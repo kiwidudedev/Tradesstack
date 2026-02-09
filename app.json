@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "TradesStack",
+    "slug": "tradesstack",
+    "scheme": "tradesstack",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#04224D"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.corey.tradesstack",
+      "usesAppleSignIn": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#04224D"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-apple-authentication"
+    ],
+    "extra": {
+      "supabaseUrl": "https://YOUR_PROJECT.supabase.co",
+      "supabaseAnonKey": "YOUR_SUPABASE_ANON_KEY"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
