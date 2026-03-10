@@ -76,6 +76,8 @@ export function Sections() {
   const [showChangeDetectionDrop, setShowChangeDetectionDrop] = useState(false);
   const [showDuplicatedSubcontractDrop, setShowDuplicatedSubcontractDrop] = useState(false);
   const [isTradePacksVideoOpen, setIsTradePacksVideoOpen] = useState(false);
+  const [isScopeBuilderVideoOpen, setIsScopeBuilderVideoOpen] = useState(false);
+  const [isAssistantVideoOpen, setIsAssistantVideoOpen] = useState(false);
   const [hoveredPricingCard, setHoveredPricingCard] = useState<"starter" | "professional" | "enterprise" | null>(null);
 
   useEffect(() => {
@@ -110,7 +112,8 @@ export function Sections() {
       const visibleBottom = Math.min(rect.bottom, window.innerHeight);
       const visibleHeight = Math.max(0, visibleBottom - visibleTop);
       const visibleRatio = visibleHeight / Math.max(rect.height, 1);
-      if (visibleRatio >= 0.75 && !isShown) {
+      const visibilityThreshold = window.innerWidth < 768 ? 0.3 : 0.75;
+      if (visibleRatio >= visibilityThreshold && !isShown) {
         setIsShown(true);
       }
     };
@@ -161,6 +164,13 @@ export function Sections() {
                 </li>
               ))}
             </ul>
+            <button
+              type="button"
+              onClick={() => setIsTradePacksVideoOpen(true)}
+              className={`${akzidenzBlack.className} mt-5 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
+            >
+              HOW TRADE PACKS WORK →
+            </button>
           </div>
           <div className="relative w-full max-w-[780px] justify-self-end pt-6 lg:order-1 lg:pt-10">
             <div className="pointer-events-none absolute left-1/2 top-[56%] h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.12),transparent_72%)] blur-[70px]" />
@@ -173,13 +183,6 @@ export function Sections() {
                 className="h-full w-full rounded-xl object-cover"
               />
             </div>
-            <button
-              type="button"
-              onClick={() => setIsTradePacksVideoOpen(true)}
-              className={`${akzidenzBlack.className} mt-4 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
-            >
-              HOW TRADE PACKS WORK
-            </button>
           </div>
         </div>
       </section>
@@ -208,9 +211,16 @@ export function Sections() {
                 </li>
               ))}
             </ul>
+            <button
+              type="button"
+              onClick={() => setIsScopeBuilderVideoOpen(true)}
+              className={`${akzidenzBlack.className} mt-5 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
+            >
+              HOW SCOPE BUILDER WORKS →
+            </button>
           </div>
 
-          <div className="relative w-full max-w-[780px] justify-self-end pt-6 lg:order-2 lg:-mt-[80px] lg:pt-10">
+          <div className="relative mt-[25px] w-full max-w-[780px] justify-self-end pt-6 lg:order-2 lg:-mt-[65px] lg:pt-10">
             <div className="pointer-events-none absolute left-1/2 top-[56%] h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.12),transparent_72%)] blur-[70px]" />
             <div className="relative overflow-hidden rounded-2xl border border-white/10 p-3 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
               {/* TODO: Replace with subscription/feature visual */}
@@ -293,6 +303,13 @@ export function Sections() {
                 </li>
               ))}
             </ul>
+            <button
+              type="button"
+              onClick={() => setIsAssistantVideoOpen(true)}
+              className={`${akzidenzBlack.className} mt-5 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
+            >
+              HOW AI ASSISTANT WORKS →
+            </button>
           </div>
 
           <div className="relative w-full max-w-[780px] justify-self-end pt-6 lg:order-2 lg:-mt-[80px] lg:pt-10">
@@ -347,6 +364,9 @@ export function Sections() {
                 <span className="mt-1 block text-[14px] text-white/70">/month</span>
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
+                <li className="text-[16px] text-white/82">
+                  Save <span className="text-[#F74917]">2-3 hours+</span> per project.
+                </li>
                 {starterPlanFeatures.map((feature) => (
                   <li key={feature} className="flex items-start gap-[14px]">
                     <span className="mt-[2px] text-[14px] leading-none text-[#F74917]">✓</span>
@@ -359,7 +379,7 @@ export function Sections() {
                   href="/register"
                   className={`${akzidenzBlack.className} inline-flex w-fit items-center justify-center rounded-[8px] bg-[#FF5A1F] px-[22px] py-[14px] text-base font-semibold text-white transition hover:bg-[#F04C11]`}
                 >
-                  Start Trial
+                  JOIN NOW
                 </Link>
               </div>
             </article>
@@ -377,17 +397,20 @@ export function Sections() {
                       : "lg:z-[3] lg:-translate-y-[16px] lg:scale-[1.02]"
               }`}
             >
-              <h3 className={`${bertholdExtraBoldCondensed.className} text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
-                Professional
-              </h3>
               <span className={`${akzidenzBlack.className} mt-1 inline-flex w-fit rounded-[20px] bg-[#FF5A1F]/15 px-[10px] py-[3px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#FF5A1F]`}>
                 Most Popular
               </span>
+              <h3 className={`${bertholdExtraBoldCondensed.className} mt-3 text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
+                Professional
+              </h3>
               <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
                 <span className="block">$499</span>
                 <span className="mt-1 block text-[14px] text-white/70">/month</span>
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
+                <li className="text-[16px] text-white/82">
+                  <span className="text-[#F74917]">50+ hours</span> a month saved.
+                </li>
                 {professionalPlanFeatures.map((feature) => (
                   <li key={feature} className="flex items-start gap-[14px]">
                     <span className="mt-[2px] text-[14px] leading-none text-[#F74917]">✓</span>
@@ -400,7 +423,7 @@ export function Sections() {
                   href="/register"
                   className={`${akzidenzBlack.className} inline-flex w-fit items-center justify-center rounded-[8px] bg-[#FF5A1F] px-[24px] py-[15px] text-base font-semibold text-white transition hover:bg-[#F04C11]`}
                 >
-                  Get Started
+                  JOIN NOW
                 </Link>
               </div>
             </article>
@@ -454,7 +477,7 @@ export function Sections() {
             className="absolute inset-0 bg-black/70"
             onClick={() => setIsTradePacksVideoOpen(false)}
           />
-          <div className="relative z-10 w-full max-w-[780px] overflow-hidden rounded-2xl border border-white/10 bg-[#0B1220]">
+          <div className="relative z-10 w-full max-w-[960px] overflow-hidden rounded-2xl border border-white/10 bg-[#0B1220]">
             <button
               type="button"
               onClick={() => setIsTradePacksVideoOpen(false)}
@@ -462,14 +485,79 @@ export function Sections() {
             >
               Close
             </button>
-            <div className="aspect-[3/2] w-full">
-              <iframe
-                className="h-full w-full"
-                src="https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1"
-                title="How Trade Packs Work"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+            <div className="aspect-video w-full">
+              <video
+                className="h-full w-full object-cover"
+                controls
+                autoPlay
+                playsInline
+                preload="metadata"
+                poster="/tradesstacktradepack-original.png"
+              >
+                <source src="/tradesstacktradepack.mp4" type="video/mp4" />
+              </video>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isScopeBuilderVideoOpen ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center px-6 py-8">
+          <button
+            type="button"
+            aria-label="Close scope builder video"
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setIsScopeBuilderVideoOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-[960px] overflow-hidden rounded-2xl border border-white/10 bg-[#0B1220]">
+            <button
+              type="button"
+              onClick={() => setIsScopeBuilderVideoOpen(false)}
+              className="absolute right-3 top-3 z-20 rounded-full bg-black/65 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-black/80"
+            >
+              Close
+            </button>
+            <div className="aspect-video w-full">
+              <video
+                className="h-full w-full object-cover"
+                controls
+                autoPlay
+                playsInline
+                preload="metadata"
+                poster="/tradesstackscopebuilder.png"
+              >
+                <source src="/tradesstackscope.mp4" type="video/mp4" />
+              </video>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isAssistantVideoOpen ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center px-6 py-8">
+          <button
+            type="button"
+            aria-label="Close AI assistant video"
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setIsAssistantVideoOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-[960px] overflow-hidden rounded-2xl border border-white/10 bg-[#0B1220]">
+            <button
+              type="button"
+              onClick={() => setIsAssistantVideoOpen(false)}
+              className="absolute right-3 top-3 z-20 rounded-full bg-black/65 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-black/80"
+            >
+              Close
+            </button>
+            <div className="aspect-video w-full">
+              <video
+                className="h-full w-full object-cover"
+                controls
+                autoPlay
+                playsInline
+                preload="metadata"
+                poster="/tradesstackbot.png"
+              >
+                <source src="/tradesstackaichat.mp4" type="video/mp4" />
+              </video>
             </div>
           </div>
         </div>

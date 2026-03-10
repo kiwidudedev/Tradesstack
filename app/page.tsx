@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LoginCard } from "@/components/auth/LoginCard";
-import { FeatureStrip } from "@/components/marketing/FeatureStrip";
 import { Footer } from "@/components/marketing/Footer";
 import { Hero } from "@/components/marketing/Hero";
 import { Navbar } from "@/components/marketing/Navbar";
@@ -76,7 +75,6 @@ export default function HomePage() {
         <Hero />
         <Sections />
         <Testimonials />
-        <FeatureStrip />
         <Footer />
       </main>
 

@@ -13,9 +13,8 @@ interface NavbarProps {
 }
 
 const links = [
-  { href: "#trade-pack", label: "How it works" },
-  { href: "#choose-plan", label: "Pricing" },
-  { href: "#support", label: "Support" },
+  { href: "/#trade-pack", label: "How it works" },
+  { href: "/#choose-plan", label: "Pricing" },
 ];
 
 export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
@@ -82,7 +81,7 @@ export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
               href="/register"
               className={`${akzidenzBlack.className} inline-flex rounded-[10px] bg-[#F74917] px-[18px] py-[10px] font-semibold text-white transition hover:bg-[#E84212]`}
             >
-              Signup
+              Sign Up
             </Link>
           </div>
         ) : (

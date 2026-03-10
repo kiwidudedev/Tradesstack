@@ -66,14 +66,8 @@ export function Hero() {
               href="/register"
               className={`${akzidenzBlack.className} inline-flex h-[52px] items-center justify-center rounded-[10px] bg-[#F74917] px-7 text-base font-semibold text-white transition hover:bg-[#E84212]`}
             >
-              Start your first project
+              Run Analysis Now
             </Link>
-              <button
-                type="button"
-              className={`${akzidenzBlack.className} inline-flex h-[52px] items-center justify-center rounded-[10px] border border-white/10 bg-white/8 px-7 text-base font-medium text-white transition hover:bg-white/12`}
-              >
-                Watch 2 min demo
-              </button>
           </div>
         </div>
 

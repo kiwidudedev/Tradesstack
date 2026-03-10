@@ -2,8 +2,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { akzidenzBlack, bertholdExtraBoldCondensed } from "@/lib/fonts";
 
-const exploreLinks = ["Product", "How it works", "Pricing", "Support"];
-const legalLinks = ["Privacy Policy", "Terms & Conditions", "Contact"];
+const exploreLinks = [
+  { label: "How it works", href: "/#trade-pack" },
+  { label: "Pricing", href: "/#choose-plan" },
+  { label: "Support", href: "mailto:hi@tradesstack.com" },
+] as const;
+const legalLinks = [
+  { label: "Privacy Policy", href: "/privacy-policy" },
+  { label: "Terms & Conditions", href: "/terms-of-service" },
+  { label: "Contact", href: "mailto:hi@tradesstack.com" },
+] as const;
 const socialItems = [
   { label: "Facebook", href: "#", id: "facebook" },
   { label: "Instagram", href: "#", id: "instagram" },
@@ -50,7 +58,11 @@ export function Footer() {
             <p className={`${bertholdExtraBoldCondensed.className} mb-4 text-2xl font-semibold uppercase italic`}>Explore</p>
             <ul className={`${akzidenzBlack.className} space-y-2 text-lg text-white/80`}>
               {exploreLinks.map((item) => (
-                <li key={item}>{item}</li>
+                <li key={item.label}>
+                  <Link href={item.href} className="transition hover:text-white">
+                    {item.label}
+                  </Link>
+                </li>
               ))}
             </ul>
           </div>
@@ -59,7 +71,11 @@ export function Footer() {
             <p className={`${bertholdExtraBoldCondensed.className} mb-4 text-2xl font-semibold uppercase italic`}>Legal</p>
             <ul className={`${akzidenzBlack.className} space-y-2 text-lg text-white/80`}>
               {legalLinks.map((item) => (
-                <li key={item}>{item}</li>
+                <li key={item.label}>
+                  <Link href={item.href} className="transition hover:text-white">
+                    {item.label}
+                  </Link>
+                </li>
               ))}
             </ul>
           </div>
@@ -75,7 +91,7 @@ export function Footer() {
               href="/register"
               className={`${akzidenzBlack.className} rounded-[10px] bg-[#F74917] px-[18px] py-[10px] text-base font-semibold text-white transition hover:bg-[#E84212]`}
             >
-              Start your first project
+              Sign Up
             </Link>
           </div>
         </div>

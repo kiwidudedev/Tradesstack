@@ -248,6 +248,17 @@ function toCompactReasonText(reason: string, maxChars = 150): string {
   return `${preferred.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
+function formatEtaSeconds(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.round(totalSeconds));
+  if (safeSeconds < 60) {
+    return `${safeSeconds}s`;
+  }
+
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
 const FLOOR_PLAN_SIGNAL_PATTERNS: RegExp[] = [
   /\bSET\s+OUT\b/,
   /\bSETTING\s+OUT\b/,
@@ -689,6 +700,8 @@ export function TradePackBuilderUploader({
   const [selectedOutputDrawingSetId, setSelectedOutputDrawingSetId] = useState<string | null>(null);
   const [isGeneratingPack, setIsGeneratingPack] = useState(false);
   const [generationStep, setGenerationStep] = useState<string | null>(null);
+  const [generationStartedAtMs, setGenerationStartedAtMs] = useState<number | null>(null);
+  const [generationClockMs, setGenerationClockMs] = useState<number>(Date.now());
   const [lastGenerationSummary, setLastGenerationSummary] = useState<LastGenerationSummary | null>(null);
   const [persistedExtractionReasons, setPersistedExtractionReasons] = useState<PersistedExtractionReason[]>([]);
   const [isLoadingPersistedReasons, setIsLoadingPersistedReasons] = useState(false);
@@ -706,6 +719,21 @@ export function TradePackBuilderUploader({
     () => drawingSets.filter((drawingSet) => isGeneratedTradePackDrawingSet(drawingSet)),
     [drawingSets]
   );
+
+  useEffect(() => {
+    if (!isGeneratingPack || generationStartedAtMs === null) {
+      return;
+    }
+
+    setGenerationClockMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setGenerationClockMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isGeneratingPack, generationStartedAtMs]);
 
   const onLocalSourceFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -919,6 +947,7 @@ export function TradePackBuilderUploader({
     setStatus(null);
     setLastGenerationSummary(null);
     setIsGeneratingPack(true);
+    setGenerationStartedAtMs(Date.now());
 
     try {
       setGenerationStep("Preparing source PDF...");
@@ -1297,6 +1326,7 @@ export function TradePackBuilderUploader({
       setError(toSupabaseErrorMessage(generationError, "Unable to build trade pack."));
     } finally {
       setGenerationStep(null);
+      setGenerationStartedAtMs(null);
       setIsGeneratingPack(false);
     }
   };
@@ -1310,6 +1340,38 @@ export function TradePackBuilderUploader({
     localSourceFile && selectedTrade
       ? `${toSafeDownloadBaseName(toDefaultDraftName(localSourceFile.name))}-${selectedTrade.slug}-trade-pack.pdf`
       : "Generated after run";
+  const generationProgress = useMemo(() => {
+    if (!generationStep || generationStartedAtMs === null) {
+      return null;
+    }
+
+    const match =
+      generationStep.match(/VLM classifying page\s+(\d+)\s+of\s+(\d+)/i) ??
+      generationStep.match(/Reading page\s+(\d+)\s+of\s+(\d+)/i);
+    if (!match) {
+      return null;
+    }
+
+    const pagesProcessed = Number.parseInt(match[1] ?? "0", 10);
+    const totalPages = Number.parseInt(match[2] ?? "0", 10);
+    if (!Number.isFinite(pagesProcessed) || !Number.isFinite(totalPages) || pagesProcessed <= 0 || totalPages <= 0) {
+      return null;
+    }
+
+    const elapsedMs = Math.max(generationClockMs - generationStartedAtMs, 0);
+    const remainingPages = Math.max(totalPages - pagesProcessed, 0);
+    const avgMsPerPage = elapsedMs / pagesProcessed;
+    const estimatedRemainingSeconds = Math.max(Math.round((avgMsPerPage * remainingPages) / 1000), 0);
+    const percent = Math.min(100, Math.max(0, Math.round((pagesProcessed / totalPages) * 100)));
+
+    return {
+      pagesProcessed,
+      totalPages,
+      remainingPages,
+      estimatedRemainingSeconds,
+      percent,
+    };
+  }, [generationClockMs, generationStartedAtMs, generationStep]);
   const extractedPageReasons = useMemo(() => {
     if (persistedExtractionReasons.length > 0) {
       return persistedExtractionReasons.map((entry) => {
@@ -1769,10 +1831,28 @@ export function TradePackBuilderUploader({
 
           <div className="mt-4 space-y-2">
             {generationStep ? (
-              <p className="inline-flex items-center gap-2 rounded-[10px] border border-[#dbe1eb] bg-[#f8fafc] px-3 py-2 text-sm text-[#4f5f79]">
-                <Loader2 className="h-4 w-4 animate-spin text-[#ff5406]" />
-                {generationStep}
-              </p>
+              <div className="space-y-2 rounded-[10px] border border-[#dbe1eb] bg-[#f8fafc] px-3 py-2">
+                <p className="inline-flex items-center gap-2 text-sm text-[#4f5f79]">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#ff5406]" />
+                  {generationStep}
+                </p>
+                {generationProgress ? (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-[#4f5f79]">
+                      Analyzing Drawing Set: {generationProgress.pagesProcessed} / {generationProgress.totalPages} drawings classified
+                    </p>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e9f3]">
+                      <div
+                        className="h-full rounded-full bg-[#ff5406] transition-[width] duration-500"
+                        style={{ width: `${generationProgress.percent}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-[#5f6f89]">
+                      Estimated time remaining: ~{formatEtaSeconds(generationProgress.estimatedRemainingSeconds)}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             {status ? (
               <p className="inline-flex items-center gap-2 rounded-[10px] border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
