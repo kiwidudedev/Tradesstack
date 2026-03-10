@@ -7,9 +7,12 @@ export const metadata: Metadata = {
   title: "Tradesstack",
   description: "Tradesstack prototype app",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: [
+      { url: "/favicon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/favicon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/favicon-48.png",
+    apple: "/favicon-512.png",
   },
 };
 
