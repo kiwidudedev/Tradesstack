@@ -1,0 +1,8 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" rx="36" fill="#DCE4EE"/>
+  <rect x="70" y="72" width="1060" height="656" rx="24" fill="#C8D4E3"/>
+  <rect x="120" y="140" width="720" height="420" rx="20" fill="#B1C3D8"/>
+  <rect x="868" y="140" width="212" height="280" rx="16" fill="#9AB1CA"/>
+  <rect x="868" y="444" width="212" height="116" rx="16" fill="#9AB1CA"/>
+  <text x="600" y="680" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" fill="#04234c">TODO: Replace with product video thumbnail</text>
+</svg>

@@ -1,0 +1,11 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" rx="36" fill="#E8EEF5"/>
+  <rect x="170" y="120" width="860" height="520" rx="28" fill="#04234c"/>
+  <rect x="205" y="160" width="790" height="430" rx="20" fill="#FFFFFF"/>
+  <rect x="245" y="210" width="280" height="24" rx="12" fill="#f74918"/>
+  <rect x="245" y="258" width="580" height="16" rx="8" fill="#D7DFEA"/>
+  <rect x="245" y="290" width="520" height="16" rx="8" fill="#D7DFEA"/>
+  <rect x="245" y="322" width="540" height="16" rx="8" fill="#D7DFEA"/>
+  <rect x="245" y="370" width="710" height="180" rx="14" fill="#EFF4FA"/>
+  <text x="600" y="690" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#04234c">TODO: Replace with device screenshot</text>
+</svg>

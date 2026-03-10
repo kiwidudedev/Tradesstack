@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f4f2;
+  --surface: #ffffff;
+  --surface-muted: #f7f7f5;
+  --text: #1d1d1d;
+  --text-muted: #6b6b6b;
+  --border: rgba(17, 17, 17, 0.1);
+  --accent: #ff5406;
+  --accent-soft: #ffe4d7;
+  --black: #1d1d1d;
+  --ink: #061a25;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-black: var(--black);
+  --color-ink: var(--ink);
+  --font-sans: var(--font-body);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+.font-heading {
+  font-family: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-body {
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+.shadow-soft {
+  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.06);
+}
+
+.shadow-float {
+  box-shadow:
+    0 18px 34px rgba(17, 17, 17, 0.08),
+    0 3px 10px rgba(17, 17, 17, 0.05);
+}
+
+.panel-gradient {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.orange-gradient {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.orange-gradient::before,
+.panel-gradient::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 3px;
+  width: 100%;
+}
+
+.orange-gradient::before {
+  background: var(--accent);
+}
+
+.panel-gradient::before {
+  background: rgba(17, 17, 17, 0.18);
+}
+
+.page-kicker {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.page-title {
+  font-family: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(2.15rem, 4.2vw, 3.85rem);
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  max-width: 52rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.auth-shell .ui-button {
+  border-radius: var(--radius-md);
+}
+
+@media (min-width: 640px) {
+  .page-subtitle {
+    font-size: 1rem;
+  }
+}
+
+nextjs-portal {
+  display: none !important;
+}
