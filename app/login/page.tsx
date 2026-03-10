@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { AuthPanel } from "@/components/auth/AuthPanel";
 
 export default function LoginPage() {
@@ -8,7 +9,9 @@ export default function LoginPage() {
         <Link href="/" className="inline-flex pb-6 text-lg font-semibold text-white/90 hover:text-white">
           Back to home
         </Link>
-        <AuthPanel mode="login" />
+        <Suspense fallback={null}>
+          <AuthPanel mode="login" />
+        </Suspense>
       </div>
     </main>
   );

@@ -1,12 +1,6 @@
-import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/app/Sidebar";
 import { Topbar } from "@/components/app/Topbar";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
+import { interMedium } from "@/lib/fonts";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (

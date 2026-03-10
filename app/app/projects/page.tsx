@@ -1,14 +1,8 @@
 import Link from "next/link";
-import { Inter } from "next/font/google";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { interMedium } from "@/lib/fonts";
 import { getOrganizationProjectsForCurrentUser } from "@/lib/projects-server";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 export default async function ProjectSpacePage() {
   const projects = await getOrganizationProjectsForCurrentUser();

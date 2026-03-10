@@ -1,11 +1,5 @@
-import { Inter } from "next/font/google";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
+import { interMedium } from "@/lib/fonts";
 
 export default function SettingsPage() {
   return (

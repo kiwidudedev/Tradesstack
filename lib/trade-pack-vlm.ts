@@ -13,6 +13,8 @@ export interface TradePackPrefilterPayload {
 }
 
 export interface TradePackVlmPageRequest {
+  organizationId: string;
+  projectId: string;
   tradeId: string;
   tradeLabel: string;
   pageNumber: number;

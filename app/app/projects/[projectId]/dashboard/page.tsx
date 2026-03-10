@@ -1,18 +1,12 @@
 import Link from "next/link";
-import { Inter } from "next/font/google";
 import { notFound } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { interMedium } from "@/lib/fonts";
 import {
   getOrganizationProjectBySlugForCurrentUser,
   getProjectDashboardMetricsForCurrentUser,
 } from "@/lib/projects-server";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 interface ProjectModuleLink {
   label: string;

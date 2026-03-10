@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Inter } from "next/font/google";
 import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
@@ -17,22 +16,11 @@ import {
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrganizationProjects } from "@/hooks/use-organization-projects";
+import { interBold, interMedium } from "@/lib/fonts";
 import { mainDashboardNav, projectDashboardNav } from "@/lib/nav";
 import { formatProjectNameFromSlug } from "@/lib/projects";
 import { mockUser } from "@/lib/mock";
 import { cn } from "@/lib/utils";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
-
-const interBold = Inter({
-  subsets: ["latin"],
-  weight: ["700"],
-  display: "swap",
-});
 
 const iconMap = {
   LayoutGrid,

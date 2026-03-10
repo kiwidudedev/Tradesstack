@@ -1,0 +1,187 @@
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+interface RouteGuardOptions {
+  routeKey: string;
+  request: Request;
+  userId?: string | null;
+  userPerMinute: number;
+  ipPerMinute: number;
+  concurrentPerUser: number;
+}
+
+interface GuardFailure {
+  ok: false;
+  status: number;
+  error: string;
+}
+
+interface GuardSuccess {
+  ok: true;
+  release: () => Promise<void>;
+}
+
+export type RouteGuardResult = GuardFailure | GuardSuccess;
+
+const WINDOW_MS = 60_000;
+
+function getClientIp(request: Request): string {
+  const forwardedFor = request.headers.get("x-forwarded-for") ?? "";
+  const firstForwarded = forwardedFor.split(",")[0]?.trim();
+  if (firstForwarded) {
+    return firstForwarded;
+  }
+
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  if (realIp) {
+    return realIp;
+  }
+
+  return "unknown";
+}
+
+interface LimiterRpcClient {
+  rpc: (
+    fn: "enforce_shared_rate_limit" | "acquire_shared_concurrency_slot" | "release_shared_concurrency_slot",
+    args: Record<string, unknown>
+  ) => Promise<{ data: boolean | null; error: { message: string } | null }>;
+}
+
+async function enforceSharedRateLimit(
+  limiterClient: LimiterRpcClient,
+  routeKey: string,
+  subjectKey: string,
+  limit: number
+): Promise<boolean | null> {
+  if (limit <= 0) {
+    return true;
+  }
+
+  const limiterResult = await limiterClient.rpc("enforce_shared_rate_limit", {
+    p_route_key: routeKey,
+    p_subject_key: subjectKey,
+    p_limit: limit,
+    p_window_seconds: WINDOW_MS / 1000,
+  });
+
+  if (limiterResult.error) {
+    console.error("[abuse-guard] shared rate limiter failed", limiterResult.error);
+    return null;
+  }
+
+  return limiterResult.data === true;
+}
+
+async function acquireSharedConcurrencySlot(
+  limiterClient: LimiterRpcClient,
+  routeKey: string,
+  subjectKey: string,
+  limit: number
+): Promise<boolean | null> {
+  if (limit <= 0) {
+    return true;
+  }
+
+  const acquireResult = await limiterClient.rpc("acquire_shared_concurrency_slot", {
+    p_route_key: routeKey,
+    p_subject_key: subjectKey,
+    p_limit: limit,
+  });
+
+  if (acquireResult.error) {
+    console.error("[abuse-guard] shared concurrency acquire failed", acquireResult.error);
+    return null;
+  }
+
+  return acquireResult.data === true;
+}
+
+async function releaseSharedConcurrencySlot(limiterClient: LimiterRpcClient, routeKey: string, subjectKey: string): Promise<void> {
+
+  const releaseResult = await limiterClient.rpc("release_shared_concurrency_slot", {
+    p_route_key: routeKey,
+    p_subject_key: subjectKey,
+  });
+
+  if (releaseResult.error) {
+    console.error("[abuse-guard] shared concurrency release failed", releaseResult.error);
+  }
+}
+
+export async function enforceRouteGuard(options: RouteGuardOptions): Promise<RouteGuardResult> {
+  const ip = getClientIp(options.request);
+  const userId = options.userId?.trim() || null;
+  const supabase = await createServerSupabaseClient();
+  const limiterClient = supabase as unknown as LimiterRpcClient;
+
+  const ipRateKey = `ip:${options.routeKey}:${ip}`;
+  const ipAllowed = await enforceSharedRateLimit(limiterClient, options.routeKey, ipRateKey, options.ipPerMinute);
+  if (ipAllowed === null) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Request guard is unavailable. Please retry.",
+    };
+  }
+  if (!ipAllowed) {
+    return {
+      ok: false,
+      status: 429,
+      error: "Too many requests. Please retry in a minute.",
+    };
+  }
+
+  if (userId) {
+    const userRateKey = `user:${options.routeKey}:${userId}`;
+    const userAllowed = await enforceSharedRateLimit(limiterClient, options.routeKey, userRateKey, options.userPerMinute);
+    if (userAllowed === null) {
+      return {
+        ok: false,
+        status: 503,
+        error: "Request guard is unavailable. Please retry.",
+      };
+    }
+    if (!userAllowed) {
+      return {
+        ok: false,
+        status: 429,
+        error: "Too many requests. Please retry in a minute.",
+      };
+    }
+
+    if (options.concurrentPerUser > 0) {
+      const activeKey = `active:${options.routeKey}:${userId}`;
+      const acquired = await acquireSharedConcurrencySlot(limiterClient, options.routeKey, activeKey, options.concurrentPerUser);
+      if (acquired === null) {
+        return {
+          ok: false,
+          status: 503,
+          error: "Request guard is unavailable. Please retry.",
+        };
+      }
+      if (!acquired) {
+        return {
+          ok: false,
+          status: 429,
+          error: "Too many concurrent requests. Please wait for current jobs to finish.",
+        };
+      }
+
+      let released = false;
+      return {
+        ok: true,
+        release: async () => {
+          if (released) {
+            return;
+          }
+          released = true;
+          await releaseSharedConcurrencySlot(limiterClient, options.routeKey, activeKey);
+        },
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    release: async () => {},
+  };
+}

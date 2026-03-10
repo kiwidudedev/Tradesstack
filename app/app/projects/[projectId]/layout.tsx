@@ -1,12 +1,6 @@
-import { Inter } from "next/font/google";
 import { notFound } from "next/navigation";
+import { interMedium } from "@/lib/fonts";
 import { getOrganizationProjectBySlugForCurrentUser } from "@/lib/projects-server";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 export default async function ProjectLayout({
   children,

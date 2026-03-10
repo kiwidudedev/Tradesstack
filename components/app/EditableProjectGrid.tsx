@@ -1,18 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Inter } from "next/font/google";
 import { GripVertical } from "lucide-react";
 import { useMemo, useState } from "react";
+import { interMedium } from "@/lib/fonts";
 import type { OrganizationProject } from "@/lib/projects";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 function moveProject(projects: OrganizationProject[], activeId: string, targetId: string) {
   const activeIndex = projects.findIndex((project) => project.id === activeId);

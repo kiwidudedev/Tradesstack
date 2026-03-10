@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
+import { enforceRouteGuard } from "@/lib/security/abuse-guard";
+import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { analyzePagePrefilterForTrade, getTradeById } from "@/lib/trade-pack-builder";
 import { getGeneratedTradePackTradeId, getGeneratedTradePackTradeLabel, isGeneratedTradePackDrawingSet } from "@/lib/trade-packs";
@@ -11,6 +13,8 @@ const DEFAULT_CHANGE_MODEL = "gpt-5.2";
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 const MAX_PAGE_TEXT_CHARS = 1400;
 const MAX_RELEVANT_PAGES_FOR_PROMPT = 42;
+const MAX_REVISED_FILES = 6;
+const CHANGE_DETECTION_TIMEOUT_MS = 90_000;
 
 interface StructuredItem {
   title: string;
@@ -224,23 +228,6 @@ function isMissingTableInSchemaCacheError(error: unknown, tableName: string): bo
   }
 
   return message.includes("schema cache") && message.includes(needle);
-}
-
-function toSupabaseErrorMessage(error: unknown, fallback: string): string {
-  if (!isRecord(error)) {
-    return fallback;
-  }
-
-  const code = typeof error.code === "string" ? error.code.trim() : "";
-  const message = typeof error.message === "string" ? error.message.trim() : "";
-  const details = typeof error.details === "string" ? error.details.trim() : "";
-  const hint = typeof error.hint === "string" ? error.hint.trim() : "";
-  const body = [message, details, hint].filter((part) => part.length > 0).join(" | ");
-  if (!body) {
-    return fallback;
-  }
-
-  return code ? `${body} (code: ${code})` : body;
 }
 
 function extractSheetNumberFromText(text: string): string | null {
@@ -587,6 +574,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
+  const guard = await enforceRouteGuard({
+    routeKey: "change-detection",
+    request,
+    userId: user.id,
+    userPerMinute: 4,
+    ipPerMinute: 12,
+    concurrentPerUser: 2,
+  });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  try {
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -608,6 +609,9 @@ export async function POST(request: Request) {
   const revisedFiles = revisedFileValues.filter((value): value is File => value instanceof File);
   if (revisedFiles.length === 0) {
     return NextResponse.json({ error: "At least one revised PDF file is required." }, { status: 400 });
+  }
+  if (revisedFiles.length > MAX_REVISED_FILES) {
+    return NextResponse.json({ error: `Maximum ${MAX_REVISED_FILES} revised PDFs allowed per request.` }, { status: 400 });
   }
 
   for (const revisedFileValue of revisedFiles) {
@@ -693,7 +697,8 @@ export async function POST(request: Request) {
     if (isMissingTableInSchemaCacheError(createRunError, "change_detection_runs")) {
       persistenceReason = "Persistence table not deployed (change_detection_runs).";
     } else {
-      persistenceReason = toSupabaseErrorMessage(createRunError, "Unable to create persistence run record.");
+      console.error("[change-detection] unable to create persistence run", createRunError);
+      persistenceReason = "Unable to create persistence run record.";
     }
   } else {
     changeDetectionRunId = createdRun.id;
@@ -917,39 +922,46 @@ Baseline text excerpt: ${entry.baselinePage.text.slice(0, MAX_PAGE_TEXT_CHARS) |
   }
 
   const model = process.env.OPENAI_CHANGE_DETECTION_MODEL || DEFAULT_CHANGE_MODEL;
-  const openAiResponse = await fetch(OPENAI_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openAiApiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.1,
-      max_output_tokens: 3800,
-      input: [
-        {
-          role: "user",
-          content: [{ type: "input_text", text: prompt }],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "change_detection_output",
-          schema: CHANGE_RESPONSE_JSON_SCHEMA,
-          strict: true,
-        },
+  let openAiResponse: Response;
+  try {
+    openAiResponse = await fetchWithTimeout(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openAiApiKey}`,
       },
-    }),
-  });
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_output_tokens: 3800,
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: prompt }],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "change_detection_output",
+            schema: CHANGE_RESPONSE_JSON_SCHEMA,
+            strict: true,
+          },
+        },
+      }),
+    }, CHANGE_DETECTION_TIMEOUT_MS);
+  } catch (error) {
+    console.error("[change-detection] upstream request failed", error);
+    await markRunFailed("AI provider request failed.");
+    return NextResponse.json({ error: "AI provider request failed." }, { status: 502 });
+  }
 
   if (!openAiResponse.ok) {
-    const responseText = await openAiResponse.text();
+    console.error("[change-detection] upstream non-ok response", openAiResponse.status, openAiResponse.statusText);
     await markRunFailed(`OpenAI request failed (${openAiResponse.status}).`);
     return NextResponse.json(
       {
-        error: `OpenAI request failed (${openAiResponse.status}): ${responseText}`,
+        error: "AI provider request failed.",
       },
       { status: 502 }
     );
@@ -1017,7 +1029,8 @@ Baseline text excerpt: ${entry.baselinePage.text.slice(0, MAX_PAGE_TEXT_CHARS) |
     } else if (isMissingTableInSchemaCacheError(updateRunError, "change_detection_runs")) {
       persistenceReason = "Persistence table not deployed (change_detection_runs).";
     } else {
-      persistenceReason = toSupabaseErrorMessage(updateRunError, "Unable to persist change detection result.");
+      console.error("[change-detection] unable to persist run", updateRunError);
+      persistenceReason = "Unable to persist change detection result.";
     }
   }
 
@@ -1074,4 +1087,7 @@ Baseline text excerpt: ${entry.baselinePage.text.slice(0, MAX_PAGE_TEXT_CHARS) |
       reason: persistenceReason,
     },
   });
+  } finally {
+    await guard.release();
+  }
 }

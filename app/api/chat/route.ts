@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { getCurrentOrganizationMember, getOrganizationProjectBySlugForCurrentUser } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { enforceRouteGuard } from "@/lib/security/abuse-guard";
+import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 
 export const runtime = "nodejs";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || "gpt-5-mini";
+const CHAT_TIMEOUT_MS = 35_000;
+const MAX_MESSAGE_CHARS = 4_000;
+const MAX_CONVERSATION_CHARS = 20_000;
 
 const SYSTEM_PROMPT = `You are a construction assistant specialising in New Zealand and Australian building projects.
 
@@ -36,8 +41,6 @@ interface AiChatMessageRow {
   content: string;
   created_at: string;
 }
-
-type UsageCountResult = { count: number | null; error: { message: string } | null };
 
 function getMonthStartIso() {
   const now = new Date();
@@ -117,15 +120,7 @@ export async function GET(request: Request) {
   const monthlyLimit = getMonthlyMessageLimit(planTier);
   const monthStartIso = getMonthStartIso();
 
-  const usageClient = supabase as unknown as {
-    from: (table: string) => {
-      select: (columns: string, options?: { count?: "exact"; head?: boolean }) => {
-        eq: (column: string, value: string) => {
-          gte: (column: string, value: string) => Promise<UsageCountResult>;
-        };
-      };
-    };
-  };
+  const usageClient = supabase as unknown as any;
 
   const chatMessagesClient = supabase as unknown as {
     from: (table: "ai_chat_messages") => {
@@ -155,17 +150,20 @@ export async function GET(request: Request) {
     .limit(200);
 
   if (queryResult.error) {
-    return NextResponse.json({ error: `Failed to load chat history: ${queryResult.error.message}` }, { status: 500 });
+    console.error("[chat] failed to load history", queryResult.error);
+    return NextResponse.json({ error: "Failed to load chat history." }, { status: 500 });
   }
 
   const usageResult = await usageClient
     .from("ai_chat_usage")
     .select("id", { count: "exact", head: true })
     .eq("user_id", member.user_id)
+    .eq("reservation_state", "committed")
     .gte("created_at", monthStartIso);
 
   if (usageResult.error) {
-    return NextResponse.json({ error: `Failed to load usage: ${usageResult.error.message}` }, { status: 500 });
+    console.error("[chat] failed to load usage", usageResult.error);
+    return NextResponse.json({ error: "Failed to load usage." }, { status: 500 });
   }
 
   const usageUsed = usageResult.count ?? 0;
@@ -227,6 +225,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No valid message content provided." }, { status: 400 });
   }
 
+  if (normalizedMessages.some((message) => message.content.length > MAX_MESSAGE_CHARS)) {
+    return NextResponse.json({ error: "One or more messages are too long." }, { status: 413 });
+  }
+
+  const totalMessageChars = normalizedMessages.reduce((sum, message) => sum + message.content.length, 0);
+  if (totalMessageChars > MAX_CONVERSATION_CHARS) {
+    return NextResponse.json({ error: "Conversation payload is too large." }, { status: 413 });
+  }
+
   const member = await getCurrentOrganizationMember();
   if (!member) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -235,6 +242,18 @@ export async function POST(request: Request) {
   const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  }
+
+  const guard = await enforceRouteGuard({
+    routeKey: "chat",
+    request,
+    userId: member.user_id,
+    userPerMinute: 20,
+    ipPerMinute: 60,
+    concurrentPerUser: 1,
+  });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const supabase = await createServerSupabaseClient();
@@ -248,29 +267,25 @@ export async function POST(request: Request) {
   const monthlyLimit = getMonthlyMessageLimit(planTier);
   const monthStartIso = getMonthStartIso();
 
-  const usageClient = supabase as unknown as {
-    from: (table: string) => {
-      select: (columns: string, options?: { count?: "exact"; head?: boolean }) => {
-        eq: (column: string, value: string) => {
-          gte: (column: string, value: string) => Promise<{ count: number | null; error: { message: string } | null }>;
-        };
-      };
-      insert: (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
-    };
-  };
+  const quotaClient = supabase as unknown as any;
 
-  const usageResult = await usageClient
-    .from("ai_chat_usage")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", member.user_id)
-    .gte("created_at", monthStartIso);
+  const quotaReservationResult = await quotaClient.rpc("reserve_ai_chat_usage_quota", {
+    p_user_id: member.user_id,
+    p_organization_id: member.organization_id,
+    p_project_slug: projectSlug,
+    p_plan_tier: planTier,
+    p_month_start: monthStartIso,
+    p_monthly_limit: monthlyLimit,
+  });
 
-  if (usageResult.error) {
-    return NextResponse.json({ error: `Failed to check usage: ${usageResult.error.message}` }, { status: 500 });
+  if (quotaReservationResult.error) {
+    await guard.release();
+    return NextResponse.json({ error: "Unable to check usage right now." }, { status: 500 });
   }
 
-  const currentUsageCount = usageResult.count ?? 0;
-  if (currentUsageCount >= monthlyLimit) {
+  const usageReservationId = typeof quotaReservationResult.data === "string" ? quotaReservationResult.data : null;
+  if (!usageReservationId) {
+    await guard.release();
     return NextResponse.json(
       {
         error: `Monthly AI message limit reached for ${planTier} plan (${monthlyLimit}).`,
@@ -278,6 +293,20 @@ export async function POST(request: Request) {
       { status: 429 }
     );
   }
+
+  let shouldReleaseQuotaReservation = true;
+  const releaseQuotaReservation = async () => {
+    if (!shouldReleaseQuotaReservation) {
+      return;
+    }
+    shouldReleaseQuotaReservation = false;
+    const releaseResult = await quotaClient.rpc("release_ai_chat_quota_reservation", {
+      p_usage_id: usageReservationId,
+    });
+    if (releaseResult.error) {
+      console.error("[chat] failed to release quota reservation", releaseResult.error);
+    }
+  };
 
   const latestUserMessage = [...normalizedMessages].reverse().find((message) => message.role === "user");
   if (latestUserMessage) {
@@ -292,9 +321,11 @@ export async function POST(request: Request) {
     ]);
 
     if (userInsertResult.error) {
+      await releaseQuotaReservation();
+      await guard.release();
       return NextResponse.json(
         {
-          error: `Unable to save user message: ${userInsertResult.error.message}`,
+          error: "Unable to save user message.",
         },
         { status: 500 }
       );
@@ -322,24 +353,34 @@ export async function POST(request: Request) {
     })),
   ];
 
-  const openAiResponse = await fetch(OPENAI_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openAiApiKey}`,
-    },
-    body: JSON.stringify({
-      model: DEFAULT_CHAT_MODEL,
-      stream: true,
-      input: responseInput,
-    }),
-  });
+  let openAiResponse: Response;
+  try {
+    openAiResponse = await fetchWithTimeout(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openAiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: DEFAULT_CHAT_MODEL,
+        stream: true,
+        input: responseInput,
+      }),
+    }, CHAT_TIMEOUT_MS);
+  } catch (error) {
+    await releaseQuotaReservation();
+    await guard.release();
+    console.error("[chat] upstream request failed", error);
+    return NextResponse.json({ error: "AI provider request failed." }, { status: 502 });
+  }
 
   if (!openAiResponse.ok || !openAiResponse.body) {
-    const errorBody = await openAiResponse.text().catch(() => "");
+    await releaseQuotaReservation();
+    await guard.release();
+    console.error("[chat] upstream non-ok response", openAiResponse.status, openAiResponse.statusText);
     return NextResponse.json(
       {
-        error: `OpenAI request failed: ${openAiResponse.status} ${openAiResponse.statusText}${errorBody ? ` - ${errorBody}` : ""}`,
+        error: "AI provider request failed.",
       },
       { status: 502 }
     );
@@ -409,17 +450,17 @@ export async function POST(request: Request) {
           }
         }
 
-        const insertResult = await usageClient.from("ai_chat_usage").insert({
-          user_id: member.user_id,
-          organization_id: member.organization_id,
-          project_slug: projectSlug,
-          tokens_used: usageTokens,
-          response_chars: accumulatedText.length,
-          plan_tier: planTier,
+        const commitResult = await quotaClient.rpc("commit_ai_chat_quota_reservation", {
+          p_usage_id: usageReservationId,
+          p_tokens_used: usageTokens,
+          p_response_chars: accumulatedText.length,
         });
 
-        if (insertResult.error) {
-          sendEvent({ type: "error", error: `Unable to record usage: ${insertResult.error.message}` });
+        if (commitResult.error || commitResult.data !== true) {
+          sendEvent({ type: "error", error: "Unable to record usage." });
+          shouldReleaseQuotaReservation = false;
+        } else {
+          shouldReleaseQuotaReservation = false;
         }
 
         if (accumulatedText.trim().length > 0) {
@@ -433,15 +474,17 @@ export async function POST(request: Request) {
             },
           ]);
           if (assistantInsertResult.error) {
-            sendEvent({ type: "error", error: `Unable to save AI message: ${assistantInsertResult.error.message}` });
+            sendEvent({ type: "error", error: "Unable to save AI response." });
           }
         }
 
         sendEvent({ type: "done" });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Streaming failed.";
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`));
+        console.error("[chat] stream failed", error);
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "Streaming failed." })}\n\n`));
       } finally {
+        await releaseQuotaReservation();
+        await guard.release();
         controller.close();
         openAiReader.releaseLock();
       }

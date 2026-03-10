@@ -5,7 +5,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { OrganizationProject } from "@/lib/projects";
 
-const projectSelect = "id, organization_id, created_by, name, slug, stage, location, created_at, updated_at";
+const projectSelect =
+  "id, organization_id, created_by, name, slug, stage, location, cover_image_url, created_at, updated_at";
 
 export function useOrganizationProjects() {
   const { session, isLoading: isAuthLoading } = useAuth();

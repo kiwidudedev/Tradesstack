@@ -1,11 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Inter } from "next/font/google";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
+import { interMedium } from "@/lib/fonts";
 
 interface ProjectSectionCardProps {
   title: string;

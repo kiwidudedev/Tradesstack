@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Inter } from "next/font/google";
+import { interMedium } from "@/lib/fonts";
 import type { RecentActivityItem } from "@/lib/projects-server";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 function parseActivityLabel(label: string) {
   const [eventLabel, sourceLabel] = label.split(" - ");

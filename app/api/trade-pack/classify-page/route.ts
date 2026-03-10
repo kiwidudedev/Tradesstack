@@ -10,6 +10,10 @@ import {
   type TradePackVlmPageRequest,
   type TradePackVlmPageResult,
 } from "@/lib/trade-pack-vlm";
+import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { enforceRouteGuard } from "@/lib/security/abuse-guard";
+import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 
 export const runtime = "nodejs";
 
@@ -20,6 +24,9 @@ const DEFAULT_ANTHROPIC_VLM_MODEL = "claude-opus-4-6";
 const CLAUDE_FALLBACK_ENABLED = false;
 const AMBIGUOUS_CONFIDENCE_MIN = 0.42;
 const AMBIGUOUS_CONFIDENCE_MAX = 0.68;
+const MAX_CLASSIFY_PAGE_TEXT_CHARS = 12000;
+const MAX_CLASSIFY_IMAGE_BYTES = 1_500_000;
+const CLASSIFY_TIMEOUT_MS = 20_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -214,6 +221,11 @@ function parseImageDataUrl(dataUrl: string): { mediaType: string; base64Data: st
   };
 }
 
+function estimateBase64Bytes(base64Data: string): number {
+  const padding = base64Data.endsWith("==") ? 2 : base64Data.endsWith("=") ? 1 : 0;
+  return Math.floor((base64Data.length * 3) / 4) - padding;
+}
+
 function isGrayBandConfidence(confidence: number): boolean {
   return confidence >= AMBIGUOUS_CONFIDENCE_MIN && confidence <= AMBIGUOUS_CONFIDENCE_MAX;
 }
@@ -302,7 +314,7 @@ async function classifyWithClaudeFallback(params: {
   }
 
   try {
-    const claudeResponse = await fetch(ANTHROPIC_API_URL, {
+    const claudeResponse = await fetchWithTimeout(ANTHROPIC_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -331,7 +343,7 @@ async function classifyWithClaudeFallback(params: {
           },
         ],
       }),
-    });
+    }, CLASSIFY_TIMEOUT_MS);
 
     if (!claudeResponse.ok) {
       return null;
@@ -362,6 +374,10 @@ function isValidRequestBody(body: unknown): body is TradePackVlmPageRequest {
   }
 
   return (
+    typeof body.organizationId === "string" &&
+    body.organizationId.length > 0 &&
+    typeof body.projectId === "string" &&
+    body.projectId.length > 0 &&
     typeof body.tradeId === "string" &&
     body.tradeId.length > 0 &&
     typeof body.tradeLabel === "string" &&
@@ -394,6 +410,54 @@ export async function POST(request: Request) {
   const trade = getTradeById(payload.tradeId);
   if (!trade) {
     return NextResponse.json({ error: "Unknown trade id." }, { status: 400 });
+  }
+
+  const member = await getCurrentOrganizationMember();
+  if (!member) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  if (payload.organizationId !== member.organization_id) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const { data: projectRow, error: projectError } = await supabase
+    .from("organization_projects")
+    .select("id")
+    .eq("id", payload.projectId)
+    .eq("organization_id", payload.organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  if (projectError || !projectRow) {
+    return NextResponse.json({ error: "Project context unavailable." }, { status: 403 });
+  }
+
+  if (payload.pageText.length > MAX_CLASSIFY_PAGE_TEXT_CHARS) {
+    return NextResponse.json({ error: "Page text payload is too large." }, { status: 413 });
+  }
+
+  const parsedImage = parseImageDataUrl(payload.pageImageDataUrl);
+  if (!parsedImage) {
+    return NextResponse.json({ error: "Invalid image payload." }, { status: 400 });
+  }
+
+  if (estimateBase64Bytes(parsedImage.base64Data) > MAX_CLASSIFY_IMAGE_BYTES) {
+    return NextResponse.json({ error: "Image payload is too large." }, { status: 413 });
+  }
+
+  const guard = await enforceRouteGuard({
+    routeKey: "trade-pack-classify-page",
+    request,
+    userId: member.user_id,
+    userPerMinute: 90,
+    ipPerMinute: 180,
+    concurrentPerUser: 4,
+  });
+
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const prefilter: TradePagePrefilterSignal = {
@@ -496,7 +560,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const openAiResponse = await fetch(OPENAI_API_URL, {
+    const openAiResponse = await fetchWithTimeout(OPENAI_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -526,7 +590,7 @@ export async function POST(request: Request) {
           },
         },
       }),
-    });
+    }, CLASSIFY_TIMEOUT_MS);
 
     if (!openAiResponse.ok) {
       if (anthropicApiKey) {
@@ -656,5 +720,7 @@ export async function POST(request: Request) {
         fallbackReason: "VLM request error",
       }),
     });
+  } finally {
+    await guard.release();
   }
 }

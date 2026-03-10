@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Inter } from "next/font/google";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Menu, Search } from "lucide-react";
@@ -10,13 +9,8 @@ import { SidebarNavContent } from "@/components/app/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { interMedium } from "@/lib/fonts";
 import { mockUser } from "@/lib/mock";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 function getInitials(name: string) {
   return name

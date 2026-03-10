@@ -996,6 +996,8 @@ export function TradePackBuilderUploader({
             const pageImageDataUrl = await renderPdfJsPageAsHighQualityImageDataUrl(page);
             const pageTextForVlm = pageText.slice(0, 12000);
             classification = await classifyTradePackPageWithVlm({
+              organizationId,
+              projectId,
               tradeId: trade.id,
               tradeLabel: trade.label,
               pageNumber,

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
+import { enforceRouteGuard } from "@/lib/security/abuse-guard";
+import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getTradeById } from "@/lib/trade-pack-builder";
 
@@ -10,6 +12,7 @@ const DEFAULT_SCOPE_MODEL = "gpt-5.2";
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 const DEFAULT_SCOPE_MAX_OUTPUT_TOKENS = 128000;
 const SCOPE_RETRY_MAX_OUTPUT_TOKENS = 128000;
+const SCOPE_AI_TIMEOUT_MS = 120_000;
 
 interface ScopeStructuredItem {
   title: string;
@@ -732,6 +735,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
+  const guard = await enforceRouteGuard({
+    routeKey: "scope-builder",
+    request,
+    userId: user.id,
+    userPerMinute: 6,
+    ipPerMinute: 20,
+    concurrentPerUser: 2,
+  });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  try {
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -991,7 +1008,7 @@ export async function POST(request: Request) {
     : DEFAULT_SCOPE_MAX_OUTPUT_TOKENS;
 
   const requestScopeFromOpenAi = async (maxOutputTokens: number): Promise<unknown> => {
-    const openAiResponse = await fetch(OPENAI_API_URL, {
+    const openAiResponse = await fetchWithTimeout(OPENAI_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1026,11 +1043,10 @@ export async function POST(request: Request) {
           },
         },
       }),
-    });
+    }, SCOPE_AI_TIMEOUT_MS);
 
     if (!openAiResponse.ok) {
-      const responseText = await openAiResponse.text();
-      throw new Error(`OpenAI request failed (${openAiResponse.status}): ${responseText}`);
+      throw new Error(`OpenAI request failed (${openAiResponse.status}).`);
     }
 
     return openAiResponse.json();
@@ -1044,9 +1060,9 @@ export async function POST(request: Request) {
       responseJson = await requestScopeFromOpenAi(retryMaxOutputTokens);
     }
   } catch (openAiError) {
-    const message = openAiError instanceof Error ? openAiError.message : "OpenAI request failed.";
-    await markRunFailed(message.slice(0, 4000));
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error("[scope-builder] upstream request failed", openAiError);
+    await markRunFailed("AI provider request failed.");
+    return NextResponse.json({ error: "AI provider request failed." }, { status: 502 });
   }
 
   if (isMaxOutputTokenIncomplete(responseJson)) {
@@ -1113,4 +1129,7 @@ export async function POST(request: Request) {
       reason: cacheReason,
     },
   });
+  } finally {
+    await guard.release();
+  }
 }

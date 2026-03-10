@@ -1,13 +1,6 @@
 import * as React from "react";
-import { Inter } from "next/font/google";
-
+import { interBold } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
-
-const interBold = Inter({
-  subsets: ["latin"],
-  weight: ["700"],
-  display: "swap",
-});
 
 const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (

@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Inter } from "next/font/google";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   MAX_PROJECT_IMAGE_UPLOAD_SIZE_BYTES,
@@ -17,12 +17,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-
-const interMedium = Inter({
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
 
 export default function CreateProjectPage() {
   const router = useRouter();

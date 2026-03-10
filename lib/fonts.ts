@@ -31,3 +31,41 @@ export const bertholdExtraBoldCondensed = localFont({
   fallback: ["Arial Narrow", "Arial", "sans-serif"],
   variable: "--font-berthold-extra-bold-condensed",
 });
+
+export const interMedium = localFont({
+  src: [{ path: "../public/fonts/inter/inter-latin-500-normal.woff2", weight: "500", style: "normal" }],
+  display: "swap",
+  fallback: ["Arial", "sans-serif"],
+  variable: "--font-inter-medium",
+});
+
+export const interBold = localFont({
+  src: [{ path: "../public/fonts/inter/inter-latin-700-normal.woff2", weight: "700", style: "normal" }],
+  display: "swap",
+  fallback: ["Arial", "sans-serif"],
+  variable: "--font-inter-bold",
+});
+
+export const mulishBody = localFont({
+  src: [
+    { path: "../public/fonts/mulish/mulish-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "../public/fonts/mulish/mulish-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../public/fonts/mulish/mulish-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../public/fonts/mulish/mulish-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
+  display: "swap",
+  fallback: ["Arial", "sans-serif"],
+  variable: "--font-body",
+});
+
+export const mulishHeading = localFont({
+  src: [
+    { path: "../public/fonts/mulish/mulish-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../public/fonts/mulish/mulish-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../public/fonts/mulish/mulish-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "../public/fonts/mulish/mulish-latin-800-normal.woff2", weight: "800", style: "normal" },
+  ],
+  display: "swap",
+  fallback: ["Arial", "sans-serif"],
+  variable: "--font-heading",
+});
