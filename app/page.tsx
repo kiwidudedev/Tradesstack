@@ -7,7 +7,6 @@ import { Footer } from "@/components/marketing/Footer";
 import { Hero } from "@/components/marketing/Hero";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Sections } from "@/components/marketing/Sections";
-import { Testimonials } from "@/components/marketing/Testimonials";
 import { useAuth } from "@/hooks/use-auth";
 
 function LoginModal({ onClose }: { onClose: () => void }) {
@@ -74,7 +73,6 @@ export default function HomePage() {
         <Navbar session={session} onLoginClick={() => setShowLoginModal(true)} />
         <Hero />
         <Sections />
-        <Testimonials />
         <Footer />
       </main>
 

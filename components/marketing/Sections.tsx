@@ -35,10 +35,9 @@ const changeDetectionBullets = [
   "Produces a clear change report in seconds",
 ];
 const starterPlanFeatures = [
-  "Up to 5 active projects",
-  "5 trades per project",
   "AI Trade Pack Builder",
   "AI Scope Builder",
+  "Specification Review",
   "Change Detection",
   "AI Construction Assistant",
   "Export trade tender packages",
@@ -46,24 +45,25 @@ const starterPlanFeatures = [
 ];
 
 const professionalPlanFeatures = [
-  "Up to 20 active projects",
-  "5 trades per project",
   "AI Trade Pack Builder",
   "AI Scope Builder",
+  "Specification Review",
   "Change Detection",
   "AI Construction Assistant",
   "Export trade tender packages",
   "Priority AI processing",
 ];
 
-const enterprisePlanFeatures = [
-  "Flexible project limits",
-  "Expanded trade capacity",
+const businessPlanFeatures = [
+  "AI Trade Pack Builder",
+  "AI Scope Builder",
+  "Specification Review",
+  "Change Detection",
+  "AI Construction Assistant",
+  "Export trade tender packages",
   "Priority AI processing",
   "Team onboarding support",
   "Dedicated account support",
-  "Custom workflow setup",
-  "Tailored commercial pricing",
 ];
 
 export function Sections() {
@@ -78,7 +78,7 @@ export function Sections() {
   const [isTradePacksVideoOpen, setIsTradePacksVideoOpen] = useState(false);
   const [isScopeBuilderVideoOpen, setIsScopeBuilderVideoOpen] = useState(false);
   const [isAssistantVideoOpen, setIsAssistantVideoOpen] = useState(false);
-  const [hoveredPricingCard, setHoveredPricingCard] = useState<"starter" | "professional" | "enterprise" | null>(null);
+  const [hoveredPricingCard, setHoveredPricingCard] = useState<"starter" | "professional" | "business" | null>(null);
 
   useEffect(() => {
     const howItWorksSection = howItWorksRef.current;
@@ -351,7 +351,7 @@ export function Sections() {
                   ? "lg:z-[4] lg:-translate-x-[20px] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
                   : hoveredPricingCard === "professional"
                     ? "lg:z-[1] lg:-translate-x-[6px] lg:scale-[0.98] lg:opacity-90"
-                    : hoveredPricingCard === "enterprise"
+                    : hoveredPricingCard === "business"
                       ? "lg:z-[1] lg:-translate-x-[24px] lg:scale-[0.97] lg:opacity-85"
                       : "lg:z-[1] lg:translate-x-[30px] lg:scale-[0.98]"
               }`}
@@ -360,12 +360,15 @@ export function Sections() {
                 Starter
               </h3>
               <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
-                <span className="block">$199</span>
-                <span className="mt-1 block text-[14px] text-white/70">/month</span>
+                <span className="block">$249</span>
+                <span className="mt-1 block text-[14px] text-white/70">/ month</span>
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
-                  Save <span className="text-[#F74917]">2-3 hours+</span> per project.
+                  4 AI Trade Packs per month
+                </li>
+                <li className="text-[16px] text-white/82">
+                  Typical time saved per month: 8+ hours
                 </li>
                 {starterPlanFeatures.map((feature) => (
                   <li key={feature} className="flex items-start gap-[14px]">
@@ -392,24 +395,27 @@ export function Sections() {
                   ? "lg:z-[5] lg:-translate-y-[20px] lg:scale-[1.03] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,90,31,0.25)]"
                   : hoveredPricingCard === "starter"
                     ? "lg:z-[2] lg:-translate-y-[16px] lg:translate-x-[10px] lg:scale-[1.01] lg:opacity-90"
-                    : hoveredPricingCard === "enterprise"
+                    : hoveredPricingCard === "business"
                       ? "lg:z-[2] lg:-translate-y-[16px] lg:-translate-x-[10px] lg:scale-[1.01] lg:opacity-90"
                       : "lg:z-[3] lg:-translate-y-[16px] lg:scale-[1.02]"
               }`}
             >
               <span className={`${akzidenzBlack.className} mt-1 inline-flex w-fit rounded-[20px] bg-[#FF5A1F]/15 px-[10px] py-[3px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#FF5A1F]`}>
-                Most Popular
+                ⭐ Most Popular
               </span>
               <h3 className={`${bertholdExtraBoldCondensed.className} mt-3 text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
                 Professional
               </h3>
               <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
-                <span className="block">$499</span>
-                <span className="mt-1 block text-[14px] text-white/70">/month</span>
+                <span className="block">$599</span>
+                <span className="mt-1 block text-[14px] text-white/70">/ month</span>
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
-                  <span className="text-[#F74917]">50+ hours</span> a month saved.
+                  12 AI Trade Packs per month
+                </li>
+                <li className="text-[16px] text-white/82">
+                  Typical time saved per month: 24+ hours
                 </li>
                 {professionalPlanFeatures.map((feature) => (
                   <li key={feature} className="flex items-start gap-[14px]">
@@ -429,10 +435,10 @@ export function Sections() {
             </article>
 
             <article
-              onMouseEnter={() => setHoveredPricingCard("enterprise")}
+              onMouseEnter={() => setHoveredPricingCard("business")}
               onMouseLeave={() => setHoveredPricingCard(null)}
               className={`relative flex h-full min-h-[620px] w-full max-w-[315px] flex-col rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(15,40,75,0.85)] px-6 py-7 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-[10px] transition-all duration-300 lg:px-8 lg:py-9 ${
-                hoveredPricingCard === "enterprise"
+                hoveredPricingCard === "business"
                   ? "lg:z-[4] lg:translate-x-[20px] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
                   : hoveredPricingCard === "professional"
                     ? "lg:z-[1] lg:translate-x-[8px] lg:scale-[0.98] lg:opacity-90"
@@ -442,14 +448,20 @@ export function Sections() {
               }`}
             >
               <h3 className={`${bertholdExtraBoldCondensed.className} text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
-                Enterprise
+                Business
               </h3>
-              <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[40px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
-                <span className="block">Custom Pricing</span>
-                <span className="mt-1 block text-[14px] text-white/70">/contact</span>
+              <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
+                <span className="block">$1,299</span>
+                <span className="mt-1 block text-[14px] text-white/70">/ month</span>
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
-                {enterprisePlanFeatures.map((feature) => (
+                <li className="text-[16px] text-white/82">
+                  30 AI Trade Packs per month
+                </li>
+                <li className="text-[16px] text-white/82">
+                  Typical time saved per month: 60+ hours
+                </li>
+                {businessPlanFeatures.map((feature) => (
                   <li key={feature} className="flex items-start gap-[14px]">
                     <span className="mt-[2px] text-[14px] leading-none text-[#F74917]">✓</span>
                     <span>{feature}</span>
@@ -461,7 +473,7 @@ export function Sections() {
                   href="/register"
                   className={`${akzidenzBlack.className} inline-flex w-fit items-center justify-center rounded-[8px] bg-[#FF5A1F] px-[22px] py-[14px] text-base font-semibold text-white transition hover:bg-[#F04C11]`}
                 >
-                  Book a Demo
+                  JOIN NOW
                 </Link>
               </div>
             </article>
