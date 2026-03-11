@@ -602,7 +602,7 @@ export async function POST(request: Request) {
   const revisedRevision = toTrimmedFormString(formData.get("revisedRevision")) || "Rev B";
 
   if (!projectId || !organizationId || !tradePackId) {
-    return NextResponse.json({ error: "projectId, organizationId, and tradePackId are required." }, { status: 400 });
+    return NextResponse.json({ error: "projectId (workspace id), organizationId, and tradePackId are required." }, { status: 400 });
   }
 
   const revisedFileValues = formData.getAll("revisedPdf");
@@ -643,7 +643,27 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (projectError || !projectRow) {
-    return NextResponse.json({ error: "Project context unavailable." }, { status: 403 });
+    return NextResponse.json({ error: "Trade pack workspace context unavailable." }, { status: 403 });
+  }
+
+  const { data: existingChangeDetectionRun, error: existingChangeDetectionRunError } = await supabase
+    .from("change_detection_runs")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("organization_id", organizationId)
+    .eq("status", "complete")
+    .limit(1)
+    .maybeSingle();
+
+  if (existingChangeDetectionRunError) {
+    return NextResponse.json({ error: "Unable to validate Change Detection limit." }, { status: 500 });
+  }
+
+  if (existingChangeDetectionRun) {
+    return NextResponse.json(
+      { error: "Change Detection already used for this Trade Pack workspace (1 of 1)." },
+      { status: 429 }
+    );
   }
 
   const { data: drawingSetRow, error: drawingSetError } = await supabase
@@ -656,7 +676,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (drawingSetError || !drawingSetRow) {
-    return NextResponse.json({ error: "Stored trade pack not found for this project." }, { status: 404 });
+    return NextResponse.json({ error: "Stored trade pack not found for this trade pack workspace." }, { status: 404 });
   }
 
   if (!isGeneratedTradePackDrawingSet(drawingSetRow)) {

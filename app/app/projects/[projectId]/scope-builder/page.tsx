@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { ScopeBuilderWorkbench } from "@/components/app/ScopeBuilderWorkbench";
 import {
-  getOrganizationProjectBySlugForCurrentUser,
-  getProjectDrawingSetsForCurrentUser,
-} from "@/lib/projects-server";
+  getTradePackWorkspaceBySlugForCurrentUser,
+  getTradePackWorkspaceDrawingSetsForCurrentUser,
+} from "@/lib/trade-pack-workspaces-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { TRADE_PACK_TRADES } from "@/lib/trade-pack-builder";
 import {
@@ -219,13 +219,13 @@ export default async function ProjectScopeBuilderPage({
   }>;
 }) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectId);
+  const project = await getTradePackWorkspaceBySlugForCurrentUser(projectId);
 
   if (!project) {
     notFound();
   }
 
-  const drawingSets = await getProjectDrawingSetsForCurrentUser(project.id);
+  const drawingSets = await getTradePackWorkspaceDrawingSetsForCurrentUser(project.id);
   const generatedTradePacks = drawingSets
     .filter((drawingSet) => isGeneratedTradePackDrawingSet(drawingSet))
     .map((drawingSet) => ({

@@ -67,7 +67,7 @@ export function EditableProjectGrid({ initialProjects }: { initialProjects: Orga
     <Card className="relative overflow-hidden rounded-none border-0 bg-transparent shadow-none xl:col-span-12">
       <CardHeader className="space-y-4 px-0 pb-5 pt-0">
         <div className="flex items-start justify-between gap-4">
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Active Projects</CardTitle>
+          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Current Trade Packs</CardTitle>
           {hasProjects ? (
             <Button
               type="button"
@@ -168,12 +168,12 @@ export function EditableProjectGrid({ initialProjects }: { initialProjects: Orga
         ) : (
           <div className="md:col-span-2 xl:col-span-3">
             <div className="rounded-[12px] border border-dashed border-[#c8cfdd] bg-white px-5 py-6">
-              <p className={`${interMedium.className} text-base font-medium text-[#2d3445]`}>No projects yet.</p>
+              <p className={`${interMedium.className} text-base font-medium text-[#2d3445]`}>No trade pack workspaces yet.</p>
               <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#687996]`}>
-                Create your first project to open a project dashboard.
+                Create your first trade pack workspace to open a workspace dashboard.
               </p>
               <Button className="mt-4 h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
-                <Link href="/app/projects/new">Create Project</Link>
+                <Link href="/app/trade-packs/new">Create Trade Pack Workspace</Link>
               </Button>
             </div>
           </div>

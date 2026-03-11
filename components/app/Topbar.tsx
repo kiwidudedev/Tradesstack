@@ -63,13 +63,13 @@ export function Topbar() {
         <div className="relative min-w-[240px] flex-1">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-[#718096]" />
           <Input
-            placeholder="Search active jobs, projects, or people"
+            placeholder="Search active jobs, trade packs, or people"
             className={`${interMedium.className} h-11 w-full rounded-[10px] border-[#E2E8F0] bg-[#F1F4F8] pl-10 text-sm font-medium text-[#0F172A] placeholder:font-medium placeholder:text-[#64748B]`}
           />
         </div>
 
         <Button className="h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
-          <Link href="/app/projects/new">Create Project</Link>
+          <Link href="/app/trade-packs/new">Create a Trade Pack</Link>
         </Button>
 
         <div className="ml-auto flex items-center gap-2">

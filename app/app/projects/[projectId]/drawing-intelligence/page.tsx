@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { TradePackBuilderUploader } from "@/components/app/TradePackBuilderUploader";
 import {
-  getOrganizationProjectBySlugForCurrentUser,
-  getProjectDrawingSetsForCurrentUser,
-} from "@/lib/projects-server";
+  getTradePackWorkspaceBySlugForCurrentUser,
+  getTradePackWorkspaceDrawingSetsForCurrentUser,
+} from "@/lib/trade-pack-workspaces-server";
 
 export default async function ProjectDrawingIntelligencePage({
   params,
@@ -11,13 +11,13 @@ export default async function ProjectDrawingIntelligencePage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectId);
+  const project = await getTradePackWorkspaceBySlugForCurrentUser(projectId);
 
   if (!project) {
     notFound();
   }
 
-  const drawingSets = await getProjectDrawingSetsForCurrentUser(project.id);
+  const drawingSets = await getTradePackWorkspaceDrawingSetsForCurrentUser(project.id);
 
   return (
     <TradePackBuilderUploader

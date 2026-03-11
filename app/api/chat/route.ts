@@ -42,6 +42,47 @@ interface AiChatMessageRow {
   created_at: string;
 }
 
+interface AiChatUsageQueryClient {
+  from: (table: "ai_chat_usage") => {
+    select: (columns: string, options: { count: "exact"; head: true }) => {
+      eq: (column: string, value: string) => {
+        eq: (column: string, value: string) => {
+          gte: (
+            column: string,
+            value: string
+          ) => Promise<{ count: number | null; error: { message: string } | null }>;
+        };
+      };
+    };
+  };
+}
+
+interface AiChatQuotaRpcClient {
+  rpc(
+    fn: "reserve_ai_chat_usage_quota",
+    params: {
+      p_user_id: string;
+      p_organization_id: string;
+      p_project_slug: string;
+      p_plan_tier: string;
+      p_month_start: string;
+      p_monthly_limit: number;
+    }
+  ): Promise<{ data: string | null; error: { message: string } | null }>;
+  rpc(
+    fn: "release_ai_chat_quota_reservation",
+    params: { p_usage_id: string }
+  ): Promise<{ data: boolean | null; error: { message: string } | null }>;
+  rpc(
+    fn: "commit_ai_chat_quota_reservation",
+    params: {
+      p_usage_id: string;
+      p_tokens_used: number;
+      p_response_chars: number;
+    }
+  ): Promise<{ data: boolean | null; error: { message: string } | null }>;
+}
+
 function getMonthStartIso() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0)).toISOString();
@@ -107,12 +148,12 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const projectSlug = url.searchParams.get("projectSlug")?.trim() || "";
   if (!projectSlug) {
-    return NextResponse.json({ error: "Missing project slug." }, { status: 400 });
+    return NextResponse.json({ error: "Missing trade pack workspace slug." }, { status: 400 });
   }
 
   const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
-    return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    return NextResponse.json({ error: "Trade pack workspace not found." }, { status: 404 });
   }
 
   const supabase = await createServerSupabaseClient();
@@ -120,7 +161,7 @@ export async function GET(request: Request) {
   const monthlyLimit = getMonthlyMessageLimit(planTier);
   const monthStartIso = getMonthStartIso();
 
-  const usageClient = supabase as unknown as any;
+  const usageClient = supabase as unknown as AiChatUsageQueryClient;
 
   const chatMessagesClient = supabase as unknown as {
     from: (table: "ai_chat_messages") => {
@@ -205,7 +246,7 @@ export async function POST(request: Request) {
   const messages = Array.isArray(payload?.messages) ? payload!.messages : [];
 
   if (!projectSlug) {
-    return NextResponse.json({ error: "Missing project slug." }, { status: 400 });
+    return NextResponse.json({ error: "Missing trade pack workspace slug." }, { status: 400 });
   }
 
   if (messages.length === 0) {
@@ -241,7 +282,7 @@ export async function POST(request: Request) {
 
   const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
-    return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    return NextResponse.json({ error: "Trade pack workspace not found." }, { status: 404 });
   }
 
   const guard = await enforceRouteGuard({
@@ -267,7 +308,7 @@ export async function POST(request: Request) {
   const monthlyLimit = getMonthlyMessageLimit(planTier);
   const monthStartIso = getMonthStartIso();
 
-  const quotaClient = supabase as unknown as any;
+  const quotaClient = supabase as unknown as AiChatQuotaRpcClient;
 
   const quotaReservationResult = await quotaClient.rpc("reserve_ai_chat_usage_quota", {
     p_user_id: member.user_id,

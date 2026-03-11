@@ -933,13 +933,19 @@ export function TradePackBuilderUploader({
     }
 
     if (!session.organizationId || session.organizationId !== organizationId) {
-      setError("Your account is not linked to this project's organization.");
+      setError("Your account is not linked to this trade pack workspace's organization.");
       return;
     }
 
     const trade = getTradeById(selectedTradeId);
     if (!trade) {
       setError("Select a valid trade.");
+      return;
+    }
+
+    const existingGeneratedPack = drawingSets.some((drawingSet) => isGeneratedTradePackDrawingSet(drawingSet));
+    if (existingGeneratedPack) {
+      setError("Trade Pack already generated.\nThe Trade Pack Builder can only be used once per Trade Pack.");
       return;
     }
 
@@ -1019,7 +1025,7 @@ export function TradePackBuilderUploader({
         let classification: TradePackVlmPageResult;
 
         if (shouldRunVlm) {
-          setGenerationStep(`VLM classifying page ${pageNumber} of ${sourcePdf.numPages}...`);
+          setGenerationStep(`Reviewing drawings… (${pageNumber} of ${sourcePdf.numPages})`);
 
           try {
             const pageImageDataUrl = await renderPdfJsPageAsHighQualityImageDataUrl(page);
@@ -1215,6 +1221,10 @@ export function TradePackBuilderUploader({
         });
       } catch (saveError) {
         outputSaveError = toSupabaseErrorMessage(saveError, "Unable to save trade pack output.");
+        const normalizedSaveError = outputSaveError.toLowerCase();
+        if (normalizedSaveError.includes("row-level security") || normalizedSaveError.includes("policy")) {
+          outputSaveError = "Trade Pack already generated.\nThe Trade Pack Builder can only be used once per Trade Pack.";
+        }
       }
 
       if (outputRow) {
@@ -1346,6 +1356,7 @@ export function TradePackBuilderUploader({
     }
 
     const match =
+      generationStep.match(/Reviewing drawings(?:\.\.\.|…)\s*\((\d+)\s+of\s+(\d+)\)/i) ??
       generationStep.match(/VLM classifying page\s+(\d+)\s+of\s+(\d+)/i) ??
       generationStep.match(/Reading page\s+(\d+)\s+of\s+(\d+)/i);
     if (!match) {
@@ -1826,7 +1837,7 @@ export function TradePackBuilderUploader({
           </div>
 
           <p className="mt-3 text-xs text-[#6f7f98]">
-            Source PDF stays on your device during generation. Only generated trade packs are saved in this project.
+            Source PDF stays on your device during generation. Only generated trade packs are saved in this trade pack workspace.
           </p>
 
           <div className="mt-4 space-y-2">
@@ -1839,7 +1850,7 @@ export function TradePackBuilderUploader({
                 {generationProgress ? (
                   <div className="space-y-1.5">
                     <p className="text-xs font-medium text-[#4f5f79]">
-                      Analyzing Drawing Set: {generationProgress.pagesProcessed} / {generationProgress.totalPages} drawings classified
+                      Analyzing drawing set for {(selectedTrade?.label ?? "selected trade").toLowerCase()} scope
                     </p>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e9f3]">
                       <div
@@ -1902,7 +1913,7 @@ export function TradePackBuilderUploader({
       <div className="rounded-[12px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3 text-xs text-[#6d7c94]">
         <p className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4 text-[#8b98ad]" />
-          Trade Pack Builder filters pages by selected trade and stores only generated outputs for this project.
+          Trade Pack Builder filters pages by selected trade and stores only generated outputs for this trade pack workspace.
         </p>
       </div>
     </div>

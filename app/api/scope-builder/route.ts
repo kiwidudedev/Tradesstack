@@ -813,8 +813,26 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (projectError || !projectRow) {
-      cacheReason = "Project context unavailable for cache.";
+      cacheReason = "Trade pack workspace context unavailable for cache.";
     } else {
+      const { data: existingScopeRun, error: existingScopeRunError } = await supabase
+        .from("scope_runs")
+        .select("id")
+        .eq("project_id", projectId!)
+        .eq("organization_id", organizationId!)
+        .eq("status", "complete")
+        .limit(1)
+        .maybeSingle();
+
+      if (existingScopeRunError) {
+        cacheReason = "Unable to validate Scope Builder limit.";
+      } else if (existingScopeRun) {
+        return NextResponse.json(
+          { error: "Scope Builder already used for this Trade Pack workspace (1 of 1)." },
+          { status: 429 }
+        );
+      }
+
       const { data: drawingSetRow, error: drawingSetError } = await supabase
         .from("project_drawing_sets")
         .select("id, storage_path")

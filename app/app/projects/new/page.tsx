@@ -1,30 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
-  MAX_PROJECT_IMAGE_UPLOAD_SIZE_BYTES,
-  PROJECT_IMAGES_BUCKET,
-  resolveUniqueProjectSlug,
-  toProjectImageStoragePath,
-  toProjectSlug,
-} from "@/lib/projects";
+  resolveUniqueTradePackWorkspaceSlug,
+  toTradePackWorkspaceSlug,
+  type TradePackPlanTier,
+} from "@/lib/trade-pack-workspaces";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+
+interface TradePackWorkspaceQuota {
+  planTier: TradePackPlanTier;
+  monthlyLimit: number;
+  createdCount: number;
+  remaining: number;
+}
+
+function normalizePlanTier(value: unknown): TradePackPlanTier {
+  if (value === "professional" || value === "business") {
+    return value;
+  }
+  return "starter";
+}
+
+function toPlanLabel(planTier: TradePackPlanTier): string {
+  if (planTier === "professional") {
+    return "Professional";
+  }
+  if (planTier === "business") {
+    return "Business";
+  }
+  return "Starter";
+}
 
 export default function CreateProjectPage() {
   const router = useRouter();
   const { session, isLoading: isAuthLoading } = useAuth();
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
-  const [projectImageFile, setProjectImageFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<TradePackWorkspaceQuota | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const supabase = useMemo(() => {
@@ -34,6 +56,52 @@ export default function CreateProjectPage() {
       return null;
     }
   }, []);
+
+  const loadQuota = useCallback(async (organizationId: string): Promise<TradePackWorkspaceQuota | null> => {
+    if (!supabase) {
+      return null;
+    }
+
+    const quotaClient = supabase as unknown as {
+      rpc: (
+        fn: "get_trade_pack_workspace_quota",
+        params: { p_organization_id: string }
+      ) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }>;
+    };
+
+    const { data, error } = await quotaClient.rpc("get_trade_pack_workspace_quota", {
+      p_organization_id: organizationId,
+    });
+
+    if (error || !data || data.length === 0) {
+      setQuota(null);
+      return null;
+    }
+
+    const row = data[0] ?? {};
+    const monthlyLimit = typeof row.monthly_limit === "number" ? row.monthly_limit : 4;
+    const createdCount = typeof row.created_count === "number" ? row.created_count : 0;
+    const remaining = typeof row.remaining === "number" ? row.remaining : Math.max(monthlyLimit - createdCount, 0);
+    const normalized: TradePackWorkspaceQuota = {
+      planTier: normalizePlanTier(row.plan_tier),
+      monthlyLimit,
+      createdCount,
+      remaining,
+    };
+
+    setQuota(normalized);
+    return normalized;
+  }, [supabase]);
+
+  useEffect(() => {
+    const organizationId = session?.organizationId;
+    if (!organizationId) {
+      setQuota(null);
+      return;
+    }
+
+    void loadQuota(organizationId);
+  }, [loadQuota, session?.organizationId]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -55,21 +123,8 @@ export default function CreateProjectPage() {
 
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError("Project name is required.");
+      setError("Trade pack workspace name is required.");
       return;
-    }
-
-    if (projectImageFile) {
-      const isImage = projectImageFile.type.startsWith("image/");
-      if (!isImage) {
-        setError("Project photo must be an image file.");
-        return;
-      }
-
-      if (projectImageFile.size > MAX_PROJECT_IMAGE_UPLOAD_SIZE_BYTES) {
-        setError("Project photo must be 10MB or smaller.");
-        return;
-      }
     }
 
     setError(null);
@@ -112,7 +167,15 @@ export default function CreateProjectPage() {
         return;
       }
 
-      const baseSlug = toProjectSlug(trimmedName);
+      const quotaSnapshot = await loadQuota(organizationId);
+      if (quotaSnapshot && quotaSnapshot.remaining <= 0) {
+        setError(
+          `${toPlanLabel(quotaSnapshot.planTier)} plan monthly limit reached (${quotaSnapshot.monthlyLimit} total trade packs per month).`
+        );
+        return;
+      }
+
+      const baseSlug = toTradePackWorkspaceSlug(trimmedName);
       const { data: existingProjectRows, error: existingProjectsError } = await supabase
         .from("organization_projects")
         .select("slug")
@@ -124,44 +187,12 @@ export default function CreateProjectPage() {
         return;
       }
 
-      const slug = resolveUniqueProjectSlug(
+      const slug = resolveUniqueTradePackWorkspaceSlug(
         baseSlug,
         (existingProjectRows ?? []).map((project) => project.slug)
       );
 
       const projectId = crypto.randomUUID();
-      let coverImageUrl: string | null = null;
-      let uploadedImagePath: string | null = null;
-
-      if (projectImageFile) {
-        const storagePath = toProjectImageStoragePath({
-          organizationId,
-          projectId,
-          fileName: projectImageFile.name,
-        });
-        uploadedImagePath = storagePath;
-
-        const { error: uploadError } = await supabase.storage
-          .from(PROJECT_IMAGES_BUCKET)
-          .upload(storagePath, projectImageFile, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: projectImageFile.type || undefined,
-          });
-
-        if (uploadError) {
-          const normalizedMessage = uploadError.message.toLowerCase();
-          if (normalizedMessage.includes("bucket")) {
-            setError("Project image bucket is not configured. Create a `project-images` bucket in Supabase Storage.");
-          } else {
-            setError(uploadError.message);
-          }
-          return;
-        }
-
-        const { data: publicUrlData } = supabase.storage.from(PROJECT_IMAGES_BUCKET).getPublicUrl(storagePath);
-        coverImageUrl = publicUrlData.publicUrl || null;
-      }
 
       const { data, error: createProjectError } = await supabase
         .from("organization_projects")
@@ -172,15 +203,23 @@ export default function CreateProjectPage() {
           name: trimmedName,
           slug,
           location: location.trim() || "Unspecified",
-          cover_image_url: coverImageUrl,
+          cover_image_url: null,
         })
         .select("slug")
         .single();
 
       if (createProjectError) {
-        if (uploadedImagePath) {
-          await supabase.storage.from(PROJECT_IMAGES_BUCKET).remove([uploadedImagePath]);
+        const normalizedCreateError = createProjectError.message.toLowerCase();
+        if (normalizedCreateError.includes("row-level security") || normalizedCreateError.includes("policy")) {
+          const refreshedQuota = await loadQuota(organizationId);
+          if (refreshedQuota && refreshedQuota.remaining <= 0) {
+            setError(
+              `${toPlanLabel(refreshedQuota.planTier)} plan monthly limit reached (${refreshedQuota.monthlyLimit} total trade packs per month).`
+            );
+            return;
+          }
         }
+
         setError(createProjectError.message);
         return;
       }
@@ -188,7 +227,7 @@ export default function CreateProjectPage() {
       router.push(`/app/projects/${data.slug}/dashboard`);
       router.refresh();
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Unable to create project.");
+      setError(createError instanceof Error ? createError.message : "Unable to create trade pack workspace.");
     } finally {
       setIsSubmitting(false);
     }
@@ -205,23 +244,31 @@ export default function CreateProjectPage() {
             <ArrowLeft className="h-4 w-4" />
             Back to Main Dashboard
           </Link>
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Create Project</CardTitle>
+          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Create a Trade Pack</CardTitle>
           <p className={`${interMedium.className} max-w-3xl text-base font-medium leading-relaxed text-[#4d5b74]`}>
-            Set up a new project dashboard for your organization. This creates a dedicated workspace for Drawing
-            Intelligence, Scope Builder, Change Detection, and AI Chatbot.
+            Set up a new Trade Pack to analyse drawings, generate scope, and track changes for a specific job or tender.
           </p>
+          {quota ? (
+            <p className={`${interMedium.className} max-w-3xl text-sm font-medium text-[#5f6f89]`}>
+              {toPlanLabel(quota.planTier)} Plan — {quota.monthlyLimit} Trade Packs per month ({quota.remaining} remaining)
+            </p>
+          ) : (
+            <p className={`${interMedium.className} max-w-3xl text-sm font-medium text-[#5f6f89]`}>
+              Monthly limits are enforced by plan: Starter 4, Professional 12, Business 30 total trade packs per month.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="max-w-2xl pb-8">
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
               <label htmlFor="projectName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Project name
+                Project / Tender Name
               </label>
               <Input
                 id="projectName"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Smith Renovation"
+                placeholder="Smith Renovation Workspace"
                 className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                 required
               />
@@ -229,7 +276,7 @@ export default function CreateProjectPage() {
 
             <div className="space-y-2">
               <label htmlFor="projectLocation" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Location
+                Project Location
               </label>
               <Input
                 id="projectLocation"
@@ -238,25 +285,6 @@ export default function CreateProjectPage() {
                 placeholder="Auckland"
                 className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
               />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="projectImage" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Project photo (optional)
-              </label>
-              <Input
-                id="projectImage"
-                type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  const nextFile = event.target.files?.[0] ?? null;
-                  setProjectImageFile(nextFile);
-                }}
-                className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-sm file:mr-4 file:rounded-[8px] file:border-0 file:bg-[#F1F4F8] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-[#0F172A]`}
-              />
-              <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>
-                Supports JPG, PNG, WEBP. Max size 10MB.
-              </p>
             </div>
 
             {error ? (
@@ -268,7 +296,7 @@ export default function CreateProjectPage() {
               disabled={isSubmitting || isAuthLoading}
               className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
             >
-              {isSubmitting ? "Creating project..." : isAuthLoading ? "Loading account..." : "Create Project"}
+              {isSubmitting ? "Creating trade pack..." : isAuthLoading ? "Loading account..." : "Create Trade Pack"}
             </Button>
           </form>
         </CardContent>

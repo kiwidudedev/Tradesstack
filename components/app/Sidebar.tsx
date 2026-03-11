@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useOrganizationProjects } from "@/hooks/use-organization-projects";
+import { useTradePackQuota } from "@/hooks/use-trade-pack-quota";
 import { interBold, interMedium } from "@/lib/fonts";
 import { mainDashboardNav, projectDashboardNav } from "@/lib/nav";
 import { formatProjectNameFromSlug } from "@/lib/projects";
@@ -48,7 +49,9 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { session } = useAuth();
   const { projects, isLoading: isProjectsLoading } = useOrganizationProjects();
+  const { quota, isLoading: isQuotaLoading } = useTradePackQuota();
   const [isProjectSpaceExpanded, setIsProjectSpaceExpanded] = useState(true);
+  const [isUsageExpanded, setIsUsageExpanded] = useState(false);
 
   const displayName = session?.name ?? mockUser.name;
   const initials = getInitials(displayName) || mockUser.initials;
@@ -66,10 +69,18 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
       ? "/app/dashboard"
       : `${projectBasePath}/dashboard`
     : "/app/dashboard";
-  const projectBackLabel = isProjectDashboardRoute ? "Back to Main Dashboard" : "Back to Project Dashboard";
+  const projectBackLabel = isProjectDashboardRoute ? "Back to Main Dashboard" : "Back to Dashboard";
   const activeProject = routeProjectSlug ? projects.find((project) => project.slug === routeProjectSlug) ?? null : null;
   const activeProjectName =
     activeProject?.name ?? (routeProjectSlug && routeProjectSlug !== "new" ? formatProjectNameFromSlug(routeProjectSlug) : null);
+  const usagePercent =
+    quota && quota.monthlyLimit > 0
+      ? Math.min(100, Math.max(0, Math.round((quota.createdCount / quota.monthlyLimit) * 100)))
+      : 0;
+  const showUpgradeTier = usagePercent >= 75;
+  const isAtLimit = quota ? quota.remaining <= 0 : false;
+  const isUsageForcedOpen = quota ? quota.remaining <= 1 : false;
+  const shouldShowUsageDetails = isUsageExpanded || isUsageForcedOpen;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -89,7 +100,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           {activeProject ? (
             <div className="mb-5 px-1">
               <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.14em] text-[#6C8AA6]/60`}>
-                Project
+                Trade Pack Workspace
               </p>
               <p className="mt-2 break-words text-[18px] font-semibold leading-tight text-white" title={activeProjectName ?? undefined}>
                 {activeProjectName}
@@ -98,7 +109,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           ) : activeProjectName ? (
             <div className="mb-5 px-1">
               <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.14em] text-[#6C8AA6]/60`}>
-                Project
+                Trade Pack Workspace
               </p>
               <p className="mt-2 break-words text-[18px] font-semibold leading-tight text-white" title={activeProjectName}>
                 {activeProjectName}
@@ -149,7 +160,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
             }
 
             const Icon = iconMap[item.icon];
-            const isProjectSpace = item.label === "Project Space";
+            const isProjectSpace = item.label === "Trade Packs";
             const isActive = pathname.startsWith(item.href);
 
             if (isProjectSpace) {
@@ -176,7 +187,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                   {isProjectSpaceOpen ? (
                     <div className="space-y-0.5 pl-4 pt-0.5">
                       {isProjectsLoading ? (
-                        <p className={`${interMedium.className} px-4 py-2 text-xs font-medium text-white/60`}>Loading projects...</p>
+                        <p className={`${interMedium.className} px-4 py-2 text-xs font-medium text-white/60`}>Loading trade pack workspaces...</p>
                       ) : projects.length > 0 ? (
                         projects.map((project) => {
                           const projectHref = `/app/projects/${project.slug}/dashboard`;
@@ -199,7 +210,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                           );
                         })
                       ) : (
-                        <p className={`${interMedium.className} px-4 py-2 text-xs font-medium text-white/60`}>No projects yet.</p>
+                        <p className={`${interMedium.className} px-4 py-2 text-xs font-medium text-white/60`}>No trade pack workspaces yet.</p>
                       )}
                     </div>
                   ) : null}
@@ -226,6 +237,52 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           })}
         </nav>
       )}
+
+      <div className="mt-6 px-1">
+        <button
+          type="button"
+          onClick={() => setIsUsageExpanded((current) => !current)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <span className={`${interMedium.className} text-[11px] text-[#9bb0ca]`}>Usage</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 text-white/65 transition-transform", shouldShowUsageDetails ? "rotate-180" : "rotate-0")} />
+        </button>
+        {shouldShowUsageDetails ? (
+          isQuotaLoading && !quota ? (
+            <p className={`${interMedium.className} mt-1.5 text-xs text-white/70`}>Loading usage...</p>
+          ) : quota ? (
+            <>
+              <p className={`${interMedium.className} mt-1.5 text-[12px] text-white/85`}>
+                {quota.createdCount} / {quota.monthlyLimit} trade packs used
+              </p>
+              <div className="mt-2">
+                <div className="h-[3px] w-full overflow-hidden rounded-full bg-[#3A5173]/45">
+                  <div className="h-full rounded-full bg-[#F74917]" style={{ width: `${usagePercent}%` }} />
+                </div>
+              </div>
+              <p className={`${interMedium.className} mt-2 text-[12px] text-white/70`}>
+                {quota.remaining} remaining this month
+              </p>
+              {showUpgradeTier ? (
+                <button
+                  type="button"
+                  className={cn(
+                    interMedium.className,
+                    "mt-2 inline-flex h-7 items-center rounded-[8px] border px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors",
+                    isAtLimit
+                      ? "border-[#F74917] bg-[#F74917] text-white hover:bg-[#E63F10]"
+                      : "border-white/20 text-white/80 hover:border-white/35 hover:bg-white/8 hover:text-white"
+                  )}
+                >
+                  Upgrade Tier
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <p className={`${interMedium.className} mt-1.5 text-xs text-white/70`}>Usage unavailable</p>
+          )
+        ) : null}
+      </div>
 
       <div className="mt-8 h-px w-full bg-white/12" />
 

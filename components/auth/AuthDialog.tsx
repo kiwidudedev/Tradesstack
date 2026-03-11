@@ -16,7 +16,7 @@ export function AuthDialog({ trigger }: AuthDialogProps) {
       <DialogContent className="border-white/30 bg-transparent p-0 shadow-none">
         <DialogTitle className="sr-only">TradesStack Sign In</DialogTitle>
         <DialogDescription className="sr-only">
-          Sign in to TradesStack to access projects, scopes, and risk workflows.
+          Sign in to TradesStack to access trade pack workspaces, scopes, and risk workflows.
         </DialogDescription>
         <AuthPanel compact />
       </DialogContent>

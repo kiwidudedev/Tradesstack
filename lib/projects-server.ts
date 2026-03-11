@@ -259,7 +259,7 @@ export async function getRecentActivityForCurrentUser(limit = 6): Promise<Recent
 
   const projectItems: RecentActivityItem[] = projects.map((project) => ({
     id: `project-${project.id}`,
-    label: `Project created - ${project.name}`,
+    label: `Trade Pack Workspace created - ${project.name}`,
     href: `/app/projects/${project.slug}/dashboard`,
     occurredAt: project.created_at,
   }));

@@ -365,7 +365,7 @@ export function Sections() {
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
-                  4 AI Trade Packs per month
+                  4 total trade packs per month
                 </li>
                 <li className="text-[16px] text-white/82">
                   Typical time saved per month: 8+ hours
@@ -412,7 +412,7 @@ export function Sections() {
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
-                  12 AI Trade Packs per month
+                  12 total trade packs per month
                 </li>
                 <li className="text-[16px] text-white/82">
                   Typical time saved per month: 24+ hours
@@ -456,7 +456,7 @@ export function Sections() {
               </p>
               <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
-                  30 AI Trade Packs per month
+                  30 total trade packs per month
                 </li>
                 <li className="text-[16px] text-white/82">
                   Typical time saved per month: 60+ hours

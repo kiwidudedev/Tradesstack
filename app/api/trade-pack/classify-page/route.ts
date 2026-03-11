@@ -431,7 +431,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (projectError || !projectRow) {
-    return NextResponse.json({ error: "Project context unavailable." }, { status: 403 });
+    return NextResponse.json({ error: "Trade pack workspace context unavailable." }, { status: 403 });
   }
 
   if (payload.pageText.length > MAX_CLASSIFY_PAGE_TEXT_CHARS) {

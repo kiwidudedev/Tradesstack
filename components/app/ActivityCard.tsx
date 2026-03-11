@@ -7,7 +7,7 @@ function parseActivityLabel(label: string) {
   const [eventLabel, sourceLabel] = label.split(" - ");
   return {
     eventLabel: eventLabel ?? label,
-    sourceLabel: sourceLabel ?? "Project",
+    sourceLabel: sourceLabel ?? "Trade Pack Workspace",
   };
 }
 

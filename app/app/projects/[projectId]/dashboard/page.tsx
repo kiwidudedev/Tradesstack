@@ -4,9 +4,9 @@ import { ArrowRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
 import {
-  getOrganizationProjectBySlugForCurrentUser,
-  getProjectDashboardMetricsForCurrentUser,
-} from "@/lib/projects-server";
+  getTradePackWorkspaceBySlugForCurrentUser,
+  getTradePackWorkspaceDashboardMetricsForCurrentUser,
+} from "@/lib/trade-pack-workspaces-server";
 
 interface ProjectModuleLink {
   label: string;
@@ -31,9 +31,9 @@ const PROJECT_MODULE_LINKS: ProjectModuleLink[] = [
     description: "Compare revisions and surface material drawing changes.",
   },
   {
-    label: "AI Chatbot",
+    label: "AI Assistant",
     segment: "ai-chatbot",
-    description: "Query your project documentation with context-aware chat.",
+    description: "Query your trade pack workspace documentation with context-aware chat.",
   },
 ];
 
@@ -107,19 +107,19 @@ export default async function ProjectDashboardPage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectId);
+  const project = await getTradePackWorkspaceBySlugForCurrentUser(projectId);
 
   if (!project) {
     notFound();
   }
 
-  const metrics = await getProjectDashboardMetricsForCurrentUser(project.id);
+  const metrics = await getTradePackWorkspaceDashboardMetricsForCurrentUser(project.id);
   const recentItems = toRecentActivityItems(metrics);
 
   return (
     <main className="space-y-8 pb-8">
       <section className="space-y-5">
-        <h2 className={`${interMedium.className} text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>Project Snapshot</h2>
+        <h2 className={`${interMedium.className} text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>Workspace Snapshot</h2>
         <div className="grid gap-5 lg:grid-cols-2">
           <Card className="border-[#E6EAF0] bg-white shadow-none">
             <CardContent className="p-5">

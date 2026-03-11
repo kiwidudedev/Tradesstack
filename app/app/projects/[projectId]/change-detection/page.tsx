@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { ChangeDetectionWorkbench } from "@/components/app/ChangeDetectionWorkbench";
-import { getOrganizationProjectBySlugForCurrentUser, getProjectDrawingSetsForCurrentUser } from "@/lib/projects-server";
+import {
+  getTradePackWorkspaceBySlugForCurrentUser,
+  getTradePackWorkspaceDrawingSetsForCurrentUser,
+} from "@/lib/trade-pack-workspaces-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   getGeneratedTradePackTradeId,
@@ -222,13 +225,13 @@ export default async function ProjectChangeDetectionPage({
   }>;
 }) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectId);
+  const project = await getTradePackWorkspaceBySlugForCurrentUser(projectId);
 
   if (!project) {
     notFound();
   }
 
-  const drawingSets = await getProjectDrawingSetsForCurrentUser(project.id);
+  const drawingSets = await getTradePackWorkspaceDrawingSetsForCurrentUser(project.id);
   const generatedTradePacks: ChangeDetectionGeneratedTradePack[] = drawingSets
     .filter((drawingSet) => isGeneratedTradePackDrawingSet(drawingSet))
     .map((drawingSet) => ({

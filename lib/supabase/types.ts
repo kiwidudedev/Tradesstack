@@ -108,6 +108,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      organization_plan_settings: {
+        Row: {
+          organization_id: string;
+          plan_tier: string;
+          monthly_trade_pack_limit: number;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          organization_id: string;
+          plan_tier?: string;
+          monthly_trade_pack_limit?: number;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          organization_id?: string;
+          plan_tier?: string;
+          monthly_trade_pack_limit?: number;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       organization_projects: {
         Row: {
           id: string;
@@ -135,6 +162,48 @@ export interface Database {
         };
         Update: {
           id?: string;
+          organization_id?: string;
+          created_by?: string;
+          name?: string;
+          slug?: string;
+          stage?: ProjectStage;
+          location?: string;
+          cover_image_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      trade_pack_workspaces: {
+        Row: {
+          id: string;
+          legacy_project_id: string;
+          organization_id: string;
+          created_by: string;
+          name: string;
+          slug: string;
+          stage: ProjectStage;
+          location: string;
+          cover_image_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          legacy_project_id: string;
+          organization_id: string;
+          created_by: string;
+          name: string;
+          slug: string;
+          stage?: ProjectStage;
+          location?: string;
+          cover_image_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          legacy_project_id?: string;
           organization_id?: string;
           created_by?: string;
           name?: string;
@@ -459,6 +528,74 @@ export interface Database {
           object_path: string;
         };
         Returns: boolean;
+      };
+      is_generated_trade_pack_file: {
+        Args: {
+          p_file_name: string;
+          p_storage_path: string;
+        };
+        Returns: boolean;
+      };
+      default_trade_pack_monthly_limit: {
+        Args: {
+          plan_tier: string;
+        };
+        Returns: number;
+      };
+      get_trade_pack_monthly_limit_for_organization: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: number;
+      };
+      count_trade_pack_workspaces_created_in_month: {
+        Args: {
+          p_organization_id: string;
+          p_reference_at?: string;
+        };
+        Returns: number;
+      };
+      can_create_trade_pack_workspace: {
+        Args: {
+          p_organization_id: string;
+          p_reference_at?: string;
+        };
+        Returns: boolean;
+      };
+      can_run_trade_pack_builder_once: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+        };
+        Returns: boolean;
+      };
+      can_run_scope_builder_once: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+        };
+        Returns: boolean;
+      };
+      can_run_change_detection_once: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+        };
+        Returns: boolean;
+      };
+      get_trade_pack_workspace_quota: {
+        Args: {
+          p_organization_id: string;
+          p_reference_at?: string;
+        };
+        Returns: {
+          plan_tier: string;
+          monthly_limit: number;
+          created_count: number;
+          remaining: number;
+          month_start: string;
+          month_end: string;
+        }[];
       };
     };
     Enums: Record<string, never>;
