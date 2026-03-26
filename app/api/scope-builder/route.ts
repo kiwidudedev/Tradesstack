@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { enforceRouteGuard } from "@/lib/security/abuse-guard";
 import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
+import { hasPdfSignature } from "@/lib/security/pdf-signature";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getTradeById } from "@/lib/trade-pack-builder";
 
@@ -788,6 +789,10 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!(await hasPdfSignature(fileValue))) {
+    return NextResponse.json({ error: "Uploaded file is not a valid PDF." }, { status: 400 });
+  }
+
   const projectId = toOptionalTrimmedFormString(formData.get("projectId"));
   const organizationId = toOptionalTrimmedFormString(formData.get("organizationId"));
   const drawingSetId = toOptionalTrimmedFormString(formData.get("drawingSetId"));
@@ -813,7 +818,7 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (projectError || !projectRow) {
-      cacheReason = "Trade pack workspace context unavailable for cache.";
+      cacheReason = "Project context unavailable for cache.";
     } else {
       const { data: existingScopeRun, error: existingScopeRunError } = await supabase
         .from("scope_runs")
@@ -828,7 +833,7 @@ export async function POST(request: Request) {
         cacheReason = "Unable to validate Scope Builder limit.";
       } else if (existingScopeRun) {
         return NextResponse.json(
-          { error: "Scope Builder already used for this Trade Pack workspace (1 of 1)." },
+          { error: "Scope Builder already used for this project (1 of 1)." },
           { status: 429 }
         );
       }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { enforceRouteGuard } from "@/lib/security/abuse-guard";
 import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
+import { hasPdfSignature } from "@/lib/security/pdf-signature";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { analyzePagePrefilterForTrade, getTradeById } from "@/lib/trade-pack-builder";
 import { getGeneratedTradePackTradeId, getGeneratedTradePackTradeLabel, isGeneratedTradePackDrawingSet } from "@/lib/trade-packs";
@@ -602,7 +603,7 @@ export async function POST(request: Request) {
   const revisedRevision = toTrimmedFormString(formData.get("revisedRevision")) || "Rev B";
 
   if (!projectId || !organizationId || !tradePackId) {
-    return NextResponse.json({ error: "projectId (workspace id), organizationId, and tradePackId are required." }, { status: 400 });
+    return NextResponse.json({ error: "projectId, organizationId, and tradePackId are required." }, { status: 400 });
   }
 
   const revisedFileValues = formData.getAll("revisedPdf");
@@ -632,6 +633,10 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    if (!(await hasPdfSignature(revisedFileValue))) {
+      return NextResponse.json({ error: `Uploaded file is not a valid PDF (${revisedFileValue.name}).` }, { status: 400 });
+    }
   }
 
   const { data: projectRow, error: projectError } = await supabase
@@ -643,7 +648,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (projectError || !projectRow) {
-    return NextResponse.json({ error: "Trade pack workspace context unavailable." }, { status: 403 });
+    return NextResponse.json({ error: "Project context unavailable." }, { status: 403 });
   }
 
   const { data: existingChangeDetectionRun, error: existingChangeDetectionRunError } = await supabase
@@ -661,7 +666,7 @@ export async function POST(request: Request) {
 
   if (existingChangeDetectionRun) {
     return NextResponse.json(
-      { error: "Change Detection already used for this Trade Pack workspace (1 of 1)." },
+      { error: "Change Detection already used for this project (1 of 1)." },
       { status: 429 }
     );
   }
@@ -676,7 +681,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (drawingSetError || !drawingSetRow) {
-    return NextResponse.json({ error: "Stored trade pack not found for this trade pack workspace." }, { status: 404 });
+    return NextResponse.json({ error: "Stored trade pack not found for this project." }, { status: 404 });
   }
 
   if (!isGeneratedTradePackDrawingSet(drawingSetRow)) {

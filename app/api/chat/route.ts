@@ -148,12 +148,24 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const projectSlug = url.searchParams.get("projectSlug")?.trim() || "";
   if (!projectSlug) {
-    return NextResponse.json({ error: "Missing trade pack workspace slug." }, { status: 400 });
+    return NextResponse.json({ error: "Missing project slug." }, { status: 400 });
   }
 
   const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
-    return NextResponse.json({ error: "Trade pack workspace not found." }, { status: 404 });
+    return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  }
+
+  const guard = await enforceRouteGuard({
+    routeKey: "chat-history",
+    request,
+    userId: member.user_id,
+    userPerMinute: 60,
+    ipPerMinute: 120,
+    concurrentPerUser: 0,
+  });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const supabase = await createServerSupabaseClient();
@@ -192,6 +204,7 @@ export async function GET(request: Request) {
 
   if (queryResult.error) {
     console.error("[chat] failed to load history", queryResult.error);
+    await guard.release();
     return NextResponse.json({ error: "Failed to load chat history." }, { status: 500 });
   }
 
@@ -204,6 +217,7 @@ export async function GET(request: Request) {
 
   if (usageResult.error) {
     console.error("[chat] failed to load usage", usageResult.error);
+    await guard.release();
     return NextResponse.json({ error: "Failed to load usage." }, { status: 500 });
   }
 
@@ -218,6 +232,7 @@ export async function GET(request: Request) {
       createdAt: row.created_at,
     }));
 
+  await guard.release();
   return NextResponse.json({
     messages,
     usage: {
@@ -246,7 +261,7 @@ export async function POST(request: Request) {
   const messages = Array.isArray(payload?.messages) ? payload!.messages : [];
 
   if (!projectSlug) {
-    return NextResponse.json({ error: "Missing trade pack workspace slug." }, { status: 400 });
+    return NextResponse.json({ error: "Missing project slug." }, { status: 400 });
   }
 
   if (messages.length === 0) {
@@ -282,7 +297,7 @@ export async function POST(request: Request) {
 
   const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
-    return NextResponse.json({ error: "Trade pack workspace not found." }, { status: 404 });
+    return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
 
   const guard = await enforceRouteGuard({
