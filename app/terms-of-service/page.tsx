@@ -145,7 +145,7 @@ export default function TermsOfServicePage() {
                 <section>
                   <h2 className="text-[26px] font-semibold uppercase tracking-[0.02em] text-[#F74917]">6. Multi-Tenant Platform and Data Access</h2>
                   <p className="mt-3">TradesStack operates as a multi-tenant platform.</p>
-                  <p className="mt-2">Users belong to organizations and collaborate within project workspaces.</p>
+                  <p className="mt-2">Users belong to organizations and collaborate within projects.</p>
                   <p className="mt-2">Access to data is controlled through:</p>
                   <ul className="mt-2 list-disc space-y-1 pl-6">
                     <li>authentication</li>

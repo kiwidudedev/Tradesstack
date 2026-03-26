@@ -7,13 +7,6 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const { response, user } = await updateSession(request);
 
-  if (pathname.startsWith("/app") && !user) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
-    redirectUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(redirectUrl);
-  }
-
   if (AUTH_PAGES.has(pathname) && user) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/app/dashboard";
@@ -25,5 +18,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app/:path*", "/login", "/register"],
+  matcher: ["/login", "/register"],
 };

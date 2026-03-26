@@ -1,9 +1,13 @@
 import type { Database } from "@/lib/supabase/types";
 
-export type OrganizationProject = Database["public"]["Tables"]["organization_projects"]["Row"];
+export type OrganizationProject = Database["public"]["Tables"]["organization_projects"]["Row"] & {
+  client_name?: string | null;
+  drawing_count?: number;
+  trade_pack_count?: number;
+};
 export type ProjectStage = Database["public"]["Tables"]["organization_projects"]["Row"]["stage"];
 
-export const PROJECT_STAGE_OPTIONS: ReadonlyArray<ProjectStage> = ["Planning", "Estimating", "In Delivery"];
+export const PROJECT_STAGE_OPTIONS: ReadonlyArray<ProjectStage> = ["Pricing", "Construction", "Completion"];
 export const PROJECT_IMAGES_BUCKET = "project-images";
 export const MAX_PROJECT_IMAGE_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 

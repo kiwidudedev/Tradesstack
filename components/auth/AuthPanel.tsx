@@ -44,7 +44,6 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
 
   const navigateAfterAuth = () => {
     router.push(postAuthPath);
-    router.refresh();
   };
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {

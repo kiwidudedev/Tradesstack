@@ -1,4 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OrganizationSettingsForm } from "./OrganizationSettingsForm";
+import { ProjectDeletionSettings } from "./ProjectDeletionSettings";
 import { interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -14,8 +16,27 @@ export default async function SettingsPage() {
         .eq("organization_id", currentMember.organization_id)
         .order("created_at", { ascending: true })
     : { data: null, error: null };
+  const organization = currentMember
+    ? await supabase
+        .from("organizations")
+        .select("id, name, logo_path, created_by, created_at, updated_at")
+        .eq("id", currentMember.organization_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  const projects = currentMember
+    ? await supabase
+        .from("organization_projects")
+        .select("id, name, slug, created_at")
+        .eq("organization_id", currentMember.organization_id)
+        .order("created_at", { ascending: false })
+    : { data: null, error: null };
 
   const memberRows = members.error ? [] : (members.data ?? []);
+  const organizationRow = organization.error ? null : (organization.data ?? null);
+  const projectRows = projects.error ? [] : (projects.data ?? []);
+  const initialLogoUrl = organizationRow?.logo_path
+    ? supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path).data.publicUrl
+    : null;
 
   return (
     <main className="space-y-8 pb-8">
@@ -63,6 +84,27 @@ export default async function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {currentMember && organizationRow ? (
+        <OrganizationSettingsForm
+          organizationId={organizationRow.id}
+          initialName={organizationRow.name}
+          initialLogoPath={organizationRow.logo_path}
+          initialLogoUrl={initialLogoUrl}
+          canEdit
+        />
+      ) : null}
+
+      {currentMember ? (
+        <ProjectDeletionSettings
+          organizationId={currentMember.organization_id}
+          projects={projectRows.map((project) => ({
+            id: project.id,
+            name: project.name,
+            slug: project.slug,
+          }))}
+        />
+      ) : null}
     </main>
   );
 }

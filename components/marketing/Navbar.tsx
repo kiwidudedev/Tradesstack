@@ -89,7 +89,7 @@ export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
             href="/app/dashboard"
             className={`${akzidenzBlack.className} rounded-[10px] bg-[#F74917] px-[18px] py-[10px] font-semibold text-white transition hover:bg-[#E84212]`}
           >
-            Workspace
+            Projects
           </Link>
         )}
       </div>

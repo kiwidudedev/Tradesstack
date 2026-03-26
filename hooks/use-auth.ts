@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import type { AuthSession, UserRole } from "@/lib/types";
@@ -25,8 +25,65 @@ type RegisterInput = {
 type MemberRow = Database["public"]["Tables"]["organization_members"]["Row"];
 type OrganizationRow = Database["public"]["Tables"]["organizations"]["Row"];
 
+type AuthStoreState = {
+  session: AuthSession | null;
+  isLoading: boolean;
+};
+
 const MISSING_ENV_ERROR =
   "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.";
+
+const listeners = new Set<() => void>();
+const authStore: AuthStoreState = {
+  session: null,
+  isLoading: true,
+};
+
+let browserSupabase: ReturnType<typeof createBrowserSupabaseClient> | null | undefined;
+let refreshInFlight: Promise<void> | null = null;
+let authSubscriptionAttached = false;
+
+function getSupabaseClient() {
+  if (browserSupabase !== undefined) {
+    return browserSupabase;
+  }
+
+  try {
+    browserSupabase = createBrowserSupabaseClient();
+  } catch {
+    browserSupabase = null;
+  }
+
+  return browserSupabase;
+}
+
+function emitStoreUpdate() {
+  listeners.forEach((listener) => listener());
+}
+
+function updateStore(next: Partial<AuthStoreState>) {
+  const nextSession = next.session === undefined ? authStore.session : next.session;
+  const nextIsLoading = next.isLoading === undefined ? authStore.isLoading : next.isLoading;
+
+  if (nextSession === authStore.session && nextIsLoading === authStore.isLoading) {
+    return;
+  }
+
+  authStore.session = nextSession;
+  authStore.isLoading = nextIsLoading;
+  emitStoreUpdate();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getSnapshot() {
+  return authStore;
+}
 
 function toAuthMessage(error: unknown, fallback: string) {
   if (!(error instanceof Error) || !error.message) {
@@ -109,27 +166,20 @@ function mapToAuthSession(user: User, member: MemberRow | null, organization: Or
   };
 }
 
-export function useAuth() {
-  const [session, setSession] = useState<AuthSession | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+async function refreshAuthSession() {
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
 
-  const supabase = useMemo(() => {
-    try {
-      return createBrowserSupabaseClient();
-    } catch {
-      return null;
-    }
-  }, []);
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    updateStore({ session: null, isLoading: false });
+    return;
+  }
 
-  const refresh = useCallback(async () => {
-    if (!supabase) {
-      setSession(null);
-      setIsLoading(false);
-      return;
-    }
+  updateStore({ isLoading: true });
 
-    setIsLoading(true);
-
+  refreshInFlight = (async () => {
     try {
       const {
         data: { user },
@@ -137,7 +187,7 @@ export function useAuth() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        setSession(null);
+        updateStore({ session: null, isLoading: false });
         return;
       }
 
@@ -168,7 +218,7 @@ export function useAuth() {
 
           const { data: ensuredOrganization } = await supabase
             .from("organizations")
-            .select("id, name, created_by, created_at, updated_at")
+            .select("id, name, logo_path, created_by, created_at, updated_at")
             .eq("id", ensuredOrganizationId)
             .maybeSingle();
 
@@ -179,117 +229,131 @@ export function useAuth() {
       if (resolvedMember?.organization_id && !organization) {
         const { data: org } = await supabase
           .from("organizations")
-          .select("id, name, created_by, created_at, updated_at")
+          .select("id, name, logo_path, created_by, created_at, updated_at")
           .eq("id", resolvedMember.organization_id)
           .maybeSingle();
 
         organization = org ?? null;
       }
 
-      setSession(mapToAuthSession(user, resolvedMember, organization));
-    } catch {
-      setSession(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase]);
-
-  const login = useCallback(
-    async (email: string, password: string): Promise<LoginResult> => {
-      if (!supabase) {
-        return { error: MISSING_ENV_ERROR };
-      }
-
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        return { error: toAuthMessage(error, "Unable to sign in right now.") };
-      }
-
-      await refresh();
-      return { error: null };
-    },
-    [refresh, supabase]
-  );
-
-  const register = useCallback(
-    async (input: RegisterInput): Promise<RegisterResult> => {
-      if (!supabase) {
-        return {
-          error: MISSING_ENV_ERROR,
-          requiresEmailConfirmation: false,
-        };
-      }
-
-      const fullName = input.fullName.trim();
-      const organizationName = input.organizationName.trim();
-
-      if (!fullName || !organizationName) {
-        return {
-          error: "Full name and organization name are required.",
-          requiresEmailConfirmation: false,
-        };
-      }
-
-      const { data, error } = await supabase.auth.signUp({
-        email: input.email,
-        password: input.password,
-        options: {
-          data: {
-            full_name: fullName,
-            organization_name: organizationName,
-          },
-        },
+      updateStore({
+        session: mapToAuthSession(user, resolvedMember, organization),
+        isLoading: false,
       });
+    } catch {
+      updateStore({ session: null, isLoading: false });
+    }
+  })().finally(() => {
+    refreshInFlight = null;
+  });
 
-      if (error) {
-        return {
-          error: toAuthMessage(error, "Unable to create your account right now."),
-          requiresEmailConfirmation: false,
-        };
-      }
+  return refreshInFlight;
+}
 
-      const requiresEmailConfirmation = !data.session;
+function ensureAuthSubscription() {
+  if (authSubscriptionAttached) {
+    return;
+  }
 
-      if (!requiresEmailConfirmation) {
-        await refresh();
-      }
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    updateStore({ session: null, isLoading: false });
+    return;
+  }
 
+  authSubscriptionAttached = true;
+  void refreshAuthSession();
+
+  supabase.auth.onAuthStateChange(() => {
+    void refreshAuthSession();
+  });
+}
+
+export function useAuth() {
+  const { session, isLoading } = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  useEffect(() => {
+    ensureAuthSubscription();
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await refreshAuthSession();
+  }, []);
+
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return { error: MISSING_ENV_ERROR };
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { error: toAuthMessage(error, "Unable to sign in right now.") };
+    }
+
+    await refreshAuthSession();
+    return { error: null };
+  }, []);
+
+  const register = useCallback(async (input: RegisterInput): Promise<RegisterResult> => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
       return {
-        error: null,
-        requiresEmailConfirmation,
+        error: MISSING_ENV_ERROR,
+        requiresEmailConfirmation: false,
       };
-    },
-    [refresh, supabase]
-  );
+    }
+
+    const fullName = input.fullName.trim();
+    const organizationName = input.organizationName.trim();
+
+    if (!fullName || !organizationName) {
+      return {
+        error: "Full name and organization name are required.",
+        requiresEmailConfirmation: false,
+      };
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: input.email,
+      password: input.password,
+      options: {
+        data: {
+          full_name: fullName,
+          organization_name: organizationName,
+        },
+      },
+    });
+
+    if (error) {
+      return {
+        error: toAuthMessage(error, "Unable to create your account right now."),
+        requiresEmailConfirmation: false,
+      };
+    }
+
+    const requiresEmailConfirmation = !data.session;
+
+    if (!requiresEmailConfirmation) {
+      await refreshAuthSession();
+    }
+
+    return {
+      error: null,
+      requiresEmailConfirmation,
+    };
+  }, []);
 
   const logout = useCallback(async () => {
+    const supabase = getSupabaseClient();
     if (!supabase) {
-      setSession(null);
+      updateStore({ session: null, isLoading: false });
       return;
     }
 
     await supabase.auth.signOut();
-    setSession(null);
-  }, [supabase]);
-
-  useEffect(() => {
-    if (!supabase) {
-      setIsLoading(false);
-      return;
-    }
-
-    void refresh();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void refresh();
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [refresh, supabase]);
+    updateStore({ session: null, isLoading: false });
+  }, []);
 
   return {
     session,

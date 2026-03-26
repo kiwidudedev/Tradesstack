@@ -18,6 +18,7 @@ import {
   analyzePagePrefilterForTrade,
   getTradeById,
 } from "@/lib/trade-pack-builder";
+import { toTradePackPdfUrl } from "@/lib/trade-packs";
 import {
   clampConfidence,
   type TradePackVlmPageRequest,
@@ -88,6 +89,7 @@ interface PdfJsModule {
 
 type TradePackPageIndexInsert = Database["public"]["Tables"]["project_trade_pack_page_index"]["Insert"];
 type TradePackReasonSnapshotInsert = Database["public"]["Tables"]["project_trade_pack_reason_snapshots"]["Insert"];
+type TradePackInsert = Database["public"]["Tables"]["trade_packs"]["Insert"];
 
 const PROJECT_DRAWING_SET_SELECT =
   "id, organization_id, project_id, uploaded_by, file_name, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
@@ -542,6 +544,53 @@ async function saveGeneratedTradePackToProject(params: {
   return insertedRow;
 }
 
+async function upsertGeneratedTradePackMetadata(params: {
+  supabase: SupabaseClient<Database>;
+  drawingSet: ProjectDrawingSet;
+  sessionUserId: string;
+  organizationId: string;
+  projectId: string;
+  tradeId: string;
+  tradeLabel: string;
+}): Promise<void> {
+  const payload: TradePackInsert = {
+    id: params.drawingSet.id,
+    organization_id: params.organizationId,
+    project_id: params.projectId,
+    trade_id: params.tradeId,
+    trade_label: params.tradeLabel,
+    pdf_url: toTradePackPdfUrl(params.drawingSet.storage_path),
+    page_index_json: [],
+    created_by: params.sessionUserId,
+  };
+
+  const maxAttempts = 3;
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const { error } = await params.supabase
+      .from("trade_packs")
+      .upsert(payload, { onConflict: "id" });
+
+    if (!error) {
+      return;
+    }
+
+    if (isMissingTableInSchemaCacheError(error, "trade_packs")) {
+      throw new Error("Trade pack metadata table is not deployed (trade_packs).");
+    }
+
+    lastError = error;
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => window.setTimeout(resolve, attempt * 300));
+    }
+  }
+
+  throw new Error(
+    toSupabaseErrorMessage(lastError, "Unable to save trade pack metadata.")
+  );
+}
+
 function toRuleConfidenceFromScore(score: number, isSupportSheet: boolean): number {
   return clampConfidence(0.24 + Math.max(0, score) * 0.08 + (isSupportSheet ? 0.1 : 0));
 }
@@ -933,7 +982,7 @@ export function TradePackBuilderUploader({
     }
 
     if (!session.organizationId || session.organizationId !== organizationId) {
-      setError("Your account is not linked to this trade pack workspace's organization.");
+      setError("Your account is not linked to this project's organization.");
       return;
     }
 
@@ -1228,6 +1277,17 @@ export function TradePackBuilderUploader({
       }
 
       if (outputRow) {
+        setGenerationStep("Recording trade pack metadata...");
+        await upsertGeneratedTradePackMetadata({
+          supabase,
+          drawingSet: outputRow,
+          sessionUserId: session.id,
+          organizationId,
+          projectId,
+          tradeId: trade.id,
+          tradeLabel: trade.label,
+        });
+
         setDrawingSets((current) => [outputRow, ...current]);
         setSelectedOutputDrawingSetId(outputRow.id);
       }
@@ -1837,7 +1897,7 @@ export function TradePackBuilderUploader({
           </div>
 
           <p className="mt-3 text-xs text-[#6f7f98]">
-            Source PDF stays on your device during generation. Only generated trade packs are saved in this trade pack workspace.
+            Source PDF stays on your device during generation. Only generated trade packs are saved in this project.
           </p>
 
           <div className="mt-4 space-y-2">
@@ -1913,7 +1973,7 @@ export function TradePackBuilderUploader({
       <div className="rounded-[12px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3 text-xs text-[#6d7c94]">
         <p className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4 text-[#8b98ad]" />
-          Trade Pack Builder filters pages by selected trade and stores only generated outputs for this trade pack workspace.
+          Trade Pack Builder filters pages by selected trade and stores only generated outputs for this project.
         </p>
       </div>
     </div>

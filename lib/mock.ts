@@ -7,7 +7,7 @@ export const mockUser = {
 export interface OrganizationProject {
   id: string;
   name: string;
-  stage: "Planning" | "Estimating" | "In Delivery";
+  stage: "Pricing" | "Construction" | "Completion";
   location: string;
 }
 
@@ -15,19 +15,19 @@ export const mockOrganizationProjects: OrganizationProject[] = [
   {
     id: "smith-renovation",
     name: "Smith Renovation",
-    stage: "Estimating",
+    stage: "Pricing",
     location: "Auckland"
   },
   {
     id: "mangawhai-new-build",
     name: "Mangawhai New Build",
-    stage: "Planning",
+    stage: "Pricing",
     location: "Northland"
   },
   {
     id: "grey-lynn-extension",
     name: "Grey Lynn Extension",
-    stage: "In Delivery",
+    stage: "Construction",
     location: "Auckland"
   }
 ];
