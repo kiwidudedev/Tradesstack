@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { akzidenzBlack, bertholdExtraBoldCondensed } from "@/lib/fonts";
+import { akzidenzBlack, bertholdExtraBoldCondensed, mulishBody } from "@/lib/fonts";
 
 const HERO_TITLES = ["QUANTITY SURVEYOR", "PROJECT MANAGER"] as const;
 const LONGEST_HERO_TITLE = "QUANTITY SURVEYOR";
@@ -63,7 +63,7 @@ export function Hero() {
             </span>
           </h1>
 
-          <p className={`${akzidenzBlack.className} mt-4 max-w-[470px] text-[14px] leading-[1.55] text-white/82 sm:text-[15px] sm:text-white/78`}>
+          <p className={`${mulishBody.className} mt-4 max-w-[470px] text-[14px] font-semibold leading-[1.55] text-white/82 sm:text-[15px] sm:text-white/78`}>
             From tender to delivery, TradesStack uses AI to give you the clarity to understand every job, price with
             confidence, and stay in control every step of the way.
           </p>

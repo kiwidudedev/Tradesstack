@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { akzidenzBlack, bertholdExtraBoldCondensed } from "@/lib/fonts";
+import { akzidenzBlack, bertholdExtraBoldCondensed, mulishBody } from "@/lib/fonts";
 
 const familiarBullets = [
   "Automatically extract drawings for each trade",
@@ -14,7 +14,7 @@ const familiarBullets = [
 
 const subscriptionBullets = [
   "Extract structured scope directly from drawings",
-  "Identify materials, systems, and build requirements",
+  "Identify materials, systems & requirements",
   "Surface coordination issues between trades",
   "Detect missing information and scope gaps",
   "Produce tender-ready subcontract scopes",
@@ -22,7 +22,7 @@ const subscriptionBullets = [
 
 const duplicatedSubscriptionBullets = [
   "Get answers about NZ/AUS construction practices",
-  "Understand common materials and building systems",
+  "Understand common materials & building systems",
   "Clarify construction terminology and standards",
   "Learn how different trades and systems interact",
   "Ask questions about construction and building methods",
@@ -156,25 +156,27 @@ export function Sections() {
               </span>
               <span className="block sm:whitespace-nowrap">Drawing Sets With AI</span>
             </h2>
-            <ul className={`${akzidenzBlack.className} max-w-[44ch] space-y-4 text-[15px] leading-[1.6] text-white/84`}>
+            <ul className={`${mulishBody.className} max-w-[44ch] space-y-[0.72rem] text-[15px] font-medium leading-[1.12] text-white/84`}>
               {familiarBullets.map((bullet) => (
                 <li key={bullet} className="flex items-start gap-2.5">
                   <span className="mt-0.5 text-[18px] leading-none text-[#F74917]">✓</span>
-                  <span>{bullet}</span>
+                  <span className={bullet === "Identify materials, systems & requirements" ? "whitespace-nowrap" : undefined}>
+                    {bullet}
+                  </span>
                 </li>
               ))}
             </ul>
             <button
               type="button"
               onClick={() => setIsTradePacksVideoOpen(true)}
-              className={`${akzidenzBlack.className} mt-5 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
+              className={`${akzidenzBlack.className} mt-8 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
             >
               HOW TRADE PACKS WORK →
             </button>
           </div>
           <div className="relative w-full max-w-[780px] justify-self-end pt-6 lg:order-1 lg:pt-10">
             <div className="pointer-events-none absolute left-1/2 top-[56%] h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.12),transparent_72%)] blur-[70px]" />
-            <div className="relative overflow-hidden rounded-2xl border border-white/10 p-3 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 p-3 shadow-[0_30px_80px_rgba(0,0,0,0.315)]">
               <Image
                 src="/tradesstacktradepack-original.png"
                 alt="TradesStack trade pack builder preview"
@@ -203,18 +205,20 @@ export function Sections() {
               </span>
               <span className="block sm:whitespace-nowrap">From Drawings</span>
             </h2>
-            <ul className={`${akzidenzBlack.className} max-w-[44ch] space-y-4 text-[15px] leading-[1.6] text-white/84`}>
+            <ul className={`${mulishBody.className} max-w-[44ch] space-y-[0.448rem] text-[15px] leading-[1.12] text-white/84`}>
               {subscriptionBullets.map((bullet) => (
                 <li key={bullet} className="flex items-start gap-2.5">
                   <span className="mt-0.5 text-[18px] leading-none text-[#F74917]">✓</span>
-                  <span>{bullet}</span>
+                  <span className={bullet === "Understand common materials & building systems" ? "whitespace-nowrap" : undefined}>
+                    {bullet}
+                  </span>
                 </li>
               ))}
             </ul>
             <button
               type="button"
               onClick={() => setIsScopeBuilderVideoOpen(true)}
-              className={`${akzidenzBlack.className} mt-5 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
+              className={`${akzidenzBlack.className} mt-[33px] inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
             >
               HOW SCOPE BUILDER WORKS →
             </button>
@@ -254,7 +258,7 @@ export function Sections() {
               </span>
               <span className="block sm:whitespace-nowrap">With AI</span>
             </h2>
-            <ul className={`${akzidenzBlack.className} max-w-[44ch] space-y-4 text-[15px] leading-[1.6] text-white/84`}>
+            <ul className={`${mulishBody.className} max-w-[44ch] space-y-[0.7rem] text-[15px] font-medium leading-[1.6] text-white`}>
               {changeDetectionBullets.map((bullet) => (
                 <li key={bullet} className="flex items-start gap-2.5">
                   <span className="mt-0.5 text-[18px] leading-none text-[#F74917]">✓</span>
@@ -295,7 +299,7 @@ export function Sections() {
                 CONSTRUCTION ASSISTANT
               </span>
             </h2>
-            <ul className={`${akzidenzBlack.className} max-w-[44ch] space-y-4 text-[15px] leading-[1.6] text-white/84`}>
+            <ul className={`${mulishBody.className} max-w-[50ch] space-y-[0.7rem] text-[15px] font-medium leading-[1.12] text-white`}>
               {duplicatedSubscriptionBullets.map((bullet) => (
                 <li key={bullet} className="flex items-start gap-2.5">
                   <span className="mt-0.5 text-[18px] leading-none text-[#F74917]">✓</span>
@@ -306,7 +310,7 @@ export function Sections() {
             <button
               type="button"
               onClick={() => setIsAssistantVideoOpen(true)}
-              className={`${akzidenzBlack.className} mt-5 inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
+              className={`${akzidenzBlack.className} mt-[30px] inline-flex rounded-[10px] bg-[#FF5A1F] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#F04C11]`}
             >
               HOW AI ASSISTANT WORKS →
             </button>
@@ -337,23 +341,19 @@ export function Sections() {
         </div>
       </section>
 
-      <section id="pricing" className="bg-transparent pb-11 pt-2 lg:pb-[52px]">
+      <section id="pricing" className="bg-transparent pb-11 pt-0 lg:pb-[52px]">
         <div className="mx-auto w-full max-w-[1200px] px-6 lg:px-12">
-          <p className={`${akzidenzBlack.className} pb-8 text-center text-[16px] leading-[1.6] text-white/72`}>
+          <p className={`${mulishBody.className} -mt-2 pb-12 text-center text-[16px] leading-[1.6] text-white`}>
             AI that makes construction drawings easier to review and price.
           </p>
-          <div className="mt-2 flex flex-col items-center gap-8 lg:flex-row lg:items-stretch lg:justify-center lg:gap-0 lg:-space-x-[52px]">
+          <div className="mt-2 flex flex-col items-center gap-[2.6rem] lg:flex-row lg:items-stretch lg:justify-center lg:gap-8">
             <article
               onMouseEnter={() => setHoveredPricingCard("starter")}
               onMouseLeave={() => setHoveredPricingCard(null)}
               className={`flex h-full min-h-[620px] w-full max-w-[315px] flex-col rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(15,40,75,0.85)] px-6 py-7 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-[10px] transition-all duration-300 lg:px-8 lg:py-9 ${
                 hoveredPricingCard === "starter"
-                  ? "lg:z-[4] lg:-translate-x-[20px] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
-                  : hoveredPricingCard === "professional"
-                    ? "lg:z-[1] lg:-translate-x-[6px] lg:scale-[0.98] lg:opacity-90"
-                    : hoveredPricingCard === "business"
-                      ? "lg:z-[1] lg:-translate-x-[24px] lg:scale-[0.97] lg:opacity-85"
-                      : "lg:z-[1] lg:translate-x-[30px] lg:scale-[0.98]"
+                  ? "lg:z-[3] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
+                  : "lg:z-[1] lg:scale-100"
               }`}
             >
               <h3 className={`${bertholdExtraBoldCondensed.className} text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
@@ -361,9 +361,9 @@ export function Sections() {
               </h3>
               <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
                 <span className="block">$249</span>
-                <span className="mt-1 block text-[14px] text-white/70">/ month</span>
+                <span className={`${mulishBody.className} mt-1 block text-[18px] text-white/70`}>/ month</span>
               </p>
-              <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
+              <ul className={`${mulishBody.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
                   4 total trade packs per month
                 </li>
@@ -392,15 +392,11 @@ export function Sections() {
               onMouseLeave={() => setHoveredPricingCard(null)}
               className={`relative flex h-full min-h-[620px] w-full max-w-[345px] flex-col rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(15,40,75,0.85)] px-6 py-7 shadow-[0_20px_50px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,90,31,0.25)] backdrop-blur-[10px] transition-all duration-300 lg:px-8 lg:py-9 ${
                 hoveredPricingCard === "professional"
-                  ? "lg:z-[5] lg:-translate-y-[20px] lg:scale-[1.03] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,90,31,0.25)]"
-                  : hoveredPricingCard === "starter"
-                    ? "lg:z-[2] lg:-translate-y-[16px] lg:translate-x-[10px] lg:scale-[1.01] lg:opacity-90"
-                    : hoveredPricingCard === "business"
-                      ? "lg:z-[2] lg:-translate-y-[16px] lg:-translate-x-[10px] lg:scale-[1.01] lg:opacity-90"
-                      : "lg:z-[3] lg:-translate-y-[16px] lg:scale-[1.02]"
+                  ? "lg:z-[3] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,90,31,0.25)]"
+                  : "lg:z-[2] lg:scale-100"
               }`}
             >
-              <span className={`${akzidenzBlack.className} mt-1 inline-flex w-fit rounded-[20px] bg-[#FF5A1F]/15 px-[10px] py-[3px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#FF5A1F]`}>
+              <span className={`${akzidenzBlack.className} absolute right-4 -top-[11px] inline-flex w-fit rounded-[20px] border border-[#FF5A1F]/40 bg-[#FF5A1F] px-[12px] py-[4px] text-[11px] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_24px_rgba(255,90,31,0.45)]`}>
                 ⭐ Most Popular
               </span>
               <h3 className={`${bertholdExtraBoldCondensed.className} mt-3 text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
@@ -408,9 +404,9 @@ export function Sections() {
               </h3>
               <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
                 <span className="block">$599</span>
-                <span className="mt-1 block text-[14px] text-white/70">/ month</span>
+                <span className={`${mulishBody.className} mt-1 block text-[18px] text-white/70`}>/ month</span>
               </p>
-              <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
+              <ul className={`${mulishBody.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
                   12 total trade packs per month
                 </li>
@@ -439,12 +435,8 @@ export function Sections() {
               onMouseLeave={() => setHoveredPricingCard(null)}
               className={`relative flex h-full min-h-[620px] w-full max-w-[315px] flex-col rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(15,40,75,0.85)] px-6 py-7 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-[10px] transition-all duration-300 lg:px-8 lg:py-9 ${
                 hoveredPricingCard === "business"
-                  ? "lg:z-[4] lg:translate-x-[20px] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
-                  : hoveredPricingCard === "professional"
-                    ? "lg:z-[1] lg:translate-x-[8px] lg:scale-[0.98] lg:opacity-90"
-                    : hoveredPricingCard === "starter"
-                      ? "lg:z-[1] lg:translate-x-[24px] lg:scale-[0.97] lg:opacity-85"
-                      : "lg:z-[1] lg:-translate-x-[20px] lg:scale-[0.98]"
+                  ? "lg:z-[3] lg:scale-[1.02] lg:shadow-[0_25px_60px_rgba(0,0,0,0.45)]"
+                  : "lg:z-[1] lg:scale-100"
               }`}
             >
               <h3 className={`${bertholdExtraBoldCondensed.className} text-[44px] font-bold uppercase leading-[0.9] tracking-[-0.02em] text-white`}>
@@ -452,9 +444,9 @@ export function Sections() {
               </h3>
               <p className={`${bertholdExtraBoldCondensed.className} mt-3 text-[56px] font-bold leading-none tracking-[-0.02em] text-[#F74917]`}>
                 <span className="block">$1,299</span>
-                <span className="mt-1 block text-[14px] text-white/70">/ month</span>
+                <span className={`${mulishBody.className} mt-1 block text-[18px] text-white/70`}>/ month</span>
               </p>
-              <ul className={`${akzidenzBlack.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
+              <ul className={`${mulishBody.className} mt-6 space-y-3 text-[16px] font-medium leading-[1.6] text-white/82`}>
                 <li className="text-[16px] text-white/82">
                   30 total trade packs per month
                 </li>

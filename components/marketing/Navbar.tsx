@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { AuthSession } from "@/lib/types";
-import { akzidenzBlack } from "@/lib/fonts";
+import { akzidenzBlack, mulishBody } from "@/lib/fonts";
 
 interface NavbarProps {
   session: AuthSession | null;
@@ -51,9 +51,9 @@ export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
           />
         </Link>
 
-        <nav className={`${akzidenzBlack.className} hidden items-center gap-6 text-base font-medium tracking-[0.02em] lg:flex`}>
+        <nav className={`${mulishBody.className} hidden items-center gap-6 text-base font-semibold tracking-[0.02em] lg:flex`}>
           {links.map((item) => (
-            <a key={item.label} href={item.href} className="text-white/80 transition hover:text-white">
+            <a key={item.label} href={item.href} className="text-white transition hover:text-white/90">
               {item.label}
             </a>
           ))}

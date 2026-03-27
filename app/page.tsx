@@ -6,6 +6,7 @@ import { LoginCard } from "@/components/auth/LoginCard";
 import { Footer } from "@/components/marketing/Footer";
 import { Hero } from "@/components/marketing/Hero";
 import { Navbar } from "@/components/marketing/Navbar";
+import { PreHeroInsights } from "@/components/marketing/PreHeroInsights";
 import { Sections } from "@/components/marketing/Sections";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -72,6 +73,7 @@ export default function HomePage() {
       <main>
         <Navbar session={session} onLoginClick={() => setShowLoginModal(true)} />
         <Hero />
+        <PreHeroInsights />
         <Sections />
         <Footer />
       </main>

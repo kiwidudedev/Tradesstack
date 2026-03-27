@@ -48,6 +48,7 @@ const AI_INTELLIGENCE_SEGMENTS = new Set([
 ]);
 
 const JOB_MANAGEMENT_ITEMS = [
+  { label: "Time Sheets", segment: "job-management/time-sheets" },
   { label: "To do's", segment: "job-management/todos" },
 ] as const;
 
