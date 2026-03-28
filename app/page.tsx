@@ -4,10 +4,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LoginCard } from "@/components/auth/LoginCard";
 import { Footer } from "@/components/marketing/Footer";
+import { FeatureShowcaseSection } from "@/components/marketing/FeatureShowcaseSection";
+import { EarlyAccessSection } from "@/components/marketing/EarlyAccessSection";
+import { FinalCtaSection } from "@/components/marketing/FinalCtaSection";
 import { Hero } from "@/components/marketing/Hero";
 import { Navbar } from "@/components/marketing/Navbar";
+import { OnePlatformSection } from "@/components/marketing/OnePlatformSection";
 import { PreHeroInsights } from "@/components/marketing/PreHeroInsights";
-import { Sections } from "@/components/marketing/Sections";
+import { ScrollToTopButton } from "@/components/marketing/ScrollToTopButton";
+import { SoftwareSyncSection } from "@/components/marketing/SoftwareSyncSection";
+import { StatsResultsSection } from "@/components/marketing/StatsResultsSection";
 import { useAuth } from "@/hooks/use-auth";
 
 function LoginModal({ onClose }: { onClose: () => void }) {
@@ -69,13 +75,19 @@ export default function HomePage() {
   }, [showLoginModal]);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#04234D_0%,#062A5C_100%)] text-white">
+    <div className="min-h-screen overflow-x-hidden bg-[#0B2639] text-white">
       <main>
         <Navbar session={session} onLoginClick={() => setShowLoginModal(true)} />
         <Hero />
         <PreHeroInsights />
-        <Sections />
+        <OnePlatformSection />
+        <FeatureShowcaseSection />
+        <SoftwareSyncSection />
+        <StatsResultsSection />
+        <EarlyAccessSection />
+        <FinalCtaSection />
         <Footer />
+        <ScrollToTopButton />
       </main>
 
       {showLoginModal ? <LoginModal onClose={() => setShowLoginModal(false)} /> : null}

@@ -1,99 +1,144 @@
-import Image from "next/image";
 import Link from "next/link";
-import { akzidenzBlack, bertholdExtraBoldCondensed } from "@/lib/fonts";
+import { akzidenzProBoldEx } from "@/lib/fonts";
 
-const exploreLinks = [
-  { label: "How it works", href: "/#trade-pack" },
-  { label: "Pricing", href: "/#choose-plan" },
-  { label: "Support", href: "mailto:hi@tradesstack.com" },
+const footerColumns = [
+  {
+    title: "Product",
+    links: [
+      { label: "Overview", href: "/#product" },
+      { label: "How it works", href: "/#trade-pack" },
+      { label: "Features", href: "/#platform-features" },
+      { label: "Pricing", href: "/#choose-plan" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { label: "About", href: "#" },
+      { label: "Contact", href: "mailto:hi@tradesstack.com" },
+      { label: "Contact us", href: "/#book-a-chat" },
+    ],
+  },
+  {
+    title: "Follow us",
+    links: [
+      { label: "Instagram", href: "#" },
+      { label: "LinkedIn", href: "#" },
+      { label: "Facebook", href: "#" },
+    ],
+  },
 ] as const;
-const legalLinks = [
+
+const bottomLinks = [
   { label: "Privacy Policy", href: "/privacy-policy" },
-  { label: "Terms & Conditions", href: "/terms-of-service" },
-  { label: "Contact", href: "mailto:hi@tradesstack.com" },
-] as const;
-const socialItems = [
-  { label: "Facebook", href: "#", id: "facebook" },
-  { label: "Instagram", href: "#", id: "instagram" },
-  { label: "LinkedIn", href: "#", id: "linkedin" },
+  { label: "Terms and Conditions", href: "/terms-of-service" },
 ] as const;
 
 export function Footer() {
   return (
-    <footer className="border-t border-white/8 bg-[#04234D] px-6 py-16 text-white lg:px-12">
-      <div className="mx-auto grid w-full max-w-[1200px] gap-10 lg:grid-cols-[1.2fr_1fr]">
-        <div>
-          <Image src="/tradesstacklogowhite.png" alt="TradesStack" width={1200} height={400} className="h-24 w-auto" />
-          <p className={`${akzidenzBlack.className} mt-6 text-lg text-white/80`}>Email: hi@tradesstack.com</p>
-          <div className={`${akzidenzBlack.className} mt-6 flex gap-3 text-sm`}>
-            {socialItems.map((item) => (
-              <Link
-                key={item.id}
-                href={item.href}
-                aria-label={item.label}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-white/15 bg-white/5 text-white/85 transition hover:border-[#F74917]/60 hover:bg-[#F74917]/12 hover:text-[#F74917]"
+    <footer className="overflow-hidden bg-[#0B2639] px-4 pb-8 pt-16 text-white sm:px-6 sm:pt-20 lg:px-8 lg:pt-24">
+      <div className="mx-auto w-full max-w-[1380px]">
+        <div className="grid gap-12 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-28">
+          <div>
+            <Link
+              href="/"
+              className={`${akzidenzProBoldEx.className} inline-block text-[2.2rem] leading-none tracking-[-0.05em] text-white sm:text-[2.8rem]`}
+            >
+              TradesStack
+            </Link>
+
+            <div className="mt-12 max-w-[512px]">
+              <p
+                className="text-[1.235rem] text-white"
+                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
               >
-                {item.id === "facebook" && (
-                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
-                    <path d="M13.5 8.5V6.8c0-.8.5-1 1-1h1.4V3h-2.2C10.7 3 10 5 10 6.4v2.1H8v3h2V21h3.5v-9.5H16l.4-3h-2.9z" />
-                  </svg>
-                )}
-                {item.id === "instagram" && (
-                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
-                    <path d="M7.8 3h8.4A4.8 4.8 0 0 1 21 7.8v8.4a4.8 4.8 0 0 1-4.8 4.8H7.8A4.8 4.8 0 0 1 3 16.2V7.8A4.8 4.8 0 0 1 7.8 3zm0 1.8A3 3 0 0 0 4.8 7.8v8.4a3 3 0 0 0 3 3h8.4a3 3 0 0 0 3-3V7.8a3 3 0 0 0-3-3H7.8zm9 .9a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM12 7.2A4.8 4.8 0 1 1 7.2 12 4.8 4.8 0 0 1 12 7.2zm0 1.8a3 3 0 1 0 3 3 3 3 0 0 0-3-3z" />
-                  </svg>
-                )}
-                {item.id === "linkedin" && (
-                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
-                    <path d="M5.2 8.5h3.3V21H5.2V8.5zM6.8 3a1.9 1.9 0 1 1-1.9 1.9A1.9 1.9 0 0 1 6.8 3zM10.4 8.5h3.1v1.7h.1a3.4 3.4 0 0 1 3.1-1.9c3.3 0 3.9 2.2 3.9 5V21h-3.3v-6.8c0-1.6 0-3.7-2.3-3.7s-2.6 1.8-2.6 3.6V21h-3.3V8.5z" />
-                  </svg>
-                )}
-              </Link>
+                Subscribe to our newsletter
+              </p>
+              <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input
+                  type="email"
+                  placeholder="Enter your email"
+                  className="min-h-[50px] w-full rounded-full border border-[#AACFDF]/18 bg-white/8 px-5 text-[0.95rem] text-white placeholder:text-white/58 outline-none transition focus:border-[#AACFDF] sm:min-w-[330px]"
+                  style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+                />
+                <button
+                  type="submit"
+                  className="inline-flex min-h-[50px] items-center justify-center rounded-full bg-[#F74918] px-6 text-[0.95rem] font-bold text-white transition-opacity hover:opacity-90"
+                  style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+                >
+                  Subscribe
+                </button>
+              </form>
+              <p
+                className="mt-3 text-[0.82rem] leading-[1.35] text-white/72"
+                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+              >
+                By subscribing you agree to our{" "}
+                <Link href="/privacy-policy" className="text-white underline underline-offset-2">
+                  Privacy Policy
+                </Link>
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-2 lg:ml-36 lg:grid-cols-3 lg:gap-x-2 lg:gap-y-10">
+            {footerColumns.map((column) => (
+              <div key={column.title} className={column.title === "Follow us" ? "col-span-2 lg:col-span-1 lg:pr-2" : "lg:pr-2"}>
+                <h3
+                  className="text-[1rem] font-bold text-[#AACFDF]"
+                  style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+                >
+                  {column.title}
+                </h3>
+                <ul className="mt-4 space-y-3">
+                  {column.links.map((link) => (
+                    <li key={link.label}>
+                      <Link
+                        href={link.href}
+                        className="text-[0.98rem] leading-[1.3] text-white transition hover:text-white"
+                        style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+                      >
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
           </div>
         </div>
 
-        <div className="grid gap-10 sm:grid-cols-2">
-          <div>
-            <p className={`${bertholdExtraBoldCondensed.className} mb-4 text-2xl font-semibold uppercase italic`}>Explore</p>
-            <ul className={`${akzidenzBlack.className} space-y-2 text-lg text-white/80`}>
-              {exploreLinks.map((item) => (
-                <li key={item.label}>
-                  <Link href={item.href} className="transition hover:text-white">
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+        <div className="mt-10 border-t border-white/12 pt-8 text-white/75">
+          <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-28">
+            <div />
+            <div className="grid gap-4 lg:ml-28 lg:grid-cols-[1.8fr_1fr_1fr] lg:gap-x-4">
+              <p
+                className="whitespace-nowrap text-[0.95rem] leading-[1.35]"
+                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+              >
+                © 2026 TradeStack. All rights reserved.
+              </p>
 
-          <div>
-            <p className={`${bertholdExtraBoldCondensed.className} mb-4 text-2xl font-semibold uppercase italic`}>Legal</p>
-            <ul className={`${akzidenzBlack.className} space-y-2 text-lg text-white/80`}>
-              {legalLinks.map((item) => (
-                <li key={item.label}>
-                  <Link href={item.href} className="transition hover:text-white">
-                    {item.label}
-                  </Link>
-                </li>
+              {bottomLinks.map((link) => (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  className="whitespace-nowrap text-[0.95rem] leading-[1.35] text-white transition hover:text-white"
+                  style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+                >
+                  {link.label}
+                </Link>
               ))}
-            </ul>
+            </div>
           </div>
+        </div>
 
-          <div className="sm:col-span-2 flex flex-wrap gap-4">
-            <Link
-              href="/register"
-              className={`${akzidenzBlack.className} hidden rounded-[10px] bg-white/8 px-[18px] py-[10px] text-base font-medium text-white transition hover:bg-white/12 lg:inline-flex`}
-            >
-              Login
-            </Link>
-            <Link
-              href="/register"
-              className={`${akzidenzBlack.className} rounded-[10px] bg-[#F74917] px-[18px] py-[10px] text-base font-semibold text-white transition hover:bg-[#E84212]`}
-            >
-              Sign Up
-            </Link>
-          </div>
+        <div className="mt-10">
+          <p
+            className={`${akzidenzProBoldEx.className} text-[3rem] leading-[0.88] tracking-[-0.06em] text-[#AACFDF] sm:text-[5.6rem] lg:text-[9rem]`}
+          >
+            No jobs missed.
+          </p>
         </div>
       </div>
     </footer>

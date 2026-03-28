@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { AuthSession } from "@/lib/types";
-import { akzidenzBlack, mulishBody } from "@/lib/fonts";
+import { akzidenzBlack } from "@/lib/fonts";
 
 interface NavbarProps {
   session: AuthSession | null;
@@ -18,53 +18,45 @@ const links = [
 ];
 
 export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
-  const [isScrolled, setIsScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => {
-      setIsScrolled(window.scrollY > 8);
-    };
-
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-    };
-  }, []);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <div
-      role="banner"
-      className={`fixed left-0 top-0 z-30 w-full text-white transition-colors duration-200 ${
-        isScrolled ? "bg-[#04234D]/95 backdrop-blur-sm" : "bg-transparent"
-      }`}
-    >
-      <div className="flex h-[68px] w-full items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6 lg:px-16">
-        <Link href="/" aria-label="TradesStack home" className="inline-flex items-center">
+    <header role="banner" className="relative z-40 w-full bg-[#0B2639]">
+      <div className="mx-auto flex h-[96px] w-full max-w-[1380px] items-center justify-between gap-4 px-5 sm:px-6 lg:h-[78px] lg:px-16">
+        <Link href="/" aria-label="TradeStack home" className="inline-flex items-center">
           <Image
             src="/tradesstacklogowhite.png"
-            alt="TradesStack"
+            alt="TradeStack"
             width={1200}
             height={400}
-            className="h-12 w-auto sm:h-16"
             priority
+            className="h-[58px] w-auto sm:h-[66px] lg:h-[80.64px]"
           />
         </Link>
 
-        <nav className={`${mulishBody.className} hidden items-center gap-6 text-base font-semibold tracking-[0.02em] lg:flex`}>
+        <nav className="hidden items-center gap-7 lg:flex">
           {links.map((item) => (
-            <a key={item.label} href={item.href} className="text-white transition hover:text-white/90">
-              {item.label}
-            </a>
+            <Link
+              key={item.label}
+              href={item.href}
+              className="inline-flex items-center gap-1.5 text-[15.6px] font-bold text-white transition-opacity hover:opacity-80"
+              style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+            >
+              <span>{item.label}</span>
+              <span aria-hidden="true" className="text-[1.35em] font-normal leading-none">
+                +
+              </span>
+            </Link>
           ))}
         </nav>
 
         {!session ? (
-          <div className={`${akzidenzBlack.className} flex items-center gap-3 text-[15px] sm:gap-4 sm:text-base`}>
+          <div className="hidden items-center gap-3 sm:gap-4 lg:flex">
             {loginHref ? (
               <Link
                 href={loginHref}
-                className={`${akzidenzBlack.className} hidden rounded-[10px] bg-white/8 px-[18px] py-[10px] font-medium text-white transition hover:bg-white/12 lg:inline-flex`}
+                className="inline-flex text-[14px] font-bold text-white transition-opacity hover:opacity-80 sm:text-[15.6px]"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
               >
                 Login
               </Link>
@@ -72,27 +64,101 @@ export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
               <button
                 type="button"
                 onClick={onLoginClick}
-                className={`${akzidenzBlack.className} hidden rounded-[10px] bg-white/8 px-[18px] py-[10px] font-medium text-white transition hover:bg-white/12 lg:inline-flex`}
+                className="inline-flex text-[14px] font-bold text-white transition-opacity hover:opacity-80 sm:text-[15.6px]"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
               >
                 Login
               </button>
             )}
             <Link
-              href="/register"
-              className={`${akzidenzBlack.className} inline-flex rounded-[10px] bg-[#F74917] px-[18px] py-[10px] font-semibold text-white transition hover:bg-[#E84212]`}
+              href="/#book-a-chat"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-[12px] border border-white bg-white/8 px-4 text-[14px] font-bold text-white transition-opacity hover:opacity-80 sm:text-[15.6px]"
+              style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
             >
-              Sign Up
+              Contact us
             </Link>
           </div>
         ) : (
           <Link
             href="/app/dashboard"
-            className={`${akzidenzBlack.className} rounded-[10px] bg-[#F74917] px-[18px] py-[10px] font-semibold text-white transition hover:bg-[#E84212]`}
+            className={`${akzidenzBlack.className} hidden min-h-[44px] items-center justify-center rounded-[12px] border border-white/60 bg-white/8 px-4 text-[15px] font-bold text-white transition-opacity hover:opacity-80 lg:inline-flex`}
           >
             Projects
           </Link>
         )}
+
+        {!session ? (
+          <div className="flex items-center gap-3 lg:hidden">
+            <Link
+              href="/#book-a-chat"
+              className="inline-flex min-h-[48px] items-center justify-center rounded-[8px] bg-white px-4 text-[1rem] font-bold text-[#0B2639]"
+              style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+            >
+              Contact us
+            </Link>
+            <button
+              type="button"
+              aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={isMobileMenuOpen}
+              onClick={() => setIsMobileMenuOpen((value) => !value)}
+              className="inline-flex h-[52px] w-[52px] items-center justify-center rounded-[8px] text-white"
+            >
+              <span className="relative h-5 w-8">
+                <span
+                  className={`absolute left-0 top-[3px] h-[3px] w-8 rounded-full bg-white transition-all ${
+                    isMobileMenuOpen ? "translate-y-[5px] rotate-45" : ""
+                  }`}
+                />
+                <span
+                  className={`absolute left-0 top-[13px] h-[3px] w-8 rounded-full bg-white transition-all ${
+                    isMobileMenuOpen ? "-translate-y-[5px] -rotate-45" : ""
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+        ) : null}
       </div>
-    </div>
+
+      {!session && isMobileMenuOpen ? (
+        <div className="border-t border-white/10 bg-[#0B2639] px-5 pb-6 pt-4 lg:hidden">
+          <nav className="flex flex-col gap-3">
+            {links.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-[1.1rem] font-bold text-white"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+              >
+                {item.label}
+              </Link>
+            ))}
+            {loginHref ? (
+              <Link
+                href={loginHref}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="mt-2 inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-5 text-[1rem] font-bold text-white"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+              >
+                Contact us
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onLoginClick?.();
+                }}
+                className="mt-2 inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-5 text-[1rem] font-bold text-white"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+              >
+                Contact us
+              </button>
+            )}
+          </nav>
+        </div>
+      ) : null}
+    </header>
   );
 }

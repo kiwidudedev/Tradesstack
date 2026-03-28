@@ -45,6 +45,17 @@ body {
   overflow-x: hidden;
 }
 
+h2 {
+  font-family: var(--font-akzidenz-pro-boldex), Helvetica, Arial, sans-serif;
+  font-size: 35px;
+}
+
+@media (min-width: 1024px) {
+  h2 {
+    font-size: 45px;
+  }
+}
+
 .font-heading {
   font-family: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
 }

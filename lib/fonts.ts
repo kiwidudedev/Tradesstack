@@ -12,10 +12,17 @@ export const akzidenz = localFont({
 });
 
 export const akzidenzBlack = localFont({
-  src: [{ path: "../public/fonts/AkzidenzGrotesk-Bold.ttf", weight: "900", style: "normal" }],
+  src: [{ path: "../public/Akzidenz-grotesk-black.ttf", weight: "900", style: "normal" }],
   display: "swap",
   fallback: ["Arial Narrow", "Arial", "sans-serif"],
   variable: "--font-akzidenz-black",
+});
+
+export const akzidenzProBoldEx = localFont({
+  src: [{ path: "../public/akzidenzgroteskpro_boldex.otf", weight: "700", style: "normal" }],
+  display: "swap",
+  fallback: ["Arial Narrow", "Arial", "sans-serif"],
+  variable: "--font-akzidenz-pro-boldex",
 });
 
 export const bertholdHeading = localFont({
