@@ -51,7 +51,7 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Co
       <SheetOverlay />
       <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
         {children}
-        <SheetClose className="absolute right-4 top-4 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+        <SheetClose className="absolute right-4 top-4 rounded-[6px] p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </SheetClose>

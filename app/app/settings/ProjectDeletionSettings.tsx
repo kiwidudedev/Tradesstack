@@ -88,7 +88,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
   };
 
   return (
-    <Card className="border-[#E6EAF0] bg-white shadow-none">
+    <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <CardHeader className="pb-3 pt-6">
         <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Project Deletion</CardTitle>
       </CardHeader>
@@ -106,7 +106,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
               <select
                 value={selectedProjectId}
                 onChange={(event) => setSelectedProjectId(event.target.value)}
-                className={`${interMedium.className} h-11 w-full rounded-[10px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none`}
               >
                 <option value="">Choose a project to delete</option>
                 {items.map((project) => (
@@ -118,7 +118,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
             </div>
 
             {selectedProject ? (
-              <div className="rounded-[10px] border border-[#F4C7C7] bg-[#FFF5F5] p-3">
+              <div className="rounded-[6px] border border-[#F4C7C7] bg-[#FFF5F5] p-3">
                 <p className={`${interMedium.className} text-sm font-semibold text-[#B42318]`}>
                   You are deleting: {selectedProject.name}
                 </p>
@@ -129,7 +129,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
                   value={confirmText}
                   onChange={(event) => setConfirmText(event.target.value)}
                   placeholder='Type "delete" to confirm'
-                  className={`${interMedium.className} mt-3 h-10 rounded-[10px] border-[#EAB8B8] bg-white text-[#1d2433]`}
+                  className={`${interMedium.className} mt-3 h-10 rounded-[6px] border-[#EAB8B8] bg-white text-[#1d2433]`}
                 />
               </div>
             ) : null}
@@ -138,7 +138,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
               type="button"
               onClick={onDeleteProject}
               disabled={!canDelete || isDeleting}
-              className={`${interMedium.className} h-10 rounded-[10px] bg-[#B42318] px-4 text-sm font-medium text-white hover:bg-[#9e1f16] disabled:bg-[#d98d88]`}
+              className={`${interMedium.className} h-10 rounded-[6px] bg-[#B42318] px-4 text-sm font-medium text-white hover:bg-[#9e1f16] disabled:bg-[#d98d88]`}
             >
               {isDeleting ? "Deleting..." : "Delete Project"}
             </Button>
@@ -146,13 +146,13 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
         )}
 
         {error ? (
-          <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
+          <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
             {error}
           </p>
         ) : null}
 
         {message ? (
-          <p className={`${interMedium.className} rounded-[10px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700`}>
+          <p className={`${interMedium.className} rounded-[6px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700`}>
             {message}
           </p>
         ) : null}

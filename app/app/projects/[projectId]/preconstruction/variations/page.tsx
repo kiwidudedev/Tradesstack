@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, FileText, Plus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -102,9 +102,7 @@ export default function ProjectVariationRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [projectName, setProjectName] = useState("");
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [deletingVariationId, setDeletingVariationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [variationRows, setVariationRows] = useState<VariationRegisterRow[]>([]);
   const [variationTotalById, setVariationTotalById] = useState<Map<string, number>>(new Map());
@@ -137,10 +135,6 @@ export default function ProjectVariationRegisterPage() {
 
         if (!resolvedOrganizationId) {
           throw new Error("Could not resolve your organization.");
-        }
-
-        if (!cancelled) {
-          setOrganizationId(resolvedOrganizationId);
         }
 
         const { data: projectRow, error: projectError } = await supabase
@@ -244,64 +238,6 @@ export default function ProjectVariationRegisterPage() {
     };
   }, [variationRows, variationTotalById]);
 
-  const deleteVariation = async (variationId: string) => {
-    const variation = variationRows.find((item) => item.id === variationId);
-    if (!variation) {
-      return;
-    }
-
-    const confirmed = typeof window === "undefined"
-      ? true
-      : window.confirm(`Delete variation ${variation.variation_number}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
-
-    if (!supabase || !organizationId) {
-      setError("Variation delete is not ready. Please refresh and try again.");
-      return;
-    }
-
-    setError(null);
-    setDeletingVariationId(variationId);
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const lineItemsTable = (supabase as any).from("project_variation_line_items");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const variationsTable = (supabase as any).from("project_variations");
-
-      const { error: deleteLineItemsError } = await lineItemsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("variation_id", variationId);
-
-      if (deleteLineItemsError) {
-        throw new Error(deleteLineItemsError.message);
-      }
-
-      const { error: deleteVariationError } = await variationsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("id", variationId);
-
-      if (deleteVariationError) {
-        throw new Error(deleteVariationError.message);
-      }
-
-      setVariationRows((current) => current.filter((row) => row.id !== variationId));
-      setVariationTotalById((current) => {
-        const next = new Map(current);
-        next.delete(variationId);
-        return next;
-      });
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete variation.");
-    } finally {
-      setDeletingVariationId(null);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -310,7 +246,7 @@ export default function ProjectVariationRegisterPage() {
           variant="ghost"
           size="sm"
           asChild
-          className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
         >
           <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -319,7 +255,7 @@ export default function ProjectVariationRegisterPage() {
         </Button>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-5 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -328,7 +264,7 @@ export default function ProjectVariationRegisterPage() {
                 Create, track, price, approve, and invoice project variations in one place{projectName ? ` for ${projectName}` : ""}.
               </p>
             </div>
-            <Button asChild className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}>
+            <Button asChild className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}>
               <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations/new`}>
                 <Plus className="mr-1.5 h-4 w-4" />
                 New Variation
@@ -336,39 +272,45 @@ export default function ProjectVariationRegisterPage() {
             </Button>
           </div>
           {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
           ) : null}
         </CardHeader>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Total Variations</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{summary.totalVariations}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Draft Value</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(summary.draftValue)}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Awaiting Client Value</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(summary.awaitingClientValue)}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Approved Value</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(summary.approvedValue)}</p>
-          </CardContent>
-        </Card>
+      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
+        <div className="flex min-w-[900px] divide-x divide-[#E3E8F0]">
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <FileText className="h-5 w-5 text-[#334155]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Total Variations</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.totalVariations}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Clock3 className="h-5 w-5 text-[#B45309]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Draft Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.draftValue)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Send className="h-5 w-5 text-[#1D4ED8]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Awaiting Client Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.awaitingClientValue)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Approved Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.approvedValue)}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-5">
           <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Register</h2>
         </CardHeader>
@@ -376,9 +318,9 @@ export default function ProjectVariationRegisterPage() {
           {isLoading ? (
             <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading variation register...</p>
           ) : variationRows.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
+            <div className="rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
               <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No variations yet for this project.</p>
-              <Button asChild className={`${interMedium.className} mt-3 h-9 rounded-[9px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]`}>
+              <Button asChild className={`${interMedium.className} mt-3 h-9 rounded-[6px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]`}>
                 <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations/new`}>
                   <Plus className="mr-1.5 h-4 w-4" />
                   Create First Variation
@@ -386,7 +328,7 @@ export default function ProjectVariationRegisterPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-[10px] border border-[#E8EDF5]">
+            <div className="overflow-x-auto rounded-[6px] border border-[#E8EDF5]">
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
@@ -414,7 +356,7 @@ export default function ProjectVariationRegisterPage() {
                         {row.variation_title || "Untitled variation"}
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClassName(row.status)}`}>
+                        <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(row.status)}`}>
                           {row.status}
                         </span>
                       </td>
@@ -425,24 +367,8 @@ export default function ProjectVariationRegisterPage() {
                         {toDayMonthYearLabel(row.due_date)}
                       </td>
                       <td className="px-3 py-2.5">
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-right text-sm font-semibold text-[#0F172A]">
-                            {toMoney(variationTotalById.get(row.id) ?? 0)}
-                          </span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              void deleteVariation(row.id);
-                            }}
-                            disabled={deletingVariationId === row.id}
-                            className="h-9 w-9 rounded-[8px] border-[#d6dfeb] bg-white p-0 text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#64748B] disabled:opacity-60"
-                            aria-label={`Delete variation ${row.variation_number}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                        <div className="flex items-center justify-end">
+                          <span className="text-right text-sm font-semibold text-[#0F172A]">{toMoney(variationTotalById.get(row.id) ?? 0)}</span>
                         </div>
                       </td>
                     </tr>

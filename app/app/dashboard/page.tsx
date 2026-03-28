@@ -131,7 +131,7 @@ export default async function DashboardPage() {
 
       <section className="-mt-6">
         <h2 className="mb-4 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Upcoming Lead Opportunities</h2>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-3 pt-5">
             <div className="flex items-center justify-between gap-3">
               <p className={`${interMedium.className} text-sm font-medium text-[#5F7390]`}>
@@ -146,7 +146,7 @@ export default async function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="overflow-x-auto rounded-[10px] border border-[#E6EAF0]">
+            <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
               <table className="min-w-full border-collapse">
                 <thead className="bg-white">
                   <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>

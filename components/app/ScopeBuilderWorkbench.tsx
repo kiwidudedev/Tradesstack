@@ -500,14 +500,14 @@ export function ScopeBuilderWorkbench({
 
       <section className="space-y-5">
         <div className="grid gap-5 xl:grid-cols-12">
-          <div className="rounded-[12px] border border-[#E6EAF0] bg-white p-6 xl:col-span-8">
+          <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6 xl:col-span-8">
             <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Scope Builder Controls</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Trade heading</label>
                 <select
-                  className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
                   value={selectedTradeId}
                   onChange={(event) => setSelectedTradeId(event.target.value)}
                   disabled={isGenerating || isLoadingLinkedPdf}
@@ -523,7 +523,7 @@ export function ScopeBuilderWorkbench({
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Trade pack source</label>
                 <select
-                  className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
                   value={selectedGeneratedTradePackId ?? ""}
                   onChange={(event) => onSelectGeneratedTradePackById(event.target.value)}
                   disabled={isGenerating || isLoadingLinkedPdf || generatedTradePacks.length === 0}
@@ -539,7 +539,7 @@ export function ScopeBuilderWorkbench({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Select PDF</label>
-                <label className="inline-flex h-10 w-full cursor-pointer items-center rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]">
+                <label className="inline-flex h-10 w-full cursor-pointer items-center rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]">
                   <input
                     type="file"
                     accept="application/pdf,.pdf"
@@ -556,7 +556,7 @@ export function ScopeBuilderWorkbench({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button
-                className="h-10 rounded-[8px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10]"
+                className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10]"
                 onClick={runScopeBuilder}
                 disabled={isGenerating || isLoadingLinkedPdf}
               >
@@ -571,20 +571,20 @@ export function ScopeBuilderWorkbench({
           </div>
 
           <div className="xl:col-span-4">
-            <div className="rounded-[12px] border border-[#E6EAF0] bg-white p-4">
+            <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-4">
               <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Current Selection</p>
               <div className="mt-3 space-y-2">
-                <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Selected trade</p>
                   <p className="mt-1 text-sm font-semibold text-[#1d2433]">{selectedTrade?.label ?? "Not selected"}</p>
                 </div>
-                <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Trade pack source</p>
                   <p className="mt-1 text-sm text-[#4f5f79]">
                     {selectedGeneratedTradePackId ? "Stored trade pack selected" : "No trade pack selected"}
                   </p>
                 </div>
-                <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Output status</p>
                   <p className="mt-1 text-sm text-[#4f5f79]">
                     {runResult ? `Generated • ${toDateTimeLabel(runResult.generatedAt)}` : "No scope generated yet"}
@@ -600,7 +600,7 @@ export function ScopeBuilderWorkbench({
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-full sm:w-[360px]">
               <select
-                className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
                 value={selectedStoredTradeId}
                 onChange={(event) => onSelectStoredTrade(event.target.value)}
                 disabled={isGenerating || isLoadingLinkedPdf || storedTradeOptions.length === 0}
@@ -615,7 +615,7 @@ export function ScopeBuilderWorkbench({
             </div>
             <Button
               variant="outline"
-              className="h-10 rounded-[8px] border-[#E6EAF0] bg-white px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
+              className="h-10 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
               onClick={copyOutput}
               disabled={!runResult || isGenerating}
             >
@@ -624,7 +624,7 @@ export function ScopeBuilderWorkbench({
             </Button>
             <Button
               variant="outline"
-              className="h-10 rounded-[8px] border-[#E6EAF0] bg-white px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
+              className="h-10 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
               onClick={downloadOutput}
               disabled={!runResult || isGenerating}
             >
@@ -679,7 +679,7 @@ export function ScopeBuilderWorkbench({
           </section>
         </section>
       ) : (
-        <Card className="rounded-[12px] border-[#E6EAF0] bg-white shadow-none">
+        <Card className="rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardContent className="flex items-center gap-3 px-5 py-5 text-sm text-[#5f7090]">
             <FileText className="h-4 w-4 text-[#7b8ba4]" />
             Upload a PDF and run Scope Builder to generate a subcontract pricing scope.
@@ -692,10 +692,10 @@ export function ScopeBuilderWorkbench({
 
 function ScopeSummaryCard({ summary }: { summary: ScopeStructuredItem[] }) {
   const itemNumberClassName =
-    "inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[#eef3fb] px-1.5 text-xs font-semibold text-[#4f607c]";
+    "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eef3fb] px-1.5 text-xs font-semibold text-[#4f607c]";
 
   return (
-    <Card className="rounded-[10px] border border-[#E6EAF0] bg-white shadow-none">
+    <Card className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
           <CardTitle className="text-[15px] font-semibold leading-6 text-[#1a2333]">Summary</CardTitle>
@@ -711,7 +711,7 @@ function ScopeSummaryCard({ summary }: { summary: ScopeStructuredItem[] }) {
                 index={index}
                 item={item}
                 compact={false}
-                rowClassName="rounded-[10px] border border-[#E6EAF0] bg-white px-4 py-3"
+                rowClassName="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3"
                 itemNumberClassName={itemNumberClassName}
                 sectionNumber={null}
                 showNumber={false}
@@ -735,15 +735,15 @@ function ScopeListCard({
 }) {
   const titleClassName = "text-[15px] font-semibold leading-6 text-[#1a2333]";
   const itemNumberClassName = compact
-    ? "inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[#eef3fb] px-1.5 text-[0.7rem] font-semibold text-[#4f607c]"
-    : "inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[#eef3fb] px-1.5 text-xs font-semibold text-[#4f607c]";
+    ? "inline-flex h-6 min-w-6 items-center justify-center rounded-[6px] bg-[#eef3fb] px-1.5 text-[0.7rem] font-semibold text-[#4f607c]"
+    : "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eef3fb] px-1.5 text-xs font-semibold text-[#4f607c]";
   const rowClassName = compact
-    ? "rounded-[10px] border border-[#E6EAF0] bg-white px-4 py-3"
-    : "rounded-[10px] border border-[#E6EAF0] bg-white px-4 py-3";
+    ? "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3"
+    : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3";
   const sectionNumber = title.match(/^(\d+)\./)?.[1] ?? null;
 
   return (
-    <Card className="rounded-[10px] border border-[#E6EAF0] bg-white shadow-none">
+    <Card className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
           <CardTitle className={titleClassName}>{title}</CardTitle>
@@ -771,7 +771,7 @@ function ScopeListCard({
 
 function ScopeStructuredTableCard({ title, rows }: { title: string; rows: ScopeStructuredItem[] }) {
   return (
-    <Card className="rounded-[10px] border border-[#E6EAF0] bg-white shadow-none">
+    <Card className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
           <CardTitle className="text-[15px] font-semibold leading-6 text-[#1a2333]">{title}</CardTitle>

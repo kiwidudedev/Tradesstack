@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, DollarSign, FileText, Plus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -130,9 +130,7 @@ export default function ProjectClaimsRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [projectName, setProjectName] = useState("");
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [deletingClaimId, setDeletingClaimId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [claims, setClaims] = useState<ClaimRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
@@ -177,10 +175,6 @@ export default function ProjectClaimsRegisterPage() {
 
         if (!resolvedOrganizationId) {
           throw new Error("Could not resolve your organization.");
-        }
-
-        if (!cancelled) {
-          setOrganizationId(resolvedOrganizationId);
         }
 
         const { data: projectRow, error: projectError } = await supabase
@@ -284,46 +278,6 @@ export default function ProjectClaimsRegisterPage() {
     };
   }, [approvedVariationsValue, claims, quotes]);
 
-  const deleteClaim = async (claimId: string) => {
-    const claim = claims.find((row) => row.id === claimId);
-    if (!claim) {
-      return;
-    }
-
-    const confirmed = typeof window === "undefined"
-      ? true
-      : window.confirm(`Delete claim ${claim.claim_number}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
-
-    if (!supabase || !organizationId) {
-      setError("Claim delete is not ready. Please refresh and try again.");
-      return;
-    }
-
-    setError(null);
-    setDeletingClaimId(claimId);
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const claimsTable = (supabase as any).from("project_claims");
-      const { error: deleteError } = await claimsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("id", claimId);
-      if (deleteError) {
-        throw new Error(deleteError.message);
-      }
-
-      setClaims((current) => current.filter((row) => row.id !== claimId));
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete claim.");
-    } finally {
-      setDeletingClaimId(null);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -332,7 +286,7 @@ export default function ProjectClaimsRegisterPage() {
           variant="ghost"
           size="sm"
           asChild
-          className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
         >
           <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -341,7 +295,7 @@ export default function ProjectClaimsRegisterPage() {
         </Button>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-5 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -349,39 +303,68 @@ export default function ProjectClaimsRegisterPage() {
               <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
                 Create, track, submit, and reconcile project claims in one place{projectName ? ` for ${projectName}` : ""}.
               </p>
-              <p className={`${interMedium.className} mt-3 text-xs font-medium text-[#52627A]`}>
-                Original Contract {toMoney(contractSummary.baseQuoteValue)} + Approved Variations {toMoney(contractSummary.approvedVariationsValue)} = Revised Contract {toMoney(contractSummary.contractValue)}
-              </p>
             </div>
             <Button
               type="button"
               onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/new`)}
-              className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10] disabled:opacity-60`}
+              className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10] disabled:opacity-60`}
             >
               <Plus className="mr-1.5 h-4 w-4" />
               New Claim
             </Button>
           </div>
           {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
           ) : null}
           {contractSummary.overdueCount > 0 ? (
-            <p className={`${interMedium.className} mt-3 rounded-[10px] border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800`}>
+            <p className={`${interMedium.className} mt-3 rounded-[6px] border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800`}>
               {contractSummary.overdueCount} overdue {contractSummary.overdueCount === 1 ? "claim" : "claims"} require follow-up.
             </p>
           ) : null}
         </CardHeader>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Card className="border-[#E6EAF0] bg-white shadow-none"><CardContent className="py-4"><p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Contract Value</p><p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(contractSummary.contractValue)}</p></CardContent></Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none"><CardContent className="py-4"><p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Claimed To Date</p><p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(contractSummary.claimedToDate)}</p></CardContent></Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none"><CardContent className="py-4"><p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Received To Date</p><p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(contractSummary.receivedToDate)}</p></CardContent></Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none"><CardContent className="py-4"><p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Outstanding</p><p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(contractSummary.outstanding)}</p></CardContent></Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none"><CardContent className="py-4"><p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Remaining To Claim</p><p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(contractSummary.remainingToClaim)}</p></CardContent></Card>
+      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
+        <div className="flex min-w-[1120px] divide-x divide-[#E3E8F0]">
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <FileText className="h-5 w-5 text-[#334155]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Contract Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(contractSummary.contractValue)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Send className="h-5 w-5 text-[#1D4ED8]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Claimed To Date</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(contractSummary.claimedToDate)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Received To Date</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(contractSummary.receivedToDate)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Clock3 className="h-5 w-5 text-[#B45309]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Outstanding</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(contractSummary.outstanding)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <DollarSign className="h-5 w-5 text-[#0F766E]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Remaining To Claim</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(contractSummary.remainingToClaim)}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-5">
           <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Claims Register</h2>
         </CardHeader>
@@ -389,20 +372,20 @@ export default function ProjectClaimsRegisterPage() {
           {isLoading ? (
             <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading claims register...</p>
           ) : claims.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
+            <div className="rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
               <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No claims yet for this project.</p>
               <Button
                 type="button"
                 onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/new`)}
-                className={`${interMedium.className} mt-3 h-9 rounded-[9px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10] disabled:opacity-60`}
+                className={`${interMedium.className} mt-3 h-9 rounded-[6px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10] disabled:opacity-60`}
               >
                 <Plus className="mr-1.5 h-4 w-4" />
                 Create First Claim
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-[10px] border border-[#E8EDF5]">
-              <table className="min-w-full border-collapse">
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse border-t border-[#E8EDF5]">
                 <thead>
                   <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
                     <th className="px-3 py-2 text-left">Claim No.</th>
@@ -414,7 +397,6 @@ export default function ProjectClaimsRegisterPage() {
                     <th className="px-3 py-2 text-right">Paid Amount</th>
                     <th className="px-3 py-2 text-right">Balance</th>
                     <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -436,7 +418,7 @@ export default function ProjectClaimsRegisterPage() {
                         </td>
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#1F2E45]`}>
                           {claim.claim_title}
-                          <span className="ml-2 rounded-full bg-[#EEF3FA] px-2 py-0.5 text-[10px] font-semibold text-[#4A5D78]">{claim.claim_type}</span>
+                          <span className="ml-2 rounded-[6px] bg-[#EEF3FA] px-2 py-0.5 text-[10px] font-semibold text-[#4A5D78]">{claim.claim_type}</span>
                         </td>
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{toDayMonthYearLabel(claim.claim_date)}</td>
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{toPeriodLabel(claim.period_start, claim.period_end)}</td>
@@ -445,25 +427,7 @@ export default function ProjectClaimsRegisterPage() {
                         <td className="px-3 py-2.5 text-right text-sm font-semibold text-[#0F172A]">{toMoney(paidAmount)}</td>
                         <td className="px-3 py-2.5 text-right text-sm font-semibold text-[#0F172A]">{toMoney(balance)}</td>
                         <td className="px-3 py-2.5">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClassName(claim.status)}`}>{claim.status}</span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center justify-end">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                void deleteClaim(claim.id);
-                              }}
-                              disabled={deletingClaimId === claim.id}
-                              className="h-9 w-9 rounded-[8px] border-[#d6dfeb] bg-white p-0 text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#64748B] disabled:opacity-60"
-                              aria-label={`Delete claim ${claim.claim_number}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(claim.status)}`}>{claim.status}</span>
                         </td>
                       </tr>
                     );

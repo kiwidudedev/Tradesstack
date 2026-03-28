@@ -181,13 +181,13 @@ export default async function LeadsClientsOpportunitiesPage({
 
   return (
     <main className="space-y-4 pb-8">
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-white shadow-none">
+      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Tender Opportunities</CardTitle>
             </div>
-            <Button className="h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
+            <Button className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
               <Link href="/app/leads-clients/opportunities/new">Create Opportunity</Link>
             </Button>
           </div>
@@ -205,12 +205,12 @@ export default async function LeadsClientsOpportunitiesPage({
               name="q"
               defaultValue={q}
               placeholder="Search opportunities"
-              className={`${interMedium.className} h-10 w-full rounded-[10px] border-[#E2E8F0] bg-[#F8FAFC] text-sm font-medium text-[#0F172A] placeholder:text-[#73859f] md:max-w-[360px]`}
+              className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#E2E8F0] bg-[#F8FAFC] text-sm font-medium text-[#0F172A] placeholder:text-[#73859f] md:max-w-[360px]`}
             />
             <select
               name="client"
               defaultValue={client}
-              className={`${interMedium.className} h-10 rounded-[10px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-medium text-[#415670]`}
+              className={`${interMedium.className} h-10 rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-medium text-[#415670]`}
             >
               <option value="all">Client: All</option>
               {clientOptions.map(([id, name]) => (
@@ -222,24 +222,24 @@ export default async function LeadsClientsOpportunitiesPage({
             <select
               name="due"
               defaultValue={due}
-              className={`${interMedium.className} h-10 rounded-[10px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-medium text-[#415670]`}
+              className={`${interMedium.className} h-10 rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-medium text-[#415670]`}
             >
               <option value="any">Due date: Any</option>
               <option value="next48h">Due in 48 hours</option>
               <option value="next7d">Due in 7 days</option>
               <option value="overdue">Overdue</option>
             </select>
-            <Button type="submit" variant="outline" className="h-10 rounded-[10px] border-[#E2E8F0] bg-white px-4 text-sm">
+            <Button type="submit" variant="outline" className="h-10 rounded-[6px] border-[#E2E8F0] bg-white px-4 text-sm">
               Apply
             </Button>
-            <Button variant="ghost" asChild className="h-10 rounded-[10px] px-3 text-sm">
+            <Button variant="ghost" asChild className="h-10 rounded-[6px] px-3 text-sm">
               <Link href="/app/leads-clients/opportunities">Reset</Link>
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-3 pt-6">
           <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Tender Pipeline</CardTitle>
           <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
@@ -248,7 +248,7 @@ export default async function LeadsClientsOpportunitiesPage({
         </CardHeader>
         <CardContent className="pt-0">
           {dueSoonRows.length > 0 ? (
-            <div className="mb-2.5 rounded-[8px] border border-[#F7E5D1] bg-[#FFFBF6] px-2.5 py-2">
+            <div className="mb-2.5 rounded-[6px] border border-[#F7E5D1] bg-[#FFFBF6] px-2.5 py-2">
               <p className={`${interMedium.className} text-xs font-semibold text-[#B45309]`}>
                 ⚠ {dueSoonRows.length} tenders due in the next 48 hours
               </p>
@@ -258,7 +258,7 @@ export default async function LeadsClientsOpportunitiesPage({
             </div>
           ) : null}
 
-          <div className="overflow-x-auto rounded-[10px] border border-[#E6EAF0]">
+          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
             <table className="min-w-full border-collapse">
               <thead className="bg-white">
                 <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
@@ -307,7 +307,7 @@ export default async function LeadsClientsOpportunitiesPage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-3 pt-6">
           <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Jobs Priced</CardTitle>
           <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
@@ -315,7 +315,7 @@ export default async function LeadsClientsOpportunitiesPage({
           </p>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="overflow-x-auto rounded-[10px] border border-[#E6EAF0]">
+          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
             <table className="min-w-full border-collapse">
               <thead className="bg-white">
                 <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
@@ -364,7 +364,7 @@ export default async function LeadsClientsOpportunitiesPage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-3 pt-6">
           <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Recently Won Jobs</CardTitle>
           <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
@@ -372,7 +372,7 @@ export default async function LeadsClientsOpportunitiesPage({
           </p>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="overflow-x-auto rounded-[10px] border border-[#E6EAF0]">
+          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
             <table className="min-w-full border-collapse">
               <thead className="bg-white">
                 <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
@@ -441,7 +441,7 @@ function OwnerCell({ owner }: { owner: string }) {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <span className={`${interMedium.className} inline-flex h-[16px] w-[16px] items-center justify-center rounded-full bg-[#E7EEF8] text-[9px] font-semibold text-[#36577F]`}>
+      <span className={`${interMedium.className} inline-flex h-[16px] w-[16px] items-center justify-center rounded-[6px] bg-[#E7EEF8] text-[9px] font-semibold text-[#36577F]`}>
         {initial}
       </span>
       <span className={`${interMedium.className} text-sm font-medium text-[#2D3D55]`}>{owner}</span>

@@ -73,7 +73,7 @@ export default async function LeadsClientsClientsPage() {
   if (!member) {
     return (
       <main className="space-y-8 pb-8">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-4 pt-7">
             <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Clients</CardTitle>
           </CardHeader>
@@ -107,7 +107,7 @@ export default async function LeadsClientsClientsPage() {
   if (clientsResult.error || projectsResult.error || opportunitiesResult.error) {
     return (
       <main className="space-y-6 pb-8">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-4 pt-7">
             <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Clients</CardTitle>
           </CardHeader>
@@ -212,7 +212,7 @@ export default async function LeadsClientsClientsPage() {
 
   return (
     <main className="space-y-4 pb-8">
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-3 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -221,7 +221,7 @@ export default async function LeadsClientsClientsPage() {
                 Total Clients: <span className="font-semibold text-[#253047]">{summary.totalClients}</span>
               </p>
             </div>
-            <Button asChild className="h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]">
+            <Button asChild className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]">
               <Link href="/app/leads-clients/clients/new">+ Add Client</Link>
             </Button>
           </div>
@@ -230,7 +230,7 @@ export default async function LeadsClientsClientsPage() {
           {topClients.length > 0 ? (
             <div className="grid gap-2 md:grid-cols-3">
               {topClients.map((client, index) => (
-                <div key={client.id} className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3.5 py-3">
+                <div key={client.id} className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3.5 py-3">
                   <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6B7F99]`}>{index + 1}. Client Rank</p>
                   <p className={`${interMedium.className} mt-1 text-sm font-semibold text-[#1D2B40]`}>{client.name}</p>
                   <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#385777]`}>{formatRating(client.rating)}</p>
@@ -249,9 +249,9 @@ export default async function LeadsClientsClientsPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardContent className="p-4">
-          <div className="overflow-x-auto rounded-[10px] border border-[#E6EAF0]">
+          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
             <table className="min-w-full border-collapse">
               <thead className="bg-white">
                 <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
@@ -290,7 +290,7 @@ export default async function LeadsClientsClientsPage() {
                           client.tags.map((tag) => (
                             <span
                               key={tag}
-                              className={`${interMedium.className} inline-flex items-center rounded-full border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}
+                              className={`${interMedium.className} inline-flex items-center rounded-[6px] border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}
                             >
                               {tag}
                             </span>
@@ -305,13 +305,13 @@ export default async function LeadsClientsClientsPage() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                        <Button variant="ghost" asChild className="h-8 rounded-[8px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
+                        <Button variant="ghost" asChild className="h-8 rounded-[6px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
                           <Link href={`/app/leads-clients/clients/${client.id}`}>View</Link>
                         </Button>
-                        <Button variant="ghost" asChild className="h-8 rounded-[8px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
+                        <Button variant="ghost" asChild className="h-8 rounded-[6px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
                           <Link href={`/app/leads-clients/clients/${client.id}/edit`}>Edit</Link>
                         </Button>
-                        <Button variant="ghost" asChild className="h-8 rounded-[8px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
+                        <Button variant="ghost" asChild className="h-8 rounded-[6px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
                           <Link href={`/app/leads-clients/opportunities/new?clientId=${client.id}`}>Add Lead</Link>
                         </Button>
                       </div>

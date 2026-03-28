@@ -329,7 +329,7 @@ export function AnalyticsDashboardClient({
           </p>
         </section>
 
-        <div className="rounded-xl border border-[#EAF0F7] bg-white/85 p-3 shadow-[0_1px_2px_rgba(8,40,81,0.035)]">
+        <div className="rounded-[6px] border border-[#EAF0F7] bg-[#F8F9FC]/85 p-3 shadow-[0_1px_2px_rgba(8,40,81,0.035)]">
           <AnalyticsHeaderFilters
             range={range}
             estimator={safeEstimator}
@@ -368,13 +368,13 @@ export function AnalyticsDashboardClient({
               <div className="flex items-center justify-between gap-3">
                 <CardTitle className="text-base font-semibold text-[#082851]">Number of quotes / Quote Total (Past 12 months)</CardTitle>
                 <div className="flex items-center gap-2 text-[11px]">
-                  <span className="rounded-full border border-[#C8D6EE] bg-[#EEF3FC] px-2 py-0.5 font-medium text-[#6F8FC7]">Quote No.</span>
-                  <span className="rounded-full border border-[#F8CFC2] bg-[#FFF1EB] px-2 py-0.5 font-medium text-[#F9A489]">Quote $</span>
+                  <span className="rounded-[6px] border border-[#C8D6EE] bg-[#EEF3FC] px-2 py-0.5 font-medium text-[#6F8FC7]">Quote No.</span>
+                  <span className="rounded-[6px] border border-[#F8CFC2] bg-[#FFF1EB] px-2 py-0.5 font-medium text-[#F9A489]">Quote $</span>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="pt-1">
-              <div className="relative rounded-xl border border-[#EAF0F7] bg-[#FAFCFF] p-4">
+              <div className="relative rounded-[6px] border border-[#EAF0F7] bg-[#FAFCFF] p-4">
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-x-8 top-7 grid h-32 grid-rows-4">
                     <div className="border-b border-[#ECF2F9]" />
@@ -397,9 +397,9 @@ export function AnalyticsDashboardClient({
                         onMouseLeave={() => setHoverMonthIndex(null)}
                         onFocus={() => setHoverMonthIndex(index)}
                         onBlur={() => setHoverMonthIndex(null)}
-                        className="flex flex-col items-center gap-2 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#BFD0EA]"
+                        className="flex flex-col items-center gap-2 rounded-[6px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#BFD0EA]"
                       >
-                        <div className="relative flex h-32 w-full items-end justify-center rounded-[8px] bg-[#F2F5FA] px-1">
+                        <div className="relative flex h-32 w-full items-end justify-center rounded-[6px] bg-[#F2F5FA] px-1">
                           <div
                             className={index === monthTrend.length - 1 ? "w-[66%] rounded-[6px] bg-[#F9A489] transition-all" : "w-[66%] rounded-[6px] bg-[#8BA5DD] transition-all"}
                             style={{
@@ -409,7 +409,7 @@ export function AnalyticsDashboardClient({
                             title={`${bucket.label}: ${formatCurrencyNZD(bucket.value)}`}
                           />
                           {hoverMonthIndex === index ? (
-                            <div className="absolute -top-9 z-20 rounded-md border border-[#DDE7F2] bg-white px-2 py-1 text-[10px] font-medium text-[#253A59] shadow-sm">
+                            <div className="absolute -top-9 z-20 rounded-[6px] border border-[#DDE7F2] bg-white px-2 py-1 text-[10px] font-medium text-[#253A59] shadow-sm">
                               {bucket.label} · {formatCurrencyNZD(bucket.value)} · {bucket.quoteCount} quotes
                             </div>
                           ) : null}
@@ -449,7 +449,7 @@ export function AnalyticsDashboardClient({
             <Card className={`${softCardClassName()}`}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                  <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                   <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#6F819B]">Highest Client Conversion</p>
                 </div>
                 <p className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-[#082851]">
@@ -466,7 +466,7 @@ export function AnalyticsDashboardClient({
             <Card className={`${softCardClassName()}`}>
               <CardContent className="p-5">
                 <div className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                  <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                   <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#6F819B]">Conversion Rate</p>
                 </div>
                 <p className="mt-2 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">
@@ -475,10 +475,10 @@ export function AnalyticsDashboardClient({
                 <div className="mt-2 h-px bg-[#EDF2F8]" />
                 <div className="mt-2.5 flex items-center gap-3">
                   <div
-                    className="relative h-10 w-10 rounded-full"
+                    className="relative h-10 w-10 rounded-[6px]"
                     style={{ background: `conic-gradient(#F74917 ${conversionRatePastYear * 3.6}deg, #E8EEF7 0deg)` }}
                   >
-                    <div className="absolute inset-[4px] flex items-center justify-center rounded-full bg-white text-[9px] font-semibold text-[#082851]">
+                    <div className="absolute inset-[4px] flex items-center justify-center rounded-[6px] bg-white text-[9px] font-semibold text-[#082851]">
                       {conversionRatePastYear}%
                     </div>
                   </div>
@@ -493,7 +493,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#6F819B]">Total Quotes</p>
               </div>
               <p className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">{formatCurrencyCompactNZD(totalQuotesValue)}</p>
@@ -506,7 +506,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#7B8DA6]">Leads Priced</p>
               </div>
               <p className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">{totalLeadsPricedPastYear}</p>
@@ -517,7 +517,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#7B8DA6]">Projects Won</p>
               </div>
               <p className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">{totalProjectsWonPastYear}</p>
@@ -528,7 +528,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#7B8DA6]">Projects Lost</p>
               </div>
               <p className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">{totalProjectsLostPastYear}</p>
@@ -539,7 +539,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#7B8DA6]">Conversion Rate</p>
               </div>
               <p className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">{conversionRatePastYear}%</p>
@@ -550,7 +550,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()}`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F74917]" />
+                <span className="h-1.5 w-1.5 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#7B8DA6]">Average Quote Total</p>
               </div>
               <p className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-[#082851]">{formatCurrencyCompactNZD(averageQuoteTotalPastYear)}</p>
@@ -564,7 +564,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()} xl:col-span-8`}>
             <CardHeader className="pb-2 pt-5">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#F74917]" />
+                <span className="h-2 w-2 rounded-[6px] bg-[#F74917]" />
                 <CardTitle className="text-[19px] font-semibold text-[#082851]">Insights</CardTitle>
               </div>
               <div className="mt-2 h-px bg-[#EDF2F8]" />
@@ -586,7 +586,7 @@ export function AnalyticsDashboardClient({
                   </div>
                   <p className="text-xl font-semibold text-[#082851]">{leastQuotesClient ? `${leastQuotesClient.count} submitted` : "-"}</p>
                 </div>
-                <div className="rounded-lg border border-[#EDF2F8] bg-[#FAFCFF] px-3 py-2 text-sm text-[#5F7390]">
+                <div className="rounded-[6px] border border-[#EDF2F8] bg-[#FAFCFF] px-3 py-2 text-sm text-[#5F7390]">
                   {mostQuotesClient && leastQuotesClient && mostQuotesClient.name === leastQuotesClient.name
                     ? "All quotes are currently concentrated in one client. Expand submissions to diversify pipeline risk."
                     : "Quote activity is uneven across clients. There is room to diversify where tenders are being submitted."}
@@ -598,7 +598,7 @@ export function AnalyticsDashboardClient({
           <Card className={`${softCardClassName()} xl:col-span-4`}>
             <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#F74917]" />
+                <span className="h-2 w-2 rounded-[6px] bg-[#F74917]" />
                 <p className="text-[19px] font-semibold text-[#082851]">Client Conversion</p>
               </div>
               <div className="mt-2 h-px bg-[#EDF2F8]" />
@@ -617,7 +617,7 @@ export function AnalyticsDashboardClient({
                   <span className="font-semibold text-[#082851]">{overdueSubmissions}</span> overdue submissions
                 </p>
               </div>
-              <Button asChild className="mt-3.5 h-9 rounded-xl bg-[#F74917] px-3.5 text-[13px] font-medium text-white shadow-[0_10px_18px_rgba(247,73,23,0.25)] hover:bg-[#e63f10]">
+              <Button asChild className="mt-3.5 h-9 rounded-[6px] bg-[#F74917] px-3.5 text-[13px] font-medium text-white shadow-[0_10px_18px_rgba(247,73,23,0.25)] hover:bg-[#e63f10]">
                 <Link href="/app/leads-clients/opportunities?due=next7d">View Priority Opportunities</Link>
               </Button>
               <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-[#8293AA]">

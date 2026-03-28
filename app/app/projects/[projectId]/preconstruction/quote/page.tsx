@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, FileText, Plus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -106,9 +106,7 @@ export default function ProjectQuoteRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [projectName, setProjectName] = useState("");
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [deletingQuoteId, setDeletingQuoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [quoteRows, setQuoteRows] = useState<QuoteRegisterRow[]>([]);
 
@@ -152,10 +150,6 @@ export default function ProjectQuoteRegisterPage() {
 
         if (!resolvedOrganizationId) {
           throw new Error("Could not resolve your organization.");
-        }
-
-        if (!cancelled) {
-          setOrganizationId(resolvedOrganizationId);
         }
 
         const { data: projectRow, error: projectError } = await supabase
@@ -227,56 +221,6 @@ export default function ProjectQuoteRegisterPage() {
     };
   }, [quoteRows]);
 
-  const deleteQuote = async (quoteId: string) => {
-    const quote = quoteRows.find((item) => item.id === quoteId);
-    if (!quote) {
-      return;
-    }
-
-    const confirmed = typeof window === "undefined"
-      ? true
-      : window.confirm(`Delete quote ${quote.quote_number}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
-
-    if (!supabase || !organizationId) {
-      setError("Quote delete is not ready. Please refresh and try again.");
-      return;
-    }
-
-    setError(null);
-    setDeletingQuoteId(quoteId);
-
-    try {
-      const { error: deleteLineItemsError } = await supabase
-        .from("project_quote_line_items")
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("quote_id", quoteId);
-
-      if (deleteLineItemsError) {
-        throw new Error(deleteLineItemsError.message);
-      }
-
-      const { error: deleteQuoteError } = await supabase
-        .from("project_quotes")
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("id", quoteId);
-
-      if (deleteQuoteError) {
-        throw new Error(deleteQuoteError.message);
-      }
-
-      setQuoteRows((current) => current.filter((row) => row.id !== quoteId));
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete quote.");
-    } finally {
-      setDeletingQuoteId(null);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -285,7 +229,7 @@ export default function ProjectQuoteRegisterPage() {
           variant="ghost"
           size="sm"
           asChild
-          className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
         >
           <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -294,7 +238,7 @@ export default function ProjectQuoteRegisterPage() {
         </Button>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-5 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -303,7 +247,7 @@ export default function ProjectQuoteRegisterPage() {
                 Create, track, revise, send, and approve project quotes in one place{projectName ? ` for ${projectName}` : ""}.
               </p>
             </div>
-            <Button asChild className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}>
+            <Button asChild className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}>
               <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/new`}>
                 <Plus className="mr-1.5 h-4 w-4" />
                 New Quote
@@ -311,39 +255,45 @@ export default function ProjectQuoteRegisterPage() {
             </Button>
           </div>
           {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
           ) : null}
         </CardHeader>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Total Quotes</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{summary.totalQuotes}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Draft Value</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(summary.draftValue)}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Sent Value</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(summary.sentValue)}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-4">
-            <p className={`${interMedium.className} text-xs font-medium uppercase tracking-[0.08em] text-[#64748B]`}>Accepted Value</p>
-            <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{toMoney(summary.acceptedValue)}</p>
-          </CardContent>
-        </Card>
+      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
+        <div className="flex min-w-[900px] divide-x divide-[#E3E8F0]">
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <FileText className="h-5 w-5 text-[#334155]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Total Quotes</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.totalQuotes}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Clock3 className="h-5 w-5 text-[#B45309]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Draft Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.draftValue)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Send className="h-5 w-5 text-[#1D4ED8]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Sent Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.sentValue)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Accepted Value</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.acceptedValue)}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-5">
           <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Quote Register</h2>
         </CardHeader>
@@ -351,9 +301,9 @@ export default function ProjectQuoteRegisterPage() {
           {isLoading ? (
             <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading quote register...</p>
           ) : quoteRows.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
+            <div className="rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
               <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No quotes yet for this project.</p>
-              <Button asChild className={`${interMedium.className} mt-3 h-9 rounded-[9px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]`}>
+              <Button asChild className={`${interMedium.className} mt-3 h-9 rounded-[6px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]`}>
                 <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/new`}>
                   <Plus className="mr-1.5 h-4 w-4" />
                   Create First Quote
@@ -361,7 +311,7 @@ export default function ProjectQuoteRegisterPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-[10px] border border-[#E8EDF5]">
+            <div className="overflow-x-auto rounded-[6px] border border-[#E8EDF5]">
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
@@ -392,29 +342,15 @@ export default function ProjectQuoteRegisterPage() {
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#1F2E45]`}>{row.quote_title || "Untitled quote"}</td>
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{getRevision(row.quote_number)}</td>
                         <td className="px-3 py-2.5">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClassName(registerStatus)}`}>
+                          <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(registerStatus)}`}>
                             {registerStatus}
                           </span>
                         </td>
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{toDayMonthYearLabel(row.quote_date)}</td>
                         <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{toDayMonthYearLabel(row.expiry_date)}</td>
                         <td className="px-3 py-2.5">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end">
                             <span className="text-right text-sm font-semibold text-[#0F172A]">{toMoney(row.total_quote_price ?? 0)}</span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                void deleteQuote(row.id);
-                              }}
-                              disabled={deletingQuoteId === row.id}
-                              className="h-9 w-9 rounded-[8px] border-[#d6dfeb] bg-white p-0 text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#64748B] disabled:opacity-60"
-                              aria-label={`Delete quote ${row.quote_number}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           </div>
                         </td>
                       </tr>

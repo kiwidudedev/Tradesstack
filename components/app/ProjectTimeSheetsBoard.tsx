@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { AlertTriangle, Clock3, Download, FileText, LogIn, LogOut, MapPin, Timer } from "lucide-react";
+import { CheckCircle2, Clock3, Download, FileText, Timer, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,9 +13,7 @@ type DashboardRange = "Today" | "This week" | "All recent";
 
 const MAX_ENTRY_ROWS = 1000;
 const MAX_EVENT_ROWS = 80;
-const MAX_LIVE_ROWS = 200;
 const MAX_TIMELINE_ROWS = 120;
-const BREAKDOWN_PAGE_SIZE = 50;
 
 interface TimeEntryRow {
   id: string;
@@ -98,20 +96,6 @@ function formatTime(value: string | null) {
   return parsed.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function formatDateTime(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-  return parsed.toLocaleString("en-NZ", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 function formatHours(hours: number) {
   const totalMinutes = Math.max(0, Math.round(hours * 60));
   const hourValue = Math.floor(totalMinutes / 60);
@@ -131,27 +115,21 @@ function getHours(entry: TimeEntryRow, now: Date) {
   return Math.max(0, (end.getTime() - start.getTime()) / 3_600_000);
 }
 
-function liveStatus(entry: TimeEntryRow, now: Date) {
-  if (entry.clock_out_at) {
-    return "Closed";
-  }
+function registerStatus(entry: TimeEntryRow, now: Date) {
   const hours = getHours(entry, now);
-  if (hours >= 10) {
-    return "Auto Clock-Out Pending";
+  if (!entry.clock_out_at) {
+    if (hours >= 10) {
+      return { label: "Auto Pending", tone: "bg-rose-100 text-rose-800 border-rose-200" };
+    }
+    if (hours >= 8.5) {
+      return { label: "Warning", tone: "bg-amber-100 text-amber-800 border-amber-200" };
+    }
+    return { label: "Clocked In", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" };
   }
-  if (hours >= 8.5) {
-    return "8.5h Warning";
+  if (entry.auto_clocked_out) {
+    return { label: "Auto Clocked", tone: "bg-rose-100 text-rose-800 border-rose-200" };
   }
-  return "Normal";
-}
-
-function getInitials(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
+  return { label: "Finished", tone: "bg-slate-100 text-slate-700 border-slate-200" };
 }
 
 function locationLabel(latitude: number | null, longitude: number | null, accuracy: number | null) {
@@ -194,7 +172,7 @@ export function ProjectTimeSheetsBoard() {
   const [tradeFilter, setTradeFilter] = useState("All trades");
   const [companyFilter, setCompanyFilter] = useState("All companies");
   const [workerFilter, setWorkerFilter] = useState("All workers");
-  const [breakdownPage, setBreakdownPage] = useState(1);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -477,12 +455,7 @@ export function ProjectTimeSheetsBoard() {
     });
   }, [companyFilter, entries, rangeBounds.end, rangeBounds.start, tradeFilter, workerFilter]);
 
-  useEffect(() => {
-    setBreakdownPage(1);
-  }, [range, tradeFilter, companyFilter, workerFilter]);
-
   const liveWorkforce = useMemo(() => filteredEntries.filter((entry) => !entry.clock_out_at), [filteredEntries]);
-  const visibleLiveWorkforce = useMemo(() => liveWorkforce.slice(0, MAX_LIVE_ROWS), [liveWorkforce]);
 
   const tradeOptions = useMemo(() => ["All trades", ...Array.from(new Set(entries.map((entry) => entry.trade_name)))], [entries]);
   const companyOptions = useMemo(
@@ -500,21 +473,6 @@ export function ProjectTimeSheetsBoard() {
     const missingClockOuts = filteredEntries.filter((entry) => !entry.clock_out_at).length;
     return { onSiteNow, totalHours, workersToday, avgHours, overtimeAlerts, missingClockOuts };
   }, [filteredEntries, liveWorkforce.length, now]);
-
-  const labourRisk = useMemo(() => {
-    const pendingAuto = liveWorkforce.filter((entry) => getHours(entry, now) >= 10).length;
-    const warningCount = liveWorkforce.filter((entry) => {
-      const hours = getHours(entry, now);
-      return hours >= 8.5 && hours < 10;
-    }).length;
-    if (pendingAuto > 0) {
-      return { tone: "high" as const, message: `${pendingAuto} workers are at 10h+ and need immediate review.` };
-    }
-    if (warningCount > 0) {
-      return { tone: "medium" as const, message: `${warningCount} workers are approaching overtime threshold.` };
-    }
-    return { tone: "low" as const, message: "No labour risks detected right now." };
-  }, [liveWorkforce, now]);
 
   const timelineRows = useMemo(() => {
     return filteredEntries
@@ -551,21 +509,58 @@ export function ProjectTimeSheetsBoard() {
         : "No overtime risk detected in the selected range.",
       `Average shift length is ${formatHours(avgShift)}.`,
       autoClockedCount > 0 ? `${autoClockedCount} entries were auto clocked out.` : "Late clock-outs are currently stable.",
+      `${events.length} clocking events logged in this range.`,
     ];
+  }, [events.length, filteredEntries, now]);
+
+  const registerGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        trade: string;
+        company: string;
+        entries: TimeEntryRow[];
+      }
+    >();
+
+    filteredEntries.forEach((entry) => {
+      const trade = entry.trade_name || "Unassigned";
+      const company = entry.company_name || "Unassigned";
+      const key = `${trade}__${company}`;
+      if (!groups.has(key)) {
+        groups.set(key, { key, trade, company, entries: [] });
+      }
+      groups.get(key)?.entries.push(entry);
+    });
+
+    return Array.from(groups.values())
+      .map((group) => {
+        const sortedEntries = group.entries
+          .slice()
+          .sort((a, b) => new Date(b.clock_in_at).getTime() - new Date(a.clock_in_at).getTime());
+        const totalHours = sortedEntries.reduce((sum, entry) => sum + getHours(entry, now), 0);
+        const riskCount = sortedEntries.filter((entry) => getHours(entry, now) >= 8.5 || entry.auto_clocked_out).length;
+        return {
+          ...group,
+          entries: sortedEntries,
+          totalHours,
+          riskCount,
+          entryCount: sortedEntries.length,
+        };
+      })
+      .sort((a, b) => a.trade.localeCompare(b.trade) || a.company.localeCompare(b.company));
   }, [filteredEntries, now]);
 
-  const breakdownTotalPages = Math.max(1, Math.ceil(filteredEntries.length / BREAKDOWN_PAGE_SIZE));
-  const breakdownStartIndex = (breakdownPage - 1) * BREAKDOWN_PAGE_SIZE;
-  const breakdownEntries = useMemo(
-    () => filteredEntries.slice(breakdownStartIndex, breakdownStartIndex + BREAKDOWN_PAGE_SIZE),
-    [breakdownStartIndex, filteredEntries]
-  );
-
   useEffect(() => {
-    if (breakdownPage > breakdownTotalPages) {
-      setBreakdownPage(breakdownTotalPages);
-    }
-  }, [breakdownPage, breakdownTotalPages]);
+    setExpandedGroups((current) => {
+      const next: Record<string, boolean> = {};
+      registerGroups.forEach((group, index) => {
+        next[group.key] = current[group.key] ?? index === 0;
+      });
+      return next;
+    });
+  }, [registerGroups]);
 
   const exportCsv = () => {
     const header = ["Worker", "Trade", "Company", "Clock In", "Clock Out", "Total Hours", "Overtime Flag", "Auto Clocked", "Clock In Location", "Clock Out Location", "Notes"];
@@ -596,8 +591,8 @@ export function ProjectTimeSheetsBoard() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+    <div className="space-y-4 bg-[#F8F9FC]">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-4 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -610,272 +605,189 @@ export function ProjectTimeSheetsBoard() {
               <select
                 value={range}
                 onChange={(event) => setRange(event.target.value as DashboardRange)}
-                className={`${interMedium.className} h-10 rounded-[10px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}
+                className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}
               >
                 <option value="Today">Today</option>
                 <option value="This week">This week</option>
                 <option value="All recent">All recent</option>
               </select>
-              <Button type="button" variant="outline" className="h-10 rounded-[10px] border-[#D6DDE9] bg-white px-3 text-[#1D2433]" onClick={exportCsv}>
+              <Button type="button" variant="outline" className="h-10 rounded-[6px] border-[#D6DDE9] bg-white px-3 text-[#1D2433]" onClick={exportCsv}>
                 <Download className="mr-1.5 h-4 w-4" />
                 CSV
               </Button>
-              <Button type="button" variant="outline" className="h-10 rounded-[10px] border-[#D6DDE9] bg-white px-3 text-[#1D2433]" onClick={() => window.print()}>
+              <Button type="button" variant="outline" className="h-10 rounded-[6px] border-[#D6DDE9] bg-white px-3 text-[#1D2433]" onClick={() => window.print()}>
                 <FileText className="mr-1.5 h-4 w-4" />
                 PDF
               </Button>
             </div>
           </div>
+          {notice ? <p className={`${interMedium.className} mt-4 rounded-[6px] border border-[#D6E7FB] bg-[#EFF6FF] px-3 py-2 text-sm font-medium text-[#1D4ED8]`}>{notice}</p> : null}
+          {error ? <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p> : null}
         </CardHeader>
-        <CardContent className="space-y-3 pb-6">
-          <div className="grid gap-2 md:grid-cols-3">
-            <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[10px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
-              {tradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[10px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
-              {companyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={workerFilter} onChange={(event) => setWorkerFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[10px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
-              {workerOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </div>
-
-          <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] p-3">
-            <div className="flex items-center justify-between">
-              <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6E7F97]`}>Site Clocking</p>
-              <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Utility actions</p>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button type="button" onClick={() => void clockIn()} disabled={isSaving || Boolean(activeMyEntry)} className="h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]">Clock In</Button>
-              <Button type="button" variant="outline" onClick={() => void clockOut()} disabled={isSaving || !activeMyEntry} className="h-10 rounded-[10px] border-[#D6DDE9] bg-white px-4 text-sm font-medium text-[#1D2433]">Clock Out</Button>
-              {activeMyEntry ? (
-                <span className={`${interMedium.className} inline-flex items-center gap-1 text-xs font-semibold text-[#1F2E45]`}>
-                  <Timer className="h-3.5 w-3.5 text-[#F74917]" />
-                  Active for {formatHours(getHours(activeMyEntry, now))}
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          {notice ? <p className={`${interMedium.className} rounded-[10px] border border-[#D6E7FB] bg-[#EFF6FF] px-3 py-2 text-sm font-medium text-[#1D4ED8]`}>{notice}</p> : null}
-          {error ? <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p> : null}
-        </CardContent>
       </Card>
 
-      <Card className={`border shadow-none ${labourRisk.tone === "high" ? "border-[#F4C4B6] bg-[#FFF5F2]" : labourRisk.tone === "medium" ? "border-[#F4E0A6] bg-[#FFFAEB]" : "border-[#CFE7D6] bg-[#F4FCF6]"}`}>
-        <CardContent className="py-3">
-          <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6E7F97]`}>Labour Risk Indicator</p>
-          <p className="mt-1 text-sm font-semibold text-[#1F2E45]">{labourRisk.message}</p>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardContent className="py-5">
-            <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6E7F97]`}>On Site Now</p>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
-              <p className="text-4xl font-semibold tracking-[-0.03em] text-[#0F172A]">{summary.onSiteNow}</p>
+      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
+        <div className="flex min-w-[900px] divide-x divide-[#E3E8F0]">
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Users className="h-5 w-5 text-[#1D4ED8]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>On Site Now</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.onSiteNow}</p>
             </div>
-            <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>Live workforce on site</p>
-          </CardContent>
-        </Card>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {[
-            { label: "Total Hours", value: formatHours(summary.totalHours) },
-            { label: "Workers", value: summary.workersToday.toString() },
-            { label: "Avg Hours / Worker", value: formatHours(summary.avgHours) },
-            { label: "Overtime Alerts", value: summary.overtimeAlerts.toString() },
-            { label: "Missing Clock Outs", value: summary.missingClockOuts.toString() },
-          ].map((card) => (
-            <Card key={card.label} className="border-[#E6EAF0] bg-white shadow-none">
-              <CardContent className="py-4">
-                <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6E7F97]`}>{card.label}</p>
-                <p className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{card.value}</p>
-              </CardContent>
-            </Card>
-          ))}
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Clock3 className="h-5 w-5 text-[#B45309]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Overtime Alerts</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.overtimeAlerts}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Complete</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{Math.max(0, summary.workersToday - summary.missingClockOuts)}</p>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center gap-3 px-5 py-4">
+            <Timer className="h-5 w-5 text-[#0F766E]" />
+            <div>
+              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Total Hours</p>
+              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{formatHours(summary.totalHours)}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardHeader className="pb-2 pt-5">
-            <CardTitle className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Live Site Workforce</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-5">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        <CardHeader className="pb-3 pt-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Workforce Register</h3>
+              <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>{insights[0]}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7F97]`}>Site Clocking</p>
+              {activeMyEntry ? (
+                <span className={`${interMedium.className} inline-flex items-center gap-1 text-xs font-semibold text-[#1F2E45]`}>
+                  <Timer className="h-3.5 w-3.5 text-[#F74917]" />
+                  {formatHours(getHours(activeMyEntry, now))}
+                </span>
+              ) : null}
+              <Button type="button" onClick={() => void clockIn()} disabled={isSaving || Boolean(activeMyEntry)} className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]">Clock In</Button>
+              <Button type="button" variant="outline" onClick={() => void clockOut()} disabled={isSaving || !activeMyEntry} className="h-9 rounded-[6px] border-[#D6DDE9] bg-white px-3 text-xs font-medium text-[#1D2433]">Clock Out</Button>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
+              {tradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
+              {companyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={workerFilter} onChange={(event) => setWorkerFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
+              {workerOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 pb-5">
+          <section className="overflow-hidden rounded-[6px] border border-[#E8EDF5]">
+            <div className={`${interMedium.className} grid grid-cols-[1.8fr_0.9fr_0.9fr_0.9fr] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
+              <p>Group</p>
+              <p className="text-right">Entries</p>
+              <p className="text-right">Total Hours</p>
+              <p className="text-right">Risks</p>
+            </div>
+
             {isLoading ? (
-              <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading workforce...</p>
-            ) : liveWorkforce.length === 0 ? (
-              <div className="rounded-[10px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-6">
-                <p className="text-sm font-semibold text-[#0F172A]">Live workforce feed is active</p>
-                <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>No one is clocked in right now. New clock-ins will appear here immediately.</p>
-              </div>
+              <p className={`${interMedium.className} px-3 py-4 text-sm font-medium text-[#64748B]`}>Loading register...</p>
+            ) : registerGroups.length === 0 ? (
+              <p className={`${interMedium.className} px-3 py-4 text-sm font-medium text-[#64748B]`}>No time entries in this selection.</p>
             ) : (
-              <div className="space-y-2">
-                {visibleLiveWorkforce.map((entry) => {
-                  const status = liveStatus(entry, now);
-                  const statusClass = status === "Normal" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : status === "8.5h Warning" ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-rose-100 text-rose-800 border-rose-200";
-                  return (
-                    <div key={entry.id} className="grid gap-2 rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] p-3 md:grid-cols-[1.2fr_1fr_1fr_1.3fr_1fr]">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0B4F8A] text-xs font-semibold text-white">{getInitials(entry.worker_name)}</span>
-                        <div>
-                          <p className="text-sm font-semibold text-[#0F172A]">{entry.worker_name}</p>
-                          <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>{entry.company_name} / {entry.trade_name}</p>
+              <div>
+                {registerGroups.map((group) => (
+                  <div key={group.key} className="border-t border-[#EEF2F7] first:border-t-0">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGroups((current) => ({ ...current, [group.key]: !current[group.key] }))}
+                      className="grid w-full grid-cols-[1.8fr_0.9fr_0.9fr_0.9fr] items-center px-3 py-2.5 text-left transition-colors hover:bg-[#FBFDFF]"
+                    >
+                      <p className="text-sm font-semibold text-[#0F172A]">
+                        <span className="mr-2 inline-block w-3 text-[#64748B]">{expandedGroups[group.key] ? "−" : "+"}</span>
+                        {group.trade} / {group.company}
+                      </p>
+                      <p className={`${interMedium.className} text-right text-sm font-medium text-[#334155]`}>{group.entryCount}</p>
+                      <p className={`${interMedium.className} text-right text-sm font-medium text-[#334155]`}>{formatHours(group.totalHours)}</p>
+                      <p className={`text-right text-sm font-semibold ${group.riskCount > 0 ? "text-[#B45309]" : "text-[#64748B]"}`}>{group.riskCount}</p>
+                    </button>
+
+                    {expandedGroups[group.key] ? (
+                      <div className="border-t border-[#EEF2F7] bg-[#FCFDFF] px-3 py-2.5">
+                        <div className="overflow-auto rounded-[6px] border border-[#E9EEF5] bg-white">
+                          <table className="min-w-[860px] border-collapse">
+                            <thead>
+                              <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
+                                <th className="px-3 py-2 text-left">Worker</th>
+                                <th className="px-3 py-2 text-left">Clock In</th>
+                                <th className="px-3 py-2 text-left">Clock Out</th>
+                                <th className="px-3 py-2 text-left">Duration</th>
+                                <th className="px-3 py-2 text-left">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.entries.map((entry) => {
+                                const status = registerStatus(entry, now);
+                                return (
+                                  <tr key={entry.id} className="border-t border-[#EEF2F7] first:border-t-0">
+                                    <td className="px-3 py-2 text-sm font-semibold text-[#0F172A]">{entry.worker_name}</td>
+                                    <td className={`${interMedium.className} px-3 py-2 text-sm font-medium text-[#334155]`}>{formatTime(entry.clock_in_at)}</td>
+                                    <td className={`${interMedium.className} px-3 py-2 text-sm font-medium text-[#334155]`}>{formatTime(entry.clock_out_at)}</td>
+                                    <td className={`${interMedium.className} px-3 py-2 text-sm font-medium text-[#334155]`}>{formatHours(getHours(entry, now))}</td>
+                                    <td className="px-3 py-2">
+                                      <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
-                      <p className={`${interMedium.className} text-sm font-medium text-[#334155]`}>In: {formatTime(entry.clock_in_at)}</p>
-                      <p className={`${interMedium.className} text-sm font-medium text-[#334155]`}>
-                        <span className="inline-flex items-center gap-1"><Timer className="h-3.5 w-3.5 text-[#F74917]" />{formatHours(getHours(entry, now))}</span>
-                      </p>
-                      <p className={`${interMedium.className} text-sm font-medium text-[#334155]`}>
-                        <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#0B4F8A]" />{locationLabel(entry.clock_in_latitude, entry.clock_in_longitude, entry.clock_in_accuracy_meters)}</span>
-                      </p>
-                      <span className={`inline-flex h-fit rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClass}`}>{status}</span>
-                    </div>
-                  );
-                })}
-                {liveWorkforce.length > visibleLiveWorkforce.length ? (
-                  <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Showing first {visibleLiveWorkforce.length} live workers for performance.</p>
-                ) : null}
+                    ) : null}
+                  </div>
+                ))}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
-          <CardHeader className="pb-2 pt-5">
-            <CardTitle className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 pb-5">
-            {events.length === 0 ? (
-              <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No activity yet.</p>
-            ) : (
-              events.slice(0, 12).map((event) => {
-                const EventIcon = event.event_type === "clock_in" ? LogIn : event.event_type === "clock_out" ? LogOut : event.event_type === "warning_8h5" ? AlertTriangle : Clock3;
-                const iconTone = event.event_type === "warning_8h5" || event.event_type === "auto_clock_out" ? "text-[#B45309]" : "text-[#0B4F8A]";
-                return (
-                  <div key={event.id} className="rounded-[10px] border border-[#E6EAF0] bg-[#FAFCFF] px-3 py-2.5">
-                    <p className={`${interMedium.className} inline-flex items-center gap-1.5 text-sm font-medium text-[#1F2E45]`}>
-                      <EventIcon className={`h-3.5 w-3.5 ${iconTone}`} />
-                      {event.message}
-                    </p>
-                    <p className={`${interMedium.className} mt-1 text-xs text-[#64748B]`}>{formatDateTime(event.created_at)}</p>
-                  </div>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
-        <CardHeader className="pb-2 pt-5">
-          <CardTitle className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Workforce Timeline</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-5">
-          {timelineRows.length === 0 ? (
-            <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No timeline data in this range.</p>
-          ) : (
-            <>
-              <div className="relative h-0"><div className="absolute left-[50%] top-0 z-10 h-4 border-l-2 border-dashed border-[#94A3B8]" /></div>
-              {timelineRows.map((row) => (
-                <div key={row.id} className="grid items-center gap-2 md:grid-cols-[220px_1fr_130px]">
-                  <p className={`${interMedium.className} text-sm font-semibold text-[#1F2E45]`}>{row.workerName}</p>
-                  <div className="relative h-6 rounded-[8px] bg-[#EAF0F8]">
-                    <div className={`absolute bottom-0 top-0 rounded-[8px] ${row.isOvertime ? "bg-[#F59E0B]" : "bg-[#0B4F8A]"}`} style={{ left: `${row.leftPct}%`, width: `${row.widthPct}%` }} />
-                  </div>
-                  <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>{row.rangeLabel}</p>
-                </div>
-              ))}
-            </>
-          )}
+          </section>
+          <p className={`${interMedium.className} mt-3 text-xs text-[#7A889C]`}>
+            {insights[2]} Coordinates are logged at clock in/out for audit traceability.
+          </p>
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-5">
-          <CardTitle className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Worker Breakdown</CardTitle>
+          <h3 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Workforce Overview</h3>
         </CardHeader>
         <CardContent className="pb-5">
-          {filteredEntries.length === 0 ? (
-            <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No workers in this selection.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-[10px] border border-[#E8EDF5]">
-              <table className="min-w-[1100px] border-collapse">
-                <thead>
-                  <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
-                    <th className="px-3 py-2 text-left">Worker</th>
-                    <th className="px-3 py-2 text-left">Trade / Company</th>
-                    <th className="px-3 py-2 text-left">Clock In</th>
-                    <th className="px-3 py-2 text-left">Clock Out</th>
-                    <th className="px-3 py-2 text-left">Total Hours</th>
-                    <th className="px-3 py-2 text-left">Overtime</th>
-                    <th className="px-3 py-2 text-left">Auto Clocked</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {breakdownEntries.map((entry) => {
-                    const hours = getHours(entry, now);
-                    const statusClass =
-                      hours >= 10
-                        ? "bg-rose-100 text-rose-800 border-rose-200"
-                        : hours >= 8.5
-                          ? "bg-amber-100 text-amber-800 border-amber-200"
-                          : "bg-emerald-100 text-emerald-800 border-emerald-200";
-                    const statusLabel = hours >= 10 ? "Critical" : hours >= 8.5 ? "Warning" : "Normal";
-                    return (
-                      <tr key={entry.id} className="border-t border-[#EEF2F7] transition-colors hover:bg-[#F8FBFF]">
-                        <td className="px-3 py-2.5 text-sm font-semibold text-[#0F172A]">{entry.worker_name}</td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{entry.trade_name} / {entry.company_name}</td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{formatTime(entry.clock_in_at)}</td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{formatTime(entry.clock_out_at)}</td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{formatHours(hours)}</td>
-                        <td className="px-3 py-2.5">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${entry.auto_clocked_out ? "bg-rose-100 text-rose-800 border-rose-200" : "bg-slate-100 text-slate-700 border-slate-200"}`}>
-                            {entry.auto_clocked_out ? "Yes" : "No"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {filteredEntries.length > BREAKDOWN_PAGE_SIZE ? (
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>
-                Showing {breakdownStartIndex + 1}-{Math.min(filteredEntries.length, breakdownStartIndex + BREAKDOWN_PAGE_SIZE)} of {filteredEntries.length}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" className="h-8 rounded-[8px] border-[#D6DDE9] px-3 text-xs" disabled={breakdownPage <= 1} onClick={() => setBreakdownPage((current) => Math.max(1, current - 1))}>Previous</Button>
-                <span className={`${interMedium.className} text-xs font-medium text-[#334155]`}>Page {breakdownPage} / {breakdownTotalPages}</span>
-                <Button type="button" variant="outline" className="h-8 rounded-[8px] border-[#D6DDE9] px-3 text-xs" disabled={breakdownPage >= breakdownTotalPages} onClick={() => setBreakdownPage((current) => Math.min(breakdownTotalPages, current + 1))}>Next</Button>
-              </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
-        <CardHeader className="pb-2 pt-5">
-          <CardTitle className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Labour Insights</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 pb-5">
-          {insights.map((insight) => (
-            <div key={insight} className="flex items-start gap-2 rounded-[10px] border border-[#E6EAF0] bg-[#FAFCFF] px-3 py-2.5">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#0B4F8A]" />
-              <p className={`${interMedium.className} text-sm font-medium text-[#1F2E45]`}>{insight}</p>
-            </div>
-          ))}
-          <p className={`${interMedium.className} text-xs text-[#64748B]`}>
-            Clock in/out location is stored as coordinates with accuracy for accountability and audit history.
-          </p>
+          <div className="space-y-2">
+            {timelineRows.length === 0 ? (
+              <p className={`${interMedium.className} rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-3 text-sm font-medium text-[#64748B]`}>No timeline data in this range.</p>
+            ) : (
+              <>
+                <div className="relative h-0"><div className="absolute left-[50%] top-0 z-10 h-4 border-l-2 border-dashed border-[#94A3B8]" /></div>
+                {timelineRows.map((row) => (
+                  <div key={row.id} className="grid items-center gap-2 md:grid-cols-[220px_1fr_130px]">
+                    <p className={`${interMedium.className} text-sm font-semibold text-[#1F2E45]`}>{row.workerName}</p>
+                    <div className="relative h-6 rounded-[6px] bg-[#EAF0F8]">
+                      <div className={`absolute bottom-0 top-0 rounded-[6px] ${row.isOvertime ? "bg-[#F59E0B]" : "bg-[#0B4F8A]"}`} style={{ left: `${row.leftPct}%`, width: `${row.widthPct}%` }} />
+                    </div>
+                    <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>{row.rangeLabel}</p>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

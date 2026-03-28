@@ -152,7 +152,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   };
 
   return (
-    <Card className="border-[#E6EAF0] bg-white shadow-none">
+    <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <CardHeader className="pb-3 pt-6">
         <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Organization Settings</CardTitle>
       </CardHeader>
@@ -163,14 +163,14 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
             value={name}
             onChange={(event) => setName(event.target.value)}
             disabled={!props.canEdit || isSaving}
-            className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+            className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
           />
         </div>
 
         <div className="space-y-2">
           <label className={`${interMedium.className} text-sm font-medium text-[#1d2433]`}>Company Logo (recommended: 1200 x 400 px)</label>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[10px] border border-[#d8e0ec] bg-[#f8fafc]">
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[6px] border border-[#d8e0ec] bg-[#f8fafc]">
               {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoUrl} alt="Organization logo" className="h-full w-full object-contain" />
@@ -186,7 +186,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                 disabled={!props.canEdit || isUploading}
                 className="hidden"
               />
-              <span className={`${interMedium.className} inline-flex h-10 cursor-pointer items-center rounded-[10px] border border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafc]`}>
+              <span className={`${interMedium.className} inline-flex h-10 cursor-pointer items-center rounded-[6px] border border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafc]`}>
                 {isUploading ? "Uploading..." : "Upload logo"}
               </span>
             </label>
@@ -198,11 +198,11 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
         ) : null}
 
         {error ? (
-          <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+          <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
         ) : null}
 
         {message ? (
-          <p className={`${interMedium.className} rounded-[10px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700`}>{message}</p>
+          <p className={`${interMedium.className} rounded-[6px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700`}>{message}</p>
         ) : null}
 
         <div>
@@ -210,7 +210,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
             type="button"
             onClick={onSaveName}
             disabled={!props.canEdit || isSaving || isUploading}
-            className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+            className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
           >
             {isSaving ? "Saving..." : "Save settings"}
           </Button>

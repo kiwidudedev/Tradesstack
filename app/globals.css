@@ -50,8 +50,54 @@ body {
     border-radius: 0 !important;
   }
 
+  .square-cards [class*="rounded"][class*="border"][class*="bg-white"]:not(button):not(a):not(input):not(select):not(textarea) {
+    background-color: #F8F9FC !important;
+  }
+
+  .square-cards .ui-card {
+    background-color: #F8F9FC !important;
+  }
+
+  .square-cards .app-page-surface [class*="border"][class*="bg-white"]:not(button):not(a):not(input):not(select):not(textarea) {
+    background-color: #F8F9FC !important;
+  }
+
+  .square-cards .app-page-surface div[class~="bg-white"] {
+    background-color: #F8F9FC !important;
+  }
+
+  .square-cards .app-page-surface [class~="bg-white"]:not(button):not(a):not(input):not(select):not(textarea) {
+    background-color: #F8F9FC !important;
+  }
+
+  .square-cards .app-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .square-cards .app-page-surface select,
+  .square-cards .app-page-surface textarea,
+  .square-cards .app-page-surface input[class~="bg-white"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .square-cards .app-page-surface select[class~="bg-white"],
+  .square-cards .app-page-surface textarea[class~="bg-white"] {
+    background-color: #F8F9FC !important;
+  }
+
+  .project-theme [class*="bg-white"] {
+    background-color: #F8F9FC !important;
+  }
+
+  .project-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .project-theme select,
+  .project-theme textarea {
+    background-color: #F8F9FC !important;
+  }
+
   .pill {
-    @apply rounded-full px-5 py-2 text-sm font-semibold tracking-tight;
+    @apply rounded-[6px] px-5 py-2 text-sm font-semibold tracking-tight;
+  }
+
+  /* Flatten the detected first page-level card surface inside /app pages */
+  .app-page-surface .app-page-header-card {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
 
   .eyebrow {
@@ -74,7 +120,7 @@ body {
 }
 
 .ts-pill {
-  border-radius: 999px;
+  border-radius: 6px;
 }
 
 .hero-rotator {

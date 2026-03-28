@@ -305,7 +305,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
   };
 
   return (
-    <Card className="mx-auto max-w-[760px] border-[#E6EAF0] bg-white shadow-none">
+    <Card className="mx-auto max-w-[760px] border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <CardHeader className="space-y-3 border-b border-[#E5E7EB]">
         <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Construction AI Assistant</CardTitle>
         <p className="max-w-3xl text-sm text-[#5b6b84]">
@@ -315,13 +315,13 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
       <CardContent className="space-y-4">
         <div
           ref={scrollContainerRef}
-          className="h-[460px] space-y-3 overflow-y-auto rounded-[12px] border border-[#E5E7EB] bg-[#F8FAFC] p-4"
+          className="h-[460px] space-y-3 overflow-y-auto rounded-[6px] border border-[#E5E7EB] bg-[#F8FAFC] p-4"
         >
           {isLoadingHistory ? (
             <p className="text-sm text-[#6d7f99]">Loading previous chat…</p>
           ) : shouldShowEmptyPrompts ? (
             <div className="space-y-4">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#0F2E57] text-xs font-semibold tracking-[0.06em] text-white">
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-[6px] bg-[#0F2E57] text-xs font-semibold tracking-[0.06em] text-white">
                 TS
               </div>
               <p className="text-sm text-[#6d7f99]">Start by asking a question.</p>
@@ -334,7 +334,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
                     onClick={() => {
                       setInputValue(prompt);
                     }}
-                    className="cursor-pointer rounded-full border border-[#E5E7EB] bg-white px-[14px] py-[8px] text-xs text-[#36527a] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="cursor-pointer rounded-[6px] border border-[#E5E7EB] bg-white px-[14px] py-[8px] text-xs text-[#36527a] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {prompt}
                   </button>
@@ -351,19 +351,19 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
                 <div key={message.id} className={message.role === "user" ? "my-4 ml-auto max-w-[92%]" : "my-4 max-w-[92%]"}>
                 {message.role === "assistant" ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 mr-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0F2E57] text-[10px] font-semibold tracking-[0.06em] text-white">
+                    <div className="mt-0.5 mr-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-[#0F2E57] text-[10px] font-semibold tracking-[0.06em] text-white">
                       TS
                     </div>
-                    <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-[18px] text-sm leading-relaxed text-[#13233c]">
+                    <div className="rounded-[6px] border border-[#E5E7EB] bg-[#F8FAFC] p-[18px] text-sm leading-relaxed text-[#13233c]">
                       {renderAssistantContent(message.content)}
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-start justify-end gap-3">
-                    <div className="rounded-xl bg-[#F74917] px-3.5 py-2.5 text-sm leading-relaxed text-white">
+                    <div className="rounded-[6px] bg-[#F74917] px-3.5 py-2.5 text-sm leading-relaxed text-white">
                       <p className="whitespace-pre-wrap">{message.content}</p>
                     </div>
-                    <div className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1F2937] text-[10px] font-semibold tracking-[0.06em] text-white">
+                    <div className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-[#1F2937] text-[10px] font-semibold tracking-[0.06em] text-white">
                       {userInitials}
                     </div>
                   </div>
@@ -374,10 +374,10 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
           )}
           {isLoading ? (
             <div className="flex items-start gap-3">
-              <div className="mt-0.5 mr-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0F2E57] text-[10px] font-semibold tracking-[0.06em] text-white">
+              <div className="mt-0.5 mr-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-[#0F2E57] text-[10px] font-semibold tracking-[0.06em] text-white">
                 TS
               </div>
-              <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-[18px] text-sm text-[#13233c]">
+              <div className="rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-[18px] text-sm text-[#13233c]">
                 <p className="inline-flex items-center gap-1 text-xs text-[#6d7f99]">
                   TS is thinking...
                   <span className="animate-pulse text-[#1d3558]">▋</span>
@@ -402,7 +402,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
             onChange={(event) => setInputValue(event.target.value)}
             placeholder="Ask about pricing, scope, coordination or drawings..."
             disabled={isLoading}
-            className="h-[52px] rounded-xl pl-[18px]"
+            className="h-[52px] rounded-[6px] pl-[18px]"
           />
           <Button
             type="submit"
@@ -417,7 +417,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
         </p>
         <div className="mt-[12px] flex justify-start">
         {isUsageOpen ? (
-          <div className="w-full max-w-[340px] rounded-[12px] border border-[#E5E7EB] bg-[#F8FAFC] px-[14px] py-[12px]">
+          <div className="w-full max-w-[340px] rounded-[6px] border border-[#E5E7EB] bg-[#F8FAFC] px-[14px] py-[12px]">
             <button
               type="button"
               onClick={() => setIsUsageOpen(false)}
@@ -435,8 +435,8 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
                     {usage.used} of {usage.limit} used
                   </p>
                 </div>
-                <div className="mt-[8px] h-[6px] w-full overflow-hidden rounded-[999px] bg-[#E5E7EB]">
-                  <div className="h-full rounded-[999px] bg-[#FF5A1F]" style={{ width: `${usagePercent}%` }} />
+                <div className="mt-[8px] h-[6px] w-full overflow-hidden rounded-[6px] bg-[#E5E7EB]">
+                  <div className="h-full rounded-[6px] bg-[#FF5A1F]" style={{ width: `${usagePercent}%` }} />
                 </div>
                 <p className="mt-[6px] text-[12px] text-[#6B7280]">{usage.remaining} remaining</p>
               </div>

@@ -363,14 +363,14 @@ export function ChangeDetectionWorkbench({
 
       <section className="space-y-5">
         <div className="grid gap-5 xl:grid-cols-12">
-          <div className="rounded-[12px] border border-[#E6EAF0] bg-white p-6 xl:col-span-8">
+          <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6 xl:col-span-8">
             <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Change Detection Controls</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Baseline trade pack</label>
                 <select
-                  className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
                   value={selectedTradePackId}
                   onChange={(event) => setSelectedTradePackId(event.target.value)}
                   disabled={isRunning || generatedTradePacks.length === 0}
@@ -386,7 +386,7 @@ export function ChangeDetectionWorkbench({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Upload revised PDF</label>
-                <label className="inline-flex h-10 w-full cursor-pointer items-center rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]">
+                <label className="inline-flex h-10 w-full cursor-pointer items-center rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]">
                   <input
                     type="file"
                     accept="application/pdf,.pdf"
@@ -406,7 +406,7 @@ export function ChangeDetectionWorkbench({
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Baseline revision</label>
                 <input
-                  className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
                   value={baselineRevision}
                   onChange={(event) => setBaselineRevision(event.target.value)}
                   disabled={isRunning}
@@ -416,7 +416,7 @@ export function ChangeDetectionWorkbench({
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Revised revision</label>
                 <input
-                  className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
                   value={revisedRevision}
                   onChange={(event) => setRevisedRevision(event.target.value)}
                   disabled={isRunning}
@@ -426,7 +426,7 @@ export function ChangeDetectionWorkbench({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button
-                className="h-10 rounded-[8px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10]"
+                className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10]"
                 onClick={runChangeDetection}
                 disabled={isRunning}
               >
@@ -437,14 +437,14 @@ export function ChangeDetectionWorkbench({
           </div>
 
           <div className="xl:col-span-4">
-            <div className="rounded-[12px] border border-[#E6EAF0] bg-white p-4">
+            <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-4">
               <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Current Selection</p>
               <div className="mt-3 space-y-2">
-                <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Baseline trade</p>
                   <p className="mt-1 text-sm font-semibold text-[#1d2433]">{selectedTradePack?.tradeLabel ?? "Not selected"}</p>
                 </div>
-                <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Revised file</p>
                   <p className="mt-1 text-sm text-[#4f5f79]">
                     {selectedPdfFiles.length > 0
@@ -452,7 +452,7 @@ export function ChangeDetectionWorkbench({
                       : "Not uploaded"}
                   </p>
                 </div>
-                <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Output status</p>
                   <p className="mt-1 text-sm text-[#4f5f79]">
                     {runResult ? `Generated • ${toDateTimeLabel(runResult.generatedAt)}` : "No output generated yet"}
@@ -467,7 +467,7 @@ export function ChangeDetectionWorkbench({
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#64748B]">Stored Change Runs</p>
           <div className="w-full sm:w-[420px]">
             <select
-              className="h-10 w-full rounded-[8px] border border-[#E6EAF0] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+              className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
               value={selectedStoredRunId}
               onChange={(event) => onSelectStoredRun(event.target.value)}
               disabled={isRunning || storedRuns.length === 0}
@@ -483,7 +483,7 @@ export function ChangeDetectionWorkbench({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
-              className="h-10 rounded-[8px] border-[#E6EAF0] bg-white px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
+              className="h-10 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
               onClick={copyOutput}
               disabled={!runResult || isRunning}
             >
@@ -492,7 +492,7 @@ export function ChangeDetectionWorkbench({
             </Button>
             <Button
               variant="outline"
-              className="h-10 rounded-[8px] border-[#E6EAF0] bg-white px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
+              className="h-10 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
               onClick={downloadOutput}
               disabled={!runResult || isRunning}
             >
@@ -535,7 +535,7 @@ export function ChangeDetectionWorkbench({
           <ChangeListCard title="Risk & Clarifications" items={runResult.result.risksClarifications} />
         </section>
       ) : (
-        <Card className="rounded-[12px] border-[#E6EAF0] bg-white shadow-none">
+        <Card className="rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardContent className="flex items-center gap-3 px-5 py-5 text-sm text-[#5f7090]">
             <FileSearch className="h-4 w-4 text-[#7b8ba4]" />
             Select a baseline trade pack, upload a revised PDF, and run Change Detection.
@@ -548,7 +548,7 @@ export function ChangeDetectionWorkbench({
 
 function ValidationCard({ validation }: { validation: ValidationPayload }) {
   return (
-    <Card className="rounded-[10px] border border-[#E6EAF0] bg-white shadow-none">
+    <Card className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <details className="group" open>
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
           <CardTitle className="text-[15px] font-semibold leading-6 text-[#1a2333]">Sheet Validation & Matching</CardTitle>
@@ -571,7 +571,7 @@ function ValidationCard({ validation }: { validation: ValidationPayload }) {
 
 function StatPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
+    <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">{label}</p>
       <p className="mt-1 text-sm font-semibold text-[#1d2433]">{value}</p>
     </div>
@@ -581,10 +581,10 @@ function StatPill({ label, value }: { label: string; value: string }) {
 function ChangeListCard({ title, items }: { title: string; items: StructuredItem[] }) {
   const safeItems = items.length > 0 ? items : [{ title: "No change identified", description: "No pricing-relevant changes detected in this section." }];
   const itemNumberClassName =
-    "inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[#eef3fb] px-1.5 text-xs font-semibold text-[#4f607c]";
+    "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eef3fb] px-1.5 text-xs font-semibold text-[#4f607c]";
 
   return (
-    <Card className="rounded-[10px] border border-[#E6EAF0] bg-white shadow-none">
+    <Card className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
           <CardTitle className="text-[15px] font-semibold leading-6 text-[#1a2333]">{title}</CardTitle>
@@ -597,7 +597,7 @@ function ChangeListCard({ title, items }: { title: string; items: StructuredItem
                 key={`${title}-${index}`}
                 index={index}
                 item={item}
-                rowClassName="rounded-[10px] border border-[#E6EAF0] bg-white px-4 py-3"
+                rowClassName="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3"
                 itemNumberClassName={itemNumberClassName}
               />
             ))}

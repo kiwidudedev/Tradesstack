@@ -72,7 +72,7 @@ export function EditableProjectGrid({ initialProjects }: { initialProjects: Orga
   return (
     <Card className="relative overflow-hidden rounded-none border-0 bg-transparent shadow-none xl:col-span-12">
       <CardHeader className="space-y-4 px-0 pb-5 pt-0">
-        <div className="rounded-[12px] border border-[#E6EAF0] bg-white px-5 py-4 shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
+        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4 shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Hi, {displayName}</p>
@@ -90,10 +90,10 @@ export function EditableProjectGrid({ initialProjects }: { initialProjects: Orga
               <Link
                 key={project.id}
                 href={`/app/projects/${project.slug}/dashboard`}
-                className="relative rounded-[12px] border border-[#E6EAF0] bg-white p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.06)]"
+                className="relative rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.06)]"
               >
                 <div className="mb-3 flex items-start gap-3">
-                  <span className="mt-0.5 inline-flex h-8 w-1 rounded-[2px] bg-[#04234D]" />
+                  <span className="mt-0.5 inline-flex h-8 w-1 rounded-[6px] bg-[#04234D]" />
                   <div>
                     <p className={`${interMedium.className} text-lg font-semibold tracking-[-0.01em] text-[#0F172A]`}>
                       {project.name}
@@ -122,12 +122,12 @@ export function EditableProjectGrid({ initialProjects }: { initialProjects: Orga
           })
         ) : (
           <div className="md:col-span-2 xl:col-span-3">
-            <div className="rounded-[12px] border border-dashed border-[#c8cfdd] bg-white px-5 py-6">
+            <div className="rounded-[6px] border border-dashed border-[#c8cfdd] bg-white px-5 py-6">
               <p className={`${interMedium.className} text-base font-medium text-[#2d3445]`}>No projects yet.</p>
               <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#687996]`}>
                 Create your first project to open your project dashboard.
               </p>
-              <Button className="mt-4 h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
+              <Button className="mt-4 h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
                 <Link href="/app/projects/new">Create Project</Link>
               </Button>
             </div>

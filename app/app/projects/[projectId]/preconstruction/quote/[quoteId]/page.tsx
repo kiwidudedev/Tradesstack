@@ -49,10 +49,10 @@ function DescriptionInputWithPreview({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-10 min-w-[200px] rounded-[8px]"
+        className="h-10 min-w-[200px] rounded-[6px]"
       />
       {hasContent ? (
-        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[14px] border border-[#E6ECF5] bg-white p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
           <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
             Full Description
           </p>
@@ -209,6 +209,7 @@ export default function PreconstructionQuotePage() {
   const [projectCode, setProjectCode] = useState<string | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -817,6 +818,51 @@ export default function PreconstructionQuotePage() {
     }
   };
 
+  const deleteQuote = useCallback(async () => {
+    if (!quoteId || !supabase || !organizationId) {
+      setError("Quote delete is not ready. Please refresh and try again.");
+      return;
+    }
+
+    const confirmed = typeof window === "undefined"
+      ? true
+      : window.confirm(`Delete quote ${quoteNumber.trim() || quoteId}? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      const { error: deleteItemsError } = await supabase
+        .from("project_quote_line_items")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("quote_id", quoteId);
+      if (deleteItemsError) {
+        throw new Error(deleteItemsError.message);
+      }
+
+      const { error: deleteQuoteError } = await supabase
+        .from("project_quotes")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("id", quoteId);
+      if (deleteQuoteError) {
+        throw new Error(deleteQuoteError.message);
+      }
+
+      router.replace(`/app/projects/${routeProjectSlug}/preconstruction/quote`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete quote.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [organizationId, quoteId, quoteNumber, routeProjectSlug, router, supabase]);
+
   const exportQuotePdf = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1109,7 +1155,7 @@ export default function PreconstructionQuotePage() {
 
   if (isLoadingQuote) {
     return (
-      <div className="rounded-[12px] border border-[#E6EAF0] bg-white px-4 py-4 sm:px-5">
+      <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-4 sm:px-5">
         <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Loading quote...</p>
       </div>
     );
@@ -1123,7 +1169,7 @@ export default function PreconstructionQuotePage() {
           variant="ghost"
           size="sm"
           asChild
-          className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
         >
           <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote`}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -1132,7 +1178,7 @@ export default function PreconstructionQuotePage() {
         </Button>
       </div>
 
-      <Card className={`shadow-none ${shouldShowEditor ? "border-[#E6EAF0] bg-white" : "border-[#E6EAF0] bg-white"}`}>
+      <Card className={`shadow-none ${shouldShowEditor ? "border-[#E6EAF0] bg-[#F8F9FC]" : "border-[#E6EAF0] bg-[#F8F9FC]"}`}>
         <CardHeader className={`${shouldShowEditor ? "pb-5 pt-6" : "pb-4 pt-4"}`}>
           <div className={`flex flex-wrap items-start justify-between ${shouldShowEditor ? "gap-4" : "gap-3"}`}>
             <div>
@@ -1148,11 +1194,23 @@ export default function PreconstructionQuotePage() {
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {quoteId ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void deleteQuote()}
+                  disabled={isDeleting}
+                  className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsQuoteContentHidden((current) => !current)}
-                className={`${interMedium.className} h-10 rounded-[10px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+                className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
                 aria-expanded={!isQuoteContentHidden}
                 aria-label={isQuoteContentHidden ? "Show quote content" : "Hide quote content"}
               >
@@ -1164,7 +1222,7 @@ export default function PreconstructionQuotePage() {
                   <select
                     value={quoteStatus}
                     onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}
-                    className={`${interMedium.className} h-10 rounded-[10px] border border-[#cfd7e4] bg-white px-3 text-sm text-[#1d2433]`}
+                    className={`${interMedium.className} h-10 rounded-[6px] border border-[#cfd7e4] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
                   >
                     {STATUS_OPTIONS.map((status) => (
                       <option key={status.value} value={status.value}>
@@ -1176,7 +1234,7 @@ export default function PreconstructionQuotePage() {
                     type="button"
                     onClick={saveQuote}
                     disabled={isSaving}
-                    className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+                    className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
                   >
                     {isSaving ? "Saving..." : "Save Quote"}
                   </Button>
@@ -1185,7 +1243,7 @@ export default function PreconstructionQuotePage() {
                     onClick={exportQuotePdf}
                     disabled={isSaving}
                     variant="outline"
-                    className={`${interMedium.className} h-10 rounded-[10px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+                    className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
                   >
                     Export PDF
                   </Button>
@@ -1197,7 +1255,7 @@ export default function PreconstructionQuotePage() {
                     onClick={() => setIsEditing(true)}
                     disabled={isSaving}
                     variant="outline"
-                    className={`${interMedium.className} h-9 rounded-[10px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
                   >
                     Edit Quote
                   </Button>
@@ -1206,7 +1264,7 @@ export default function PreconstructionQuotePage() {
                     onClick={exportQuotePdf}
                     disabled={isSaving}
                     variant="outline"
-                    className={`${interMedium.className} h-9 rounded-[10px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
                   >
                     Export PDF
                   </Button>
@@ -1215,7 +1273,7 @@ export default function PreconstructionQuotePage() {
             </div>
           </div>
           {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
           ) : null}
           {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
         </CardHeader>
@@ -1223,7 +1281,7 @@ export default function PreconstructionQuotePage() {
 
       {isQuoteContentHidden ? null : shouldShowEditor ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-[12px] border border-[#E6EAF0] bg-white px-3 py-4 sm:px-5">
+        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 py-4 sm:px-5">
           <section className="border-b border-[#E8EDF5] pb-5">
             <button
               type="button"
@@ -1242,14 +1300,14 @@ export default function PreconstructionQuotePage() {
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1.5 md:col-span-2">
                         <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Quote title</label>
-                        <Input value={quoteTitle} onChange={(event) => setQuoteTitle(event.target.value)} placeholder="Kitchen renovation quote" className="h-10 rounded-[8px]" />
+                        <Input value={quoteTitle} onChange={(event) => setQuoteTitle(event.target.value)} placeholder="Kitchen renovation quote" className="h-10 rounded-[6px]" />
                       </div>
                       <div className="space-y-1.5">
                         <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
                         <select
                           value={quoteStatus}
                           onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}
-                          className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d1d9e6] bg-white px-3 text-sm text-[#1d2433]`}
+                          className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
                         >
                           {STATUS_OPTIONS.map((status) => (
                             <option key={status.value} value={status.value}>
@@ -1262,20 +1320,20 @@ export default function PreconstructionQuotePage() {
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1.5">
                         <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Project name</label>
-                        <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-10 rounded-[8px]" />
+                        <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-10 rounded-[6px]" />
                       </div>
                       <div className="space-y-1.5">
                         <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Quote date</label>
-                        <Input type="date" value={quoteDate} onChange={(event) => setQuoteDate(event.target.value)} className="h-10 rounded-[8px]" />
+                        <Input type="date" value={quoteDate} onChange={(event) => setQuoteDate(event.target.value)} className="h-10 rounded-[6px]" />
                       </div>
                       <div className="space-y-1.5">
                         <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Expiry date</label>
-                        <Input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} className="h-10 rounded-[8px]" />
+                        <Input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} className="h-10 rounded-[6px]" />
                       </div>
                     </div>
                     <div className="max-w-[320px] space-y-1.5">
                       <label className={`${interMedium.className} block text-xs font-medium text-[#64748B]`}>Quote number</label>
-                      <Input value={quoteNumber} readOnly placeholder="Q-26001-1" className="h-10 rounded-[8px] bg-[#f8fafc]" />
+                      <Input value={quoteNumber} readOnly placeholder="Q-26001-1" className="h-10 rounded-[6px] bg-[#f8fafc]" />
                     </div>
                   </div>
                 </div>
@@ -1297,11 +1355,11 @@ export default function PreconstructionQuotePage() {
             {isLineItemsOpen ? (
               <div className="mt-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addLineItem(false)} className={`${interMedium.className} h-9 rounded-[8px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}>
+                  <Button type="button" onClick={() => addLineItem(false)} className={`${interMedium.className} h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}>
                     <Plus className="mr-1 h-4 w-4" />
                     Add Item
                   </Button>
-                  <Button type="button" onClick={() => addLineItem(true)} variant="outline" className={`${interMedium.className} h-9 rounded-[8px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}>
+                  <Button type="button" onClick={() => addLineItem(true)} variant="outline" className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}>
                     <Plus className="mr-1 h-4 w-4" />
                     Add Optional
                   </Button>
@@ -1309,7 +1367,7 @@ export default function PreconstructionQuotePage() {
                     type="button"
                     variant="outline"
                     onClick={() => setIsScopeImportOpen((current) => !current)}
-                    className={`${interMedium.className} h-9 rounded-[8px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}
+                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}
                   >
                     <Plus className="mr-1 h-4 w-4" />
                     Import Scope Items
@@ -1317,14 +1375,14 @@ export default function PreconstructionQuotePage() {
                 </div>
 
               {isScopeImportOpen ? (
-                <div className="rounded-[10px] border border-[#E5EAF2] bg-[#FCFDFE] p-3">
+                <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FCFDFE] p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <p className={`${interMedium.className} text-sm font-semibold text-[#24324A]`}>Cost Breakdown Categories</p>
                     <Button
                       type="button"
                       onClick={importSelectedScopeItems}
                       disabled={selectedScopeCostItemIds.length === 0}
-                      className={`${interMedium.className} h-8 rounded-[8px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10] disabled:opacity-50`}
+                      className={`${interMedium.className} h-8 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10] disabled:opacity-50`}
                     >
                       Add Selected ({selectedScopeCostItemIds.length})
                     </Button>
@@ -1334,12 +1392,12 @@ export default function PreconstructionQuotePage() {
                   ) : availableScopeCostItems.length > 0 ? (
                     <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
                       {availableScopeCostItems.map((item) => (
-                        <label key={item.id} className="flex cursor-pointer items-start gap-2 rounded-[8px] border border-[#E6ECF5] bg-white px-2.5 py-2">
+                        <label key={item.id} className="flex cursor-pointer items-start gap-2 rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] px-2.5 py-2">
                           <input
                             type="checkbox"
                             checked={selectedScopeCostItemIds.includes(item.id)}
                             onChange={() => toggleScopeCostItem(item.id)}
-                            className="mt-0.5 h-4 w-4 rounded border-[#cfd8e6]"
+                            className="mt-0.5 h-4 w-4 rounded-[6px] border-[#cfd8e6]"
                           />
                           <span className="min-w-0">
                             <span className={`${interMedium.className} block text-xs font-semibold text-[#23344D]`}>{item.title}</span>
@@ -1363,7 +1421,7 @@ export default function PreconstructionQuotePage() {
                 </div>
               ) : null}
 
-              <div className="hidden rounded-[10px] border border-[#E5EAF2] overflow-visible md:block">
+              <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
                 <div className="overflow-x-auto">
                   <div className="min-w-[760px]">
                     <div
@@ -1388,7 +1446,7 @@ export default function PreconstructionQuotePage() {
                           <select
                             value={item.section}
                             onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                            className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d6dfeb] bg-white px-2 text-sm text-[#1d2433]`}
+                            className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}
                           >
                             {LINE_ITEM_SECTIONS.map((section) => (
                               <option key={section} value={section}>
@@ -1396,15 +1454,15 @@ export default function PreconstructionQuotePage() {
                               </option>
                             ))}
                           </select>
-                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[8px] px-2" />
-                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[8px] px-2" />
+                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
+                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
                           <div className="relative w-[100px]">
                             <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                             <Input
                               type="number"
                               value={item.rate === 0 ? "" : item.rate}
                               onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                              className="h-10 w-[100px] rounded-[8px] pl-6 pr-2"
+                              className="h-10 w-[100px] rounded-[6px] pl-6 pr-2"
                             />
                           </div>
                           <div className="flex items-center justify-end gap-1.5">
@@ -1413,7 +1471,7 @@ export default function PreconstructionQuotePage() {
                               type="button"
                               variant="ghost"
                               onClick={() => removeLineItem(item.id)}
-                              className="h-8 w-8 rounded-[8px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                              className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
                               aria-label="Delete line item"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1432,7 +1490,7 @@ export default function PreconstructionQuotePage() {
               <div className="space-y-2 md:hidden">
                 <p className={`${interMedium.className} px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6E7F97]`}>Main line items</p>
                 {mainLineItems.map((item) => (
-                  <div key={item.id} className="space-y-2 rounded-[10px] border border-[#E5EAF2] bg-[#FAFCFF] p-3">
+                  <div key={item.id} className="space-y-2 rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] p-3">
                     <DescriptionInputWithPreview
                       value={item.description}
                       onChange={(value) => updateLineItem(item.id, "description", value)}
@@ -1441,7 +1499,7 @@ export default function PreconstructionQuotePage() {
                     <select
                       value={item.section}
                       onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                      className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d6dfeb] bg-white px-2 text-sm text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}
                     >
                       {LINE_ITEM_SECTIONS.map((section) => (
                         <option key={section} value={section}>
@@ -1450,15 +1508,15 @@ export default function PreconstructionQuotePage() {
                       ))}
                     </select>
                     <div className="grid grid-cols-3 gap-2">
-                      <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[8px] px-2" />
-                      <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[8px] px-2" />
+                      <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[6px] px-2" />
+                      <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[6px] px-2" />
                       <div className="relative">
                         <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                         <Input
                           type="number"
                           value={item.rate === 0 ? "" : item.rate}
                           onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                          className="h-10 w-full rounded-[8px] pl-6 pr-2"
+                          className="h-10 w-full rounded-[6px] pl-6 pr-2"
                         />
                       </div>
                     </div>
@@ -1468,7 +1526,7 @@ export default function PreconstructionQuotePage() {
                         type="button"
                         variant="ghost"
                         onClick={() => removeLineItem(item.id)}
-                        className="h-8 w-8 rounded-[8px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
+                        className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
                         aria-label="Delete line item"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1477,11 +1535,11 @@ export default function PreconstructionQuotePage() {
                   </div>
                 ))}
                 {mainLineItems.length === 0 ? (
-                  <div className={`${interMedium.className} rounded-[10px] border border-[#E5EAF2] px-3 py-4 text-center text-sm text-[#73839a]`}>No main line items yet.</div>
+                  <div className={`${interMedium.className} rounded-[6px] border border-[#E5EAF2] px-3 py-4 text-center text-sm text-[#73839a]`}>No main line items yet.</div>
                 ) : null}
               </div>
 
-              <div className="hidden rounded-[10px] border border-[#E5EAF2] overflow-visible md:block">
+              <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
                 <div className="overflow-x-auto">
                   <div className="min-w-[640px]">
                     <div
@@ -1502,15 +1560,15 @@ export default function PreconstructionQuotePage() {
                             onChange={(value) => updateLineItem(item.id, "description", value)}
                             placeholder="Optional add-on"
                           />
-                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[8px] px-2" />
-                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[8px] px-2" />
+                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
+                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
                           <div className="relative w-[100px]">
                             <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                             <Input
                               type="number"
                               value={item.rate === 0 ? "" : item.rate}
                               onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                              className="h-10 w-[100px] rounded-[8px] pl-6 pr-2"
+                              className="h-10 w-[100px] rounded-[6px] pl-6 pr-2"
                             />
                           </div>
                           <div className="flex items-center justify-end gap-1.5">
@@ -1519,7 +1577,7 @@ export default function PreconstructionQuotePage() {
                               type="button"
                               variant="ghost"
                               onClick={() => removeLineItem(item.id)}
-                              className="h-8 w-8 rounded-[8px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                              className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
                               aria-label="Delete optional line item"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1538,22 +1596,22 @@ export default function PreconstructionQuotePage() {
               <div className="space-y-2 md:hidden">
                 <p className={`${interMedium.className} px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6E7F97]`}>Optional items</p>
                 {optionalLineItems.map((item) => (
-                  <div key={item.id} className="space-y-2 rounded-[10px] border border-[#E5EAF2] bg-white p-3">
+                  <div key={item.id} className="space-y-2 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] p-3">
                     <DescriptionInputWithPreview
                       value={item.description}
                       onChange={(value) => updateLineItem(item.id, "description", value)}
                       placeholder="Optional add-on"
                     />
                     <div className="grid grid-cols-3 gap-2">
-                      <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[8px] px-2" />
-                      <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[8px] px-2" />
+                      <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[6px] px-2" />
+                      <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[6px] px-2" />
                       <div className="relative">
                         <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                         <Input
                           type="number"
                           value={item.rate === 0 ? "" : item.rate}
                           onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                          className="h-10 w-full rounded-[8px] pl-6 pr-2"
+                          className="h-10 w-full rounded-[6px] pl-6 pr-2"
                         />
                       </div>
                     </div>
@@ -1563,7 +1621,7 @@ export default function PreconstructionQuotePage() {
                         type="button"
                         variant="ghost"
                         onClick={() => removeLineItem(item.id)}
-                        className="h-8 w-8 rounded-[8px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
+                        className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
                         aria-label="Delete optional line item"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1572,7 +1630,7 @@ export default function PreconstructionQuotePage() {
                   </div>
                 ))}
                 {optionalLineItems.length === 0 ? (
-                  <div className={`${interMedium.className} rounded-[10px] border border-[#E5EAF2] px-3 py-4 text-center text-xs text-[#7e8ca2]`}>No optional items yet.</div>
+                  <div className={`${interMedium.className} rounded-[6px] border border-[#E5EAF2] px-3 py-4 text-center text-xs text-[#7e8ca2]`}>No optional items yet.</div>
                 ) : null}
               </div>
 
@@ -1606,34 +1664,34 @@ export default function PreconstructionQuotePage() {
                 <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Validity period</label>
-                    <Input value={validityPeriod} onChange={(event) => setValidityPeriod(event.target.value)} className="h-10 rounded-[8px]" />
+                    <Input value={validityPeriod} onChange={(event) => setValidityPeriod(event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Payment terms</label>
-                    <Input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="h-10 rounded-[8px]" />
+                    <Input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Lead time</label>
-                    <Input value={leadTime} onChange={(event) => setLeadTime(event.target.value)} className="h-10 rounded-[8px]" />
+                    <Input value={leadTime} onChange={(event) => setLeadTime(event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Inclusions</label>
-                  <textarea value={termsInclusions} onChange={(event) => setTermsInclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[8px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={termsInclusions} onChange={(event) => setTermsInclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Exclusions</label>
-                  <textarea value={termsExclusions} onChange={(event) => setTermsExclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[8px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={termsExclusions} onChange={(event) => setTermsExclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Clarifications</label>
-                  <textarea value={clarifications} onChange={(event) => setClarifications(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[8px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={clarifications} onChange={(event) => setClarifications(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assumptions</label>
-                  <textarea value={assumptions} onChange={(event) => setAssumptions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[8px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={assumptions} onChange={(event) => setAssumptions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
               </div>
               </div>
@@ -1642,7 +1700,7 @@ export default function PreconstructionQuotePage() {
         </div>
 
         <div className="xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-[#E6EAF0] bg-white shadow-none">
+          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
             <CardHeader className="pb-3 pt-5">
               <CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Pricing Summary</CardTitle>
             </CardHeader>
@@ -1655,7 +1713,7 @@ export default function PreconstructionQuotePage() {
                     variant="outline"
                     onClick={() => setIncludeMarginInExport((current) => !current)}
                     className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      includeMarginInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-white text-[#64748B]"
+                      includeMarginInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
                     }`}
                   >
                     <Check className="mr-1 h-3 w-3" />
@@ -1666,7 +1724,7 @@ export default function PreconstructionQuotePage() {
                   type="number"
                   value={marginPercent === "0" ? "" : marginPercent}
                   onChange={(event) => setMarginPercent(event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
               <div className="grid gap-2">
@@ -1677,7 +1735,7 @@ export default function PreconstructionQuotePage() {
                     variant="outline"
                     onClick={() => setIncludeDiscountInExport((current) => !current)}
                     className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      includeDiscountInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-white text-[#64748B]"
+                      includeDiscountInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
                     }`}
                   >
                     <Check className="mr-1 h-3 w-3" />
@@ -1688,7 +1746,7 @@ export default function PreconstructionQuotePage() {
                   type="number"
                   value={discountAmount === "0" ? "" : discountAmount}
                   onChange={(event) => setDiscountAmount(event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
               <div className="grid gap-2">
@@ -1699,7 +1757,7 @@ export default function PreconstructionQuotePage() {
                     variant="outline"
                     onClick={() => setIncludeContingencyInExport((current) => !current)}
                     className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      includeContingencyInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-white text-[#64748B]"
+                      includeContingencyInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
                     }`}
                   >
                     <Check className="mr-1 h-3 w-3" />
@@ -1710,12 +1768,12 @@ export default function PreconstructionQuotePage() {
                   type="number"
                   value={contingencyAmount === "0" ? "" : contingencyAmount}
                   onChange={(event) => setContingencyAmount(event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
               <div className="grid gap-2">
                 <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>GST (%)</label>
-                <Input type="number" value={gstPercent} onChange={(event) => setGstPercent(event.target.value)} className="h-10 rounded-[8px]" />
+                <Input type="number" value={gstPercent} onChange={(event) => setGstPercent(event.target.value)} className="h-10 rounded-[6px]" />
               </div>
 
               <div className="h-px bg-[#E7ECF3]" />
@@ -1729,16 +1787,16 @@ export default function PreconstructionQuotePage() {
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Optional Items</span><span>{toMoney(pricingSummary.optionalSubtotal)}</span></p>
               </div>
 
-              <div className="rounded-[10px] bg-[#04234D] px-4 py-3 text-white">
+              <div className="rounded-[6px] bg-[#04234D] px-4 py-3 text-white">
                 <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.08em] text-white/70`}>Total Quote Price</p>
                 <p className="mt-1 text-[32px] font-semibold leading-none">{toMoney(pricingSummary.grandTotal)}</p>
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveQuote} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[10px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
+                <Button type="button" onClick={saveQuote} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[6px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
                   {isSaving ? "Saving..." : "Save Quote"}
                 </Button>
-                <Button type="button" onClick={exportQuotePdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[10px] border-[#d3dbe8] bg-white text-sm font-medium text-[#1d2433]`}>
+                <Button type="button" onClick={exportQuotePdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>
                   Export PDF
                 </Button>
               </div>
@@ -1748,7 +1806,7 @@ export default function PreconstructionQuotePage() {
         </div>
       ) : (
         <div className="space-y-7">
-          <section className="rounded-[12px] border border-[#E6EAF0] bg-white px-5 py-4">
+          <section className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4">
             <div className="mb-3 border-b border-[#E2E8F0] pb-2.5">
               <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Quote Summary</h2>
             </div>
@@ -1762,7 +1820,7 @@ export default function PreconstructionQuotePage() {
           </section>
 
           <div className="space-y-7">
-            <section className="rounded-[12px] border border-[#E6EAF0] bg-white px-4 py-3">
+            <section className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3">
               <div className="mb-3 flex items-end justify-between border-b border-[#E2E8F0] pb-2.5">
                 <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Quote Details</h2>
               </div>
@@ -1776,7 +1834,7 @@ export default function PreconstructionQuotePage() {
               </div>
             </section>
 
-            <section className="rounded-[12px] border border-[#dbe3ef] bg-white">
+            <section className="rounded-[6px] border border-[#dbe3ef] bg-[#F8F9FC]">
               <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#E2E8F0] px-5 pb-3 pt-4">
                 <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Line Items</h2>
               </div>
@@ -1823,7 +1881,7 @@ export default function PreconstructionQuotePage() {
               </div>
             </section>
 
-            <section className="rounded-[12px] border border-[#eef2f7] bg-[#fcfdff] px-5 py-4">
+            <section className="rounded-[6px] border border-[#eef2f7] bg-[#fcfdff] px-5 py-4">
               <div className="mb-3 border-b border-[#E2E8F0] pb-2.5">
                 <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Terms & Clarifications</h2>
               </div>

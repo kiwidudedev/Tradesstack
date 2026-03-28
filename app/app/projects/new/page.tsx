@@ -272,7 +272,7 @@ export default function CreateProjectPage() {
         variant="ghost"
         size="sm"
         asChild
-        className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+        className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
       >
         <Link href="/app/dashboard">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -280,7 +280,7 @@ export default function CreateProjectPage() {
         </Link>
       </Button>
 
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-white shadow-none">
+      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-4 pt-7">
           <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Create a Project</CardTitle>
           <p className={`${interMedium.className} max-w-3xl text-base font-medium leading-relaxed text-[#4d5b74]`}>
@@ -298,7 +298,7 @@ export default function CreateProjectPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Smith Renovation Project"
-                className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
                 required
               />
             </div>
@@ -314,7 +314,7 @@ export default function CreateProjectPage() {
                   id="projectClient"
                   value={selectedClientId}
                   onChange={(event) => setSelectedClientId(event.target.value)}
-                  className={`${interMedium.className} h-11 w-full rounded-[10px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
+                  className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
                   required
                 >
                   <option value="">Select a client</option>
@@ -333,7 +333,7 @@ export default function CreateProjectPage() {
             </div>
 
             {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingClients ? (
-              <div className="rounded-[10px] border border-[#d7deea] bg-[#f8faff] p-3">
+              <div className="rounded-[6px] border border-[#d7deea] bg-[#f8faff] p-3">
                 <p className={`${interMedium.className} mb-3 text-sm font-semibold text-[#1d2433]`}>New Client Details</p>
                 <div className="space-y-3">
                   <div className="space-y-2">
@@ -345,7 +345,7 @@ export default function CreateProjectPage() {
                       value={clientCompanyName}
                       onChange={(event) => setClientCompanyName(event.target.value)}
                       placeholder="Smith Developments"
-                      className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
                       required
                     />
                   </div>
@@ -361,7 +361,7 @@ export default function CreateProjectPage() {
                         value={clientEmail}
                         onChange={(event) => setClientEmail(event.target.value)}
                         placeholder="client@company.com"
-                        className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
                       />
                     </div>
 
@@ -374,7 +374,7 @@ export default function CreateProjectPage() {
                         value={clientPhone}
                         onChange={(event) => setClientPhone(event.target.value)}
                         placeholder="+64 21 123 4567"
-                        className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
                       />
                     </div>
                   </div>
@@ -390,7 +390,7 @@ export default function CreateProjectPage() {
                 id="projectStage"
                 value={stage}
                 onChange={(event) => setStage(event.target.value as ProjectStage)}
-                className={`${interMedium.className} h-11 w-full rounded-[10px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
+                className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
               >
                 {PROJECT_STAGE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -409,18 +409,18 @@ export default function CreateProjectPage() {
                 value={location}
                 onChange={(event) => setLocation(event.target.value)}
                 placeholder="Auckland"
-                className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
               />
             </div>
 
             {error ? (
-              <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+              <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
             ) : null}
 
             <Button
               type="submit"
               disabled={isSubmitting || isAuthLoading}
-              className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
+              className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
             >
               {isSubmitting ? "Creating project..." : isAuthLoading ? "Loading account..." : "Create Project"}
             </Button>

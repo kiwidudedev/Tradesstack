@@ -1641,7 +1641,7 @@ export function TradePackBuilderUploader({
   const renderDrawingSetRow = (drawingSet: ProjectDrawingSet, showTradePackBadge: boolean) => (
     <div
       key={drawingSet.id}
-      className="rounded-[10px] border border-[#E6EAF0] bg-white px-4 py-4"
+      className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -1658,7 +1658,7 @@ export function TradePackBuilderUploader({
                 value={renameDraft}
                 onChange={(event) => setRenameDraft(event.target.value)}
                 disabled={renamingId === drawingSet.id || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-10 rounded-[12px] border-[#cdd6e6] bg-white text-[#1d2433]"
+                className="h-10 rounded-[6px] border-[#cdd6e6] bg-white text-[#1d2433]"
               />
             </div>
           ) : (
@@ -1688,7 +1688,7 @@ export function TradePackBuilderUploader({
                 variant="outline"
                 onClick={() => saveDrawingSetRename(drawingSet)}
                 disabled={renamingId === drawingSet.id || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[8px] border-[#E6EAF0] bg-white px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
               >
                 {renamingId === drawingSet.id ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1702,7 +1702,7 @@ export function TradePackBuilderUploader({
                 variant="ghost"
                 onClick={cancelRenameDrawingSet}
                 disabled={renamingId === drawingSet.id || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[8px] px-3 text-[13px] text-[#5f6f89] hover:bg-[#eef3fb]"
+                className="h-8 rounded-[6px] px-3 text-[13px] text-[#5f6f89] hover:bg-[#eef3fb]"
               >
                 Cancel
               </Button>
@@ -1714,7 +1714,7 @@ export function TradePackBuilderUploader({
                 variant="outline"
                 onClick={() => downloadDrawingSet(drawingSet)}
                 disabled={downloadingPath === drawingSet.storage_path || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[8px] border-[#E6EAF0] bg-white px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
               >
                 {downloadingPath === drawingSet.storage_path ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1732,7 +1732,7 @@ export function TradePackBuilderUploader({
                     setSelectedOutputDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                  className="h-8 rounded-[8px] border-[#E6EAF0] bg-white px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                  className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
                 >
                   Why
                   <ChevronDown
@@ -1751,7 +1751,7 @@ export function TradePackBuilderUploader({
                     setSettingsMenuDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                  className="h-8 rounded-[8px] border-[#E6EAF0] bg-white px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                  className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
                 >
                   Settings
                   <ChevronDown
@@ -1762,12 +1762,12 @@ export function TradePackBuilderUploader({
                 </Button>
 
                 {settingsMenuDrawingSetId === drawingSet.id ? (
-                  <div className="absolute right-0 top-11 z-20 min-w-[140px] rounded-[10px] border border-[#d7deeb] bg-white p-1.5 shadow-[0_10px_20px_rgba(16,24,40,0.12)]">
+                  <div className="absolute right-0 top-11 z-20 min-w-[140px] rounded-[6px] border border-[#d7deeb] bg-white p-1.5 shadow-[0_10px_20px_rgba(16,24,40,0.12)]">
                     <button
                       type="button"
                       onClick={() => startRenameDrawingSet(drawingSet)}
                       disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                      className="flex h-8 w-full items-center rounded-[8px] px-2.5 text-left text-sm text-[#1d2433] hover:bg-[#f6f9ff] disabled:text-[#8b98ad]"
+                      className="flex h-8 w-full items-center rounded-[6px] px-2.5 text-left text-sm text-[#1d2433] hover:bg-[#f6f9ff] disabled:text-[#8b98ad]"
                     >
                       Rename
                     </button>
@@ -1777,7 +1777,7 @@ export function TradePackBuilderUploader({
                         void deleteDrawingSet(drawingSet);
                       }}
                       disabled={deletingDrawingSetId === drawingSet.id || isGeneratingPack || renamingId !== null}
-                      className="flex h-8 w-full items-center rounded-[8px] px-2.5 text-left text-sm text-[#b83a3a] hover:bg-[#fdeeee] disabled:text-[#cf9090]"
+                      className="flex h-8 w-full items-center rounded-[6px] px-2.5 text-left text-sm text-[#b83a3a] hover:bg-[#fdeeee] disabled:text-[#cf9090]"
                     >
                       {deletingDrawingSetId === drawingSet.id ? (
                         <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
@@ -1801,7 +1801,7 @@ export function TradePackBuilderUploader({
                 const { pageLabel, detail } = toExtractionReasonParts(reason);
 
                 return (
-                  <div key={`${reasonIndex}-${reason}`} className="rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
+                  <div key={`${reasonIndex}-${reason}`} className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
                     <p className="text-[13px] font-semibold text-[#334155]">{pageLabel}</p>
                     <p className="mt-1 text-[13px] leading-[1.6] text-[#475569]">{detail}</p>
                   </div>
@@ -1828,7 +1828,7 @@ export function TradePackBuilderUploader({
       </section>
 
       <section className="grid gap-5 xl:grid-cols-12">
-        <div className="rounded-[12px] border border-[#E6EAF0] bg-white p-6 xl:col-span-8">
+        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6 xl:col-span-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="mt-1 text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Create Trade Pack</p>
@@ -1837,7 +1837,7 @@ export function TradePackBuilderUploader({
               type="button"
               onClick={generateTradePack}
               disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
-              className="h-10 rounded-[8px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10] disabled:bg-[#f6a47f]"
+              className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10] disabled:bg-[#f6a47f]"
             >
               {isGeneratingPack ? (
                 <>
@@ -1855,7 +1855,7 @@ export function TradePackBuilderUploader({
               <label htmlFor="localSourcePdfInput" className="text-xs font-medium uppercase tracking-[0.16em] text-[#8b98ad]">
                 Source PDF
               </label>
-              <div className="flex h-11 items-center gap-2 rounded-[10px] border border-[#cdd6e6] bg-white px-2">
+              <div className="flex h-11 items-center gap-2 rounded-[6px] border border-[#cdd6e6] bg-white px-2">
                 <input
                   id="localSourcePdfInput"
                   type="file"
@@ -1866,7 +1866,7 @@ export function TradePackBuilderUploader({
                 />
                 <label
                   htmlFor="localSourcePdfInput"
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[8px] bg-[#161922] px-3 text-xs font-medium text-white hover:bg-[#101217]"
+                  className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[6px] bg-[#161922] px-3 text-xs font-medium text-white hover:bg-[#101217]"
                 >
                   Select PDF
                 </label>
@@ -1885,7 +1885,7 @@ export function TradePackBuilderUploader({
                 value={selectedTradeId}
                 onChange={(event) => setSelectedTradeId(event.target.value)}
                 disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-11 w-full rounded-[10px] border border-[#cdd6e6] bg-white px-3 text-sm text-[#1d2433] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35"
+                className="h-11 w-full rounded-[6px] border border-[#cdd6e6] bg-white px-3 text-sm text-[#1d2433] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35"
               >
                 {TRADE_PACK_TRADES.map((trade) => (
                   <option key={trade.id} value={trade.id}>
@@ -1902,7 +1902,7 @@ export function TradePackBuilderUploader({
 
           <div className="mt-4 space-y-2">
             {generationStep ? (
-              <div className="space-y-2 rounded-[10px] border border-[#dbe1eb] bg-[#f8fafc] px-3 py-2">
+              <div className="space-y-2 rounded-[6px] border border-[#dbe1eb] bg-[#f8fafc] px-3 py-2">
                 <p className="inline-flex items-center gap-2 text-sm text-[#4f5f79]">
                   <Loader2 className="h-4 w-4 animate-spin text-[#ff5406]" />
                   {generationStep}
@@ -1912,9 +1912,9 @@ export function TradePackBuilderUploader({
                     <p className="text-xs font-medium text-[#4f5f79]">
                       Analyzing drawing set for {(selectedTrade?.label ?? "selected trade").toLowerCase()} scope
                     </p>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e9f3]">
+                    <div className="h-2 w-full overflow-hidden rounded-[6px] bg-[#e3e9f3]">
                       <div
-                        className="h-full rounded-full bg-[#ff5406] transition-[width] duration-500"
+                        className="h-full rounded-[6px] bg-[#ff5406] transition-[width] duration-500"
                         style={{ width: `${generationProgress.percent}%` }}
                       />
                     </div>
@@ -1926,28 +1926,28 @@ export function TradePackBuilderUploader({
               </div>
             ) : null}
             {status ? (
-              <p className="inline-flex items-center gap-2 rounded-[10px] border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              <p className="inline-flex items-center gap-2 rounded-[6px] border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
                 <CheckCircle2 className="h-4 w-4" />
                 {status}
               </p>
             ) : null}
-            {error ? <p className="rounded-[10px] border border-red-300/70 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+            {error ? <p className="rounded-[6px] border border-red-300/70 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
           </div>
         </div>
 
         <div className="space-y-3 xl:col-span-4">
-          <div className="rounded-[12px] border border-[#E6EAF0] bg-white p-6">
+          <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6">
             <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Current Selection</p>
             <div className="mt-4 space-y-2">
-              <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
+              <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Trade</p>
                 <p className="mt-1 text-sm font-semibold text-[#1d2433]">{selectedTrade?.label ?? "Not selected"}</p>
               </div>
-              <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
+              <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Source</p>
                 <p className="mt-1 truncate text-sm text-[#4f5f79]">{localSourceFile?.name ?? "No source PDF selected"}</p>
               </div>
-              <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
+              <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Output File</p>
                 <p className="mt-1 truncate text-sm text-[#4f5f79]">{outputFilePreview}</p>
               </div>
@@ -1961,7 +1961,7 @@ export function TradePackBuilderUploader({
         <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Produced Trade Packs</h3>
         <div className="space-y-2">
           {generatedTradePacks.length === 0 ? (
-            <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3">
+            <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3">
               <p className="text-sm text-[#687996]">No generated trade packs yet.</p>
             </div>
           ) : (
@@ -1970,7 +1970,7 @@ export function TradePackBuilderUploader({
         </div>
       </section>
 
-      <div className="rounded-[12px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3 text-xs text-[#6d7c94]">
+      <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3 text-xs text-[#6d7c94]">
         <p className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4 text-[#8b98ad]" />
           Trade Pack Builder filters pages by selected trade and stores only generated outputs for this project.

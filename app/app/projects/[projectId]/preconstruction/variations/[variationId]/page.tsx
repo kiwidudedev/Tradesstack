@@ -106,10 +106,10 @@ function DescriptionInputWithPreview({
       <Input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 min-w-[200px] rounded-[8px]"
+        className="h-10 min-w-[200px] rounded-[6px]"
       />
       {hasContent ? (
-        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[14px] border border-[#E6ECF5] bg-white p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
           <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
             Full Description
           </p>
@@ -268,11 +268,11 @@ export default function ProjectVariationsPage() {
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
   const [savedStatusById, setSavedStatusById] = useState<Map<string, VariationStatus>>(new Map());
-  const [isRegisterOpen, setIsRegisterOpen] = useState(true);
   const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
   const [isDocsOpen, setIsDocsOpen] = useState(true);
   const supabase = useMemo(() => {
@@ -460,7 +460,15 @@ export default function ProjectVariationsPage() {
       }));
 
       setVariations(hydratedVariations);
-      setActiveVariationId((current) => (current && hydratedVariations.some((item) => item.id === current) ? current : hydratedVariations[0].id));
+      setActiveVariationId((current) => {
+        if (routeVariationId && hydratedVariations.some((item) => item.id === routeVariationId)) {
+          return routeVariationId;
+        }
+        if (current && hydratedVariations.some((item) => item.id === current)) {
+          return current;
+        }
+        return hydratedVariations[0].id;
+      });
       setPersistedVariationIds(new Set(hydratedVariations.map((item) => item.id)));
       setSavedStatusById(new Map(hydratedVariations.map((item) => [item.id, item.status])));
       setIsLoadingVariations(false);
@@ -471,7 +479,7 @@ export default function ProjectVariationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [routeProjectSlug, session?.organizationId, supabase]);
+  }, [routeProjectSlug, routeVariationId, session?.organizationId, supabase]);
 
   const activeVariation = useMemo(
     () => variations.find((variation) => variation.id === activeVariationId) ?? variations[0] ?? null,
@@ -832,6 +840,89 @@ export default function ProjectVariationsPage() {
     }
   };
 
+  const deleteVariation = useCallback(async (variationId: string) => {
+    const variation = variations.find((item) => item.id === variationId);
+    if (!variation) {
+      return;
+    }
+
+    const confirmed = typeof window === "undefined"
+      ? true
+      : window.confirm(`Delete variation ${variation.code}? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      if (persistedVariationIds.has(variationId)) {
+        if (!supabase || !organizationId) {
+          setError("Variation delete is not ready. Please refresh and try again.");
+          return;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const lineItemsTable = (supabase as any).from("project_variation_line_items");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const attachmentsTable = (supabase as any).from("project_variation_attachments");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const statusEventsTable = (supabase as any).from("project_variation_status_events");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const invoiceItemsTable = (supabase as any).from("project_variation_invoice_items");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const variationsTable = (supabase as any).from("project_variations");
+
+        const [{ error: deleteLineItemsError }, { error: deleteAttachmentsError }, { error: deleteStatusEventsError }, { error: deleteInvoiceItemsError }] = await Promise.all([
+          lineItemsTable.delete().eq("organization_id", organizationId).eq("variation_id", variationId),
+          attachmentsTable.delete().eq("organization_id", organizationId).eq("variation_id", variationId),
+          statusEventsTable.delete().eq("organization_id", organizationId).eq("variation_id", variationId),
+          invoiceItemsTable.delete().eq("organization_id", organizationId).eq("variation_id", variationId),
+        ]);
+
+        if (deleteLineItemsError) throw new Error(deleteLineItemsError.message);
+        if (deleteAttachmentsError) throw new Error(deleteAttachmentsError.message);
+        if (deleteStatusEventsError) throw new Error(deleteStatusEventsError.message);
+        if (deleteInvoiceItemsError) throw new Error(deleteInvoiceItemsError.message);
+
+        const { error: deleteVariationError } = await variationsTable
+          .delete()
+          .eq("organization_id", organizationId)
+          .eq("id", variationId);
+        if (deleteVariationError) {
+          throw new Error(deleteVariationError.message);
+        }
+      }
+
+      const nextRows = variations.filter((item) => item.id !== variationId);
+      setVariations(nextRows);
+      setPersistedVariationIds((current) => {
+        const next = new Set(current);
+        next.delete(variationId);
+        return next;
+      });
+      setSavedStatusById((current) => {
+        const next = new Map(current);
+        next.delete(variationId);
+        return next;
+      });
+
+      if (nextRows.length === 0) {
+        router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations`);
+      } else {
+        const fallback = nextRows[0];
+        setActiveVariationId(fallback.id);
+        router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations/${fallback.id}`);
+      }
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete variation.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [organizationId, persistedVariationIds, routeProjectSlug, router, supabase, variations]);
+
   const exportVariationPdf = useCallback(() => {
     if (typeof window === "undefined" || !activeVariation) {
       return;
@@ -1112,7 +1203,7 @@ export default function ProjectVariationsPage() {
 
   if (isLoadingVariations) {
     return (
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardContent className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading variations...</CardContent>
       </Card>
     );
@@ -1126,7 +1217,7 @@ export default function ProjectVariationsPage() {
           variant="ghost"
           size="sm"
           asChild
-          className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
         >
           <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -1135,7 +1226,7 @@ export default function ProjectVariationsPage() {
         </Button>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-5 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -1146,7 +1237,19 @@ export default function ProjectVariationsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" onClick={createVariation} variant="outline" className={`${interMedium.className} h-10 rounded-[10px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}>
+              {activeVariation ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void deleteVariation(activeVariation.id)}
+                  disabled={isDeleting}
+                  className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </Button>
+              ) : null}
+              <Button type="button" onClick={createVariation} variant="outline" className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}>
                 <Plus className="mr-1 h-4 w-4" />
                 New Variation
               </Button>
@@ -1154,7 +1257,7 @@ export default function ProjectVariationsPage() {
                 type="button"
                 onClick={saveVariation}
                 disabled={isSaving}
-                className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+                className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
               >
                 {isSaving ? "Saving..." : "Save Variation"}
               </Button>
@@ -1162,14 +1265,14 @@ export default function ProjectVariationsPage() {
                 type="button"
                 onClick={exportVariationPdf}
                 variant="outline"
-                className={`${interMedium.className} h-10 rounded-[10px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+                className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
               >
                 Export PDF
               </Button>
             </div>
           </div>
           {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
           ) : null}
           {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
         </CardHeader>
@@ -1177,44 +1280,38 @@ export default function ProjectVariationsPage() {
 
       {hasVariations && activeVariation ? (
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-[12px] border border-[#E6EAF0] bg-white px-5 py-4">
+        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4">
           <section className="border-b border-[#E8EDF5] pb-5">
-            <button type="button" onClick={() => setIsRegisterOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Register</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isRegisterOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {isRegisterOpen ? (
-              <div className="mt-4 space-y-3">
-                <div className="rounded-[10px] border border-[#E5EAF2] overflow-hidden">
-                  <div className={`${interMedium.className} grid grid-cols-[120px_minmax(190px,1fr)_130px_120px] gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
-                    <span>Code</span><span>Variation</span><span>Status</span><span className="text-right">Value</span>
-                  </div>
-                  <div className="divide-y divide-[#EEF2F7]">
-                    {variations.map((variation) => {
-                      const total = variation.costLines.reduce((acc, line) => acc + lineTotal(line), 0);
-                      const isActive = variation.id === activeVariation.id;
-                      return (
-                        <button
-                          key={variation.id}
-                          type="button"
-                          onClick={() => {
-                            setActiveVariationId(variation.id);
-                            router.push(`/app/projects/${routeProjectSlug}/preconstruction/variations/${variation.id}`);
-                          }}
-                          className={`grid w-full cursor-pointer grid-cols-[120px_minmax(190px,1fr)_130px_120px] items-center gap-2 px-3 py-2 text-left transition-colors ${isActive ? "bg-[#F8FBFF]" : "hover:bg-[#f8fafc]"}`}
-                        >
-                          <span className={`${interMedium.className} text-xs font-semibold tracking-[0.06em] text-[#475569]`}>{variation.code}</span>
-                          <span className="text-sm text-[#0F172A]">{variation.title || "—"}</span>
-                          <span className={`inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-semibold ${statusClassName(variation.status)}`}>{variation.status}</span>
-                          <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(total)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+            <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Register</h2>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-[6px] border border-[#E5EAF2] overflow-hidden">
+                <div className={`${interMedium.className} grid grid-cols-[120px_minmax(190px,1fr)_130px_120px] gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
+                  <span>Code</span><span>Variation</span><span>Status</span><span className="text-right">Value</span>
+                </div>
+                <div className="divide-y divide-[#EEF2F7]">
+                  {variations.map((variation) => {
+                    const total = variation.costLines.reduce((acc, line) => acc + lineTotal(line), 0);
+                    const isActive = variation.id === activeVariation.id;
+                    return (
+                      <button
+                        key={variation.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveVariationId(variation.id);
+                          router.push(`/app/projects/${routeProjectSlug}/preconstruction/variations/${variation.id}`);
+                        }}
+                        className={`grid w-full cursor-pointer grid-cols-[120px_minmax(190px,1fr)_130px_120px] items-center gap-2 px-3 py-2 text-left transition-colors ${isActive ? "bg-[#F8FBFF]" : "hover:bg-[#f8fafc]"}`}
+                      >
+                        <span className={`${interMedium.className} text-xs font-semibold tracking-[0.06em] text-[#475569]`}>{variation.code}</span>
+                        <span className="text-sm text-[#0F172A]">{variation.title || "—"}</span>
+                        <span className={`inline-flex h-7 items-center rounded-[6px] border px-2.5 text-xs font-semibold ${statusClassName(variation.status)}`}>{variation.status}</span>
+                        <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(total)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            ) : null}
+            </div>
           </section>
 
           <section className="border-b border-[#E8EDF5] py-5">
@@ -1223,33 +1320,33 @@ export default function ProjectVariationsPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5 md:col-span-2">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Variation title</label>
-                  <Input value={activeVariation.title} onChange={(event) => updateActiveVariation("title", event.target.value)} className="h-10 rounded-[8px]" />
+                  <Input value={activeVariation.title} onChange={(event) => updateActiveVariation("title", event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
-                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d1d9e6] bg-white px-3 text-sm text-[#1d2433]`}>
+                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Variation code</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[8px] bg-[#f8fafc]" /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Variation code</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Origin</label>
-                  <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d1d9e6] bg-white px-3 text-sm text-[#1d2433]`}>
+                  <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     {ORIGIN_OPTIONS.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
                   </select>
                 </div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested by</label><Input value={activeVariation.requestedBy} onChange={(event) => updateActiveVariation("requestedBy", event.target.value)} className="h-10 rounded-[8px]" /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested by</label><Input value={activeVariation.requestedBy} onChange={(event) => updateActiveVariation("requestedBy", event.target.value)} className="h-10 rounded-[6px]" /></div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[8px]" /></div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Due date</label><Input type="date" value={activeVariation.dueDate} onChange={(event) => updateActiveVariation("dueDate", event.target.value)} className="h-10 rounded-[8px]" /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Due date</label><Input type="date" value={activeVariation.dueDate} onChange={(event) => updateActiveVariation("dueDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Invoice ready</label>
-                  <button type="button" onClick={() => updateActiveVariation("invoiceReady", !activeVariation.invoiceReady)} className={`flex h-10 w-full items-center justify-between rounded-[8px] border px-3 text-sm ${activeVariation.invoiceReady ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d1d9e6] bg-white text-[#334155]"}`}>
+                  <button type="button" onClick={() => updateActiveVariation("invoiceReady", !activeVariation.invoiceReady)} className={`flex h-10 w-full items-center justify-between rounded-[6px] border px-3 text-sm ${activeVariation.invoiceReady ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d1d9e6] bg-[#F8F9FC] text-[#334155]"}`}>
                     <span className={interMedium.className}>{activeVariation.invoiceReady ? "Ready for invoice" : "Not ready"}</span>
                     <Check className="h-4 w-4" />
                   </button>
@@ -1267,10 +1364,10 @@ export default function ProjectVariationsPage() {
             {isCostBuildUpOpen ? (
               <div className="mt-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[8px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}><Plus className="mr-1 h-4 w-4" />Add Cost Line</Button>
+                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}><Plus className="mr-1 h-4 w-4" />Add Cost Line</Button>
                 </div>
 
-                <div className="rounded-[10px] border border-[#E5EAF2] overflow-visible">
+                <div className="rounded-[6px] border border-[#E5EAF2] overflow-visible">
                   <div className={`${interMedium.className} grid items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089]`} style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
                     <span>Description</span><span>Section</span><span>Qty</span><span>Unit</span><span>Rate</span><span className="text-right">Total</span>
                   </div>
@@ -1282,14 +1379,14 @@ export default function ProjectVariationsPage() {
                           value={line.description}
                           onChange={(value) => updateCostLine(line.id, "description", value)}
                         />
-                        <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d6dfeb] bg-white px-2 text-sm text-[#1d2433]`}>
+                        <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}>
                           {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
                         </select>
-                        <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[8px] px-2" />
-                        <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[8px] px-2" />
+                        <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
+                        <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
                         <div className="relative w-[100px]">
                           <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                          <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-10 w-[100px] rounded-[8px] pl-6 pr-2" />
+                          <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-10 w-[100px] rounded-[6px] pl-6 pr-2" />
                         </div>
                         <div className="flex items-center justify-end gap-1.5">
                           <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineTotal(line))}</div>
@@ -1297,7 +1394,7 @@ export default function ProjectVariationsPage() {
                             type="button"
                             variant="ghost"
                             onClick={() => removeCostLine(line.id)}
-                            className="h-8 w-8 rounded-[8px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                            className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
                             aria-label="Delete line item"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1320,24 +1417,24 @@ export default function ProjectVariationsPage() {
             {isDocsOpen ? (
               <div className="mt-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${interMedium.className} h-9 rounded-[8px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${interMedium.className} h-9 rounded-[8px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Site Instruction")} className={`${interMedium.className} h-9 rounded-[8px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
+                  <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
+                  <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
+                  <Button type="button" variant="outline" onClick={() => addAttachment("Site Instruction")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
                 </div>
 
-                <div className="rounded-[10px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
+                <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
                   <p className={`${interMedium.className} mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Linked Documentation</p>
                   <div className="space-y-2">
                     {activeVariation.attachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[8px] border border-[#E5EAF2] bg-white px-3 py-2">
+                      <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
                         <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[#1D2433]`}>{attachment.name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="rounded-full bg-[#EEF3FA] px-2 py-1 text-[11px] font-semibold text-[#4A5D78]">{attachment.type}</span>
+                          <span className="rounded-[6px] bg-[#EEF3FA] px-2 py-1 text-[11px] font-semibold text-[#4A5D78]">{attachment.type}</span>
                           <Button
                             type="button"
                             variant="outline"
                             onClick={() => removeAttachment(attachment.id)}
-                            className={`${interMedium.className} h-10 w-10 rounded-[8px] border-[#d6dfeb] bg-white p-0 text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#1d2433]`}
+                            className={`${interMedium.className} h-10 w-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] p-0 text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#1d2433]`}
                             aria-label="Delete attachment"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1356,13 +1453,13 @@ export default function ProjectVariationsPage() {
                       type="button"
                       variant="ghost"
                       onClick={() => updateActiveVariation("notes", "")}
-                      className="h-8 w-8 rounded-[8px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
+                      className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
                       aria-label="Delete notes"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[8px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
               </div>
             ) : null}
@@ -1370,12 +1467,12 @@ export default function ProjectVariationsPage() {
         </div>
 
         <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-[#E6EAF0] bg-white shadow-none">
+          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
             <CardHeader className="pb-3 pt-5"><CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Status</CardTitle></CardHeader>
             <CardContent className="space-y-2 pb-5">
               <p className={`${interMedium.className} text-sm text-[#334155]`}>
                 <span className="text-[#64748B]">Current:</span>{" "}
-                <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusClassName(activeVariation.status)}`}>{activeVariation.status}</span>
+                <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(activeVariation.status)}`}>{activeVariation.status}</span>
               </p>
               <div className={`${interMedium.className} space-y-1.5 text-xs text-[#52627A]`}>
                 <p className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Requested: {activeVariation.requestedDate || "-"}</p>
@@ -1385,7 +1482,7 @@ export default function ProjectVariationsPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-[#E6EAF0] bg-white shadow-none">
+          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
             <CardHeader className="pb-3 pt-5"><CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Pricing Summary</CardTitle></CardHeader>
             <CardContent className="space-y-3 pb-5">
               <div className="grid gap-2">
@@ -1398,7 +1495,7 @@ export default function ProjectVariationsPage() {
                     className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
                       activeVariation.includeMarginInExport
                         ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                        : "border-[#d3dbe8] bg-white text-[#64748B]"
+                        : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
                     }`}
                   >
                     <Check className="mr-1 h-3 w-3" />
@@ -1409,7 +1506,7 @@ export default function ProjectVariationsPage() {
                   type="number"
                   value={activeVariation.marginPercent === "0" ? "" : activeVariation.marginPercent}
                   onChange={(event) => updateActiveVariation("marginPercent", event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
               <div className="grid gap-2">
@@ -1418,7 +1515,7 @@ export default function ProjectVariationsPage() {
                   type="number"
                   value={activeVariation.discountAmount === "0" ? "" : activeVariation.discountAmount}
                   onChange={(event) => updateActiveVariation("discountAmount", event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
               <div className="grid gap-2">
@@ -1427,7 +1524,7 @@ export default function ProjectVariationsPage() {
                   type="number"
                   value={activeVariation.contingencyAmount === "0" ? "" : activeVariation.contingencyAmount}
                   onChange={(event) => updateActiveVariation("contingencyAmount", event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
               <div className="grid gap-2">
@@ -1436,7 +1533,7 @@ export default function ProjectVariationsPage() {
                   type="number"
                   value={activeVariation.gstPercent}
                   onChange={(event) => updateActiveVariation("gstPercent", event.target.value)}
-                  className="h-10 rounded-[8px]"
+                  className="h-10 rounded-[6px]"
                 />
               </div>
 
@@ -1450,16 +1547,16 @@ export default function ProjectVariationsPage() {
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">GST</span><span>{toMoney(pricingSummary.gst)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Variation Register Total</span><span>{toMoney(summary.totalValue)}</span></p>
               </div>
-              <div className="rounded-[10px] bg-[#04234D] px-4 py-3 text-white">
+              <div className="rounded-[6px] bg-[#04234D] px-4 py-3 text-white">
                 <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.08em] text-white/70`}>Total Variation Price</p>
                 <p className="mt-1 text-[32px] font-semibold leading-none">{toMoney(pricingSummary.grandTotal)}</p>
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[10px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
+                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[6px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
                   {isSaving ? "Saving..." : "Save Variation"}
                 </Button>
-                <Button type="button" onClick={exportVariationPdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[10px] border-[#d3dbe8] bg-white text-sm font-medium text-[#1d2433]`}>
+                <Button type="button" onClick={exportVariationPdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>
                   Export PDF
                 </Button>
               </div>
@@ -1468,9 +1565,9 @@ export default function ProjectVariationsPage() {
         </div>
       </div>
       ) : (
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardContent className="flex flex-col items-center justify-center px-6 py-14 text-center">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF3FA] text-[#29446E]">
+            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-[6px] bg-[#EEF3FA] text-[#29446E]">
               <FileStack className="h-6 w-6" />
             </div>
             <h2 className="text-xl font-semibold tracking-[-0.01em] text-[#0F172A]">No variations yet</h2>
@@ -1481,7 +1578,7 @@ export default function ProjectVariationsPage() {
             <Button
               type="button"
               onClick={createVariation}
-              className={`${interMedium.className} mt-6 h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+              className={`${interMedium.className} mt-6 h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
             >
               <Plus className="mr-1 h-4 w-4" />
               Create First Variation

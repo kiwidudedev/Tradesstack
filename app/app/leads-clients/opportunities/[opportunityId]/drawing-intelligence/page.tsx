@@ -28,7 +28,7 @@ export default async function OpportunityDrawingIntelligencePage({
     <main className="space-y-4 pb-8">
       <Link
         href={`/app/leads-clients/opportunities/${opportunityId}`}
-        className={`${interMedium.className} inline-flex h-8 w-fit items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:text-[#344054]`}
+        className={`${interMedium.className} inline-flex h-8 w-fit items-center gap-1.5 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:text-[#344054]`}
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         Back to Lead Dashboard

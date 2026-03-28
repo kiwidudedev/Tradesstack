@@ -5,5 +5,5 @@ export default function ProjectLayoutShell({
 }: {
   children: React.ReactNode;
 }) {
-  return <main className="space-y-8 pb-8">{children}</main>;
+  return <main className="project-theme space-y-8 bg-[#F8F9FC] pb-8">{children}</main>;
 }

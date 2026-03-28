@@ -204,7 +204,7 @@ function StructuredSection({ title, items }: { title: string; items: StructuredI
       {items.length > 0 ? (
         <ul className="space-y-2">
           {items.map((item, index) => (
-            <li key={`${title}-${index}`} className="rounded-[10px] border border-[#E4EBF3] bg-[#F8FBFF] p-3">
+            <li key={`${title}-${index}`} className="rounded-[6px] border border-[#E4EBF3] bg-[#F8FBFF] p-3">
               <p className="text-sm font-semibold text-[#1B2433]">{item.title}</p>
               <p className="mt-1 text-sm text-[#4B5D79]">{item.description}</p>
             </li>
@@ -481,7 +481,7 @@ export function SpecFinishesReviewWorkbench({
 
   return (
     <div className="space-y-6">
-      <Card className="border-[#DFE7F1] bg-white shadow-none">
+      <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
         <CardContent className="space-y-5 p-5">
           <div className="space-y-1">
             <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">
@@ -497,7 +497,7 @@ export function SpecFinishesReviewWorkbench({
             <select
               value={selectedTradeId}
               onChange={(event) => setSelectedTradeId(event.target.value)}
-              className="h-11 w-full rounded-[10px] border border-[#D5DFEC] bg-white px-3 text-sm text-[#334155]"
+              className="h-11 w-full rounded-[6px] border border-[#D5DFEC] bg-white px-3 text-sm text-[#334155]"
             >
               {SPEC_FINISHES_TRADES.map((trade) => (
                 <option key={trade.id} value={trade.id}>
@@ -510,7 +510,7 @@ export function SpecFinishesReviewWorkbench({
           <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7F8EA8]">Select PDF</label>
-              <label className="inline-flex h-11 w-full cursor-pointer items-center justify-between rounded-[10px] border border-[#D5DFEC] bg-[#F9FBFF] px-3 text-sm text-[#334155] hover:bg-[#F2F7FF]">
+              <label className="inline-flex h-11 w-full cursor-pointer items-center justify-between rounded-[6px] border border-[#D5DFEC] bg-[#F9FBFF] px-3 text-sm text-[#334155] hover:bg-[#F2F7FF]">
                 <span className="truncate">{selectedPdfFile ? selectedPdfFile.name : "Choose PDF file"}</span>
                 <span className="ml-3 inline-flex items-center gap-2 text-[#61748F]">
                   <FileText className="h-4 w-4" />
@@ -524,7 +524,7 @@ export function SpecFinishesReviewWorkbench({
               type="button"
               onClick={runReview}
               disabled={!selectedPdfFile || isRunning}
-              className="h-11 rounded-[10px] bg-[#F74917] px-5 text-sm font-semibold text-white hover:bg-[#E84B1D] disabled:bg-[#F7B8A2]"
+              className="h-11 rounded-[6px] bg-[#F74917] px-5 text-sm font-semibold text-white hover:bg-[#E84B1D] disabled:bg-[#F7B8A2]"
             >
               {isRunning ? (
                 <>
@@ -551,7 +551,7 @@ export function SpecFinishesReviewWorkbench({
                   }
                   setRunResult(null);
                 }}
-                className="h-10 w-full rounded-[10px] border border-[#D5DFEC] bg-white px-3 text-sm text-[#334155]"
+                className="h-10 w-full rounded-[6px] border border-[#D5DFEC] bg-white px-3 text-sm text-[#334155]"
               >
                 <option value="">Select stored run...</option>
                 {storedRuns.map((run) => (
@@ -569,12 +569,12 @@ export function SpecFinishesReviewWorkbench({
       </Card>
 
       {reasons.length > 0 ? (
-        <Card className="border-[#DFE7F1] bg-white shadow-none">
+        <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
           <CardContent className="p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#64748B]">Why pages were extracted</p>
             <ul className="mt-3 space-y-2">
               {reasons.map((reason, index) => (
-                <li key={`reason-${index}`} className="rounded-[10px] border border-[#E4EBF3] bg-[#F8FBFF] px-3 py-2 text-sm text-[#41546F]">
+                <li key={`reason-${index}`} className="rounded-[6px] border border-[#E4EBF3] bg-[#F8FBFF] px-3 py-2 text-sm text-[#41546F]">
                   {reason}
                 </li>
               ))}
@@ -584,7 +584,7 @@ export function SpecFinishesReviewWorkbench({
       ) : null}
 
       {activeResult && activeMeta ? (
-        <Card className="border-[#DFE7F1] bg-white shadow-none">
+        <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
           <CardContent className="space-y-6 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -615,7 +615,7 @@ export function SpecFinishesReviewWorkbench({
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-[#DFE7F1] bg-white shadow-none">
+        <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
           <CardContent className="p-5 text-sm text-[#61748F]">
             Select a trade heading, upload a PDF, and run the review to generate a structured summary.
           </CardContent>

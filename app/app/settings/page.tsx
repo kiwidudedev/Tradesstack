@@ -40,7 +40,7 @@ export default async function SettingsPage() {
 
   return (
     <main className="space-y-8 pb-8">
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-white shadow-none">
+      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-4 pt-7">
           <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Settings</CardTitle>
         </CardHeader>
@@ -51,7 +51,7 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-3 pt-6">
           <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Organization Users</CardTitle>
         </CardHeader>
@@ -61,7 +61,7 @@ export default async function SettingsPage() {
           ) : memberRows.length === 0 ? (
             <p className={`${interMedium.className} text-sm text-[#5f6f89]`}>No users found for this organization yet.</p>
           ) : (
-            <div className="overflow-x-auto rounded-[10px] border border-[#E6EAF0]">
+            <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
               <table className="min-w-full border-collapse text-left">
                 <thead className="bg-[#F8FAFC] text-xs uppercase tracking-[0.08em] text-[#7b8ba4]">
                   <tr>

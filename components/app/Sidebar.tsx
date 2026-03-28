@@ -49,7 +49,8 @@ const AI_INTELLIGENCE_SEGMENTS = new Set([
 
 const JOB_MANAGEMENT_ITEMS = [
   { label: "Time Sheets", segment: "job-management/time-sheets" },
-  { label: "To do's", segment: "job-management/todos" },
+  { label: "Tasks", segment: "job-management/todos" },
+  { label: "Quality Assurance", segment: "job-management/quality-assurance" },
 ] as const;
 
 const LEADS_CLIENTS_ITEMS = [
@@ -218,7 +219,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                       href={preconstructionQuoteHref}
                       onClick={onNavigate}
                       className={cn(
-                        "group flex h-[36px] items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                        "group flex h-[36px] items-center gap-3 rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                         pathname.startsWith(preconstructionQuoteHref)
                           ? "bg-white/10 text-white"
                           : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -231,7 +232,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                       href={preconstructionVariationsHref}
                       onClick={onNavigate}
                       className={cn(
-                        "group flex h-[36px] items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                        "group flex h-[36px] items-center gap-3 rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                         pathname.startsWith(preconstructionVariationsHref)
                           ? "bg-white/10 text-white"
                           : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -244,7 +245,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                       href={preconstructionPurchaseOrdersHref}
                       onClick={onNavigate}
                       className={cn(
-                        "group flex h-[36px] items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                        "group flex h-[36px] items-center gap-3 rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                         pathname.startsWith(preconstructionPurchaseOrdersHref)
                           ? "bg-white/10 text-white"
                           : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -257,7 +258,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                       href={preconstructionClaimsHref}
                       onClick={onNavigate}
                       className={cn(
-                        "group flex h-[36px] items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                        "group flex h-[36px] items-center gap-3 rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                         pathname.startsWith(preconstructionClaimsHref)
                           ? "bg-white/10 text-white"
                           : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -308,7 +309,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                         href={href}
                         onClick={onNavigate}
                         className={cn(
-                          "group flex h-[36px] items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                          "group flex h-[36px] items-center gap-3 rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                           isActive
                             ? "bg-white/10 text-white"
                             : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -360,7 +361,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                         href={href}
                         onClick={onNavigate}
                         className={cn(
-                          "group flex h-[36px] items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                          "group flex h-[36px] items-center gap-3 rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                           isActive
                             ? "bg-white/10 text-white"
                             : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -404,7 +405,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           <Link
             href={projectBackHref}
             onClick={onNavigate}
-            className={`${interMedium.className} mt-5 inline-flex h-10 w-auto items-center whitespace-nowrap rounded-[8px] bg-[#F74917] px-[14px] text-[14px] font-medium text-white transition-colors hover:bg-[#E63F10]`}
+            className={`${interMedium.className} mt-5 inline-flex h-10 w-auto items-center whitespace-nowrap rounded-[6px] bg-[#F74917] px-[14px] text-[14px] font-medium text-white transition-colors hover:bg-[#E63F10]`}
           >
             <ArrowLeft className="mr-2 h-3.5 w-3.5 shrink-0" />
             {projectBackLabel}
@@ -459,7 +460,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                               href={projectHref}
                               onClick={onNavigate}
                               className={cn(
-                                "mb-0.5 flex h-[32px] items-center rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                                "mb-0.5 flex h-[32px] items-center rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                                 projectActive
                                   ? "bg-white/10 text-white"
                                   : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -477,7 +478,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                           href="/app/projects"
                           onClick={onNavigate}
                           className={cn(
-                            "mt-1 flex h-[32px] items-center rounded-[10px] px-3 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/6 hover:text-white"
+                            "mt-1 flex h-[32px] items-center rounded-[6px] px-3 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/6 hover:text-white"
                           )}
                         >
                           <span className={interBold.className}>View all projects</span>
@@ -520,7 +521,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                             href={subItem.href}
                             onClick={onNavigate}
                             className={cn(
-                              "mb-0.5 flex h-[32px] items-center rounded-[10px] px-3 text-[14px] font-medium transition-colors",
+                              "mb-0.5 flex h-[32px] items-center rounded-[6px] px-3 text-[14px] font-medium transition-colors",
                               subActive
                                 ? "bg-white/10 text-white"
                                 : "text-white/75 hover:bg-white/6 hover:text-white"
@@ -559,7 +560,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
             <Link
               href="/app/dashboard"
               onClick={onNavigate}
-              className={`${interMedium.className} mt-5 inline-flex h-10 w-auto items-center whitespace-nowrap rounded-[8px] bg-[#F74917] px-[14px] text-[14px] font-medium text-white transition-colors hover:bg-[#E63F10]`}
+              className={`${interMedium.className} mt-5 inline-flex h-10 w-auto items-center whitespace-nowrap rounded-[6px] bg-[#F74917] px-[14px] text-[14px] font-medium text-white transition-colors hover:bg-[#E63F10]`}
             >
               <ArrowLeft className="mr-2 h-3.5 w-3.5 shrink-0" />
               Back to Main Dashboard
@@ -573,10 +574,10 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-3 pt-5">
         <Link
           href="/app/settings"
-          className="-mx-2 flex items-center gap-3 rounded-[8px] px-2 py-1 transition-colors hover:bg-white/6"
+          className="-mx-2 flex items-center gap-3 rounded-[6px] px-2 py-1 transition-colors hover:bg-white/6"
           title={displayName}
         >
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F74917] text-[15px] font-semibold text-white">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[6px] bg-[#F74917] text-[15px] font-semibold text-white">
             {initials}
           </span>
           <span className={`${interMedium.className} truncate text-[15px] font-semibold text-white`}>

@@ -764,7 +764,7 @@ export default function ProjectClaimDetailPage() {
 
   if (isLoading) {
     return (
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardContent className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading claim...</CardContent>
       </Card>
     );
@@ -778,7 +778,7 @@ export default function ProjectClaimDetailPage() {
           variant="ghost"
           size="sm"
           asChild
-          className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
         >
           <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -787,7 +787,7 @@ export default function ProjectClaimDetailPage() {
         </Button>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-5 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -803,7 +803,7 @@ export default function ProjectClaimDetailPage() {
                   variant="outline"
                   onClick={() => void deleteClaim()}
                   disabled={isDeleting}
-                  className={`${interMedium.className} h-10 rounded-[10px] border-[#d6dfeb] bg-white px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
+                  className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
                 >
                   <Trash2 className="mr-1.5 h-4 w-4" />
                   {isDeleting ? "Deleting..." : "Delete"}
@@ -814,7 +814,7 @@ export default function ProjectClaimDetailPage() {
                 onClick={exportClaimPdf}
                 disabled={!claimId}
                 variant="outline"
-                className={`${interMedium.className} h-10 rounded-[10px] border-[#d6dfeb] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+                className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
               >
                 <FileDown className="mr-1.5 h-4 w-4" />
                 Export PDF
@@ -823,20 +823,20 @@ export default function ProjectClaimDetailPage() {
                 type="button"
                 onClick={() => void saveClaim()}
                 disabled={isSaving}
-                className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+                className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
               >
                 <Save className="mr-1.5 h-4 w-4" />
                 {isSaving ? "Saving..." : "Save Claim"}
               </Button>
             </div>
           </div>
-          {error ? <p className={`${interMedium.className} mt-4 rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p> : null}
+          {error ? <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p> : null}
           {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
         </CardHeader>
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-2 pt-5">
             <CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Claim Workspace</CardTitle>
           </CardHeader>
@@ -846,17 +846,17 @@ export default function ProjectClaimDetailPage() {
               <div className="grid gap-3 md:grid-cols-12">
                 <div className="space-y-1.5 md:col-span-4">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim No.</label>
-                  <Input value={claimNumber} onChange={(event) => setClaimNumber(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} />
+                  <Input value={claimNumber} onChange={(event) => setClaimNumber(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} />
                 </div>
                 <div className="space-y-1.5 md:col-span-8">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Title</label>
-                  <Input value={claimTitle} onChange={(event) => setClaimTitle(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} />
+                  <Input value={claimTitle} onChange={(event) => setClaimTitle(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} />
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Type</label>
-                  <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)} className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d1d9e6] bg-white px-3 text-sm text-[#1d2433]`} disabled={isSubmittedLocked}>
+                  <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`} disabled={isSubmittedLocked}>
                     <option value="Progress">Progress</option>
                     <option value="Deposit">Deposit</option>
                     <option value="Final">Final</option>
@@ -864,7 +864,7 @@ export default function ProjectClaimDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
-                  <select value={status} onChange={(event) => setStatus(event.target.value as ClaimStatus)} className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#d1d9e6] bg-white px-3 text-sm text-[#1d2433]`}>
+                  <select value={status} onChange={(event) => setStatus(event.target.value as ClaimStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     <option value="Draft">Draft</option>
                     <option value="Submitted">Submitted</option>
                     <option value="Unpaid">Unpaid</option>
@@ -872,13 +872,13 @@ export default function ProjectClaimDetailPage() {
                     <option value="Overdue">Overdue</option>
                     <option value="Cancelled">Cancelled</option>
                   </select>
-                  <span className={`${interMedium.className} inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${claimStatusClassName(status)}`}>
+                  <span className={`${interMedium.className} inline-flex rounded-[6px] border px-2 py-0.5 text-[11px] font-semibold ${claimStatusClassName(status)}`}>
                     {status}
                   </span>
                 </div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>% Complete</label>
-                  <Input type="number" value={percentComplete} onChange={(event) => setPercentComplete(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} />
+                  <Input type="number" value={percentComplete} onChange={(event) => setPercentComplete(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} />
                 </div>
               </div>
             </section>
@@ -888,10 +888,10 @@ export default function ProjectClaimDetailPage() {
             <section className="space-y-3">
               <h3 className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7392]`}>Claim Period</h3>
               <div className="grid gap-3 md:grid-cols-4">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Date</label><Input type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} /></div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Due Date</label><Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} /></div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Period Start</label><Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} /></div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Period End</label><Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} className="h-10 rounded-[8px]" disabled={isSubmittedLocked} /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Date</label><Input type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Due Date</label><Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Period Start</label><Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Period End</label><Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
               </div>
             </section>
 
@@ -900,7 +900,7 @@ export default function ProjectClaimDetailPage() {
             <section className="space-y-3">
               <h3 className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7392]`}>Payment & Notes</h3>
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-[12px] border border-[#D6E5FB] bg-[#F4F8FF] p-4 md:col-span-2">
+                <div className="rounded-[6px] border border-[#D6E5FB] bg-[#F4F8FF] p-4 md:col-span-2">
                   <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4f678c]`}>Calculated Claim Amount</p>
                   <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#0F2C5C]">{toMoney(currentClaimAmount)}</p>
                   <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#4f678c]`}>
@@ -909,18 +909,18 @@ export default function ProjectClaimDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Paid Amount</label>
-                  <Input type="number" value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="h-10 rounded-[8px]" />
+                  <Input type="number" value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Notes</label>
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${interMedium.className} min-h-[110px] w-full rounded-[8px] border border-[#d1d9e6] px-3 py-2 text-sm`} disabled={isSubmittedLocked} />
+                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${interMedium.className} min-h-[110px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} disabled={isSubmittedLocked} />
               </div>
             </section>
           </CardContent>
         </Card>
 
-        <Card className="border-[#E6EAF0] bg-white shadow-none xl:sticky xl:top-6 xl:self-start">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none xl:sticky xl:top-6 xl:self-start">
           <CardHeader className="pb-3 pt-5">
             <CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Claim Summary</CardTitle>
           </CardHeader>
@@ -958,7 +958,7 @@ export default function ProjectClaimDetailPage() {
               <p className="flex items-center justify-between text-[15px] font-semibold text-[#0F172A]"><span>Outstanding</span><span>{toMoney(balance)}</span></p>
             </section>
 
-            <div className="rounded-[12px] border border-[#0E2A56] bg-[#0B2E63] px-4 py-3 text-white">
+            <div className="rounded-[6px] border border-[#0E2A56] bg-[#0B2E63] px-4 py-3 text-white">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#cbd8ea]">Current Claim</p>
               <p className="mt-1 text-[30px] font-semibold leading-none tracking-[-0.02em]">{toMoney(currentClaimAmount)}</p>
             </div>

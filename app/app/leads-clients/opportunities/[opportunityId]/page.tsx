@@ -316,7 +316,7 @@ export default async function OpportunityWorkspacePage({
 
   return (
     <main className="space-y-6 pb-8">
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-white shadow-none">
+      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-4 pt-7">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
@@ -327,24 +327,24 @@ export default async function OpportunityWorkspacePage({
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 asChild
-                className="h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]"
+                className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]"
               >
                 <Link href={nextAction.href}>Continue Tender</Link>
               </Button>
-              <Button asChild variant="outline" className="h-10 rounded-[10px] border-[#D8E2EE] bg-white px-[14px] text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
+              <Button asChild variant="outline" className="h-10 rounded-[6px] border-[#D8E2EE] bg-white px-[14px] text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
                 <Link href={generateTradePackHref}>Generate Trade Pack</Link>
               </Button>
-              <Button asChild variant="outline" className="h-10 rounded-[10px] border-[#D8E2EE] bg-white px-[14px] text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
+              <Button asChild variant="outline" className="h-10 rounded-[6px] border-[#D8E2EE] bg-white px-[14px] text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
                 <Link href={buildScopeHref}>Build Scope</Link>
               </Button>
-              <Button asChild variant="outline" className="h-10 rounded-[10px] border-[#D8E2EE] bg-white px-[14px] text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
+              <Button asChild variant="outline" className="h-10 rounded-[6px] border-[#D8E2EE] bg-white px-[14px] text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
                 <Link href={`/app/leads-clients/opportunities/${opportunityId}/quote`}>Start Pricing</Link>
               </Button>
               {quoteSubmitted || activeOpportunity.stage === "Won" ? (
                 <form action={onConvertToProject}>
                   <Button
                     type="submit"
-                    className="h-10 rounded-[10px] bg-[#0F172A] px-[18px] text-sm font-medium text-white hover:bg-[#111c30]"
+                    className="h-10 rounded-[6px] bg-[#0F172A] px-[18px] text-sm font-medium text-white hover:bg-[#111c30]"
                   >
                     Convert To Project
                   </Button>
@@ -355,36 +355,36 @@ export default async function OpportunityWorkspacePage({
         </CardHeader>
         <CardContent className="space-y-4 pt-1">
           <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-            <div className="rounded-[12px] border border-[#E6EAF0] bg-[#F8FAFC] p-4">
+            <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] p-4">
               <div className="mb-3 flex items-center justify-between">
                 <p className={`${interMedium.className} text-sm font-semibold text-[#1E2B3F]`}>Status Progress</p>
                 <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#657A96]`}>
                   Quote Readiness {quoteReadiness}%
                 </p>
               </div>
-              <div className="h-2 w-full rounded-full bg-[#E7EEF6]">
-                <div className="h-2 rounded-full bg-[#F74917] transition-all" style={{ width: `${quoteReadiness}%` }} />
+              <div className="h-2 w-full rounded-[6px] bg-[#E7EEF6]">
+                <div className="h-2 rounded-[6px] bg-[#F74917] transition-all" style={{ width: `${quoteReadiness}%` }} />
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                 {trackerSteps.map((step) => (
-                  <div key={step.label} className="flex items-center gap-2 rounded-[8px] border border-[#E1EAF4] bg-white px-2.5 py-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${step.done ? "bg-[#22C55E]" : "bg-[#CAD5E3]"}`} />
+                  <div key={step.label} className="flex items-center gap-2 rounded-[6px] border border-[#E1EAF4] bg-white px-2.5 py-2">
+                    <span className={`h-2.5 w-2.5 rounded-[6px] ${step.done ? "bg-[#22C55E]" : "bg-[#CAD5E3]"}`} />
                     <span className={`${interMedium.className} text-xs font-semibold text-[#2A3B54]`}>{step.label}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="rounded-[12px] border border-[#F7D9CC] bg-[#FFF7F4] p-4">
+            <div className="rounded-[6px] border border-[#F7D9CC] bg-[#FFF7F4] p-4">
               <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.1em] text-[#B94D33]`}>Next Action</p>
               <h3 className="mt-2 text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">{nextAction.title}</h3>
               <p className={`${interMedium.className} mt-1.5 text-sm font-medium leading-relaxed text-[#7A4A3C]`}>{nextAction.detail}</p>
-              <Button asChild className="mt-4 h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]">
+              <Button asChild className="mt-4 h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]">
                 <Link href={nextAction.href}>{nextAction.ctaLabel}</Link>
               </Button>
             </div>
           </div>
 
-          <div className="rounded-[12px] border border-[#E6EAF0] bg-white px-4 py-3">
+          <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3">
             <div className={`${interMedium.className} flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-[#415670]`}>
               <span>
                 Client: <strong className="text-[#0F172A]">{activeOpportunity.clientName}</strong>
@@ -404,7 +404,7 @@ export default async function OpportunityWorkspacePage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-2">
             {workspaceTabs.map((tab) => (
@@ -414,8 +414,8 @@ export default async function OpportunityWorkspacePage({
                 className={
                   interMedium.className +
                   (tab === "Summary"
-                    ? " h-9 rounded-[10px] border border-[#D8E2EE] bg-[#F4F8FC] px-4 text-sm font-semibold text-[#0F172A]"
-                    : " h-9 rounded-[10px] border border-transparent px-4 text-sm font-medium text-[#6D809A] hover:bg-[#F6F9FC] hover:text-[#30425D]")
+                    ? " h-9 rounded-[6px] border border-[#D8E2EE] bg-[#F4F8FC] px-4 text-sm font-semibold text-[#0F172A]"
+                    : " h-9 rounded-[6px] border border-transparent px-4 text-sm font-medium text-[#6D809A] hover:bg-[#F6F9FC] hover:text-[#30425D]")
                 }
               >
                 {tab}
@@ -426,7 +426,7 @@ export default async function OpportunityWorkspacePage({
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-2 pt-6">
             <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Tender Snapshot</CardTitle>
           </CardHeader>
@@ -438,39 +438,39 @@ export default async function OpportunityWorkspacePage({
           </CardContent>
         </Card>
 
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-2 pt-6">
             <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">AI Insights</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2.5">
             {riskInsights.length > 0 ? (
               riskInsights.map((item) => (
-                <div key={item} className="rounded-[10px] border border-[#FDEAD7] bg-[#FFFBF6] px-3 py-2.5">
+                <div key={item} className="rounded-[6px] border border-[#FDEAD7] bg-[#FFFBF6] px-3 py-2.5">
                   <p className={`${interMedium.className} text-sm font-medium text-[#9A5F1D]`}>⚠ {item}</p>
                 </div>
               ))
             ) : (
-              <div className="rounded-[10px] border border-[#DDEBDF] bg-[#F7FBF8] px-3 py-2.5">
+              <div className="rounded-[6px] border border-[#DDEBDF] bg-[#F7FBF8] px-3 py-2.5">
                 <p className={`${interMedium.className} text-sm font-medium text-[#2F6A45]`}>
                   No critical issues detected. Continue progressing scope and pricing.
                 </p>
               </div>
             )}
-            <Button asChild variant="outline" className="h-10 rounded-[10px] border-[#D8E2EE] bg-white px-4 text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
+            <Button asChild variant="outline" className="h-10 rounded-[6px] border-[#D8E2EE] bg-white px-4 text-sm font-medium text-[#24324A] hover:bg-[#F8FAFD]">
               <Link href={packsGenerated ? buildScopeHref : generateTradePackHref}>View Issues</Link>
             </Button>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-6">
           <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Recent Activity</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {activity.length > 0 ? (
             activity.map((item) => (
-              <div key={`${item.label}-${item.at}`} className="flex items-center justify-between rounded-[10px] border border-[#EAF0F6] bg-[#F9FBFD] px-3 py-2.5">
+              <div key={`${item.label}-${item.at}`} className="flex items-center justify-between rounded-[6px] border border-[#EAF0F6] bg-[#F9FBFD] px-3 py-2.5">
                 <p className={`${interMedium.className} text-sm font-medium text-[#314760]`}>{item.label}</p>
                 <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#8396B0]`}>
                   {formatRelativeTime(item.at)}
@@ -485,7 +485,7 @@ export default async function OpportunityWorkspacePage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-6">
           <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Summary</CardTitle>
         </CardHeader>
@@ -502,7 +502,7 @@ export default async function OpportunityWorkspacePage({
           <Button
             type="submit"
             variant="ghost"
-            className="h-9 rounded-[10px] px-3 text-sm font-medium text-[#B42318] hover:bg-[#FEF3F2] hover:text-[#912018]"
+            className="h-9 rounded-[6px] px-3 text-sm font-medium text-[#B42318] hover:bg-[#FEF3F2] hover:text-[#912018]"
           >
             Delete Lead
           </Button>
@@ -522,7 +522,7 @@ function SnapshotRow({
   tone?: "neutral" | "warning";
 }) {
   return (
-    <div className="flex items-center justify-between rounded-[10px] border border-[#EAF0F6] bg-[#F9FBFD] px-3 py-2.5">
+    <div className="flex items-center justify-between rounded-[6px] border border-[#EAF0F6] bg-[#F9FBFD] px-3 py-2.5">
       <p className={`${interMedium.className} text-sm font-medium text-[#5B6E89]`}>{label}</p>
       <p className={`${interMedium.className} text-sm font-semibold ${tone === "warning" ? "text-[#B45309]" : "text-[#0F172A]"}`}>{value}</p>
     </div>

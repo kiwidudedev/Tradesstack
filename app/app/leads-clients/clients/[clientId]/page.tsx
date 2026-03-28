@@ -341,7 +341,7 @@ export default async function ClientOverviewPage({
         variant="ghost"
         size="sm"
         asChild
-        className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+        className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
       >
         <Link href="/app/leads-clients/clients">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -349,17 +349,17 @@ export default async function ClientOverviewPage({
         </Link>
       </Button>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-3 pt-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{client.name}</CardTitle>
-                <span className={`${interMedium.className} inline-flex items-center rounded-full border border-[#D7E4F4] bg-[#F3F8FF] px-2.5 py-1 text-xs font-semibold text-[#2F557E]`}>
+                <span className={`${interMedium.className} inline-flex items-center rounded-[6px] border border-[#D7E4F4] bg-[#F3F8FF] px-2.5 py-1 text-xs font-semibold text-[#2F557E]`}>
                   {formatRating(rating)}
                 </span>
                 {(client.tags ?? [])[0] ? (
-                  <span className={`${interMedium.className} inline-flex items-center rounded-full border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}>
+                  <span className={`${interMedium.className} inline-flex items-center rounded-[6px] border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}>
                     {(client.tags ?? [])[0]}
                   </span>
                 ) : null}
@@ -371,10 +371,10 @@ export default async function ClientOverviewPage({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" asChild className="h-9 rounded-[10px] border-[#D6DFEB] px-3 text-sm">
+              <Button variant="outline" asChild className="h-9 rounded-[6px] border-[#D6DFEB] px-3 text-sm">
                 <Link href="/app/projects">View Projects</Link>
               </Button>
-              <Button asChild className="h-9 rounded-[10px] bg-[#F74917] px-3 text-sm text-white hover:bg-[#e63f10]">
+              <Button asChild className="h-9 rounded-[6px] bg-[#F74917] px-3 text-sm text-white hover:bg-[#e63f10]">
                 <Link href={`/app/leads-clients/opportunities/new?clientId=${client.id}`}>Add Opportunity</Link>
               </Button>
             </div>
@@ -382,7 +382,7 @@ export default async function ClientOverviewPage({
         </CardHeader>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardContent className="grid gap-2 p-3.5 md:grid-cols-2 xl:grid-cols-4">
           <MetricPill label="Active Leads" value={String(activeLeads)} />
           <MetricPill label="Projects" value={String(projects.length)} />
@@ -401,7 +401,7 @@ export default async function ClientOverviewPage({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-2 pt-5">
             <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Recent Opportunities</CardTitle>
           </CardHeader>
@@ -412,7 +412,7 @@ export default async function ClientOverviewPage({
                   <Link
                     key={opportunity.id}
                     href={`/app/leads-clients/opportunities/${opportunity.slug}`}
-                    className="block cursor-pointer rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5 transition-all hover:-translate-y-[1px] hover:bg-[#F3F8FF]"
+                    className="block cursor-pointer rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5 transition-all hover:-translate-y-[1px] hover:bg-[#F3F8FF]"
                   >
                     <p className={`${interMedium.className} text-sm font-semibold text-[#1E2D43]`}>{opportunity.name}</p>
                     <p className={`${interMedium.className} mt-1 text-xs font-semibold ${statusSignal(opportunity.stage).className}`}>
@@ -427,7 +427,7 @@ export default async function ClientOverviewPage({
           </CardContent>
         </Card>
 
-        <Card className="border-[#E6EAF0] bg-white shadow-none">
+        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardHeader className="pb-2 pt-5">
             <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Recent Projects</CardTitle>
           </CardHeader>
@@ -438,7 +438,7 @@ export default async function ClientOverviewPage({
                   <Link
                     key={project.id}
                     href={`/app/projects/${project.slug}/dashboard`}
-                    className="block cursor-pointer rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5 transition-all hover:-translate-y-[1px] hover:bg-[#F3F8FF]"
+                    className="block cursor-pointer rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5 transition-all hover:-translate-y-[1px] hover:bg-[#F3F8FF]"
                   >
                     <p className={`${interMedium.className} text-sm font-semibold text-[#1E2D43]`}>{project.name}</p>
                     <p className={`${interMedium.className} mt-1 text-xs font-semibold ${statusSignal(project.stage).className}`}>
@@ -454,7 +454,7 @@ export default async function ClientOverviewPage({
         </Card>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-1 pt-4">
           <CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Details</CardTitle>
         </CardHeader>
@@ -469,11 +469,11 @@ export default async function ClientOverviewPage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-2 pt-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Tags</CardTitle>
-            <Button variant="outline" asChild className="h-8 rounded-[9px] border-[#D6DFEB] px-3 text-xs">
+            <Button variant="outline" asChild className="h-8 rounded-[6px] border-[#D6DFEB] px-3 text-xs">
               <Link href={`/app/leads-clients/clients/${client.id}/edit`}>+ Add Tag</Link>
             </Button>
           </div>
@@ -484,7 +484,7 @@ export default async function ClientOverviewPage({
               (client.tags ?? []).map((tag) => (
                 <span
                   key={tag}
-                  className={`${interMedium.className} inline-flex items-center rounded-full border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}
+                  className={`${interMedium.className} inline-flex items-center rounded-[6px] border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}
                 >
                   {tag}
                 </span>
@@ -498,7 +498,7 @@ export default async function ClientOverviewPage({
             {SUGGESTED_TAGS.filter((tag) => !(client.tags ?? []).includes(tag)).map((tag) => (
               <span
                 key={tag}
-                className={`${interMedium.className} inline-flex items-center rounded-full border border-dashed border-[#CAD8EA] bg-[#FBFCFE] px-2.5 py-1 text-xs font-medium text-[#6A809C]`}
+                className={`${interMedium.className} inline-flex items-center rounded-[6px] border border-dashed border-[#CAD8EA] bg-[#FBFCFE] px-2.5 py-1 text-xs font-medium text-[#6A809C]`}
               >
                 {tag}
               </span>
@@ -512,7 +512,7 @@ export default async function ClientOverviewPage({
 
 function MetricPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[10px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
+    <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
       <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.1em] text-[#667C97]`}>{label}</p>
       <p className={`${interMedium.className} mt-1 text-sm font-semibold text-[#1E2D43]`}>{value}</p>
     </div>

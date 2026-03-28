@@ -305,7 +305,7 @@ export default function NewOpportunityPage() {
         variant="ghost"
         size="sm"
         asChild
-        className={`${interMedium.className} h-8 rounded-[8px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+        className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
       >
         <Link href="/app/leads-clients/opportunities">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -313,7 +313,7 @@ export default function NewOpportunityPage() {
         </Link>
       </Button>
 
-      <Card className="border-[#E6EAF0] bg-white shadow-none">
+      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
         <CardHeader className="pb-4 pt-7">
           <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Create Tender Opportunity</CardTitle>
           <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
@@ -332,7 +332,7 @@ export default function NewOpportunityPage() {
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Hobson Office Upgrade"
-                  className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                  className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                   required
                 />
               </div>
@@ -348,7 +348,7 @@ export default function NewOpportunityPage() {
                     id="opportunityClient"
                     value={selectedClientId}
                     onChange={(event) => setSelectedClientId(event.target.value)}
-                    className={`${interMedium.className} h-11 w-full rounded-[10px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
+                    className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
                     disabled={isAuthLoading}
                     required={clients.length > 0}
                   >
@@ -378,7 +378,7 @@ export default function NewOpportunityPage() {
                 value={location}
                 onChange={(event) => setLocation(event.target.value)}
                 placeholder="Hobson Street, Auckland"
-                className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
               />
             </div>
 
@@ -395,7 +395,7 @@ export default function NewOpportunityPage() {
                       value={clientCompanyName}
                       onChange={(event) => setClientCompanyName(event.target.value)}
                       placeholder="Meridian PM"
-                      className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                       required
                     />
                   </div>
@@ -411,7 +411,7 @@ export default function NewOpportunityPage() {
                         value={clientEmail}
                         onChange={(event) => setClientEmail(event.target.value)}
                         placeholder="client@company.com"
-                        className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                       />
                     </div>
 
@@ -424,7 +424,7 @@ export default function NewOpportunityPage() {
                         value={clientPhone}
                         onChange={(event) => setClientPhone(event.target.value)}
                         placeholder="+64 21 123 4567"
-                        className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                       />
                     </div>
                   </div>
@@ -442,7 +442,7 @@ export default function NewOpportunityPage() {
                     type="date"
                     value={dueDate}
                     onChange={(event) => setDueDate(event.target.value)}
-                  className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                  className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                     required
                 />
               </div>
@@ -458,7 +458,7 @@ export default function NewOpportunityPage() {
                     value={estimatedValue}
                     onChange={(event) => setEstimatedValue(event.target.value)}
                     placeholder="500000"
-                  className={`${interMedium.className} h-11 rounded-[10px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                  className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
                 />
               </div>
             </div>
@@ -474,7 +474,7 @@ export default function NewOpportunityPage() {
                     id="opportunityOwner"
                     value={selectedOwnerUserId}
                     onChange={(event) => setSelectedOwnerUserId(event.target.value)}
-                    className={`${interMedium.className} h-11 w-full rounded-[10px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
+                    className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
                   >
                     {members.map((member) => (
                       <option key={member.user_id} value={member.user_id}>
@@ -486,20 +486,20 @@ export default function NewOpportunityPage() {
             </div>
 
             {error ? (
-              <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
+              <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
                 {error}
               </p>
             ) : null}
 
             <div className="border-t border-[#E6EAF0] pt-4">
               <div className="flex items-center justify-between gap-3">
-                <Button type="button" variant="ghost" asChild className="h-10 rounded-[10px] px-4 text-sm">
+                <Button type="button" variant="ghost" asChild className="h-10 rounded-[6px] px-4 text-sm">
                   <Link href="/app/leads-clients/opportunities">Cancel</Link>
                 </Button>
                 <Button
                   type="submit"
                   disabled={isSubmitting || isAuthLoading || isLoadingFormData}
-                  className={`${interMedium.className} h-10 rounded-[10px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
+                  className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
                 >
                   {isSubmitting ? "Creating..." : "Create Tender"}
                 </Button>
