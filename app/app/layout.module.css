@@ -1,0 +1,5 @@
+.appRoute :global(h2) {
+  font-family: var(--font-inter-bold), Arial, sans-serif !important;
+  font-size: 34px !important;
+  font-weight: 700 !important;
+}

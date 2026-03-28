@@ -75,7 +75,18 @@ export default function HomePage() {
   }, [showLoginModal]);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#0B2639] text-white">
+    <div className="landing-page min-h-screen overflow-x-hidden bg-[#0B2639] text-white">
+      <style jsx global>{`
+        .landing-page h2 {
+          font-size: 45px !important;
+        }
+
+        @media (min-width: 1024px) {
+          .landing-page h2 {
+            font-size: 65px !important;
+          }
+        }
+      `}</style>
       <main>
         <Navbar session={session} onLoginClick={() => setShowLoginModal(true)} />
         <Hero />
