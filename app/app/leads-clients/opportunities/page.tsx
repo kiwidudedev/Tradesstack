@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
+import styles from "./opportunities.module.css";
 
 function formatCurrencyCompactNZD(value: number) {
   return new Intl.NumberFormat("en-NZ", {
@@ -46,24 +47,24 @@ function getDaysUntilIso(isoDate: string | null): number | null {
 function getDueMeta(isoDate: string | null) {
   const diffDays = getDaysUntilIso(isoDate);
   if (diffDays === null) {
-    return { text: "No due date", className: "text-[#8A97AB]" };
+    return { text: "No due date", className: styles.dueMetaSoft };
   }
 
   if (diffDays < 0) {
-    return { text: "🔴 Overdue", className: "text-[#B91C1C]" };
+    return { text: "Overdue", className: styles.dueMetaDanger };
   }
 
   if (diffDays === 0) {
-    return { text: "⚠ Due today", className: "text-[#D97706]" };
+    return { text: "Due today", className: styles.dueMetaWarn };
   }
 
   if (diffDays === 1) {
-    return { text: "⚠ Due tomorrow", className: "text-[#D97706]" };
+    return { text: "Due tomorrow", className: styles.dueMetaWarn };
   }
 
   return {
     text: `Due in ${diffDays} days`,
-    className: diffDays <= 3 ? "text-[#D97706]" : "text-[#6F839E]",
+    className: diffDays <= 3 ? styles.dueMetaWarn : styles.dueMetaSoft,
   };
 }
 
@@ -180,37 +181,37 @@ export default async function LeadsClientsOpportunitiesPage({
   };
 
   return (
-    <main className="space-y-4 pb-8">
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-2 pt-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className={`${styles.page} space-y-4 pb-8`}>
+      <Card className={`${styles.heroCard} relative overflow-hidden`}>
+        <CardHeader className={styles.heroHeader}>
+          <div className={styles.heroHeaderRow}>
             <div className="min-w-0">
-              <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Tender Opportunities</CardTitle>
+              <CardTitle className={styles.heroTitle}>Tender Opportunities</CardTitle>
             </div>
-            <Button className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
+            <Button className={styles.heroButton} asChild>
               <Link href="/app/leads-clients/opportunities/new">Create Opportunity</Link>
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-2.5 pt-0">
-          <p className={`${interMedium.className} text-sm font-medium text-[#5F7390]`}>
-            <span className="font-semibold text-[#253047]">{stats.active}</span> active tenders {" \u00b7 "}
-            <span className="font-semibold text-[#253047]">{formatCurrencyCompactNZD(stats.pipelineValue)}</span> pipeline {" \u00b7 "}
-            <span className="font-semibold text-[#253047]">{stats.dueThisWeek}</span> due this week {" \u00b7 "}
-            <span className="font-semibold text-[#253047]">{stats.quoted}</span> {stats.quoted === 1 ? "quote submitted" : "quotes submitted"}
+          <p className={`${interMedium.className} ${styles.statLine}`}>
+            <span className={styles.statStrong}>{stats.active}</span> active tenders {" \u00b7 "}
+            <span className={styles.statStrong}>{formatCurrencyCompactNZD(stats.pipelineValue)}</span> pipeline {" \u00b7 "}
+            <span className={styles.statStrong}>{stats.dueThisWeek}</span> due this week {" \u00b7 "}
+            <span className={styles.statStrong}>{stats.quoted}</span> {stats.quoted === 1 ? "quote submitted" : "quotes submitted"}
           </p>
 
-          <form method="get" className="flex flex-wrap items-center gap-3">
+          <form method="get" className={styles.filtersForm}>
             <Input
               name="q"
               defaultValue={q}
               placeholder="Search opportunities"
-              className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#E2E8F0] bg-[#F8FAFC] text-sm font-medium text-[#0F172A] placeholder:text-[#73859f] md:max-w-[360px]`}
+              className={`${interMedium.className} ${styles.searchInput} w-full md:max-w-[360px]`}
             />
             <select
               name="client"
               defaultValue={client}
-              className={`${interMedium.className} h-10 rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-medium text-[#415670]`}
+              className={`${interMedium.className} ${styles.filterSelect} px-3.5`}
             >
               <option value="all">Client: All</option>
               {clientOptions.map(([id, name]) => (
@@ -222,72 +223,72 @@ export default async function LeadsClientsOpportunitiesPage({
             <select
               name="due"
               defaultValue={due}
-              className={`${interMedium.className} h-10 rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-medium text-[#415670]`}
+              className={`${interMedium.className} ${styles.filterSelect} px-3.5`}
             >
               <option value="any">Due date: Any</option>
               <option value="next48h">Due in 48 hours</option>
               <option value="next7d">Due in 7 days</option>
               <option value="overdue">Overdue</option>
             </select>
-            <Button type="submit" variant="outline" className="h-10 rounded-[6px] border-[#E2E8F0] bg-white px-4 text-sm">
+            <Button type="submit" variant="outline" className={styles.applyButton}>
               Apply
             </Button>
-            <Button variant="ghost" asChild className="h-10 rounded-[6px] px-3 text-sm">
+            <Button variant="ghost" asChild className={styles.resetButton}>
               <Link href="/app/leads-clients/opportunities">Reset</Link>
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Tender Pipeline</CardTitle>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
-            <span className="font-semibold text-[#253047]">{pipelineRows.length}</span> tenders being priced
+      <Card className={styles.sectionCard}>
+        <CardHeader className={styles.sectionHeader}>
+          <CardTitle className={styles.sectionTitle}>Tender Pipeline</CardTitle>
+          <p className={`${interMedium.className} ${styles.sectionMeta}`}>
+            <span className={styles.statStrong}>{pipelineRows.length}</span> tenders being priced
           </p>
         </CardHeader>
         <CardContent className="pt-0">
           {dueSoonRows.length > 0 ? (
-            <div className="mb-2.5 rounded-[6px] border border-[#F7E5D1] bg-[#FFFBF6] px-2.5 py-2">
-              <p className={`${interMedium.className} text-xs font-semibold text-[#B45309]`}>
+            <div className={styles.alertBox}>
+              <p className={`${interMedium.className} ${styles.alertTitle}`}>
                 ⚠ {dueSoonRows.length} tenders due in the next 48 hours
               </p>
-              <p className={`${interMedium.className} mt-0.5 text-xs font-medium text-[#9A6A2D]`}>
+              <p className={`${interMedium.className} ${styles.alertText}`}>
                 {dueSoonRows.map((item) => item.name).join(" • ")}
               </p>
             </div>
           ) : null}
 
-          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
-            <table className="min-w-full border-collapse">
-              <thead className="bg-white">
-                <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
-                  <th className="px-3 py-1.5">Opportunity</th>
-                  <th className="px-3 py-1.5 text-right">Company</th>
-                  <th className="px-3 py-1.5 text-right">Due</th>
-                  <th className="px-3 py-1.5 text-right">Estimator</th>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead className={styles.tableHead}>
+                <tr className={`${interMedium.className} ${styles.headRow}`}>
+                  <th className={styles.headCell}>Opportunity</th>
+                  <th className={styles.headCellRight}>Company</th>
+                  <th className={styles.headCellRight}>Due</th>
+                  <th className={styles.headCellRight}>Estimator</th>
                 </tr>
               </thead>
               <tbody>
                 {pipelineRows.map((row) => (
-                  <tr key={row.opportunityId} className="cursor-pointer border-t border-[#E9EEF4] bg-white transition-colors hover:bg-[#EEF4FB]">
-                    <td className="px-3 py-[3px]">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="block rounded-[6px]">
-                        <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{row.name}</p>
-                        <p className={`${interMedium.className} mt-0 text-[10px] font-normal text-[#97A6BB]`}>{row.location}</p>
+                  <tr key={row.opportunityId} className={styles.tableRow}>
+                    <td className={styles.cell}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={styles.opportunityLink}>
+                        <p className={`${interMedium.className} ${styles.primaryText}`}>{row.name}</p>
+                        <p className={`${interMedium.className} ${styles.secondaryText}`}>{row.location}</p>
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} inline-block text-sm font-medium text-[#2D3D55]`}>
+                    <td className={styles.cellRight}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
                         {row.clientName}
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
+                    <td className={styles.cellRight}>
                       <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-block text-right">
                         <DueDateCell isoDate={row.dueDateIso} />
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
+                    <td className={styles.cellRight}>
                       <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-flex items-center justify-end">
                         <OwnerCell owner={row.ownerName} />
                       </Link>
@@ -295,8 +296,8 @@ export default async function LeadsClientsOpportunitiesPage({
                   </tr>
                 ))}
                 {pipelineRows.length === 0 ? (
-                  <tr className="border-t border-[#E9EEF4] bg-white">
-                    <td colSpan={4} className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#8A97AB]`}>
+                  <tr className={styles.emptyRow}>
+                    <td colSpan={4} className={`${interMedium.className} ${styles.emptyCell}`}>
                       No active tenders match your filters.
                     </td>
                   </tr>
@@ -307,44 +308,44 @@ export default async function LeadsClientsOpportunitiesPage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Jobs Priced</CardTitle>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
-            <span className="font-semibold text-[#253047]">{pricedRows.length}</span> priced tenders
+      <Card className={styles.sectionCard}>
+        <CardHeader className={styles.sectionHeader}>
+          <CardTitle className={styles.sectionTitle}>Jobs Priced</CardTitle>
+          <p className={`${interMedium.className} ${styles.sectionMeta}`}>
+            <span className={styles.statStrong}>{pricedRows.length}</span> priced tenders
           </p>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
-            <table className="min-w-full border-collapse">
-              <thead className="bg-white">
-                <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
-                  <th className="px-3 py-1.5">Opportunity</th>
-                  <th className="px-3 py-1.5 text-right">Company</th>
-                  <th className="px-3 py-1.5 text-right">Quoted</th>
-                  <th className="px-3 py-1.5 text-right">Estimator</th>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead className={styles.tableHead}>
+                <tr className={`${interMedium.className} ${styles.headRow}`}>
+                  <th className={styles.headCell}>Opportunity</th>
+                  <th className={styles.headCellRight}>Company</th>
+                  <th className={styles.headCellRight}>Quoted</th>
+                  <th className={styles.headCellRight}>Estimator</th>
                 </tr>
               </thead>
               <tbody>
                 {pricedRows.map((row) => (
-                  <tr key={row.opportunityId} className="cursor-pointer border-t border-[#E9EEF4] bg-white transition-colors hover:bg-[#EEF4FB]">
-                    <td className="px-3 py-[3px]">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="block rounded-[6px]">
-                        <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{row.name}</p>
-                        <p className={`${interMedium.className} mt-0 text-[10px] font-normal text-[#97A6BB]`}>{row.location}</p>
+                  <tr key={row.opportunityId} className={styles.tableRow}>
+                    <td className={styles.cell}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={styles.opportunityLink}>
+                        <p className={`${interMedium.className} ${styles.primaryText}`}>{row.name}</p>
+                        <p className={`${interMedium.className} ${styles.secondaryText}`}>{row.location}</p>
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} inline-block text-sm font-medium text-[#2D3D55]`}>
+                    <td className={styles.cellRight}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
                         {row.clientName}
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} inline-block text-sm font-medium text-[#2D3D55]`}>
+                    <td className={styles.cellRight}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
                         {formatDayMonth(row.quotedDateIso)}
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
+                    <td className={styles.cellRight}>
                       <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-flex items-center justify-end">
                         <OwnerCell owner={row.ownerName} />
                       </Link>
@@ -352,8 +353,8 @@ export default async function LeadsClientsOpportunitiesPage({
                   </tr>
                 ))}
                 {pricedRows.length === 0 ? (
-                  <tr className="border-t border-[#E9EEF4] bg-white">
-                    <td colSpan={4} className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#8A97AB]`}>
+                  <tr className={styles.emptyRow}>
+                    <td colSpan={4} className={`${interMedium.className} ${styles.emptyCell}`}>
                       No priced tenders yet.
                     </td>
                   </tr>
@@ -364,44 +365,44 @@ export default async function LeadsClientsOpportunitiesPage({
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Recently Won Jobs</CardTitle>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
-            <span className="font-semibold text-[#253047]">{wonRows.length}</span> won tenders
+      <Card className={styles.sectionCard}>
+        <CardHeader className={styles.sectionHeader}>
+          <CardTitle className={styles.sectionTitle}>Recently Won Jobs</CardTitle>
+          <p className={`${interMedium.className} ${styles.sectionMeta}`}>
+            <span className={styles.statStrong}>{wonRows.length}</span> won tenders
           </p>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
-            <table className="min-w-full border-collapse">
-              <thead className="bg-white">
-                <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
-                  <th className="px-3 py-1.5">Opportunity</th>
-                  <th className="px-3 py-1.5 text-right">Company</th>
-                  <th className="px-3 py-1.5 text-right">Won</th>
-                  <th className="px-3 py-1.5 text-right">Estimator</th>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead className={styles.tableHead}>
+                <tr className={`${interMedium.className} ${styles.headRow}`}>
+                  <th className={styles.headCell}>Opportunity</th>
+                  <th className={styles.headCellRight}>Company</th>
+                  <th className={styles.headCellRight}>Won</th>
+                  <th className={styles.headCellRight}>Estimator</th>
                 </tr>
               </thead>
               <tbody>
                 {wonRows.map((row) => (
-                  <tr key={row.opportunityId} className="cursor-pointer border-t border-[#E9EEF4] bg-white transition-colors hover:bg-[#EEF4FB]">
-                    <td className="px-3 py-[3px]">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="block rounded-[6px]">
-                        <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{row.name}</p>
-                        <p className={`${interMedium.className} mt-0 text-[10px] font-normal text-[#97A6BB]`}>{row.location}</p>
+                  <tr key={row.opportunityId} className={styles.tableRow}>
+                    <td className={styles.cell}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={styles.opportunityLink}>
+                        <p className={`${interMedium.className} ${styles.primaryText}`}>{row.name}</p>
+                        <p className={`${interMedium.className} ${styles.secondaryText}`}>{row.location}</p>
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} inline-block text-sm font-medium text-[#2D3D55]`}>
+                    <td className={styles.cellRight}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
                         {row.clientName}
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} inline-block text-sm font-medium text-[#2D3D55]`}>
+                    <td className={styles.cellRight}>
+                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
                         {formatDayMonth(row.quotedDateIso)}
                       </Link>
                     </td>
-                    <td className="px-3 py-[3px] text-right">
+                    <td className={styles.cellRight}>
                       <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-flex items-center justify-end">
                         <OwnerCell owner={row.ownerName} />
                       </Link>
@@ -409,8 +410,8 @@ export default async function LeadsClientsOpportunitiesPage({
                   </tr>
                 ))}
                 {wonRows.length === 0 ? (
-                  <tr className="border-t border-[#E9EEF4] bg-white">
-                    <td colSpan={4} className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#8A97AB]`}>
+                  <tr className={styles.emptyRow}>
+                    <td colSpan={4} className={`${interMedium.className} ${styles.emptyCell}`}>
                       No recently won jobs yet.
                     </td>
                   </tr>
@@ -429,9 +430,9 @@ function DueDateCell({ isoDate }: { isoDate: string | null }) {
   const meta = getDueMeta(isoDate);
 
   return (
-    <div className="leading-tight text-right">
-      <p className={`${interMedium.className} text-sm font-semibold text-[#1F2F45]`}>{label}</p>
-      <p className={`${interMedium.className} mt-[1px] text-[11px] font-medium ${meta.className}`}>{meta.text}</p>
+    <div className={styles.dueCell}>
+      <p className={`${interMedium.className} ${styles.dueLabel}`}>{label}</p>
+      <p className={`${interMedium.className} ${styles.dueMeta} ${meta.className}`}>{meta.text}</p>
     </div>
   );
 }
@@ -440,11 +441,11 @@ function OwnerCell({ owner }: { owner: string }) {
   const initial = owner.slice(0, 1).toUpperCase();
 
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`${interMedium.className} inline-flex h-[16px] w-[16px] items-center justify-center rounded-[6px] bg-[#E7EEF8] text-[9px] font-semibold text-[#36577F]`}>
+    <span className={styles.ownerCell}>
+      <span className={`${interMedium.className} ${styles.ownerBadge}`}>
         {initial}
       </span>
-      <span className={`${interMedium.className} text-sm font-medium text-[#2D3D55]`}>{owner}</span>
+      <span className={`${interMedium.className} ${styles.ownerName}`}>{owner}</span>
     </span>
   );
 }

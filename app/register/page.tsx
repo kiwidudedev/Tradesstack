@@ -1,12 +1,12 @@
 import { Suspense } from "react";
-import { AuthPanel } from "@/components/auth/AuthPanel";
+import { RegisterShowcasePanel } from "@/components/auth/RegisterShowcasePanel";
 
 export default function RegisterPage() {
   return (
-    <main className="min-h-screen bg-[#04234D] px-4 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
-      <div className="mx-auto w-full max-w-6xl">
+    <main className="flex min-h-screen items-center bg-[#F4EFE6] px-4 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
+      <div className="mx-auto w-full max-w-[1320px]">
         <Suspense fallback={null}>
-          <AuthPanel mode="register" closeHref="/" />
+          <RegisterShowcasePanel closeHref="/" />
         </Suspense>
       </div>
     </main>

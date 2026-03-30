@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { bertholdHeading } from "@/lib/fonts";
+import { akzidenz } from "@/lib/fonts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -118,9 +118,11 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
             />
 
             <div className="space-y-3">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#F74917]">AI FOR CONSTRUCTION DOCUMENTS</p>
+              <p className={`${akzidenz.className} text-sm font-normal uppercase tracking-[0.24em] text-[#F74917]`}>
+                AI FOR CONSTRUCTION DOCUMENTS
+              </p>
               <h1
-                className={`${bertholdHeading.className} w-full max-w-[400px] text-[45px] font-black uppercase italic leading-[0.95] tracking-[-0.02em] text-white`}
+                className={`${akzidenz.className} w-full max-w-[400px] text-[45px] font-bold uppercase leading-[0.95] tracking-[-0.02em] text-white`}
               >
                 <span className="block whitespace-nowrap">DRAWINGS UPLOADED.</span>
                 <span className="block whitespace-nowrap text-[#F74917]">AI ANALYZED.</span>

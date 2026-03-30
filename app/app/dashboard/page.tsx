@@ -1,7 +1,5 @@
 import { redirect } from "next/navigation";
-import { ClipboardList, FileSearch, Hammer, ReceiptText } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { interMedium } from "@/lib/fonts";
+import { DashboardWorkspace } from "./DashboardWorkspace";
 import { getLiveOpportunitiesForCurrentUser } from "@/lib/leads-clients-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { getTradePackWorkspacesForCurrentUser } from "@/lib/trade-pack-workspaces-server";
@@ -19,8 +17,34 @@ function toFirstName(value: string | null): string {
   return trimmed.split(/\s+/)[0] ?? "User";
 }
 
+function getGreeting(value: Date): string {
+  const hour = value.getHours();
+
+  if (hour < 12) {
+    return "Good morning";
+  }
+
+  if (hour < 18) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
+}
+
 function formatLongDate(value: Date): string {
   return new Intl.DateTimeFormat("en-NZ", { weekday: "long", day: "numeric", month: "long" }).format(value);
+}
+
+function formatShortDate(value: Date): string {
+  return new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short" }).format(value);
+}
+
+function formatMoney(value: number): string {
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 export default async function DashboardPage() {
@@ -38,87 +62,117 @@ export default async function DashboardPage() {
     redirect("/app/projects/new");
   }
 
+  const now = new Date();
   const firstName = toFirstName(member.display_name ?? null);
-  const dateLabel = formatLongDate(new Date());
+  const greeting = getGreeting(now);
+  const dateLabel = formatLongDate(now);
+  const initialTimeIso = now.toISOString();
 
-  const requestsNew = opportunities.filter((row) => row.stage === "New").length;
-  const requestsOverdue = opportunities.filter((row) => row.stage === "Reviewing").length;
-  const quotesApproved = opportunities.filter((row) => row.stage === "Quoted").length;
-  const quotesDraft = opportunities.filter((row) => row.stage === "Pricing").length;
-  const jobsRequiresInvoicing = opportunities.filter((row) => row.stage === "Won").length;
-  const jobsActive = projects.filter((row) => row.stage === "Construction").length;
-  const invoicesAwaiting = opportunities.filter((row) => row.stage === "Quoted" || row.stage === "Won").length;
-  const invoicesPastDue = opportunities.filter((row) => row.latestQuoteStatus === "Expired").length;
+  const newRequests = opportunities.filter((row) => row.stage === "New");
+  const quotesInProgress = opportunities.filter((row) => row.stage === "Pricing" || row.stage === "Quoted");
+  const activeProjects = projects.filter((row) => row.stage === "Construction");
+  const awaitingPayment = opportunities.filter((row) => row.stage === "Quoted" || row.stage === "Won");
+  const totalPipelineValue = opportunities.reduce((sum, row) => sum + row.valueNZD, 0);
+
+  const overviewCards = [
+    {
+      label: "New requests",
+      value: String(newRequests.length),
+      meta: `${opportunities.filter((row) => row.stage === "Reviewing").length} in review`,
+      tone: "accent" as const,
+    },
+    {
+      label: "Quotes in progress",
+      value: String(quotesInProgress.length),
+      meta: `${opportunities.filter((row) => row.stage === "Quoted").length} approved`,
+      tone: "ink" as const,
+    },
+    {
+      label: "Active jobs",
+      value: String(activeProjects.length),
+      meta: `${projects.filter((row) => row.stage === "Pricing").length} still pricing`,
+      tone: "sage" as const,
+    },
+    {
+      label: "Pipeline value",
+      value: formatMoney(totalPipelineValue),
+      meta: `${awaitingPayment.length} awaiting payment`,
+      tone: "gold" as const,
+    },
+  ];
+
+  const todoItems = [
+    {
+      title: "Follow up new requests",
+      count: newRequests.length,
+      detail: "Reach out and confirm project scope details.",
+    },
+    {
+      title: "Finish draft quotes",
+      count: opportunities.filter((row) => row.stage === "Pricing").length,
+      detail: "Move pricing work through to approval.",
+    },
+    {
+      title: "Invoice won work",
+      count: opportunities.filter((row) => row.stage === "Won").length,
+      detail: "Send invoices for converted and awarded jobs.",
+    },
+    {
+      title: "Review expired quotes",
+      count: opportunities.filter((row) => row.latestQuoteStatus === "Expired").length,
+      detail: "Reconnect with leads that need a refreshed quote.",
+    },
+  ].filter((item) => item.count > 0);
+
+  const todaysTodo = [
+    ...newRequests.slice(0, 2).map((row) => ({
+      title: row.name,
+      eyebrow: "New request",
+      detail: row.location || row.clientName,
+      badge: "Start assessment",
+    })),
+    ...opportunities
+      .filter((row) => row.stage === "Pricing")
+      .slice(0, 2)
+      .map((row) => ({
+        title: row.name,
+        eyebrow: "Quote draft",
+        detail: row.clientName,
+        badge: "Review pricing",
+      })),
+    ...activeProjects.slice(0, 2).map((row) => ({
+      title: row.name,
+      eyebrow: "Active project",
+      detail: row.location || row.project_code || "Construction",
+      badge: "Check progress",
+    })),
+  ].slice(0, 5);
+
+  const upcomingLeads = [...opportunities]
+    .sort((a, b) => {
+      const aValue = a.dueDateIso ? new Date(a.dueDateIso).getTime() : Number.POSITIVE_INFINITY;
+      const bValue = b.dueDateIso ? new Date(b.dueDateIso).getTime() : Number.POSITIVE_INFINITY;
+      return aValue - bValue;
+    })
+    .slice(0, 5)
+    .map((row) => ({
+      title: row.name,
+      client: row.clientName,
+      stage: row.stage,
+      dueLabel: row.dueDateIso ? formatShortDate(new Date(row.dueDateIso)) : "No due date",
+      value: formatMoney(row.valueNZD),
+    }));
 
   return (
-    <main className="space-y-8 pb-8">
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-4 pt-6">
-          <p className={`${interMedium.className} text-base font-medium text-[#5F7390]`}>{dateLabel}</p>
-          <CardTitle className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Good evening, {firstName}</CardTitle>
-        </CardHeader>
-      </Card>
-
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Workflow</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="overflow-hidden rounded-[6px] border border-[#E6EAF0] bg-white">
-            <div className="grid h-[4px] grid-cols-4">
-              <div className="bg-[#B66A2F]" />
-              <div className="bg-[#8E4157]" />
-              <div className="bg-[#4C8B4A]" />
-              <div className="bg-[#3F689D]" />
-            </div>
-            <div className="grid divide-y divide-[#E6EAF0] lg:grid-cols-4 lg:divide-x lg:divide-y-0">
-              <div className="px-4 py-4">
-                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
-                  <ClipboardList className="h-4 w-4 text-[#B66A2F]" />
-                  Requests
-                </p>
-                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{requestsNew}</p>
-                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>New</p>
-                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Assessments complete ({requestsNew})</p>
-                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Overdue ({requestsOverdue})</p>
-              </div>
-
-              <div className="px-4 py-4">
-                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
-                  <FileSearch className="h-4 w-4 text-[#8E4157]" />
-                  Quotes
-                </p>
-                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{quotesApproved}</p>
-                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>Approved</p>
-                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Draft ({quotesDraft})</p>
-                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Changes requested (0)</p>
-              </div>
-
-              <div className="px-4 py-4">
-                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
-                  <Hammer className="h-4 w-4 text-[#4C8B4A]" />
-                  Jobs
-                </p>
-                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{jobsRequiresInvoicing}</p>
-                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>Requires invoicing</p>
-                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Active ({jobsActive})</p>
-                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Action required (0)</p>
-              </div>
-
-              <div className="px-4 py-4">
-                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
-                  <ReceiptText className="h-4 w-4 text-[#3F689D]" />
-                  Invoices
-                </p>
-                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{invoicesAwaiting}</p>
-                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>Awaiting payment</p>
-                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Draft (0)</p>
-                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Past due ({invoicesPastDue})</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </main>
+    <DashboardWorkspace
+      dateLabel={dateLabel}
+      initialTimeIso={initialTimeIso}
+      greeting={greeting}
+      firstName={firstName}
+      overviewCards={overviewCards}
+      todoItems={todoItems}
+      todaysTodo={todaysTodo}
+      upcomingLeads={upcomingLeads}
+    />
   );
 }

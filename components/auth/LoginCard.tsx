@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { X } from "lucide-react";
-import { bertholdHeading } from "@/lib/fonts";
+import { akzidenz } from "@/lib/fonts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
@@ -77,9 +77,11 @@ export function LoginCard({
               priority
             />
             <div className="space-y-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#F74917]">AI FOR CONSTRUCTION DOCUMENTS</p>
+              <p className={`${akzidenz.className} text-sm font-normal uppercase tracking-[0.24em] text-[#F74917]`}>
+                AI FOR CONSTRUCTION DOCUMENTS
+              </p>
               <h2
-                className={`${bertholdHeading.className} text-[2.6rem] font-black uppercase italic leading-[0.9] tracking-[-0.04em] sm:text-[3.4rem] text-white`}
+                className={`${akzidenz.className} text-[2.6rem] font-bold uppercase leading-[0.9] tracking-[-0.04em] text-white sm:text-[3.4rem]`}
               >
                 <span className="block whitespace-nowrap">DRAWINGS UPLOADED.</span>
                 <span className="block whitespace-nowrap text-[#F74917]">AI ANALYZED.</span>

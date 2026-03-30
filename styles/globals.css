@@ -142,3 +142,11 @@ h2 {
 nextjs-portal {
   display: none !important;
 }
+
+.app-shell:has(.dashboardScope) {
+  background: #f4f4f2;
+}
+
+.app-shell-main:has(.dashboardScope) {
+  background: #f4f4f2;
+}
