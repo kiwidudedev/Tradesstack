@@ -1,18 +1,32 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { interMedium } from "@/lib/fonts";
 
-export function TodaysTodosCard({ userName }: { userName: string }) {
+export interface TodayFocusStats {
+  tasksDueToday: number;
+  pricingDeadlines: number;
+  overdueItems: number;
+  followUpsNeeded: number;
+}
+
+export function TodaysTodosCard({ stats }: { stats: TodayFocusStats }) {
   return (
-    <Card className="relative overflow-hidden rounded-none border-0 bg-transparent shadow-none">
-      <CardHeader className="px-0 pb-5 pt-0">
-        <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Today&apos;s Tasks</CardTitle>
-      </CardHeader>
-      <CardContent className="rounded-[6px] border border-dashed border-[#c8cfdd] bg-white px-5 py-5">
-        <p className={`${interMedium.className} text-base font-semibold text-[#0F172A]`}>{userName}&apos;s list will appear here.</p>
-        <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>
-          Placeholder: this section will show personalized tasks for today once task logic is connected.
-        </p>
-      </CardContent>
-    </Card>
+    <section className="space-y-2">
+      <h2 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.08em] text-[#5E718A]`}>Today&apos;s Focus</h2>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[#435872]">
+        <span className={`${interMedium.className}`}>Tasks due: <span className="font-semibold text-[#0F172A]">{stats.tasksDueToday}</span></span>
+        <span className="text-[#A1AEC0]">•</span>
+        <span className={`${interMedium.className}`}>Overdue: <span className="font-semibold text-[#B91C1C]">{stats.overdueItems}</span></span>
+        <span className="text-[#A1AEC0]">•</span>
+        <span className={`${interMedium.className}`}>Pricing deadlines: <span className="font-semibold text-[#0F172A]">{stats.pricingDeadlines}</span></span>
+        <span className="text-[#A1AEC0]">•</span>
+        <span className={`${interMedium.className}`}>Follow-ups: <span className="font-semibold text-[#0F172A]">{stats.followUpsNeeded}</span></span>
+      </div>
+      <div>
+        <Button className="h-7 rounded-[7px] border border-[#9DC58A] bg-[#F4FBF0] px-3 text-xs font-semibold text-[#4A7D37] hover:bg-[#E9F7E2]" asChild>
+          <Link href="/app/leads-clients/opportunities/new">Plan Today</Link>
+        </Button>
+      </div>
+    </section>
   );
 }

@@ -1,0 +1,34 @@
+.dashboardScope {
+  --dash-bg: #f9f8f6;
+  --dash-panel: #fbfcfe;
+  --dash-card: #ffffff;
+  --dash-border: #e6ebf2;
+  --dash-border-strong: #e4eaf2;
+  --dash-title: #5e718a;
+}
+
+.dashboardScope {
+  background: var(--dash-bg);
+}
+
+.primaryCard {
+  border: 1px solid var(--dash-border);
+  background: color-mix(in oklab, var(--dash-card) 95%, transparent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sectionLabel {
+  color: var(--dash-title);
+}
+
+.workflowGrid {
+  border-color: var(--dash-border-strong);
+}
+
+.dashboardDate {
+  font-size: 16px !important;
+}
+
+.workflowHeading {
+  font-size: 24px !important;
+}

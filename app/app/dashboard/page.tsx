@@ -1,16 +1,10 @@
-import { ActivityCard } from "@/components/app/ActivityCard";
-import { EditableProjectGrid } from "@/components/app/EditableProjectGrid";
-import { TodaysTodosCard } from "@/components/app/TodaysTodosCard";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { redirect } from "next/navigation";
+import { ClipboardList, FileSearch, Hammer, ReceiptText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
 import { getLiveOpportunitiesForCurrentUser } from "@/lib/leads-clients-server";
-import { redirect } from "next/navigation";
-import Link from "next/link";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
-import {
-  getTradePackWorkspaceRecentActivityForCurrentUser,
-  getTradePackWorkspacesForCurrentUser,
-} from "@/lib/trade-pack-workspaces-server";
+import { getTradePackWorkspacesForCurrentUser } from "@/lib/trade-pack-workspaces-server";
 
 function toFirstName(value: string | null): string {
   if (!value) {
@@ -25,190 +19,106 @@ function toFirstName(value: string | null): string {
   return trimmed.split(/\s+/)[0] ?? "User";
 }
 
-function formatDayMonth(value: string | null): string {
-  if (!value) {
-    return "No due date";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "No due date";
-  }
-
-  return new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short" }).format(date);
-}
-
-function getDaysUntilIso(isoDate: string | null): number | null {
-  if (!isoDate) {
-    return null;
-  }
-
-  const due = new Date(isoDate);
-  if (Number.isNaN(due.getTime())) {
-    return null;
-  }
-
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dueMidnight = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-  return Math.ceil((dueMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function getDueMeta(isoDate: string | null) {
-  const diffDays = getDaysUntilIso(isoDate);
-  if (diffDays === null) {
-    return { text: "No due date", className: "text-[#8A97AB]" };
-  }
-
-  if (diffDays < 0) {
-    return { text: "🔴 Overdue", className: "text-[#B91C1C]" };
-  }
-
-  if (diffDays === 0) {
-    return { text: "⚠ Due today", className: "text-[#D97706]" };
-  }
-
-  if (diffDays === 1) {
-    return { text: "⚠ Due tomorrow", className: "text-[#D97706]" };
-  }
-
-  return {
-    text: `Due in ${diffDays} days`,
-    className: diffDays <= 3 ? "text-[#D97706]" : "text-[#6F839E]",
-  };
-}
-
-function DueDateCell({ isoDate }: { isoDate: string | null }) {
-  const dueMeta = getDueMeta(isoDate);
-
-  return (
-    <div className="text-right">
-      <p className={`${interMedium.className} text-sm font-semibold text-[#1F2B3D]`}>{formatDayMonth(isoDate)}</p>
-      <p className={`${interMedium.className} text-[10px] font-medium ${dueMeta.className}`}>{dueMeta.text}</p>
-    </div>
-  );
+function formatLongDate(value: Date): string {
+  return new Intl.DateTimeFormat("en-NZ", { weekday: "long", day: "numeric", month: "long" }).format(value);
 }
 
 export default async function DashboardPage() {
-  const [projects, recentActivity, member, opportunities] = await Promise.all([
-    getTradePackWorkspacesForCurrentUser(),
-    getTradePackWorkspaceRecentActivityForCurrentUser(),
+  const [member, opportunities, projects] = await Promise.all([
     getCurrentOrganizationMember(),
     getLiveOpportunitiesForCurrentUser(),
+    getTradePackWorkspacesForCurrentUser(),
   ]);
+
+  if (!member) {
+    redirect("/login");
+  }
 
   if (projects.length === 0) {
     redirect("/app/projects/new");
   }
 
-  const firstName = toFirstName(member?.display_name ?? null);
-  const upcomingLeadOpportunities = opportunities
-    .filter((row) => row.group === "pipeline")
-    .sort((left, right) => {
-      const leftDays = getDaysUntilIso(left.dueDateIso);
-      const rightDays = getDaysUntilIso(right.dueDateIso);
-      if (leftDays === null && rightDays === null) {
-        return left.name.localeCompare(right.name);
-      }
-      if (leftDays === null) {
-        return 1;
-      }
-      if (rightDays === null) {
-        return -1;
-      }
-      if (leftDays !== rightDays) {
-        return leftDays - rightDays;
-      }
-      return left.name.localeCompare(right.name);
-    })
-    .slice(0, 5);
+  const firstName = toFirstName(member.display_name ?? null);
+  const dateLabel = formatLongDate(new Date());
+
+  const requestsNew = opportunities.filter((row) => row.stage === "New").length;
+  const requestsOverdue = opportunities.filter((row) => row.stage === "Reviewing").length;
+  const quotesApproved = opportunities.filter((row) => row.stage === "Quoted").length;
+  const quotesDraft = opportunities.filter((row) => row.stage === "Pricing").length;
+  const jobsRequiresInvoicing = opportunities.filter((row) => row.stage === "Won").length;
+  const jobsActive = projects.filter((row) => row.stage === "Construction").length;
+  const invoicesAwaiting = opportunities.filter((row) => row.stage === "Quoted" || row.stage === "Won").length;
+  const invoicesPastDue = opportunities.filter((row) => row.latestQuoteStatus === "Expired").length;
 
   return (
     <main className="space-y-8 pb-8">
-      <section>
-        <EditableProjectGrid initialProjects={projects} />
-      </section>
+      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        <CardHeader className="pb-4 pt-6">
+          <p className={`${interMedium.className} text-base font-medium text-[#5F7390]`}>{dateLabel}</p>
+          <CardTitle className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Good evening, {firstName}</CardTitle>
+        </CardHeader>
+      </Card>
 
-      <section className="-mt-6">
-        <h2 className="mb-4 text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Upcoming Lead Opportunities</h2>
-        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-          <CardHeader className="pb-3 pt-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className={`${interMedium.className} text-sm font-medium text-[#5F7390]`}>
-                <span className="font-semibold text-[#253047]">{upcomingLeadOpportunities.length}</span> upcoming tenders
-              </p>
-              <Link
-                href="/app/leads-clients/opportunities"
-                className={`${interMedium.className} text-sm font-semibold text-[#31507A] transition-colors hover:text-[#0F172A]`}
-              >
-                View all
-              </Link>
+      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        <CardHeader className="pb-3 pt-6">
+          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Workflow</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="overflow-hidden rounded-[6px] border border-[#E6EAF0] bg-white">
+            <div className="grid h-[4px] grid-cols-4">
+              <div className="bg-[#B66A2F]" />
+              <div className="bg-[#8E4157]" />
+              <div className="bg-[#4C8B4A]" />
+              <div className="bg-[#3F689D]" />
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-white">
-                  <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
-                    <th className="px-3 py-1.5">Opportunity</th>
-                    <th className="px-3 py-1.5 text-right">Company</th>
-                    <th className="px-3 py-1.5 text-right">Due</th>
-                    <th className="px-3 py-1.5 text-right">Estimator</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcomingLeadOpportunities.map((row) => (
-                    <tr key={row.opportunityId} className="cursor-pointer border-t border-[#E9EEF4] bg-white transition-colors hover:bg-[#EEF4FB]">
-                      <td className="p-0">
-                        <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="block w-full px-3 py-[3px]">
-                          <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{row.name}</p>
-                          <p className={`${interMedium.className} mt-0 text-[10px] font-normal text-[#97A6BB]`}>{row.location}</p>
-                        </Link>
-                      </td>
-                      <td className="p-0 text-right">
-                        <Link
-                          href={`/app/leads-clients/opportunities/${row.slug}`}
-                          className={`${interMedium.className} block w-full px-3 py-[3px] text-sm font-medium text-[#2D3D55]`}
-                        >
-                          {row.clientName}
-                        </Link>
-                      </td>
-                      <td className="p-0 text-right">
-                        <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="block w-full px-3 py-[3px] text-right">
-                          <DueDateCell isoDate={row.dueDateIso} />
-                        </Link>
-                      </td>
-                      <td className="p-0 text-right">
-                        <Link
-                          href={`/app/leads-clients/opportunities/${row.slug}`}
-                          className={`${interMedium.className} block w-full px-3 py-[3px] text-sm font-medium text-[#2D3D55]`}
-                        >
-                          {row.ownerName}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                  {upcomingLeadOpportunities.length === 0 ? (
-                    <tr className="border-t border-[#E9EEF4] bg-white">
-                      <td colSpan={4} className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#8A97AB]`}>
-                        No upcoming opportunities right now.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+            <div className="grid divide-y divide-[#E6EAF0] lg:grid-cols-4 lg:divide-x lg:divide-y-0">
+              <div className="px-4 py-4">
+                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
+                  <ClipboardList className="h-4 w-4 text-[#B66A2F]" />
+                  Requests
+                </p>
+                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{requestsNew}</p>
+                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>New</p>
+                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Assessments complete ({requestsNew})</p>
+                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Overdue ({requestsOverdue})</p>
+              </div>
+
+              <div className="px-4 py-4">
+                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
+                  <FileSearch className="h-4 w-4 text-[#8E4157]" />
+                  Quotes
+                </p>
+                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{quotesApproved}</p>
+                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>Approved</p>
+                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Draft ({quotesDraft})</p>
+                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Changes requested (0)</p>
+              </div>
+
+              <div className="px-4 py-4">
+                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
+                  <Hammer className="h-4 w-4 text-[#4C8B4A]" />
+                  Jobs
+                </p>
+                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{jobsRequiresInvoicing}</p>
+                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>Requires invoicing</p>
+                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Active ({jobsActive})</p>
+                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Action required (0)</p>
+              </div>
+
+              <div className="px-4 py-4">
+                <p className={`${interMedium.className} flex items-center gap-2 text-sm font-semibold text-[#6F8097]`}>
+                  <ReceiptText className="h-4 w-4 text-[#3F689D]" />
+                  Invoices
+                </p>
+                <p className={`${interMedium.className} mt-2 text-4xl font-semibold leading-none text-[#0E2A43]`}>{invoicesAwaiting}</p>
+                <p className={`${interMedium.className} mt-2 text-xl font-medium text-[#21354B]`}>Awaiting payment</p>
+                <p className={`${interMedium.className} mt-2 text-sm text-[#3F556D]`}>Draft (0)</p>
+                <p className={`${interMedium.className} mt-0.5 text-sm text-[#3F556D]`}>Past due ({invoicesPastDue})</p>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section>
-        <TodaysTodosCard userName={firstName} />
-      </section>
-
-      <section>
-        <ActivityCard items={recentActivity} />
-      </section>
+          </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }

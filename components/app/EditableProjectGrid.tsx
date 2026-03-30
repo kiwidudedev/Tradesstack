@@ -6,7 +6,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import type { OrganizationProject } from "@/lib/projects";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 function formatLastUpdated(value: string | null) {
   if (!value) {
@@ -67,73 +66,67 @@ export function EditableProjectGrid({ initialProjects }: { initialProjects: Orga
     [initialProjects]
   );
   const hasProjects = projects.length > 0;
+  const featuredProject = projects[0] ?? null;
+  const secondaryProjects = projects.slice(1);
   const displayName = session?.name?.trim() || "User";
 
   return (
-    <Card className="relative overflow-hidden rounded-none border-0 bg-transparent shadow-none xl:col-span-12">
-      <CardHeader className="space-y-4 px-0 pb-5 pt-0">
-        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4 shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Hi, {displayName}</p>
-              <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>Here are your current projects.</p>
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-5 px-0 pb-8 md:grid-cols-2 xl:grid-cols-3">
-        {hasProjects ? (
-          projects.map((project) => {
-            const locationLabel = project.location?.trim() ? project.location : "Unspecified";
-
-            return (
-              <Link
-                key={project.id}
-                href={`/app/projects/${project.slug}/dashboard`}
-                className="relative rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.06)]"
-              >
-                <div className="mb-3 flex items-start gap-3">
-                  <span className="mt-0.5 inline-flex h-8 w-1 rounded-[6px] bg-[#04234D]" />
-                  <div>
-                    <p className={`${interMedium.className} text-lg font-semibold tracking-[-0.01em] text-[#0F172A]`}>
-                      {project.name}
-                    </p>
-                    <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>{locationLabel}</p>
-                  </div>
-                </div>
-
-                <div className="my-3 h-px bg-[#E6EAF0]" />
-                <div className={`${interMedium.className} space-y-2 text-sm font-medium text-[#334155]`}>
-                  <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Job Stage</span>
-                    <span>{normalizeJobStage(project.stage)}</span>
-                  </p>
-                  <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Client</span>
-                    <span>{project.client_name?.trim() ? project.client_name : "Unassigned"}</span>
-                  </p>
-                  <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Last updated</span>
-                    <span>{formatLastUpdated(project.updated_at)}</span>
+    <section className="space-y-2 xl:col-span-12">
+      <div>
+        <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6C7D93]`}>Workspace</p>
+        <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-[#0F172A]">Your Projects</h2>
+        <p className={`${interMedium.className} mt-1 text-xs font-medium text-[#64748B]`}>
+          {displayName}, here&apos;s where to pick up build work today.
+        </p>
+      </div>
+      {hasProjects ? (
+        <div className="space-y-1.5 border-t border-[#E5EAF2] pt-1.5">
+          {featuredProject ? (
+            <Link
+              href={`/app/projects/${featuredProject.slug}/dashboard`}
+              className="group block rounded-[6px] px-1 py-1.5 transition-colors hover:bg-[#F7FAFE]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{featuredProject.name}</p>
+                  <p className={`${interMedium.className} mt-0.5 text-xs text-[#64748B]`}>
+                    {featuredProject.location?.trim() ? featuredProject.location : "Unspecified"}
                   </p>
                 </div>
-              </Link>
-            );
-          })
-        ) : (
-          <div className="md:col-span-2 xl:col-span-3">
-            <div className="rounded-[6px] border border-dashed border-[#c8cfdd] bg-white px-5 py-6">
-              <p className={`${interMedium.className} text-base font-medium text-[#2d3445]`}>No projects yet.</p>
-              <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#687996]`}>
-                Create your first project to open your project dashboard.
+                <span className={`${interMedium.className} text-xs font-medium text-[#31507A]`}>{normalizeJobStage(featuredProject.stage)}</span>
+              </div>
+              <p className={`${interMedium.className} mt-1 text-xs text-[#6C7D93]`}>
+                Last activity {formatLastUpdated(featuredProject.updated_at)} • {featuredProject.client_name?.trim() ? featuredProject.client_name : "Unassigned"}
               </p>
-              <Button className="mt-4 h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]" asChild>
-                <Link href="/app/projects/new">Create Project</Link>
-              </Button>
+            </Link>
+          ) : null}
+
+          {secondaryProjects.length > 0 ? (
+            <div className="space-y-0.5">
+              {secondaryProjects.map((project) => (
+                <Link
+                  key={project.id}
+                  href={`/app/projects/${project.slug}/dashboard`}
+                  className="flex items-center justify-between rounded-[6px] px-1 py-1 transition-colors hover:bg-[#F7FAFE]"
+                >
+                  <span className={`${interMedium.className} truncate text-xs font-medium text-[#23324A]`}>{project.name}</span>
+                  <span className={`${interMedium.className} text-[11px] text-[#6C7D93]`}>{formatLastUpdated(project.updated_at)}</span>
+                </Link>
+              ))}
             </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          ) : null}
+        </div>
+      ) : (
+        <div className="border-t border-[#E5EAF2] pt-2">
+          <p className={`${interMedium.className} text-sm font-medium text-[#2d3445]`}>No projects yet.</p>
+          <p className={`${interMedium.className} mt-1 text-xs font-medium text-[#687996]`}>
+            Create your first project to open your project dashboard.
+          </p>
+          <Button className="mt-3 h-8 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]" asChild>
+            <Link href="/app/projects/new">Create Project</Link>
+          </Button>
+        </div>
+      )}
+    </section>
   );
 }
