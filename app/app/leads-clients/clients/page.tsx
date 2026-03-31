@@ -4,8 +4,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import styles from "./clients.module.css";
 
 const CLIENT_TAGS = ["Good Client", "High Value", "Difficult", "Slow Payer"] as const;
+
+type ClaimFinanceRow = {
+  project_id: string | null;
+  status: string | null;
+  claim_date: string | null;
+  due_date: string | null;
+  claim_amount: number | null;
+  paid_amount: number | null;
+  updated_at: string | null;
+};
 
 function formatRelativeTime(value: string | null): string {
   if (!value) {
@@ -53,6 +64,44 @@ function formatRating(value: number): string {
   return `⭐ ${value.toFixed(1)}`;
 }
 
+function formatCurrencyCompact(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}m`;
+  }
+  if (abs >= 1_000) {
+    return `$${(value / 1_000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, "")}k`;
+  }
+  return `$${Math.round(value)}`;
+}
+
+function formatDaysLabel(value: number): string {
+  const rounded = Math.round(value);
+  return `${rounded} day${rounded === 1 ? "" : "s"}`;
+}
+
+function getClientDisplayName(client: { company_name: string | null; name: string }): string {
+  const company = client.company_name?.trim();
+  if (company) {
+    return company;
+  }
+  return client.name;
+}
+
+function getDaysSinceIso(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) {
+    return null;
+  }
+
+  const dayMs = 1000 * 60 * 60 * 24;
+  return Math.floor((Date.now() - time) / dayMs);
+}
+
 function clampRating(value: number): number {
   if (value < 1) {
     return 1;
@@ -72,13 +121,13 @@ export default async function LeadsClientsClientsPage() {
   const member = await getCurrentOrganizationMember();
   if (!member) {
     return (
-      <main className="space-y-8 pb-8">
-        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-          <CardHeader className="pb-4 pt-7">
-            <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Clients</CardTitle>
+      <main className={`${styles.clientsScope} space-y-6 pb-8`}>
+        <Card className={styles.overviewCard}>
+          <CardHeader className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Clients</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Sign in to view organization clients.</p>
+          <CardContent className="pt-0">
+            <p className={`${interMedium.className} ${styles.heroSummary}`}>Sign in to view organization clients.</p>
           </CardContent>
         </Card>
       </main>
@@ -99,20 +148,31 @@ export default async function LeadsClientsClientsPage() {
       .order("updated_at", { ascending: false }),
     supabase
       .from("organization_opportunities")
-      .select("id, client_id, stage, updated_at")
+      .select("id, client_id, stage, estimated_value, updated_at")
       .eq("organization_id", member.organization_id)
       .order("updated_at", { ascending: false }),
   ]);
 
+  const claimsResult = await (supabase as unknown as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => Promise<{ data: ClaimFinanceRow[] | null; error: { message: string } | null }>;
+      };
+    };
+  })
+    .from("project_claims")
+    .select("project_id, status, claim_date, due_date, claim_amount, paid_amount, updated_at")
+    .eq("organization_id", member.organization_id);
+
   if (clientsResult.error || projectsResult.error || opportunitiesResult.error) {
     return (
-      <main className="space-y-6 pb-8">
-        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-          <CardHeader className="pb-4 pt-7">
-            <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Clients</CardTitle>
+      <main className={`${styles.clientsScope} space-y-6 pb-8`}>
+        <Card className={styles.overviewCard}>
+          <CardHeader className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Clients</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Could not load client data right now. Please refresh.</p>
+          <CardContent className="pt-0">
+            <p className={`${interMedium.className} ${styles.heroSummary}`}>Could not load client data right now. Please refresh.</p>
           </CardContent>
         </Card>
       </main>
@@ -122,6 +182,7 @@ export default async function LeadsClientsClientsPage() {
   const clients = clientsResult.data ?? [];
   const projects = projectsResult.data ?? [];
   const opportunities = opportunitiesResult.data ?? [];
+  const claims = claimsResult.error ? [] : (claimsResult.data ?? []);
 
   const projectCountByClientId = new Map<string, number>();
   const latestProjectActivityByClientId = new Map<string, string>();
@@ -137,6 +198,8 @@ export default async function LeadsClientsClientsPage() {
 
   const activeLeadCountByClientId = new Map<string, number>();
   const wonLeadCountByClientId = new Map<string, number>();
+  const totalLeadCountByClientId = new Map<string, number>();
+  const wonValueByClientId = new Map<string, number>();
   const latestLeadActivityByClientId = new Map<string, string>();
   for (const opportunity of opportunities) {
     if (!opportunity.client_id) {
@@ -147,6 +210,8 @@ export default async function LeadsClientsClientsPage() {
       latestLeadActivityByClientId.set(opportunity.client_id, opportunity.updated_at);
     }
 
+    totalLeadCountByClientId.set(opportunity.client_id, (totalLeadCountByClientId.get(opportunity.client_id) ?? 0) + 1);
+
     const isActiveLead = opportunity.stage !== "Won" && opportunity.stage !== "Lost";
     if (isActiveLead) {
       activeLeadCountByClientId.set(opportunity.client_id, (activeLeadCountByClientId.get(opportunity.client_id) ?? 0) + 1);
@@ -154,6 +219,7 @@ export default async function LeadsClientsClientsPage() {
 
     if (opportunity.stage === "Won") {
       wonLeadCountByClientId.set(opportunity.client_id, (wonLeadCountByClientId.get(opportunity.client_id) ?? 0) + 1);
+      wonValueByClientId.set(opportunity.client_id, (wonValueByClientId.get(opportunity.client_id) ?? 0) + Number(opportunity.estimated_value ?? 0));
     }
   }
 
@@ -198,138 +264,347 @@ export default async function LeadsClientsClientsPage() {
       return left.name.localeCompare(right.name);
     });
 
-  const summary = {
-    totalClients: clients.length,
-  };
+  const projectClientByProjectId = new Map<string, string>();
+  for (const project of projects) {
+    if (!project.client_id) {
+      continue;
+    }
+    projectClientByProjectId.set(project.id, project.client_id);
+  }
 
-  const topClients = rows.slice(0, 3);
-  const mostWorkedWith = rows.reduce<{ name: string; projectsCount: number } | null>((best, row) => {
-    if (!best || row.projectsCount > best.projectsCount) {
-      return { name: row.name, projectsCount: row.projectsCount };
+  const paidRevenueByClientId = new Map<string, number>();
+  const paidRevenueLast12MonthsByClientId = new Map<string, number>();
+  const overdueClientIds = new Set<string>();
+  const slowPayingClientIds = new Set<string>();
+  const overdueCountByClientId = new Map<string, number>();
+  const payDaysSamplesByClientId = new Map<string, number[]>();
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const last12MonthsCutoff = new Date();
+  last12MonthsCutoff.setFullYear(last12MonthsCutoff.getFullYear() - 1);
+
+  for (const claim of claims) {
+    const projectId = claim.project_id;
+    if (!projectId) {
+      continue;
+    }
+
+    const clientId = projectClientByProjectId.get(projectId);
+    if (!clientId) {
+      continue;
+    }
+
+    const claimAmount = Number(claim.claim_amount ?? 0);
+    const paidAmount = Number(claim.paid_amount ?? 0);
+    const balance = Math.max(0, claimAmount - paidAmount);
+    const claimAgeDays = getDaysSinceIso(claim.claim_date);
+
+    paidRevenueByClientId.set(clientId, (paidRevenueByClientId.get(clientId) ?? 0) + paidAmount);
+    if (paidAmount > 0 && claim.updated_at) {
+      const paidAt = new Date(claim.updated_at);
+      if (!Number.isNaN(paidAt.getTime()) && paidAt >= last12MonthsCutoff) {
+        paidRevenueLast12MonthsByClientId.set(
+          clientId,
+          (paidRevenueLast12MonthsByClientId.get(clientId) ?? 0) + paidAmount
+        );
+      }
+    }
+
+    const dueDate = claim.due_date;
+    const isOverdueByStatus = (claim.status ?? "").toLowerCase() === "overdue";
+    const isOverdueByDate = Boolean(dueDate && dueDate < todayIso && balance > 0);
+    if (isOverdueByStatus || isOverdueByDate) {
+      overdueClientIds.add(clientId);
+      overdueCountByClientId.set(clientId, (overdueCountByClientId.get(clientId) ?? 0) + 1);
+    }
+
+    if (balance > 0 && claimAgeDays !== null && claimAgeDays > 30) {
+      slowPayingClientIds.add(clientId);
+    }
+
+    const isPaid = (claim.status ?? "").toLowerCase() === "paid" || paidAmount >= claimAmount;
+    if (isPaid && claim.claim_date && claim.updated_at) {
+      const invoiceTime = new Date(claim.claim_date).getTime();
+      const paidTime = new Date(claim.updated_at).getTime();
+      if (!Number.isNaN(invoiceTime) && !Number.isNaN(paidTime) && paidTime >= invoiceTime) {
+        const daysToPay = (paidTime - invoiceTime) / (1000 * 60 * 60 * 24);
+        const current = payDaysSamplesByClientId.get(clientId) ?? [];
+        current.push(daysToPay);
+        payDaysSamplesByClientId.set(clientId, current);
+      }
+    }
+  }
+
+  const topClient = rows.reduce<{ id: string; displayName: string; revenue: number; projectsCount: number } | null>((best, row) => {
+    const revenue = (paidRevenueByClientId.get(row.id) ?? 0) + (wonValueByClientId.get(row.id) ?? 0);
+    if (!best || revenue > best.revenue) {
+      return {
+        id: row.id,
+        displayName: getClientDisplayName(row),
+        revenue,
+        projectsCount: row.projectsCount,
+      };
+    }
+    return best;
+  }, null);
+  const topClientLast12Months = rows.reduce<{ id: string; displayName: string; revenue: number } | null>((best, row) => {
+    const revenue = paidRevenueLast12MonthsByClientId.get(row.id) ?? 0;
+    if (!best || revenue > best.revenue) {
+      return {
+        id: row.id,
+        displayName: getClientDisplayName(row),
+        revenue,
+      };
     }
     return best;
   }, null);
 
+  const noActivityClientIds = new Set(
+    rows.filter((row) => {
+      const days = getDaysSinceIso(row.lastActivityIso);
+      return days !== null && days >= 60;
+    }).map((row) => row.id)
+  );
+  const repeatClientCount = rows.filter((row) => row.projectsCount >= 2).length;
+  const repeatClientPercent = rows.length > 0 ? Math.round((repeatClientCount / rows.length) * 100) : 0;
+  const slowPayingClientCount = slowPayingClientIds.size;
+  const totalClientValue = Array.from(rows).reduce(
+    (sum, row) => sum + (paidRevenueByClientId.get(row.id) ?? 0) + (wonValueByClientId.get(row.id) ?? 0),
+    0
+  );
+  const pipelineValue = opportunities
+    .filter((item) => item.stage !== "Won" && item.stage !== "Lost")
+    .reduce((sum, item) => sum + Number(item.estimated_value ?? 0), 0);
+  const openQuotesCount = opportunities.filter((item) => item.stage !== "Won" && item.stage !== "Lost").length;
+  const topClientDependencyPercent =
+    topClient && totalClientValue > 0 ? Math.round((topClient.revenue / totalClientValue) * 100) : 0;
+  const topClientForConversion = topClientLast12Months ?? topClient;
+  const topClientOpportunityCount = topClientForConversion ? (totalLeadCountByClientId.get(topClientForConversion.id) ?? 0) : 0;
+  const topClientWonCount = topClientForConversion ? (wonLeadCountByClientId.get(topClientForConversion.id) ?? 0) : 0;
+  const topClientConversionRate = topClientOpportunityCount > 0 ? Math.round((topClientWonCount / topClientOpportunityCount) * 100) : 0;
+
   return (
-    <main className="space-y-4 pb-8">
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Client Summary</CardTitle>
-              <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
-                Total Clients: <span className="font-semibold text-[#253047]">{summary.totalClients}</span>
-              </p>
-            </div>
-            <Button asChild className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]">
-              <Link href="/app/leads-clients/clients/new">+ Add Client</Link>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-0">
-          {topClients.length > 0 ? (
-            <div className="grid gap-2 md:grid-cols-3">
-              {topClients.map((client, index) => (
-                <div key={client.id} className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3.5 py-3">
-                  <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6B7F99]`}>{index + 1}. Client Rank</p>
-                  <p className={`${interMedium.className} mt-1 text-sm font-semibold text-[#1D2B40]`}>{client.name}</p>
-                  <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#385777]`}>{formatRating(client.rating)}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className={`${interMedium.className} text-sm font-medium text-[#7A8EA8]`}>No client rankings yet.</p>
-          )}
-
-          <p className={`${interMedium.className} text-sm font-medium text-[#5C728E]`}>
-            {mostWorkedWith && mostWorkedWith.projectsCount > 0
-              ? `You've worked most with ${mostWorkedWith.name} (${mostWorkedWith.projectsCount} project${mostWorkedWith.projectsCount === 1 ? "" : "s"}).`
-              : "Add projects and active leads to start building client priority insights."}
+    <main className={`${styles.clientsScope} space-y-6 pb-8`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroHeading}>Clients</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Track who you work with most and keep client relationships moving.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+        <Button asChild className={styles.heroButton}>
+          <Link href="/app/leads-clients/clients/new">+ Add Client</Link>
+        </Button>
+      </section>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardContent className="p-4">
-          <div className="overflow-x-auto rounded-[6px] border border-[#E6EAF0]">
-            <table className="min-w-full border-collapse">
-              <thead className="bg-white">
-                <tr className={`${interMedium.className} text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#566B86]`}>
-                  <th className="px-3 py-2.5">Client</th>
-                  <th className="px-3 py-2.5">Company</th>
-                  <th className="px-3 py-2.5 text-center">Rating</th>
-                  <th className="px-3 py-2.5 text-center">Active Leads</th>
-                  <th className="px-3 py-2.5 text-center">Projects</th>
-                  <th className="px-3 py-2.5">Tags</th>
-                  <th className="px-3 py-2.5 text-right">Last Activity</th>
-                  <th className="w-[210px] px-3 py-2.5 text-right" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((client) => (
-                  <tr key={client.id} className="group border-t border-[#E9EEF4] bg-white transition-colors hover:bg-[#F8FBFF]">
-                    <td className="px-3 py-3">
-                      <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{client.name}</p>
-                      <p className={`${interMedium.className} mt-0.5 text-xs font-medium text-[#6C809B]`}>{client.email || client.phone || "No contact details"}</p>
-                    </td>
-                    <td className={`${interMedium.className} px-3 py-3 text-sm font-medium text-[#2D3D55]`}>
-                      {client.company_name || "\u2014"}
-                    </td>
-                    <td className={`${interMedium.className} px-3 py-3 text-center text-sm font-semibold text-[#304763]`}>
-                      {formatRating(client.rating)}
-                    </td>
-                    <td className={`${interMedium.className} px-3 py-3 text-center text-sm font-semibold text-[#304763]`}>
-                      {client.activeLeads}
-                    </td>
-                    <td className={`${interMedium.className} px-3 py-3 text-center text-sm font-semibold text-[#304763]`}>
-                      {client.projectsCount}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {client.tags.length > 0 ? (
-                          client.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className={`${interMedium.className} inline-flex items-center rounded-[6px] border border-[#D5E0EE] bg-[#F3F7FC] px-2.5 py-1 text-xs font-medium text-[#466387]`}
-                            >
-                              {tag}
+      <section className={styles.grid}>
+        <Card className={styles.overviewCard}>
+          <CardHeader className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Client Intelligence</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className={styles.overviewGrid}>
+              <article className={styles.metricTile}>
+                <div className={styles.metricTop}>
+                  <span className={styles.metricBadgeAccent}>C</span>
+                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Top Client</span>
+                </div>
+                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
+                  Client with the highest paid revenue over the past 12 months.
+                </p>
+                <p className={styles.metricValue}>{topClientLast12Months?.displayName ?? "—"}</p>
+                <p className={`${interMedium.className} ${styles.metricMeta}`}>
+                  {formatCurrencyCompact(topClientLast12Months?.revenue ?? 0)}
+                </p>
+              </article>
+              <article className={styles.metricTile}>
+                <div className={styles.metricTop}>
+                  <span className={styles.metricBadgeInk}>R</span>
+                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Top Client Conversion</span>
+                </div>
+                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
+                  Won opportunities as a share of all opportunities for your top client.
+                </p>
+                <p className={styles.metricValue}>{topClientConversionRate}%</p>
+                <p className={`${interMedium.className} ${styles.metricMeta}`}>
+                  {topClientForConversion?.displayName ?? "—"} • {topClientWonCount}/{topClientOpportunityCount} won
+                </p>
+              </article>
+              <article className={styles.metricTile}>
+                <div className={styles.metricTop}>
+                  <span className={styles.metricBadgeSage}>L</span>
+                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Repeat</span>
+                </div>
+                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
+                  Share of clients who have 2 or more jobs with you.
+                </p>
+                <p className={styles.metricValue}>{repeatClientPercent}%</p>
+                <p className={`${interMedium.className} ${styles.metricMeta}`}>
+                  {repeatClientCount} client{repeatClientCount === 1 ? "" : "s"}
+                </p>
+              </article>
+              <article className={styles.metricTile}>
+                <div className={styles.metricTop}>
+                  <span className={styles.metricBadgeGold}>P</span>
+                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Pipeline</span>
+                </div>
+                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
+                  Total estimated value of open quotes (not won or lost), and how many open quotes exist.
+                </p>
+                <p className={styles.metricValue}>{formatCurrencyCompact(pipelineValue)}</p>
+                <p className={`${interMedium.className} ${styles.metricMeta}`}>
+                  {openQuotesCount} quote{openQuotesCount === 1 ? "" : "s"}
+                </p>
+              </article>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={styles.tableCard}>
+          <CardHeader className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Client Insights (AI layer)</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className={styles.insightsList}>
+              <li className={`${interMedium.className} ${styles.insightItem}`}>
+                ⚠️ {slowPayingClientCount} client{slowPayingClientCount === 1 ? "" : "s"} taking &gt;30 days to pay
+              </li>
+              <li className={`${interMedium.className} ${styles.insightItem}`}>
+                💰 {topClient?.displayName ?? "Top client"} = {topClientDependencyPercent}% of your revenue (high dependency)
+              </li>
+              <li className={`${interMedium.className} ${styles.insightItem}`}>
+                🔁 {repeatClientPercent}% of work comes from repeat clients
+              </li>
+              <li className={`${interMedium.className} ${styles.insightItem}`}>
+                📉 {noActivityClientIds.size} client{noActivityClientIds.size === 1 ? "" : "s"} ha{noActivityClientIds.size === 1 ? "s" : "ve"} no recent activity
+              </li>
+            </ul>
+          </CardContent>
+        </Card>
+
+        <Card className={styles.tableCard}>
+          <CardHeader className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Client list</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr className={`${interMedium.className} ${styles.headRow}`}>
+                    <th className={styles.headCell}>Client</th>
+                    <th className={styles.headCell}>Company</th>
+                    <th className={styles.headCellCenter}>Rating</th>
+                    <th className={styles.headCellCenter}>Active Leads</th>
+                    <th className={styles.headCellCenter}>Projects</th>
+                    <th className={styles.headCell}>Tags</th>
+                    <th className={styles.headCellRight}>Last Activity</th>
+                    <th className={styles.headCellRight} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((client) => {
+                    const totalRevenue = paidRevenueByClientId.get(client.id) ?? 0;
+                    const avgJobValue = client.projectsCount > 0 ? totalRevenue / client.projectsCount : 0;
+                    const overdueCount = overdueCountByClientId.get(client.id) ?? 0;
+                    const paySamples = payDaysSamplesByClientId.get(client.id) ?? [];
+                    const avgDaysToPay = paySamples.length > 0
+                      ? paySamples.reduce((sum, days) => sum + days, 0) / paySamples.length
+                      : null;
+
+                    const reliability = (() => {
+                      if (overdueCount > 0) {
+                        return { label: "At Risk", className: styles.rankStatusAtRisk };
+                      }
+                      if (avgDaysToPay === null) {
+                        return { label: "New", className: styles.rankStatusNew };
+                      }
+                      if (avgDaysToPay < 7) {
+                        return { label: "Reliable", className: styles.rankStatusActive };
+                      }
+                      if (avgDaysToPay < 21) {
+                        return { label: "Watch", className: styles.rankStatusRepeat };
+                      }
+                      return { label: "At Risk", className: styles.rankStatusAtRisk };
+                    })();
+
+                    return (
+                      <tr key={client.id} className={styles.row}>
+                        <td className={styles.cell}>
+                          <p className={`${interMedium.className} ${styles.primaryText}`}>{getClientDisplayName(client)}</p>
+                          <p className={`${interMedium.className} ${styles.secondaryText}`}>
+                            {formatCurrencyCompact(totalRevenue)} total • {formatCurrencyCompact(avgJobValue)} avg • {client.projectsCount} job{client.projectsCount === 1 ? "" : "s"}
+                          </p>
+                          <p className={`${interMedium.className} ${styles.secondaryText}`}>
+                            {avgDaysToPay === null ? "No payment history" : `Paid in ${formatDaysLabel(avgDaysToPay)}`} • {overdueCount > 0 ? `${overdueCount} overdue` : "No overdue"}
+                          </p>
+                          <div className={styles.rowChips}>
+                            <span className={`${interMedium.className} ${styles.rankStatus} ${reliability.className}`}>
+                              {reliability.label}
                             </span>
-                          ))
-                        ) : (
-                          <span className={`${interMedium.className} text-xs font-medium text-[#8A9CB4]`}>No tags</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-medium text-[#4A607D]`}>
-                      {formatRelativeTime(client.lastActivityIso)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                        <Button variant="ghost" asChild className="h-8 rounded-[6px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
-                          <Link href={`/app/leads-clients/clients/${client.id}`}>View</Link>
-                        </Button>
-                        <Button variant="ghost" asChild className="h-8 rounded-[6px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
-                          <Link href={`/app/leads-clients/clients/${client.id}/edit`}>Edit</Link>
-                        </Button>
-                        <Button variant="ghost" asChild className="h-8 rounded-[6px] px-2.5 text-xs text-[#3B4F69] hover:bg-[#EFF5FC]">
-                          <Link href={`/app/leads-clients/opportunities/new?clientId=${client.id}`}>Add Lead</Link>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 ? (
-                  <tr className="border-t border-[#E9EEF4] bg-white">
-                    <td colSpan={8} className={`${interMedium.className} px-4 py-4 text-sm font-medium text-[#8A97AB]`}>
-                      No clients yet. Add your first client to start tracking leads and projects.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+                            {client.projectsCount >= 2 ? (
+                              <span className={`${interMedium.className} ${styles.rankStatus} ${styles.rankStatusRepeat}`}>Repeat</span>
+                            ) : null}
+                            {client.projectsCount < 2 && client.activeLeads > 0 ? (
+                              <span className={`${interMedium.className} ${styles.rankStatus} ${styles.rankStatusActive}`}>Active</span>
+                            ) : null}
+                          </div>
+                        </td>
+                      <td className={styles.cell}>
+                        <p className={`${interMedium.className} ${styles.bodyText}`}>{client.company_name || client.name}</p>
+                      </td>
+                      <td className={styles.cellCenter}>
+                        <p className={`${interMedium.className} ${styles.bodyText}`}>{formatRating(client.rating)}</p>
+                      </td>
+                      <td className={styles.cellCenter}>
+                        <p className={`${interMedium.className} ${styles.bodyText}`}>{client.activeLeads}</p>
+                      </td>
+                      <td className={styles.cellCenter}>
+                        <p className={`${interMedium.className} ${styles.bodyText}`}>{client.projectsCount}</p>
+                      </td>
+                      <td className={styles.cell}>
+                        <div className={styles.tagList}>
+                          {client.tags.length > 0 ? (
+                            client.tags.map((tag) => (
+                              <span key={tag} className={`${interMedium.className} ${styles.tag}`}>
+                                {tag}
+                              </span>
+                            ))
+                          ) : (
+                            <span className={`${interMedium.className} ${styles.emptyTag}`}>No tags</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className={styles.cellRight}>
+                        <p className={`${interMedium.className} ${styles.bodyText}`}>{formatRelativeTime(client.lastActivityIso)}</p>
+                      </td>
+                      <td className={styles.cellRight}>
+                        <div className={styles.actions}>
+                          <Button variant="ghost" asChild className={styles.actionButton}>
+                            <Link href={`/app/leads-clients/clients/${client.id}`}>View</Link>
+                          </Button>
+                          <Button variant="ghost" asChild className={styles.actionButton}>
+                            <Link href={`/app/leads-clients/clients/${client.id}/edit`}>Edit</Link>
+                          </Button>
+                          <Button variant="ghost" asChild className={styles.actionButton}>
+                            <Link href={`/app/leads-clients/opportunities/new?clientId=${client.id}`}>Add Lead</Link>
+                          </Button>
+                        </div>
+                      </td>
+                      </tr>
+                    );
+                  })}
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className={`${interMedium.className} ${styles.emptyState}`}>
+                        No clients yet. Add your first client to start tracking leads and projects.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
     </main>
   );
 }
