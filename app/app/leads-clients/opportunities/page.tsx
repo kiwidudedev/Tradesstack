@@ -179,21 +179,36 @@ export default async function LeadsClientsOpportunitiesPage({
     }).length,
     quoted: quotedCount,
   };
+  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(new Date());
 
   return (
-    <main className={`${styles.page} space-y-4 pb-8`}>
-      <Card className={`${styles.heroCard} relative overflow-hidden`}>
-        <CardHeader className={styles.heroHeader}>
-          <div className={styles.heroHeaderRow}>
-            <div className="min-w-0">
-              <CardTitle className={styles.heroTitle}>Tender Opportunities</CardTitle>
-            </div>
-            <Button className={styles.heroButton} asChild>
-              <Link href="/app/leads-clients/opportunities/new">Create Opportunity</Link>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2.5 pt-0">
+    <main className={`${styles.page} space-y-6 pb-8`}>
+      <section className={styles.heroBlock}>
+        <div className="min-w-0">
+          <CardTitle className={styles.heroTitle}>Tender Opportunities</CardTitle>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Track pipeline health, due dates, and estimator focus in one place.
+          </p>
+        </div>
+        <div className={styles.heroActions}>
+          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
+          <Button className={styles.heroButton} asChild>
+            <Link href="/app/leads-clients/opportunities/new">Create Opportunity</Link>
+          </Button>
+        </div>
+      </section>
+
+      <Card className={styles.sectionCard}>
+        <CardContent className="space-y-2.5 p-5">
           <p className={`${interMedium.className} ${styles.statLine}`}>
             <span className={styles.statStrong}>{stats.active}</span> active tenders {" \u00b7 "}
             <span className={styles.statStrong}>{formatCurrencyCompactNZD(stats.pipelineValue)}</span> pipeline {" \u00b7 "}

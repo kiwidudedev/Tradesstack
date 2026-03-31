@@ -37,6 +37,7 @@ export default function NewOpportunityPage() {
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedOwnerUserId, setSelectedOwnerUserId] = useState<string>("");
+  const [clientContactName, setClientContactName] = useState("");
   const [clientCompanyName, setClientCompanyName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -97,7 +98,7 @@ export default function NewOpportunityPage() {
             .from("organization_clients")
             .select("id, name, company_name")
             .eq("organization_id", resolvedOrganizationId)
-            .order("name", { ascending: true }),
+            .order("company_name", { ascending: true }),
           supabase
             .from("organization_members")
             .select("user_id, display_name")
@@ -117,8 +118,8 @@ export default function NewOpportunityPage() {
         }
 
         const resolvedClients = (clientsResult.data ?? []).sort((left, right) => {
-          const leftLabel = (left.company_name?.trim() || left.name).toLowerCase();
-          const rightLabel = (right.company_name?.trim() || right.name).toLowerCase();
+          const leftLabel = (left.company_name?.trim() || "").toLowerCase();
+          const rightLabel = (right.company_name?.trim() || "").toLowerCase();
           return leftLabel.localeCompare(rightLabel);
         });
         const resolvedMembers = membersResult.data ?? [];
@@ -175,6 +176,11 @@ export default function NewOpportunityPage() {
 
       if (shouldCreateNewClient) {
         const trimmedCompanyName = clientCompanyName.trim();
+        const trimmedContactName = clientContactName.trim();
+        if (!trimmedContactName) {
+          setError("Contact name is required.");
+          return;
+        }
         if (!trimmedCompanyName) {
           setError("Company name is required.");
           return;
@@ -190,7 +196,7 @@ export default function NewOpportunityPage() {
           .insert({
             organization_id: resolvedOrganizationId,
             created_by: session.id,
-            name: trimmedCompanyName,
+            name: trimmedContactName,
             company_name: trimmedCompanyName,
             email: normalizeOptional(clientEmail),
             phone: normalizeOptional(clientPhone),
@@ -355,7 +361,7 @@ export default function NewOpportunityPage() {
                     <option value="">Select a client</option>
                     {clients.map((client) => (
                       <option key={client.id} value={client.id}>
-                        {client.company_name?.trim() || client.name}
+                        {client.company_name?.trim() || "Unknown Company"}
                       </option>
                     ))}
                     <option value={NEW_CLIENT_OPTION}>Add new client</option>
@@ -386,6 +392,19 @@ export default function NewOpportunityPage() {
               <div className="space-y-3">
                 <p className={`${interMedium.className} text-sm font-semibold text-[#1d2433]`}>New Client Details</p>
                 <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label htmlFor="clientContactName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
+                      Contact Name *
+                    </label>
+                    <Input
+                      id="clientContactName"
+                      value={clientContactName}
+                      onChange={(event) => setClientContactName(event.target.value)}
+                      placeholder="John Smith"
+                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
+                      required
+                    />
+                  </div>
                   <div className="space-y-2">
                     <label htmlFor="clientCompanyName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
                       Company Name *

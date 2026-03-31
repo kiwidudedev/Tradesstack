@@ -115,10 +115,10 @@ export async function getOrganizationProjectsForCurrentUser(): Promise<Organizat
 
   const clientsResult =
     clientIds.length > 0
-      ? await supabase.from("organization_clients").select("id, name").eq("organization_id", member.organization_id).in("id", clientIds)
+      ? await supabase.from("organization_clients").select("id, company_name").eq("organization_id", member.organization_id).in("id", clientIds)
       : { data: [], error: null };
 
-  const clientNameById = new Map((clientsResult.data ?? []).map((client) => [client.id, client.name]));
+  const clientNameById = new Map((clientsResult.data ?? []).map((client) => [client.id, client.company_name ?? "Unknown Company"]));
 
   return visibleProjects.map((project) => {
     return {

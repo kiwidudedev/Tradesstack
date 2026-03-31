@@ -31,7 +31,7 @@ export default async function NewClientPage() {
       redirect("/app/leads-clients/clients");
     }
 
-    const name = String(formData.get("name") ?? "").trim();
+    const contactName = String(formData.get("name") ?? "").trim();
     const companyName = String(formData.get("companyName") ?? "").trim();
     const emailRaw = String(formData.get("email") ?? "").trim();
     const phoneRaw = String(formData.get("phone") ?? "").trim();
@@ -40,15 +40,19 @@ export default async function NewClientPage() {
       .map((value) => String(value))
       .filter((tag): tag is (typeof CLIENT_TAGS)[number] => CLIENT_TAGS.includes(tag as (typeof CLIENT_TAGS)[number]));
 
-    if (!name) {
-      redirect("/app/leads-clients/clients/new?error=missing-name");
+    if (!contactName) {
+      redirect("/app/leads-clients/clients/new?error=missing-contact-name");
+    }
+
+    if (!companyName) {
+      redirect("/app/leads-clients/clients/new?error=missing-company-name");
     }
 
     const { error } = await supabase.from("organization_clients").insert({
       organization_id: currentMember.organization_id,
       created_by: user.id,
-      name,
-      company_name: companyName || null,
+      name: contactName,
+      company_name: companyName,
       email: emailRaw || null,
       phone: phoneRaw || null,
       tags,
@@ -99,15 +103,15 @@ export default async function NewClientPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="name" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Client Name
+                  Contact Name
                 </label>
-                <Input id="name" name="name" required placeholder="Fletcher Construction" className="h-11 rounded-[6px]" />
+                <Input id="name" name="name" required placeholder="John Smith" className="h-11 rounded-[6px]" />
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="companyName" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Company
+                  Company Name
                 </label>
-                <Input id="companyName" name="companyName" placeholder="Fletcher Construction Ltd" className="h-11 rounded-[6px]" />
+                <Input id="companyName" name="companyName" required placeholder="Fletcher Construction Ltd" className="h-11 rounded-[6px]" />
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="email" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>

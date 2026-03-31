@@ -8,6 +8,8 @@ import { getTradeById, TRADE_PACK_TRADES } from "@/lib/trade-pack-builder";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { interMedium } from "@/lib/fonts";
+import styles from "./trade-pack-builder.module.css";
 
 interface ScopeStructuredItem {
   title: string;
@@ -489,25 +491,49 @@ export function ScopeBuilderWorkbench({
     return tradePack.tradeLabel;
   };
 
+  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(new Date());
+
   return (
-    <main className="space-y-8 pb-8">
-      <section className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Scope Builder</h2>
-        <p className="max-w-4xl text-base text-[#4d5d78]">
+    <main className={`${styles.scope} space-y-6 pb-8`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Scope Builder</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
           Generate structured trade scope from a trade pack.
         </p>
+        </div>
+        <div className={styles.heroActions}>
+          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
+          <Button
+            className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+            onClick={runScopeBuilder}
+            disabled={isGenerating || isLoadingLinkedPdf}
+          >
+            {isGenerating || isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Run Scope Builder"}
+          </Button>
+        </div>
       </section>
 
       <section className="space-y-5">
-        <div className="grid gap-5 xl:grid-cols-12">
-          <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6 xl:col-span-8">
-            <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Scope Builder Controls</p>
+        <div className={styles.dashboardGrid}>
+          <div className={`${styles.card} p-6`}>
+            <p className={styles.sectionTitle}>Scope Builder Controls</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Trade heading</label>
+                <label className={styles.metricLabel}>Trade heading</label>
                 <select
-                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
                   value={selectedTradeId}
                   onChange={(event) => setSelectedTradeId(event.target.value)}
                   disabled={isGenerating || isLoadingLinkedPdf}
@@ -521,9 +547,9 @@ export function ScopeBuilderWorkbench({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Trade pack source</label>
+                <label className={styles.metricLabel}>Trade pack source</label>
                 <select
-                  className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                  className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
                   value={selectedGeneratedTradePackId ?? ""}
                   onChange={(event) => onSelectGeneratedTradePackById(event.target.value)}
                   disabled={isGenerating || isLoadingLinkedPdf || generatedTradePacks.length === 0}
@@ -538,8 +564,8 @@ export function ScopeBuilderWorkbench({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7f8ea8]">Select PDF</label>
-                <label className="inline-flex h-10 w-full cursor-pointer items-center rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]">
+                <label className={styles.metricLabel}>Select PDF</label>
+                <label className={`${styles.fieldBox} inline-flex h-10 w-full cursor-pointer text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]`}>
                   <input
                     type="file"
                     accept="application/pdf,.pdf"
@@ -556,7 +582,7 @@ export function ScopeBuilderWorkbench({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button
-                className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10]"
+                className={`${styles.controlButton} h-10 px-[18px] text-sm`}
                 onClick={runScopeBuilder}
                 disabled={isGenerating || isLoadingLinkedPdf}
               >
@@ -570,23 +596,23 @@ export function ScopeBuilderWorkbench({
             </div>
           </div>
 
-          <div className="xl:col-span-4">
-            <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-4">
-              <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Current Selection</p>
+          <div>
+            <div className={`${styles.card} p-4`}>
+              <p className={styles.sectionTitle}>Current Selection</p>
               <div className="mt-3 space-y-2">
-                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Selected trade</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1d2433]">{selectedTrade?.label ?? "Not selected"}</p>
+                <div className={styles.selectionBox}>
+                  <p className={styles.selectionLabel}>Selected trade</p>
+                  <p className={styles.selectionValue}>{selectedTrade?.label ?? "Not selected"}</p>
                 </div>
-                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Trade pack source</p>
-                  <p className="mt-1 text-sm text-[#4f5f79]">
+                <div className={styles.selectionBox}>
+                  <p className={styles.selectionLabel}>Trade pack source</p>
+                  <p className={styles.selectionValue}>
                     {selectedGeneratedTradePackId ? "Stored trade pack selected" : "No trade pack selected"}
                   </p>
                 </div>
-                <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Output status</p>
-                  <p className="mt-1 text-sm text-[#4f5f79]">
+                <div className={styles.selectionBox}>
+                  <p className={styles.selectionLabel}>Output status</p>
+                  <p className={styles.selectionValue}>
                     {runResult ? `Generated • ${toDateTimeLabel(runResult.generatedAt)}` : "No scope generated yet"}
                   </p>
                 </div>
@@ -596,11 +622,11 @@ export function ScopeBuilderWorkbench({
         </div>
 
         <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#64748B]">Stored Scope Runs</p>
+          <p className={styles.metricLabel}>Stored Scope Runs</p>
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-full sm:w-[360px]">
               <select
-                className="h-10 w-full rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#ff5406]"
+                className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
                 value={selectedStoredTradeId}
                 onChange={(event) => onSelectStoredTrade(event.target.value)}
                 disabled={isGenerating || isLoadingLinkedPdf || storedTradeOptions.length === 0}
@@ -615,7 +641,7 @@ export function ScopeBuilderWorkbench({
             </div>
             <Button
               variant="outline"
-              className="h-10 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
+              className={`${styles.controlButton} h-10 px-[18px] text-sm`}
               onClick={copyOutput}
               disabled={!runResult || isGenerating}
             >
@@ -624,7 +650,7 @@ export function ScopeBuilderWorkbench({
             </Button>
             <Button
               variant="outline"
-              className="h-10 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-[18px] text-sm text-[#1d2433] hover:bg-[#F8FAFC]"
+              className={`${styles.controlButton} h-10 px-[18px] text-sm`}
               onClick={downloadOutput}
               disabled={!runResult || isGenerating}
             >
@@ -653,7 +679,7 @@ export function ScopeBuilderWorkbench({
       {runResult ? (
         <section className="space-y-5">
           <div className="space-y-1">
-            <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Scope Output</h3>
+            <h3 className={styles.sectionTitle}>Scope Output</h3>
             <p className="text-sm text-[#64748B]">{runResult.tradeLabel}</p>
           </div>
 
@@ -679,7 +705,7 @@ export function ScopeBuilderWorkbench({
           </section>
         </section>
       ) : (
-        <Card className="rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        <Card className={styles.card}>
           <CardContent className="flex items-center gap-3 px-5 py-5 text-sm text-[#5f7090]">
             <FileText className="h-4 w-4 text-[#7b8ba4]" />
             Upload a PDF and run Scope Builder to generate a subcontract pricing scope.

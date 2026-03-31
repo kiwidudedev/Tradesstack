@@ -48,7 +48,7 @@ export default async function EditClientPage({
       redirect("/app/leads-clients/clients");
     }
 
-    const name = String(formData.get("name") ?? "").trim();
+    const contactName = String(formData.get("name") ?? "").trim();
     const companyName = String(formData.get("companyName") ?? "").trim();
     const emailRaw = String(formData.get("email") ?? "").trim();
     const phoneRaw = String(formData.get("phone") ?? "").trim();
@@ -57,16 +57,20 @@ export default async function EditClientPage({
       .map((value) => String(value))
       .filter((tag): tag is (typeof CLIENT_TAGS)[number] => CLIENT_TAGS.includes(tag as (typeof CLIENT_TAGS)[number]));
 
-    if (!name) {
-      redirect(`/app/leads-clients/clients/${clientId}/edit?error=missing-name`);
+    if (!contactName) {
+      redirect(`/app/leads-clients/clients/${clientId}/edit?error=missing-contact-name`);
+    }
+
+    if (!companyName) {
+      redirect(`/app/leads-clients/clients/${clientId}/edit?error=missing-company-name`);
     }
 
     const serverSupabase = await createServerSupabaseClient();
     const { error } = await serverSupabase
       .from("organization_clients")
       .update({
-        name,
-        company_name: companyName || null,
+        name: contactName,
+        company_name: companyName,
         email: emailRaw || null,
         phone: phoneRaw || null,
         tags,
@@ -115,15 +119,15 @@ export default async function EditClientPage({
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="name" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Client Name
+                  Contact Name
                 </label>
                 <Input id="name" name="name" required defaultValue={client.name} className="h-11 rounded-[6px]" />
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="companyName" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Company
+                  Company Name
                 </label>
-                <Input id="companyName" name="companyName" defaultValue={client.company_name ?? ""} className="h-11 rounded-[6px]" />
+                <Input id="companyName" name="companyName" required defaultValue={client.company_name ?? ""} className="h-11 rounded-[6px]" />
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="email" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>

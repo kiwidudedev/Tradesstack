@@ -29,6 +29,8 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 import type { Database } from "@/lib/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { interMedium } from "@/lib/fonts";
+import styles from "./trade-pack-builder.module.css";
 
 interface TradePackBuilderUploaderProps {
   projectId: string;
@@ -1639,10 +1641,7 @@ export function TradePackBuilderUploader({
   }, [organizationId, projectId, selectedGeneratedTradePack, selectedGeneratedTradePack?.id, supabase]);
 
   const renderDrawingSetRow = (drawingSet: ProjectDrawingSet, showTradePackBadge: boolean) => (
-    <div
-      key={drawingSet.id}
-      className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-4"
-    >
+    <div key={drawingSet.id} className={`${styles.listRow} px-4 py-4`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {editingDrawingSetId === drawingSet.id ? (
@@ -1688,7 +1687,7 @@ export function TradePackBuilderUploader({
                 variant="outline"
                 onClick={() => saveDrawingSetRename(drawingSet)}
                 disabled={renamingId === drawingSet.id || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                className={`${styles.controlButton} h-8 px-3 text-[13px]`}
               >
                 {renamingId === drawingSet.id ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1714,7 +1713,7 @@ export function TradePackBuilderUploader({
                 variant="outline"
                 onClick={() => downloadDrawingSet(drawingSet)}
                 disabled={downloadingPath === drawingSet.storage_path || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                className={`${styles.controlButton} h-8 px-3 text-[13px]`}
               >
                 {downloadingPath === drawingSet.storage_path ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1732,7 +1731,7 @@ export function TradePackBuilderUploader({
                     setSelectedOutputDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                  className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                  className={`${styles.controlButton} h-8 px-3 text-[13px]`}
                 >
                   Why
                   <ChevronDown
@@ -1751,7 +1750,7 @@ export function TradePackBuilderUploader({
                     setSettingsMenuDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                  className="h-8 rounded-[6px] border-[#E6EAF0] bg-[#F8F9FC] px-3 text-[13px] text-[#1d2433] hover:bg-[#F8FAFC]"
+                  className={`${styles.controlButton} h-8 px-3 text-[13px]`}
                 >
                   Settings
                   <ChevronDown
@@ -1762,7 +1761,7 @@ export function TradePackBuilderUploader({
                 </Button>
 
                 {settingsMenuDrawingSetId === drawingSet.id ? (
-                  <div className="absolute right-0 top-11 z-20 min-w-[140px] rounded-[6px] border border-[#d7deeb] bg-white p-1.5 shadow-[0_10px_20px_rgba(16,24,40,0.12)]">
+                  <div className={`${styles.menuPanel} absolute right-0 top-11 z-20 min-w-[140px] p-1.5`}>
                     <button
                       type="button"
                       onClick={() => startRenameDrawingSet(drawingSet)}
@@ -1801,7 +1800,7 @@ export function TradePackBuilderUploader({
                 const { pageLabel, detail } = toExtractionReasonParts(reason);
 
                 return (
-                  <div key={`${reasonIndex}-${reason}`} className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
+                  <div key={`${reasonIndex}-${reason}`} className={`${styles.metricTile} px-3 py-2.5`}>
                     <p className="text-[13px] font-semibold text-[#334155]">{pageLabel}</p>
                     <p className="mt-1 text-[13px] leading-[1.6] text-[#475569]">{detail}</p>
                   </div>
@@ -1820,42 +1819,58 @@ export function TradePackBuilderUploader({
     </div>
   );
 
+  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(new Date());
+
   return (
-    <div className="space-y-8 pb-8">
-      <section className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Trade Pack Builder</h2>
-        <p className="max-w-3xl text-base text-[#4f5f79]">Upload the full set. Pick a trade. Download only the pages that matter.</p>
+    <div className={`${styles.scope} space-y-6 pb-8`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Drawing Intelligence</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Upload the full set, pick a trade, and generate the pages that matter most.
+          </p>
+        </div>
+        <div className={styles.heroActions}>
+          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
+          <Button
+            type="button"
+            onClick={generateTradePack}
+            disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
+            className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+          >
+            {isGeneratingPack ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Building Pack
+              </>
+            ) : (
+              "Generate & Download"
+            )}
+          </Button>
+        </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-12">
-        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6 xl:col-span-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="mt-1 text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Create Trade Pack</p>
-            </div>
-            <Button
-              type="button"
-              onClick={generateTradePack}
-              disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
-              className="h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#E63F10] disabled:bg-[#f6a47f]"
-            >
-              {isGeneratingPack ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Building Pack
-                </>
-              ) : (
-                "Generate & Download"
-              )}
-            </Button>
+      <section className={styles.dashboardGrid}>
+        <div className={`${styles.card} p-6`}>
+          <div className={styles.sectionHeader}>
+            <p className={styles.sectionTitle}>Create Trade Pack</p>
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="localSourcePdfInput" className="text-xs font-medium uppercase tracking-[0.16em] text-[#8b98ad]">
+              <label htmlFor="localSourcePdfInput" className={styles.metricLabel}>
                 Source PDF
               </label>
-              <div className="flex h-11 items-center gap-2 rounded-[6px] border border-[#cdd6e6] bg-white px-2">
+              <div className={styles.fieldBox}>
                 <input
                   id="localSourcePdfInput"
                   type="file"
@@ -1877,7 +1892,7 @@ export function TradePackBuilderUploader({
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="tradeSelector" className="text-xs font-medium uppercase tracking-[0.16em] text-[#8b98ad]">
+              <label htmlFor="tradeSelector" className={styles.metricLabel}>
                 Trade
               </label>
               <select
@@ -1885,7 +1900,7 @@ export function TradePackBuilderUploader({
                 value={selectedTradeId}
                 onChange={(event) => setSelectedTradeId(event.target.value)}
                 disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-11 w-full rounded-[6px] border border-[#cdd6e6] bg-white px-3 text-sm text-[#1d2433] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35"
+                className={`${styles.fieldSelect} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
               >
                 {TRADE_PACK_TRADES.map((trade) => (
                   <option key={trade.id} value={trade.id}>
@@ -1896,7 +1911,7 @@ export function TradePackBuilderUploader({
             </div>
           </div>
 
-          <p className="mt-3 text-xs text-[#6f7f98]">
+          <p className={`${styles.metaText} mt-3 text-xs`}>
             Source PDF stays on your device during generation. Only generated trade packs are saved in this project.
           </p>
 
@@ -1935,21 +1950,21 @@ export function TradePackBuilderUploader({
           </div>
         </div>
 
-        <div className="space-y-3 xl:col-span-4">
-          <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-6">
-            <p className="text-xl font-semibold tracking-[-0.01em] text-[#1d2433]">Current Selection</p>
+        <div className="space-y-3">
+          <div className={`${styles.card} p-6`}>
+            <p className={styles.sectionTitle}>Current Selection</p>
             <div className="mt-4 space-y-2">
-              <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Trade</p>
-                <p className="mt-1 text-sm font-semibold text-[#1d2433]">{selectedTrade?.label ?? "Not selected"}</p>
+              <div className={styles.selectionBox}>
+                <p className={styles.selectionLabel}>Trade</p>
+                <p className={styles.selectionValue}>{selectedTrade?.label ?? "Not selected"}</p>
               </div>
-              <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Source</p>
-                <p className="mt-1 truncate text-sm text-[#4f5f79]">{localSourceFile?.name ?? "No source PDF selected"}</p>
+              <div className={styles.selectionBox}>
+                <p className={styles.selectionLabel}>Source</p>
+                <p className={`${styles.selectionValue} truncate`}>{localSourceFile?.name ?? "No source PDF selected"}</p>
               </div>
-              <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b98ad]">Output File</p>
-                <p className="mt-1 truncate text-sm text-[#4f5f79]">{outputFilePreview}</p>
+              <div className={styles.selectionBox}>
+                <p className={styles.selectionLabel}>Output File</p>
+                <p className={`${styles.selectionValue} truncate`}>{outputFilePreview}</p>
               </div>
             </div>
           </div>
@@ -1958,10 +1973,10 @@ export function TradePackBuilderUploader({
       </section>
 
       <section className="space-y-5">
-        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Produced Trade Packs</h3>
+        <h3 className={styles.sectionTitle}>Produced Trade Packs</h3>
         <div className="space-y-2">
           {generatedTradePacks.length === 0 ? (
-            <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3">
+            <div className={`${styles.cardMuted} px-4 py-3`}>
               <p className="text-sm text-[#687996]">No generated trade packs yet.</p>
             </div>
           ) : (
@@ -1970,7 +1985,7 @@ export function TradePackBuilderUploader({
         </div>
       </section>
 
-      <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-4 py-3 text-xs text-[#6d7c94]">
+      <div className={`${styles.cardMuted} px-4 py-3 text-xs text-[#6d7c94]`}>
         <p className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4 text-[#8b98ad]" />
           Trade Pack Builder filters pages by selected trade and stores only generated outputs for this project.

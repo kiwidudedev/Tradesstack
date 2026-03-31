@@ -13,6 +13,7 @@
   --dash-sage-ink: #2f6b4f;
   --dash-gold: #f3ead6;
   --dash-gold-ink: #8a6731;
+  background: var(--dash-bg);
 }
 
 .heroBlock {
@@ -147,7 +148,7 @@
 .metricValue {
   margin: 0.7rem 0 0;
   color: var(--dash-text);
-  font-size: clamp(1.4rem, 2.1vw, 1.95rem);
+  font-size: 21px !important;
   line-height: 1;
   letter-spacing: 0.01em;
   font-weight: 600;
@@ -160,30 +161,10 @@
 }
 
 .metricTooltip {
-  position: absolute;
-  left: 0.9rem;
-  right: 0.9rem;
-  top: 0.85rem;
-  margin: 0;
-  border: 1px solid var(--dash-border);
-  border-radius: 0.7rem;
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.12);
-  color: var(--dash-ink);
+  margin: 0.45rem 0 0;
+  color: var(--dash-muted);
   font-size: 12px;
   line-height: 1.35;
-  padding: 0.5rem 0.6rem;
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
-  transition: opacity 140ms ease, transform 140ms ease;
-  z-index: 20;
-}
-
-.metricTile:hover .metricTooltip,
-.metricTile:focus-within .metricTooltip {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .rankList {
@@ -291,7 +272,46 @@
   overflow-x: auto;
   border: 1px solid var(--dash-border);
   border-radius: 1rem;
-  background: #ffffff;
+  background: var(--dash-panel);
+}
+
+.simpleList {
+  display: grid;
+  gap: 0.7rem;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.simpleListItem {
+  border: 1px solid var(--dash-border);
+  border-radius: 1rem;
+  background: var(--dash-bg);
+  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.025);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.simpleListTitle {
+  margin: 0;
+  color: #2d3d55;
+  font-size: 15px;
+}
+
+.simpleEmptyPanel {
+  border: 1px dashed var(--dash-border-strong);
+  border-radius: 1rem;
+  background: var(--dash-bg);
+  padding: 1rem;
+}
+
+.simpleEmptyText {
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 15px;
 }
 
 .insightsList {
@@ -342,7 +362,7 @@
 
 .row {
   border-top: 1px solid rgba(17, 17, 17, 0.08);
-  background: #ffffff;
+  background: var(--dash-bg);
   transition: background-color 180ms ease;
 }
 
@@ -417,13 +437,13 @@
   border-radius: 999px !important;
   padding: 0 0.7rem !important;
   color: var(--dash-ink) !important;
-  background: #fff !important;
+  background: var(--dash-panel-muted) !important;
   border: 1px solid var(--dash-border) !important;
   font-size: 12px !important;
 }
 
 .actionButton:hover {
-  background: var(--dash-panel-muted) !important;
+  background: #eceff3 !important;
 }
 
 .emptyState {

@@ -32,12 +32,34 @@
   padding-bottom: 0.7rem !important;
 }
 
+.heroBlock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.15rem 0 0.35rem;
+}
+
 .heroHeaderRow {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.heroActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.55rem;
+}
+
+.heroDate {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  text-align: right;
 }
 
 .heroTitle {
@@ -47,6 +69,13 @@
   line-height: 0.98 !important;
   letter-spacing: -0.04em !important;
   font-weight: 600 !important;
+}
+
+.heroSummary {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.45;
 }
 
 .heroButton {
@@ -257,6 +286,20 @@
 
 .dueMetaSoft {
   color: var(--soft);
+}
+
+@media (max-width: 1100px) {
+  .heroBlock {
+    flex-direction: column;
+  }
+
+  .heroActions {
+    align-items: flex-start;
+  }
+
+  .heroDate {
+    text-align: left;
+  }
 }
 
 .dueMetaDanger {

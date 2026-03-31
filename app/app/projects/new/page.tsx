@@ -38,6 +38,7 @@ export default function CreateProjectPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [clients, setClients] = useState<OrganizationClient[]>([]);
   const [selectedClientId, setSelectedClientId] = useState("");
+  const [clientContactName, setClientContactName] = useState("");
   const [clientCompanyName, setClientCompanyName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -107,7 +108,7 @@ export default function CreateProjectPage() {
           .from("organization_clients")
           .select("id, organization_id, created_by, name, company_name, email, phone, created_at, updated_at")
           .eq("organization_id", resolvedOrganizationId)
-          .order("name", { ascending: true });
+          .order("company_name", { ascending: true });
 
         if (clientsError) {
           if (!isCancelled) {
@@ -179,7 +180,12 @@ export default function CreateProjectPage() {
       let resolvedClientId: string | null = null;
 
       if (shouldCreateNewClient) {
+        const trimmedContactName = clientContactName.trim();
         const trimmedCompanyName = clientCompanyName.trim();
+        if (!trimmedContactName) {
+          setError("Contact name is required.");
+          return;
+        }
         if (!trimmedCompanyName) {
           setError("Company name is required.");
           return;
@@ -195,7 +201,7 @@ export default function CreateProjectPage() {
           .insert({
             organization_id: resolvedOrganizationId,
             created_by: session.id,
-            name: trimmedCompanyName,
+            name: trimmedContactName,
             company_name: trimmedCompanyName,
             email: normalizeOptional(clientEmail),
             phone: normalizeOptional(clientPhone),
@@ -320,7 +326,7 @@ export default function CreateProjectPage() {
                   <option value="">Select a client</option>
                   {clients.map((client) => (
                     <option key={client.id} value={client.id}>
-                      {client.name}
+                      {client.company_name?.trim() || "Unknown Company"}
                     </option>
                   ))}
                   <option value={NEW_CLIENT_OPTION}>Add new client</option>
@@ -336,6 +342,19 @@ export default function CreateProjectPage() {
               <div className="rounded-[6px] border border-[#d7deea] bg-[#f8faff] p-3">
                 <p className={`${interMedium.className} mb-3 text-sm font-semibold text-[#1d2433]`}>New Client Details</p>
                 <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label htmlFor="clientContactName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
+                      Contact Name *
+                    </label>
+                    <Input
+                      id="clientContactName"
+                      value={clientContactName}
+                      onChange={(event) => setClientContactName(event.target.value)}
+                      placeholder="John Smith"
+                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
+                      required
+                    />
+                  </div>
                   <div className="space-y-2">
                     <label htmlFor="clientCompanyName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
                       Company Name *

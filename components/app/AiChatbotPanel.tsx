@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { mockUser } from "@/lib/mock";
+import { interMedium } from "@/lib/fonts";
+import styles from "./trade-pack-builder.module.css";
 
 type ChatRole = "user" | "assistant";
 
@@ -93,6 +95,20 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
     }
     return Math.min((usage.used / usage.limit) * 100, 100);
   }, [usage]);
+  const nowLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat("en-NZ", {
+        timeZone: "Pacific/Auckland",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }).format(new Date()),
+    []
+  );
   const scrollToBottom = () => {
     const container = scrollContainerRef.current;
     if (!container) {
@@ -305,17 +321,27 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
   };
 
   return (
-    <Card className="mx-auto max-w-[760px] border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-      <CardHeader className="space-y-3 border-b border-[#E5E7EB]">
-        <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Construction AI Assistant</CardTitle>
-        <p className="max-w-3xl text-sm text-[#5b6b84]">
-          Ask questions about NZ/AUS construction.
-        </p>
+    <main className={`${styles.scope} space-y-6 pb-8`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Construction AI Assistant</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Ask questions about NZ/AUS construction, pricing scope, and drawing interpretation.
+          </p>
+        </div>
+        <div className={styles.heroActions}>
+          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
+        </div>
+      </section>
+
+      <Card className={styles.card}>
+      <CardHeader className={`${styles.sectionHeader} border-b border-[#E5E7EB]`}>
+        <CardTitle className={styles.sectionTitle}>Chat</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-5">
         <div
           ref={scrollContainerRef}
-          className="h-[460px] space-y-3 overflow-y-auto rounded-[6px] border border-[#E5E7EB] bg-[#F8FAFC] p-4"
+          className="h-[460px] space-y-3 overflow-y-auto rounded-[16px] border border-[#E5E7EB] bg-[#F8FAFC] p-4"
         >
           {isLoadingHistory ? (
             <p className="text-sm text-[#6d7f99]">Loading previous chat…</p>
@@ -402,12 +428,12 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
             onChange={(event) => setInputValue(event.target.value)}
             placeholder="Ask about pricing, scope, coordination or drawings..."
             disabled={isLoading}
-            className="h-[52px] rounded-[6px] pl-[18px]"
+            className="h-[52px] rounded-[999px] border-[#D3DDEA] bg-white pl-[18px]"
           />
           <Button
             type="submit"
             disabled={!canSend}
-            className="h-[52px] bg-[#FF5A1F] px-6 text-white hover:bg-[#F04C11] disabled:opacity-40"
+            className={`${styles.heroPrimaryButton} h-[52px] px-6 text-white disabled:opacity-40`}
           >
             Send
           </Button>
@@ -455,6 +481,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
         )}
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </main>
   );
 }

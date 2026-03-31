@@ -4,6 +4,7 @@ import { useMemo, useState, type ChangeEvent } from "react";
 import { Download, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { interMedium } from "@/lib/fonts";
 import {
   SPEC_FINISHES_TRADES,
   analyzePageForSpecFinishesTrade,
@@ -15,6 +16,7 @@ import {
   toSpecFinishesTradeTaxonomy,
 } from "@/lib/spec-finishes-classification";
 import { clampConfidence, type TradePackVlmPageResult } from "@/lib/trade-pack-vlm";
+import styles from "./trade-pack-builder.module.css";
 
 interface StructuredItem {
   title: string;
@@ -479,25 +481,58 @@ export function SpecFinishesReviewWorkbench({
     downloadTextFile(`${base}-spec-finishes-review.md`, markdown);
   };
 
+  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(new Date());
+
   return (
-    <div className="space-y-6">
-      <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
+    <div className={`${styles.scope} space-y-6 pb-8`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Specification Review</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Select a trade heading, upload a specification PDF, and generate a structured finishes summary.
+          </p>
+        </div>
+        <div className={styles.heroActions}>
+          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
+          <Button
+            type="button"
+            onClick={runReview}
+            disabled={!selectedPdfFile || isRunning}
+            className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Running...
+              </>
+            ) : (
+              "Run Review"
+            )}
+          </Button>
+        </div>
+      </section>
+
+      <Card className={styles.card}>
         <CardContent className="space-y-5 p-5">
-          <div className="space-y-1">
-            <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">
-              Specification Review
-            </CardTitle>
-            <p className="text-sm text-[#61748F]">
-              Select a trade heading, upload a specification or finishes PDF, then generate a structured summary.
-            </p>
+          <div className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Review Controls</CardTitle>
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7F8EA8]">Trade Heading</label>
+            <label className={styles.metricLabel}>Trade Heading</label>
             <select
               value={selectedTradeId}
               onChange={(event) => setSelectedTradeId(event.target.value)}
-              className="h-11 w-full rounded-[6px] border border-[#D5DFEC] bg-white px-3 text-sm text-[#334155]"
+              className={`${styles.fieldSelect} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
             >
               {SPEC_FINISHES_TRADES.map((trade) => (
                 <option key={trade.id} value={trade.id}>
@@ -509,8 +544,8 @@ export function SpecFinishesReviewWorkbench({
 
           <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7F8EA8]">Select PDF</label>
-              <label className="inline-flex h-11 w-full cursor-pointer items-center justify-between rounded-[6px] border border-[#D5DFEC] bg-[#F9FBFF] px-3 text-sm text-[#334155] hover:bg-[#F2F7FF]">
+              <label className={styles.metricLabel}>Select PDF</label>
+              <label className={`${styles.fieldBox} inline-flex w-full cursor-pointer justify-between text-sm text-[#334155]`}>
                 <span className="truncate">{selectedPdfFile ? selectedPdfFile.name : "Choose PDF file"}</span>
                 <span className="ml-3 inline-flex items-center gap-2 text-[#61748F]">
                   <FileText className="h-4 w-4" />
@@ -524,7 +559,7 @@ export function SpecFinishesReviewWorkbench({
               type="button"
               onClick={runReview}
               disabled={!selectedPdfFile || isRunning}
-              className="h-11 rounded-[6px] bg-[#F74917] px-5 text-sm font-semibold text-white hover:bg-[#E84B1D] disabled:bg-[#F7B8A2]"
+              className={`${styles.controlButton} h-11 px-5 text-sm`}
             >
               {isRunning ? (
                 <>
@@ -539,7 +574,7 @@ export function SpecFinishesReviewWorkbench({
 
           {storedRuns.length > 0 ? (
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7F8EA8]">Stored Runs</label>
+              <label className={styles.metricLabel}>Stored Runs</label>
               <select
                 value={selectedStoredRunId}
                 onChange={(event) => {
@@ -551,7 +586,7 @@ export function SpecFinishesReviewWorkbench({
                   }
                   setRunResult(null);
                 }}
-                className="h-10 w-full rounded-[6px] border border-[#D5DFEC] bg-white px-3 text-sm text-[#334155]"
+                className={`${styles.fieldSelect} h-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
               >
                 <option value="">Select stored run...</option>
                 {storedRuns.map((run) => (
@@ -569,12 +604,12 @@ export function SpecFinishesReviewWorkbench({
       </Card>
 
       {reasons.length > 0 ? (
-        <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
+        <Card className={styles.card}>
           <CardContent className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#64748B]">Why pages were extracted</p>
+            <p className={styles.metricLabel}>Why pages were extracted</p>
             <ul className="mt-3 space-y-2">
               {reasons.map((reason, index) => (
-                <li key={`reason-${index}`} className="rounded-[6px] border border-[#E4EBF3] bg-[#F8FBFF] px-3 py-2 text-sm text-[#41546F]">
+                <li key={`reason-${index}`} className={`${styles.metricTile} px-3 py-2 text-sm text-[#41546F]`}>
                   {reason}
                 </li>
               ))}
@@ -584,11 +619,11 @@ export function SpecFinishesReviewWorkbench({
       ) : null}
 
       {activeResult && activeMeta ? (
-        <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
+        <Card className={styles.card}>
           <CardContent className="space-y-6 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Structured Review Output</CardTitle>
+                <CardTitle className={styles.sectionTitle}>Structured Review Output</CardTitle>
                 <p className="mt-1 text-sm text-[#61748F]">
                   Trade: {activeResult.tradeLabel} | Source: {activeMeta.fileName} | Generated: {toDateTimeLabel(activeMeta.generatedAt)}
                 </p>
@@ -597,7 +632,7 @@ export function SpecFinishesReviewWorkbench({
                 type="button"
                 variant="outline"
                 onClick={downloadMarkdown}
-                className="inline-flex items-center gap-2 border-[#D3DDEA] text-[#42526B]"
+                className={`${styles.controlButton} inline-flex items-center gap-2`}
               >
                 <Download className="h-4 w-4" />
                 Export Markdown
@@ -615,7 +650,7 @@ export function SpecFinishesReviewWorkbench({
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-[#DFE7F1] bg-[#F8F9FC] shadow-none">
+        <Card className={styles.card}>
           <CardContent className="p-5 text-sm text-[#61748F]">
             Select a trade heading, upload a PDF, and run the review to generate a structured summary.
           </CardContent>

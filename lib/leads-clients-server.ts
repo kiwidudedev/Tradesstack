@@ -450,7 +450,7 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
   );
 
   const clientNameById = new Map(
-    clients.map((client) => [client.id, client.company_name?.trim() || client.name])
+    clients.map((client) => [client.id, client.company_name?.trim() || "Unknown Company"])
   );
   const ownerNameByUserId = new Map(members.map((memberRow) => [memberRow.user_id, memberRow.display_name]));
   const latestQuoteByOpportunityId = new Map<

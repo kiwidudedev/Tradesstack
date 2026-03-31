@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
@@ -7,6 +8,13 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import styles from "./clients.module.css";
 
 const CLIENT_TAGS = ["Good Client", "High Value", "Difficult", "Slow Payer"] as const;
+const TOP_CLIENT_PERIOD_OPTIONS = [
+  { key: "30d", label: "30D" },
+  { key: "90d", label: "90D" },
+  { key: "12m", label: "12M" },
+  { key: "all", label: "All" },
+] as const;
+type TopClientPeriodKey = (typeof TOP_CLIENT_PERIOD_OPTIONS)[number]["key"];
 
 type ClaimFinanceRow = {
   project_id: string | null;
@@ -18,74 +26,8 @@ type ClaimFinanceRow = {
   updated_at: string | null;
 };
 
-function formatRelativeTime(value: string | null): string {
-  if (!value) {
-    return "No recent activity";
-  }
-
-  const timestamp = new Date(value).getTime();
-  if (Number.isNaN(timestamp)) {
-    return "No recent activity";
-  }
-
-  const diffMs = Date.now() - timestamp;
-  if (diffMs < 0) {
-    return "Just now";
-  }
-
-  const minutes = Math.floor(diffMs / (1000 * 60));
-  if (minutes < 1) {
-    return "Just now";
-  }
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  if (days < 30) {
-    return `${days}d ago`;
-  }
-
-  const months = Math.floor(days / 30);
-  if (months < 12) {
-    return `${months}mo ago`;
-  }
-
-  const years = Math.floor(months / 12);
-  return `${years}y ago`;
-}
-
-function formatRating(value: number): string {
-  return `⭐ ${value.toFixed(1)}`;
-}
-
-function formatCurrencyCompact(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}m`;
-  }
-  if (abs >= 1_000) {
-    return `$${(value / 1_000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, "")}k`;
-  }
-  return `$${Math.round(value)}`;
-}
-
-function formatDaysLabel(value: number): string {
-  const rounded = Math.round(value);
-  return `${rounded} day${rounded === 1 ? "" : "s"}`;
-}
-
 function getClientDisplayName(client: { company_name: string | null; name: string }): string {
-  const company = client.company_name?.trim();
-  if (company) {
-    return company;
-  }
-  return client.name;
+  return client.company_name?.trim() || "Unknown Company";
 }
 
 function getDaysSinceIso(value: string | null): number | null {
@@ -100,6 +42,37 @@ function getDaysSinceIso(value: string | null): number | null {
 
   const dayMs = 1000 * 60 * 60 * 24;
   return Math.floor((Date.now() - time) / dayMs);
+}
+
+function getTopClientPeriodCutoff(period: TopClientPeriodKey, now: Date): Date | null {
+  if (period === "all") {
+    return null;
+  }
+  const cutoff = new Date(now);
+  if (period === "12m") {
+    cutoff.setFullYear(cutoff.getFullYear() - 1);
+    return cutoff;
+  }
+  if (period === "90d") {
+    cutoff.setDate(cutoff.getDate() - 90);
+    return cutoff;
+  }
+  cutoff.setDate(cutoff.getDate() - 30);
+  return cutoff;
+}
+
+function isOnOrAfterCutoff(value: string | null, cutoff: Date | null): boolean {
+  if (cutoff === null) {
+    return true;
+  }
+  if (!value) {
+    return false;
+  }
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+  return timestamp >= cutoff.getTime();
 }
 
 function clampRating(value: number): number {
@@ -117,7 +90,30 @@ function normalizeClientTags(value: string[] | null): string[] {
   return (value ?? []).filter((tag): tag is (typeof CLIENT_TAGS)[number] => supported.has(tag as (typeof CLIENT_TAGS)[number]));
 }
 
-export default async function LeadsClientsClientsPage() {
+type LeadsClientsClientsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function LeadsClientsClientsPage({ searchParams }: LeadsClientsClientsPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const topClientPeriodParam = resolvedSearchParams.topClientPeriod;
+  const topClientPeriodRaw = Array.isArray(topClientPeriodParam) ? topClientPeriodParam[0] : topClientPeriodParam;
+  const clientSearchParam = resolvedSearchParams.clientSearch;
+  const clientSearchRaw = Array.isArray(clientSearchParam) ? clientSearchParam[0] : clientSearchParam;
+  const clientSearch = (clientSearchRaw ?? "").trim();
+  const topClientPeriod = TOP_CLIENT_PERIOD_OPTIONS.some((option) => option.key === topClientPeriodRaw)
+    ? (topClientPeriodRaw as TopClientPeriodKey)
+    : "12m";
+  const topClientPeriodCutoff = getTopClientPeriodCutoff(topClientPeriod, new Date());
+  const buildClientsHref = (nextTopClientPeriod: TopClientPeriodKey): string => {
+    const params = new URLSearchParams();
+    if (nextTopClientPeriod !== "12m") {
+      params.set("topClientPeriod", nextTopClientPeriod);
+    }
+    const query = params.toString();
+    return query ? `/app/leads-clients/clients?${query}` : "/app/leads-clients/clients";
+  };
+
   const member = await getCurrentOrganizationMember();
   if (!member) {
     return (
@@ -148,7 +144,7 @@ export default async function LeadsClientsClientsPage() {
       .order("updated_at", { ascending: false }),
     supabase
       .from("organization_opportunities")
-      .select("id, client_id, stage, estimated_value, updated_at")
+      .select("id, client_id, stage, estimated_value, created_at, updated_at")
       .eq("organization_id", member.organization_id)
       .order("updated_at", { ascending: false }),
   ]);
@@ -185,12 +181,19 @@ export default async function LeadsClientsClientsPage() {
   const claims = claimsResult.error ? [] : (claimsResult.data ?? []);
 
   const projectCountByClientId = new Map<string, number>();
+  const projectCountInSelectedPeriodByClientId = new Map<string, number>();
   const latestProjectActivityByClientId = new Map<string, string>();
   for (const project of projects) {
     if (!project.client_id) {
       continue;
     }
     projectCountByClientId.set(project.client_id, (projectCountByClientId.get(project.client_id) ?? 0) + 1);
+    if (isOnOrAfterCutoff(project.updated_at, topClientPeriodCutoff)) {
+      projectCountInSelectedPeriodByClientId.set(
+        project.client_id,
+        (projectCountInSelectedPeriodByClientId.get(project.client_id) ?? 0) + 1
+      );
+    }
     if (!latestProjectActivityByClientId.has(project.client_id)) {
       latestProjectActivityByClientId.set(project.client_id, project.updated_at);
     }
@@ -198,7 +201,10 @@ export default async function LeadsClientsClientsPage() {
 
   const activeLeadCountByClientId = new Map<string, number>();
   const wonLeadCountByClientId = new Map<string, number>();
-  const totalLeadCountByClientId = new Map<string, number>();
+  const totalLeadCountInTopClientPeriodByClientId = new Map<string, number>();
+  const wonLeadCountInTopClientPeriodByClientId = new Map<string, number>();
+  const wonValueInTopClientPeriodByClientId = new Map<string, number>();
+  const decisionDaysSamplesInTopPeriodByClientId = new Map<string, number[]>();
   const wonValueByClientId = new Map<string, number>();
   const latestLeadActivityByClientId = new Map<string, string>();
   for (const opportunity of opportunities) {
@@ -210,7 +216,12 @@ export default async function LeadsClientsClientsPage() {
       latestLeadActivityByClientId.set(opportunity.client_id, opportunity.updated_at);
     }
 
-    totalLeadCountByClientId.set(opportunity.client_id, (totalLeadCountByClientId.get(opportunity.client_id) ?? 0) + 1);
+    if (isOnOrAfterCutoff(opportunity.updated_at, topClientPeriodCutoff)) {
+      totalLeadCountInTopClientPeriodByClientId.set(
+        opportunity.client_id,
+        (totalLeadCountInTopClientPeriodByClientId.get(opportunity.client_id) ?? 0) + 1
+      );
+    }
 
     const isActiveLead = opportunity.stage !== "Won" && opportunity.stage !== "Lost";
     if (isActiveLead) {
@@ -220,6 +231,28 @@ export default async function LeadsClientsClientsPage() {
     if (opportunity.stage === "Won") {
       wonLeadCountByClientId.set(opportunity.client_id, (wonLeadCountByClientId.get(opportunity.client_id) ?? 0) + 1);
       wonValueByClientId.set(opportunity.client_id, (wonValueByClientId.get(opportunity.client_id) ?? 0) + Number(opportunity.estimated_value ?? 0));
+      if (isOnOrAfterCutoff(opportunity.updated_at, topClientPeriodCutoff)) {
+        wonLeadCountInTopClientPeriodByClientId.set(
+          opportunity.client_id,
+          (wonLeadCountInTopClientPeriodByClientId.get(opportunity.client_id) ?? 0) + 1
+        );
+        wonValueInTopClientPeriodByClientId.set(
+          opportunity.client_id,
+          (wonValueInTopClientPeriodByClientId.get(opportunity.client_id) ?? 0) + Number(opportunity.estimated_value ?? 0)
+        );
+      }
+    }
+
+    const isDecided = opportunity.stage === "Won" || opportunity.stage === "Lost";
+    if (isDecided && isOnOrAfterCutoff(opportunity.updated_at, topClientPeriodCutoff)) {
+      const createdAt = new Date(opportunity.created_at).getTime();
+      const decidedAt = new Date(opportunity.updated_at).getTime();
+      if (!Number.isNaN(createdAt) && !Number.isNaN(decidedAt) && decidedAt >= createdAt) {
+        const decisionDays = (decidedAt - createdAt) / (1000 * 60 * 60 * 24);
+        const current = decisionDaysSamplesInTopPeriodByClientId.get(opportunity.client_id) ?? [];
+        current.push(decisionDays);
+        decisionDaysSamplesInTopPeriodByClientId.set(opportunity.client_id, current);
+      }
     }
   }
 
@@ -308,7 +341,6 @@ export default async function LeadsClientsClientsPage() {
         );
       }
     }
-
     const dueDate = claim.due_date;
     const isOverdueByStatus = (claim.status ?? "").toLowerCase() === "overdue";
     const isOverdueByDate = Boolean(dueDate && dueDate < todayIso && balance > 0);
@@ -334,53 +366,101 @@ export default async function LeadsClientsClientsPage() {
     }
   }
 
-  const topClient = rows.reduce<{ id: string; displayName: string; revenue: number; projectsCount: number } | null>((best, row) => {
-    const revenue = (paidRevenueByClientId.get(row.id) ?? 0) + (wonValueByClientId.get(row.id) ?? 0);
-    if (!best || revenue > best.revenue) {
-      return {
-        id: row.id,
-        displayName: getClientDisplayName(row),
-        revenue,
-        projectsCount: row.projectsCount,
-      };
+  const bestConversionClientInTopPeriod = rows.reduce<{
+    id: string;
+    displayName: string;
+    wonCount: number;
+    opportunityCount: number;
+    conversionRate: number;
+  } | null>((best, row) => {
+    const opportunityCount = totalLeadCountInTopClientPeriodByClientId.get(row.id) ?? 0;
+    if (opportunityCount === 0) {
+      return best;
     }
-    return best;
-  }, null);
-  const topClientLast12Months = rows.reduce<{ id: string; displayName: string; revenue: number } | null>((best, row) => {
-    const revenue = paidRevenueLast12MonthsByClientId.get(row.id) ?? 0;
-    if (!best || revenue > best.revenue) {
+    const wonCount = wonLeadCountInTopClientPeriodByClientId.get(row.id) ?? 0;
+    const conversionRate = wonCount / opportunityCount;
+    if (
+      !best ||
+      conversionRate > best.conversionRate ||
+      (conversionRate === best.conversionRate && opportunityCount > best.opportunityCount) ||
+      (conversionRate === best.conversionRate && opportunityCount === best.opportunityCount && wonCount > best.wonCount)
+    ) {
       return {
         id: row.id,
         displayName: getClientDisplayName(row),
-        revenue,
+        wonCount,
+        opportunityCount,
+        conversionRate,
       };
     }
     return best;
   }, null);
 
-  const noActivityClientIds = new Set(
-    rows.filter((row) => {
-      const days = getDaysSinceIso(row.lastActivityIso);
-      return days !== null && days >= 60;
-    }).map((row) => row.id)
-  );
-  const repeatClientCount = rows.filter((row) => row.projectsCount >= 2).length;
-  const repeatClientPercent = rows.length > 0 ? Math.round((repeatClientCount / rows.length) * 100) : 0;
-  const slowPayingClientCount = slowPayingClientIds.size;
-  const totalClientValue = Array.from(rows).reduce(
-    (sum, row) => sum + (paidRevenueByClientId.get(row.id) ?? 0) + (wonValueByClientId.get(row.id) ?? 0),
-    0
-  );
-  const pipelineValue = opportunities
-    .filter((item) => item.stage !== "Won" && item.stage !== "Lost")
-    .reduce((sum, item) => sum + Number(item.estimated_value ?? 0), 0);
-  const openQuotesCount = opportunities.filter((item) => item.stage !== "Won" && item.stage !== "Lost").length;
-  const topClientDependencyPercent =
-    topClient && totalClientValue > 0 ? Math.round((topClient.revenue / totalClientValue) * 100) : 0;
-  const topClientForConversion = topClientLast12Months ?? topClient;
-  const topClientOpportunityCount = topClientForConversion ? (totalLeadCountByClientId.get(topClientForConversion.id) ?? 0) : 0;
-  const topClientWonCount = topClientForConversion ? (wonLeadCountByClientId.get(topClientForConversion.id) ?? 0) : 0;
-  const topClientConversionRate = topClientOpportunityCount > 0 ? Math.round((topClientWonCount / topClientOpportunityCount) * 100) : 0;
+  const mostRepeatWinsClient = rows.reduce<{
+    id: string;
+    displayName: string;
+    wonCount: number;
+  } | null>((best, row) => {
+    const wonCount = wonLeadCountInTopClientPeriodByClientId.get(row.id) ?? 0;
+    if (!best || wonCount > best.wonCount) {
+      return {
+        id: row.id,
+        displayName: getClientDisplayName(row),
+        wonCount,
+      };
+    }
+    return best;
+  }, null);
+  const fastestDecisionClient = rows.reduce<{
+    id: string;
+    displayName: string;
+    avgDecisionDays: number;
+    decidedCount: number;
+  } | null>((best, row) => {
+    const samples = decisionDaysSamplesInTopPeriodByClientId.get(row.id) ?? [];
+    if (samples.length === 0) {
+      return best;
+    }
+    const avgDecisionDays = samples.reduce((sum, days) => sum + days, 0) / samples.length;
+    if (
+      !best ||
+      avgDecisionDays < best.avgDecisionDays ||
+      (avgDecisionDays === best.avgDecisionDays && samples.length > best.decidedCount)
+    ) {
+      return {
+        id: row.id,
+        displayName: getClientDisplayName(row),
+        avgDecisionDays,
+        decidedCount: samples.length,
+      };
+    }
+    return best;
+  }, null);
+  const filteredClientRows = rows.filter((client) => {
+    if (!clientSearch) {
+      return true;
+    }
+    const company = client.company_name?.trim() || "";
+    return company.toLowerCase().includes(clientSearch.toLowerCase());
+  });
+  const highestValueWonClient = rows.reduce<{
+    id: string;
+    displayName: string;
+    wonValue: number;
+    wonCount: number;
+  } | null>((best, row) => {
+    const wonValue = wonValueInTopClientPeriodByClientId.get(row.id) ?? 0;
+    const wonCount = wonLeadCountInTopClientPeriodByClientId.get(row.id) ?? 0;
+    if (!best || wonValue > best.wonValue) {
+      return {
+        id: row.id,
+        displayName: getClientDisplayName(row),
+        wonValue,
+        wonCount,
+      };
+    }
+    return best;
+  }, null);
 
   return (
     <main className={`${styles.clientsScope} space-y-6 pb-8`}>
@@ -397,212 +477,152 @@ export default async function LeadsClientsClientsPage() {
       </section>
 
       <section className={styles.grid}>
-        <Card className={styles.overviewCard}>
+        <Card className={`${styles.overviewCard} relative`}>
+          <div className="absolute right-6 top-6 z-20 flex items-center gap-2">
+            <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6A7B95]`}>
+              {TOP_CLIENT_PERIOD_OPTIONS.find((option) => option.key === topClientPeriod)?.label ?? "12M"}
+            </span>
+            <details className="relative">
+              <summary className="flex h-[32px] w-[32px] cursor-pointer list-none items-center justify-center rounded-full border border-[#DCE3EC] bg-white text-[#4D607D] transition hover:bg-[#EEF3F9]">
+                <SlidersHorizontal className="h-[13px] w-[13px]" />
+              </summary>
+              <div className="absolute right-0 top-11 z-20 min-w-[128px] rounded-[12px] border border-[#DCE3EC] bg-white p-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
+                {TOP_CLIENT_PERIOD_OPTIONS.map((option) => {
+                  const isActive = option.key === topClientPeriod;
+                  const href = buildClientsHref(option.key);
+                  return (
+                    <Link
+                      key={option.key}
+                      href={href}
+                      className={`block rounded-[8px] px-2.5 py-1.5 text-xs font-semibold ${
+                        isActive ? "bg-[#1D293D] text-white" : "text-[#4D607D] hover:bg-[#EEF3F9]"
+                      }`}
+                    >
+                      {option.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </details>
+          </div>
           <CardHeader className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Client Intelligence</CardTitle>
+            <CardTitle className={styles.sectionTitle}>Client Summary</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <div className={styles.overviewGrid}>
-              <article className={styles.metricTile}>
-                <div className={styles.metricTop}>
-                  <span className={styles.metricBadgeAccent}>C</span>
-                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Top Client</span>
-                </div>
-                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
-                  Client with the highest paid revenue over the past 12 months.
-                </p>
-                <p className={styles.metricValue}>{topClientLast12Months?.displayName ?? "—"}</p>
-                <p className={`${interMedium.className} ${styles.metricMeta}`}>
-                  {formatCurrencyCompact(topClientLast12Months?.revenue ?? 0)}
-                </p>
-              </article>
-              <article className={styles.metricTile}>
-                <div className={styles.metricTop}>
-                  <span className={styles.metricBadgeInk}>R</span>
-                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Top Client Conversion</span>
-                </div>
-                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
-                  Won opportunities as a share of all opportunities for your top client.
-                </p>
-                <p className={styles.metricValue}>{topClientConversionRate}%</p>
-                <p className={`${interMedium.className} ${styles.metricMeta}`}>
-                  {topClientForConversion?.displayName ?? "—"} • {topClientWonCount}/{topClientOpportunityCount} won
-                </p>
-              </article>
-              <article className={styles.metricTile}>
-                <div className={styles.metricTop}>
-                  <span className={styles.metricBadgeSage}>L</span>
-                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Repeat</span>
-                </div>
-                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
-                  Share of clients who have 2 or more jobs with you.
-                </p>
-                <p className={styles.metricValue}>{repeatClientPercent}%</p>
-                <p className={`${interMedium.className} ${styles.metricMeta}`}>
-                  {repeatClientCount} client{repeatClientCount === 1 ? "" : "s"}
-                </p>
-              </article>
-              <article className={styles.metricTile}>
-                <div className={styles.metricTop}>
-                  <span className={styles.metricBadgeGold}>P</span>
-                  <span className={`${interMedium.className} ${styles.metricLabel}`}>Pipeline</span>
-                </div>
-                <p className={`${interMedium.className} ${styles.metricTooltip}`}>
-                  Total estimated value of open quotes (not won or lost), and how many open quotes exist.
-                </p>
-                <p className={styles.metricValue}>{formatCurrencyCompact(pipelineValue)}</p>
-                <p className={`${interMedium.className} ${styles.metricMeta}`}>
-                  {openQuotesCount} quote{openQuotesCount === 1 ? "" : "s"}
-                </p>
-              </article>
+              {bestConversionClientInTopPeriod ? (
+                <Link href={`/app/leads-clients/clients/${bestConversionClientInTopPeriod.id}`} className="block">
+                  <article className={`${styles.metricTile} cursor-pointer`}>
+                    <div className={styles.metricTop}>
+                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Best Conversion Client</span>
+                    </div>
+                    <p className={styles.metricValue}>{bestConversionClientInTopPeriod.displayName}</p>
+                  </article>
+                </Link>
+              ) : (
+                <article className={styles.metricTile}>
+                  <div className={styles.metricTop}>
+                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Best Conversion Client</span>
+                  </div>
+                  <p className={styles.metricValue}>—</p>
+                </article>
+              )}
+              {highestValueWonClient ? (
+                <Link href={`/app/leads-clients/clients/${highestValueWonClient.id}`} className="block">
+                  <article className={`${styles.metricTile} cursor-pointer`}>
+                    <div className={styles.metricTop}>
+                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Highest Value Won Client</span>
+                    </div>
+                    <p className={styles.metricValue}>{highestValueWonClient.displayName}</p>
+                  </article>
+                </Link>
+              ) : (
+                <article className={styles.metricTile}>
+                  <div className={styles.metricTop}>
+                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Highest Value Won Client</span>
+                  </div>
+                  <p className={styles.metricValue}>—</p>
+                </article>
+              )}
+              {mostRepeatWinsClient ? (
+                <Link href={`/app/leads-clients/clients/${mostRepeatWinsClient.id}`} className="block">
+                  <article className={`${styles.metricTile} cursor-pointer`}>
+                    <div className={styles.metricTop}>
+                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Most Repeat Wins</span>
+                    </div>
+                    <p className={styles.metricValue}>{mostRepeatWinsClient.displayName}</p>
+                  </article>
+                </Link>
+              ) : (
+                <article className={styles.metricTile}>
+                  <div className={styles.metricTop}>
+                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Most Repeat Wins</span>
+                  </div>
+                  <p className={styles.metricValue}>—</p>
+                </article>
+              )}
+              {fastestDecisionClient ? (
+                <Link href={`/app/leads-clients/clients/${fastestDecisionClient.id}`} className="block">
+                  <article className={`${styles.metricTile} cursor-pointer`}>
+                    <div className={styles.metricTop}>
+                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Fastest Decision Client</span>
+                    </div>
+                    <p className={styles.metricValue}>{fastestDecisionClient.displayName}</p>
+                  </article>
+                </Link>
+              ) : (
+                <article className={styles.metricTile}>
+                  <div className={styles.metricTop}>
+                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Fastest Decision Client</span>
+                  </div>
+                  <p className={styles.metricValue}>—</p>
+                </article>
+              )}
             </div>
           </CardContent>
         </Card>
 
         <Card className={styles.tableCard}>
-          <CardHeader className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Client Insights (AI layer)</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <ul className={styles.insightsList}>
-              <li className={`${interMedium.className} ${styles.insightItem}`}>
-                ⚠️ {slowPayingClientCount} client{slowPayingClientCount === 1 ? "" : "s"} taking &gt;30 days to pay
-              </li>
-              <li className={`${interMedium.className} ${styles.insightItem}`}>
-                💰 {topClient?.displayName ?? "Top client"} = {topClientDependencyPercent}% of your revenue (high dependency)
-              </li>
-              <li className={`${interMedium.className} ${styles.insightItem}`}>
-                🔁 {repeatClientPercent}% of work comes from repeat clients
-              </li>
-              <li className={`${interMedium.className} ${styles.insightItem}`}>
-                📉 {noActivityClientIds.size} client{noActivityClientIds.size === 1 ? "" : "s"} ha{noActivityClientIds.size === 1 ? "s" : "ve"} no recent activity
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
-
-        <Card className={styles.tableCard}>
-          <CardHeader className={styles.sectionHeader}>
+          <CardHeader className={`${styles.sectionHeader} !flex-row !items-center !justify-between !space-y-0 gap-3`}>
             <CardTitle className={styles.sectionTitle}>Client list</CardTitle>
+            <form action="/app/leads-clients/clients" method="get" className="flex items-center gap-2">
+              {topClientPeriod !== "12m" ? <input type="hidden" name="topClientPeriod" value={topClientPeriod} /> : null}
+              <input
+                type="text"
+                name="clientSearch"
+                defaultValue={clientSearch}
+                placeholder="Search"
+                className={`${interMedium.className} ${styles.actionButton} w-auto outline-none placeholder:text-[#7b8aa3] focus:border-[#bfc9d8]`}
+              />
+            </form>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr className={`${interMedium.className} ${styles.headRow}`}>
-                    <th className={styles.headCell}>Client</th>
-                    <th className={styles.headCell}>Company</th>
-                    <th className={styles.headCellCenter}>Rating</th>
-                    <th className={styles.headCellCenter}>Active Leads</th>
-                    <th className={styles.headCellCenter}>Projects</th>
-                    <th className={styles.headCell}>Tags</th>
-                    <th className={styles.headCellRight}>Last Activity</th>
-                    <th className={styles.headCellRight} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((client) => {
-                    const totalRevenue = paidRevenueByClientId.get(client.id) ?? 0;
-                    const avgJobValue = client.projectsCount > 0 ? totalRevenue / client.projectsCount : 0;
-                    const overdueCount = overdueCountByClientId.get(client.id) ?? 0;
-                    const paySamples = payDaysSamplesByClientId.get(client.id) ?? [];
-                    const avgDaysToPay = paySamples.length > 0
-                      ? paySamples.reduce((sum, days) => sum + days, 0) / paySamples.length
-                      : null;
-
-                    const reliability = (() => {
-                      if (overdueCount > 0) {
-                        return { label: "At Risk", className: styles.rankStatusAtRisk };
-                      }
-                      if (avgDaysToPay === null) {
-                        return { label: "New", className: styles.rankStatusNew };
-                      }
-                      if (avgDaysToPay < 7) {
-                        return { label: "Reliable", className: styles.rankStatusActive };
-                      }
-                      if (avgDaysToPay < 21) {
-                        return { label: "Watch", className: styles.rankStatusRepeat };
-                      }
-                      return { label: "At Risk", className: styles.rankStatusAtRisk };
-                    })();
-
-                    return (
-                      <tr key={client.id} className={styles.row}>
-                        <td className={styles.cell}>
-                          <p className={`${interMedium.className} ${styles.primaryText}`}>{getClientDisplayName(client)}</p>
-                          <p className={`${interMedium.className} ${styles.secondaryText}`}>
-                            {formatCurrencyCompact(totalRevenue)} total • {formatCurrencyCompact(avgJobValue)} avg • {client.projectsCount} job{client.projectsCount === 1 ? "" : "s"}
-                          </p>
-                          <p className={`${interMedium.className} ${styles.secondaryText}`}>
-                            {avgDaysToPay === null ? "No payment history" : `Paid in ${formatDaysLabel(avgDaysToPay)}`} • {overdueCount > 0 ? `${overdueCount} overdue` : "No overdue"}
-                          </p>
-                          <div className={styles.rowChips}>
-                            <span className={`${interMedium.className} ${styles.rankStatus} ${reliability.className}`}>
-                              {reliability.label}
-                            </span>
-                            {client.projectsCount >= 2 ? (
-                              <span className={`${interMedium.className} ${styles.rankStatus} ${styles.rankStatusRepeat}`}>Repeat</span>
-                            ) : null}
-                            {client.projectsCount < 2 && client.activeLeads > 0 ? (
-                              <span className={`${interMedium.className} ${styles.rankStatus} ${styles.rankStatusActive}`}>Active</span>
-                            ) : null}
-                          </div>
-                        </td>
-                      <td className={styles.cell}>
-                        <p className={`${interMedium.className} ${styles.bodyText}`}>{client.company_name || client.name}</p>
-                      </td>
-                      <td className={styles.cellCenter}>
-                        <p className={`${interMedium.className} ${styles.bodyText}`}>{formatRating(client.rating)}</p>
-                      </td>
-                      <td className={styles.cellCenter}>
-                        <p className={`${interMedium.className} ${styles.bodyText}`}>{client.activeLeads}</p>
-                      </td>
-                      <td className={styles.cellCenter}>
-                        <p className={`${interMedium.className} ${styles.bodyText}`}>{client.projectsCount}</p>
-                      </td>
-                      <td className={styles.cell}>
-                        <div className={styles.tagList}>
-                          {client.tags.length > 0 ? (
-                            client.tags.map((tag) => (
-                              <span key={tag} className={`${interMedium.className} ${styles.tag}`}>
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span className={`${interMedium.className} ${styles.emptyTag}`}>No tags</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className={styles.cellRight}>
-                        <p className={`${interMedium.className} ${styles.bodyText}`}>{formatRelativeTime(client.lastActivityIso)}</p>
-                      </td>
-                      <td className={styles.cellRight}>
-                        <div className={styles.actions}>
-                          <Button variant="ghost" asChild className={styles.actionButton}>
-                            <Link href={`/app/leads-clients/clients/${client.id}`}>View</Link>
-                          </Button>
-                          <Button variant="ghost" asChild className={styles.actionButton}>
-                            <Link href={`/app/leads-clients/clients/${client.id}/edit`}>Edit</Link>
-                          </Button>
-                          <Button variant="ghost" asChild className={styles.actionButton}>
-                            <Link href={`/app/leads-clients/opportunities/new?clientId=${client.id}`}>Add Lead</Link>
-                          </Button>
-                        </div>
-                      </td>
-                      </tr>
-                    );
-                  })}
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className={`${interMedium.className} ${styles.emptyState}`}>
-                        No clients yet. Add your first client to start tracking leads and projects.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+            {filteredClientRows.length === 0 ? (
+              <div className={styles.simpleEmptyPanel}>
+                <p className={`${interMedium.className} ${styles.simpleEmptyText}`}>
+                  No matching clients found.
+                </p>
+              </div>
+            ) : (
+              <div className={styles.simpleList}>
+                {filteredClientRows.map((client) => (
+                  <article key={client.id} className={styles.simpleListItem}>
+                    <p className={`${interMedium.className} ${styles.simpleListTitle}`}>{client.company_name || "Unknown Company"}</p>
+                    <Button variant="ghost" asChild className={styles.actionButton}>
+                      <Link href={`/app/leads-clients/clients/${client.id}`}>View</Link>
+                    </Button>
+                  </article>
+                ))}
+              </div>
+            )}
           </CardContent>
+        </Card>
+
+        <Card className={styles.tableCard}>
+          <CardHeader className={styles.sectionHeader}>
+            <CardTitle className={styles.sectionTitle}>Client Insights (AI)</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0" />
         </Card>
       </section>
     </main>
