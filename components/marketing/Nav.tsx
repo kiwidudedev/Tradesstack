@@ -50,9 +50,9 @@ export function Nav() {
             />
           </div>
 
-          <Link href="/register">
+          <Link href="/early-access">
             <Button variant="outline" size="sm" className="h-10 px-5 text-[var(--brand-blue)]">
-              Sign up
+              Get Early Access
             </Button>
           </Link>
         </div>

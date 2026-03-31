@@ -64,7 +64,7 @@ export function Hero() {
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Link
-              href="/register"
+              href="/early-access"
               className="inline-flex min-h-[56px] w-full items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[1.05rem] font-bold text-white transition-opacity hover:opacity-90 sm:min-h-[52px] sm:w-auto sm:text-[15px]"
               style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
             >

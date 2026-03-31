@@ -27,7 +27,7 @@ export function OnePlatformSection() {
               </p>
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
                 <Link
-                  href="/register"
+                  href="/early-access"
                   className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
                   style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
                 >
