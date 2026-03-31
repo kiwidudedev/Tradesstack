@@ -49,7 +49,7 @@ export function Hero() {
           </div>
 
           <h1
-            className={`${akzidenzProBoldEx.className} mt-7 max-w-[11ch] text-[2.7rem] leading-[0.93] tracking-[-0.055em] text-white sm:text-[2.93rem] lg:max-w-none lg:text-[3.85rem]`}
+            className={`${akzidenzProBoldEx.className} mt-7 max-w-[11ch] text-[2.7rem] leading-[0.93] tracking-[-0.044em] text-white sm:text-[2.93rem] lg:max-w-none lg:text-[3.85rem]`}
           >
             Know every job. Price it right. Let AI keep the work on track.
           </h1>
@@ -62,16 +62,24 @@ export function Hero() {
             confidence, and stay in control every step of the way.
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+            <div className="flex w-full flex-col gap-2 sm:w-auto">
+              <Link
+                href="/early-access"
+                className="inline-flex min-h-[56px] w-full items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[1.05rem] font-bold text-white transition-opacity hover:opacity-90 sm:min-h-[52px] sm:w-auto sm:text-[15px]"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+              >
+                Get Early Access
+              </Link>
+              <p
+                className="text-center text-[14.4px] leading-[1.4] text-white/82 sm:max-w-[260px] sm:text-left"
+                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+              >
+                No payment needed. Just sign up and we&apos;ll show you what we&apos;re building.
+              </p>
+            </div>
             <Link
-              href="/early-access"
-              className="inline-flex min-h-[56px] w-full items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[1.05rem] font-bold text-white transition-opacity hover:opacity-90 sm:min-h-[52px] sm:w-auto sm:text-[15px]"
-              style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
-            >
-              Get Early Access
-            </Link>
-            <Link
-              href="/#book-a-chat"
+              href="/contact-us"
               className="inline-flex min-h-[56px] w-full items-center justify-center rounded-[8px] border-[1.5px] bg-transparent px-7 text-[1.05rem] font-bold sm:min-h-[52px] sm:w-auto sm:text-[15px]"
               style={{
                 fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif',
@@ -79,7 +87,7 @@ export function Hero() {
                 color: "#FFFFFF",
               }}
             >
-              Contact us
+              Contact Us
             </Link>
           </div>
         </div>

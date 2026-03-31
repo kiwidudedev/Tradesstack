@@ -25,16 +25,24 @@ export function OnePlatformSection() {
                 Everything you need to run a job from pricing and planning to tracking and delivery, all in one
                 place. No switching between tools, no missed details.
               </p>
-              <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-start">
+                <div className="flex flex-col gap-2">
+                  <Link
+                    href="/early-access"
+                    className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
+                    style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+                  >
+                    Get Early Access
+                  </Link>
+                  <p
+                    className="max-w-[260px] text-[14.4px] leading-[1.4] text-[#0B2639]"
+                    style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+                  >
+                    No payment needed. Just sign up and we&apos;ll show you what we&apos;re building.
+                  </p>
+                </div>
                 <Link
-                  href="/early-access"
-                  className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
-                  style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
-                >
-                  Get Early Access
-                </Link>
-                <Link
-                  href="/#book-a-chat"
+                  href="/contact-us"
                   className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] border-[1.5px] bg-transparent px-7 text-[15px] font-bold transition-opacity hover:opacity-80"
                   style={{
                     fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif',
@@ -42,7 +50,7 @@ export function OnePlatformSection() {
                     color: "#0B2639",
                   }}
                 >
-                  Contact us
+                  Contact Us
                 </Link>
               </div>
             </div>

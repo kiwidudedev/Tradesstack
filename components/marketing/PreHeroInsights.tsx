@@ -83,7 +83,7 @@ export function PreHeroInsights() {
               className="inline-flex min-h-[52px] w-full items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90 sm:w-auto"
               style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
             >
-              See how it works
+              See The Platform Features
             </Link>
           </div>
         </div>

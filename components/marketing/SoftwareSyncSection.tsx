@@ -60,7 +60,7 @@ export function SoftwareSyncSection() {
               Software Sync
             </div>
             <h2
-              className={`${akzidenzProBoldEx.className} mt-5 max-w-[12ch] text-[2rem] leading-[0.98] tracking-[-0.04em] text-[#0B2639] sm:text-[2.7rem]`}
+              className={`${akzidenzProBoldEx.className} mt-5 max-w-[12ch] text-[1.6rem] leading-[0.98] tracking-[-0.04em] text-[#0B2639] sm:text-[2.16rem]`}
             >
               Sync with your favourite softwares
             </h2>

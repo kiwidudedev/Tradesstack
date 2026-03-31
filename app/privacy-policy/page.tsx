@@ -3,29 +3,31 @@
 import { Footer } from "@/components/marketing/Footer";
 import { Navbar } from "@/components/marketing/Navbar";
 import { useAuth } from "@/hooks/use-auth";
-import { akzidenzBlack, bertholdExtraBoldCondensed } from "@/lib/fonts";
+import { akzidenzBlack, akzidenzProBoldEx } from "@/lib/fonts";
 
 export default function PrivacyPolicyPage() {
   const { session } = useAuth();
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#04234D_0%,#062A5C_100%)] text-white">
+    <div className="min-h-screen overflow-x-hidden bg-[#F4EFE6] text-[#0B2639]">
       <main>
         <Navbar session={session} loginHref="/login" />
 
         <section className="px-6 pb-16 pt-28 lg:px-16 lg:pt-32">
           <div className="mx-auto w-full max-w-[1000px]">
             <h1
-              className={`${bertholdExtraBoldCondensed.className} text-[44px] font-bold uppercase leading-[0.95] tracking-[-0.02em] text-white sm:text-[58px] lg:text-[72px]`}
+              className={`${akzidenzProBoldEx.className} text-[44px] font-bold uppercase leading-[0.92] tracking-[-0.05em] text-[#0B2639] sm:text-[58px] lg:text-[72px]`}
             >
               Privacy Policy
             </h1>
-            <p className={`${akzidenzBlack.className} mt-4 text-base text-white/80`}>
+            <p className={`${akzidenzBlack.className} mt-4 text-base text-[#0B2639]/70`}>
               Last Updated: March 10, 2026
             </p>
 
-            <div className="mt-8 rounded-2xl border border-white/10 bg-[rgba(8,34,72,0.82)] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] sm:p-8">
-              <div className={`${akzidenzBlack.className} space-y-7 text-[16px] leading-[1.75] text-white/86`}>
+            <div className="mt-8 rounded-[28px] border border-[#0B2639]/8 bg-white p-6 shadow-[0_18px_40px_rgba(11,38,57,0.08)] sm:p-8 lg:p-10">
+              <div
+                className={`${akzidenzBlack.className} space-y-7 text-[16px] leading-[1.75] text-[#0B2639]/88 [&_h2]:!text-[#0B2639] [&_h2]:tracking-[-0.03em] [&_h3]:!text-[#0B2639] [&_p]:text-[#0B2639]/88 [&_ul]:text-[#0B2639]/88`}
+              >
                 <p>
                   TradesStack ("TradesStack", "we", "our", or "us") operates a cloud-based software platform designed for construction
                   professionals including builders, estimators, quantity surveyors, and project managers.

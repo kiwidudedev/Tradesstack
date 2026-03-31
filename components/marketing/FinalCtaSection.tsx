@@ -6,7 +6,7 @@ import { akzidenzProBoldEx } from "@/lib/fonts";
 
 export function FinalCtaSection() {
   return (
-    <section className="overflow-hidden bg-[#AACFDF] px-6 pb-0 pt-16 text-[#0B2639] sm:px-8 sm:pt-20 lg:px-16 lg:pt-24">
+    <section className="overflow-hidden border-t border-white bg-[#AACFDF] px-6 pb-0 pt-16 text-[#0B2639] sm:px-8 sm:pt-20 lg:px-16 lg:pt-24">
       <div className="mx-auto grid w-full max-w-[1380px] gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:gap-12">
         <div className="max-w-[560px] pb-6 lg:pt-6">
           <h2
@@ -22,16 +22,24 @@ export function FinalCtaSection() {
             control.
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="flex flex-col gap-2">
+              <Link
+                href="/early-access"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+              >
+                Get Early Access
+              </Link>
+              <p
+                className="max-w-[260px] text-[14.4px] leading-[1.4] text-black"
+                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+              >
+                No payment needed. Just sign up and we&apos;ll show you what we&apos;re building.
+              </p>
+            </div>
             <Link
-              href="/early-access"
-              className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
-              style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
-            >
-              Get Early Access
-            </Link>
-            <Link
-              href="/#book-a-chat"
+              href="/contact-us"
               className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] border-[1.5px] bg-transparent px-7 text-[15px] font-bold"
               style={{
                 fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif',
@@ -39,7 +47,7 @@ export function FinalCtaSection() {
                 color: "#0B2639",
               }}
             >
-              Contact us
+              Contact Us
             </Link>
           </div>
         </div>

@@ -5,7 +5,6 @@ const footerColumns = [
   {
     title: "Product",
     links: [
-      { label: "Overview", href: "/#product" },
       { label: "How it works", href: "/#trade-pack" },
       { label: "Features", href: "/#platform-features" },
       { label: "Pricing", href: "/#choose-plan" },
@@ -15,16 +14,15 @@ const footerColumns = [
     title: "Company",
     links: [
       { label: "About", href: "#" },
-      { label: "Contact", href: "mailto:hi@tradesstack.com" },
-      { label: "Contact us", href: "/#book-a-chat" },
+      { label: "Contact us", href: "/contact-us" },
     ],
   },
   {
     title: "Follow us",
     links: [
-      { label: "Instagram", href: "#" },
+      { label: "Instagram", href: "https://www.instagram.com/tradesstack/" },
       { label: "LinkedIn", href: "#" },
-      { label: "Facebook", href: "#" },
+      { label: "Facebook", href: "https://www.facebook.com/tradesstack" },
     ],
   },
 ] as const;
@@ -95,6 +93,8 @@ export function Footer() {
                     <li key={link.label}>
                       <Link
                         href={link.href}
+                        target={column.title === "Follow us" ? "_blank" : undefined}
+                        rel={column.title === "Follow us" ? "noreferrer" : undefined}
                         className="text-[0.98rem] leading-[1.3] text-white transition hover:text-white"
                         style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
                       >

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { akzidenzProBoldEx } from "@/lib/fonts";
 
 const stats = [
@@ -88,12 +89,21 @@ export function StatsResultsSection() {
           ))}
         </div>
 
-        <p
-          className="mx-auto mt-12 text-center text-[12px] leading-[1.3] text-[#0B2639]/55 sm:text-[13px]"
-          style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
-        >
-          Based on typical workflow improvements using TradeStack
-        </p>
+        <div className="mt-8 flex flex-col items-center gap-2 text-center">
+          <Link
+            href="/early-access"
+            className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
+            style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+          >
+            Get Early Access
+          </Link>
+          <p
+            className="max-w-[260px] text-[14.4px] leading-[1.4] text-[#0B2639]"
+            style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+          >
+            No payment needed. Just sign up and we&apos;ll show you what we&apos;re building.
+          </p>
+        </div>
       </div>
     </section>
   );
