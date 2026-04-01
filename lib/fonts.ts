@@ -26,14 +26,14 @@ export const akzidenzProBoldEx = localFont({
 });
 
 export const bertholdHeading = localFont({
-  src: [{ path: "../public/fonts/Berthold-Akzidenz-Grotesk-Bold-Condensed.otf", weight: "700", style: "normal" }],
+  src: [{ path: "../public/fonts/AkzidenzGrotesk-Bold.ttf", weight: "700", style: "normal" }],
   display: "swap",
   fallback: ["Arial Narrow", "Arial", "sans-serif"],
   variable: "--font-berthold-heading",
 });
 
 export const bertholdExtraBoldCondensed = localFont({
-  src: [{ path: "../public/fonts/Berthold-Akzidenz-Grotesk-Bold-Condensed.otf", weight: "800", style: "normal" }],
+  src: [{ path: "../public/Akzidenz-grotesk-black.ttf", weight: "800", style: "normal" }],
   display: "swap",
   fallback: ["Arial Narrow", "Arial", "sans-serif"],
   variable: "--font-berthold-extra-bold-condensed",
@@ -55,10 +55,8 @@ export const interBold = localFont({
 
 export const mulishBody = localFont({
   src: [
-    { path: "../public/fonts/mulish/mulish-latin-400-normal.woff2", weight: "400", style: "normal" },
-    { path: "../public/fonts/mulish/mulish-latin-500-normal.woff2", weight: "500", style: "normal" },
-    { path: "../public/fonts/mulish/mulish-latin-600-normal.woff2", weight: "600", style: "normal" },
-    { path: "../public/fonts/mulish/mulish-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "../public/fonts/inter/inter-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../public/fonts/inter/inter-latin-700-normal.woff2", weight: "700", style: "normal" },
   ],
   display: "swap",
   fallback: ["Arial", "sans-serif"],
@@ -67,10 +65,8 @@ export const mulishBody = localFont({
 
 export const mulishHeading = localFont({
   src: [
-    { path: "../public/fonts/mulish/mulish-latin-500-normal.woff2", weight: "500", style: "normal" },
-    { path: "../public/fonts/mulish/mulish-latin-600-normal.woff2", weight: "600", style: "normal" },
-    { path: "../public/fonts/mulish/mulish-latin-700-normal.woff2", weight: "700", style: "normal" },
-    { path: "../public/fonts/mulish/mulish-latin-800-normal.woff2", weight: "800", style: "normal" },
+    { path: "../public/fonts/inter/inter-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "../public/fonts/inter/inter-latin-700-normal.woff2", weight: "700", style: "normal" },
   ],
   display: "swap",
   fallback: ["Arial", "sans-serif"],

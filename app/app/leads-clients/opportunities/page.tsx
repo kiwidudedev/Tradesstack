@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { CalendarDays, LayoutGrid, List, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
+import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
+import { OpportunitiesBoard } from "./OpportunitiesBoard";
 import styles from "./opportunities.module.css";
 
 function formatCurrencyCompactNZD(value: number) {
@@ -13,19 +15,6 @@ function formatCurrencyCompactNZD(value: number) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
-}
-
-function formatDayMonth(value: string | null): string {
-  if (!value) {
-    return "No due date";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "No due date";
-  }
-
-  return new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short" }).format(date);
 }
 
 function getDaysUntilIso(isoDate: string | null): number | null {
@@ -44,28 +33,24 @@ function getDaysUntilIso(isoDate: string | null): number | null {
   return Math.ceil((dueMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function getDueMeta(isoDate: string | null) {
-  const diffDays = getDaysUntilIso(isoDate);
-  if (diffDays === null) {
-    return { text: "No due date", className: styles.dueMetaSoft };
+function sortRowsByDue(left: LiveOpportunityRow, right: LiveOpportunityRow) {
+  const leftDays = getDaysUntilIso(left.dueDateIso);
+  const rightDays = getDaysUntilIso(right.dueDateIso);
+
+  if (leftDays === null && rightDays === null) {
+    return left.name.localeCompare(right.name);
+  }
+  if (leftDays === null) {
+    return 1;
+  }
+  if (rightDays === null) {
+    return -1;
+  }
+  if (leftDays !== rightDays) {
+    return leftDays - rightDays;
   }
 
-  if (diffDays < 0) {
-    return { text: "Overdue", className: styles.dueMetaDanger };
-  }
-
-  if (diffDays === 0) {
-    return { text: "Due today", className: styles.dueMetaWarn };
-  }
-
-  if (diffDays === 1) {
-    return { text: "Due tomorrow", className: styles.dueMetaWarn };
-  }
-
-  return {
-    text: `Due in ${diffDays} days`,
-    className: diffDays <= 3 ? styles.dueMetaWarn : styles.dueMetaSoft,
-  };
+  return left.name.localeCompare(right.name);
 }
 
 function filterByDueRange(rows: LiveOpportunityRow[], dueFilter: string): LiveOpportunityRow[] {
@@ -105,14 +90,10 @@ export default async function LeadsClientsOpportunitiesPage({
   const client = typeof params.client === "string" ? params.client : "all";
   const due = typeof params.due === "string" ? params.due : "any";
 
-  const allRows = await getLiveOpportunitiesForCurrentUser();
-  const clientOptions = Array.from(
-    new Map(
-      allRows
-        .filter((row) => row.clientId)
-        .map((row) => [row.clientId as string, row.clientName])
-    ).entries()
-  );
+  const [member, allRows] = await Promise.all([
+    getCurrentOrganizationMember(),
+    getLiveOpportunitiesForCurrentUser(),
+  ]);
 
   const searchedRows = q
     ? allRows.filter((row) => {
@@ -130,38 +111,7 @@ export default async function LeadsClientsOpportunitiesPage({
 
   const pipelineRows = dueFilteredRows
     .filter((row) => row.group === "pipeline")
-    .sort((left, right) => {
-      const leftDays = getDaysUntilIso(left.dueDateIso);
-      const rightDays = getDaysUntilIso(right.dueDateIso);
-      if (leftDays === null && rightDays === null) {
-        return left.name.localeCompare(right.name);
-      }
-      if (leftDays === null) {
-        return 1;
-      }
-      if (rightDays === null) {
-        return -1;
-      }
-      if (leftDays !== rightDays) {
-        return leftDays - rightDays;
-      }
-      return left.name.localeCompare(right.name);
-    });
-
-  const pricedRows = dueFilteredRows
-    .filter((row) => row.group === "priced" || row.group === "won")
-    .sort((left, right) => {
-      const leftTime = left.quotedDateIso ? new Date(left.quotedDateIso).getTime() : Number.POSITIVE_INFINITY;
-      const rightTime = right.quotedDateIso ? new Date(right.quotedDateIso).getTime() : Number.POSITIVE_INFINITY;
-      if (leftTime !== rightTime) {
-        return leftTime - rightTime;
-      }
-      return left.name.localeCompare(right.name);
-    });
-
-  const wonRows = dueFilteredRows
-    .filter((row) => row.group === "won")
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort(sortRowsByDue);
 
   const dueSoonRows = pipelineRows.filter((row) => {
     const days = getDaysUntilIso(row.dueDateIso);
@@ -179,288 +129,89 @@ export default async function LeadsClientsOpportunitiesPage({
     }).length,
     quoted: quotedCount,
   };
-  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).format(new Date());
 
   return (
     <main className={`${styles.page} space-y-6 pb-8`}>
       <section className={styles.heroBlock}>
-        <div className="min-w-0">
-          <CardTitle className={styles.heroTitle}>Tender Opportunities</CardTitle>
+        <div className={styles.heroCopy}>
+          <h1 className={styles.heroTitle}>Tender Opportunities</h1>
           <p className={`${interMedium.className} ${styles.heroSummary}`}>
-            Track pipeline health, due dates, and estimator focus in one place.
+            Track pipeline health, due dates, and estimator focus in one live tender workspace.
           </p>
         </div>
         <div className={styles.heroActions}>
-          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
-          <Button className={styles.heroButton} asChild>
+          <Button className={`${interMedium.className} ${styles.heroButton}`} asChild>
             <Link href="/app/leads-clients/opportunities/new">Create Opportunity</Link>
           </Button>
         </div>
       </section>
 
-      <Card className={styles.sectionCard}>
-        <CardContent className="space-y-2.5 p-5">
-          <p className={`${interMedium.className} ${styles.statLine}`}>
-            <span className={styles.statStrong}>{stats.active}</span> active tenders {" \u00b7 "}
-            <span className={styles.statStrong}>{formatCurrencyCompactNZD(stats.pipelineValue)}</span> pipeline {" \u00b7 "}
-            <span className={styles.statStrong}>{stats.dueThisWeek}</span> due this week {" \u00b7 "}
-            <span className={styles.statStrong}>{stats.quoted}</span> {stats.quoted === 1 ? "quote submitted" : "quotes submitted"}
-          </p>
-
-          <form method="get" className={styles.filtersForm}>
-            <Input
-              name="q"
-              defaultValue={q}
-              placeholder="Search opportunities"
-              className={`${interMedium.className} ${styles.searchInput} w-full md:max-w-[360px]`}
-            />
-            <select
-              name="client"
-              defaultValue={client}
-              className={`${interMedium.className} ${styles.filterSelect} px-3.5`}
-            >
-              <option value="all">Client: All</option>
-              {clientOptions.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <select
-              name="due"
-              defaultValue={due}
-              className={`${interMedium.className} ${styles.filterSelect} px-3.5`}
-            >
-              <option value="any">Due date: Any</option>
-              <option value="next48h">Due in 48 hours</option>
-              <option value="next7d">Due in 7 days</option>
-              <option value="overdue">Overdue</option>
-            </select>
-            <Button type="submit" variant="outline" className={styles.applyButton}>
-              Apply
-            </Button>
-            <Button variant="ghost" asChild className={styles.resetButton}>
-              <Link href="/app/leads-clients/opportunities">Reset</Link>
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className={styles.sectionCard}>
-        <CardHeader className={styles.sectionHeader}>
-          <CardTitle className={styles.sectionTitle}>Tender Pipeline</CardTitle>
-          <p className={`${interMedium.className} ${styles.sectionMeta}`}>
-            <span className={styles.statStrong}>{pipelineRows.length}</span> tenders being priced
-          </p>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {dueSoonRows.length > 0 ? (
-            <div className={styles.alertBox}>
-              <p className={`${interMedium.className} ${styles.alertTitle}`}>
-                ⚠ {dueSoonRows.length} tenders due in the next 48 hours
-              </p>
-              <p className={`${interMedium.className} ${styles.alertText}`}>
-                {dueSoonRows.map((item) => item.name).join(" • ")}
-              </p>
-            </div>
-          ) : null}
-
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr className={`${interMedium.className} ${styles.headRow}`}>
-                  <th className={styles.headCell}>Opportunity</th>
-                  <th className={styles.headCellRight}>Company</th>
-                  <th className={styles.headCellRight}>Due</th>
-                  <th className={styles.headCellRight}>Estimator</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pipelineRows.map((row) => (
-                  <tr key={row.opportunityId} className={styles.tableRow}>
-                    <td className={styles.cell}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={styles.opportunityLink}>
-                        <p className={`${interMedium.className} ${styles.primaryText}`}>{row.name}</p>
-                        <p className={`${interMedium.className} ${styles.secondaryText}`}>{row.location}</p>
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
-                        {row.clientName}
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-block text-right">
-                        <DueDateCell isoDate={row.dueDateIso} />
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-flex items-center justify-end">
-                        <OwnerCell owner={row.ownerName} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-                {pipelineRows.length === 0 ? (
-                  <tr className={styles.emptyRow}>
-                    <td colSpan={4} className={`${interMedium.className} ${styles.emptyCell}`}>
-                      No active tenders match your filters.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+      <section className={styles.commandSurface}>
+        <div className={styles.inlineStats}>
+          <div className={styles.inlineStat}>
+            <span className={styles.inlineStatLabel}>Active Tenders</span>
+            <span className={styles.inlineStatValue}>{stats.active}</span>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className={styles.sectionCard}>
-        <CardHeader className={styles.sectionHeader}>
-          <CardTitle className={styles.sectionTitle}>Jobs Priced</CardTitle>
-          <p className={`${interMedium.className} ${styles.sectionMeta}`}>
-            <span className={styles.statStrong}>{pricedRows.length}</span> priced tenders
-          </p>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr className={`${interMedium.className} ${styles.headRow}`}>
-                  <th className={styles.headCell}>Opportunity</th>
-                  <th className={styles.headCellRight}>Company</th>
-                  <th className={styles.headCellRight}>Quoted</th>
-                  <th className={styles.headCellRight}>Estimator</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pricedRows.map((row) => (
-                  <tr key={row.opportunityId} className={styles.tableRow}>
-                    <td className={styles.cell}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={styles.opportunityLink}>
-                        <p className={`${interMedium.className} ${styles.primaryText}`}>{row.name}</p>
-                        <p className={`${interMedium.className} ${styles.secondaryText}`}>{row.location}</p>
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
-                        {row.clientName}
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
-                        {formatDayMonth(row.quotedDateIso)}
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-flex items-center justify-end">
-                        <OwnerCell owner={row.ownerName} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-                {pricedRows.length === 0 ? (
-                  <tr className={styles.emptyRow}>
-                    <td colSpan={4} className={`${interMedium.className} ${styles.emptyCell}`}>
-                      No priced tenders yet.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+          <div className={styles.inlineStat}>
+            <span className={styles.inlineStatLabel}>Pipeline Value</span>
+            <span className={styles.inlineStatValue}>{formatCurrencyCompactNZD(stats.pipelineValue)}</span>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className={styles.sectionCard}>
-        <CardHeader className={styles.sectionHeader}>
-          <CardTitle className={styles.sectionTitle}>Recently Won Jobs</CardTitle>
-          <p className={`${interMedium.className} ${styles.sectionMeta}`}>
-            <span className={styles.statStrong}>{wonRows.length}</span> won tenders
-          </p>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr className={`${interMedium.className} ${styles.headRow}`}>
-                  <th className={styles.headCell}>Opportunity</th>
-                  <th className={styles.headCellRight}>Company</th>
-                  <th className={styles.headCellRight}>Won</th>
-                  <th className={styles.headCellRight}>Estimator</th>
-                </tr>
-              </thead>
-              <tbody>
-                {wonRows.map((row) => (
-                  <tr key={row.opportunityId} className={styles.tableRow}>
-                    <td className={styles.cell}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={styles.opportunityLink}>
-                        <p className={`${interMedium.className} ${styles.primaryText}`}>{row.name}</p>
-                        <p className={`${interMedium.className} ${styles.secondaryText}`}>{row.location}</p>
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
-                        {row.clientName}
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className={`${interMedium.className} ${styles.ownerName} inline-block`}>
-                        {formatDayMonth(row.quotedDateIso)}
-                      </Link>
-                    </td>
-                    <td className={styles.cellRight}>
-                      <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="inline-flex items-center justify-end">
-                        <OwnerCell owner={row.ownerName} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-                {wonRows.length === 0 ? (
-                  <tr className={styles.emptyRow}>
-                    <td colSpan={4} className={`${interMedium.className} ${styles.emptyCell}`}>
-                      No recently won jobs yet.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+          <div className={styles.inlineStat}>
+            <span className={styles.inlineStatLabel}>Due This Week</span>
+            <span className={styles.inlineStatValue}>{stats.dueThisWeek}</span>
           </div>
-        </CardContent>
-      </Card>
+          <div className={styles.inlineStat}>
+            <span className={styles.inlineStatLabel}>Submitted</span>
+            <span className={styles.inlineStatValue}>{stats.quoted}</span>
+          </div>
+        </div>
+
+        {dueSoonRows.length > 0 ? (
+          <div className={styles.inlineAlert}>
+            <span className={`${interMedium.className} ${styles.inlineAlertText}`}>
+              {"⚠ "}
+              {dueSoonRows.length} {dueSoonRows.length === 1 ? "tender due in 48 hours" : "tenders due in 48 hours"}
+              {" — "}
+              {dueSoonRows.map((item) => item.name).join(" • ")}
+            </span>
+          </div>
+        ) : null}
+
+        <form method="get" className={styles.boardToolbar}>
+          <div className={styles.viewTabs}>
+            <span className={`${interMedium.className} ${styles.viewTab} ${styles.viewTabActive}`}>
+              <LayoutGrid className={styles.viewTabIcon} aria-hidden="true" />
+              Board
+            </span>
+            <span className={`${interMedium.className} ${styles.viewTab}`}>
+              <List className={styles.viewTabIcon} aria-hidden="true" />
+              List
+            </span>
+            <span className={`${interMedium.className} ${styles.viewTab}`}>
+              <CalendarDays className={styles.viewTabIcon} aria-hidden="true" />
+              Calendar
+            </span>
+          </div>
+
+          <div className={styles.toolbarActions}>
+            {client !== "all" ? <input type="hidden" name="client" value={client} /> : null}
+            {due !== "any" ? <input type="hidden" name="due" value={due} /> : null}
+            <label className={styles.toolbarSearch}>
+              <Search className={styles.toolbarSearchIcon} aria-hidden="true" />
+              <Input
+                name="q"
+                defaultValue={q}
+                placeholder="Search in view..."
+                className={`${interMedium.className} ${styles.toolbarSearchInput}`}
+              />
+            </label>
+          </div>
+        </form>
+      </section>
+
+      <section className={styles.boardSection}>
+        <OpportunitiesBoard rows={dueFilteredRows} organizationId={member?.organization_id ?? ""} />
+      </section>
     </main>
-  );
-}
-
-function DueDateCell({ isoDate }: { isoDate: string | null }) {
-  const label = formatDayMonth(isoDate);
-  const meta = getDueMeta(isoDate);
-
-  return (
-    <div className={styles.dueCell}>
-      <p className={`${interMedium.className} ${styles.dueLabel}`}>{label}</p>
-      <p className={`${interMedium.className} ${styles.dueMeta} ${meta.className}`}>{meta.text}</p>
-    </div>
-  );
-}
-
-function OwnerCell({ owner }: { owner: string }) {
-  const initial = owner.slice(0, 1).toUpperCase();
-
-  return (
-    <span className={styles.ownerCell}>
-      <span className={`${interMedium.className} ${styles.ownerBadge}`}>
-        {initial}
-      </span>
-      <span className={`${interMedium.className} ${styles.ownerName}`}>{owner}</span>
-    </span>
   );
 }
