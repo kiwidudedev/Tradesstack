@@ -172,16 +172,18 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
                 </div>
               </div>
 
-              {error ? (
-                <p className="text-sm text-red-600" style={graphikStyle}>
-                  {error}
-                </p>
-              ) : null}
-              {info ? (
-                <p className="text-sm text-emerald-700" style={graphikStyle}>
-                  {info}
-                </p>
-              ) : null}
+              <div className="min-h-[28px]">
+                {error ? (
+                  <p className="text-sm text-red-600" style={graphikStyle}>
+                    {error}
+                  </p>
+                ) : null}
+                {!error && info ? (
+                  <p className="text-sm text-emerald-700" style={graphikStyle}>
+                    {info}
+                  </p>
+                ) : null}
+              </div>
 
               <p className="text-[13px] leading-5 text-[#495d6f]" style={graphikStyle}>
                 By submitting this form I confirm I have read and accepted TradeStack&apos;s{" "}
@@ -200,7 +202,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
                 <span>{isSubmitting ? "Creating account..." : "Sign up now"}</span>
               </Button>
 
-              <p className="text-[13px] text-[#0B2639]" style={graphikStyle}>
+              <p className="-mt-[10px] text-[13px] text-[#0B2639]" style={graphikStyle}>
                 Already have a TradeStack account?{" "}
                 <Link href="/login" className="font-semibold text-[#F74917] transition hover:text-[#d95a1c]">
                   Sign in

@@ -58,10 +58,6 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  if (projects.length === 0) {
-    redirect("/app/projects/new");
-  }
-
   const now = new Date();
   const firstName = toFirstName(member.display_name ?? null);
   const greeting = getGreeting(now);

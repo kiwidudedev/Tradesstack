@@ -104,6 +104,10 @@ function toAuthMessage(error: unknown, fallback: string) {
     return "This email is already registered. Please sign in instead.";
   }
 
+  if (message.includes("password should contain at least one character of each")) {
+    return "Password must include uppercase and lowercase letters, a number, and a symbol.";
+  }
+
   return error.message;
 }
 
@@ -199,31 +203,14 @@ async function refreshAuthSession() {
         .limit(1)
         .maybeSingle();
 
-      let resolvedMember = member ?? null;
+      const resolvedMember = member ?? null;
       let organization: OrganizationRow | null = null;
 
       if (!resolvedMember) {
-        const { data: ensuredOrganizationId } = await supabase.rpc("ensure_organization_membership");
-
-        if (ensuredOrganizationId) {
-          const { data: bootstrappedMember } = await supabase
-            .from("organization_members")
-            .select("id, organization_id, user_id, role, display_name, avatar_path, created_at, updated_at")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-
-          resolvedMember = bootstrappedMember ?? null;
-
-          const { data: ensuredOrganization } = await supabase
-            .from("organizations")
-            .select("id, name, logo_path, created_by, created_at, updated_at")
-            .eq("id", ensuredOrganizationId)
-            .maybeSingle();
-
-          organization = ensuredOrganization ?? null;
-        }
+        // Tenant safety: never auto-provision org membership during session refresh.
+        // Missing membership means this user is not fully provisioned for app access.
+        updateStore({ session: null, isLoading: false });
+        return;
       }
 
       if (resolvedMember?.organization_id && !organization) {
@@ -286,9 +273,31 @@ export function useAuth() {
       return { error: MISSING_ENV_ERROR };
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       return { error: toAuthMessage(error, "Unable to sign in right now.") };
+    }
+
+    const userId = data.user?.id;
+    if (!userId) {
+      await supabase.auth.signOut();
+      return { error: "Unable to sign in right now." };
+    }
+
+    const { data: membership } = await supabase
+      .from("organization_members")
+      .select("id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!membership) {
+      await supabase.auth.signOut();
+      return {
+        error:
+          "No workspace found for this account. Finish sign up or ask your admin for an invite.",
+      };
     }
 
     await refreshAuthSession();

@@ -210,7 +210,20 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
               />
             </div>
 
-            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            {error ? (
+              <div className="rounded-[0.9rem] border border-[#FCA5A5] bg-[#FFF1F2] px-4 py-3.5">
+                <p className="text-[15px] font-semibold leading-6 text-[#7F1D1D]">{error}</p>
+                {!isRegisterMode ? (
+                  <p className="mt-1.5 text-[13px] leading-5 text-[#9F1239]">
+                    Need access?{" "}
+                    <Link href="/register" className="font-semibold underline underline-offset-2">
+                      Create an account
+                    </Link>{" "}
+                    or contact your organization admin.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {info ? <p className="text-sm text-emerald-700">{info}</p> : null}
 
             <Button type="submit" className="h-14 w-full rounded-full bg-[#111111] text-base text-white hover:bg-black" disabled={isSubmitting}>
