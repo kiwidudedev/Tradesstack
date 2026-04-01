@@ -88,7 +88,6 @@ const JOB_MANAGEMENT_ITEMS = [
 const LEADS_CLIENTS_ITEMS = [
   { label: "Opportunities", href: "/app/leads-clients/opportunities" },
   { label: "Clients", href: "/app/leads-clients/clients" },
-  { label: "Analytics", href: "/app/leads-clients/analytics" },
 ] as const;
 
 function getInitials(name: string) {
