@@ -157,7 +157,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
 
   async function handleLogout() {
     await logout();
-    router.push("/login");
+    router.push("/");
     router.refresh();
   }
 
@@ -173,14 +173,14 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-[58px] w-full items-center justify-between rounded-[16px] border border-white/10 bg-white px-3.5 text-left text-[#061A25] shadow-[0_10px_24px_rgba(6,26,37,0.12)] transition hover:bg-white/95"
+            className="flex h-[58px] w-full items-center justify-between rounded-[16px] border border-white/12 bg-transparent px-3.5 text-left text-[#E6EDF3] transition hover:bg-[rgba(255,255,255,0.06)] data-[state=open]:bg-[rgba(255,255,255,0.10)]"
           >
             <span className="min-w-0">
-              <span className="block truncate text-[15px] text-[#061A25]" style={graphikRegularTextStyle}>
+              <span className="block truncate text-[15px] text-[#E6EDF3]" style={graphikRegularTextStyle}>
                 {isProjectsLoading && projects.length === 0 ? "Loading projects..." : selectedProjectLabel}
               </span>
             </span>
-            <ChevronDown className="h-4 w-4 shrink-0 text-[#6B7280]" strokeWidth={2.3} />
+            <ChevronDown className="h-4 w-4 shrink-0 text-[#E6EDF3]" strokeWidth={2.3} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -478,17 +478,14 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
             ) : null}
           </nav>
 
-          <Link
-            href={projectBackHref}
-            onClick={onNavigate}
-            className={`${interMedium.className} mt-5 inline-flex h-10 w-auto items-center whitespace-nowrap rounded-[6px] bg-[#F74917] px-[14px] text-[14px] font-medium text-white transition-colors hover:bg-[#E63F10]`}
-          >
-            <ArrowLeft className="mr-2 h-3.5 w-3.5 shrink-0" />
-            {projectBackLabel}
-          </Link>
         </div>
       ) : (
-        <div className="mt-7 min-h-0 flex flex-1 flex-col">
+        <div className="mt-3.5 min-h-0 flex flex-1 flex-col">
+          <div className="pb-6">
+            <div>{projectSelector}</div>
+            <div className="mt-5 h-px w-full bg-white/12" />
+          </div>
+
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {mainDashboardNav.map((item) => {
             if (item.label === "Settings") {
@@ -576,14 +573,6 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           ) : null}
         </div>
       )}
-
-      {!isProjectContext ? (
-        <div className="pt-6">
-          <div>
-            {projectSelector}
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-auto pt-6">
         <div className="mb-4 h-px w-full bg-white/12" />

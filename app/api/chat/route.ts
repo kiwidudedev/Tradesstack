@@ -40,6 +40,15 @@ interface AiChatMessageRow {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  conversation_id?: string | null;
+}
+
+interface AiChatConversationRow {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
 }
 
 interface AiChatUsageQueryClient {
@@ -139,6 +148,24 @@ function tryExtractUsageTokens(payload: Record<string, unknown>): number {
 
 const messagesClientSelect = "id, role, content, created_at";
 
+function toConversationTitle(input: string) {
+  const normalized = input.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "New Chat";
+  }
+  return normalized.slice(0, 80);
+}
+
+function extractAssistantHeadingTitle(content: string) {
+  const lines = content.split("\n");
+  const headingLine =
+    lines.find((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && !trimmed.startsWith("•");
+    }) ?? "";
+  return toConversationTitle(headingLine);
+}
+
 export async function GET(request: Request) {
   const member = await getCurrentOrganizationMember();
   if (!member) {
@@ -172,40 +199,53 @@ export async function GET(request: Request) {
   const planTier = getPlanTierForUser(member.user_id);
   const monthlyLimit = getMonthlyMessageLimit(planTier);
   const monthStartIso = getMonthStartIso();
+  const conversationId = url.searchParams.get("conversationId")?.trim() || "";
 
   const usageClient = supabase as unknown as AiChatUsageQueryClient;
+  const chatDb = supabase as any;
 
-  const chatMessagesClient = supabase as unknown as {
-    from: (table: "ai_chat_messages") => {
-      select: (columns: string) => {
-        eq: (column: string, value: string) => {
-          eq: (column: string, value: string) => {
-            order: (
-              column: string,
-              options: { ascending: boolean }
-            ) => {
-              limit: (
-                count: number
-              ) => Promise<{ data: AiChatMessageRow[] | null; error: { message: string } | null }>;
-            };
-          };
-        };
-      };
-      insert: (rows: Array<Record<string, unknown>>) => Promise<{ error: { message: string } | null }>;
-    };
-  };
-  const queryResult = await chatMessagesClient
-    .from("ai_chat_messages")
-    .select(messagesClientSelect)
+  const conversationsResult = await chatDb
+    .from("ai_chat_conversations")
+    .select("id, title, created_at, updated_at, last_message_at")
     .eq("user_id", member.user_id)
     .eq("project_slug", projectSlug)
-    .order("created_at", { ascending: true })
-    .limit(200);
+    .is("archived_at", null)
+    .order("last_message_at", { ascending: false });
 
-  if (queryResult.error) {
-    console.error("[chat] failed to load history", queryResult.error);
+  if (conversationsResult.error) {
+    console.error("[chat] failed to load conversations", conversationsResult.error);
     await guard.release();
     return NextResponse.json({ error: "Failed to load chat history." }, { status: 500 });
+  }
+
+  const conversations: AiChatConversationRow[] = Array.isArray(conversationsResult.data)
+    ? (conversationsResult.data as AiChatConversationRow[])
+    : [];
+  const activeConversationId =
+    (conversationId && conversations.some((conversation) => conversation.id === conversationId) ? conversationId : "") ||
+    conversations[0]?.id ||
+    null;
+
+  let queryResult: { data: AiChatMessageRow[] | null; error: { message: string } | null } = {
+    data: [],
+    error: null,
+  };
+
+  if (activeConversationId) {
+    queryResult = await chatDb
+      .from("ai_chat_messages")
+      .select(messagesClientSelect)
+      .eq("user_id", member.user_id)
+      .eq("project_slug", projectSlug)
+      .eq("conversation_id", activeConversationId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (queryResult.error) {
+      console.error("[chat] failed to load conversation history", queryResult.error);
+      await guard.release();
+      return NextResponse.json({ error: "Failed to load chat history." }, { status: 500 });
+    }
   }
 
   const usageResult = await usageClient
@@ -234,6 +274,14 @@ export async function GET(request: Request) {
 
   await guard.release();
   return NextResponse.json({
+    conversations: conversations.map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      createdAt: conversation.created_at,
+      updatedAt: conversation.updated_at,
+      lastMessageAt: conversation.last_message_at,
+    })),
+    activeConversationId,
     messages,
     usage: {
       used: usageUsed,
@@ -253,11 +301,13 @@ export async function POST(request: Request) {
   const payload = (await request.json().catch(() => null)) as
     | {
         projectSlug?: string;
+        conversationId?: string;
         messages?: IncomingMessage[];
       }
     | null;
 
   const projectSlug = typeof payload?.projectSlug === "string" ? payload.projectSlug.trim() : "";
+  const requestConversationId = typeof payload?.conversationId === "string" ? payload.conversationId.trim() : "";
   const messages = Array.isArray(payload?.messages) ? payload!.messages : [];
 
   if (!projectSlug) {
@@ -318,6 +368,35 @@ export async function POST(request: Request) {
       insert: (rows: Array<Record<string, unknown>>) => Promise<{ error: { message: string } | null }>;
     };
   };
+  const dynamicSupabase = supabase as unknown as {
+    from: (table: "ai_chat_conversations") => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => {
+          eq: (column: string, value: string) => {
+            eq: (column: string, value: string) => {
+              is: (column: string, value: null) => {
+                limit: (
+                  count: number
+                ) => Promise<{ data: AiChatConversationRow[] | null; error: { message: string } | null }>;
+              };
+            };
+          };
+        };
+      };
+      insert: (rows: Array<Record<string, unknown>>) => {
+        select: (columns: string) => {
+          limit: (
+            count: number
+          ) => Promise<{ data: AiChatConversationRow[] | null; error: { message: string } | null }>;
+        };
+      };
+      update: (values: Record<string, unknown>) => {
+        eq: (column: string, value: string) => {
+          eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+        };
+      };
+    };
+  };
 
   const planTier = getPlanTierForUser(member.user_id);
   const monthlyLimit = getMonthlyMessageLimit(planTier);
@@ -365,12 +444,54 @@ export async function POST(request: Request) {
   };
 
   const latestUserMessage = [...normalizedMessages].reverse().find((message) => message.role === "user");
+  let activeConversationId = requestConversationId || "";
+
+  if (activeConversationId) {
+    const existingConversationResult = await dynamicSupabase
+      .from("ai_chat_conversations")
+      .select("id, title, created_at, updated_at, last_message_at")
+      .eq("id", activeConversationId)
+      .eq("user_id", member.user_id)
+      .eq("project_slug", projectSlug)
+      .is("archived_at", null)
+      .limit(1);
+
+    if (existingConversationResult.error || !existingConversationResult.data?.[0]) {
+      await releaseQuotaReservation();
+      await guard.release();
+      return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    }
+  } else {
+    const createConversationResult = await dynamicSupabase
+      .from("ai_chat_conversations")
+      .insert([
+        {
+          user_id: member.user_id,
+          organization_id: member.organization_id,
+          project_slug: projectSlug,
+          title: "New Chat",
+          last_message_at: new Date().toISOString(),
+        },
+      ])
+      .select("id, title, created_at, updated_at, last_message_at")
+      .limit(1);
+
+    if (createConversationResult.error || !createConversationResult.data?.[0]) {
+      await releaseQuotaReservation();
+      await guard.release();
+      return NextResponse.json({ error: "Unable to create chat conversation." }, { status: 500 });
+    }
+
+    activeConversationId = createConversationResult.data[0].id;
+  }
+
   if (latestUserMessage) {
     const userInsertResult = await chatMessagesClient.from("ai_chat_messages").insert([
       {
         user_id: member.user_id,
         organization_id: member.organization_id,
         project_slug: projectSlug,
+        conversation_id: activeConversationId,
         role: "user",
         content: latestUserMessage.content,
       },
@@ -386,6 +507,19 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+  }
+
+  const updateConversationAfterUserMessageResult = await dynamicSupabase
+    .from("ai_chat_conversations")
+    .update({
+      updated_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+    })
+    .eq("id", activeConversationId)
+    .eq("user_id", member.user_id);
+
+  if (updateConversationAfterUserMessageResult.error) {
+    console.error("[chat] failed to update conversation metadata", updateConversationAfterUserMessageResult.error);
   }
 
   const responseInput = [
@@ -525,12 +659,27 @@ export async function POST(request: Request) {
               user_id: member.user_id,
               organization_id: member.organization_id,
               project_slug: projectSlug,
+              conversation_id: activeConversationId,
               role: "assistant",
               content: accumulatedText.trim(),
             },
           ]);
           if (assistantInsertResult.error) {
             sendEvent({ type: "error", error: "Unable to save AI response." });
+          }
+
+          const updateConversationResult = await (dynamicSupabase as any)
+            .from("ai_chat_conversations")
+            .update({
+              title: extractAssistantHeadingTitle(accumulatedText),
+              updated_at: new Date().toISOString(),
+              last_message_at: new Date().toISOString(),
+            })
+            .eq("id", activeConversationId)
+            .eq("user_id", member.user_id)
+            .eq("title", "New Chat");
+          if (updateConversationResult.error) {
+            console.error("[chat] failed to update conversation after assistant response", updateConversationResult.error);
           }
         }
 
@@ -552,6 +701,60 @@ export async function POST(request: Request) {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Conversation-Id": activeConversationId,
     },
   });
+}
+
+export async function DELETE(request: Request) {
+  const member = await getCurrentOrganizationMember();
+  if (!member) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const projectSlug = url.searchParams.get("projectSlug")?.trim() || "";
+  const conversationId = url.searchParams.get("conversationId")?.trim() || "";
+
+  if (!projectSlug || !conversationId) {
+    return NextResponse.json({ error: "Missing project slug or conversation id." }, { status: 400 });
+  }
+
+  const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  }
+
+  const guard = await enforceRouteGuard({
+    routeKey: "chat-delete",
+    request,
+    userId: member.user_id,
+    userPerMinute: 20,
+    ipPerMinute: 60,
+    concurrentPerUser: 1,
+  });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const db = supabase as any;
+
+  const { error: archiveConversationError } = await db
+    .from("ai_chat_conversations")
+    .update({
+      archived_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId)
+    .eq("user_id", member.user_id)
+    .eq("project_slug", projectSlug);
+
+  if (archiveConversationError) {
+    await guard.release();
+    return NextResponse.json({ error: "Unable to archive conversation." }, { status: 500 });
+  }
+
+  await guard.release();
+  return NextResponse.json({ ok: true });
 }

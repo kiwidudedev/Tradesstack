@@ -9,7 +9,7 @@ import { marketingLinks } from "@/lib/nav";
 
 export function Nav() {
   return (
-    <header className="relative z-20 px-4 pt-6 sm:px-8 lg:px-14 lg:pt-10">
+    <header className="marketing-navbar relative z-20 px-4 pt-6 sm:px-8 lg:px-14 lg:pt-10">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-full py-3">
         <Link href="/" className="-ml-[42px] inline-flex items-center">
           <Image

@@ -24,6 +24,7 @@ export default async function ProjectDrawingIntelligencePage({
       projectId={project.id}
       organizationId={project.organization_id}
       initialDrawingSets={drawingSets}
+      projectDashboardHref={`/app/projects/${projectId}/dashboard`}
     />
   );
 }

@@ -455,7 +455,7 @@ export default function ProjectClaimDetailPage() {
     const periodLabel = periodStart || periodEnd
       ? `${toDayMonthYearLabel(periodStart || null)} - ${toDayMonthYearLabel(periodEnd || null)}`
       : "—";
-    const raisedBy = session?.fullName?.trim() || "—";
+    const raisedBy = session?.name?.trim() || "—";
     const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableClaimNumber}`;
     const logoMarkup = organizationLogoUrl
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`

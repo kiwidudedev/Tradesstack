@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent } from "react";
-import Link from "next/link";
-import { ChevronDown, Copy, Download, FileSearch, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
 import styles from "./trade-pack-builder.module.css";
 
@@ -98,6 +97,7 @@ interface ChangeDetectionWorkbenchProps {
   initialDrawingSetId?: string;
   initialGeneratedTradePacks: ChangeDetectionGeneratedTradePack[];
   initialStoredRuns: ChangeDetectionStoredRun[];
+  projectDashboardHref?: string;
 }
 
 function toDateTimeLabel(value: string): string {
@@ -154,6 +154,7 @@ export function ChangeDetectionWorkbench({
   initialDrawingSetId,
   initialGeneratedTradePacks,
   initialStoredRuns,
+  projectDashboardHref,
 }: ChangeDetectionWorkbenchProps) {
   const [selectedTradePackId, setSelectedTradePackId] = useState<string>(initialDrawingSetId ?? "");
   const [selectedPdfFiles, setSelectedPdfFiles] = useState<File[]>([]);
@@ -354,19 +355,10 @@ export function ChangeDetectionWorkbench({
     setStatus(`Stored result loaded • ${toDateTimeLabel(storedRun.generatedAt)}`);
   };
 
-  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).format(new Date());
+  const isProjectChangeDetectionPage = Boolean(projectDashboardHref);
 
   return (
-    <main className={`${styles.scope} space-y-6 pb-8`}>
+    <main className={`${styles.scope} ${isProjectChangeDetectionPage ? "-mb-8" : "pb-8"} space-y-6`}>
       <section className={styles.heroBlock}>
         <div>
           <h1 className={styles.heroTitle}>Change Detection</h1>
@@ -375,24 +367,37 @@ export function ChangeDetectionWorkbench({
         </p>
         </div>
         <div className={styles.heroActions}>
-          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
-          <Button
-            className={`${interMedium.className} ${styles.heroPrimaryButton}`}
-            onClick={runChangeDetection}
-            disabled={isRunning}
-          >
-            {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {isRunning ? "Running Detection..." : "Run Change Detection"}
-          </Button>
+          {projectDashboardHref ? null : (
+            <Button
+              className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+              onClick={runChangeDetection}
+              disabled={isRunning}
+            >
+              {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {isRunning ? "Running Detection..." : "Run Change Detection"}
+            </Button>
+          )}
         </div>
       </section>
 
       <section className="space-y-5">
         <div className={styles.dashboardGrid}>
-          <div className={`${styles.card} p-6`}>
-            <p className={styles.sectionTitle}>Change Detection Controls</p>
+          <div className={`lg:col-span-2 ${styles.card} rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] px-7 pb-6 pt-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-6 md:pt-8`}>
+            <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[260px]`}>
+              <p className={styles.sectionTitle}>Run Change Detection</p>
+              <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
+                <Button
+                  className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+                  onClick={runChangeDetection}
+                  disabled={isRunning}
+                >
+                  {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {isRunning ? "Running Detection..." : "Run Change Detection"}
+                </Button>
+              </div>
+            </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <label className={styles.metricLabel}>Baseline trade pack</label>
                 <select
@@ -412,7 +417,7 @@ export function ChangeDetectionWorkbench({
 
               <div className="space-y-1.5">
                 <label className={styles.metricLabel}>Upload revised PDF</label>
-                <label className={`${styles.fieldBox} inline-flex h-10 w-full cursor-pointer text-sm font-medium text-[#1d2433] hover:bg-[#f8fafd]`}>
+                <label className={`${styles.fieldBox} inline-flex h-10 w-full cursor-pointer justify-between text-sm text-[#334155]`}>
                   <input
                     type="file"
                     accept="application/pdf,.pdf"
@@ -424,7 +429,10 @@ export function ChangeDetectionWorkbench({
                   <span className="truncate">
                     {selectedPdfFiles.length > 0
                       ? `${selectedPdfFiles.length} file${selectedPdfFiles.length > 1 ? "s" : ""} selected`
-                      : "Choose revised PDF(s)"}
+                      : "No revised PDF selected"}
+                  </span>
+                  <span className="ml-3 inline-flex h-8 shrink-0 items-center rounded-[999px] bg-[#1E3648] px-3 text-xs font-medium text-white">
+                    Select PDF
                   </span>
                 </label>
               </div>
@@ -449,94 +457,50 @@ export function ChangeDetectionWorkbench({
                 />
               </div>
             </div>
+          </div>
+        </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+        <section className={`${styles.card} space-y-4 rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8`}>
+          <h3 className={styles.sectionTitle}>Stored Change Runs</h3>
+          <div className={`${styles.listRow} ${styles.producedRowProjectTone} p-[14px_18px]`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-full sm:w-[420px]">
+                <select
+                  className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
+                  value={selectedStoredRunId}
+                  onChange={(event) => onSelectStoredRun(event.target.value)}
+                  disabled={isRunning || storedRuns.length === 0}
+                >
+                  <option value="">Select stored run...</option>
+                  {storedRuns.map((run) => (
+                    <option key={run.id} value={run.id}>
+                      {run.tradeLabel} • {run.baselineRevision} → {run.revisedRevision} • {toDateTimeLabel(run.generatedAt)}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <Button
-                className={`${styles.controlButton} h-10 px-[18px] text-sm`}
-                onClick={runChangeDetection}
-                disabled={isRunning}
+                variant="outline"
+                className={`${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
+                onClick={copyOutput}
+                disabled={!runResult || isRunning}
               >
-                {isRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSearch className="mr-2 h-4 w-4" />}
-                {isRunning ? "Running Detection..." : "Run Change Detection"}
+                <Copy className="mr-2 h-4 w-4" />
+                Copy Output
+              </Button>
+              <Button
+                variant="outline"
+                className={`${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
+                onClick={downloadOutput}
+                disabled={!runResult || isRunning}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download
               </Button>
             </div>
           </div>
-
-          <div>
-            <div className={`${styles.card} p-4`}>
-              <p className={styles.sectionTitle}>Current Selection</p>
-              <div className="mt-3 space-y-2">
-                <div className={styles.selectionBox}>
-                  <p className={styles.selectionLabel}>Baseline trade</p>
-                  <p className={styles.selectionValue}>{selectedTradePack?.tradeLabel ?? "Not selected"}</p>
-                </div>
-                <div className={styles.selectionBox}>
-                  <p className={styles.selectionLabel}>Revised file</p>
-                  <p className={styles.selectionValue}>
-                    {selectedPdfFiles.length > 0
-                      ? `${selectedPdfFiles.length} PDF${selectedPdfFiles.length > 1 ? "s" : ""} selected`
-                      : "Not uploaded"}
-                  </p>
-                </div>
-                <div className={styles.selectionBox}>
-                  <p className={styles.selectionLabel}>Output status</p>
-                  <p className={styles.selectionValue}>
-                    {runResult ? `Generated • ${toDateTimeLabel(runResult.generatedAt)}` : "No output generated yet"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className={styles.metricLabel}>Stored Change Runs</p>
-          <div className="w-full sm:w-[420px]">
-            <select
-              className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
-              value={selectedStoredRunId}
-              onChange={(event) => onSelectStoredRun(event.target.value)}
-              disabled={isRunning || storedRuns.length === 0}
-            >
-              <option value="">Select stored run...</option>
-              {storedRuns.map((run) => (
-                <option key={run.id} value={run.id}>
-                  {run.tradeLabel} • {run.baselineRevision} → {run.revisedRevision} • {toDateTimeLabel(run.generatedAt)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              className={`${styles.controlButton} h-10 px-[18px] text-sm`}
-              onClick={copyOutput}
-              disabled={!runResult || isRunning}
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              Copy Output
-            </Button>
-            <Button
-              variant="outline"
-              className={`${styles.controlButton} h-10 px-[18px] text-sm`}
-              onClick={downloadOutput}
-              disabled={!runResult || isRunning}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </Button>
-          </div>
-          <div>
-            <Link
-              href={`/app/projects/${projectSlug}/scope-builder`}
-              className="inline-flex h-10 items-center text-sm font-medium text-[#4f5f79] transition-colors hover:text-[#1d2433]"
-            >
-              {"<- Open Scope Builder"}
-            </Link>
-          </div>
-
-          {status ? <p className="text-[13px] text-[#64748B]">{status}</p> : null}
-        </div>
+          {status ? <p className="sr-only">{status}</p> : null}
+        </section>
 
         {error ? <p className="text-[13px] text-[#b42318]">{error}</p> : null}
       </section>
@@ -560,14 +524,7 @@ export function ChangeDetectionWorkbench({
           <ChangeListCard title="Cost Impact Changes" items={runResult.result.costImpactChanges} />
           <ChangeListCard title="Risk & Clarifications" items={runResult.result.risksClarifications} />
         </section>
-      ) : (
-        <Card className={styles.card}>
-          <CardContent className="flex items-center gap-3 px-5 py-5 text-sm text-[#5f7090]">
-            <FileSearch className="h-4 w-4 text-[#7b8ba4]" />
-            Select a baseline trade pack, upload a revised PDF, and run Change Detection.
-          </CardContent>
-        </Card>
-      )}
+      ) : null}
     </main>
   );
 }

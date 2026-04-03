@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Upload as TusUpload } from "tus-js-client";
-import { CheckCircle2, ChevronDown, ExternalLink, FileText, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -36,6 +37,7 @@ interface TradePackBuilderUploaderProps {
   projectId: string;
   organizationId: string;
   initialDrawingSets: ProjectDrawingSet[];
+  projectDashboardHref?: string;
 }
 
 interface LastGenerationSummary {
@@ -735,6 +737,7 @@ export function TradePackBuilderUploader({
   projectId,
   organizationId,
   initialDrawingSets,
+  projectDashboardHref,
 }: TradePackBuilderUploaderProps) {
   const { session, isLoading: isAuthLoading } = useAuth();
   const [drawingSets, setDrawingSets] = useState<ProjectDrawingSet[]>(initialDrawingSets);
@@ -1364,34 +1367,34 @@ export function TradePackBuilderUploader({
 
       if (outputSaveError) {
         setStatus(
-          `${trade.label} trade pack generated: ${matchedPageIndexes.length} pages from ${sourcePdf.numPages}. Download started.`
+          `${trade.label} trade pack is ready: ${matchedPageIndexes.length} of ${sourcePdf.numPages} pages. Your download has started.`
         );
         setError(`Trade pack generated, but output could not be saved: ${outputSaveError}`);
       } else if (reasonSnapshotSaveError && pageIndexSaveError) {
         setStatus(
-          `${trade.label} trade pack generated: ${matchedPageIndexes.length} pages from ${sourcePdf.numPages}. Download started and output saved.`
+          `${trade.label} trade pack is ready: ${matchedPageIndexes.length} of ${sourcePdf.numPages} pages. Your download has started and the file was saved.`
         );
         setError(
           `Trade pack generated, but saved reasoning and page index both failed: ${reasonSnapshotSaveError} | ${pageIndexSaveError}`
         );
       } else if (reasonSnapshotSaveError) {
         setStatus(
-          `${trade.label} trade pack generated: ${matchedPageIndexes.length} pages from ${sourcePdf.numPages}. Download started, output saved, and reasoning saved via page index.`
+          `${trade.label} trade pack is ready: ${matchedPageIndexes.length} of ${sourcePdf.numPages} pages. Download started, file saved, and reasoning kept via the page index.`
         );
       } else if (pageIndexSkippedMissingTable) {
         setStatus(
-          `${trade.label} trade pack generated: ${matchedPageIndexes.length} pages from ${sourcePdf.numPages}. Download started, output saved, and reasoning saved. Page index table is not deployed yet, so indexing was skipped.`
+          `${trade.label} trade pack is ready: ${matchedPageIndexes.length} of ${sourcePdf.numPages} pages. Download started and file saved. Reasoning was saved, but page indexing is not enabled yet.`
         );
       } else if (pageIndexSaveError) {
         setStatus(
-          `${trade.label} trade pack generated: ${matchedPageIndexes.length} pages from ${sourcePdf.numPages}. Download started and output saved.`
+          `${trade.label} trade pack is ready: ${matchedPageIndexes.length} of ${sourcePdf.numPages} pages. Download started and file saved.`
         );
         setError(
           `Trade pack generated and saved with reasoning, but page index storage failed: ${pageIndexSaveError}`
         );
       } else {
         setStatus(
-          `${trade.label} trade pack generated: ${matchedPageIndexes.length} pages from ${sourcePdf.numPages}. Includes ${floorPlanPagesIncluded} floor plan page(s). Download started, output saved, reasoning saved, and page index stored.`
+          `${trade.label} trade pack is ready: ${matchedPageIndexes.length} of ${sourcePdf.numPages} pages, including ${floorPlanPagesIncluded} floor plan pages. Download started, file saved, and indexing completed.`
         );
       }
     } catch (generationError) {
@@ -1408,10 +1411,6 @@ export function TradePackBuilderUploader({
   const selectedGeneratedTradePack =
     generatedTradePacks.find((drawingSet) => drawingSet.id === selectedOutputDrawingSetId) ?? latestGeneratedTradePack;
   const selectedTrade = TRADE_PACK_TRADES.find((tradeOption) => tradeOption.id === selectedTradeId) ?? null;
-  const outputFilePreview =
-    localSourceFile && selectedTrade
-      ? `${toSafeDownloadBaseName(toDefaultDraftName(localSourceFile.name))}-${selectedTrade.slug}-trade-pack.pdf`
-      : "Generated after run";
   const generationProgress = useMemo(() => {
     if (!generationStep || generationStartedAtMs === null) {
       return null;
@@ -1640,15 +1639,20 @@ export function TradePackBuilderUploader({
     };
   }, [organizationId, projectId, selectedGeneratedTradePack, selectedGeneratedTradePack?.id, supabase]);
 
+  const isProjectDrawingIntelligencePage = Boolean(projectDashboardHref);
+  const producedCardToneClass = isProjectDrawingIntelligencePage ? styles.producedCardProjectTone : "";
+  const producedRowToneClass = isProjectDrawingIntelligencePage ? styles.producedRowProjectTone : "";
+  const producedActionButtonToneClass = isProjectDrawingIntelligencePage ? styles.producedActionButtonProjectTone : "";
+
   const renderDrawingSetRow = (drawingSet: ProjectDrawingSet, showTradePackBadge: boolean) => (
-    <div key={drawingSet.id} className={`${styles.listRow} px-4 py-4`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div key={drawingSet.id} className={`${styles.listRow} ${producedRowToneClass} px-[18px] py-[14px]`}>
+      <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           {editingDrawingSetId === drawingSet.id ? (
             <div className="space-y-2">
               <label
                 htmlFor={`rename-${drawingSet.id}`}
-                className="block text-xs font-medium uppercase tracking-[0.12em] text-[#8b98ad]"
+                className="block text-xs font-medium uppercase tracking-[0.12em] text-[#8a8a8a]"
               >
                 Drawing Set Name
               </label>
@@ -1662,24 +1666,19 @@ export function TradePackBuilderUploader({
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 <p className="truncate text-[15px] font-semibold text-[#1d2433]">
                   {showTradePackBadge ? getGeneratedTradePackTradeLabel(drawingSet) : drawingSet.file_name}
                 </p>
-                {showTradePackBadge ? (
-                  <span className="inline-flex items-center rounded-[6px] border border-[#E2E8F0] bg-[#F1F5F9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#334155]">
-                    Trade Pack
-                  </span>
-                ) : null}
               </div>
-              <p className="mt-1 text-[13px] text-[#64748B]">
+              <p className="mt-1 text-[12px] text-[#7b818c]">
                 {formatFileSize(drawingSet.file_size_bytes)} • Uploaded {formatUploadedAt(drawingSet.uploaded_at)}
               </p>
             </>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 rounded-[10px] bg-[#F7F8FA] p-1">
           {editingDrawingSetId === drawingSet.id ? (
             <>
               <Button
@@ -1701,7 +1700,7 @@ export function TradePackBuilderUploader({
                 variant="ghost"
                 onClick={cancelRenameDrawingSet}
                 disabled={renamingId === drawingSet.id || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[6px] px-3 text-[13px] text-[#5f6f89] hover:bg-[#eef3fb]"
+                className="h-8 rounded-[6px] px-3 text-[13px] text-[#6b6b6b] hover:bg-[#F3F4F6]"
               >
                 Cancel
               </Button>
@@ -1713,7 +1712,7 @@ export function TradePackBuilderUploader({
                 variant="outline"
                 onClick={() => downloadDrawingSet(drawingSet)}
                 disabled={downloadingPath === drawingSet.storage_path || isGeneratingPack || deletingDrawingSetId !== null}
-                className={`${styles.controlButton} h-8 px-3 text-[13px]`}
+                className={`${styles.controlButton} ${producedActionButtonToneClass} h-8 px-3 text-[13px]`}
               >
                 {downloadingPath === drawingSet.storage_path ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1731,7 +1730,7 @@ export function TradePackBuilderUploader({
                     setSelectedOutputDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                  className={`${styles.controlButton} h-8 px-3 text-[13px]`}
+                  className={`${styles.controlButton} ${producedActionButtonToneClass} h-8 px-3 text-[13px]`}
                 >
                   Why
                   <ChevronDown
@@ -1750,7 +1749,7 @@ export function TradePackBuilderUploader({
                     setSettingsMenuDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                  className={`${styles.controlButton} h-8 px-3 text-[13px]`}
+                  className={`${styles.controlButton} ${producedActionButtonToneClass} h-8 px-3 text-[13px]`}
                 >
                   Settings
                   <ChevronDown
@@ -1766,7 +1765,7 @@ export function TradePackBuilderUploader({
                       type="button"
                       onClick={() => startRenameDrawingSet(drawingSet)}
                       disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                      className="flex h-8 w-full items-center rounded-[6px] px-2.5 text-left text-sm text-[#1d2433] hover:bg-[#f6f9ff] disabled:text-[#8b98ad]"
+                      className="flex h-8 w-full items-center rounded-[6px] px-2.5 text-left text-sm text-[#1d1d1d] hover:bg-[#F3F4F6] disabled:text-[#8a8a8a]"
                     >
                       Rename
                     </button>
@@ -1793,7 +1792,7 @@ export function TradePackBuilderUploader({
 
       {showTradePackBadge && selectedOutputDrawingSetId === drawingSet.id ? (
         <div className="mt-4 border-t border-[#E6EAF0] pt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#64748B]">Why pages were extracted</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6b6b6b]">Why pages were extracted</p>
           {extractedPageReasons.length > 0 ? (
             <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
               {extractedPageReasons.map((reason, reasonIndex) => {
@@ -1801,183 +1800,154 @@ export function TradePackBuilderUploader({
 
                 return (
                   <div key={`${reasonIndex}-${reason}`} className={`${styles.metricTile} px-3 py-2.5`}>
-                    <p className="text-[13px] font-semibold text-[#334155]">{pageLabel}</p>
-                    <p className="mt-1 text-[13px] leading-[1.6] text-[#475569]">{detail}</p>
+                    <p className="text-[13px] font-semibold text-[#1d1d1d]">{pageLabel}</p>
+                    <p className="mt-1 text-[13px] leading-[1.6] text-[#6b6b6b]">{detail}</p>
                   </div>
                 );
               })}
             </div>
           ) : isLoadingPersistedReasons ? (
-            <p className="mt-2 text-[13px] text-[#5f7292]">Loading extraction reasons...</p>
+            <p className="mt-2 text-[13px] text-[#6b6b6b]">Loading extraction reasons...</p>
           ) : persistedReasonsError ? (
             <p className="mt-2 text-[13px] text-red-700">{persistedReasonsError}</p>
           ) : (
-            <p className="mt-2 text-[13px] text-[#5f7292]">No extraction reasons found for this output.</p>
+            <p className="mt-2 text-[13px] text-[#6b6b6b]">No extraction reasons found for this output.</p>
           )}
         </div>
       ) : null}
     </div>
   );
 
-  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).format(new Date());
-
   return (
-    <div className={`${styles.scope} space-y-6 pb-8`}>
+    <div className={`${styles.scope} ${projectDashboardHref ? "-mb-8" : "pb-8"} space-y-6`}>
       <section className={styles.heroBlock}>
         <div>
-          <h1 className={styles.heroTitle}>Drawing Intelligence</h1>
+          <h1 className={styles.heroTitle}>Trade Pack Builder</h1>
           <p className={`${interMedium.className} ${styles.heroSummary}`}>
             Upload the full set, pick a trade, and generate the pages that matter most.
           </p>
         </div>
-        <div className={styles.heroActions}>
-          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
-          <Button
-            type="button"
-            onClick={generateTradePack}
-            disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
-            className={`${interMedium.className} ${styles.heroPrimaryButton}`}
-          >
-            {isGeneratingPack ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Building Pack
-              </>
-            ) : (
-              "Generate & Download"
-            )}
-          </Button>
-        </div>
+        <div className={styles.heroActions} />
       </section>
 
       <section className={styles.dashboardGrid}>
-        <div className={`${styles.card} p-6`}>
-          <div className={styles.sectionHeader}>
-            <p className={styles.sectionTitle}>Create Trade Pack</p>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <label htmlFor="localSourcePdfInput" className={styles.metricLabel}>
-                Source PDF
-              </label>
-              <div className={styles.fieldBox}>
-                <input
-                  id="localSourcePdfInput"
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  onChange={onLocalSourceFileSelect}
-                  disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="localSourcePdfInput"
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[6px] bg-[#161922] px-3 text-xs font-medium text-white hover:bg-[#101217]"
+        <div className="space-y-3 lg:col-span-2">
+          <div
+            className={`${styles.card} rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8`}
+          >
+            <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
+              <p className={styles.sectionTitle}>Create Trade Pack</p>
+              <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
+                <Button
+                  type="button"
+                  onClick={generateTradePack}
+                  disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
+                  className={`${interMedium.className} ${styles.heroPrimaryButton}`}
                 >
-                  Select PDF
+                  {isGeneratingPack ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Building Pack
+                    </>
+                  ) : (
+                    "Generate & Download"
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor="localSourcePdfInput" className={styles.metricLabel}>
+                  Source PDF
                 </label>
-                <p className="truncate pr-1 text-sm text-[#5f6f89]">
-                  {localSourceFile ? localSourceFile.name : "No source PDF selected"}
-                </p>
+                <div className={styles.fieldBox}>
+                  <input
+                    id="localSourcePdfInput"
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    onChange={onLocalSourceFileSelect}
+                    disabled={isGeneratingPack || deletingDrawingSetId !== null}
+                    className="hidden"
+                  />
+                  <p className="truncate pr-1 text-sm text-[#6b6b6b]">
+                    {localSourceFile ? localSourceFile.name : "No source PDF selected"}
+                  </p>
+                  <label
+                    htmlFor="localSourcePdfInput"
+                    className="ml-auto inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[999px] bg-[#1E3648] px-3 text-xs font-medium text-white hover:bg-[#1A3141]"
+                  >
+                    Select PDF
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="tradeSelector" className={styles.metricLabel}>
+                  Trade
+                </label>
+                <select
+                  id="tradeSelector"
+                  value={selectedTradeId}
+                  onChange={(event) => setSelectedTradeId(event.target.value)}
+                  disabled={isGeneratingPack || deletingDrawingSetId !== null}
+                  className={`${styles.fieldSelect} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
+                >
+                  {TRADE_PACK_TRADES.map((trade) => (
+                    <option key={trade.id} value={trade.id}>
+                      {trade.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label htmlFor="tradeSelector" className={styles.metricLabel}>
-                Trade
-              </label>
-              <select
-                id="tradeSelector"
-                value={selectedTradeId}
-                onChange={(event) => setSelectedTradeId(event.target.value)}
-                disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                className={`${styles.fieldSelect} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
-              >
-                {TRADE_PACK_TRADES.map((trade) => (
-                  <option key={trade.id} value={trade.id}>
-                    {trade.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <p className={`${styles.metaText} mt-3 text-xs`}>
-            Source PDF stays on your device during generation. Only generated trade packs are saved in this project.
-          </p>
-
-          <div className="mt-4 space-y-2">
-            {generationStep ? (
-              <div className="space-y-2 rounded-[6px] border border-[#dbe1eb] bg-[#f8fafc] px-3 py-2">
-                <p className="inline-flex items-center gap-2 text-sm text-[#4f5f79]">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#ff5406]" />
-                  {generationStep}
-                </p>
-                {generationProgress ? (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-[#4f5f79]">
-                      Analyzing drawing set for {(selectedTrade?.label ?? "selected trade").toLowerCase()} scope
-                    </p>
-                    <div className="h-2 w-full overflow-hidden rounded-[6px] bg-[#e3e9f3]">
-                      <div
-                        className="h-full rounded-[6px] bg-[#ff5406] transition-[width] duration-500"
-                        style={{ width: `${generationProgress.percent}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-[#5f6f89]">
-                      Estimated time remaining: ~{formatEtaSeconds(generationProgress.estimatedRemainingSeconds)}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {status ? (
-              <p className="inline-flex items-center gap-2 rounded-[6px] border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                {status}
-              </p>
-            ) : null}
-            {error ? <p className="rounded-[6px] border border-red-300/70 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className={`${styles.card} p-6`}>
-            <p className={styles.sectionTitle}>Current Selection</p>
             <div className="mt-4 space-y-2">
-              <div className={styles.selectionBox}>
-                <p className={styles.selectionLabel}>Trade</p>
-                <p className={styles.selectionValue}>{selectedTrade?.label ?? "Not selected"}</p>
-              </div>
-              <div className={styles.selectionBox}>
-                <p className={styles.selectionLabel}>Source</p>
-                <p className={`${styles.selectionValue} truncate`}>{localSourceFile?.name ?? "No source PDF selected"}</p>
-              </div>
-              <div className={styles.selectionBox}>
-                <p className={styles.selectionLabel}>Output File</p>
-                <p className={`${styles.selectionValue} truncate`}>{outputFilePreview}</p>
-              </div>
+              {generationStep ? (
+                <div className="space-y-2 rounded-[6px] border border-[rgba(17,17,17,0.12)] bg-[#F3F4F6] px-3 py-2">
+                  <p className="inline-flex items-center gap-2 text-sm text-[#6b6b6b]">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#ff5406]" />
+                    {generationStep}
+                  </p>
+                  {generationProgress ? (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-[#6b6b6b]">
+                        Analyzing drawing set for {(selectedTrade?.label ?? "selected trade").toLowerCase()} scope
+                      </p>
+                      <div className="h-2 w-full overflow-hidden rounded-[6px] bg-[#E5E7EB]">
+                        <div
+                          className="h-full rounded-[6px] bg-[#ff5406] transition-[width] duration-500"
+                          style={{ width: `${generationProgress.percent}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-[#6b6b6b]">
+                        Estimated time remaining: ~{formatEtaSeconds(generationProgress.estimatedRemainingSeconds)}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {status ? (
+                <p className="inline-flex items-center gap-2 rounded-[6px] border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {status}
+                </p>
+              ) : null}
+              {error ? <p className="rounded-[6px] border border-red-300/70 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
             </div>
           </div>
 
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section
+        className={`${styles.card} ${producedCardToneClass} space-y-5 rounded-[32px] border p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8`}
+      >
         <h3 className={styles.sectionTitle}>Produced Trade Packs</h3>
         <div className="space-y-2">
           {generatedTradePacks.length === 0 ? (
             <div className={`${styles.cardMuted} px-4 py-3`}>
-              <p className="text-sm text-[#687996]">No generated trade packs yet.</p>
+              <p className="text-sm text-[#6b6b6b]">No generated trade packs yet.</p>
             </div>
           ) : (
             generatedTradePacks.map((drawingSet) => renderDrawingSetRow(drawingSet, true))
@@ -1985,12 +1955,6 @@ export function TradePackBuilderUploader({
         </div>
       </section>
 
-      <div className={`${styles.cardMuted} px-4 py-3 text-xs text-[#6d7c94]`}>
-        <p className="inline-flex items-center gap-2">
-          <FileText className="h-4 w-4 text-[#8b98ad]" />
-          Trade Pack Builder filters pages by selected trade and stores only generated outputs for this project.
-        </p>
-      </div>
     </div>
   );
 }

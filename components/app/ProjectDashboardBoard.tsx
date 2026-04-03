@@ -108,6 +108,8 @@ export function ProjectDashboardBoard() {
   }, []);
 
   const projectBase = useMemo(() => `/app/projects/${routeProjectSlug}`, [routeProjectSlug]);
+  const tradePackCardClassName =
+    "rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]";
 
   const actionRequired = useMemo(
     () =>
@@ -540,50 +542,48 @@ export function ProjectDashboardBoard() {
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 
   return (
-    <main className="space-y-6 pb-8">
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-4 pt-7">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">
-                {context?.projectName ?? "Project Command Centre"}
-              </CardTitle>
-            </div>
+    <main className="-mb-8 space-y-6 bg-[#F3F4F6]">
+      <div className="pb-1 pt-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-[41.6px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">
+              {context?.projectName ?? "Project Command Centre"}
+            </h1>
           </div>
-        </CardHeader>
-      </Card>
+        </div>
+      </div>
 
-      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
+      <div className={`overflow-x-auto ${tradePackCardClassName}`}>
         <div className="flex min-w-[820px] divide-x divide-[#E3E8F0]">
-          <Link href={`${projectBase}/job-management/todos`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-white">
+          <Link href={`${projectBase}/job-management/todos`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
             <Clock3 className="h-5 w-5 text-[#B45309]" />
             <div>
               <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Tasks Due Today</p>
               <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.tasksDueToday}</p>
             </div>
           </Link>
-          <Link href={`${projectBase}/job-management/quality-assurance`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-white">
+          <Link href={`${projectBase}/job-management/quality-assurance`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
             <AlertTriangle className="h-5 w-5 text-[#DC2626]" />
             <div>
               <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Open Issues</p>
               <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.openIssues}</p>
             </div>
           </Link>
-          <Link href={`${projectBase}/preconstruction/variations`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-white">
+          <Link href={`${projectBase}/preconstruction/variations`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
             <FileWarning className="h-5 w-5 text-[#1D4ED8]" />
             <div>
               <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Pending Variations</p>
               <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.pendingVariations}</p>
             </div>
           </Link>
-          <Link href={`${projectBase}/preconstruction/claims`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-white">
+          <Link href={`${projectBase}/preconstruction/claims`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
             <CalendarClock className="h-5 w-5 text-[#0F766E]" />
             <div>
               <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Claims This Month</p>
               <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.claimsThisMonth}</p>
             </div>
           </Link>
-          <Link href={`${projectBase}/job-management/time-sheets`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-white">
+          <Link href={`${projectBase}/job-management/time-sheets`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
             <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
             <div>
               <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Active Workers</p>
@@ -593,7 +593,7 @@ export function ProjectDashboardBoard() {
         </div>
       </div>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+      <Card className={tradePackCardClassName}>
         <CardHeader className="pb-3 pt-5">
           <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Action Required</CardTitle>
         </CardHeader>
@@ -620,7 +620,7 @@ export function ProjectDashboardBoard() {
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+      <Card className={tradePackCardClassName}>
         <CardHeader className="pb-3 pt-5">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-[#1D4ED8]" />
@@ -636,7 +636,7 @@ export function ProjectDashboardBoard() {
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+      <Card className={tradePackCardClassName}>
         <CardHeader className="pb-3 pt-5">
           <button
             type="button"

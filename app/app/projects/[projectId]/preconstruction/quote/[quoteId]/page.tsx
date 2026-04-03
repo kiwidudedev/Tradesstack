@@ -2,15 +2,18 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Check, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteLineItemSection, QuoteStatus } from "@/lib/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 type LineItemSection = QuoteLineItemSection;
 
@@ -42,23 +45,82 @@ function DescriptionInputWithPreview({
   placeholder?: string;
 }) {
   const hasContent = value.trim().length > 0;
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewPosition, setPreviewPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const updatePreviewPosition = useCallback(() => {
+    const inputElement = inputRef.current;
+    if (!inputElement) {
+      return;
+    }
+    const rect = inputElement.getBoundingClientRect();
+    setPreviewPosition({
+      top: rect.bottom + 8,
+      left: rect.left,
+      width: Math.min(560, Math.max(rect.width, 280)),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isPreviewOpen) {
+      return;
+    }
+
+    const handleReposition = () => updatePreviewPosition();
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [isPreviewOpen, updatePreviewPosition]);
+
+  const openPreview = useCallback(() => {
+    if (!hasContent) {
+      return;
+    }
+    updatePreviewPosition();
+    setIsPreviewOpen(true);
+  }, [hasContent, updatePreviewPosition]);
+
+  const closePreview = useCallback(() => {
+    setIsPreviewOpen(false);
+  }, []);
 
   return (
-    <div className="group relative">
+    <div className="relative">
       <Input
+        ref={inputRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onMouseEnter={openPreview}
+        onMouseLeave={closePreview}
+        onFocus={openPreview}
+        onBlur={closePreview}
         placeholder={placeholder}
+        title={value.trim() || placeholder || ""}
         className="h-10 min-w-[200px] rounded-[6px]"
       />
-      {hasContent ? (
-        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-          <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
-            Full Description
-          </p>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium leading-relaxed text-[#1F2E45]`}>{value}</p>
-        </div>
-      ) : null}
+      {hasContent && isPreviewOpen && previewPosition && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[300] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)]"
+              style={{
+                top: previewPosition.top,
+                left: previewPosition.left,
+                width: previewPosition.width,
+              }}
+            >
+              <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
+                Full Description
+              </p>
+              <p className={`${interMedium.className} mt-1 text-sm font-medium leading-relaxed text-[#1F2E45]`}>{value}</p>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -72,7 +134,6 @@ const STATUS_OPTIONS: Array<{ value: QuoteStatus; label: string }> = [
 const LINE_ITEM_SECTIONS: LineItemSection[] = ["Item", "Materials", "Labour", "Plant", "Subcontractors", "Preliminaries"];
 const MAIN_LINE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 130px 78px 78px 110px 110px";
 const OPTIONAL_LINE_GRID_TEMPLATE = "minmax(260px, 1fr) 90px 90px 120px 130px";
-
 function toMoney(value: number) {
   return new Intl.NumberFormat(undefined, {
     style: "currency",
@@ -199,6 +260,8 @@ export default function PreconstructionQuotePage() {
   const routeQuoteId = params?.quoteId;
   const isNewQuoteRoute = routeQuoteId === "new";
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const routeMode = searchParams.get("mode");
   const { session, isLoading: isAuthLoading } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
@@ -255,9 +318,10 @@ export default function PreconstructionQuotePage() {
   const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
   const [isScopeImportOpen, setIsScopeImportOpen] = useState(false);
   const [isLoadingScopeItems, setIsLoadingScopeItems] = useState(false);
+  const [hasLoadedScopeItems, setHasLoadedScopeItems] = useState(false);
   const [scopeCostItems, setScopeCostItems] = useState<ScopeCostCategoryItem[]>([]);
   const [selectedScopeCostItemIds, setSelectedScopeCostItemIds] = useState<string[]>([]);
-  const [isTermsOpen, setIsTermsOpen] = useState(false);
+  const [isTermsOpen, setIsTermsOpen] = useState(true);
   const [isQuoteContentHidden, setIsQuoteContentHidden] = useState(false);
   const loadedRouteRef = useRef<string | null>(null);
 
@@ -275,7 +339,18 @@ export default function PreconstructionQuotePage() {
       return null;
     }
   }, []);
-  const shouldShowEditor = isEditing || !quoteId;
+  const shouldShowEditor = routeMode === "edit" || isEditing || !quoteId;
+  const isHydratingExistingQuote = isLoadingQuote && !isNewQuoteRoute;
+
+  useEffect(() => {
+    if (!routeProjectSlug || !routeQuoteId || isNewQuoteRoute) {
+      return;
+    }
+
+    if (routeMode !== "edit") {
+      router.replace(`/app/projects/${routeProjectSlug}/preconstruction/quote/${routeQuoteId}?mode=edit`);
+    }
+  }, [isNewQuoteRoute, routeMode, routeProjectSlug, routeQuoteId, router]);
 
   const mainLineItems = useMemo(() => lineItems.filter((item) => !item.isOptional), [lineItems]);
   const optionalLineItems = useMemo(() => lineItems.filter((item) => item.isOptional), [lineItems]);
@@ -431,7 +506,10 @@ export default function PreconstructionQuotePage() {
           .maybeSingle();
 
         if (!withCodeResult.error && withCodeResult.data) {
-          projectRow = withCodeResult.data as typeof projectRow;
+          projectRow = {
+            ...withCodeResult.data,
+            project_code: withCodeResult.data.project_code ?? null,
+          };
         } else {
           const fallbackResult = await supabase
             .from("organization_projects")
@@ -467,42 +545,6 @@ export default function PreconstructionQuotePage() {
         setSiteAddress((current) => current || projectRow.location || "");
         setQuoteNumber((current) => current || `Q-${resolvedProjectCode}-1`);
 
-        setIsLoadingScopeItems(true);
-        const [scopeRunsResult, tradePacksResult] = await Promise.all([
-          supabase
-            .from("scope_runs")
-            .select("id, trade_pack_id, result_json, created_at")
-            .eq("organization_id", resolvedOrganizationId)
-            .eq("project_id", projectRow.id)
-            .eq("status", "complete")
-            .order("created_at", { ascending: false })
-            .limit(120),
-          supabase
-            .from("trade_packs")
-            .select("id, trade_label")
-            .eq("organization_id", resolvedOrganizationId)
-            .eq("project_id", projectRow.id),
-        ]);
-
-        if (!cancelled) {
-          if (!scopeRunsResult.error) {
-            const tradeLabelByTradePackId = new Map((tradePacksResult.data ?? []).map((row) => [row.id, row.trade_label]));
-            const normalizedItems = toScopeCostCategoryItems({
-              runs: (scopeRunsResult.data ?? []) as Array<{
-                id: string;
-                trade_pack_id: string;
-                result_json: Record<string, unknown>;
-                created_at: string;
-              }>,
-              tradeLabelByTradePackId,
-            });
-            setScopeCostItems(normalizedItems);
-          } else {
-            setScopeCostItems([]);
-          }
-          setIsLoadingScopeItems(false);
-        }
-
         let linkedClientName = "";
         let linkedCompanyName = "";
         let linkedContactPerson = "";
@@ -533,25 +575,66 @@ export default function PreconstructionQuotePage() {
           }
         }
 
-        const { data: quoteRows, error: quoteError } = await supabase
-          .from("project_quotes")
-          .select("*")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .order("updated_at", { ascending: false })
-          .limit(20);
-        if (quoteError) {
-          throw new Error(quoteError.message);
-        }
+        type QuoteRow = {
+          id: string;
+          status: QuoteStatus;
+          quote_title: string;
+          quote_number: string;
+          client_name: string | null;
+          company_name: string | null;
+          contact_person: string | null;
+          client_email: string | null;
+          client_phone: string | null;
+          site_address: string | null;
+          project_name: string | null;
+          quote_date: string | null;
+          expiry_date: string | null;
+          optional_items_notes: string;
+          scope_exclusions: string;
+          assumptions: string;
+          scope_notes: string;
+          margin_percent: number | null;
+          discount_amount: number | null;
+          contingency_amount: number | null;
+          gst_percent: number | null;
+          validity_period: string | null;
+          payment_terms: string;
+          lead_time: string;
+          terms_inclusions: string;
+          terms_exclusions: string;
+          clarifications: string;
+          acceptance_notes: string;
+        };
 
-        let selectedQuote: (typeof quoteRows extends (infer U)[] ? U : never) | null = null;
-        if (!isNewQuoteRoute) {
-          if (routeQuoteId) {
-            selectedQuote = (quoteRows ?? []).find((row) => row.id === routeQuoteId) ?? null;
+        let selectedQuote: QuoteRow | null = null;
+        if (!isNewQuoteRoute && routeQuoteId) {
+          const { data: quoteById, error: quoteByIdError } = await supabase
+            .from("project_quotes")
+            .select("*")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("project_id", projectRow.id)
+            .eq("id", routeQuoteId)
+            .maybeSingle();
+
+          if (quoteByIdError) {
+            throw new Error(quoteByIdError.message);
           }
-          if (!selectedQuote) {
-            selectedQuote = (quoteRows ?? []).find((row) => row.status === "Sent") ?? (quoteRows ?? [])[0] ?? null;
+
+          selectedQuote = (quoteById as QuoteRow | null) ?? null;
+        } else if (!isNewQuoteRoute) {
+          const { data: quoteRows, error: quoteError } = await supabase
+            .from("project_quotes")
+            .select("*")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("project_id", projectRow.id)
+            .order("updated_at", { ascending: false })
+            .limit(20);
+
+          if (quoteError) {
+            throw new Error(quoteError.message);
           }
+
+          selectedQuote = ((quoteRows ?? []).find((row) => row.status === "Sent") ?? (quoteRows ?? [])[0] ?? null) as QuoteRow | null;
         }
 
         if (!selectedQuote || cancelled) {
@@ -579,9 +662,9 @@ export default function PreconstructionQuotePage() {
         setExpiryDate(selectedQuote.expiry_date ?? "");
         setIsEditing(false);
         setOptionalItemsNotes(selectedQuote.optional_items_notes);
-        setScopeExclusions(selectedQuote.scope_exclusions);
-        setAssumptions(selectedQuote.assumptions);
-        setScopeNotes(selectedQuote.scope_notes);
+        setScopeExclusions(selectedQuote.scope_exclusions || selectedQuote.terms_exclusions || "");
+        setAssumptions(selectedQuote.assumptions || "");
+        setScopeNotes(selectedQuote.scope_notes || selectedQuote.clarifications || "");
         setMarginPercent(String(selectedQuote.margin_percent ?? 0));
         setDiscountAmount(String(selectedQuote.discount_amount ?? 0));
         setContingencyAmount(String(selectedQuote.contingency_amount ?? 0));
@@ -590,8 +673,8 @@ export default function PreconstructionQuotePage() {
         setPaymentTerms(selectedQuote.payment_terms);
         setLeadTime(selectedQuote.lead_time);
         setTermsInclusions(selectedQuote.terms_inclusions);
-        setTermsExclusions(selectedQuote.terms_exclusions);
-        setClarifications(selectedQuote.clarifications);
+        setTermsExclusions(selectedQuote.terms_exclusions || selectedQuote.scope_exclusions || "");
+        setClarifications(selectedQuote.clarifications || selectedQuote.scope_notes || "");
         setAcceptanceNotes(selectedQuote.acceptance_notes);
 
         const { data: itemRows, error: itemsError } = await supabase
@@ -633,6 +716,75 @@ export default function PreconstructionQuotePage() {
       cancelled = true;
     };
   }, [isAuthLoading, isNewQuoteRoute, normalizeAllowedStatus, resolveNextQuoteNumber, routeProjectSlug, routeQuoteId, sessionOrganizationId, supabase, userId]);
+
+  useEffect(() => {
+    setHasLoadedScopeItems(false);
+    setScopeCostItems([]);
+    setSelectedScopeCostItemIds([]);
+    setIsLoadingScopeItems(false);
+  }, [dbProjectId, organizationId]);
+
+  useEffect(() => {
+    if (!isScopeImportOpen || hasLoadedScopeItems || !supabase || !organizationId || !dbProjectId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadScopeItems = async () => {
+      setIsLoadingScopeItems(true);
+
+      try {
+        const [scopeRunsResult, tradePacksResult] = await Promise.all([
+          supabase
+            .from("scope_runs")
+            .select("id, trade_pack_id, result_json, created_at")
+            .eq("organization_id", organizationId)
+            .eq("project_id", dbProjectId)
+            .eq("status", "complete")
+            .order("created_at", { ascending: false })
+            .limit(120),
+          supabase
+            .from("trade_packs")
+            .select("id, trade_label")
+            .eq("organization_id", organizationId)
+            .eq("project_id", dbProjectId),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!scopeRunsResult.error) {
+          const tradeLabelByTradePackId = new Map((tradePacksResult.data ?? []).map((row) => [row.id, row.trade_label]));
+          const normalizedItems = toScopeCostCategoryItems({
+            runs: (scopeRunsResult.data ?? []) as Array<{
+              id: string;
+              trade_pack_id: string;
+              result_json: Record<string, unknown>;
+              created_at: string;
+            }>,
+            tradeLabelByTradePackId,
+          });
+          setScopeCostItems(normalizedItems);
+        } else {
+          setScopeCostItems([]);
+        }
+
+        setHasLoadedScopeItems(true);
+      } finally {
+        if (!cancelled) {
+          setIsLoadingScopeItems(false);
+        }
+      }
+    };
+
+    void loadScopeItems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dbProjectId, hasLoadedScopeItems, isScopeImportOpen, organizationId, supabase]);
 
   const addLineItem = (isOptional = false) => {
     setLineItems((current) => [...current, makeDefaultLineItem(isOptional)]);
@@ -711,6 +863,11 @@ export default function PreconstructionQuotePage() {
       return;
     }
 
+    if (!termsInclusions.trim() || !scopeExclusions.trim()) {
+      setError("Please add at least one inclusion and one exclusion before saving.");
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     setSaveMessage(null);
@@ -733,9 +890,9 @@ export default function PreconstructionQuotePage() {
         expiry_date: expiryDate || null,
         status: quoteStatus,
         optional_items_notes: optionalItemsNotes,
-        scope_exclusions: scopeExclusions,
-        assumptions,
-        scope_notes: scopeNotes,
+        scope_exclusions: scopeExclusions.trim(),
+        assumptions: assumptions.trim(),
+        scope_notes: scopeNotes.trim() || clarifications.trim(),
         subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
         optional_subtotal: Number(pricingSummary.optionalSubtotal.toFixed(2)),
         margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
@@ -749,8 +906,8 @@ export default function PreconstructionQuotePage() {
         payment_terms: paymentTerms,
         lead_time: leadTime,
         terms_inclusions: termsInclusions,
-        terms_exclusions: termsExclusions,
-        clarifications,
+        terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
+        clarifications: clarifications.trim() || scopeNotes.trim(),
         acceptance_notes: acceptanceNotes,
       };
 
@@ -774,7 +931,6 @@ export default function PreconstructionQuotePage() {
         }
         resolvedQuoteId = data.id;
         setQuoteId(data.id);
-        router.replace(`/app/projects/${routeProjectSlug}/preconstruction/quote/${data.id}`);
       }
 
       const { error: deleteItemsError } = await supabase
@@ -810,7 +966,8 @@ export default function PreconstructionQuotePage() {
       if (quoteStatus === "Expired") {
         setSaveMessage("Quote marked as expired. Reprice required.");
       }
-      setIsEditing(false);
+      setIsEditing(true);
+      router.push(`/app/projects/${routeProjectSlug}/preconstruction/quote`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save quote.");
     } finally {
@@ -896,9 +1053,9 @@ export default function PreconstructionQuotePage() {
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
       : `<div class="logo-fallback">${escapeHtml(printableOrgName.slice(0, 2).toUpperCase())}</div>`;
     const optionalPricingRows = [
-      includeMarginInExport ? `<div class="row"><span class="k">Margin</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>` : "",
+      includeMarginInExport ? `<div class="row"><span class="k">Mark up</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>` : "",
       includeDiscountInExport ? `<div class="row"><span class="k">Discount</span><span class="v">-${toMoney(pricingSummary.discount)}</span></div>` : "",
-      includeContingencyInExport ? `<div class="row"><span class="k">Contingency</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>` : "",
+      includeContingencyInExport ? `<div class="row"><span class="k">P&G</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>` : "",
     ].join("");
 
     const html = `<!doctype html>
@@ -1153,149 +1310,122 @@ export default function PreconstructionQuotePage() {
     siteAddress,
   ]);
 
-  if (isLoadingQuote) {
-    return (
-      <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-4 sm:px-5">
-        <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Loading quote...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="w-full space-y-6">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-        >
-          <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Back to Quote Register
-          </Link>
-        </Button>
-      </div>
-
-      <Card className={`shadow-none ${shouldShowEditor ? "border-[#E6EAF0] bg-[#F8F9FC]" : "border-[#E6EAF0] bg-[#F8F9FC]"}`}>
-        <CardHeader className={`${shouldShowEditor ? "pb-5 pt-6" : "pb-4 pt-4"}`}>
-          <div className={`flex flex-wrap items-start justify-between ${shouldShowEditor ? "gap-4" : "gap-3"}`}>
-            <div>
-              <CardTitle className={`${shouldShowEditor ? "text-[26px] sm:text-[34px]" : "text-[24px] sm:text-[30px]"} font-semibold leading-none tracking-[-0.03em] text-[#0F172A]`}>
-                {shouldShowEditor ? `Quote - ${projectName || "Project Name"}` : quoteTitle || "Quote Overview"}
-              </CardTitle>
-              {!shouldShowEditor ? (
-                <div className={`${interMedium.className} mt-2 space-y-0.5 text-sm font-medium text-[#64748B]`}>
-                  <p className="text-[#4f5f77]">{companyName || "No company"}</p>
-                </div>
-              ) : (
-                <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>{companyName || "No company"}</p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {quoteId ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void deleteQuote()}
-                  disabled={isDeleting}
-                  className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
-                >
-                  <Trash2 className="mr-1.5 h-4 w-4" />
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </Button>
-              ) : null}
+    <div className={`${styles.scope} -mb-8 w-full space-y-6`} aria-busy={isLoadingQuote}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Quote</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsQuoteContentHidden((current) => !current)}
-                className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                aria-expanded={!isQuoteContentHidden}
-                aria-label={isQuoteContentHidden ? "Show quote content" : "Hide quote content"}
+                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
               >
-                {isQuoteContentHidden ? "Show" : "Hide"}
-                <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${isQuoteContentHidden ? "-rotate-90" : "rotate-0"}`} />
+                Actions
+                <ChevronDown className="ml-1 h-4 w-4" />
               </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              side="bottom"
+              sideOffset={8}
+              className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100 backdrop-blur-none`}
+            >
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote`}>
+                  Back to Quote Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
               {shouldShowEditor ? (
                 <>
-                  <select
-                    value={quoteStatus}
-                    onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}
-                    className={`${interMedium.className} h-10 rounded-[6px] border border-[#cfd7e4] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    type="button"
-                    onClick={saveQuote}
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void saveQuote();
+                    }}
                     disabled={isSaving}
-                    className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
                   >
                     {isSaving ? "Saving..." : "Save Quote"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={exportQuotePdf}
-                    disabled={isSaving}
-                    variant="outline"
-                    className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                  >
-                    Export PDF
-                  </Button>
+                  </DropdownMenuItem>
                 </>
               ) : (
-                <>
-                  <Button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    disabled={isSaving}
-                    variant="outline"
-                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                  >
-                    Edit Quote
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={exportQuotePdf}
-                    disabled={isSaving}
-                    variant="outline"
-                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                  >
-                    Export PDF
-                  </Button>
-                </>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setIsEditing(true);
+                  }}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                >
+                  Edit Quote
+                </DropdownMenuItem>
               )}
-            </div>
-          </div>
-          {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-          ) : null}
-          {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
-        </CardHeader>
-      </Card>
 
-      {isQuoteContentHidden ? null : shouldShowEditor ? (
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  exportQuotePdf();
+                }}
+                disabled={isSaving}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+              >
+                Export PDF
+              </DropdownMenuItem>
+
+              {quoteId ? (
+                <>
+                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void deleteQuote();
+                    }}
+                    disabled={isDeleting}
+                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </section>
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
+
+      {isQuoteContentHidden ? null : isHydratingExistingQuote ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 py-4 sm:px-5">
+          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-6 py-6">
+            <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Loading saved quote...</p>
+          </div>
+          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-6 py-6">
+            <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Loading pricing...</p>
+          </div>
+        </div>
+      ) : shouldShowEditor ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
+        <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
           <section className="border-b border-[#E8EDF5] pb-5">
             <button
               type="button"
               onClick={() => setIsQuoteDetailsOpen((current) => !current)}
               className="flex w-full items-center justify-between"
             >
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Quote Details</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Quote Details</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isQuoteDetailsOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isQuoteDetailsOpen ? (
               <div className="mt-4 space-y-5">
                 <div>
-                  <p className={`${interMedium.className} mb-3 text-sm font-semibold text-[#24324a]`}>Project & Quote</p>
                   <div className="space-y-3">
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1.5 md:col-span-2">
@@ -1348,14 +1478,14 @@ export default function PreconstructionQuotePage() {
               onClick={() => setIsLineItemsOpen((current) => !current)}
               className="flex w-full items-center justify-between"
             >
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Line Items</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isLineItemsOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isLineItemsOpen ? (
               <div className="mt-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addLineItem(false)} className={`${interMedium.className} h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}>
+                  <Button type="button" onClick={() => addLineItem(false)} className={`${interMedium.className} h-9 rounded-[6px] bg-[#0B2739] px-3 text-xs font-medium text-white hover:bg-[#0B2739]`}>
                     <Plus className="mr-1 h-4 w-4" />
                     Add Item
                   </Button>
@@ -1539,11 +1669,11 @@ export default function PreconstructionQuotePage() {
                 ) : null}
               </div>
 
-              <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
+              <div className="hidden rounded-[6px] border border-[#E5EAF2] bg-[#F6F7F9] overflow-visible md:block">
                 <div className="overflow-x-auto">
                   <div className="min-w-[640px]">
                     <div
-                      className={`${interMedium.className} grid items-center gap-2 bg-[#FAFBFD] px-3 py-2 text-left text-[11px] uppercase tracking-[0.08em] text-[#6E7F97]`}
+                      className={`${interMedium.className} grid items-center gap-2 bg-[#F6F7F9] px-3 py-2 text-left text-[11px] uppercase tracking-[0.08em] text-[#6E7F97]`}
                       style={{ gridTemplateColumns: OPTIONAL_LINE_GRID_TEMPLATE }}
                     >
                       <span>Optional Items</span>
@@ -1656,7 +1786,7 @@ export default function PreconstructionQuotePage() {
               onClick={() => setIsTermsOpen((current) => !current)}
               className="flex w-full items-center justify-between"
             >
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Terms & Clarifications</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Terms & Clarifications</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isTermsOpen ? "rotate-180" : ""}`} />
             </button>
             {isTermsOpen ? (
@@ -1678,16 +1808,32 @@ export default function PreconstructionQuotePage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Inclusions</label>
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Inclusions</label>
                   <textarea value={termsInclusions} onChange={(event) => setTermsInclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Exclusions</label>
-                  <textarea value={termsExclusions} onChange={(event) => setTermsExclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea
+                    value={scopeExclusions}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setScopeExclusions(value);
+                      setTermsExclusions(value);
+                    }}
+                    className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`}
+                  />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Clarifications</label>
-                  <textarea value={clarifications} onChange={(event) => setClarifications(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea
+                    value={clarifications}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setClarifications(value);
+                      setScopeNotes(value);
+                    }}
+                    className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`}
+                  />
                 </div>
                 <div className="space-y-1.5">
                     <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assumptions</label>
@@ -1700,14 +1846,14 @@ export default function PreconstructionQuotePage() {
         </div>
 
         <div className="xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
             <CardHeader className="pb-3 pt-5">
-              <CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Pricing Summary</CardTitle>
+              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 pb-5">
+            <CardContent className="space-y-3 bg-[#F6F7F9] pb-5">
               <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Margin (%)</label>
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Mark up (%)</label>
                   <Button
                     type="button"
                     variant="outline"
@@ -1751,7 +1897,7 @@ export default function PreconstructionQuotePage() {
               </div>
               <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Contingency</label>
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>P&G</label>
                   <Button
                     type="button"
                     variant="outline"
@@ -1780,23 +1926,23 @@ export default function PreconstructionQuotePage() {
 
               <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Margin</span><span>{toMoney(pricingSummary.margin)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span>-{toMoney(pricingSummary.discount)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Contingency</span><span>{toMoney(pricingSummary.contingency)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span>{toMoney(pricingSummary.contingency)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">GST</span><span>{toMoney(pricingSummary.gst)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Optional Items</span><span>{toMoney(pricingSummary.optionalSubtotal)}</span></p>
               </div>
 
-              <div className="rounded-[6px] bg-[#04234D] px-4 py-3 text-white">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.08em] text-white/70`}>Total Quote Price</p>
-                <p className="mt-1 text-[32px] font-semibold leading-none">{toMoney(pricingSummary.grandTotal)}</p>
+              <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
+                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Quote Price</p>
+                <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveQuote} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[6px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
+                <Button type="button" onClick={saveQuote} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Quote"}
                 </Button>
-                <Button type="button" onClick={exportQuotePdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>
+                <Button type="button" onClick={exportQuotePdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>
                   Export PDF
                 </Button>
               </div>

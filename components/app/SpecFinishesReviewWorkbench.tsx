@@ -92,6 +92,7 @@ interface SpecFinishesReviewWorkbenchProps {
   projectId: string;
   organizationId: string;
   initialStoredRuns: SpecFinishesStoredRun[];
+  projectDashboardHref?: string;
 }
 
 const MIN_PREFILTER_SCORE_FOR_VLM = 7;
@@ -188,7 +189,8 @@ function downloadTextFile(fileName: string, content: string): void {
 }
 
 function downloadPdf(bytes: Uint8Array, fileName: string): void {
-  const blob = new Blob([bytes], { type: "application/pdf" });
+  const safeBytes = Uint8Array.from(bytes);
+  const blob = new Blob([safeBytes], { type: "application/pdf" });
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
@@ -223,6 +225,7 @@ export function SpecFinishesReviewWorkbench({
   projectId,
   organizationId,
   initialStoredRuns,
+  projectDashboardHref,
 }: SpecFinishesReviewWorkbenchProps) {
   const [selectedTradeId, setSelectedTradeId] = useState<string>(SPEC_FINISHES_TRADES[0]?.id ?? "");
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
@@ -242,6 +245,9 @@ export function SpecFinishesReviewWorkbench({
   );
 
   const activeResult = runResult?.result ?? selectedStoredRun?.result ?? null;
+  const isProjectSpecReviewPage = Boolean(projectDashboardHref);
+  const projectCardClassName =
+    "rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8";
   const activeMeta = runResult
     ? { fileName: runResult.fileName, generatedAt: runResult.generatedAt }
     : selectedStoredRun
@@ -409,8 +415,9 @@ export function SpecFinishesReviewWorkbench({
       downloadPdf(extractedBytes, extractedFileName);
 
       setStatus("Sending extracted pages to AI...");
+      const extractedBytesSafe = Uint8Array.from(extractedBytes);
       const extractedFile = new File([
-        new Blob([extractedBytes], { type: "application/pdf" }),
+        new Blob([extractedBytesSafe], { type: "application/pdf" }),
       ], extractedFileName, {
         type: "application/pdf",
       });
@@ -481,127 +488,102 @@ export function SpecFinishesReviewWorkbench({
     downloadTextFile(`${base}-spec-finishes-review.md`, markdown);
   };
 
-  const nowLabel = new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).format(new Date());
-
   return (
-    <div className={`${styles.scope} space-y-6 pb-8`}>
+    <div className={`${styles.scope} -mb-8 space-y-6`}>
       <section className={styles.heroBlock}>
         <div>
           <h1 className={styles.heroTitle}>Specification Review</h1>
           <p className={`${interMedium.className} ${styles.heroSummary}`}>
-            Select a trade heading, upload a specification PDF, and generate a structured finishes summary.
+            Select a trade, upload a specification PDF, and generate a trade specific review
           </p>
         </div>
-        <div className={styles.heroActions}>
-          <p className={`${interMedium.className} ${styles.heroDate}`}>{nowLabel}</p>
-          <Button
-            type="button"
-            onClick={runReview}
-            disabled={!selectedPdfFile || isRunning}
-            className={`${interMedium.className} ${styles.heroPrimaryButton}`}
-          >
-            {isRunning ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Running...
-              </>
-            ) : (
-              "Run Review"
-            )}
-          </Button>
-        </div>
+        <div className={styles.heroActions} />
       </section>
 
-      <Card className={styles.card}>
-        <CardContent className="space-y-5 p-5">
-          <div className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Review Controls</CardTitle>
+      <Card className={`${styles.card} ${isProjectSpecReviewPage ? projectCardClassName : "bg-[#F6F7F9]"}`}>
+        <CardContent className={`${isProjectSpecReviewPage ? "space-y-0 p-0" : "space-y-5 bg-[#F6F7F9] p-5"}`}>
+          <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
+            <CardTitle className={styles.sectionTitle}>Generate Specification Review</CardTitle>
+            <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
+              <Button
+                type="button"
+                onClick={runReview}
+                disabled={!selectedPdfFile || isRunning}
+                className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+              >
+                {isRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Running...
+                  </>
+                ) : (
+                  "Run Review"
+                )}
+              </Button>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <label className={styles.metricLabel}>Trade Heading</label>
-            <select
-              value={selectedTradeId}
-              onChange={(event) => setSelectedTradeId(event.target.value)}
-              className={`${styles.fieldSelect} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
-            >
-              {SPEC_FINISHES_TRADES.map((trade) => (
-                <option key={trade.id} value={trade.id}>
-                  {trade.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
-              <label className={styles.metricLabel}>Select PDF</label>
+              <label className={styles.metricLabel}>Source PDF</label>
               <label className={`${styles.fieldBox} inline-flex w-full cursor-pointer justify-between text-sm text-[#334155]`}>
-                <span className="truncate">{selectedPdfFile ? selectedPdfFile.name : "Choose PDF file"}</span>
-                <span className="ml-3 inline-flex items-center gap-2 text-[#61748F]">
+                <span className="truncate">{selectedPdfFile ? selectedPdfFile.name : "No source PDF selected"}</span>
+                <span className="ml-3 inline-flex h-8 shrink-0 items-center gap-2 rounded-[999px] bg-[#0B2739] px-3 text-xs font-medium text-white">
                   <FileText className="h-4 w-4" />
-                  Browse
+                  Select PDF
                 </span>
                 <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={onPdfChange} />
               </label>
             </div>
 
-            <Button
-              type="button"
-              onClick={runReview}
-              disabled={!selectedPdfFile || isRunning}
-              className={`${styles.controlButton} h-11 px-5 text-sm`}
-            >
-              {isRunning ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Running...
-                </>
-              ) : (
-                "Run Review"
-              )}
-            </Button>
-          </div>
-
-          {storedRuns.length > 0 ? (
             <div className="space-y-2">
-              <label className={styles.metricLabel}>Stored Runs</label>
+              <label className={styles.metricLabel}>Trade Heading</label>
               <select
-                value={selectedStoredRunId}
-                onChange={(event) => {
-                  const runId = event.target.value;
-                  setSelectedStoredRunId(runId);
-                  const run = storedRuns.find((entry) => entry.id === runId);
-                  if (run?.tradeId) {
-                    setSelectedTradeId(run.tradeId);
-                  }
-                  setRunResult(null);
-                }}
-                className={`${styles.fieldSelect} h-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
+                value={selectedTradeId}
+                onChange={(event) => setSelectedTradeId(event.target.value)}
+                className={`${styles.fieldSelect} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
               >
-                <option value="">Select stored run...</option>
-                {storedRuns.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {run.tradeLabel} - {run.sourceDocumentName} ({toDateTimeLabel(run.generatedAt)})
+                {SPEC_FINISHES_TRADES.map((trade) => (
+                  <option key={trade.id} value={trade.id}>
+                    {trade.label}
                   </option>
                 ))}
               </select>
             </div>
-          ) : null}
+          </div>
 
           {status ? <p className="text-sm text-[#2B6A3F]">{status}</p> : null}
           {error ? <p className="whitespace-pre-wrap text-sm text-[#C2410C]">{error}</p> : null}
         </CardContent>
       </Card>
+
+      {storedRuns.length > 0 ? (
+        <Card className={`${styles.card} ${isProjectSpecReviewPage ? projectCardClassName : "p-5"}`}>
+          <CardContent className={isProjectSpecReviewPage ? "space-y-2 p-0" : "space-y-2 p-0"}>
+            <CardTitle className={styles.sectionTitle}>Stored Reviews</CardTitle>
+            <select
+              value={selectedStoredRunId}
+              onChange={(event) => {
+                const runId = event.target.value;
+                setSelectedStoredRunId(runId);
+                const run = storedRuns.find((entry) => entry.id === runId);
+                if (run?.tradeId) {
+                  setSelectedTradeId(run.tradeId);
+                }
+                setRunResult(null);
+              }}
+              className={`${styles.fieldSelect} h-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/35`}
+            >
+              <option value="">Select stored run...</option>
+              {storedRuns.map((run) => (
+                <option key={run.id} value={run.id}>
+                  {run.tradeLabel} - {run.sourceDocumentName} ({toDateTimeLabel(run.generatedAt)})
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {reasons.length > 0 ? (
         <Card className={styles.card}>
@@ -649,17 +631,8 @@ export function SpecFinishesReviewWorkbench({
             <StructuredSection title="Risks & Clarifications Required" items={activeResult.risksClarificationsRequired} />
           </CardContent>
         </Card>
-      ) : (
-        <Card className={styles.card}>
-          <CardContent className="p-5 text-sm text-[#61748F]">
-            Select a trade heading, upload a PDF, and run the review to generate a structured summary.
-          </CardContent>
-        </Card>
-      )}
+      ) : null}
 
-      <p className="text-xs text-[#7B8EA8]">
-        For guidance only. Verify against full specifications, consultant documentation, and tender addenda.
-      </p>
     </div>
   );
 }

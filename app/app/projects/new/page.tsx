@@ -121,7 +121,10 @@ export default function CreateProjectPage() {
           return;
         }
 
-        const resolvedClients = clientRows ?? [];
+        const resolvedClients = (clientRows ?? []).map((clientRow) => ({
+          ...clientRow,
+          tags: [],
+        }));
         setClients(resolvedClients);
         setSelectedClientId(resolvedClients.length > 0 ? "" : NEW_CLIENT_OPTION);
       } finally {

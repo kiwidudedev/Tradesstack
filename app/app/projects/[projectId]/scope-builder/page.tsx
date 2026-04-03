@@ -291,9 +291,9 @@ export default async function ProjectScopeBuilderPage({
 
   return (
     <ScopeBuilderWorkbench
-      projectSlug={project.slug}
       projectId={project.id}
       organizationId={project.organization_id}
+      projectDashboardHref={`/app/projects/${project.slug}/dashboard`}
       initialTradeId={readSearchParam(query.tradeId)}
       initialStoragePath={readSearchParam(query.storagePath)}
       initialFileName={readSearchParam(query.fileName)}

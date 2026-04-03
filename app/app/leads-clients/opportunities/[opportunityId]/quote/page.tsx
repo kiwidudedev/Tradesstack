@@ -428,7 +428,10 @@ export default function PreconstructionQuotePage() {
           .maybeSingle();
 
         if (!withCodeResult.error && withCodeResult.data) {
-          opportunityRow = withCodeResult.data as typeof opportunityRow;
+          opportunityRow = {
+            ...withCodeResult.data,
+            opportunity_code: withCodeResult.data.opportunity_code ?? null,
+          };
         } else {
           const fallbackResult = await supabase
             .from("organization_opportunities")

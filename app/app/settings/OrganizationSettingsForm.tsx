@@ -73,11 +73,11 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
     setMessage(null);
 
     const { error: updateError } = await supabase
-      .rpc("update_organization_settings", {
+      .rpc("update_organization_settings" as never, {
         p_organization_id: props.organizationId,
         p_name: trimmedName,
         p_logo_path: null,
-      });
+      } as never);
 
     if (updateError) {
       setError(toSettingsErrorMessage(updateError));
@@ -128,11 +128,11 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
     }
 
     const { error: updateError } = await supabase
-      .rpc("update_organization_settings", {
+      .rpc("update_organization_settings" as never, {
         p_organization_id: props.organizationId,
         p_name: null,
         p_logo_path: nextPath,
-      });
+      } as never);
 
     if (updateError) {
       setError(toSettingsErrorMessage(updateError));

@@ -304,7 +304,6 @@ export default async function OpportunityScopeBuilderPage({
         Back to Lead Dashboard
       </Link>
       <ScopeBuilderWorkbench
-        projectSlug={project.slug}
         projectId={project.id}
         organizationId={project.organization_id}
         initialTradeId={readSearchParam(query.tradeId)}

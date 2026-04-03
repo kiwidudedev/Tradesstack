@@ -186,6 +186,7 @@ export default async function ProjectSpecFinishesReviewPage({
     <SpecFinishesReviewWorkbench
       projectId={project.id}
       organizationId={project.organization_id}
+      projectDashboardHref={`/app/projects/${project.slug}/dashboard`}
       initialStoredRuns={initialStoredRuns}
     />
   );

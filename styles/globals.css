@@ -133,6 +133,18 @@ h2 {
   border-radius: var(--radius-md);
 }
 
+/* Global button typography */
+button,
+.ui-button {
+  font-family: var(--font-inter-medium), Arial, sans-serif !important;
+}
+
+/* Keep nav bars on their existing typography */
+.marketing-navbar button,
+.marketing-navbar .ui-button {
+  font-family: inherit !important;
+}
+
 @media (min-width: 640px) {
   .page-subtitle {
     font-size: 1rem;

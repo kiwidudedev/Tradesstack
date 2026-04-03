@@ -1,16 +1,12 @@
-import Link from "next/link";
 import { Suspense } from "react";
-import { AuthPanel } from "@/components/auth/AuthPanel";
+import { LoginShowcasePanel } from "@/components/auth/LoginShowcasePanel";
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen bg-[#04234D] px-4 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
-      <div className="mx-auto w-full max-w-6xl">
-        <Link href="/" className="inline-flex pb-6 text-lg font-semibold text-white/90 hover:text-white">
-          Back to home
-        </Link>
+    <main className="flex min-h-screen items-center justify-center bg-[#F4EFE6] px-4 py-6 sm:px-8 sm:py-8 lg:px-12 lg:py-0">
+      <div className="mx-auto w-full max-w-[1320px]">
         <Suspense fallback={null}>
-          <AuthPanel mode="login" />
+          <LoginShowcasePanel closeHref="/" />
         </Suspense>
       </div>
     </main>

@@ -66,7 +66,7 @@ export default async function NewClientPage() {
       .filter((tag): tag is (typeof PROFILE_TAGS)[number] => PROFILE_TAGS.includes(tag as (typeof PROFILE_TAGS)[number]));
 
     const customTag = String(formData.get("customTag") ?? "").trim();
-    const tags = profileTags.filter((tag) => tag !== "Custom");
+    const tags: string[] = profileTags.filter((tag) => tag !== "Custom");
 
     if (profileTags.includes("Custom") && customTag) {
       tags.push(customTag);

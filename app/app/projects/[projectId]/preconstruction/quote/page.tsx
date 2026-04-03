@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Clock3, FileText, Plus, Send } from "lucide-react";
+import { useParams } from "next/navigation";
+import { ChevronDown, ExternalLink, PenLine, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 interface QuoteRegisterRow {
   id: string;
@@ -20,6 +21,12 @@ interface QuoteRegisterRow {
   expiry_date: string | null;
   total_quote_price: number;
   updated_at: string;
+  terms_inclusions: string | null;
+  terms_exclusions: string | null;
+  assumptions: string | null;
+  clarifications: string | null;
+  scope_exclusions: string | null;
+  scope_notes: string | null;
 }
 
 function toMoney(value: number) {
@@ -28,6 +35,17 @@ function toMoney(value: number) {
     currency: "NZD",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function toAccountingMoney(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+    currencySign: "accounting",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safeValue);
 }
 
 function toDayMonthYearLabel(value: string | null) {
@@ -52,6 +70,35 @@ function toDayMonthYearLabel(value: string | null) {
   });
 }
 
+function toDayShortMonthYearLabel(value: string | null) {
+  if (!value) {
+    return "—";
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-");
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("en-NZ", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "—";
+  }
+
+  return parsed.toLocaleDateString("en-NZ", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function getRevision(quoteNumber: string) {
   const match = quoteNumber.match(/-(\d+)$/);
   if (!match) {
@@ -60,55 +107,39 @@ function getRevision(quoteNumber: string) {
   return `Rev ${match[1]}`;
 }
 
-function toRegisterStatus(status: QuoteStatus): string {
-  switch (status) {
-    case "Draft":
-      return "Draft";
-    case "Ready to Send":
-    case "Viewed":
-      return "In Review";
-    case "Sent":
-      return "Sent";
-    case "Accepted":
-      return "Accepted";
-    case "Rejected":
-      return "Declined";
-    case "Expired":
-      return "Expired";
-    default:
-      return status;
-  }
+function toHistoryStatusLabel(isCurrent: boolean) {
+  return isCurrent ? "Accepted" : "Superseded";
 }
 
-function statusClassName(status: string) {
-  switch (status) {
-    case "Accepted":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "Declined":
-      return "bg-rose-100 text-rose-800 border-rose-200";
-    case "Sent":
-      return "bg-amber-100 text-amber-800 border-amber-200";
-    case "Expired":
-      return "bg-amber-100 text-amber-800 border-amber-200";
-    case "In Review":
-      return "bg-violet-100 text-violet-800 border-violet-200";
-    default:
-      return "bg-slate-100 text-slate-700 border-slate-200";
+function historyStatusClassName(isCurrent: boolean) {
+  return isCurrent
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : "border-[#D9DEE5] bg-[#F3F4F6] text-[#6b7280]";
+}
+
+function toLines(value: string | null | undefined) {
+  if (!value) {
+    return [];
   }
+
+  return value
+    .split(/\r?\n|[;]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 export default function ProjectQuoteRegisterPage() {
   const params = useParams<{ projectId: string }>();
   const routeProjectSlug = params?.projectId;
-  const router = useRouter();
   const { session } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
 
-  const [projectName, setProjectName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quoteRows, setQuoteRows] = useState<QuoteRegisterRow[]>([]);
+  const [isQuoteHistoryOpen, setIsQuoteHistoryOpen] = useState(false);
+  const [isDeletingSummaryQuote, setIsDeletingSummaryQuote] = useState(false);
 
   const supabase = useMemo(() => {
     try {
@@ -165,7 +196,7 @@ export default function ProjectQuoteRegisterPage() {
 
         const { data: quotes, error: quotesError } = await supabase
           .from("project_quotes")
-          .select("id, quote_number, quote_title, status, quote_date, expiry_date, total_quote_price, updated_at")
+          .select("id, quote_number, quote_title, status, quote_date, expiry_date, total_quote_price, updated_at, terms_inclusions, terms_exclusions, assumptions, clarifications, scope_exclusions, scope_notes")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
           .order("updated_at", { ascending: false });
@@ -178,7 +209,6 @@ export default function ProjectQuoteRegisterPage() {
           return;
         }
 
-        setProjectName(projectRow.name || "");
         setQuoteRows((quotes ?? []) as QuoteRegisterRow[]);
       } catch (loadError) {
         if (!cancelled) {
@@ -198,170 +228,303 @@ export default function ProjectQuoteRegisterPage() {
     };
   }, [routeProjectSlug, sessionOrganizationId, supabase, userId]);
 
-  const summary = useMemo(() => {
-    const totalQuotes = quoteRows.length;
-    const draftValue = quoteRows
-      .filter((row) => {
-        const status = toRegisterStatus(row.status);
-        return status === "Draft" || status === "In Review";
-      })
-      .reduce((sum, row) => sum + (row.total_quote_price ?? 0), 0);
-    const sentValue = quoteRows
-      .filter((row) => toRegisterStatus(row.status) === "Sent")
-      .reduce((sum, row) => sum + (row.total_quote_price ?? 0), 0);
-    const acceptedValue = quoteRows
-      .filter((row) => toRegisterStatus(row.status) === "Accepted")
-      .reduce((sum, row) => sum + (row.total_quote_price ?? 0), 0);
+  const acceptedQuote = quoteRows.find((row) => row.status === "Accepted") ?? null;
+  const summaryQuote = acceptedQuote ?? quoteRows[0] ?? null;
+  const includedLines = toLines(summaryQuote?.terms_inclusions);
+  const excludedLines = toLines(summaryQuote?.scope_exclusions || summaryQuote?.terms_exclusions);
+  const assumptionLines = toLines(summaryQuote?.assumptions);
+  const keyNotesLines = toLines(summaryQuote?.scope_notes ?? summaryQuote?.clarifications);
 
-    return {
-      totalQuotes,
-      draftValue,
-      sentValue,
-      acceptedValue,
-    };
-  }, [quoteRows]);
+  async function handleDeleteSummaryQuote() {
+    if (!summaryQuote || !supabase || isDeletingSummaryQuote) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(`Delete quote ${summaryQuote.quote_number}? This cannot be undone.`);
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeletingSummaryQuote(true);
+    setError(null);
+
+    try {
+      const { error: deleteItemsError } = await supabase
+        .from("project_quote_line_items")
+        .delete()
+        .eq("quote_id", summaryQuote.id);
+
+      if (deleteItemsError) {
+        throw new Error(deleteItemsError.message);
+      }
+
+      const { error: deleteQuoteError } = await supabase
+        .from("project_quotes")
+        .delete()
+        .eq("id", summaryQuote.id);
+
+      if (deleteQuoteError) {
+        throw new Error(deleteQuoteError.message);
+      }
+
+      setQuoteRows((currentRows) => currentRows.filter((row) => row.id !== summaryQuote.id));
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete quote.");
+    } finally {
+      setIsDeletingSummaryQuote(false);
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-        >
-          <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Back to Dashboard
-          </Link>
-        </Button>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-5 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Quote Register</h1>
-              <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-                Create, track, revise, send, and approve project quotes in one place{projectName ? ` for ${projectName}` : ""}.
-              </p>
-            </div>
-            <Button asChild className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}>
-              <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/new`}>
-                <Plus className="mr-1.5 h-4 w-4" />
-                New Quote
-              </Link>
-            </Button>
-          </div>
-          {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+    <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Quotation</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Baseline pricing agreed for this job
+          </p>
+        </div>
+        <div className={styles.heroActions}>
+          {summaryQuote ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                  aria-label="Quote actions"
+                >
+                  Actions
+                  <ChevronDown className="ml-1 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side="top"
+                align="end"
+                sideOffset={8}
+                className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}
+              >
+                <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
+                    <PenLine className="mr-2 h-4 w-4" />
+                    Edit
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    void handleDeleteSummaryQuote();
+                  }}
+                  disabled={isDeletingSummaryQuote}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {isDeletingSummaryQuote ? "Deleting..." : "Delete"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
-        </CardHeader>
-      </Card>
+        </div>
+      </section>
 
-      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
-        <div className="flex min-w-[900px] divide-x divide-[#E3E8F0]">
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <FileText className="h-5 w-5 text-[#334155]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Total Quotes</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.totalQuotes}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Clock3 className="h-5 w-5 text-[#B45309]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Draft Value</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.draftValue)}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Send className="h-5 w-5 text-[#1D4ED8]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Sent Value</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.sentValue)}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Accepted Value</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.acceptedValue)}</p>
-            </div>
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+
+      <section
+        className="overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6"
+      >
+        <div className="bg-[#F3F4F6]">
+          <div className="space-y-6">
+            {isLoading ? (
+              <p className={`${interMedium.className} py-8 text-sm font-medium text-[#6b6b6b]`}>Loading quote register...</p>
+            ) : (
+              <>
+                {summaryQuote ? (
+                  <div className="py-1">
+                    <div className="grid gap-6 md:grid-cols-[1.45fr_1fr] md:items-end">
+                      <div className="min-w-0 space-y-3">
+                        <p className="truncate text-[30px] font-semibold leading-[1.04] tracking-[-0.02em] text-[#1d2433]">
+                          {summaryQuote.quote_title || "Untitled quote"}
+                        </p>
+                        <div className={`${interMedium.className} space-y-0.5 text-sm text-[#64748B]`}>
+                          <p>{summaryQuote.quote_number} · {getRevision(summaryQuote.quote_number)}</p>
+                          <p>Accepted {toDayShortMonthYearLabel(summaryQuote.quote_date || summaryQuote.updated_at)} · {session?.name || "—"}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-start gap-2 md:items-end">
+                        <p className="text-[36px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">
+                          {toAccountingMoney(summaryQuote.total_quote_price ?? 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`${styles.cardMuted} ${styles.producedRowProjectTone} px-5 py-6 text-center`}>
+                    <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
+                      No accepted quote yet — create or link one to start tracking this job
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Scope Summary</h3>
+                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                      <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-emerald-700`}>Included</p>
+                      <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
+                        {includedLines.length > 0 ? (
+                          includedLines.map((line) => <li key={`include-${line}`}>{line}</li>)
+                        ) : (
+                          <li className="text-[#64748B]">No inclusions captured in this quote.</li>
+                        )}
+                      </ul>
+                    </div>
+                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                      <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-rose-700`}>Excluded</p>
+                      <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
+                        {excludedLines.length > 0 ? (
+                          excludedLines.map((line) => <li key={`exclude-${line}`}>{line}</li>)
+                        ) : (
+                          <li className="text-[#64748B]">No exclusions captured in this quote.</li>
+                        )}
+                      </ul>
+                    </div>
+                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                      <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-amber-700`}>Assumptions</p>
+                      <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
+                        {assumptionLines.length > 0 ? (
+                          assumptionLines.map((line) => <li key={`assumption-${line}`}>{line}</li>)
+                        ) : (
+                          <li className="text-[#64748B]">No assumptions captured in this quote.</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Key Notes / Qualifications</h3>
+                  <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                    {keyNotesLines.length > 0 ? (
+                      <ul className={`${interMedium.className} space-y-1 text-sm text-[#334155]`}>
+                        {keyNotesLines.map((line) => <li key={`note-${line}`}>{line}</li>)}
+                      </ul>
+                    ) : (
+                      <p className={`${interMedium.className} text-sm text-[#64748B]`}>
+                        No key notes captured in this quote.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Quote History</h3>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsQuoteHistoryOpen((current) => !current)}
+                      className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                      aria-expanded={isQuoteHistoryOpen}
+                      aria-controls="quote-history-table"
+                    >
+                      {isQuoteHistoryOpen ? "Hide" : "Show"}
+                      <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${isQuoteHistoryOpen ? "rotate-180" : "rotate-0"}`} />
+                    </Button>
+                  </div>
+                  {isQuoteHistoryOpen ? (
+                    <div id="quote-history-table" className="overflow-x-auto rounded-[12px] border border-[#D9DEE5] bg-[#F6F7F9]">
+                      <table className="min-w-full border-collapse">
+                        <thead>
+                          <tr className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#6b6b6b]`}>
+                            <th className="px-4 py-3 text-left">Quote #</th>
+                            <th className="px-4 py-3 text-left">Revision</th>
+                            <th className="px-4 py-3 text-left">Status</th>
+                            <th className="px-4 py-3 text-left">Date</th>
+                            <th className="px-4 py-3 text-right">Value</th>
+                            <th className="px-4 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {quoteRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className={`${interMedium.className} px-4 py-6 text-center text-sm text-[#6b6b6b]`}>
+                                No quote revisions yet.
+                              </td>
+                            </tr>
+                          ) : quoteRows.map((row) => {
+                            const isCurrent = acceptedQuote?.id === row.id;
+
+                            return (
+                              <tr
+                                key={row.id}
+                                className="border-t border-[#D9DEE5] bg-[#F3F4F6] transition-colors"
+                              >
+                                <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
+                                  {row.quote_number}
+                                </td>
+                                <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
+                                  {getRevision(row.quote_number)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex rounded-[8px] border px-2.5 py-0.5 text-xs font-semibold ${historyStatusClassName(isCurrent)}`}>
+                                    {toHistoryStatusLabel(isCurrent)}
+                                  </span>
+                                </td>
+                                <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
+                                  {toDayMonthYearLabel(row.quote_date || row.updated_at)}
+                                </td>
+                                <td className="px-4 py-3 text-right text-sm font-semibold text-[#1d1d1d]">
+                                  {toMoney(row.total_quote_price ?? 0)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button
+                                      asChild
+                                      variant="outline"
+                                      className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                                    >
+                                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${row.id}?mode=edit`}>
+                                        View
+                                      </Link>
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="space-y-3">
+                  <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Linked Workflows</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
+                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>View Variations</Link>
+                    </Button>
+                    <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
+                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>View Claims</Link>
+                    </Button>
+                    <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
+                      <Link href={`/app/projects/${routeProjectSlug}/scope-builder`}>View Scope</Link>
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-2 pt-5">
-          <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Quote Register</h2>
-        </CardHeader>
-        <CardContent className="pb-5">
-          {isLoading ? (
-            <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading quote register...</p>
-          ) : quoteRows.length === 0 ? (
-            <div className="rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
-              <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No quotes yet for this project.</p>
-              <Button asChild className={`${interMedium.className} mt-3 h-9 rounded-[6px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]`}>
-                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/new`}>
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  Create First Quote
-                </Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-[6px] border border-[#E8EDF5]">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
-                    <th className="px-3 py-2 text-left">Quote #</th>
-                    <th className="px-3 py-2 text-left">Quote Name</th>
-                    <th className="px-3 py-2 text-left">Revision</th>
-                    <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-left">Issued</th>
-                    <th className="px-3 py-2 text-left">Expiry</th>
-                    <th className="px-3 py-2 text-right">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quoteRows.map((row) => {
-                    const registerStatus = toRegisterStatus(row.status);
-
-                    return (
-                      <tr
-                        key={row.id}
-                        onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/quote/${row.id}`)}
-                        className="cursor-pointer border-t border-[#EEF2F7] transition-colors hover:bg-[#F8FBFF]"
-                      >
-                        <td className="px-3 py-2.5 text-sm font-semibold text-[#0F172A]">
-                          <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${row.id}`} className="hover:underline">
-                            {row.quote_number}
-                          </Link>
-                        </td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#1F2E45]`}>{row.quote_title || "Untitled quote"}</td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{getRevision(row.quote_number)}</td>
-                        <td className="px-3 py-2.5">
-                          <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(registerStatus)}`}>
-                            {registerStatus}
-                          </span>
-                        </td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{toDayMonthYearLabel(row.quote_date)}</td>
-                        <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>{toDayMonthYearLabel(row.expiry_date)}</td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center justify-end">
-                            <span className="text-right text-sm font-semibold text-[#0F172A]">{toMoney(row.total_quote_price ?? 0)}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      </section>
     </div>
   );
 }

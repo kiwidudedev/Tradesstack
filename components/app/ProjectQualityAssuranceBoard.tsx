@@ -1096,22 +1096,29 @@ export function ProjectQualityAssuranceBoard() {
       }
 
       const normalizedIssues: QaIssue[] = ((issuesResult.data ?? []) as Array<Record<string, unknown>>)
-        .map((row) => ({
-          id: String(row.id),
-          title: String(row.title ?? ""),
-          description: String(row.description ?? ""),
-          trade: String(row.trade ?? ""),
-          location: String(row.location ?? ""),
-          priority:
-            row.priority === "Low" || row.priority === "High" || row.priority === "Medium"
-              ? row.priority
-              : "Medium",
-          status: (row.status as IssueStatus) ?? "Open",
-          dueDate: typeof row.due_date === "string" ? row.due_date : null,
-          assignee: String(row.assignee_name ?? ""),
-          assigneeUserId: typeof row.assignee_user_id === "string" ? row.assignee_user_id : null,
-          updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString(),
-        }))
+        .map((row) => {
+          const priority: QaIssue["priority"] =
+            row.priority === "Low"
+              ? "Low"
+              : row.priority === "High"
+                ? "High"
+                : row.priority === "Medium"
+                  ? "Medium"
+                  : "Medium";
+          return {
+            id: String(row.id),
+            title: String(row.title ?? ""),
+            description: String(row.description ?? ""),
+            trade: String(row.trade ?? ""),
+            location: String(row.location ?? ""),
+            priority,
+            status: (row.status as IssueStatus) ?? "Open",
+            dueDate: typeof row.due_date === "string" ? row.due_date : null,
+            assignee: String(row.assignee_name ?? ""),
+            assigneeUserId: typeof row.assignee_user_id === "string" ? row.assignee_user_id : null,
+            updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString(),
+          };
+        })
         .filter((row) => !isLegacySeedIssueTitle(row.title));
 
       const normalizedInspections: InspectionGroup[] = ((inspectionsResult.data ?? []) as Array<Record<string, unknown>>)
@@ -1141,26 +1148,33 @@ export function ProjectQualityAssuranceBoard() {
         .filter((row) => !isLegacySeedInspectionTitle(row.title));
 
       const normalizedSignOffs: SignOffItem[] = ((signOffsResult.data ?? []) as Array<Record<string, unknown>>)
-        .map((row) => ({
-          id: String(row.id),
-          title: String(row.title ?? ""),
-          type:
-            row.signoff_type === "Client" || row.signoff_type === "Council" || row.signoff_type === "Final Handover"
-              ? row.signoff_type
-              : "Internal",
-          trade: String(row.trade ?? ""),
-          location: String(row.location ?? ""),
-          assignee: String(row.assignee_name ?? ""),
-          assigneeUserId: typeof row.assignee_user_id === "string" ? row.assignee_user_id : null,
-          dueDate: typeof row.due_date === "string" ? row.due_date : null,
-          linkedInspectionId: typeof row.linked_inspection_id === "string" ? row.linked_inspection_id : null,
-          linkedIssueId: typeof row.linked_issue_id === "string" ? row.linked_issue_id : null,
-          note: String(row.note ?? ""),
-          status: (row.status as SignOffStatus) ?? "Pending",
-          signedBy: typeof row.signed_by_name === "string" ? row.signed_by_name : null,
-          signedAt: typeof row.signed_at === "string" ? row.signed_at : null,
-          createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
-        }))
+        .map((row) => {
+          const type: SignOffItem["type"] =
+            row.signoff_type === "Client"
+              ? "Client"
+              : row.signoff_type === "Council"
+                ? "Council"
+                : row.signoff_type === "Final Handover"
+                  ? "Final Handover"
+                  : "Internal";
+          return {
+            id: String(row.id),
+            title: String(row.title ?? ""),
+            type,
+            trade: String(row.trade ?? ""),
+            location: String(row.location ?? ""),
+            assignee: String(row.assignee_name ?? ""),
+            assigneeUserId: typeof row.assignee_user_id === "string" ? row.assignee_user_id : null,
+            dueDate: typeof row.due_date === "string" ? row.due_date : null,
+            linkedInspectionId: typeof row.linked_inspection_id === "string" ? row.linked_inspection_id : null,
+            linkedIssueId: typeof row.linked_issue_id === "string" ? row.linked_issue_id : null,
+            note: String(row.note ?? ""),
+            status: (row.status as SignOffStatus) ?? "Pending",
+            signedBy: typeof row.signed_by_name === "string" ? row.signed_by_name : null,
+            signedAt: typeof row.signed_at === "string" ? row.signed_at : null,
+            createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+          };
+        })
         .filter((row) => !isLegacySeedSignOffTitle(row.title));
 
       const normalizedTodoLinks: TodoLinkRow[] = ((todosResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({

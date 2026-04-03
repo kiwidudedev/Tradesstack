@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { akzidenzProBoldEx, mulishBody, mulishHeading } from "@/lib/fonts";
+import { akzidenzProBoldEx, interMedium, mulishBody, mulishHeading } from "@/lib/fonts";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
@@ -31,7 +31,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         suppressHydrationWarning
-        className={`${akzidenzProBoldEx.variable} ${mulishBody.variable} ${mulishHeading.variable} font-body antialiased`}
+        className={`${akzidenzProBoldEx.variable} ${interMedium.variable} ${mulishBody.variable} ${mulishHeading.variable} font-body antialiased`}
       >
         {process.env.NODE_ENV === "development" ? (
           <Script src="//unpkg.com/react-grab/dist/index.global.js" strategy="beforeInteractive" />

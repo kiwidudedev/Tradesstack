@@ -287,6 +287,7 @@ export default async function ProjectChangeDetectionPage({
       projectSlug={project.slug}
       projectId={project.id}
       organizationId={project.organization_id}
+      projectDashboardHref={`/app/projects/${project.slug}/dashboard`}
       initialDrawingSetId={readSearchParam(query.drawingSetId)}
       initialGeneratedTradePacks={generatedTradePacks}
       initialStoredRuns={initialStoredRuns}

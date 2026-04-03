@@ -21,7 +21,7 @@ export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <header role="banner" className="relative z-40 w-full bg-[#0B2639]">
+    <header role="banner" className="marketing-navbar relative z-40 w-full bg-[#0B2639]">
       <div className="mx-auto flex h-[96px] w-full max-w-[1380px] items-center justify-between gap-4 px-5 sm:px-6 lg:h-[78px] lg:px-16">
         <Link href="/" aria-label="TradeStack home" className="inline-flex items-center lg:translate-x-[-18px]">
           <Image

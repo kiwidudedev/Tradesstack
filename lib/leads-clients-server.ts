@@ -444,7 +444,10 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
   const opportunities = (opportunitiesResult.error ? [] : (opportunitiesResult.data ?? [])) as OpportunityRow[];
   const clients = (clientsResult.error ? [] : (clientsResult.data ?? [])) as ClientRow[];
   const members = (membersResult.error ? [] : (membersResult.data ?? [])) as MemberRow[];
-  const quotes = (quotesResult.error ? [] : (quotesResult.data ?? [])) as Pick<OpportunityQuoteRow, "opportunity_id" | "status" | "updated_at" | "created_at">[];
+  const quotes = (quotesResult.error ? [] : (quotesResult.data ?? [])) as Pick<
+    OpportunityQuoteRow,
+    "opportunity_id" | "status" | "updated_at" | "created_at" | "total_quote_price"
+  >[];
   const workspaceSlugByProjectId = new Map(
     (projectsResult.error ? [] : (projectsResult.data ?? [])).map((project) => [project.id, project.slug])
   );
