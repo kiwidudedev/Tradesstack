@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Clock3, FileText, Plus, Send } from "lucide-react";
+import { ChevronDown, ExternalLink, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 type PurchaseOrderStatus = "Draft" | "Pending Approval" | "Approved" | "Issued" | "Received" | "Invoiced" | "Cancelled";
 
@@ -70,28 +71,6 @@ function statusClassName(status: PurchaseOrderStatus) {
       return "bg-indigo-100 text-indigo-800 border-indigo-200";
     default:
       return "bg-slate-100 text-slate-700 border-slate-200";
-  }
-}
-
-function toSummaryStatus(status: string) {
-  switch (status) {
-    case "Draft":
-      return "draft";
-    case "Pending Approval":
-    case "Priced":
-      return "pending";
-    case "Issued":
-    case "Sent":
-    case "Client Review":
-      return "issued";
-    case "Received":
-      return "received";
-    case "Approved":
-      return "approved";
-    case "Invoiced":
-      return "invoiced";
-    default:
-      return "other";
   }
 }
 
@@ -187,182 +166,164 @@ export default function ProjectVariationRegisterPage() {
     };
   }, [routeProjectSlug, sessionOrganizationId, supabase]);
 
-  const summary = useMemo(() => {
-    const totalVariations = purchaseOrderRows.length;
-    const draftValue = purchaseOrderRows
-      .filter((row) => {
-        const mapped = toSummaryStatus(row.status);
-        return mapped === "draft" || mapped === "pending";
-      })
-      .reduce((sum, row) => sum + (row.total_purchase_order_price ?? 0), 0);
-    const awaitingClientValue = purchaseOrderRows
-      .filter((row) => {
-        const mapped = toSummaryStatus(row.status);
-        return mapped === "issued" || mapped === "received";
-      })
-      .reduce((sum, row) => sum + (row.total_purchase_order_price ?? 0), 0);
-    const approvedValue = purchaseOrderRows
-      .filter((row) => {
-        const mapped = toSummaryStatus(row.status);
-        return mapped === "approved" || mapped === "invoiced";
-      })
-      .reduce((sum, row) => sum + (row.total_purchase_order_price ?? 0), 0);
-
-    return {
-      totalVariations,
-      draftValue,
-      awaitingClientValue,
-      approvedValue,
-    };
+  const totalPurchaseOrderValue = useMemo(() => {
+    return purchaseOrderRows.reduce((sum, row) => sum + (row.total_purchase_order_price ?? 0), 0);
   }, [purchaseOrderRows]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-        >
-          <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Back to Dashboard
-          </Link>
-        </Button>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-5 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Purchase Order Register</h1>
-              <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-                Create, track, issue, approve, and invoice project purchase orders in one place{projectName ? ` for ${projectName}` : ""}.
-              </p>
-            </div>
-            <Button asChild className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}>
-              <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/new`}>
-                <Plus className="mr-1.5 h-4 w-4" />
-                New Purchase Order
-              </Link>
-            </Button>
-          </div>
-          {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-          ) : null}
-        </CardHeader>
-      </Card>
-
-      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
-        <div className="flex min-w-[900px] divide-x divide-[#E3E8F0]">
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <FileText className="h-5 w-5 text-[#334155]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Total Purchase Orders</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.totalVariations}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Clock3 className="h-5 w-5 text-[#B45309]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Draft Value</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.draftValue)}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Send className="h-5 w-5 text-[#1D4ED8]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Issued Value</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.awaitingClientValue)}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Invoiced Value</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{toMoney(summary.approvedValue)}</p>
-            </div>
-          </div>
+    <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Purchase Orders</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Create, track, issue, approve, and invoice purchase orders for this job
+          </p>
         </div>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-2 pt-5">
-          <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Purchase Order Register</h2>
-        </CardHeader>
-        <CardContent className="pb-5">
-          {isLoading ? (
-            <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading purchase order register...</p>
-          ) : purchaseOrderRows.length === 0 ? (
-            <div className="rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-8 text-center">
-              <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>No purchase orders yet for this project.</p>
-              <Button asChild className={`${interMedium.className} mt-3 h-9 rounded-[6px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]`}>
-                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/new`}>
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  Create First Purchase Order
-                </Link>
+        <div className={styles.heroActions}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+              >
+                Actions
+                <ChevronDown className="ml-1 h-4 w-4" />
               </Button>
-            </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Project Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/new`}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Purchase Order
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </section>
+
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+
+      <section className="overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6">
+        <div className="space-y-6">
+          {isLoading ? (
+            <p className={`${interMedium.className} py-8 text-sm font-medium text-[#6b6b6b]`}>Loading purchase order register...</p>
           ) : (
-            <div className="overflow-x-auto rounded-[6px] border border-[#E8EDF5]">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
-                    <th className="px-3 py-2 text-left">Purchase Order #</th>
-                    <th className="px-3 py-2 text-left">Purchase Order Name</th>
-                    <th className="px-3 py-2 text-left">Issued To</th>
-                    <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-left">Requested</th>
-                    <th className="px-3 py-2 text-left">Due</th>
-                    <th className="px-3 py-2 text-right">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchaseOrderRows.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${row.id}`)}
-                      className="cursor-pointer border-t border-[#EEF2F7] transition-colors hover:bg-[#F8FBFF]"
-                    >
-                      <td className="px-3 py-2.5 text-sm font-semibold text-[#0F172A]">
-                        <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${row.id}`} className="hover:underline">
-                          {row.purchase_order_number}
-                        </Link>
-                      </td>
-                      <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#1F2E45]`}>
-                        {row.purchase_order_title || "Untitled purchase order"}
-                      </td>
-                      <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>
-                        {row.issued_to_label?.trim() || "—"}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(row.status)}`}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>
-                        {toDayMonthYearLabel(row.requested_date)}
-                      </td>
-                      <td className={`${interMedium.className} px-3 py-2.5 text-sm font-medium text-[#334155]`}>
-                        {toDayMonthYearLabel(row.due_date)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center justify-end">
-                          <span className="text-right text-sm font-semibold text-[#0F172A]">
-                            {toMoney(row.total_purchase_order_price ?? 0)}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="py-1">
+                <div className="grid gap-6 md:grid-cols-[1.45fr_1fr] md:items-end">
+                  <div className="min-w-0 space-y-3">
+                    <p className="truncate text-[30px] font-semibold leading-[1.04] tracking-[-0.02em] text-[#1d2433]">
+                      {projectName || "Project"}
+                    </p>
+                    <p className={`${interMedium.className} text-sm text-[#64748B]`}>
+                      {purchaseOrderRows.length} purchase order{purchaseOrderRows.length === 1 ? "" : "s"} in register
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-start gap-2 md:items-end">
+                    <p className="text-[36px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">
+                      {toMoney(totalPurchaseOrderValue)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Purchase Order Register</h3>
+                {purchaseOrderRows.length === 0 ? (
+                  <div className={`${styles.cardMuted} ${styles.producedRowProjectTone} px-5 py-6 text-center`}>
+                    <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
+                      No purchase orders yet for this project.
+                    </p>
+                    <Button asChild className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
+                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/new`}>
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        Create First Purchase Order
+                      </Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-[12px] border border-[#D9DEE5] bg-[#F6F7F9]">
+                    <table className="min-w-full border-collapse">
+                      <thead>
+                        <tr className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#6b6b6b]`}>
+                          <th className="px-4 py-3 text-left">Purchase Order #</th>
+                          <th className="px-4 py-3 text-left">Purchase Order Name</th>
+                          <th className="px-4 py-3 text-left">Issued To</th>
+                          <th className="px-4 py-3 text-left">Status</th>
+                          <th className="px-4 py-3 text-left">Requested</th>
+                          <th className="px-4 py-3 text-left">Due</th>
+                          <th className="px-4 py-3 text-right">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {purchaseOrderRows.map((row) => (
+                          <tr
+                            key={row.id}
+                            onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${row.id}`)}
+                            className="cursor-pointer border-t border-[#D9DEE5] bg-[#F3F4F6] transition-colors hover:bg-[#EEF2F7]"
+                          >
+                            <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
+                              <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${row.id}`} className="hover:underline">
+                                {row.purchase_order_number}
+                              </Link>
+                            </td>
+                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
+                              {row.purchase_order_title || "Untitled purchase order"}
+                            </td>
+                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
+                              {row.issued_to_label?.trim() || "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex rounded-[8px] border px-2.5 py-0.5 text-xs font-semibold ${statusClassName(row.status)}`}>
+                                {row.status}
+                              </span>
+                            </td>
+                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
+                              {toDayMonthYearLabel(row.requested_date)}
+                            </td>
+                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
+                              {toDayMonthYearLabel(row.due_date)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm font-semibold text-[#1d1d1d]">
+                              {toMoney(row.total_purchase_order_price ?? 0)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Linked Workflows</h3>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
+                    <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote`}>View Quote</Link>
+                  </Button>
+                  <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
+                    <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>View Variations</Link>
+                  </Button>
+                  <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
+                    <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>Project Dashboard</Link>
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </div>
   );
 }

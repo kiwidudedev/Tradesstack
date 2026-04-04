@@ -1,26 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Check,
   ChevronDown,
   Clock3,
+  ExternalLink,
   FileStack,
   Mail,
   Plus,
-  ShieldCheck,
   Trash2,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
 type VariationOrigin = "Client Request" | "Drawing Revision" | "Site Instruction" | "RFI" | "Unknown";
@@ -39,6 +40,8 @@ interface AttachmentItem {
   id: string;
   name: string;
   type: "Drawing" | "Email" | "Site Instruction";
+  storagePath: string | null;
+  externalUrl: string | null;
 }
 
 interface VariationItem {
@@ -63,6 +66,13 @@ interface VariationItem {
   costLines: CostLine[];
   notes: string;
   attachments: AttachmentItem[];
+  validityPeriod: string;
+  paymentTerms: string;
+  leadTime: string;
+  inclusions: string;
+  exclusions: string;
+  clarifications: string;
+  assumptions: string;
 }
 
 interface VariationRow {
@@ -85,12 +95,20 @@ interface VariationRow {
   include_discount_in_export?: boolean | null;
   include_contingency_in_export?: boolean | null;
   notes: string;
+  validity_period?: string | null;
+  payment_terms?: string | null;
+  lead_time?: string | null;
+  terms_inclusions?: string | null;
+  terms_exclusions?: string | null;
+  clarifications?: string | null;
+  assumptions?: string | null;
 }
 
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Priced", "Sent", "Client Review", "Approved", "Rejected", "Invoiced"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Client Request", "Drawing Revision", "Site Instruction", "RFI", "Unknown"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
 const LINE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 130px 78px 78px 110px 110px";
+const VARIATION_ATTACHMENTS_BUCKET = "project-variation-attachments";
 
 function DescriptionInputWithPreview({
   value,
@@ -168,24 +186,6 @@ function lineTotal(line: CostLine) {
   return line.quantity * line.rate;
 }
 
-function statusClassName(status: VariationStatus) {
-  switch (status) {
-    case "Approved":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "Rejected":
-      return "bg-rose-100 text-rose-800 border-rose-200";
-    case "Invoiced":
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    case "Sent":
-    case "Client Review":
-      return "bg-amber-100 text-amber-800 border-amber-200";
-    case "Priced":
-      return "bg-indigo-100 text-indigo-800 border-indigo-200";
-    default:
-      return "bg-slate-100 text-slate-700 border-slate-200";
-  }
-}
-
 function makeDefaultCostLine(section: CostSection = "Labour"): CostLine {
   return {
     id: crypto.randomUUID(),
@@ -208,33 +208,6 @@ function deriveJobCode(value: string | null | undefined) {
     .replace(/^-+|-+$/g, "");
 
   return normalized || "JOB";
-}
-
-function makeDefaultVariation(index: number, jobCode: string): VariationItem {
-  const code = `${jobCode}-VAR-${String(index + 1).padStart(2, "0")}`;
-  return {
-    id: crypto.randomUUID(),
-    code,
-    title: "",
-    status: "Draft",
-    origin: "Client Request",
-    requestedBy: "",
-    requestedDate: new Date().toISOString().slice(0, 10),
-    dueDate: "",
-    clientSentAt: null,
-    approvedAt: null,
-    invoiceReady: false,
-    marginPercent: "0",
-    discountAmount: "0",
-    contingencyAmount: "0",
-    gstPercent: "15",
-    includeMarginInExport: true,
-    includeDiscountInExport: false,
-    includeContingencyInExport: false,
-    costLines: [makeDefaultCostLine("Labour")],
-    notes: "",
-    attachments: [],
-  };
 }
 
 function normalizeStatus(value: string): VariationStatus {
@@ -269,12 +242,17 @@ export default function ProjectVariationsPage() {
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCreatingVariation, setIsCreatingVariation] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
   const [savedStatusById, setSavedStatusById] = useState<Map<string, VariationStatus>>(new Map());
   const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
+  const [isTermsOpen, setIsTermsOpen] = useState(true);
   const [isDocsOpen, setIsDocsOpen] = useState(true);
+  const [pendingAttachmentType, setPendingAttachmentType] = useState<AttachmentItem["type"] | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const hasAutoCreatedOnNewRoute = useRef(false);
   const supabase = useMemo(() => {
     try {
       return createBrowserSupabaseClient();
@@ -355,9 +333,9 @@ export default function ProjectVariationsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const attachmentsTable = (supabase as any).from("project_variation_attachments");
 
-      const { data: variationRowsRaw, error: variationError } = await variationsTable
-        .select(
-          "id, variation_number, variation_title, status, origin, requested_by, requested_date, due_date, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes"
+        const { data: variationRowsRaw, error: variationError } = await variationsTable
+          .select(
+          "id, variation_number, variation_title, status, origin, requested_by, requested_date, due_date, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes, validity_period, payment_terms, lead_time, terms_inclusions, terms_exclusions, clarifications, assumptions"
         )
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", projectRow.id)
@@ -386,7 +364,7 @@ export default function ProjectVariationsPage() {
           .in("variation_id", variationIds)
           .order("sort_order", { ascending: true }),
         attachmentsTable
-          .select("id, variation_id, file_name, file_kind")
+          .select("id, variation_id, file_name, file_kind, storage_path, external_url")
           .in("variation_id", variationIds)
           .order("created_at", { ascending: true }),
       ]);
@@ -405,6 +383,8 @@ export default function ProjectVariationsPage() {
         variation_id: string;
         file_name: string;
         file_kind: string;
+        storage_path: string | null;
+        external_url: string | null;
       }>;
 
       const linesByVariationId = new Map<string, CostLine[]>();
@@ -431,6 +411,8 @@ export default function ProjectVariationsPage() {
             attachmentRow.file_kind === "Drawing" || attachmentRow.file_kind === "Email" || attachmentRow.file_kind === "Site Instruction"
               ? (attachmentRow.file_kind as AttachmentItem["type"])
               : "Email",
+          storagePath: attachmentRow.storage_path ?? null,
+          externalUrl: attachmentRow.external_url ?? null,
         });
         attachmentsByVariationId.set(attachmentRow.variation_id, current);
       }
@@ -457,6 +439,13 @@ export default function ProjectVariationsPage() {
         costLines: linesByVariationId.get(row.id) ?? [makeDefaultCostLine("Labour")],
         notes: row.notes ?? "",
         attachments: attachmentsByVariationId.get(row.id) ?? [],
+        validityPeriod: row.validity_period ?? "30 days",
+        paymentTerms: row.payment_terms ?? "",
+        leadTime: row.lead_time ?? "",
+        inclusions: row.terms_inclusions ?? "",
+        exclusions: row.terms_exclusions ?? "",
+        clarifications: row.clarifications ?? "",
+        assumptions: row.assumptions ?? "",
       }));
 
       setVariations(hydratedVariations);
@@ -556,49 +545,102 @@ export default function ProjectVariationsPage() {
     };
   }, [activeVariation]);
 
-  const createVariation = useCallback(() => {
-    let createdVariationId: string | null = null;
-
-    setVariations((current) => {
-      const prefix = `${jobCode}-VAR-`;
-      let maxSuffix = 0;
-      for (const variation of current) {
-        if (!variation.code.startsWith(prefix)) {
-          continue;
-        }
-        const suffix = Number.parseInt(variation.code.slice(prefix.length), 10);
-        if (Number.isFinite(suffix) && suffix > maxSuffix) {
-          maxSuffix = suffix;
-        }
-      }
-      const nextVariation = makeDefaultVariation(current.length, jobCode);
-      nextVariation.code = `${prefix}${String(maxSuffix + 1).padStart(2, "0")}`;
-      createdVariationId = nextVariation.id;
-      return [...current, nextVariation];
-    });
-
-    if (createdVariationId) {
-      setActiveVariationId(createdVariationId);
-      router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations/${createdVariationId}`);
+  const createVariation = useCallback(async () => {
+    if (isCreatingVariation) {
+      return;
     }
-  }, [jobCode, routeProjectSlug, router]);
+    if (!supabase || !organizationId || !dbProjectId) {
+      setError("Variation creation is not ready. Please refresh and try again.");
+      return;
+    }
+
+    setIsCreatingVariation(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: createError } = await (supabase as any).rpc("create_project_variation_draft", {
+        p_organization_id: organizationId,
+        p_project_id: dbProjectId,
+        p_title: "New Variation",
+      });
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      const createdRow = Array.isArray(data) ? data[0] : null;
+      if (!createdRow?.id) {
+        throw new Error("Variation was created but no identifier was returned.");
+      }
+
+      const createdVariation: VariationItem = {
+        id: createdRow.id,
+        code: createdRow.variation_number || `${jobCode}-VAR-00`,
+        title: createdRow.variation_title || "New Variation",
+        status: normalizeStatus(createdRow.status),
+        origin: normalizeOrigin(createdRow.origin),
+        requestedBy: "",
+        requestedDate: "",
+        dueDate: "",
+        clientSentAt: null,
+        approvedAt: null,
+        invoiceReady: false,
+        marginPercent: "0",
+        discountAmount: "0",
+        contingencyAmount: "0",
+        gstPercent: "15",
+        includeMarginInExport: true,
+        includeDiscountInExport: false,
+        includeContingencyInExport: false,
+        costLines: [makeDefaultCostLine("Labour")],
+        notes: "",
+        attachments: [],
+        validityPeriod: "30 days",
+        paymentTerms: "",
+        leadTime: "",
+        inclusions: "",
+        exclusions: "",
+        clarifications: "",
+        assumptions: "",
+      };
+
+      setVariations((current) => {
+        if (current.some((variation) => variation.id === createdVariation.id)) {
+          return current;
+        }
+        return [createdVariation, ...current];
+      });
+      setPersistedVariationIds((current) => new Set([...current, createdVariation.id]));
+      setSavedStatusById((current) => {
+        const next = new Map(current);
+        next.set(createdVariation.id, createdVariation.status);
+        return next;
+      });
+
+      setActiveVariationId(createdVariation.id);
+      router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations/${createdVariation.id}`);
+    } catch (createVariationError) {
+      setError(createVariationError instanceof Error ? createVariationError.message : "Unable to create variation.");
+    } finally {
+      setIsCreatingVariation(false);
+    }
+  }, [dbProjectId, isCreatingVariation, jobCode, organizationId, routeProjectSlug, router, supabase]);
 
   useEffect(() => {
-    if (!isNewVariationRoute || isLoadingVariations) {
+    if (!isNewVariationRoute) {
+      hasAutoCreatedOnNewRoute.current = false;
       return;
     }
 
-    const unsavedVariation = variations.find((variation) => !persistedVariationIds.has(variation.id));
-    if (unsavedVariation) {
-      setActiveVariationId(unsavedVariation.id);
-      if (routeVariationId !== unsavedVariation.id) {
-        router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations/${unsavedVariation.id}`);
-      }
+    if (isLoadingVariations || hasAutoCreatedOnNewRoute.current) {
       return;
     }
 
-    createVariation();
-  }, [createVariation, isLoadingVariations, isNewVariationRoute, persistedVariationIds, routeProjectSlug, routeVariationId, router, variations]);
+    hasAutoCreatedOnNewRoute.current = true;
+    void createVariation();
+  }, [createVariation, isLoadingVariations, isNewVariationRoute]);
 
   const updateActiveVariation = <K extends keyof VariationItem>(key: K, value: VariationItem[K]) => {
     if (!activeVariation) return;
@@ -623,16 +665,56 @@ export default function ProjectVariationsPage() {
     );
   };
 
-  const addAttachment = (type: AttachmentItem["type"]) => {
-    if (!activeVariation) return;
+  const openAttachmentPicker = (type: AttachmentItem["type"]) => {
+    setPendingAttachmentType(type);
+    attachmentInputRef.current?.click();
+  };
 
-    const ext = type === "Drawing" ? "dwg" : "pdf";
-    const nextName = `${type.toLowerCase().replaceAll(" ", "-")}-${activeVariation.attachments.length + 1}.${ext}`;
+  const handleAttachmentFilesSelected = (files: FileList | null) => {
+    if (!activeVariation || !pendingAttachmentType || !files || files.length === 0) {
+      return;
+    }
+    if (!supabase || !organizationId || !dbProjectId) {
+      setError("Attachment upload is not ready. Please refresh and try again.");
+      return;
+    }
 
-    updateActiveVariation("attachments", [
-      ...activeVariation.attachments,
-      { id: crypto.randomUUID(), name: nextName, type },
-    ]);
+    void (async () => {
+      try {
+        setError(null);
+        const uploadResults = await Promise.all(
+          Array.from(files).map(async (file) => {
+            const cleanName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+            const fileId = crypto.randomUUID();
+            const storagePath = `${organizationId}/${dbProjectId}/${activeVariation.id}/${fileId}-${cleanName}`;
+            const { error: uploadError } = await supabase.storage
+              .from(VARIATION_ATTACHMENTS_BUCKET)
+              .upload(storagePath, file, { upsert: false });
+
+            if (uploadError) {
+              throw new Error(uploadError.message);
+            }
+
+            return {
+              id: fileId,
+              name: file.name,
+              type: pendingAttachmentType,
+              storagePath,
+              externalUrl: null,
+            } satisfies AttachmentItem;
+          })
+        );
+
+        updateActiveVariation("attachments", [...activeVariation.attachments, ...uploadResults]);
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : "Unable to upload attachment.");
+      } finally {
+        setPendingAttachmentType(null);
+        if (attachmentInputRef.current) {
+          attachmentInputRef.current.value = "";
+        }
+      }
+    })();
   };
 
   const removeAttachment = (attachmentId: string) => {
@@ -718,6 +800,13 @@ export default function ProjectVariationsPage() {
         include_margin_in_export: activeVariation.includeMarginInExport,
         include_discount_in_export: activeVariation.includeDiscountInExport,
         include_contingency_in_export: activeVariation.includeContingencyInExport,
+        validity_period: activeVariation.validityPeriod,
+        payment_terms: activeVariation.paymentTerms,
+        lead_time: activeVariation.leadTime,
+        terms_inclusions: activeVariation.inclusions,
+        terms_exclusions: activeVariation.exclusions,
+        clarifications: activeVariation.clarifications,
+        assumptions: activeVariation.assumptions,
         gst_total: Number(pricingSummary.gst.toFixed(2)),
         total_variation_price: Number(pricingSummary.grandTotal.toFixed(2)),
       };
@@ -781,7 +870,8 @@ export default function ProjectVariationsPage() {
           variation_id: activeVariation.id,
           file_kind: attachment.type,
           file_name: attachment.name,
-          external_url: `manual://${attachment.name}`,
+          storage_path: attachment.storagePath,
+          external_url: attachment.externalUrl,
           uploaded_by: session?.id ?? null,
         }));
         const { error: insertAttachmentsError } = await attachmentsTable.insert(attachmentsPayload);
@@ -966,6 +1056,13 @@ export default function ProjectVariationsPage() {
     const notesMarkup = activeVariation.notes.trim()
       ? escapeHtml(activeVariation.notes).replaceAll("\n", "<br />")
       : "No notes added.";
+    const validityPeriodMarkup = escapeHtml(activeVariation.validityPeriod.trim() || "Not provided");
+    const paymentTermsMarkup = escapeHtml(activeVariation.paymentTerms.trim() || "Not provided");
+    const leadTimeMarkup = escapeHtml(activeVariation.leadTime.trim() || "Not provided");
+    const inclusionsMarkup = escapeHtml(activeVariation.inclusions.trim() || "No inclusions captured.").replaceAll("\n", "<br />");
+    const exclusionsMarkup = escapeHtml(activeVariation.exclusions.trim() || "No exclusions captured.").replaceAll("\n", "<br />");
+    const clarificationsMarkup = escapeHtml(activeVariation.clarifications.trim() || "No clarifications captured.").replaceAll("\n", "<br />");
+    const assumptionsMarkup = escapeHtml(activeVariation.assumptions.trim() || "No assumptions captured.").replaceAll("\n", "<br />");
     const attachmentsRows = activeVariation.attachments.length > 0
       ? activeVariation.attachments
           .map(
@@ -1078,6 +1175,38 @@ export default function ProjectVariationsPage() {
         background: #fff;
       }
       .attachments-table th { width: 50%; }
+      .terms-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .terms-grid.two-col {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .term-card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #fff;
+      }
+      .term-card .k {
+        margin: 0 0 4px;
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+      .term-card .v {
+        margin: 0;
+        color: var(--text);
+        font-weight: 600;
+      }
+      .term-card .v.multiline {
+        white-space: normal;
+        font-weight: 500;
+      }
       .doc-footer {
         margin-top: 14px;
         padding-top: 8px;
@@ -1142,6 +1271,15 @@ export default function ProjectVariationsPage() {
         <tbody>${lineItemsRows}</tbody>
       </table>
 
+      <section class="totals">
+        <div class="row"><span class="k">Subtotal</span><span class="v">${toMoney(pricingSummary.baseSubtotal)}</span></div>
+        ${optionalPricingRows}
+        <div class="row"><span class="k">GST</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
+        <div class="divider final">
+          <div class="row"><span class="k">Total</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
+        </div>
+      </section>
+
       <h2 class="section-title">Attachments</h2>
       <table class="attachments-table">
         <thead>
@@ -1156,12 +1294,39 @@ export default function ProjectVariationsPage() {
       <h2 class="section-title">Notes</h2>
       <section class="notes-box">${notesMarkup}</section>
 
-      <section class="totals">
-        <div class="row"><span class="k">Subtotal</span><span class="v">${toMoney(pricingSummary.baseSubtotal)}</span></div>
-        ${optionalPricingRows}
-        <div class="row"><span class="k">GST</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
-        <div class="divider final">
-          <div class="row"><span class="k">Total</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
+      <h2 class="section-title">Terms & Clarifications</h2>
+      <section class="terms-grid">
+        <div class="term-card">
+          <p class="k">Validity period</p>
+          <p class="v">${validityPeriodMarkup}</p>
+        </div>
+        <div class="term-card">
+          <p class="k">Payment terms</p>
+          <p class="v">${paymentTermsMarkup}</p>
+        </div>
+        <div class="term-card">
+          <p class="k">Lead time</p>
+          <p class="v">${leadTimeMarkup}</p>
+        </div>
+      </section>
+      <section class="terms-grid two-col">
+        <div class="term-card">
+          <p class="k">Inclusions</p>
+          <p class="v multiline">${inclusionsMarkup}</p>
+        </div>
+        <div class="term-card">
+          <p class="k">Exclusions</p>
+          <p class="v multiline">${exclusionsMarkup}</p>
+        </div>
+      </section>
+      <section class="terms-grid two-col">
+        <div class="term-card">
+          <p class="k">Clarifications</p>
+          <p class="v multiline">${clarificationsMarkup}</p>
+        </div>
+        <div class="term-card">
+          <p class="k">Assumptions</p>
+          <p class="v multiline">${assumptionsMarkup}</p>
         </div>
       </section>
 
@@ -1203,119 +1368,148 @@ export default function ProjectVariationsPage() {
 
   if (isLoadingVariations) {
     return (
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardContent className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading variations...</CardContent>
-      </Card>
+      <div className={`${styles.scope} -mb-8 space-y-6`}>
+        <section className={styles.heroBlock}>
+          <div>
+            <h1 className={styles.heroTitle}>Variation</h1>
+            <p className={`${interMedium.className} ${styles.heroSummary}`}>
+              Manage pricing changes and approvals for this job
+            </p>
+          </div>
+          <div className={styles.heroActions}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px] opacity-60`}
+            >
+              Actions
+              <ChevronDown className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </section>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+            <div className="space-y-4">
+              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              </div>
+              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading variations...</p>
+            </div>
+          </div>
+          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
+            <CardHeader className="pb-3 pt-5">
+              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-5">
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-        >
-          <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Back to Variation Register
-          </Link>
-        </Button>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-5 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Variation Control Centre</CardTitle>
-              <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-                Create, track, price, approve, and invoice project variations in one place.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {activeVariation ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void deleteVariation(activeVariation.id)}
-                  disabled={isDeleting}
-                  className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
-                >
-                  <Trash2 className="mr-1.5 h-4 w-4" />
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </Button>
-              ) : null}
-              <Button type="button" onClick={createVariation} variant="outline" className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}>
-                <Plus className="mr-1 h-4 w-4" />
-                New Variation
-              </Button>
+    <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Variation</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+            Manage pricing changes and approvals for this job
+          </p>
+        </div>
+        <div className={styles.heroActions}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 type="button"
-                onClick={saveVariation}
+                variant="outline"
+                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+              >
+                Actions
+                <ChevronDown className="ml-1 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[230px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Variation Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void createVariation();
+                }}
+                disabled={isCreatingVariation}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {isCreatingVariation ? "Creating..." : "New Variation"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void saveVariation();
+                }}
                 disabled={isSaving}
-                className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 {isSaving ? "Saving..." : "Save Variation"}
-              </Button>
-              <Button
-                type="button"
-                onClick={exportVariationPdf}
-                variant="outline"
-                className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  exportVariationPdf();
+                }}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 Export PDF
-              </Button>
-            </div>
-          </div>
-          {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-          ) : null}
-          {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
-        </CardHeader>
-      </Card>
+              </DropdownMenuItem>
+              {activeVariation ? (
+                <>
+                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void deleteVariation(activeVariation.id);
+                    }}
+                    disabled={isDeleting}
+                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </section>
+
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
       {hasVariations && activeVariation ? (
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
+        <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
           <section className="border-b border-[#E8EDF5] pb-5">
-            <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Register</h2>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-[6px] border border-[#E5EAF2] overflow-hidden">
-                <div className={`${interMedium.className} grid grid-cols-[120px_minmax(190px,1fr)_130px_120px] gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
-                  <span>Code</span><span>Variation</span><span>Status</span><span className="text-right">Value</span>
-                </div>
-                <div className="divide-y divide-[#EEF2F7]">
-                  {variations.map((variation) => {
-                    const total = variation.costLines.reduce((acc, line) => acc + lineTotal(line), 0);
-                    const isActive = variation.id === activeVariation.id;
-                    return (
-                      <button
-                        key={variation.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveVariationId(variation.id);
-                          router.push(`/app/projects/${routeProjectSlug}/preconstruction/variations/${variation.id}`);
-                        }}
-                        className={`grid w-full cursor-pointer grid-cols-[120px_minmax(190px,1fr)_130px_120px] items-center gap-2 px-3 py-2 text-left transition-colors ${isActive ? "bg-[#F8FBFF]" : "hover:bg-[#f8fafc]"}`}
-                      >
-                        <span className={`${interMedium.className} text-xs font-semibold tracking-[0.06em] text-[#475569]`}>{variation.code}</span>
-                        <span className="text-sm text-[#0F172A]">{variation.title || "—"}</span>
-                        <span className={`inline-flex h-7 items-center rounded-[6px] border px-2.5 text-xs font-semibold ${statusClassName(variation.status)}`}>{variation.status}</span>
-                        <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(total)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="border-b border-[#E8EDF5] py-5">
-            <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Details</h2>
+            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Variation Details</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5 md:col-span-2">
@@ -1357,14 +1551,14 @@ export default function ProjectVariationsPage() {
 
           <section className="border-b border-[#E8EDF5] py-5">
             <button type="button" onClick={() => setIsCostBuildUpOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Cost Build-Up</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isCostBuildUpOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isCostBuildUpOpen ? (
               <div className="mt-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}><Plus className="mr-1 h-4 w-4" />Add Cost Line</Button>
+                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[8px] bg-[#0B2739] px-3 text-sm font-medium text-white hover:bg-[#0B2739]`}><Plus className="mr-1 h-4 w-4" />Add Item</Button>
                 </div>
 
                 <div className="rounded-[6px] border border-[#E5EAF2] overflow-visible">
@@ -1408,18 +1602,77 @@ export default function ProjectVariationsPage() {
             ) : null}
           </section>
 
+          <section className="border-b border-[#E8EDF5] py-5">
+            <button type="button" onClick={() => setIsTermsOpen((current) => !current)} className="flex w-full items-center justify-between">
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Terms & Clarifications</h2>
+              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isTermsOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isTermsOpen ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Validity period</label>
+                    <Input value={activeVariation.validityPeriod} onChange={(event) => updateActiveVariation("validityPeriod", event.target.value)} className="h-10 rounded-[6px]" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Payment terms</label>
+                    <Input value={activeVariation.paymentTerms} onChange={(event) => updateActiveVariation("paymentTerms", event.target.value)} className="h-10 rounded-[6px]" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Lead time</label>
+                    <Input value={activeVariation.leadTime} onChange={(event) => updateActiveVariation("leadTime", event.target.value)} className="h-10 rounded-[6px]" />
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Inclusions</label>
+                    <textarea value={activeVariation.inclusions} onChange={(event) => updateActiveVariation("inclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Exclusions</label>
+                    <textarea value={activeVariation.exclusions} onChange={(event) => updateActiveVariation("exclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Clarifications</label>
+                    <textarea value={activeVariation.clarifications} onChange={(event) => updateActiveVariation("clarifications", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assumptions</label>
+                    <textarea value={activeVariation.assumptions} onChange={(event) => updateActiveVariation("assumptions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
           <section className="py-5">
             <button type="button" onClick={() => setIsDocsOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Attachments & Notes</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Attachments & Notes</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isDocsOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isDocsOpen ? (
               <div className="mt-4 space-y-4">
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => handleAttachmentFilesSelected(event.target.files)}
+                  accept={
+                    pendingAttachmentType === "Drawing"
+                      ? ".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.webp"
+                      : pendingAttachmentType === "Email"
+                        ? ".eml,.msg,.pdf,.png,.jpg,.jpeg,.webp"
+                        : ".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                  }
+                />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Site Instruction")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Drawing")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Email")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Site Instruction")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
                 </div>
 
                 <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
@@ -1467,27 +1720,12 @@ export default function ProjectVariationsPage() {
         </div>
 
         <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-            <CardHeader className="pb-3 pt-5"><CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Variation Status</CardTitle></CardHeader>
-            <CardContent className="space-y-2 pb-5">
-              <p className={`${interMedium.className} text-sm text-[#334155]`}>
-                <span className="text-[#64748B]">Current:</span>{" "}
-                <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(activeVariation.status)}`}>{activeVariation.status}</span>
-              </p>
-              <div className={`${interMedium.className} space-y-1.5 text-xs text-[#52627A]`}>
-                <p className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Requested: {activeVariation.requestedDate || "-"}</p>
-                <p className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Sent to client: {activeVariation.clientSentAt || "-"}</p>
-                <p className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5" />Approved: {activeVariation.approvedAt || "-"}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-            <CardHeader className="pb-3 pt-5"><CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Pricing Summary</CardTitle></CardHeader>
+          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
+            <CardHeader className="pb-3 pt-5"><CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle></CardHeader>
             <CardContent className="space-y-3 pb-5">
               <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Margin (%)</label>
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Mark up (%)</label>
                   <Button
                     type="button"
                     variant="outline"
@@ -1510,7 +1748,22 @@ export default function ProjectVariationsPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Discount</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Discount</label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => updateActiveVariation("includeDiscountInExport", !activeVariation.includeDiscountInExport)}
+                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
+                      activeVariation.includeDiscountInExport
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
+                    }`}
+                  >
+                    <Check className="mr-1 h-3 w-3" />
+                    Include
+                  </Button>
+                </div>
                 <Input
                   type="number"
                   value={activeVariation.discountAmount === "0" ? "" : activeVariation.discountAmount}
@@ -1519,7 +1772,22 @@ export default function ProjectVariationsPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Contingency</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>P&G</label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => updateActiveVariation("includeContingencyInExport", !activeVariation.includeContingencyInExport)}
+                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
+                      activeVariation.includeContingencyInExport
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
+                    }`}
+                  >
+                    <Check className="mr-1 h-3 w-3" />
+                    Include
+                  </Button>
+                </div>
                 <Input
                   type="number"
                   value={activeVariation.contingencyAmount === "0" ? "" : activeVariation.contingencyAmount}
@@ -1541,23 +1809,20 @@ export default function ProjectVariationsPage() {
 
               <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Margin</span><span>{toMoney(pricingSummary.margin)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span>-{toMoney(pricingSummary.discount)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Contingency</span><span>{toMoney(pricingSummary.contingency)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span>{toMoney(pricingSummary.contingency)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">GST</span><span>{toMoney(pricingSummary.gst)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Variation Register Total</span><span>{toMoney(summary.totalValue)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Variation Total</span><span>{toMoney(summary.totalValue)}</span></p>
               </div>
-              <div className="rounded-[6px] bg-[#04234D] px-4 py-3 text-white">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.08em] text-white/70`}>Total Variation Price</p>
-                <p className="mt-1 text-[32px] font-semibold leading-none">{toMoney(pricingSummary.grandTotal)}</p>
+              <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
+                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Variation Price</p>
+                <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[6px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
+                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Variation"}
-                </Button>
-                <Button type="button" onClick={exportVariationPdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>
-                  Export PDF
                 </Button>
               </div>
             </CardContent>
@@ -1577,11 +1842,12 @@ export default function ProjectVariationsPage() {
             </p>
             <Button
               type="button"
-              onClick={createVariation}
+              onClick={() => void createVariation()}
+              disabled={isCreatingVariation}
               className={`${interMedium.className} mt-6 h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
             >
               <Plus className="mr-1 h-4 w-4" />
-              Create First Variation
+              {isCreatingVariation ? "Creating..." : "Create First Variation"}
             </Button>
           </CardContent>
         </Card>
