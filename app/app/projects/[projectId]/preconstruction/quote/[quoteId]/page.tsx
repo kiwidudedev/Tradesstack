@@ -393,6 +393,7 @@ export default function PreconstructionQuotePage() {
       grandTotal,
     };
   }, [contingencyAmount, discountAmount, gstPercent, lineItems, marginPercent]);
+  const showMarginBreakout = includeMarginInExport === true;
 
   const resolveNextQuoteNumber = useCallback(async (orgId: string, projectCodeValue: string): Promise<string> => {
     if (!supabase) {
@@ -1025,18 +1026,24 @@ export default function PreconstructionQuotePage() {
       return;
     }
 
+    const exportMarginMultiplier = !showMarginBreakout && pricingSummary.baseSubtotal > 0
+      ? (pricingSummary.baseSubtotal + pricingSummary.margin) / pricingSummary.baseSubtotal
+      : 1;
+
     const lineItemsRows = lineItems.length > 0
       ? lineItems
           .map((item) => {
             const description = item.description.trim() || "Untitled line item";
+            const exportedRate = item.rate * exportMarginMultiplier;
+            const exportedLineTotal = lineItemTotal(item) * exportMarginMultiplier;
             return `
               <tr>
                 <td>${escapeHtml(description)}</td>
                 <td>${escapeHtml(item.section)}</td>
                 <td class="right">${item.quantity}</td>
                 <td>${escapeHtml(item.unit || "-")}</td>
-                <td class="right">${toMoney(item.rate)}</td>
-                <td class="right">${toMoney(lineItemTotal(item))}</td>
+                <td class="right">${toMoney(exportedRate)}</td>
+                <td class="right">${toMoney(exportedLineTotal)}</td>
               </tr>
             `;
           })
@@ -1053,11 +1060,11 @@ export default function PreconstructionQuotePage() {
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
       : `<div class="logo-fallback">${escapeHtml(printableOrgName.slice(0, 2).toUpperCase())}</div>`;
     const optionalPricingRows = [
-      includeMarginInExport ? `<div class="row"><span class="k">Mark up</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>` : "",
+      showMarginBreakout ? `<div class="row"><span class="k">Mark up</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>` : "",
       includeDiscountInExport ? `<div class="row"><span class="k">Discount</span><span class="v">-${toMoney(pricingSummary.discount)}</span></div>` : "",
       includeContingencyInExport ? `<div class="row"><span class="k">P&G</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>` : "",
     ].join("");
-    const subtotalExcludingGstForExport = includeMarginInExport
+    const subtotalExcludingGstForExport = showMarginBreakout
       ? pricingSummary.baseSubtotal
       : pricingSummary.baseSubtotal + pricingSummary.margin;
 
@@ -1933,11 +1940,15 @@ export default function PreconstructionQuotePage() {
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span>-{toMoney(pricingSummary.discount)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span>{toMoney(pricingSummary.contingency)}</span></p>
                 <div className="my-1 h-px bg-[#CBD5E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <div className="my-1 h-px bg-[#CBD5E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
-                <div className="my-1 h-px bg-[#CBD5E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Total (incl. margin)</span><span>{toMoney(pricingSummary.baseSubtotal + pricingSummary.margin)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span>{toMoney(showMarginBreakout ? pricingSummary.baseSubtotal : pricingSummary.baseSubtotal + pricingSummary.margin)}</span></p>
+                {showMarginBreakout ? (
+                  <>
+                    <div className="my-1 h-px bg-[#CBD5E1]" />
+                    <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
+                    <div className="my-1 h-px bg-[#CBD5E1]" />
+                    <p className="flex items-center justify-between"><span className="text-[#64748B]">Total (incl. margin)</span><span>{toMoney(pricingSummary.baseSubtotal + pricingSummary.margin)}</span></p>
+                  </>
+                ) : null}
                 <div className="my-1 h-px bg-[#CBD5E1]" />
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({gstPercent.trim() || "15"}%)</span><span>{toMoney(pricingSummary.gst)}</span></p>
               </div>
