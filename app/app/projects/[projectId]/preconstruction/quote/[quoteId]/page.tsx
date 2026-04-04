@@ -1057,6 +1057,9 @@ export default function PreconstructionQuotePage() {
       includeDiscountInExport ? `<div class="row"><span class="k">Discount</span><span class="v">-${toMoney(pricingSummary.discount)}</span></div>` : "",
       includeContingencyInExport ? `<div class="row"><span class="k">P&G</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>` : "",
     ].join("");
+    const subtotalExcludingGstForExport = includeMarginInExport
+      ? pricingSummary.baseSubtotal
+      : pricingSummary.baseSubtotal + pricingSummary.margin;
 
     const html = `<!doctype html>
 <html lang="en">
@@ -1150,6 +1153,7 @@ export default function PreconstructionQuotePage() {
       }
       .totals .k { color: var(--muted); }
       .totals .v { text-align: right; font-weight: 600; }
+      .totals .row-divider { border-top: 1px solid #CBD5E1; margin: 4px 0; }
       .totals .divider { border-top: 2px solid var(--navy); margin-top: 6px; padding-top: 8px; }
       .totals .final .k,
       .totals .final .v { color: var(--navy); font-weight: 800; font-size: 22px; line-height: 1.05; }
@@ -1233,12 +1237,13 @@ export default function PreconstructionQuotePage() {
       </table>
 
       <section class="totals">
-        <div class="row"><span class="k">Subtotal</span><span class="v">${toMoney(pricingSummary.baseSubtotal)}</span></div>
+        <div class="row-divider"></div>
+        <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotalExcludingGstForExport)}</span></div>
         ${optionalPricingRows}
-        <div class="row"><span class="k">GST</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
-        <div class="row"><span class="k">Optional Items</span><span class="v">${toMoney(pricingSummary.optionalSubtotal)}</span></div>
+        <div class="row-divider"></div>
+        <div class="row"><span class="k">GST (${escapeHtml(gstPercent.trim() || "15")}%)</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
         <div class="divider final">
-          <div class="row"><span class="k">Total</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
+          <div class="row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
         </div>
       </section>
 
@@ -1925,16 +1930,20 @@ export default function PreconstructionQuotePage() {
               <div className="h-px bg-[#E7ECF3]" />
 
               <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span>-{toMoney(pricingSummary.discount)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span>{toMoney(pricingSummary.contingency)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST</span><span>{toMoney(pricingSummary.gst)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Optional Items</span><span>{toMoney(pricingSummary.optionalSubtotal)}</span></p>
+                <div className="my-1 h-px bg-[#CBD5E1]" />
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
+                <div className="my-1 h-px bg-[#CBD5E1]" />
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
+                <div className="my-1 h-px bg-[#CBD5E1]" />
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Total (incl. margin)</span><span>{toMoney(pricingSummary.baseSubtotal + pricingSummary.margin)}</span></p>
+                <div className="my-1 h-px bg-[#CBD5E1]" />
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({gstPercent.trim() || "15"}%)</span><span>{toMoney(pricingSummary.gst)}</span></p>
               </div>
 
               <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
-                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Quote Price</p>
+                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Quote Price (incl. GST)</p>
                 <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
               </div>
 
