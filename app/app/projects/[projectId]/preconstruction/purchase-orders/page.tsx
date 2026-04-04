@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -82,7 +82,10 @@ export default function ProjectVariationRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [projectName, setProjectName] = useState("");
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [purchaseOrderRows, setPurchaseOrderRows] = useState<PurchaseOrderRegisterRow[]>([]);
 
@@ -146,6 +149,8 @@ export default function ProjectVariationRegisterPage() {
           return;
         }
 
+        setOrganizationId(resolvedOrganizationId);
+        setProjectId(projectRow.id);
         setProjectName(projectRow.name || "");
         setPurchaseOrderRows(purchaseOrderRows);
       } catch (loadError) {
@@ -169,6 +174,39 @@ export default function ProjectVariationRegisterPage() {
   const totalPurchaseOrderValue = useMemo(() => {
     return purchaseOrderRows.reduce((sum, row) => sum + (row.total_purchase_order_price ?? 0), 0);
   }, [purchaseOrderRows]);
+
+  const createPurchaseOrderAndOpen = useCallback(async () => {
+    if (!supabase || !organizationId || !projectId || isCreating) {
+      return;
+    }
+
+    setIsCreating(true);
+    setError(null);
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: createdRows, error: createError } = await (supabase as any).rpc("create_project_purchase_order_draft", {
+        p_organization_id: organizationId,
+        p_project_id: projectId,
+        p_title: "New Purchase Order",
+        p_origin: "Material Supply",
+      });
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
+      if (!createdRow?.id) {
+        throw new Error("Purchase order was created but no identifier was returned.");
+      }
+
+      router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${createdRow.id}`);
+    } catch (createErr) {
+      setError(createErr instanceof Error ? createErr.message : "Unable to create purchase order.");
+      setIsCreating(false);
+    }
+  }, [isCreating, organizationId, projectId, routeProjectSlug, router, supabase]);
 
   return (
     <div className={`${styles.scope} -mb-8 space-y-6`}>
@@ -199,11 +237,16 @@ export default function ProjectVariationRegisterPage() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
-                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/new`}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Purchase Order
-                </Link>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void createPurchaseOrderAndOpen();
+                }}
+                disabled={isCreating || isLoading}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {isCreating ? "Creating..." : "New Purchase Order"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -221,16 +264,16 @@ export default function ProjectVariationRegisterPage() {
           ) : (
             <>
               <div className="py-1">
-                <div className="grid gap-6 md:grid-cols-[1.45fr_1fr] md:items-end">
+                <div className="grid gap-6 md:grid-cols-[1.45fr_1fr] md:items-start">
                   <div className="min-w-0 space-y-3">
                     <p className="truncate text-[30px] font-semibold leading-[1.04] tracking-[-0.02em] text-[#1d2433]">
                       {projectName || "Project"}
                     </p>
-                    <p className={`${interMedium.className} text-sm text-[#64748B]`}>
-                      {purchaseOrderRows.length} purchase order{purchaseOrderRows.length === 1 ? "" : "s"} in register
-                    </p>
                   </div>
                   <div className="flex flex-col items-start gap-2 md:items-end">
+                    <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>
+                      Total Purchase Order Value
+                    </p>
                     <p className="text-[36px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">
                       {toMoney(totalPurchaseOrderValue)}
                     </p>
@@ -245,11 +288,9 @@ export default function ProjectVariationRegisterPage() {
                     <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
                       No purchase orders yet for this project.
                     </p>
-                    <Button asChild className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
-                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/new`}>
+                    <Button onClick={() => void createPurchaseOrderAndOpen()} disabled={isCreating || isLoading} className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
                         <Plus className="mr-1 h-3.5 w-3.5" />
-                        Create First Purchase Order
-                      </Link>
+                        {isCreating ? "Creating..." : "Create First Purchase Order"}
                     </Button>
                   </div>
                 ) : (
@@ -274,9 +315,9 @@ export default function ProjectVariationRegisterPage() {
                             className="cursor-pointer border-t border-[#D9DEE5] bg-[#F3F4F6] transition-colors hover:bg-[#EEF2F7]"
                           >
                             <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
-                              <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${row.id}`} className="hover:underline">
+                              <span className="hover:underline">
                                 {row.purchase_order_number}
-                              </Link>
+                              </span>
                             </td>
                             <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
                               {row.purchase_order_title || "Untitled purchase order"}

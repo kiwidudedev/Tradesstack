@@ -1859,6 +1859,15 @@ export default function ProjectVariationsPage() {
                 <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Variation"}
                 </Button>
+                <Button
+                  type="button"
+                  onClick={exportVariationPdf}
+                  disabled={isSaving}
+                  variant="outline"
+                  className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}
+                >
+                  Export PDF
+                </Button>
               </div>
             </CardContent>
           </Card>

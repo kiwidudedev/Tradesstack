@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -104,7 +104,10 @@ export default function ProjectVariationRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [projectName, setProjectName] = useState("");
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [variationRows, setVariationRows] = useState<VariationRegisterRow[]>([]);
   const [variationTotalById, setVariationTotalById] = useState<Map<string, number>>(new Map());
@@ -199,6 +202,8 @@ export default function ProjectVariationRegisterPage() {
           return;
         }
 
+        setOrganizationId(resolvedOrganizationId);
+        setProjectId(projectRow.id);
         setProjectName(projectRow.name || "");
         setVariationRows(variationRows);
         setVariationTotalById(totalsById);
@@ -223,6 +228,38 @@ export default function ProjectVariationRegisterPage() {
   const totalVariationValue = useMemo(() => {
     return variationRows.reduce((sum, row) => sum + (variationTotalById.get(row.id) ?? 0), 0);
   }, [variationRows, variationTotalById]);
+
+  const createVariationAndOpen = useCallback(async () => {
+    if (!supabase || !organizationId || !projectId || isCreating) {
+      return;
+    }
+
+    setIsCreating(true);
+    setError(null);
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: createdRows, error: createError } = await (supabase as any).rpc("create_project_variation_draft", {
+        p_organization_id: organizationId,
+        p_project_id: projectId,
+        p_title: "New Variation",
+      });
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
+      if (!createdRow?.id) {
+        throw new Error("Variation was created but no identifier was returned.");
+      }
+
+      router.push(`/app/projects/${routeProjectSlug}/preconstruction/variations/${createdRow.id}`);
+    } catch (createErr) {
+      setError(createErr instanceof Error ? createErr.message : "Unable to create variation.");
+      setIsCreating(false);
+    }
+  }, [isCreating, organizationId, projectId, routeProjectSlug, router, supabase]);
 
   return (
     <div className={`${styles.scope} -mb-8 space-y-6`}>
@@ -253,11 +290,16 @@ export default function ProjectVariationRegisterPage() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
-                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations/new`}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Variation
-                </Link>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void createVariationAndOpen();
+                }}
+                disabled={isCreating || isLoading}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {isCreating ? "Creating..." : "New Variation"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -299,11 +341,9 @@ export default function ProjectVariationRegisterPage() {
                     <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
                       No variations yet for this project.
                     </p>
-                    <Button asChild className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
-                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations/new`}>
+                    <Button onClick={() => void createVariationAndOpen()} disabled={isCreating || isLoading} className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
                         <Plus className="mr-1 h-3.5 w-3.5" />
-                        Create First Variation
-                      </Link>
+                        {isCreating ? "Creating..." : "Create First Variation"}
                     </Button>
                   </div>
                 ) : (

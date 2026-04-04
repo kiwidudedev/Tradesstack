@@ -4,22 +4,23 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   ChevronDown,
   Clock3,
+  ExternalLink,
   FileStack,
   Mail,
   Plus,
-  ShieldCheck,
   Trash2,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Pending Approval" | "Approved" | "Issued" | "Received" | "Invoiced" | "Cancelled";
 type VariationOrigin = "Material Supply" | "Subcontract Work" | "Plant / Equipment Hire" | "Site Expense" | "Freight / Delivery" | "Variation Order" | "General Purchase" | "Other";
@@ -38,10 +39,13 @@ interface AttachmentItem {
   id: string;
   name: string;
   type: "Drawing" | "Email" | "Site Instruction";
+  storagePath: string | null;
+  externalUrl: string | null;
 }
 
 interface VariationItem {
   id: string;
+  updatedAt: string | null;
   code: string;
   title: string;
   status: VariationStatus;
@@ -70,6 +74,7 @@ interface VariationItem {
 
 interface VariationRow {
   id: string;
+  updated_at: string | null;
   purchase_order_number: string;
   purchase_order_title: string;
   status: string;
@@ -97,6 +102,14 @@ interface VariationRow {
   notes: string;
 }
 
+interface PurchaseOrderSummaryRow {
+  total_value: number | null;
+  draft_count: number | null;
+  awaiting_client_count: number | null;
+  approved_count: number | null;
+  invoice_ready_count: number | null;
+}
+
 interface OrganizationSupplier {
   id: string;
   name: string;
@@ -110,6 +123,7 @@ const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work"
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
 const NEW_SUPPLIER_OPTION = "__new_supplier__";
 const LINE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 130px 78px 78px 110px 110px";
+const PURCHASE_ORDER_ATTACHMENTS_BUCKET = "project-variation-attachments";
 
 function DescriptionInputWithPreview({
   value,
@@ -187,25 +201,6 @@ function lineTotal(line: CostLine) {
   return line.quantity * line.rate;
 }
 
-function statusClassName(status: VariationStatus) {
-  switch (status) {
-    case "Issued":
-      return "bg-amber-100 text-amber-800 border-amber-200";
-    case "Approved":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "Received":
-      return "bg-cyan-100 text-cyan-800 border-cyan-200";
-    case "Cancelled":
-      return "bg-rose-100 text-rose-800 border-rose-200";
-    case "Invoiced":
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    case "Pending Approval":
-      return "bg-indigo-100 text-indigo-800 border-indigo-200";
-    default:
-      return "bg-slate-100 text-slate-700 border-slate-200";
-  }
-}
-
 function makeDefaultCostLine(section: CostSection = "Labour"): CostLine {
   return {
     id: crypto.randomUUID(),
@@ -238,6 +233,7 @@ function makeDefaultVariation(index: number, jobCode: string): VariationItem {
   const code = `${jobCode}-VAR-${String(index + 1).padStart(2, "0")}`;
   return {
     id: crypto.randomUUID(),
+    updatedAt: null,
     code,
     title: "",
     status: "Draft",
@@ -255,7 +251,7 @@ function makeDefaultVariation(index: number, jobCode: string): VariationItem {
     discountAmount: "0",
     contingencyAmount: "0",
     gstPercent: "15",
-    includeMarginInExport: false,
+    includeMarginInExport: true,
     includeDiscountInExport: false,
     includeContingencyInExport: false,
     totalPrice: 0,
@@ -299,17 +295,28 @@ export default function ProjectVariationsPage() {
   const [newSupplierCompanyName, setNewSupplierCompanyName] = useState("");
   const [newSupplierEmail, setNewSupplierEmail] = useState("");
   const [newSupplierPhone, setNewSupplierPhone] = useState("");
+  const [pendingAttachmentType, setPendingAttachmentType] = useState<AttachmentItem["type"] | null>(null);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState("");
+  const [isSupplierMenuOpen, setIsSupplierMenuOpen] = useState(false);
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [, setSummary] = useState({
+    totalValue: 0,
+    draft: 0,
+    awaitingClient: 0,
+    approved: 0,
+    invoiceReady: 0,
+  });
+  const [hydratedPurchaseOrderIds, setHydratedPurchaseOrderIds] = useState<Set<string>>(new Set());
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
-  const [savedStatusById, setSavedStatusById] = useState<Map<string, VariationStatus>>(new Map());
-  const [isRegisterOpen, setIsRegisterOpen] = useState(true);
   const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
   const [isDocsOpen, setIsDocsOpen] = useState(true);
   const isCreatingPurchaseOrderRef = useRef(false);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const hydratingPurchaseOrderIdsRef = useRef<Set<string>>(new Set());
   const supabase = useMemo(() => {
     try {
       return createBrowserSupabaseClient();
@@ -321,6 +328,156 @@ export default function ProjectVariationsPage() {
   useEffect(() => {
     if (!supabase) {
       setIsLoadingVariations(false);
+    }
+  }, [supabase]);
+
+  const refreshSummary = useCallback(async (nextOrganizationId: string, nextProjectId: string) => {
+    if (!supabase) {
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error: summaryError } = await (supabase as any).rpc("get_project_purchase_order_summary", {
+      p_organization_id: nextOrganizationId,
+      p_project_id: nextProjectId,
+    });
+
+    if (summaryError) {
+      throw new Error(summaryError.message);
+    }
+
+    const row = (Array.isArray(data) ? data[0] : null) as PurchaseOrderSummaryRow | null;
+    setSummary({
+      totalValue: Number(row?.total_value ?? 0),
+      draft: Number(row?.draft_count ?? 0),
+      awaitingClient: Number(row?.awaiting_client_count ?? 0),
+      approved: Number(row?.approved_count ?? 0),
+      invoiceReady: Number(row?.invoice_ready_count ?? 0),
+    });
+  }, [supabase]);
+
+  const hydratePurchaseOrderDetails = useCallback(async (purchaseOrderId: string, resolvedOrganizationId: string) => {
+    if (!supabase || !resolvedOrganizationId || !purchaseOrderId) {
+      return;
+    }
+    if (hydratingPurchaseOrderIdsRef.current.has(purchaseOrderId)) {
+      return;
+    }
+    hydratingPurchaseOrderIdsRef.current.add(purchaseOrderId);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lineItemsTable = (supabase as any).from("project_purchase_order_line_items");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attachmentsTable = (supabase as any).from("project_purchase_order_attachments");
+
+    try {
+      const [{ data: purchaseOrderRowRaw, error: purchaseOrderError }, { data: lineRowsRaw }, { data: attachmentRowsRaw }] = await Promise.all([
+        purchaseOrdersTable
+          .select(
+            "id, updated_at, purchase_order_number, purchase_order_title, status, origin, supplier_id, issued_to_label, supplier_contact, supplier_name_snapshot, supplier_email_snapshot, supplier_phone_snapshot, requested_by, requested_date, due_date, total_purchase_order_price, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes"
+          )
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("id", purchaseOrderId)
+          .maybeSingle(),
+        lineItemsTable
+          .select("id, purchase_order_id, section, description, quantity, unit, rate")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("purchase_order_id", purchaseOrderId)
+          .order("sort_order", { ascending: true }),
+        attachmentsTable
+          .select("id, purchase_order_id, file_name, file_kind, storage_path, external_url")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("purchase_order_id", purchaseOrderId)
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (purchaseOrderError) {
+        throw new Error(purchaseOrderError.message);
+      }
+      if (!purchaseOrderRowRaw) {
+        return;
+      }
+
+      const row = purchaseOrderRowRaw as VariationRow;
+      const lineRows = (lineRowsRaw ?? []) as Array<{
+        id: string;
+        purchase_order_id: string;
+        section: string;
+        description: string;
+        quantity: number;
+        unit: string;
+        rate: number;
+      }>;
+      const attachmentRows = (attachmentRowsRaw ?? []) as Array<{
+        id: string;
+        purchase_order_id: string;
+        file_name: string;
+        file_kind: string;
+        storage_path: string | null;
+        external_url: string | null;
+      }>;
+
+      const hydratedLines = lineRows.length > 0
+        ? lineRows.map((lineRow) => ({
+            id: lineRow.id,
+            section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
+            description: lineRow.description ?? "",
+            quantity: Number(lineRow.quantity ?? 0),
+            unit: lineRow.unit ?? "",
+            rate: Number(lineRow.rate ?? 0),
+          }))
+        : [makeDefaultCostLine("Labour")];
+
+      const hydratedAttachments: AttachmentItem[] = attachmentRows.map((attachmentRow) => ({
+        id: attachmentRow.id,
+        name: attachmentRow.file_name ?? "",
+        type:
+          attachmentRow.file_kind === "Drawing" || attachmentRow.file_kind === "Email" || attachmentRow.file_kind === "Site Instruction"
+            ? (attachmentRow.file_kind as AttachmentItem["type"])
+            : "Email",
+        storagePath: attachmentRow.storage_path ?? null,
+        externalUrl: attachmentRow.external_url ?? null,
+      }));
+
+      setVariations((current) =>
+        current.map((variation) =>
+          variation.id !== purchaseOrderId
+            ? variation
+            : {
+                ...variation,
+                updatedAt: row.updated_at ?? null,
+                code: row.purchase_order_number,
+                title: row.purchase_order_title,
+                status: normalizeStatus(row.status),
+                origin: normalizeOrigin(row.origin),
+                issuedToSupplierId: row.supplier_id ?? "",
+                issuedToLabel: row.issued_to_label ?? row.supplier_name_snapshot ?? "",
+                supplierContact: row.supplier_contact ?? "",
+                requestedBy: row.requested_by ?? "",
+                requestedDate: row.requested_date ?? "",
+                dueDate: row.due_date ?? "",
+                clientSentAt: row.sent_to_client_at,
+                approvedAt: row.approved_at,
+                invoiceReady: Boolean(row.invoice_ready),
+                marginPercent: String(row.margin_percent ?? 0),
+                discountAmount: String(row.discount_amount ?? 0),
+                contingencyAmount: String(row.contingency_amount ?? 0),
+                gstPercent: String(row.gst_percent ?? 15),
+                includeMarginInExport: row.include_margin_in_export ?? true,
+                includeDiscountInExport: Boolean(row.include_discount_in_export),
+                includeContingencyInExport: Boolean(row.include_contingency_in_export),
+                totalPrice: Number(row.total_purchase_order_price ?? 0),
+                notes: row.notes ?? "",
+                costLines: hydratedLines,
+                attachments: hydratedAttachments,
+              }
+        )
+      );
+      setHydratedPurchaseOrderIds((current) => new Set([...current, purchaseOrderId]));
+    } finally {
+      hydratingPurchaseOrderIdsRef.current.delete(purchaseOrderId);
     }
   }, [supabase]);
 
@@ -386,10 +543,6 @@ export default function ProjectVariationsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const variationsTable = (supabase as any).from("project_purchase_orders");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const lineItemsTable = (supabase as any).from("project_purchase_order_line_items");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attachmentsTable = (supabase as any).from("project_purchase_order_attachments");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const suppliersTable = (supabase as any).from("organization_suppliers");
 
       const { data: suppliersRaw } = await suppliersTable
@@ -401,9 +554,17 @@ export default function ProjectVariationsPage() {
       const supplierRows = (suppliersRaw ?? []) as OrganizationSupplier[];
       setSuppliers(supplierRows);
 
+      try {
+        await refreshSummary(resolvedOrganizationId, projectRow.id);
+      } catch (summaryError) {
+        if (!cancelled) {
+          setError(summaryError instanceof Error ? summaryError.message : "Unable to load purchase order summary.");
+        }
+      }
+
       const { data: variationRowsRaw, error: variationError } = await variationsTable
         .select(
-          "id, purchase_order_number, purchase_order_title, status, origin, supplier_id, issued_to_label, supplier_contact, supplier_name_snapshot, supplier_email_snapshot, supplier_phone_snapshot, requested_by, requested_date, due_date, total_purchase_order_price, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes"
+          "id, updated_at, purchase_order_number, purchase_order_title, status, total_purchase_order_price, invoice_ready"
         )
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", projectRow.id)
@@ -420,7 +581,6 @@ export default function ProjectVariationsPage() {
         setVariations([]);
         setActiveVariationId(null);
         setPersistedVariationIds(new Set());
-        setSavedStatusById(new Map());
         setIsLoadingVariations(false);
         return;
       }
@@ -429,127 +589,47 @@ export default function ProjectVariationsPage() {
 
       const hydratedVariations: VariationItem[] = variationRows.map((row) => ({
         id: row.id,
+        updatedAt: row.updated_at ?? null,
         code: row.purchase_order_number,
         title: row.purchase_order_title,
         status: normalizeStatus(row.status),
-        origin: normalizeOrigin(row.origin),
-        issuedToSupplierId: row.supplier_id ?? "",
-        issuedToLabel: row.issued_to_label ?? row.supplier_name_snapshot ?? "",
-        supplierContact: row.supplier_contact ?? "",
-        requestedBy: row.requested_by ?? "",
-        requestedDate: row.requested_date ?? "",
-        dueDate: row.due_date ?? "",
-        clientSentAt: row.sent_to_client_at,
-        approvedAt: row.approved_at,
+        origin: "Material Supply",
+        issuedToSupplierId: "",
+        issuedToLabel: "",
+        supplierContact: "",
+        requestedBy: "",
+        requestedDate: "",
+        dueDate: "",
+        clientSentAt: null,
+        approvedAt: null,
         invoiceReady: Boolean(row.invoice_ready),
-        marginPercent: String(row.margin_percent ?? 0),
-        discountAmount: String(row.discount_amount ?? 0),
-        contingencyAmount: String(row.contingency_amount ?? 0),
-        gstPercent: String(row.gst_percent ?? 15),
-        includeMarginInExport: row.include_margin_in_export ?? true,
-        includeDiscountInExport: Boolean(row.include_discount_in_export),
-        includeContingencyInExport: Boolean(row.include_contingency_in_export),
+        marginPercent: "0",
+        discountAmount: "0",
+        contingencyAmount: "0",
+        gstPercent: "15",
+        includeMarginInExport: true,
+        includeDiscountInExport: false,
+        includeContingencyInExport: false,
         totalPrice: Number(row.total_purchase_order_price ?? 0),
         costLines: [makeDefaultCostLine("Labour")],
-        notes: row.notes ?? "",
+        notes: "",
         attachments: [],
       }));
 
       setVariations(hydratedVariations);
+      setHydratedPurchaseOrderIds(new Set());
       setActiveVariationId((current) => (current && hydratedVariations.some((item) => item.id === current) ? current : hydratedVariations[0].id));
       setPersistedVariationIds(new Set(hydratedVariations.map((item) => item.id)));
-      setSavedStatusById(new Map(hydratedVariations.map((item) => [item.id, item.status])));
-      setIsLoadingVariations(false);
 
-      const hydrateDetailsForIds = async (purchaseOrderIds: string[]) => {
-        if (purchaseOrderIds.length === 0) {
-          return;
+      const selectedId = routePurchaseOrderId && variationIds.includes(routePurchaseOrderId) ? routePurchaseOrderId : variationIds[0];
+      try {
+        await hydratePurchaseOrderDetails(selectedId, resolvedOrganizationId);
+      } catch (hydrateError) {
+        if (!cancelled) {
+          setError(hydrateError instanceof Error ? hydrateError.message : "Unable to load purchase order details.");
         }
-
-        const [{ data: lineRowsRaw }, { data: attachmentRowsRaw }] = await Promise.all([
-          lineItemsTable
-            .select("id, purchase_order_id, section, description, quantity, unit, rate")
-            .in("purchase_order_id", purchaseOrderIds)
-            .order("sort_order", { ascending: true }),
-          attachmentsTable
-            .select("id, purchase_order_id, file_name, file_kind")
-            .in("purchase_order_id", purchaseOrderIds)
-            .order("created_at", { ascending: true }),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        const lineRows = (lineRowsRaw ?? []) as Array<{
-          id: string;
-          purchase_order_id: string;
-          section: string;
-          description: string;
-          quantity: number;
-          unit: string;
-          rate: number;
-        }>;
-        const attachmentRows = (attachmentRowsRaw ?? []) as Array<{
-          id: string;
-          purchase_order_id: string;
-          file_name: string;
-          file_kind: string;
-        }>;
-
-        const linesByVariationId = new Map<string, CostLine[]>();
-        for (const lineRow of lineRows) {
-          const current = linesByVariationId.get(lineRow.purchase_order_id) ?? [];
-          current.push({
-            id: lineRow.id,
-            section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
-            description: lineRow.description ?? "",
-            quantity: Number(lineRow.quantity ?? 0),
-            unit: lineRow.unit ?? "",
-            rate: Number(lineRow.rate ?? 0),
-          });
-          linesByVariationId.set(lineRow.purchase_order_id, current);
-        }
-
-        const attachmentsByVariationId = new Map<string, AttachmentItem[]>();
-        for (const attachmentRow of attachmentRows) {
-          const current = attachmentsByVariationId.get(attachmentRow.purchase_order_id) ?? [];
-          current.push({
-            id: attachmentRow.id,
-            name: attachmentRow.file_name ?? "",
-            type:
-              attachmentRow.file_kind === "Drawing" || attachmentRow.file_kind === "Email" || attachmentRow.file_kind === "Site Instruction"
-                ? (attachmentRow.file_kind as AttachmentItem["type"])
-                : "Email",
-          });
-          attachmentsByVariationId.set(attachmentRow.purchase_order_id, current);
-        }
-
-        const idSet = new Set(purchaseOrderIds);
-        setVariations((current) =>
-          current.map((variation) => {
-            if (!idSet.has(variation.id)) {
-              return variation;
-            }
-
-            return {
-              ...variation,
-              costLines: linesByVariationId.get(variation.id) ?? [makeDefaultCostLine("Labour")],
-              attachments: attachmentsByVariationId.get(variation.id) ?? [],
-            };
-          })
-        );
-      };
-
-      const selectedId = routePurchaseOrderId && variationIds.includes(routePurchaseOrderId)
-        ? routePurchaseOrderId
-        : variationIds[0];
-      void hydrateDetailsForIds([selectedId]);
-
-      const remainingIds = variationIds.filter((id) => id !== selectedId);
-      if (remainingIds.length > 0) {
-        void hydrateDetailsForIds(remainingIds);
       }
+      setIsLoadingVariations(false);
     };
 
     void loadProjectCode();
@@ -557,13 +637,39 @@ export default function ProjectVariationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [routeProjectSlug, routePurchaseOrderId, session?.organizationId, supabase]);
+  }, [hydratePurchaseOrderDetails, refreshSummary, routeProjectSlug, routePurchaseOrderId, session?.organizationId, supabase]);
 
   const activeVariation = useMemo(
     () => variations.find((variation) => variation.id === activeVariationId) ?? variations[0] ?? null,
     [activeVariationId, variations]
   );
   const hasVariations = variations.length > 0;
+  const filteredSuppliers = useMemo(() => {
+    const query = supplierSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return suppliers;
+    }
+    return suppliers.filter((supplier) => supplierDisplayName(supplier).toLowerCase().includes(query));
+  }, [supplierSearchQuery, suppliers]);
+
+  useEffect(() => {
+    if (!activeVariation) {
+      return;
+    }
+
+    if (activeVariation.issuedToSupplierId === NEW_SUPPLIER_OPTION) {
+      setSupplierSearchQuery(activeVariation.issuedToLabel || "");
+      return;
+    }
+
+    const selectedSupplier = suppliers.find((supplier) => supplier.id === activeVariation.issuedToSupplierId);
+    if (selectedSupplier) {
+      setSupplierSearchQuery(supplierDisplayName(selectedSupplier));
+      return;
+    }
+
+    setSupplierSearchQuery(activeVariation.issuedToLabel || "");
+  }, [activeVariation, suppliers]);
 
   useEffect(() => {
     if (!routePurchaseOrderId || variations.length === 0) {
@@ -574,65 +680,36 @@ export default function ProjectVariationsPage() {
     }
   }, [routePurchaseOrderId, variations]);
 
-  const summary = useMemo(() => {
-    const totals = {
-      totalValue: 0,
-      draft: 0,
-      awaitingClient: 0,
-      approved: 0,
-      invoiceReady: 0,
-    };
-
-    for (const variation of variations) {
-      const variationTotal = Number(variation.totalPrice ?? 0);
-      totals.totalValue += variationTotal;
-
-      if (variation.status === "Draft") {
-        totals.draft += 1;
-      }
-      if (variation.status === "Issued") {
-        totals.awaitingClient += 1;
-      }
-      if (variation.status === "Approved") {
-        totals.approved += 1;
-      }
-      if (variation.invoiceReady) {
-        totals.invoiceReady += 1;
-      }
+  useEffect(() => {
+    if (!activeVariationId || !organizationId || hydratedPurchaseOrderIds.has(activeVariationId)) {
+      return;
     }
 
-    return totals;
-  }, [variations]);
+    void hydratePurchaseOrderDetails(activeVariationId, organizationId).catch((hydrateError) => {
+      setError(hydrateError instanceof Error ? hydrateError.message : "Unable to load purchase order details.");
+    });
+  }, [activeVariationId, hydratePurchaseOrderDetails, hydratedPurchaseOrderIds, organizationId]);
 
   const pricingSummary = useMemo(() => {
     if (!activeVariation) {
       return {
         baseSubtotal: 0,
-        margin: 0,
-        discount: 0,
-        contingency: 0,
         gst: 0,
         grandTotal: 0,
       };
     }
 
     const baseSubtotal = activeVariation.costLines.reduce((acc, line) => acc + lineTotal(line), 0);
-    const margin = 0;
-    const contingency = 0;
-    const discount = 0;
-    const preGstTotal = baseSubtotal;
-    const gst = preGstTotal * (numberOrZero(activeVariation.gstPercent) / 100);
-    const grandTotal = preGstTotal + gst;
+    const gst = baseSubtotal * (numberOrZero(activeVariation.gstPercent) / 100);
+    const grandTotal = baseSubtotal + gst;
 
     return {
       baseSubtotal,
-      margin,
-      discount,
-      contingency,
       gst,
       grandTotal,
     };
   }, [activeVariation]);
+  const isActiveVariationHydrated = activeVariation ? hydratedPurchaseOrderIds.has(activeVariation.id) : false;
 
   const createPurchaseOrder = useCallback(async () => {
     if (isCreatingPurchaseOrderRef.current) {
@@ -647,79 +724,48 @@ export default function ProjectVariationsPage() {
         setError("Purchase order create is not ready. Please refresh and try again.");
         return;
       }
+      // Use atomic DB-side draft creation to prevent purchase_order_number races under concurrency.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: createdRows, error: createError } = await (supabase as any).rpc("create_project_purchase_order_draft", {
+        p_organization_id: organizationId,
+        p_project_id: dbProjectId,
+        p_title: "New Purchase Order",
+        p_origin: "Material Supply",
+      });
 
-      const prefix = `${jobCode}-PO-`;
-      let maxSuffix = 0;
-      for (const variation of variations) {
-        if (!variation.code.startsWith(prefix)) {
-          continue;
-        }
-        const suffix = Number.parseInt(variation.code.slice(prefix.length), 10);
-        if (Number.isFinite(suffix) && suffix > maxSuffix) {
-          maxSuffix = suffix;
-        }
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
+      if (!createdRow?.id) {
+        throw new Error("Purchase order was created but no identifier was returned.");
       }
 
       const nextVariation = makeDefaultVariation(variations.length, jobCode);
-      nextVariation.code = `${prefix}${String(maxSuffix + 1).padStart(2, "0")}`;
-      nextVariation.title = nextVariation.title.trim() || "New Purchase Order";
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
-      const insertPayload = {
-        id: nextVariation.id,
-        organization_id: organizationId,
-        project_id: dbProjectId,
-        created_by: session.id,
-        purchase_order_title: nextVariation.title,
-        purchase_order_number: nextVariation.code,
-        status: nextVariation.status,
-        origin: nextVariation.origin,
-        supplier_id: null,
-        issued_to_label: "",
-        supplier_contact: "",
-        supplier_name_snapshot: "",
-        supplier_email_snapshot: "",
-        supplier_phone_snapshot: "",
-        requested_by: nextVariation.requestedBy,
-        requested_date: nextVariation.requestedDate || null,
-        due_date: nextVariation.dueDate || null,
-        sent_to_client_at: nextVariation.clientSentAt || null,
-        approved_at: nextVariation.approvedAt || null,
-        invoice_ready: nextVariation.invoiceReady,
-        notes: nextVariation.notes,
-        subtotal: 0,
-        margin_percent: 0,
-        discount_amount: 0,
-        contingency_amount: 0,
-        gst_percent: Number(numberOrZero(nextVariation.gstPercent).toFixed(3)),
-        gst_total: 0,
-        total_purchase_order_price: 0,
-        include_margin_in_export: false,
-        include_discount_in_export: false,
-        include_contingency_in_export: false,
-      };
-
-      const { error: insertError } = await purchaseOrdersTable.insert(insertPayload);
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
+      nextVariation.id = createdRow.id;
+      nextVariation.updatedAt = null;
+      nextVariation.code = createdRow.purchase_order_number || `${jobCode}-PO-00`;
+      nextVariation.title = createdRow.purchase_order_title || "New Purchase Order";
+      nextVariation.status = normalizeStatus(createdRow.status);
+      nextVariation.origin = normalizeOrigin(createdRow.origin);
 
       setVariations((current) => [...current, nextVariation]);
       setPersistedVariationIds((current) => new Set([...current, nextVariation.id]));
-      setSavedStatusById((current) => {
-        const next = new Map(current);
-        next.set(nextVariation.id, nextVariation.status);
+      setActiveVariationId(nextVariation.id);
+      setHydratedPurchaseOrderIds((current) => {
+        const next = new Set(current);
+        next.delete(nextVariation.id);
         return next;
       });
-      setActiveVariationId(nextVariation.id);
+      await refreshSummary(organizationId, dbProjectId);
       router.replace(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${nextVariation.id}`);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create purchase order.");
     } finally {
       isCreatingPurchaseOrderRef.current = false;
     }
-  }, [dbProjectId, jobCode, organizationId, routeProjectSlug, router, session?.id, supabase, variations]);
+  }, [dbProjectId, jobCode, organizationId, refreshSummary, routeProjectSlug, router, session?.id, supabase, variations]);
 
   const deletePurchaseOrder = useCallback(async (purchaseOrderId: string) => {
     const purchaseOrder = variations.find((item) => item.id === purchaseOrderId);
@@ -765,11 +811,14 @@ export default function ProjectVariationsPage() {
         next.delete(purchaseOrderId);
         return next;
       });
-      setSavedStatusById((current) => {
-        const next = new Map(current);
+      setHydratedPurchaseOrderIds((current) => {
+        const next = new Set(current);
         next.delete(purchaseOrderId);
         return next;
       });
+      if (dbProjectId) {
+        await refreshSummary(organizationId, dbProjectId);
+      }
 
       if (nextRows.length === 0) {
         router.replace(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders`);
@@ -783,7 +832,7 @@ export default function ProjectVariationsPage() {
     } finally {
       setIsDeleting(false);
     }
-  }, [organizationId, persistedVariationIds, routeProjectSlug, router, supabase, variations]);
+  }, [dbProjectId, organizationId, persistedVariationIds, refreshSummary, routeProjectSlug, router, supabase, variations]);
 
   useEffect(() => {
     if (!isNewVariationRoute || isLoadingVariations) {
@@ -826,15 +875,59 @@ export default function ProjectVariationsPage() {
   };
 
   const addAttachment = (type: AttachmentItem["type"]) => {
-    if (!activeVariation) return;
+    setPendingAttachmentType(type);
+    attachmentInputRef.current?.click();
+  };
 
-    const ext = type === "Drawing" ? "dwg" : "pdf";
-    const nextName = `${type.toLowerCase().replaceAll(" ", "-")}-${activeVariation.attachments.length + 1}.${ext}`;
+  const handleAttachmentFilesSelected = (files: FileList | null) => {
+    if (!activeVariation || !pendingAttachmentType || !files || files.length === 0) {
+      return;
+    }
+    if (!supabase || !organizationId || !dbProjectId) {
+      setError("Attachment upload is not ready. Please refresh and try again.");
+      return;
+    }
 
-    updateActiveVariation("attachments", [
-      ...activeVariation.attachments,
-      { id: crypto.randomUUID(), name: nextName, type },
-    ]);
+    void (async () => {
+      try {
+        setError(null);
+        const uploadResults = await Promise.all(
+          Array.from(files).map(async (file) => {
+            const cleanName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+            const fileId = crypto.randomUUID();
+            const storagePath = `${organizationId}/${dbProjectId}/purchase-orders/${activeVariation.id}/${fileId}-${cleanName}`;
+            const { error: uploadError } = await supabase.storage
+              .from(PURCHASE_ORDER_ATTACHMENTS_BUCKET)
+              .upload(storagePath, file, { upsert: false });
+
+            if (uploadError) {
+              throw new Error(uploadError.message);
+            }
+
+            const { data: publicUrlData } = supabase.storage
+              .from(PURCHASE_ORDER_ATTACHMENTS_BUCKET)
+              .getPublicUrl(storagePath);
+
+            return {
+              id: fileId,
+              name: file.name,
+              type: pendingAttachmentType,
+              storagePath,
+              externalUrl: publicUrlData.publicUrl || `manual://${file.name}`,
+            } satisfies AttachmentItem;
+          })
+        );
+
+        updateActiveVariation("attachments", [...activeVariation.attachments, ...uploadResults]);
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : "Unable to upload attachment.");
+      } finally {
+        setPendingAttachmentType(null);
+        if (attachmentInputRef.current) {
+          attachmentInputRef.current.value = "";
+        }
+      }
+    })();
   };
 
   const removeAttachment = (attachmentId: string) => {
@@ -867,29 +960,6 @@ export default function ProjectVariationsPage() {
     setSaveMessage(null);
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const variationTable = (supabase as any).from("project_purchase_orders");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const lineItemsTable = (supabase as any).from("project_purchase_order_line_items");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attachmentsTable = (supabase as any).from("project_purchase_order_attachments");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const statusEventsTable = (supabase as any).from("project_purchase_order_status_events");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const invoiceItemsTable = (supabase as any).from("project_purchase_order_invoice_items");
-
-      const sectionTotals = {
-        Labour: 0,
-        Materials: 0,
-        Subcontractors: 0,
-        Plant: 0,
-        Margin: 0,
-      } satisfies Record<CostSection, number>;
-
-      for (const line of activeVariation.costLines) {
-        sectionTotals[line.section] += lineTotal(line);
-      }
-
       let resolvedSupplierId: string | null = activeVariation.issuedToSupplierId || null;
       let resolvedSupplier: OrganizationSupplier | null = suppliers.find((supplier) => supplier.id === resolvedSupplierId) ?? null;
       if (resolvedSupplierId === NEW_SUPPLIER_OPTION) {
@@ -943,157 +1013,80 @@ export default function ProjectVariationsPage() {
       const supplierNameSnapshot = resolvedSupplier ? issuedToLabel : "";
       const supplierEmailSnapshot = resolvedSupplier?.email?.trim() || "";
       const supplierPhoneSnapshot = resolvedSupplier?.phone?.trim() || "";
-
-      const payload = {
-        id: activeVariation.id,
-        organization_id: organizationId,
-        project_id: dbProjectId,
-        created_by: session?.id,
-        purchase_order_title: activeVariation.title.trim() || activeVariation.code,
-        purchase_order_number: activeVariation.code,
-        status: activeVariation.status,
-        origin: activeVariation.origin,
-        supplier_id: resolvedSupplierId,
-        issued_to_label: issuedToLabel,
-        supplier_contact: supplierContact,
-        supplier_name_snapshot: supplierNameSnapshot,
-        supplier_email_snapshot: supplierEmailSnapshot,
-        supplier_phone_snapshot: supplierPhoneSnapshot,
-        requested_by: activeVariation.requestedBy,
-        requested_date: activeVariation.requestedDate || null,
-        due_date: activeVariation.dueDate || null,
-        sent_to_client_at: activeVariation.clientSentAt || null,
-        approved_at: activeVariation.approvedAt || null,
-        invoice_ready: activeVariation.invoiceReady,
-        notes: activeVariation.notes,
-        subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
-        margin_percent: 0,
-        discount_amount: 0,
-        contingency_amount: 0,
-        gst_percent: Number(numberOrZero(activeVariation.gstPercent).toFixed(3)),
-        include_margin_in_export: false,
-        include_discount_in_export: false,
-        include_contingency_in_export: false,
-        gst_total: Number(pricingSummary.gst.toFixed(2)),
-        total_purchase_order_price: Number(pricingSummary.grandTotal.toFixed(2)),
-      };
-
-      if (persistedVariationIds.has(activeVariation.id)) {
-        const { error: updateError } = await variationTable
-          .update(payload)
-          .eq("organization_id", organizationId)
-          .eq("id", activeVariation.id);
-        if (updateError) {
-          throw new Error(updateError.message);
-        }
-      } else {
-        const { error: insertError } = await variationTable.insert(payload);
-        if (insertError) {
-          throw new Error(insertError.message);
-        }
-      }
-
-      const { error: deleteLineItemsError } = await lineItemsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("purchase_order_id", activeVariation.id);
-      if (deleteLineItemsError) {
-        throw new Error(deleteLineItemsError.message);
-      }
-
-      if (activeVariation.costLines.length > 0) {
-        const lineItemsPayload = activeVariation.costLines.map((line, index) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: saveRows, error: saveError } = await (supabase as any).rpc("save_project_purchase_order_draft", {
+        p_organization_id: organizationId,
+        p_project_id: dbProjectId,
+        p_purchase_order_id: activeVariation.id,
+        p_expected_updated_at: activeVariation.updatedAt,
+        p_purchase_order_title: activeVariation.title.trim() || activeVariation.code,
+        p_purchase_order_number: activeVariation.code,
+        p_status: activeVariation.status,
+        p_origin: activeVariation.origin,
+        p_supplier_id: resolvedSupplierId,
+        p_issued_to_label: issuedToLabel,
+        p_supplier_contact: supplierContact,
+        p_supplier_name_snapshot: supplierNameSnapshot,
+        p_supplier_email_snapshot: supplierEmailSnapshot,
+        p_supplier_phone_snapshot: supplierPhoneSnapshot,
+        p_requested_by: activeVariation.requestedBy,
+        p_requested_date: activeVariation.requestedDate || null,
+        p_due_date: activeVariation.dueDate || null,
+        p_sent_to_client_at: activeVariation.clientSentAt || null,
+        p_approved_at: activeVariation.approvedAt || null,
+        p_invoice_ready: activeVariation.invoiceReady,
+        p_notes: activeVariation.notes,
+        p_margin_percent: 0,
+        p_discount_amount: 0,
+        p_contingency_amount: 0,
+        p_gst_percent: Number(numberOrZero(activeVariation.gstPercent).toFixed(3)),
+        p_include_margin_in_export: false,
+        p_include_discount_in_export: false,
+        p_include_contingency_in_export: false,
+        p_line_items: activeVariation.costLines.map((line) => ({
           id: line.id,
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          purchase_order_id: activeVariation.id,
           section: line.section,
           description: line.description,
           quantity: Number(line.quantity),
           unit: line.unit,
           rate: Number(line.rate),
-          total: Number(lineTotal(line).toFixed(2)),
-          sort_order: index,
-        }));
-        const { error: insertLineItemsError } = await lineItemsTable.insert(lineItemsPayload);
-        if (insertLineItemsError) {
-          throw new Error(insertLineItemsError.message);
-        }
-      }
-
-      const { error: deleteAttachmentsError } = await attachmentsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("purchase_order_id", activeVariation.id);
-      if (deleteAttachmentsError) {
-        throw new Error(deleteAttachmentsError.message);
-      }
-
-      if (activeVariation.attachments.length > 0) {
-        const attachmentsPayload = activeVariation.attachments.map((attachment) => ({
+        })),
+        p_attachments: activeVariation.attachments.map((attachment) => ({
           id: attachment.id,
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          purchase_order_id: activeVariation.id,
-          file_kind: attachment.type,
-          file_name: attachment.name,
-          external_url: `manual://${attachment.name}`,
-          uploaded_by: session?.id ?? null,
-        }));
-        const { error: insertAttachmentsError } = await attachmentsTable.insert(attachmentsPayload);
-        if (insertAttachmentsError) {
-          throw new Error(insertAttachmentsError.message);
-        }
+          type: attachment.type,
+          name: attachment.name,
+          external_url: attachment.externalUrl ?? `manual://${attachment.name}`,
+        })),
+      });
+
+      if (saveError) {
+        throw new Error(saveError.message);
       }
 
-      const previousSavedStatus = savedStatusById.get(activeVariation.id);
-      if (previousSavedStatus !== activeVariation.status) {
-        const { error: insertStatusEventError } = await statusEventsTable.insert({
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          purchase_order_id: activeVariation.id,
-          from_status: previousSavedStatus ?? null,
-          to_status: activeVariation.status,
-          changed_by: session?.id ?? null,
-        });
-        if (insertStatusEventError) {
-          throw new Error(insertStatusEventError.message);
-        }
-      }
-
-      if (activeVariation.invoiceReady) {
-        const { error: upsertInvoiceItemError } = await invoiceItemsTable.upsert(
-          {
-            organization_id: organizationId,
-            project_id: dbProjectId,
-            purchase_order_id: activeVariation.id,
-            amount: Number(pricingSummary.grandTotal.toFixed(2)),
-            status: "Ready",
-          },
-          { onConflict: "purchase_order_id" }
-        );
-        if (upsertInvoiceItemError) {
-          throw new Error(upsertInvoiceItemError.message);
-        }
-      } else {
-        await invoiceItemsTable
-          .delete()
-          .eq("organization_id", organizationId)
-          .eq("purchase_order_id", activeVariation.id);
-      }
+      const savedRow = Array.isArray(saveRows) ? saveRows[0] : null;
+      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : activeVariation.updatedAt;
+      const nextTotal = Number(savedRow?.total_purchase_order_price ?? pricingSummary.grandTotal);
 
       setPersistedVariationIds((current) => new Set([...current, activeVariation.id]));
-      setSavedStatusById((current) => {
-        const next = new Map(current);
-        next.set(activeVariation.id, activeVariation.status);
-        return next;
-      });
       setVariations((current) =>
-        current.map((item) => (item.id === activeVariation.id ? { ...item, totalPrice: Number(pricingSummary.grandTotal.toFixed(2)) } : item))
+        current.map((item) =>
+          item.id === activeVariation.id
+            ? {
+                ...item,
+                updatedAt: nextUpdatedAt,
+                status: activeVariation.status,
+                invoiceReady: activeVariation.invoiceReady,
+                totalPrice: nextTotal,
+              }
+            : item
+        )
       );
+      setHydratedPurchaseOrderIds((current) => new Set([...current, activeVariation.id]));
+      await refreshSummary(organizationId, dbProjectId);
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save purchase order.");
+      const message = saveError instanceof Error ? saveError.message : "Unable to save purchase order.";
+      setError(message);
     } finally {
       setIsSaving(false);
     }
@@ -1236,6 +1229,7 @@ export default function ProjectVariationsPage() {
       }
       .totals .k { color: var(--muted); }
       .totals .v { text-align: right; font-weight: 600; }
+      .totals .row-divider { border-top: 1px solid #CBD5E1; margin: 4px 0; }
       .totals .divider { border-top: 2px solid var(--navy); margin-top: 6px; padding-top: 8px; }
       .totals .final .k,
       .totals .final .v { color: var(--navy); font-weight: 800; font-size: 22px; line-height: 1.05; }
@@ -1313,6 +1307,15 @@ export default function ProjectVariationsPage() {
         <tbody>${lineItemsRows}</tbody>
       </table>
 
+      <section class="totals">
+        <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(pricingSummary.baseSubtotal)}</span></div>
+        <div class="row-divider"></div>
+        <div class="row"><span class="k">GST (${escapeHtml(activeVariation.gstPercent.trim() || "15")}%)</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
+        <div class="divider final">
+          <div class="row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
+        </div>
+      </section>
+
       <h2 class="section-title">Attachments</h2>
       <table class="attachments-table">
         <thead>
@@ -1326,14 +1329,6 @@ export default function ProjectVariationsPage() {
 
       <h2 class="section-title">Notes</h2>
       <section class="notes-box">${notesMarkup}</section>
-
-      <section class="totals">
-        <div class="row"><span class="k">Subtotal</span><span class="v">${toMoney(pricingSummary.baseSubtotal)}</span></div>
-        <div class="row"><span class="k">GST</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
-        <div class="divider final">
-          <div class="row"><span class="k">Total</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
-        </div>
-      </section>
 
       <footer class="doc-footer">
         <span>${escapeHtml(printableOrgName)} • ${escapeHtml(printableNumber)}</span>
@@ -1370,148 +1365,144 @@ export default function ProjectVariationsPage() {
 
   if (isLoadingVariations) {
     return (
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardContent className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading purchase orders...</CardContent>
-      </Card>
+      <div className={`${styles.scope} -mb-8 space-y-6`}>
+        <section className={styles.heroBlock}>
+          <div>
+            <h1 className={styles.heroTitle}>Purchase Order</h1>
+            <p className={`${interMedium.className} ${styles.heroSummary}`}>Manage procurement, approvals, and supplier scope for this job</p>
+          </div>
+          <div className={styles.heroActions}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px] opacity-60`}
+            >
+              Actions
+              <ChevronDown className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </section>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+            <div className="space-y-4">
+              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              </div>
+              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading purchase orders...</p>
+            </div>
+          </div>
+          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
+            <CardHeader className="pb-3 pt-5">
+              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-5">
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-        >
-          <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Back to Purchase Order Register
-          </Link>
-        </Button>
-      </div>
-
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-5 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Purchase Order Register</h1>
-              <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-                Create, track, price, approve, and invoice project purchase orders in one place.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {activeVariation ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void deletePurchaseOrder(activeVariation.id)}
-                  disabled={isDeleting}
-                  className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-4 text-sm font-medium text-[#7f1d1d] hover:bg-[#fff1f2]`}
-                >
-                  <Trash2 className="mr-1.5 h-4 w-4" />
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </Button>
-              ) : null}
-              <Button type="button" onClick={() => void createPurchaseOrder()} variant="outline" className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}>
-                <Plus className="mr-1 h-4 w-4" />
-                New Purchase Order
-              </Button>
+    <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <section className={styles.heroBlock}>
+        <div>
+          <h1 className={styles.heroTitle}>Purchase Order</h1>
+          <p className={`${interMedium.className} ${styles.heroSummary}`}>Manage procurement, approvals, and supplier scope for this job</p>
+        </div>
+        <div className={styles.heroActions}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 type="button"
-                onClick={saveVariation}
+                variant="outline"
+                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+              >
+                Actions
+                <ChevronDown className="ml-1 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[240px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders`}>
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Purchase Order Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void createPurchaseOrder();
+                }}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                New Purchase Order
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void saveVariation();
+                }}
                 disabled={isSaving}
-                className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 {isSaving ? "Saving..." : "Save Purchase Order"}
-              </Button>
-              <Button
-                type="button"
-                onClick={exportVariationPdf}
-                variant="outline"
-                className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  exportVariationPdf();
+                }}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 Export PDF
-              </Button>
-            </div>
-          </div>
-          {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-          ) : null}
-          {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
-        </CardHeader>
-      </Card>
+              </DropdownMenuItem>
+              {activeVariation ? (
+                <>
+                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void deletePurchaseOrder(activeVariation.id);
+                    }}
+                    disabled={isDeleting}
+                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </section>
+
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
       {hasVariations && activeVariation ? (
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4">
-          <section className="border-b border-[#E8EDF5] pb-5">
-            <button type="button" onClick={() => setIsRegisterOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Purchase Order Register</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isRegisterOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {isRegisterOpen ? (
-              <div className="mt-4 space-y-3">
-                <div className="rounded-[6px] border border-[#E5EAF2] overflow-hidden">
-                  <div className={`${interMedium.className} grid grid-cols-[120px_minmax(190px,1fr)_130px_140px] gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
-                    <span>Code</span><span>Purchase Order</span><span>Status</span><span className="text-right">Value</span>
-                  </div>
-                  <div className="divide-y divide-[#EEF2F7]">
-                    {variations.map((variation) => {
-                      const total = variation.id === activeVariation.id ? pricingSummary.grandTotal : Number(variation.totalPrice ?? 0);
-                      const isActive = variation.id === activeVariation.id;
-                      return (
-                        <div
-                          key={variation.id}
-                          onClick={() => {
-                            setActiveVariationId(variation.id);
-                            router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${variation.id}`);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setActiveVariationId(variation.id);
-                              router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${variation.id}`);
-                            }
-                          }}
-                          role="button"
-                          tabIndex={0}
-                          className={`grid w-full cursor-pointer grid-cols-[120px_minmax(190px,1fr)_130px_140px] items-center gap-2 px-3 py-2 text-left transition-colors ${isActive ? "bg-[#F8FBFF]" : "hover:bg-[#f8fafc]"}`}
-                        >
-                          <span className={`${interMedium.className} text-xs font-semibold tracking-[0.06em] text-[#475569]`}>{variation.code}</span>
-                          <span className="text-sm text-[#0F172A]">{variation.title || "—"}</span>
-                          <span className={`inline-flex h-7 items-center rounded-[6px] border px-2.5 text-xs font-semibold ${statusClassName(variation.status)}`}>{variation.status}</span>
-                          <span className="flex items-center justify-end gap-2">
-                            <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(total)}</span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                void deletePurchaseOrder(variation.id);
-                              }}
-                              className="h-10 w-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] p-0 text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#64748B]"
-                              aria-label={`Delete purchase order ${variation.code}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
+      isActiveVariationHydrated ? (
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
+        <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
           <section className="border-b border-[#E8EDF5] py-5">
-            <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Purchase Order Details</h2>
+            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Purchase Order Details</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5 md:col-span-2">
@@ -1540,30 +1531,65 @@ export default function ProjectVariationsPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Issued To</label>
-                  <select
-                    value={activeVariation.issuedToSupplierId}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      updateActiveVariation("issuedToSupplierId", nextValue);
-                      if (nextValue === NEW_SUPPLIER_OPTION) {
-                        updateActiveVariation("issuedToLabel", "");
-                        return;
-                      }
-                      const selected = suppliers.find((supplier) => supplier.id === nextValue);
-                      if (selected) {
-                        updateActiveVariation("issuedToLabel", supplierDisplayName(selected));
-                      }
-                    }}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                  >
-                    <option value="">Select supplier</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplierDisplayName(supplier)}
-                      </option>
-                    ))}
-                    <option value={NEW_SUPPLIER_OPTION}>Add new supplier</option>
-                  </select>
+                  <div className="relative">
+                    <Input
+                      value={supplierSearchQuery}
+                      onFocus={() => setIsSupplierMenuOpen(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => setIsSupplierMenuOpen(false), 100);
+                      }}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setSupplierSearchQuery(value);
+                        updateActiveVariation("issuedToSupplierId", "");
+                        updateActiveVariation("issuedToLabel", value);
+                        setIsSupplierMenuOpen(true);
+                      }}
+                      className="h-10 rounded-[6px]"
+                      placeholder="Search supplier..."
+                    />
+                    {isSupplierMenuOpen ? (
+                      <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[#d1d9e6] bg-white shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
+                        {filteredSuppliers.length > 0 ? (
+                          filteredSuppliers.map((supplier) => {
+                            const label = supplierDisplayName(supplier);
+                            return (
+                              <button
+                                key={supplier.id}
+                                type="button"
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  updateActiveVariation("issuedToSupplierId", supplier.id);
+                                  updateActiveVariation("issuedToLabel", label);
+                                  setSupplierSearchQuery(label);
+                                  setIsSupplierMenuOpen(false);
+                                }}
+                                className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC]`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <p className={`${interMedium.className} px-3 py-2 text-sm text-[#64748B]`}>No suppliers found.</p>
+                        )}
+                        <div className="border-t border-[#e7edf5]">
+                          <button
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              updateActiveVariation("issuedToSupplierId", NEW_SUPPLIER_OPTION);
+                              updateActiveVariation("issuedToLabel", supplierSearchQuery.trim());
+                              setIsSupplierMenuOpen(false);
+                            }}
+                            className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC]`}
+                          >
+                            Add new supplier
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Supplier Contact</label>
@@ -1595,53 +1621,23 @@ export default function ProjectVariationsPage() {
                 </div>
               ) : null}
 
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested Date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
                 <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Required By</label><Input type="date" value={activeVariation.dueDate} onChange={(event) => updateActiveVariation("dueDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
-                <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Invoice Status</label>
-                  <select
-                    value={activeVariation.status === "Invoiced" ? "Invoiced" : activeVariation.invoiceReady ? "Ready to Invoice" : "Not Ready"}
-                    onChange={(event) => {
-                      const next = event.target.value;
-                      if (next === "Invoiced") {
-                        updateActiveVariation("invoiceReady", true);
-                        setStatus("Invoiced");
-                        return;
-                      }
-                      if (next === "Ready to Invoice") {
-                        updateActiveVariation("invoiceReady", true);
-                        if (activeVariation.status === "Invoiced") {
-                          setStatus("Issued");
-                        }
-                        return;
-                      }
-                      updateActiveVariation("invoiceReady", false);
-                      if (activeVariation.status === "Invoiced") {
-                        setStatus("Issued");
-                      }
-                    }}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                  >
-                    <option value="Not Ready">Not Ready</option>
-                    <option value="Ready to Invoice">Ready to Invoice</option>
-                    <option value="Invoiced">Invoiced</option>
-                  </select>
-                </div>
               </div>
             </div>
           </section>
 
           <section className="border-b border-[#E8EDF5] py-5">
             <button type="button" onClick={() => setIsCostBuildUpOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Cost Build-Up</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isCostBuildUpOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isCostBuildUpOpen ? (
               <div className="mt-4 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}><Plus className="mr-1 h-4 w-4" />Add Cost Line</Button>
+                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[8px] bg-[#0B2739] px-3 text-sm font-medium text-white hover:bg-[#0B2739]`}><Plus className="mr-1 h-4 w-4" />Add Item</Button>
                 </div>
 
                 <div className="rounded-[6px] border border-[#E5EAF2] overflow-visible">
@@ -1687,12 +1683,26 @@ export default function ProjectVariationsPage() {
 
           <section className="py-5">
             <button type="button" onClick={() => setIsDocsOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Attachments & Notes</h2>
+              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Attachments & Notes</h2>
               <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isDocsOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isDocsOpen ? (
               <div className="mt-4 space-y-4">
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => handleAttachmentFilesSelected(event.target.files)}
+                  accept={
+                    pendingAttachmentType === "Drawing"
+                      ? ".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.webp"
+                      : pendingAttachmentType === "Email"
+                        ? ".eml,.msg,.pdf,.png,.jpg,.jpeg,.webp"
+                        : ".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                  }
+                />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
                   <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
@@ -1744,23 +1754,8 @@ export default function ProjectVariationsPage() {
         </div>
 
         <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-            <CardHeader className="pb-3 pt-5"><CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Purchase Order Status</CardTitle></CardHeader>
-            <CardContent className="space-y-2 pb-5">
-              <p className={`${interMedium.className} text-sm text-[#334155]`}>
-                <span className="text-[#64748B]">Current:</span>{" "}
-                <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${statusClassName(activeVariation.status)}`}>{activeVariation.status}</span>
-              </p>
-              <div className={`${interMedium.className} space-y-1.5 text-xs text-[#52627A]`}>
-                <p className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Requested: {activeVariation.requestedDate || "-"}</p>
-                <p className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Issued: {activeVariation.clientSentAt || "-"}</p>
-                <p className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5" />Approved: {activeVariation.approvedAt || "-"}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-            <CardHeader className="pb-3 pt-5"><CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Pricing Summary</CardTitle></CardHeader>
+          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
+            <CardHeader className="pb-3 pt-5"><CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle></CardHeader>
             <CardContent className="space-y-3 pb-5">
               <div className="grid gap-2">
                 <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>GST (%)</label>
@@ -1775,20 +1770,26 @@ export default function ProjectVariationsPage() {
               <div className="h-px bg-[#E7ECF3]" />
 
               <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST</span><span>{toMoney(pricingSummary.gst)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Purchase Order Register Total</span><span>{toMoney(summary.totalValue)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
+                <div className="my-1 h-px bg-[#CBD5E1]" />
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({activeVariation.gstPercent.trim() || "15"}%)</span><span>{toMoney(pricingSummary.gst)}</span></p>
               </div>
-              <div className="rounded-[6px] bg-[#04234D] px-4 py-3 text-white">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.08em] text-white/70`}>Total Purchase Order Price</p>
-                <p className="mt-1 text-[32px] font-semibold leading-none">{toMoney(pricingSummary.grandTotal)}</p>
+              <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
+                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Purchase Order Price (incl. GST)</p>
+                <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[6px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
+                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Purchase Order"}
                 </Button>
-                <Button type="button" onClick={exportVariationPdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>
+                <Button
+                  type="button"
+                  onClick={exportVariationPdf}
+                  disabled={isSaving}
+                  variant="outline"
+                  className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}
+                >
                   Export PDF
                 </Button>
               </div>
@@ -1796,6 +1797,35 @@ export default function ProjectVariationsPage() {
           </Card>
         </div>
       </div>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+            <div className="space-y-4">
+              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              </div>
+              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading purchase order details...</p>
+            </div>
+          </div>
+          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
+            <CardHeader className="pb-3 pt-5">
+              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-5">
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+            </CardContent>
+          </Card>
+        </div>
+      )
       ) : (
         <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
           <CardContent className="flex flex-col items-center justify-center px-6 py-14 text-center">
