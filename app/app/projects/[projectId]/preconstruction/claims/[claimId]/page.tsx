@@ -828,11 +828,7 @@ export default function ProjectClaimDetailPage() {
     const printableOrgName = organizationName.trim() || "Tradesstack";
     const printableProjectName = projectName || routeProjectSlug?.replaceAll("-", " ") || "Project";
     const printableClaimNumber = claimNumber || "Unassigned";
-    const printableClaimTitle = claimTitle.trim() || "Progress Claim";
     const issueDate = toDayMonthYearLabel(claimDate || new Date().toISOString().slice(0, 10));
-    const periodLabel = periodStart || periodEnd
-      ? `${toDayMonthYearLabel(periodStart || null)} - ${toDayMonthYearLabel(periodEnd || null)}`
-      : "—";
     const raisedBy = session?.name?.trim() || "—";
     const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableClaimNumber}`;
     const logoMarkup = organizationLogoUrl
@@ -847,20 +843,17 @@ export default function ProjectClaimDetailPage() {
           <div class="cell-primary">${escapeHtml(line.sourceNumber || line.description || "Untitled line item")}</div>
           ${line.sourceKind === "Variation" && line.sourceTitle ? `<div class="cell-secondary">${escapeHtml(line.sourceTitle)}</div>` : ""}
         </td>
-        <td>${escapeHtml(line.section || "-")}</td>
-        <td class="right money col-line-total">${toMoney(line.sourceTotal)}</td>
-        <td class="right money col-prev">${toMoney(line.previouslyClaimedAmount)}</td>
-        <td class="right percent col-claim-pct">${line.claimPercent.toFixed(2)}%</td>
-        <td class="right money col-this-claim">${toMoney(line.claimAmount)}</td>
-        <td class="right money col-to-date">${toMoney(line.cumulativeClaimedAmount)}</td>
+        <td class="right money col-contract">${toMoney(line.sourceTotal)}</td>
+        <td class="right percent col-progress">${line.claimPercent.toFixed(2)}%</td>
+        <td class="right money col-total">${toMoney(line.claimAmount)}</td>
       </tr>
     `;
     const lineItemsRows = claimLineItemsComputed.length > 0
       ? [
-          quotePdfRows.length > 0 ? `<tr class="group-row"><td colspan="7">Quote Value</td></tr>${quotePdfRows.map(renderPdfLineRow).join("")}` : "",
-          variationPdfRows.length > 0 ? `<tr class="group-row"><td colspan="7">Variations Value</td></tr>${variationPdfRows.map(renderPdfLineRow).join("")}` : "",
+          quotePdfRows.length > 0 ? `<tr class="group-row"><td colspan="4">Quote Value</td></tr>${quotePdfRows.map(renderPdfLineRow).join("")}` : "",
+          variationPdfRows.length > 0 ? `<tr class="group-row"><td colspan="4">Variations Value</td></tr>${variationPdfRows.map(renderPdfLineRow).join("")}` : "",
         ].join("")
-      : `<tr><td colspan="7" style="text-align:center;color:#64748b;">No claimable line items.</td></tr>`;
+      : `<tr><td colspan="4" style="text-align:center;color:#64748b;">No claimable line items.</td></tr>`;
 
     const gstRate = 0.15;
     const subtotal = currentClaimAmount;
@@ -874,332 +867,376 @@ export default function ProjectClaimDetailPage() {
     <title>${escapeHtml(exportDocumentTitle)}</title>
     <style>
       :root {
-        --navy: #082851;
-        --orange: #F74917;
-        --text: #0F172A;
-        --muted: #64748B;
-        --border: #E2E8F0;
+        --orange: #ff4d1f;
+        --text: #2d3137;
+        --muted: #697587;
+        --line: #cfd6e0;
       }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      @page { size: A4; margin: 9mm 9mm 10mm 9mm; }
-      html, body { margin: 0; padding: 0; background: #fff; color: var(--text); }
-      body { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; line-height: 1.3; }
-      .doc { position: relative; min-height: calc(297mm - 30mm); }
-      .accent { height: 3px; background: var(--orange); margin-bottom: 8px; }
-      .header {
+      @page { size: A4; margin: 0; }
+      html, body { margin: 0; padding: 0; background: #eceff3; color: var(--text); }
+      body { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; }
+      .sheet {
+        width: 794px;
+        min-height: 1123px;
+        margin: 34px auto;
+        background: #fff;
+        padding: 44px 44px 32px;
+        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 10px 26px rgba(15, 23, 42, 0.12);
+      }
+      .accent { height: 4px; background: var(--orange); margin-bottom: 16px; }
+      .top {
         display: grid;
-        grid-template-columns: 1fr 320px;
-        column-gap: 24px;
-        align-items: start;
-        padding-bottom: 7px;
-        border-bottom: 1px solid var(--border);
+        grid-template-columns: 1fr auto auto;
+        align-items: center;
+        column-gap: 20px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 10px;
       }
       .brand { display: flex; align-items: center; gap: 12px; }
-      .logo-wrap { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .logo-wrap { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
       .logo-img { width: 100%; height: 100%; object-fit: contain; }
       .logo-fallback {
-        width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
-        border: 1px solid var(--border); color: var(--navy); font-weight: 700; letter-spacing: 0.06em;
+        width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--line); color: var(--orange); font-size: 13px; font-weight: 700;
       }
-      .company-name { margin: 0; color: var(--navy); font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
-      .header-meta dl { margin: 0; }
-      .header-meta .row {
-        display: grid;
-        grid-template-columns: 84px 1fr;
-        gap: 8px;
-        padding: 2px 0;
-      }
-      .header-meta dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-      .header-meta dd { margin: 0; color: var(--text); font-weight: 600; }
-      .title-block { padding: 8px 0 7px; border-bottom: 1px solid var(--border); }
-      .quote-title { margin: 0; color: var(--navy); font-size: 26px; line-height: 1.05; letter-spacing: -0.02em; }
-      .details { padding: 6px 0; border-bottom: 1px solid var(--border); }
-      .details-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 4px; }
-      .details-row { display: grid; grid-template-columns: 94px 1fr; gap: 10px; }
-      .details-row .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-      .details-row .v { color: var(--text); font-weight: 600; }
-      .section-title {
-        margin: 8px 0 5px;
-        color: var(--navy);
-        font-size: 13px;
+      .title {
+        margin: 0;
+        color: var(--orange);
+        font-size: 58px;
+        line-height: 1;
+        letter-spacing: -0.02em;
         font-weight: 700;
-        letter-spacing: 0.01em;
       }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      thead th {
-        background: #F8FAFC;
-        color: var(--muted);
+      .site { margin: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+      .issued-row {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: 1fr 310px;
+        column-gap: 20px;
+      }
+      .issued-title {
+        margin: 0 0 4px;
+        color: #1f2937;
+        font-size: 12px;
+        line-height: 1;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        font-size: 9px;
+      }
+      .issued-text {
+        margin: 0;
+        color: #4b5563;
+        white-space: pre-line;
+        font-size: 15px;
+        line-height: 1.3;
+      }
+      .issued-meta .row {
+        display: grid;
+        grid-template-columns: 185px auto;
+        gap: 10px;
+        margin-bottom: 1px;
+      }
+      .issued-meta .k {
+        color: #1f2937;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 700;
+        text-align: right;
+        font-size: 10px;
+      }
+      .issued-meta .v {
+        color: #4b5563;
+        text-align: right;
+        font-size: 14px;
+      }
+      .project-lead {
+        margin: 14px 0 10px;
+      }
+      .project-lead .project-line {
+        margin: 0 0 2px;
+        color: #1f2937;
+        font-size: 32px;
+        line-height: 1.05;
+        font-weight: 700;
+      }
+      .project-lead .lead-note {
+        margin: 0;
+        color: #4b5563;
+        font-size: 11px;
+      }
+      .section-title {
+        margin: 0 0 6px;
+        color: #1f2937;
+        font-size: 14px;
+        line-height: 1;
+        letter-spacing: 0;
+        font-weight: 700;
+      }
+
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }
+      thead th {
+        background: var(--orange);
+        color: #fff;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 11px;
         font-weight: 700;
         text-align: left;
-        padding: 5px 6px;
-        border-top: 1px solid var(--border);
-        border-bottom: 1px solid var(--border);
-      }
-      thead th.col-prev,
-      thead th.col-line-total,
-      thead th.col-claim-pct,
-      thead th.col-this-claim,
-      thead th.col-to-date {
-        border-left: 1px solid #dbe6f2;
+        padding: 5px 8px;
       }
       tbody td {
-        padding: 5px 6px;
-        border-bottom: 1px solid #EEF2F7;
-        color: var(--text);
+        border-top: 1px solid var(--line);
+        padding: 6px 8px;
+        color: #303846;
+        font-size: 10px;
         vertical-align: top;
       }
       .group-row td {
-        background: #f8fafc;
-        color: #4d617a;
+        background: #f5f7fb;
+        color: #5d6f88;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         font-size: 10px;
         font-weight: 700;
-        border-top: 1px solid #e5eaf2;
-        border-bottom: 1px solid #e5eaf2;
       }
-      tbody td.col-prev,
-      tbody td.col-line-total,
-      tbody td.col-claim-pct,
-      tbody td.col-this-claim,
-      tbody td.col-to-date {
-        border-left: 1px solid #edf3fa;
-      }
-      .desc-cell {
-        line-height: 1.25;
-        overflow-wrap: anywhere;
-      }
-      .cell-primary {
-        font-weight: 600;
-        color: #0f172a;
-      }
-      .cell-secondary {
-        margin-top: 1px;
-        font-size: 10px;
-        color: #64748b;
-      }
-      .money,
-      .percent {
-        white-space: nowrap;
-        word-break: keep-all;
-        overflow-wrap: normal;
-        font-variant-numeric: tabular-nums;
-        font-size: 10px;
-      }
-      tbody tr { break-inside: avoid; page-break-inside: avoid; }
+      .desc-cell { line-height: 1.25; }
+      .cell-primary { font-weight: 600; color: #1f2937; }
+      .cell-secondary { margin-top: 1px; font-size: 9px; color: #6b7280; }
       .right { text-align: right; }
-      .mini-header {
-        padding: 6px 0 7px;
-        border-bottom: 1px solid var(--border);
+      .money, .percent { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+      .lower {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 18px;
       }
-      .mini-header .line {
-        color: #475569;
+      .payment-details .bar {
+        display: inline-block;
+        background: var(--orange);
+        color: #fff;
         font-size: 10px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-      }
-      .mini-header .line strong {
-        color: var(--text);
         font-weight: 700;
-        margin-left: 6px;
-        letter-spacing: 0;
-        text-transform: none;
+        padding: 6px 12px;
+        margin-bottom: 8px;
       }
-      .pdf-block {
-        margin-top: 8px;
-        border-top: 1px solid var(--border);
-        padding-top: 8px;
+      .payment-details p {
+        margin: 0 0 4px;
+        color: #374151;
+        font-size: 12px;
       }
-      .pdf-block h3 {
-        margin: 0 0 6px;
-        color: #5d7292;
+      .payment-details p strong { color: #1f2937; }
+      .payment-details .thanks {
+        margin-top: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #1f2937;
+      }
+      .payment-details .legal {
+        margin-top: 12px;
+        font-size: 12px;
+        line-height: 1.35;
+        font-weight: 700;
+      }
+
+      .claim-summary h3 {
+        margin: 0 0 8px;
+        color: #1f2937;
+        font-size: 11px;
+        line-height: 1;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .summary-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+      }
+      .summary-row .k { color: #607089; }
+      .summary-row .v { color: #253248; font-weight: 600; }
+      .summary-row.strong .k,
+      .summary-row.strong .v { color: #162033; font-weight: 700; }
+      .summary-divider { border-top: 2px solid #9fb2ce; margin: 6px 0 4px; }
+      .summary-block-title {
+        margin: 8px 0 3px;
+        color: #4d617a;
         font-size: 10px;
         font-weight: 700;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
-        letter-spacing: 0.12em;
       }
-      .hero-claim {
-        text-align: center;
-      }
-      .hero-claim .hero-label {
-        margin: 0;
-        color: #5d7292;
+      .totals-inline { margin-top: 10px; }
+      .totals-inline .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 3px 0;
+        border-bottom: 1px solid var(--line);
         font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
       }
-      .hero-claim .hero-value {
-        margin: 4px 0 3px;
-        color: var(--navy);
-        font-size: 34px;
-        line-height: 1;
-        font-weight: 800;
-      }
-      .hero-claim .hero-total {
-        margin: 0;
-        color: #334155;
-        font-size: 13px;
-        font-weight: 600;
-      }
-      .statement {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-      }
-      .statement-col .row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        padding: 2px 0;
-      }
-      .statement-col .k { color: #5d6f8b; }
-      .statement-col .v { text-align: right; color: #334155; font-weight: 600; }
-      .statement-col .divider {
-        border-top: 1px solid var(--border);
-        margin: 4px 0;
-      }
-      .statement-col .strong .k,
-      .statement-col .strong .v {
-        color: var(--text);
-        font-weight: 700;
-      }
-      .progress-rows .row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        padding: 2px 0;
-      }
-      .progress-rows .k { color: #5d6f8b; }
-      .progress-rows .v { text-align: right; color: #334155; font-weight: 600; }
-      .notes-inline {
-        margin-top: 8px;
-        border-top: 1px solid var(--border);
+      .totals-inline .k { color: #5d7292; }
+      .totals-inline .v { color: #27344a; font-weight: 600; }
+      .totals-inline .row.total-row {
+        background: var(--orange);
+        border-top: 0;
+        border-bottom: 0;
         padding-top: 7px;
+        padding-bottom: 7px;
+        padding-left: 8px;
+        padding-right: 8px;
       }
-      .notes-inline h3 {
-        margin: 0 0 4px;
-        color: var(--navy);
-        font-size: 13px;
+      .totals-inline .row.total-row .k,
+      .totals-inline .row.total-row .v {
+        color: #fff;
+        font-size: 12px;
+        line-height: 1.1;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+      .terms {
+        margin-top: 16px;
+        max-width: 54%;
+        color: #374151;
+        white-space: pre-line;
+        font-size: 11px;
+      }
+      .terms p { margin: 0 0 8px; }
+      .signature {
+        margin-top: 18px;
+        text-align: right;
+      }
+      .signature .scribble {
+        font-family: "Brush Script MT", "Segoe Script", cursive;
+        font-size: 36px;
+        color: #6b7280;
+        line-height: 1;
+      }
+      .signature .name {
+        margin-top: 4px;
+        font-size: 16px;
         font-weight: 700;
-      }
-      .notes-inline p {
-        margin: 0;
-        color: #334155;
+        color: #1f2937;
+        line-height: 1;
       }
       .doc-footer {
-        margin-top: 6px;
-        padding-top: 5px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
+        margin-top: 18px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        align-items: center;
         color: var(--muted);
-        font-size: 10px;
+        font-size: 11px;
       }
+      .doc-footer .center { text-align: center; }
+      .doc-footer .right { text-align: right; }
       .doc-footer .page::before { content: counter(page); }
+
+      tbody tr { break-inside: avoid; page-break-inside: avoid; }
       @media print {
-        .doc { min-height: auto; }
+        html, body { background: #fff; }
+        .sheet { margin: 0; box-shadow: none; }
       }
     </style>
   </head>
   <body>
-    <main class="doc">
+    <main class="sheet">
       <div class="accent"></div>
-      <header class="header">
+      <header class="top">
         <div class="brand">
           <div class="logo-wrap">${logoMarkup}</div>
-          <div>
-            <p class="company-name">${escapeHtml(printableOrgName)}</p>
-          </div>
         </div>
-        <div class="header-meta">
-          <dl>
-            <div class="row"><dt>Claim #</dt><dd>${escapeHtml(printableClaimNumber)}</dd></div>
-            <div class="row"><dt>Issued</dt><dd>${escapeHtml(issueDate)}</dd></div>
-            <div class="row"><dt>Due</dt><dd>${escapeHtml(toDayMonthYearLabel(dueDate || null))}</dd></div>
-          </dl>
-        </div>
+        <p class="title">Payment Claim</p>
+        <p class="site">www.tradesstack.com</p>
       </header>
 
-      <section class="title-block">
-        <h1 class="quote-title">${escapeHtml(printableClaimTitle)}</h1>
-      </section>
-
-      <section class="mini-header">
-        <div class="line">Payment Claim #<strong>${escapeHtml(printableClaimNumber)}</strong></div>
-        <div class="line">Project:<strong>${escapeHtml(printableProjectName)}</strong></div>
-        <div class="line">Date:<strong>${escapeHtml(issueDate)}</strong></div>
-      </section>
-
-      <section class="details">
-        <div class="details-grid">
-          <div class="details-row"><span class="k">Project</span><span class="v">${escapeHtml(printableProjectName)}</span></div>
-          <div class="details-row"><span class="k">Raised By</span><span class="v">${escapeHtml(raisedBy || "-")}</span></div>
-          <div class="details-row"><span class="k">Claim Type</span><span class="v">${escapeHtml(claimType)}</span></div>
-          <div class="details-row"><span class="k">Status</span><span class="v">${escapeHtml(status)}</span></div>
-          <div class="details-row"><span class="k">Claim Date</span><span class="v">${escapeHtml(toDayMonthYearLabel(claimDate || null))}</span></div>
-          <div class="details-row"><span class="k">Period</span><span class="v">${escapeHtml(periodLabel)}</span></div>
+      <section class="issued-row">
+        <div>
+          <p class="issued-title">Issued To:</p>
+          <p class="issued-text">${escapeHtml(printableProjectName)}
+${escapeHtml(printableOrgName)}</p>
         </div>
+        <div class="issued-meta">
+          <div class="row"><span class="k">Payment Claim No:</span><span class="v">${escapeHtml(printableClaimNumber)}</span></div>
+          <div class="row"><span class="k">Date:</span><span class="v">${escapeHtml(issueDate)}</span></div>
+          <div class="row"><span class="k">Due Date:</span><span class="v">${escapeHtml(toDayMonthYearLabel(dueDate || null))}</span></div>
+        </div>
+      </section>
+
+      <section class="project-lead">
+        <p class="project-line">Project: ${escapeHtml(printableProjectName)}</p>
+        <p class="lead-note">We greatly appreciate your support. Please see the payment claim breakdown below.</p>
       </section>
 
       <h2 class="section-title">Claim Line Items</h2>
       <table>
         <thead>
           <tr>
-            <th style="width:29%">Description</th>
-            <th style="width:10%">Section</th>
-            <th class="right col-line-total" style="width:15%">Line Total</th>
-            <th class="right col-prev" style="width:12%">Prev Claimed</th>
-            <th class="right col-claim-pct" style="width:8%">Claim %</th>
-            <th class="right col-this-claim" style="width:13%">This Claim</th>
-            <th class="right col-to-date" style="width:13%">To Date</th>
+            <th style="width:46%">Description</th>
+            <th class="right col-contract" style="width:20%">Contract Value</th>
+            <th class="right col-progress" style="width:14%">Progress %</th>
+            <th class="right col-total" style="width:20%">Total</th>
           </tr>
         </thead>
         <tbody>${lineItemsRows}</tbody>
       </table>
 
-      <section class="pdf-block hero-claim">
-        <p class="hero-label">Current Claim</p>
-        <p class="hero-value">${toMoney(currentClaimAmount)}</p>
-        <p class="hero-total">Total (incl. GST): ${toMoney(total)}</p>
-      </section>
+      <section class="lower">
+        <section class="payment-details">
+          <div class="bar">Payment Details</div>
+          <p><strong>Claim Type:</strong> ${escapeHtml(claimType)}</p>
+          <p><strong>Status:</strong> ${escapeHtml(status)}</p>
+          <p><strong>Project:</strong> ${escapeHtml(printableProjectName)}</p>
+          <p class="thanks">Thank you for your business!</p>
+          <p class="legal">This is a Payment Claim under the Construction Contracts Act 2002.</p>
+        </section>
 
-      <section class="pdf-block">
-        <h3>Contract Position</h3>
-        <div class="statement">
-          <div class="statement-col">
-            <div class="row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
-            <div class="row"><span class="k">Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
-            <div class="divider"></div>
-            <div class="row strong"><span class="k">Revised Contract</span><span class="v">${toMoney(revisedContractValue)}</span></div>
-          </div>
-          <div class="statement-col">
-            <div class="row"><span class="k">Previously Claimed</span><span class="v">${toMoney(previousClaimsTotal)}</span></div>
-            <div class="row"><span class="k">This Claim</span><span class="v">${toMoney(currentClaimAmount)}</span></div>
-            <div class="divider"></div>
-            <div class="row strong"><span class="k">Outstanding</span><span class="v">${toMoney(balance)}</span></div>
-          </div>
+        <div>
+          <section class="claim-summary">
+            <h3>Claim Summary</h3>
+            <div class="summary-row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
+            <div class="summary-row"><span class="k">Approved Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
+            <div class="summary-row strong"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
+
+            <div class="summary-divider"></div>
+            <p class="summary-block-title">Previous Claims</p>
+            <div class="summary-row"><span class="k">Total Previously Claimed</span><span class="v">${toMoney(previousClaimsTotal)}</span></div>
+
+            <div class="summary-divider"></div>
+            <p class="summary-block-title">This Claim</p>
+            <div class="summary-row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(valueEarnedToDate)}</span></div>
+            <div class="summary-row"><span class="k">Less Previous Claims</span><span class="v">-${toMoney(previousClaimsTotal)}</span></div>
+
+            <div class="summary-divider"></div>
+            <div class="summary-row strong"><span class="k">Current Claim</span><span class="v">${toMoney(currentClaimAmount)}</span></div>
+          </section>
+
+          <section class="totals-inline">
+            <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotal)}</span></div>
+            <div class="row"><span class="k">GST (${(gstRate * 100).toFixed(0)}%)</span><span class="v">${toMoney(gst)}</span></div>
+            <div class="row total-row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(total)}</span></div>
+          </section>
         </div>
       </section>
 
-      <section class="pdf-block">
-        <h3>Progress</h3>
-        <div class="progress-rows">
-          <div class="row"><span class="k">Completed</span><span class="v">${parsedPercentComplete.toFixed(2)}%</span></div>
-          <div class="row"><span class="k">This Claim</span><span class="v">${thisClaimPercent.toFixed(2)}%</span></div>
-          <div class="row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(valueEarnedToDate)}</span></div>
-        </div>
+      <section class="signature">
+        <div class="scribble">${escapeHtml(raisedBy || "Signature")}</div>
       </section>
-      ${notes.trim()
-        ? `<section class="notes-inline"><h3>Claim Notes</h3><p>${escapeHtml(notes.trim())}</p></section>`
-        : ""}
+
+      ${notes.trim() ? `<section class="terms"><p><strong>Claim Notes</strong></p><p>${escapeHtml(notes.trim())}</p></section>` : ""}
 
       <footer class="doc-footer">
-        <span>${escapeHtml(printableOrgName)} • ${escapeHtml(printableClaimNumber)}</span>
-        <span class="page">Page </span>
+        <span>📞 021 123 456</span>
+        <span class="center">✉ admin@tradesstack.com</span>
+        <span class="right page">Page </span>
       </footer>
     </main>
   </body>
