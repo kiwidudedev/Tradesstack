@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink, Plus } from "lucide-react";
+import { ChevronDown, ExternalLink, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -116,10 +116,13 @@ export default function ProjectClaimsRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreatingClaim, setIsCreatingClaim] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [claims, setClaims] = useState<ClaimRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [approvedVariationsValue, setApprovedVariationsValue] = useState(0);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
 
   const supabase = useMemo(() => {
     try {
@@ -172,6 +175,8 @@ export default function ProjectClaimsRegisterPage() {
         if (projectError || !projectRow?.id) {
           throw new Error(projectError?.message ?? "Project not found.");
         }
+        setOrganizationId(resolvedOrganizationId);
+        setProjectId(projectRow.id);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const claimsTable = (supabase as any).from("project_claims");
@@ -217,7 +222,7 @@ export default function ProjectClaimsRegisterPage() {
         const variationRows = (variationsRaw ?? []) as VariationRow[];
 
         const approvedVariationTotal = variationRows
-          .filter((row) => row.status === "Approved")
+          .filter((row) => row.status === "Approved" || row.status === "Sent" || row.status === "Invoiced")
           .reduce((sum, row) => sum + Number(row.total_variation_price ?? 0), 0);
 
         setQuotes(quoteRows);
@@ -236,6 +241,37 @@ export default function ProjectClaimsRegisterPage() {
       cancelled = true;
     };
   }, [isAuthLoading, routeProjectSlug, session, sessionOrganizationId, supabase]);
+
+  const createClaimAndOpen = useCallback(async () => {
+    if (!supabase || !organizationId || !projectId || isCreatingClaim) {
+      return;
+    }
+
+    setIsCreatingClaim(true);
+    setError(null);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: createError } = await (supabase as any).rpc("create_project_claim_draft", {
+        p_organization_id: organizationId,
+        p_project_id: projectId,
+        p_title: "New Claim",
+      });
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      const createdRow = Array.isArray(data) ? data[0] : null;
+      if (!createdRow?.id) {
+        throw new Error("Claim draft was created but no identifier was returned.");
+      }
+
+      router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${createdRow.id}`);
+    } catch (createClaimError) {
+      setError(createClaimError instanceof Error ? createClaimError.message : "Unable to create claim.");
+      setIsCreatingClaim(false);
+    }
+  }, [isCreatingClaim, organizationId, projectId, routeProjectSlug, router, supabase]);
 
   const contractSummary = useMemo(() => {
     const baseQuoteValue = pickBaseQuoteValue(quotes);
@@ -321,12 +357,13 @@ export default function ProjectClaimsRegisterPage() {
               <DropdownMenuItem
                 onSelect={(event) => {
                   event.preventDefault();
-                  router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/new`);
+                  void createClaimAndOpen();
                 }}
+                disabled={isLoading || isCreatingClaim}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 <Plus className="mr-2 h-4 w-4" />
-                New Claim
+                {isCreatingClaim ? "Creating..." : "New Claim"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -348,7 +385,7 @@ export default function ProjectClaimsRegisterPage() {
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-[18px] border border-[#C5CDD8] bg-[#F6F7F9] px-5 py-4">
                 <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#64748B]`}>Current Project Total</p>
-                <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.remainingToClaim)}</p>
+                <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.contractValue)}</p>
               </div>
               <div className="rounded-[18px] border border-[#C5CDD8] bg-[#F6F7F9] px-5 py-4">
                 <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#B45309]`}>Submitted</p>
@@ -372,11 +409,12 @@ export default function ProjectClaimsRegisterPage() {
                 <div className={`${styles.cardMuted} ${styles.producedRowProjectTone} px-5 py-6 text-center`}>
                   <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>No claims yet for this project.</p>
                   <Button
-                    onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/new`)}
+                    onClick={() => void createClaimAndOpen()}
+                    disabled={isLoading || isCreatingClaim}
                     className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}
                   >
                     <Plus className="mr-1 h-3.5 w-3.5" />
-                    Create First Claim
+                    {isCreatingClaim ? "Creating..." : "Create First Claim"}
                   </Button>
                 </div>
               ) : (
@@ -421,7 +459,37 @@ export default function ProjectClaimsRegisterPage() {
                             <td className="px-4 py-3 text-right text-sm font-semibold text-[#1d1d1d]">
                               {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
                             </td>
-                            <td className="px-4 py-3 text-right text-[#6b6b6b]">•••</td>
+                            <td className="px-4 py-3 text-right text-[#6b6b6b]">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(event) => event.stopPropagation()}
+                                    className="h-7 w-7 rounded-md text-[#6b6b6b] hover:bg-[#E7ECF2] hover:text-[#1d2433]"
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">Claim actions</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="min-w-[140px]"
+                                >
+                                  <DropdownMenuItem
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`);
+                                    }}
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </td>
                           </tr>
                         );
                       })}

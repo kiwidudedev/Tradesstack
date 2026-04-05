@@ -207,6 +207,7 @@ export default function ProjectClaimDetailPage() {
   const [baseQuoteValue, setBaseQuoteValue] = useState(0);
   const [approvedVariationsValue, setApprovedVariationsValue] = useState(0);
   const [previousClaimsTotal, setPreviousClaimsTotal] = useState(0);
+  const [paidToDateTotal, setPaidToDateTotal] = useState(0);
   const hasAutoCreatedOnNewRoute = useRef(false);
 
   const supabase = useMemo(() => {
@@ -237,7 +238,7 @@ export default function ProjectClaimDetailPage() {
       return;
     }
 
-    const loadFromSourceDocuments = async () => {
+    const loadFromSourceDocuments = async (applyToState = true): Promise<ClaimLineItem[]> => {
       const { data: quoteRows } = await supabase
         .from("project_quotes")
         .select("id, quote_number, quote_title, status, updated_at")
@@ -267,24 +268,11 @@ export default function ProjectClaimDetailPage() {
 
       const { data: variationRows } = await supabase
         .from("project_variations")
-        .select("id, variation_number, variation_title, created_at")
+        .select("id, variation_number, variation_title, total_variation_price, created_at")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", projectDbId)
-        .eq("status", "Approved")
+        .in("status", ["Approved", "Sent", "Invoiced"])
         .order("created_at", { ascending: true });
-
-      const approvedVariationIds = (variationRows ?? []).map((row) => row.id);
-      const variationLineItems = approvedVariationIds.length > 0
-        ? await supabase
-            .from("project_variation_line_items")
-            .select("id, variation_id, section, description, quantity, unit, rate, total, sort_order")
-            .eq("organization_id", resolvedOrganizationId)
-            .eq("project_id", projectDbId)
-            .in("variation_id", approvedVariationIds)
-            .order("sort_order", { ascending: true })
-        : { data: [] as Array<Record<string, unknown>> };
-
-      const variationById = new Map((variationRows ?? []).map((row) => [row.id, row]));
 
       const quoteMapped: ClaimLineItem[] = ((quoteLineItems.data ?? []) as Array<Record<string, unknown>>).map((row, index) => ({
         id: `quote-${String(row.id ?? crypto.randomUUID())}`,
@@ -308,33 +296,33 @@ export default function ProjectClaimDetailPage() {
         sortOrder: numberOrZero(row.sort_order) || index,
       }));
 
-      const variationMapped: ClaimLineItem[] = ((variationLineItems.data ?? []) as Array<Record<string, unknown>>).map((row, index) => {
-        const variationId = String(row.variation_id ?? "");
-        const sourceVariation = variationById.get(variationId);
-        return {
-          id: `variation-${String(row.id ?? crypto.randomUUID())}`,
-          sourceKind: "Variation",
-          sourceDocumentId: variationId,
-          sourceLineItemId: String(row.id ?? ""),
-          sourceNumber: String(sourceVariation?.variation_number ?? ""),
-          sourceTitle: String(sourceVariation?.variation_title ?? "Variation"),
-          section: String(row.section ?? ""),
-          description: String(row.description ?? ""),
-          quantity: numberOrZero(row.quantity),
-          unit: String(row.unit ?? ""),
-          rate: numberOrZero(row.rate),
-          sourceTotal: numberOrZero(row.total) || numberOrZero(row.quantity) * numberOrZero(row.rate),
-          previouslyClaimedAmount: 0,
-          previouslyClaimedPercent: 0,
-          claimPercent: 0,
-          claimAmount: 0,
-          cumulativeClaimedAmount: 0,
-          cumulativeClaimedPercent: 0,
-          sortOrder: 100000 + (numberOrZero(row.sort_order) || index),
-        };
-      });
+      const variationMapped: ClaimLineItem[] = ((variationRows ?? []) as Array<Record<string, unknown>>).map((row, index) => ({
+        id: `variation-${String(row.id ?? crypto.randomUUID())}`,
+        sourceKind: "Variation",
+        sourceDocumentId: String(row.id ?? ""),
+        sourceLineItemId: String(row.id ?? ""),
+        sourceNumber: String(row.variation_number ?? ""),
+        sourceTitle: String(row.variation_title ?? "Variation"),
+        section: "Item",
+        description: String(row.variation_title ?? "Variation"),
+        quantity: 1,
+        unit: "Item",
+        rate: numberOrZero(row.total_variation_price),
+        sourceTotal: numberOrZero(row.total_variation_price),
+        previouslyClaimedAmount: 0,
+        previouslyClaimedPercent: 0,
+        claimPercent: 0,
+        claimAmount: 0,
+        cumulativeClaimedAmount: 0,
+        cumulativeClaimedPercent: 0,
+        sortOrder: 100000 + index,
+      }));
 
-      setClaimLineItems([...quoteMapped, ...variationMapped]);
+      const sourceRows = [...quoteMapped, ...variationMapped];
+      if (applyToState) {
+        setClaimLineItems(sourceRows);
+      }
+      return sourceRows;
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -346,7 +334,7 @@ export default function ProjectClaimDetailPage() {
       .order("sort_order", { ascending: true });
 
     if (lineItemsError) {
-      await loadFromSourceDocuments();
+      await loadFromSourceDocuments(true);
       return;
     }
 
@@ -373,11 +361,27 @@ export default function ProjectClaimDetailPage() {
     }));
 
     if (nextRows.length === 0) {
-      await loadFromSourceDocuments();
+      await loadFromSourceDocuments(true);
       return;
     }
 
-    setClaimLineItems(nextRows);
+    const liveSourceRows = await loadFromSourceDocuments(false);
+    const liveVariationKeys = new Set(
+      liveSourceRows
+        .filter((row) => row.sourceKind === "Variation")
+        .map((row) => `Variation:${row.sourceLineItemId}`)
+    );
+    const normalizedExistingRows = nextRows.filter(
+      (row) => row.sourceKind !== "Variation" || liveVariationKeys.has(`Variation:${row.sourceLineItemId}`)
+    );
+    const existingSourceKeys = new Set(
+      normalizedExistingRows.map((row) => `${row.sourceKind}:${row.sourceLineItemId}`)
+    );
+    const missingRows = liveSourceRows.filter(
+      (row) => !existingSourceKeys.has(`${row.sourceKind}:${row.sourceLineItemId}`)
+    );
+    const mergedRows = [...normalizedExistingRows, ...missingRows].sort((left, right) => left.sortOrder - right.sortOrder);
+    setClaimLineItems(mergedRows);
   }, [projectDbId, supabase]);
 
   const refreshContractSummary = useCallback(async (resolvedOrganizationId: string, resolvedProjectId: string, existingClaimId: string | null) => {
@@ -400,7 +404,7 @@ export default function ProjectClaimDetailPage() {
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
       claimsTable
-        .select("id, claim_amount, status")
+        .select("id, claim_amount, paid_amount, status")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
     ]);
@@ -416,16 +420,21 @@ export default function ProjectClaimDetailPage() {
 
     const quoteValue = Number(bestQuote?.total_quote_price ?? 0);
     const approvedVariations = (variationRows ?? [])
-      .filter((row) => row.status === "Approved")
+      .filter((row) => row.status === "Approved" || row.status === "Sent" || row.status === "Invoiced")
       .reduce((sum, row) => sum + Number(row.total_variation_price ?? 0), 0);
 
-    const previousTotal = ((claimsRowsRaw ?? []) as Array<{ id: string; claim_amount: number | null; status: ClaimStatus }>)
+    const claimRows = (claimsRowsRaw ?? []) as Array<{ id: string; claim_amount: number | null; paid_amount: number | null; status: ClaimStatus }>;
+    const previousTotal = claimRows
       .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
       .reduce((sum, row) => sum + Number(row.claim_amount ?? 0), 0);
+    const paidToDate = claimRows
+      .filter((row) => row.status !== "Cancelled")
+      .reduce((sum, row) => sum + Number(row.paid_amount ?? 0), 0);
 
     setBaseQuoteValue(quoteValue);
     setApprovedVariationsValue(approvedVariations);
     setPreviousClaimsTotal(previousTotal);
+    setPaidToDateTotal(paidToDate);
   }, [supabase]);
 
   const createClaim = useCallback(async () => {
@@ -575,6 +584,26 @@ export default function ProjectClaimDetailPage() {
     void createClaim();
   }, [createClaim, isLoading, isNewRoute, organizationId, projectDbId]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isRefreshShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r";
+      if (!isRefreshShortcut) {
+        return;
+      }
+      event.preventDefault();
+      window.location.reload();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
   const claimLineItemsComputed = useMemo(() => {
     return claimLineItems.map((item) => {
       const previousAmount = Math.max(0, numberOrZero(item.previouslyClaimedAmount));
@@ -609,7 +638,7 @@ export default function ProjectClaimDetailPage() {
   const previousPercentComplete = revisedContractValue > 0 ? (previousClaimsTotal / revisedContractValue) * 100 : 0;
   const thisClaimPercent = revisedContractValue > 0 ? (currentClaimAmount / revisedContractValue) * 100 : 0;
   const paidAmountNumber = Number(paidAmount || 0);
-  const balance = Math.max(0, currentClaimAmount - paidAmountNumber);
+  const balance = Math.max(0, valueEarnedToDate - paidToDateTotal);
   const isSubmittedLocked = status === "Submitted";
   const displayedPercentComplete = parsedPercentComplete.toFixed(2);
 
@@ -623,11 +652,56 @@ export default function ProjectClaimDetailPage() {
     );
   };
 
-  const lineItemsGridTemplate = "minmax(220px,1.4fr) 110px 130px 110px 120px 120px 120px 120px";
+  const lineItemsGridTemplate = "minmax(0,1.7fr) minmax(0,0.8fr) minmax(0,1.1fr) minmax(0,0.95fr) minmax(0,0.95fr) minmax(0,0.9fr) minmax(0,1fr) minmax(0,1fr)";
+  const quoteLineItems = claimLineItemsComputed.filter((line) => line.sourceKind === "Quote");
+  const variationLineItems = claimLineItemsComputed.filter((line) => line.sourceKind === "Variation");
+  const quoteLineTotalValue = quoteLineItems.reduce((sum, line) => sum + line.sourceTotal, 0);
+  const variationLineTotalValue = variationLineItems.reduce((sum, line) => sum + line.sourceTotal, 0);
+
+  const renderLineItemRow = (line: (typeof claimLineItemsComputed)[number]) => (
+    <div
+      key={line.id}
+      className="grid items-center gap-2 border-b border-[#EEF2F7] px-3 py-2 last:border-b-0 [&>*:not(:first-child)]:border-l [&>*:not(:first-child)]:border-[#EEF2F7] [&>*:not(:first-child)]:pl-3"
+      style={{ gridTemplateColumns: lineItemsGridTemplate }}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-[#1d2433]">
+          {line.sourceNumber || line.description || "Untitled line"}
+        </p>
+        {line.sourceKind === "Variation" && line.sourceTitle ? (
+          <p className={`${interMedium.className} truncate text-[11px] text-[#64748B]`}>
+            {line.sourceTitle}
+          </p>
+        ) : null}
+      </div>
+      <span className={`${interMedium.className} min-w-0 truncate text-sm text-[#334155]`}>{line.section}</span>
+      <span className={`${interMedium.className} truncate text-xs text-[#64748B]`}>{line.sourceKind} {line.sourceNumber}</span>
+      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.sourceTotal)}</span>
+      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.previouslyClaimedAmount)}</span>
+      <div className="relative">
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          step="0.1"
+          value={line.claimPercent.toString()}
+          onChange={(event) => updateClaimLinePercent(line.id, event.target.value)}
+          disabled={isSubmittedLocked}
+          className="h-10 rounded-[6px] pr-7 text-right"
+        />
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#64748B]">%</span>
+      </div>
+      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(line.claimAmount)}</span>
+      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.cumulativeClaimedAmount)}</span>
+    </div>
+  );
 
   const renderLineItemsTable = (containerClassName = "") => (
     <div className={`overflow-x-auto rounded-[6px] border border-[#E5EAF2] ${containerClassName}`.trim()}>
-      <div className={`${interMedium.className} grid min-w-[980px] items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089]`} style={{ gridTemplateColumns: lineItemsGridTemplate }}>
+      <div
+        className={`${interMedium.className} grid items-center gap-2 border-b border-[#E5EAF2] bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089] [&>*:not(:first-child)]:border-l [&>*:not(:first-child)]:border-[#E5EAF2] [&>*:not(:first-child)]:pl-3`}
+        style={{ gridTemplateColumns: lineItemsGridTemplate }}
+      >
         <span>Description</span>
         <span>Section</span>
         <span>Source</span>
@@ -637,36 +711,23 @@ export default function ProjectClaimDetailPage() {
         <span className="text-right">This Claim</span>
         <span className="text-right">Claimed to Date</span>
       </div>
-      <div className="divide-y divide-[#EEF2F7]">
-        {claimLineItemsComputed.map((line) => (
-          <div key={line.id} className="grid min-w-[980px] items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: lineItemsGridTemplate }}>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-[#1d2433]">{line.description || "Untitled line"}</p>
-              <p className={`${interMedium.className} truncate text-[11px] text-[#64748B]`}>
-                {line.quantity} {line.unit || "unit"} @ {toMoney(line.rate)}
-              </p>
-            </div>
-            <span className={`${interMedium.className} text-sm text-[#334155]`}>{line.section}</span>
-            <span className={`${interMedium.className} truncate text-xs text-[#64748B]`}>{line.sourceKind} {line.sourceNumber}</span>
-            <span className={`${interMedium.className} text-right text-sm text-[#334155]`}>{toMoney(line.sourceTotal)}</span>
-            <span className={`${interMedium.className} text-right text-sm text-[#334155]`}>{toMoney(line.previouslyClaimedAmount)}</span>
-            <div className="relative">
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step="0.1"
-                value={line.claimPercent.toString()}
-                onChange={(event) => updateClaimLinePercent(line.id, event.target.value)}
-                disabled={isSubmittedLocked}
-                className="h-10 rounded-[6px] pr-7 text-right"
-              />
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#64748B]">%</span>
-            </div>
-            <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(line.claimAmount)}</span>
-            <span className={`${interMedium.className} text-right text-sm text-[#334155]`}>{toMoney(line.cumulativeClaimedAmount)}</span>
+      <div>
+        {quoteLineItems.length > 0 ? (
+          <div className="border-b border-[#E5EAF2] bg-[#F8FAFC] px-3 py-2">
+            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>
+              Quote Value
+            </p>
           </div>
-        ))}
+        ) : null}
+        {quoteLineItems.map(renderLineItemRow)}
+        {variationLineItems.length > 0 ? (
+          <div className="border-y border-[#E5EAF2] bg-[#F8FAFC] px-3 py-2">
+            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>
+              Variations Value
+            </p>
+          </div>
+        ) : null}
+        {variationLineItems.map(renderLineItemRow)}
         {claimLineItemsComputed.length === 0 ? (
           <p className={`${interMedium.className} px-3 py-6 text-center text-sm text-[#73839a]`}>No claimable line items found yet.</p>
         ) : null}
@@ -717,10 +778,10 @@ export default function ProjectClaimDetailPage() {
         setStatus(savedRow.status ?? status);
         setPaidAmount(String(savedRow.paid_amount ?? paidAmountNumber));
         setBaseQuoteValue(Number(savedRow.linked_quote_value ?? 0));
-        setApprovedVariationsValue(Number(savedRow.linked_approved_variations ?? 0));
         setPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
       }
       await loadClaimLineItems(organizationId, claimId);
+      await refreshContractSummary(organizationId, projectDbId, claimId);
 
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveClaimError) {
@@ -778,20 +839,27 @@ export default function ProjectClaimDetailPage() {
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
       : `<div class="logo-fallback">${escapeHtml(printableOrgName.slice(0, 2).toUpperCase())}</div>`;
 
+    const quotePdfRows = claimLineItemsComputed.filter((line) => line.sourceKind === "Quote");
+    const variationPdfRows = claimLineItemsComputed.filter((line) => line.sourceKind === "Variation");
+    const renderPdfLineRow = (line: ClaimLineItem) => `
+      <tr>
+        <td class="desc-cell">
+          <div class="cell-primary">${escapeHtml(line.sourceNumber || line.description || "Untitled line item")}</div>
+          ${line.sourceKind === "Variation" && line.sourceTitle ? `<div class="cell-secondary">${escapeHtml(line.sourceTitle)}</div>` : ""}
+        </td>
+        <td>${escapeHtml(line.section || "-")}</td>
+        <td class="right money col-line-total">${toMoney(line.sourceTotal)}</td>
+        <td class="right money col-prev">${toMoney(line.previouslyClaimedAmount)}</td>
+        <td class="right percent col-claim-pct">${line.claimPercent.toFixed(2)}%</td>
+        <td class="right money col-this-claim">${toMoney(line.claimAmount)}</td>
+        <td class="right money col-to-date">${toMoney(line.cumulativeClaimedAmount)}</td>
+      </tr>
+    `;
     const lineItemsRows = claimLineItemsComputed.length > 0
-      ? claimLineItemsComputed
-          .map((line) => `
-            <tr>
-              <td class="desc-cell">${escapeHtml(line.description || "Untitled line item")}</td>
-              <td>${escapeHtml(line.section || "-")}</td>
-              <td class="source-cell">${escapeHtml(`${line.sourceKind} ${line.sourceNumber || ""}`.trim())}</td>
-              <td class="right money col-prev">${toMoney(line.previouslyClaimedAmount)}</td>
-              <td class="right percent col-claim-pct">${line.claimPercent.toFixed(2)}%</td>
-              <td class="right money col-this-claim">${toMoney(line.claimAmount)}</td>
-              <td class="right money col-to-date">${toMoney(line.cumulativeClaimedAmount)}</td>
-            </tr>
-          `)
-          .join("")
+      ? [
+          quotePdfRows.length > 0 ? `<tr class="group-row"><td colspan="7">Quote Value</td></tr>${quotePdfRows.map(renderPdfLineRow).join("")}` : "",
+          variationPdfRows.length > 0 ? `<tr class="group-row"><td colspan="7">Variations Value</td></tr>${variationPdfRows.map(renderPdfLineRow).join("")}` : "",
+        ].join("")
       : `<tr><td colspan="7" style="text-align:center;color:#64748b;">No claimable line items.</td></tr>`;
 
     const gstRate = 0.15;
@@ -871,6 +939,7 @@ export default function ProjectClaimDetailPage() {
         border-bottom: 1px solid var(--border);
       }
       thead th.col-prev,
+      thead th.col-line-total,
       thead th.col-claim-pct,
       thead th.col-this-claim,
       thead th.col-to-date {
@@ -882,7 +951,18 @@ export default function ProjectClaimDetailPage() {
         color: var(--text);
         vertical-align: top;
       }
+      .group-row td {
+        background: #f8fafc;
+        color: #4d617a;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 10px;
+        font-weight: 700;
+        border-top: 1px solid #e5eaf2;
+        border-bottom: 1px solid #e5eaf2;
+      }
       tbody td.col-prev,
+      tbody td.col-line-total,
       tbody td.col-claim-pct,
       tbody td.col-this-claim,
       tbody td.col-to-date {
@@ -892,10 +972,14 @@ export default function ProjectClaimDetailPage() {
         line-height: 1.25;
         overflow-wrap: anywhere;
       }
-      .source-cell {
-        color: #334155;
+      .cell-primary {
+        font-weight: 600;
+        color: #0f172a;
+      }
+      .cell-secondary {
+        margin-top: 1px;
         font-size: 10px;
-        overflow-wrap: anywhere;
+        color: #64748b;
       }
       .money,
       .percent {
@@ -907,91 +991,105 @@ export default function ProjectClaimDetailPage() {
       }
       tbody tr { break-inside: avoid; page-break-inside: avoid; }
       .right { text-align: right; }
-      .summary {
-        margin-top: 4px;
-        border-top: 1px solid var(--border);
+      .mini-header {
+        padding: 6px 0 7px;
         border-bottom: 1px solid var(--border);
-        padding: 6px 0;
       }
-      .summary-panel {
-        border: 1px solid #d8e3f1;
-        border-radius: 8px;
-        background: #fbfdff;
-        padding: 6px 8px;
+      .mini-header .line {
+        color: #475569;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
-      .summary-group + .summary-group {
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid #e6edf5;
+      .mini-header .line strong {
+        color: var(--text);
+        font-weight: 700;
+        margin-left: 6px;
+        letter-spacing: 0;
+        text-transform: none;
       }
-      .summary-group h3 {
-        margin: 0 0 4px;
+      .pdf-block {
+        margin-top: 8px;
+        border-top: 1px solid var(--border);
+        padding-top: 8px;
+      }
+      .pdf-block h3 {
+        margin: 0 0 6px;
         color: #5d7292;
         font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.12em;
       }
-      .summary-row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        padding: 0;
+      .hero-claim {
+        text-align: center;
       }
-      .summary-row .k { color: #5d6f8b; }
-      .summary-row .v { text-align: right; color: #334155; font-weight: 500; }
-      .summary-row.strong .k,
-      .summary-row.strong .v { color: var(--text); font-weight: 700; }
-      .summary-row.snapshot .k { color: #334155; font-weight: 600; }
-      .summary-row.snapshot .v { color: #0f172a; font-weight: 700; }
-      .summary-current-claim {
-        margin-top: 6px;
-        border: 1px solid #cfe0f5;
-        border-radius: 8px;
-        background: #f2f7ff;
-        padding: 6px 8px;
-      }
-      .summary-current-claim .label {
+      .hero-claim .hero-label {
         margin: 0;
         color: #5d7292;
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 700;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
       }
-      .summary-current-claim .value {
-        margin: 2px 0 0;
+      .hero-claim .hero-value {
+        margin: 4px 0 3px;
         color: var(--navy);
-        font-size: 20px;
+        font-size: 34px;
         line-height: 1;
         font-weight: 800;
       }
-      .notes-box {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 7px;
-        color: var(--text);
-        background: #fff;
+      .hero-claim .hero-total {
+        margin: 0;
+        color: #334155;
+        font-size: 13px;
+        font-weight: 600;
       }
-      .totals {
-        margin-top: 5px;
-        margin-left: auto;
-        width: 360px;
-        break-inside: avoid;
-        page-break-inside: avoid;
+      .statement {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
       }
-      .totals .row {
+      .statement-col .row {
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 10px;
         padding: 2px 0;
       }
-      .totals .k { color: var(--muted); }
-      .totals .v { text-align: right; font-weight: 600; }
-      .totals .row-divider { border-top: 1px solid #CBD5E1; margin: 4px 0; }
-      .totals .divider { border-top: 2px solid var(--navy); margin-top: 4px; padding-top: 5px; }
-      .totals .final .k,
-      .totals .final .v { color: var(--navy); font-weight: 800; font-size: 22px; line-height: 1.05; }
+      .statement-col .k { color: #5d6f8b; }
+      .statement-col .v { text-align: right; color: #334155; font-weight: 600; }
+      .statement-col .divider {
+        border-top: 1px solid var(--border);
+        margin: 4px 0;
+      }
+      .statement-col .strong .k,
+      .statement-col .strong .v {
+        color: var(--text);
+        font-weight: 700;
+      }
+      .progress-rows .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 2px 0;
+      }
+      .progress-rows .k { color: #5d6f8b; }
+      .progress-rows .v { text-align: right; color: #334155; font-weight: 600; }
+      .notes-inline {
+        margin-top: 8px;
+        border-top: 1px solid var(--border);
+        padding-top: 7px;
+      }
+      .notes-inline h3 {
+        margin: 0 0 4px;
+        color: var(--navy);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .notes-inline p {
+        margin: 0;
+        color: #334155;
+      }
       .doc-footer {
         margin-top: 6px;
         padding-top: 5px;
@@ -1030,6 +1128,12 @@ export default function ProjectClaimDetailPage() {
         <h1 class="quote-title">${escapeHtml(printableClaimTitle)}</h1>
       </section>
 
+      <section class="mini-header">
+        <div class="line">Payment Claim #<strong>${escapeHtml(printableClaimNumber)}</strong></div>
+        <div class="line">Project:<strong>${escapeHtml(printableProjectName)}</strong></div>
+        <div class="line">Date:<strong>${escapeHtml(issueDate)}</strong></div>
+      </section>
+
       <section class="details">
         <div class="details-grid">
           <div class="details-row"><span class="k">Project</span><span class="v">${escapeHtml(printableProjectName)}</span></div>
@@ -1047,7 +1151,7 @@ export default function ProjectClaimDetailPage() {
           <tr>
             <th style="width:29%">Description</th>
             <th style="width:10%">Section</th>
-            <th style="width:15%">Source</th>
+            <th class="right col-line-total" style="width:15%">Line Total</th>
             <th class="right col-prev" style="width:12%">Prev Claimed</th>
             <th class="right col-claim-pct" style="width:8%">Claim %</th>
             <th class="right col-this-claim" style="width:13%">This Claim</th>
@@ -1057,49 +1161,41 @@ export default function ProjectClaimDetailPage() {
         <tbody>${lineItemsRows}</tbody>
       </table>
 
-      <section class="summary">
-        <div class="summary-panel">
-          <div class="summary-group">
-            <h3>Contract Snapshot</h3>
-            <div class="summary-row snapshot"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
-            <div class="summary-row snapshot"><span class="k">Previously Claimed</span><span class="v">${toMoney(previousClaimsTotal)}</span></div>
-            <div class="summary-row snapshot"><span class="k">Current Claim</span><span class="v">${toMoney(currentClaimAmount)}</span></div>
-            <div class="summary-row strong"><span class="k">Outstanding</span><span class="v">${toMoney(balance)}</span></div>
-            <div class="summary-current-claim">
-              <p class="label">Current Claim</p>
-              <p class="value">${toMoney(currentClaimAmount)}</p>
-            </div>
+      <section class="pdf-block hero-claim">
+        <p class="hero-label">Current Claim</p>
+        <p class="hero-value">${toMoney(currentClaimAmount)}</p>
+        <p class="hero-total">Total (incl. GST): ${toMoney(total)}</p>
+      </section>
+
+      <section class="pdf-block">
+        <h3>Contract Position</h3>
+        <div class="statement">
+          <div class="statement-col">
+            <div class="row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
+            <div class="row"><span class="k">Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
+            <div class="divider"></div>
+            <div class="row strong"><span class="k">Revised Contract</span><span class="v">${toMoney(revisedContractValue)}</span></div>
           </div>
-          <div class="summary-group">
-            <h3>Progress Metrics</h3>
-            <div class="summary-row"><span class="k">% Complete (Current)</span><span class="v">${parsedPercentComplete.toFixed(2)}%</span></div>
-            <div class="summary-row"><span class="k">This Claim %</span><span class="v">${thisClaimPercent.toFixed(2)}%</span></div>
-            <div class="summary-row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(valueEarnedToDate)}</span></div>
-          </div>
-          <div class="summary-group">
-            <h3>Breakdown</h3>
-            <div class="summary-row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
-            <div class="summary-row"><span class="k">Approved Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
-            <div class="summary-row"><span class="k">Less Previous Claims</span><span class="v">-${toMoney(previousClaimsTotal)}</span></div>
-            <div class="summary-row"><span class="k">Paid to Date</span><span class="v">${toMoney(paidAmountNumber)}</span></div>
+          <div class="statement-col">
+            <div class="row"><span class="k">Previously Claimed</span><span class="v">${toMoney(previousClaimsTotal)}</span></div>
+            <div class="row"><span class="k">This Claim</span><span class="v">${toMoney(currentClaimAmount)}</span></div>
+            <div class="divider"></div>
+            <div class="row strong"><span class="k">Outstanding</span><span class="v">${toMoney(balance)}</span></div>
           </div>
         </div>
       </section>
 
-      <section class="notes-and-totals">
-        <h2 class="section-title">Claim Notes</h2>
-        <section class="notes-box">${escapeHtml(notes.trim() || "No notes added.")}</section>
-
-        <section class="totals">
-          <div class="row-divider"></div>
-          <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotal)}</span></div>
-          <div class="row-divider"></div>
-          <div class="row"><span class="k">GST (${(gstRate * 100).toFixed(0)}%)</span><span class="v">${toMoney(gst)}</span></div>
-          <div class="divider final">
-            <div class="row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(total)}</span></div>
-          </div>
-        </section>
+      <section class="pdf-block">
+        <h3>Progress</h3>
+        <div class="progress-rows">
+          <div class="row"><span class="k">Completed</span><span class="v">${parsedPercentComplete.toFixed(2)}%</span></div>
+          <div class="row"><span class="k">This Claim</span><span class="v">${thisClaimPercent.toFixed(2)}%</span></div>
+          <div class="row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(valueEarnedToDate)}</span></div>
+        </div>
       </section>
+      ${notes.trim()
+        ? `<section class="notes-inline"><h3>Claim Notes</h3><p>${escapeHtml(notes.trim())}</p></section>`
+        : ""}
 
       <footer class="doc-footer">
         <span>${escapeHtml(printableOrgName)} • ${escapeHtml(printableClaimNumber)}</span>
@@ -1409,7 +1505,7 @@ export default function ProjectClaimDetailPage() {
 
               <section className="space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Payment Position</p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Paid to Date</span><span>{toMoney(paidAmountNumber)}</span></p>
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Paid to Date</span><span>{toMoney(paidToDateTotal)}</span></p>
                 <p className="flex items-center justify-between text-[15px] font-semibold text-[#0F172A]"><span>Outstanding</span><span>{toMoney(balance)}</span></p>
               </section>
 
@@ -1452,7 +1548,17 @@ export default function ProjectClaimDetailPage() {
                 Close
               </Button>
             </div>
-            <div className="min-h-0 flex-1 overflow-hidden p-5">
+            <div className="flex flex-wrap items-center gap-2 border-b border-[#E8EDF5] px-5 py-3">
+              <div className="inline-flex items-center gap-2 rounded-[6px] border border-[#D8E0EB] bg-[#F8FAFC] px-3 py-1.5">
+                <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Quote Total</span>
+                <span className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(quoteLineTotalValue)}</span>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-[6px] border border-[#D8E0EB] bg-[#F8FAFC] px-3 py-1.5">
+                <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Variation Total</span>
+                <span className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(variationLineTotalValue)}</span>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
               {renderLineItemsTable("h-full")}
             </div>
           </div>

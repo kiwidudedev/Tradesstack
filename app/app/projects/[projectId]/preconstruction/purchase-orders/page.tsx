@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink, Plus } from "lucide-react";
+import { ChevronDown, ExternalLink, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -303,8 +303,8 @@ export default function ProjectVariationRegisterPage() {
                           <th className="px-4 py-3 text-left">Issued To</th>
                           <th className="px-4 py-3 text-left">Status</th>
                           <th className="px-4 py-3 text-left">Requested</th>
-                          <th className="px-4 py-3 text-left">Due</th>
                           <th className="px-4 py-3 text-right">Value</th>
+                          <th className="w-[52px] px-4 py-3 text-right"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -333,11 +333,39 @@ export default function ProjectVariationRegisterPage() {
                             <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
                               {toDayMonthYearLabel(row.requested_date)}
                             </td>
-                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
-                              {toDayMonthYearLabel(row.due_date)}
-                            </td>
                             <td className="px-4 py-3 text-right text-sm font-semibold text-[#1d1d1d]">
                               {toMoney(row.total_purchase_order_price ?? 0)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-[#6b6b6b]">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(event) => event.stopPropagation()}
+                                    className="h-7 w-7 rounded-md text-[#6b6b6b] hover:bg-[#E7ECF2] hover:text-[#1d2433]"
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">Purchase order actions</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="min-w-[140px]"
+                                >
+                                  <DropdownMenuItem
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${row.id}`);
+                                    }}
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </td>
                           </tr>
                         ))}
