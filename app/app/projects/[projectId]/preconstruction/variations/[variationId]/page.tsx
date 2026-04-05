@@ -236,9 +236,12 @@ export default function ProjectVariationsPage() {
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("");
+  const [projectLocation, setProjectLocation] = useState("");
   const [jobCode, setJobCode] = useState(() => deriveJobCode(routeProjectSlug));
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
+  const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -292,11 +295,12 @@ export default function ProjectVariationsPage() {
 
       const { data: organizationRow } = await supabase
         .from("organizations")
-        .select("name, logo_path")
+        .select("name, logo_path, brand_primary_color")
         .eq("id", resolvedOrganizationId)
         .maybeSingle();
       if (!cancelled) {
         setOrganizationName(organizationRow?.name ?? "");
+        setOrganizationBrandPrimaryColor((organizationRow?.brand_primary_color ?? "").trim());
         if (organizationRow?.logo_path) {
           const { data: logoUrlData } = supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path);
           setOrganizationLogoUrl(logoUrlData.publicUrl);
@@ -307,7 +311,7 @@ export default function ProjectVariationsPage() {
 
       const { data: projectRow } = await supabase
         .from("organization_projects")
-        .select("id, project_code")
+        .select("id, project_code, name, location")
         .eq("organization_id", resolvedOrganizationId)
         .eq("slug", routeProjectSlug)
         .maybeSingle();
@@ -323,6 +327,8 @@ export default function ProjectVariationsPage() {
 
       setOrganizationId(resolvedOrganizationId);
       setDbProjectId(projectRow.id);
+      setProjectName(projectRow.name ?? "");
+      setProjectLocation(projectRow.location ?? "");
       const resolvedCode = projectRow?.project_code ? deriveJobCode(projectRow.project_code) : deriveJobCode(routeProjectSlug);
       setJobCode(resolvedCode);
 
@@ -1021,7 +1027,6 @@ export default function ProjectVariationsPage() {
     }
 
     const showMarginBreakout = activeVariation.includeMarginInExport === true;
-
     const exportMarginMultiplier = !showMarginBreakout && pricingSummary.baseSubtotal > 0
       ? (pricingSummary.baseSubtotal + pricingSummary.margin) / pricingSummary.baseSubtotal
       : 1;
@@ -1032,64 +1037,77 @@ export default function ProjectVariationsPage() {
             const description = line.description.trim() || "Untitled line item";
             const exportedRate = line.rate * exportMarginMultiplier;
             const exportedLineTotal = lineTotal(line) * exportMarginMultiplier;
+            const qty = Number.isFinite(line.quantity) ? line.quantity : 0;
             return `
               <tr>
-                <td>${escapeHtml(description)}</td>
-                <td>${escapeHtml(line.section)}</td>
-                <td class="right">${line.quantity}</td>
-                <td>${escapeHtml(line.unit || "-")}</td>
-                <td class="right">${toMoney(exportedRate)}</td>
-                <td class="right">${toMoney(exportedLineTotal)}</td>
+                <td class="desc-cell">
+                  <div class="cell-primary">${escapeHtml(description)}</div>
+                  <div class="cell-secondary">${escapeHtml(line.section)}</div>
+                </td>
+                <td class="right money col-rate">${toMoney(exportedRate)}</td>
+                <td class="right col-qty">${qty}</td>
+                <td class="col-unit">${escapeHtml(line.unit || "-")}</td>
+                <td class="right money col-total">${toMoney(exportedLineTotal)}</td>
               </tr>
             `;
           })
           .join("")
-      : `<tr><td colspan="6" style="text-align:center;color:#64748b;">No line items added.</td></tr>`;
+      : `<tr><td colspan="5" style="text-align:center;color:#64748b;">No line items added.</td></tr>`;
 
     const printableOrgName = organizationName.trim() || "Tradesstack";
-    const printableProjectName = (routeProjectSlug ?? "").replaceAll("-", " ") || "Project";
-    const printableNumber = activeVariation.code || "Unassigned";
+    const printableProjectName = projectName.trim() || (routeProjectSlug ?? "").replaceAll("-", " ") || "Project";
+    const printableProjectLocation = projectLocation.trim();
+    const printableIssuedToContact = activeVariation.requestedBy.trim();
+    const printableIssuedToLines = [
+      printableOrgName,
+      printableProjectLocation || printableProjectName,
+      printableIssuedToContact ? `Contact: ${printableIssuedToContact}` : "",
+    ]
+      .filter((line) => line.trim().length > 0)
+      .map((line) => escapeHtml(line))
+      .join("\n");
+    const printableNumber = activeVariation.code.trim() || "Unassigned";
     const printableTitle = activeVariation.title.trim() || "Variation";
     const issuedDate = toDayMonthYearLabel(activeVariation.requestedDate || new Date().toISOString().slice(0, 10));
     const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableNumber}`;
+    const sanitizedBrandPrimaryColor = organizationBrandPrimaryColor.trim();
+    const pdfPrimaryColor = /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(sanitizedBrandPrimaryColor)
+      ? sanitizedBrandPrimaryColor
+      : "#0B2739";
     const logoMarkup = organizationLogoUrl
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
       : `<div class="logo-fallback">${escapeHtml(printableOrgName.slice(0, 2).toUpperCase())}</div>`;
 
-    const discountRowForExport = activeVariation.includeDiscountInExport
-      ? `<div class="row"><span class="k">Discount</span><span class="v">-${toMoney(pricingSummary.discount)}</span></div>`
+    const discountRowForExport = activeVariation.includeDiscountInExport && pricingSummary.discount > 0
+      ? `<div class="summary-row"><span class="k">Discount</span><span class="v">-${toMoney(pricingSummary.discount)}</span></div>`
       : "";
-    const contingencyRowForExport = activeVariation.includeContingencyInExport
-      ? `<div class="row"><span class="k">P&G</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>`
+    const contingencyRowForExport = activeVariation.includeContingencyInExport && pricingSummary.contingency > 0
+      ? `<div class="summary-row"><span class="k">P&G</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>`
       : "";
     const markUpRowForExport = showMarginBreakout
-      ? `<div class="row"><span class="k">Mark up</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>`
+      ? `<div class="summary-row"><span class="k">Mark up</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>`
       : "";
-    const subtotalExcludingGstForExport = showMarginBreakout
-      ? pricingSummary.baseSubtotal
-      : pricingSummary.baseSubtotal + pricingSummary.margin;
     const totalIncludingMarginForExport = pricingSummary.baseSubtotal + pricingSummary.margin;
-    const totalIncludingMarginRowForExport = showMarginBreakout
-      ? `<div class="row"><span class="k">Total (incl. margin)</span><span class="v">${toMoney(totalIncludingMarginForExport)}</span></div>`
-      : "";
+    const subtotalExcludingGstForExport = totalIncludingMarginForExport;
     const notesMarkup = activeVariation.notes.trim()
-      ? escapeHtml(activeVariation.notes).replaceAll("\n", "<br />")
-      : "No notes added.";
-    const validityPeriodMarkup = escapeHtml(activeVariation.validityPeriod.trim() || "Not provided");
-    const paymentTermsMarkup = escapeHtml(activeVariation.paymentTerms.trim() || "Not provided");
-    const leadTimeMarkup = escapeHtml(activeVariation.leadTime.trim() || "Not provided");
-    const inclusionsMarkup = escapeHtml(activeVariation.inclusions.trim() || "No inclusions captured.").replaceAll("\n", "<br />");
-    const exclusionsMarkup = escapeHtml(activeVariation.exclusions.trim() || "No exclusions captured.").replaceAll("\n", "<br />");
-    const clarificationsMarkup = escapeHtml(activeVariation.clarifications.trim() || "No clarifications captured.").replaceAll("\n", "<br />");
-    const assumptionsMarkup = escapeHtml(activeVariation.assumptions.trim() || "No assumptions captured.").replaceAll("\n", "<br />");
-    const attachmentsRows = activeVariation.attachments.length > 0
+      ? `<p><strong>Notes:</strong> ${escapeHtml(activeVariation.notes.trim()).replaceAll("\n", "<br />")}</p>`
+      : "";
+    const termRows = [
+      activeVariation.validityPeriod.trim() ? `<p><strong>Validity Period:</strong> ${escapeHtml(activeVariation.validityPeriod.trim())}</p>` : "",
+      activeVariation.paymentTerms.trim() ? `<p><strong>Payment Terms:</strong> ${escapeHtml(activeVariation.paymentTerms.trim())}</p>` : "",
+      activeVariation.leadTime.trim() ? `<p><strong>Lead Time:</strong> ${escapeHtml(activeVariation.leadTime.trim())}</p>` : "",
+      activeVariation.inclusions.trim() ? `<p><strong>Inclusions:</strong> ${escapeHtml(activeVariation.inclusions.trim()).replaceAll("\n", "<br />")}</p>` : "",
+      activeVariation.exclusions.trim() ? `<p><strong>Exclusions:</strong> ${escapeHtml(activeVariation.exclusions.trim()).replaceAll("\n", "<br />")}</p>` : "",
+      activeVariation.clarifications.trim() ? `<p><strong>Clarifications:</strong> ${escapeHtml(activeVariation.clarifications.trim()).replaceAll("\n", "<br />")}</p>` : "",
+      activeVariation.assumptions.trim() ? `<p><strong>Assumptions:</strong> ${escapeHtml(activeVariation.assumptions.trim()).replaceAll("\n", "<br />")}</p>` : "",
+    ]
+      .filter(Boolean)
+      .join("");
+    const attachmentsMarkup = activeVariation.attachments.length > 0
       ? activeVariation.attachments
-          .map(
-            (attachment) =>
-              `<tr><td>${escapeHtml(attachment.name || "-")}</td><td>${escapeHtml(attachment.type || "-")}</td></tr>`
-          )
+          .map((attachment) => `<p><strong>${escapeHtml(attachment.type || "Attachment")}:</strong> ${escapeHtml(attachment.name || "-")}</p>`)
           .join("")
-      : `<tr><td colspan="2" style="text-align:center;color:#64748b;">No attachments added.</td></tr>`;
+      : "";
 
     const html = `<!doctype html>
 <html lang="en">
@@ -1098,269 +1116,282 @@ export default function ProjectVariationsPage() {
     <title>${escapeHtml(exportDocumentTitle)}</title>
     <style>
       :root {
-        --navy: #082851;
-        --orange: #F74917;
-        --text: #0F172A;
-        --muted: #64748B;
-        --border: #E2E8F0;
+        --orange: ${pdfPrimaryColor};
+        --text: #2d3137;
+        --muted: #697587;
+        --line: #cfd6e0;
       }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      @page { size: A4; margin: 14mm 14mm 16mm 14mm; }
-      html, body { margin: 0; padding: 0; background: #fff; color: var(--text); }
-      body { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; line-height: 1.4; }
-      .doc { position: relative; min-height: calc(297mm - 30mm); }
-      .accent { height: 3px; background: var(--orange); margin-bottom: 14px; }
-      .header {
+      @page { size: A4; margin: 0; }
+      html, body { margin: 0; padding: 0; background: #eceff3; color: var(--text); }
+      body { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; }
+      .sheet {
+        width: 794px;
+        min-height: 1123px;
+        margin: 34px auto;
+        background: #fff;
+        padding: 44px 44px 32px;
+        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 10px 26px rgba(15, 23, 42, 0.12);
+      }
+      .accent { height: 4px; background: var(--orange); margin-bottom: 16px; }
+      .top {
         display: grid;
-        grid-template-columns: 1fr 320px;
-        column-gap: 24px;
-        align-items: start;
-        padding-bottom: 12px;
-        border-bottom: 1px solid var(--border);
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        column-gap: 20px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 10px;
       }
       .brand { display: flex; align-items: center; gap: 12px; }
-      .logo-wrap { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .logo-wrap { width: 180px; height: 72px; display: flex; align-items: center; justify-content: flex-start; overflow: hidden; }
       .logo-img { width: 100%; height: 100%; object-fit: contain; }
       .logo-fallback {
-        width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
-        border: 1px solid var(--border); color: var(--navy); font-weight: 700; letter-spacing: 0.06em;
+        width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--line); color: var(--orange); font-size: 13px; font-weight: 700;
       }
-      .company-name { margin: 0; color: var(--navy); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-      .header-meta dl { margin: 0; }
-      .header-meta .row {
-        display: grid;
-        grid-template-columns: 84px 1fr;
-        gap: 8px;
-        padding: 2px 0;
-      }
-      .header-meta dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-      .header-meta dd { margin: 0; color: var(--text); font-weight: 600; }
-      .title-block { padding: 16px 0 14px; border-bottom: 1px solid var(--border); }
-      .quote-title { margin: 0; color: var(--navy); font-size: 34px; line-height: 1.05; letter-spacing: -0.02em; }
-      .details { padding: 12px 0; border-bottom: 1px solid var(--border); }
-      .details-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; row-gap: 6px; }
-      .details-row { display: grid; grid-template-columns: 94px 1fr; gap: 10px; }
-      .details-row .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-      .details-row .v { color: var(--text); font-weight: 600; }
-      .section-title {
-        margin: 16px 0 8px;
-        color: var(--navy);
-        font-size: 16px;
+      .title {
+        margin: 0;
+        color: var(--orange);
+        font-size: 22px;
+        line-height: 1.1;
+        letter-spacing: -0.01em;
         font-weight: 700;
-        letter-spacing: 0.01em;
+        text-align: right;
+        justify-self: end;
       }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      thead th {
-        background: #F8FAFC;
-        color: var(--muted);
+
+      .issued-row {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: 1fr 310px;
+        column-gap: 20px;
+      }
+      .issued-title {
+        margin: 0 0 4px;
+        color: #1f2937;
+        font-size: 12px;
+        line-height: 1;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
+      }
+      .issued-text {
+        margin: 0;
+        color: #4b5563;
+        white-space: pre-line;
+        font-size: 13px;
+        line-height: 1.3;
+      }
+      .issued-meta .row {
+        display: grid;
+        grid-template-columns: 185px auto;
+        gap: 10px;
+        margin-bottom: 1px;
+      }
+      .issued-meta .k {
+        color: #1f2937;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 700;
+        text-align: right;
         font-size: 10px;
+      }
+      .issued-meta .v {
+        color: #4b5563;
+        text-align: right;
+        font-size: 12px;
+      }
+      .project-lead {
+        margin: 14px 0 10px;
+      }
+      .project-lead .project-line {
+        margin: 0 0 2px;
+        color: #1f2937;
+        font-size: 22px;
+        line-height: 1.15;
+        font-weight: 700;
+      }
+
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }
+      thead th {
+        background: var(--orange);
+        color: #fff;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 11px;
         font-weight: 700;
         text-align: left;
-        padding: 8px 8px;
-        border-top: 1px solid var(--border);
-        border-bottom: 1px solid var(--border);
+        padding: 5px 8px;
       }
       tbody td {
-        padding: 8px;
-        border-bottom: 1px solid #EEF2F7;
-        color: var(--text);
+        border-top: 1px solid var(--line);
+        padding: 6px 8px;
+        color: #303846;
+        font-size: 10px;
         vertical-align: top;
-        word-break: break-word;
       }
+      .desc-cell { line-height: 1.25; }
+      .cell-primary { font-weight: 600; color: #1f2937; }
+      .cell-secondary { margin-top: 1px; font-size: 9px; color: #6b7280; }
       .right { text-align: right; }
-      .totals {
-        margin-top: 10px;
-        margin-left: auto;
-        width: 360px;
+      .money { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+      .lower {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 18px;
       }
-      .totals .row {
+      .variation-details .bar {
+        display: block;
+        width: 100%;
+        background: var(--orange);
+        color: #fff;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+        padding: 6px 12px;
+        margin-bottom: 8px;
+      }
+      .variation-details p {
+        margin: 0 0 4px;
+        color: #374151;
+        font-size: 11px;
+      }
+      .variation-details p strong { color: #1f2937; }
+
+      .variation-summary .bar {
+        display: block;
+        width: 100%;
+        background: var(--orange);
+        color: #fff;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+        padding: 6px 12px;
+        margin: 0 0 8px;
+      }
+      .summary-row {
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 10px;
-        padding: 3px 0;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
       }
-      .totals .k { color: var(--muted); }
-      .totals .v { text-align: right; font-weight: 600; }
-      .totals .row-divider { border-top: 1px solid #CBD5E1; margin: 4px 0; }
-      .totals .divider { border-top: 2px solid var(--navy); margin-top: 6px; padding-top: 8px; }
-      .totals .final .k,
-      .totals .final .v { color: var(--navy); font-weight: 800; font-size: 22px; line-height: 1.05; }
-      .notes-box {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 10px;
-        color: var(--text);
-        background: #fff;
-      }
-      .attachments-table th { width: 50%; }
-      .terms-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-        margin-bottom: 8px;
-      }
-      .terms-grid.two-col {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      .term-card {
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
-        background: #fff;
-      }
-      .term-card .k {
-        margin: 0 0 4px;
-        color: var(--muted);
+      .summary-row.no-divider { border-bottom: 0; }
+      .summary-row .k { color: #607089; }
+      .summary-row .v { color: #253248; font-weight: 600; }
+      .summary-divider { border-top: 2px solid #9fb2ce; margin: 6px 0 4px; }
+      .summary-block-title {
+        margin: 8px 0 3px;
+        color: #4d617a;
         font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
         font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
       }
-      .term-card .v {
-        margin: 0;
-        color: var(--text);
-        font-weight: 600;
+
+      .totals-inline { margin-top: 0; }
+      .totals-inline .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
       }
-      .term-card .v.multiline {
-        white-space: normal;
-        font-weight: 500;
+      .totals-inline .k { color: #5d7292; }
+      .totals-inline .v { color: #27344a; font-weight: 600; }
+      .totals-inline .row.total-row {
+        background: var(--orange);
+        border-top: 0;
+        border-bottom: 0;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        padding-left: 8px;
+        padding-right: 8px;
       }
-      .doc-footer {
-        margin-top: 14px;
-        padding-top: 8px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        color: var(--muted);
-        font-size: 10px;
+      .totals-inline .row.total-row .k,
+      .totals-inline .row.total-row .v {
+        color: #fff;
+        font-size: 12px;
+        line-height: 1.1;
+        font-weight: 800;
+        letter-spacing: 0;
       }
-      .doc-footer .page::before { content: counter(page); }
+
+      tbody tr { break-inside: avoid; page-break-inside: avoid; }
       @media print {
-        .doc { min-height: auto; }
+        html, body { background: #fff; }
+        .sheet { margin: 0; box-shadow: none; }
       }
     </style>
   </head>
   <body>
-    <main class="doc">
+    <main class="sheet">
       <div class="accent"></div>
-      <header class="header">
+      <header class="top">
         <div class="brand">
           <div class="logo-wrap">${logoMarkup}</div>
-          <div>
-            <p class="company-name">${escapeHtml(printableOrgName)}</p>
-          </div>
         </div>
-        <div class="header-meta">
-          <dl>
-            <div class="row"><dt>Variation #</dt><dd>${escapeHtml(printableNumber)}</dd></div>
-            <div class="row"><dt>Issued</dt><dd>${escapeHtml(issuedDate)}</dd></div>
-            <div class="row"><dt>Status</dt><dd>${escapeHtml(activeVariation.status)}</dd></div>
-          </dl>
-        </div>
+        <p class="title">Variation</p>
       </header>
 
-      <section class="title-block">
-        <h1 class="quote-title">${escapeHtml(printableTitle)}</h1>
-      </section>
-
-      <section class="details">
-        <div class="details-grid">
-          <div class="details-row"><span class="k">Project</span><span class="v">${escapeHtml(printableProjectName || "-")}</span></div>
-          <div class="details-row"><span class="k">Origin</span><span class="v">${escapeHtml(activeVariation.origin || "-")}</span></div>
-          <div class="details-row"><span class="k">Requested by</span><span class="v">${escapeHtml(activeVariation.requestedBy || "-")}</span></div>
-          <div class="details-row"><span class="k">Requested</span><span class="v">${escapeHtml(toDayMonthYearLabel(activeVariation.requestedDate))}</span></div>
-          <div class="details-row"><span class="k">Due</span><span class="v">${escapeHtml(toDayMonthYearLabel(activeVariation.dueDate))}</span></div>
-          <div class="details-row"><span class="k">Approved</span><span class="v">${escapeHtml(toDayMonthYearLabel(activeVariation.approvedAt))}</span></div>
+      <section class="issued-row">
+        <div>
+          <p class="issued-title">Issued To:</p>
+          <p class="issued-text">${printableIssuedToLines}</p>
+        </div>
+        <div class="issued-meta">
+          <div class="row"><span class="k">Variation No:</span><span class="v">${escapeHtml(printableNumber)}</span></div>
+          <div class="row"><span class="k">Date:</span><span class="v">${escapeHtml(issuedDate)}</span></div>
+          <div class="row"><span class="k">Type:</span><span class="v">${escapeHtml(activeVariation.origin || "—")}</span></div>
+          <div class="row"><span class="k">Status:</span><span class="v">${escapeHtml(activeVariation.status)}</span></div>
         </div>
       </section>
 
-      <h2 class="section-title">Cost Build-Up</h2>
+      <section class="project-lead">
+        <p class="project-line">Project: ${escapeHtml(printableProjectName)}</p>
+      </section>
+
       <table>
         <thead>
           <tr>
-            <th style="width:33%">Description</th>
-            <th style="width:17%">Section</th>
-            <th class="right" style="width:10%">Qty</th>
+            <th style="width:42%">Description</th>
+            <th class="right col-rate" style="width:18%">Rate</th>
+            <th class="right col-qty" style="width:10%">Qty</th>
             <th style="width:10%">Unit</th>
-            <th class="right" style="width:15%">Rate</th>
-            <th class="right" style="width:15%">Total</th>
+            <th class="right col-total" style="width:20%">Total</th>
           </tr>
         </thead>
         <tbody>${lineItemsRows}</tbody>
       </table>
 
-      <section class="totals">
-        ${discountRowForExport}
-        ${contingencyRowForExport}
-        <div class="row-divider"></div>
-        <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotalExcludingGstForExport)}</span></div>
-        ${markUpRowForExport ? '<div class="row-divider"></div>' : ''}
-        ${markUpRowForExport}
-        ${totalIncludingMarginRowForExport ? '<div class="row-divider"></div>' : ''}
-        ${totalIncludingMarginRowForExport}
-        <div class="row-divider"></div>
-        <div class="row"><span class="k">GST (${escapeHtml(activeVariation.gstPercent.trim() || "15")}%)</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
-        <div class="divider final">
-          <div class="row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
+      <section class="lower">
+        <section class="variation-details">
+          <div class="bar">Variation Details</div>
+          <p><strong>Variation:</strong> ${escapeHtml(printableTitle)}</p>
+          <p><strong>Requested By:</strong> ${escapeHtml(activeVariation.requestedBy || "—")}</p>
+          ${attachmentsMarkup}
+          ${notesMarkup}
+          ${termRows}
+        </section>
+
+        <div>
+          <section class="totals-inline">
+            <div class="row total-row"><span class="k">Variation Summary</span><span class="v"></span></div>
+            ${markUpRowForExport ? markUpRowForExport.replaceAll("summary-row", "row") : ""}
+            ${discountRowForExport ? discountRowForExport.replaceAll("summary-row", "row") : ""}
+            ${contingencyRowForExport ? contingencyRowForExport.replaceAll("summary-row", "row") : ""}
+            <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotalExcludingGstForExport)}</span></div>
+            <div class="row"><span class="k">GST (${escapeHtml(activeVariation.gstPercent.trim() || "15")}%)</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
+            <div class="row total-row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
+          </section>
         </div>
       </section>
-
-      <h2 class="section-title">Attachments</h2>
-      <table class="attachments-table">
-        <thead>
-          <tr>
-            <th>File</th>
-            <th>Type</th>
-          </tr>
-        </thead>
-        <tbody>${attachmentsRows}</tbody>
-      </table>
-
-      <h2 class="section-title">Notes</h2>
-      <section class="notes-box">${notesMarkup}</section>
-
-      <h2 class="section-title">Terms & Clarifications</h2>
-      <section class="terms-grid">
-        <div class="term-card">
-          <p class="k">Validity period</p>
-          <p class="v">${validityPeriodMarkup}</p>
-        </div>
-        <div class="term-card">
-          <p class="k">Payment terms</p>
-          <p class="v">${paymentTermsMarkup}</p>
-        </div>
-        <div class="term-card">
-          <p class="k">Lead time</p>
-          <p class="v">${leadTimeMarkup}</p>
-        </div>
-      </section>
-      <section class="terms-grid two-col">
-        <div class="term-card">
-          <p class="k">Inclusions</p>
-          <p class="v multiline">${inclusionsMarkup}</p>
-        </div>
-        <div class="term-card">
-          <p class="k">Exclusions</p>
-          <p class="v multiline">${exclusionsMarkup}</p>
-        </div>
-      </section>
-      <section class="terms-grid two-col">
-        <div class="term-card">
-          <p class="k">Clarifications</p>
-          <p class="v multiline">${clarificationsMarkup}</p>
-        </div>
-        <div class="term-card">
-          <p class="k">Assumptions</p>
-          <p class="v multiline">${assumptionsMarkup}</p>
-        </div>
-      </section>
-
-      <footer class="doc-footer">
-        <span>${escapeHtml(printableOrgName)} • ${escapeHtml(printableNumber)}</span>
-        <span class="page">Page </span>
-      </footer>
     </main>
   </body>
 </html>`;
@@ -1370,6 +1401,7 @@ export default function ProjectVariationsPage() {
     const popup = window.open(url, "_blank", "width=1024,height=768");
     if (!popup) {
       URL.revokeObjectURL(url);
+      setError("Unable to export PDF. Please allow pop-ups and try again.");
       return;
     }
 
@@ -1382,6 +1414,7 @@ export default function ProjectVariationsPage() {
     };
   }, [
     activeVariation,
+    organizationBrandPrimaryColor,
     organizationLogoUrl,
     organizationName,
     pricingSummary.baseSubtotal,
@@ -1390,6 +1423,8 @@ export default function ProjectVariationsPage() {
     pricingSummary.grandTotal,
     pricingSummary.gst,
     pricingSummary.margin,
+    projectLocation,
+    projectName,
     routeProjectSlug,
   ]);
 
