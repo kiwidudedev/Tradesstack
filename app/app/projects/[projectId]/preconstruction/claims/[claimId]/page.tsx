@@ -181,6 +181,8 @@ export default function ProjectClaimDetailPage() {
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
   const [projectDbId, setProjectDbId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
+  const [projectLocation, setProjectLocation] = useState("");
+  const [clientCompanyName, setClientCompanyName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -516,7 +518,7 @@ export default function ProjectClaimDetailPage() {
 
         const { data: projectRow, error: projectError } = await supabase
           .from("organization_projects")
-          .select("id, name")
+          .select("id, name, client_id, location")
           .eq("organization_id", resolvedOrganizationId)
           .eq("slug", routeProjectSlug)
           .maybeSingle();
@@ -526,6 +528,20 @@ export default function ProjectClaimDetailPage() {
         if (!cancelled) {
           setProjectDbId(projectRow.id);
           setProjectName(projectRow.name ?? "");
+          setProjectLocation(projectRow.location ?? "");
+          setClientCompanyName("");
+        }
+
+        if (projectRow.client_id) {
+          const { data: clientRow } = await supabase
+            .from("organization_clients")
+            .select("name, company_name")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("id", projectRow.client_id)
+            .maybeSingle();
+          if (!cancelled) {
+            setClientCompanyName((clientRow?.company_name ?? "").trim() || (clientRow?.name ?? "").trim());
+          }
         }
 
         if (!isNewRoute) {
@@ -827,9 +843,10 @@ export default function ProjectClaimDetailPage() {
 
     const printableOrgName = organizationName.trim() || "Tradesstack";
     const printableProjectName = projectName || routeProjectSlug?.replaceAll("-", " ") || "Project";
+    const printableIssuedToName = clientCompanyName.trim() || printableProjectName;
+    const printableIssuedToAddress = projectLocation.trim() || printableOrgName;
     const printableClaimNumber = claimNumber || "Unassigned";
     const issueDate = toDayMonthYearLabel(claimDate || new Date().toISOString().slice(0, 10));
-    const raisedBy = session?.name?.trim() || "—";
     const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableClaimNumber}`;
     const logoMarkup = organizationLogoUrl
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
@@ -844,8 +861,8 @@ export default function ProjectClaimDetailPage() {
           ${line.sourceKind === "Variation" && line.sourceTitle ? `<div class="cell-secondary">${escapeHtml(line.sourceTitle)}</div>` : ""}
         </td>
         <td class="right money col-contract">${toMoney(line.sourceTotal)}</td>
-        <td class="right percent col-progress">${line.claimPercent.toFixed(2)}%</td>
-        <td class="right money col-total">${toMoney(line.claimAmount)}</td>
+        <td class="right percent col-progress">${line.cumulativeClaimedPercent.toFixed(2)}%</td>
+        <td class="right money col-total">${toMoney(line.cumulativeClaimedAmount)}</td>
       </tr>
     `;
     const lineItemsRows = claimLineItemsComputed.length > 0
@@ -867,7 +884,7 @@ export default function ProjectClaimDetailPage() {
     <title>${escapeHtml(exportDocumentTitle)}</title>
     <style>
       :root {
-        --orange: #ff4d1f;
+        --orange: #0B2739;
         --text: #2d3137;
         --muted: #697587;
         --line: #cfd6e0;
@@ -887,14 +904,14 @@ export default function ProjectClaimDetailPage() {
       .accent { height: 4px; background: var(--orange); margin-bottom: 16px; }
       .top {
         display: grid;
-        grid-template-columns: 1fr auto auto;
+        grid-template-columns: 1fr auto;
         align-items: center;
         column-gap: 20px;
         border-bottom: 1px solid var(--line);
         padding-bottom: 10px;
       }
       .brand { display: flex; align-items: center; gap: 12px; }
-      .logo-wrap { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .logo-wrap { width: 180px; height: 72px; display: flex; align-items: center; justify-content: flex-start; overflow: hidden; }
       .logo-img { width: 100%; height: 100%; object-fit: contain; }
       .logo-fallback {
         width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
@@ -903,12 +920,13 @@ export default function ProjectClaimDetailPage() {
       .title {
         margin: 0;
         color: var(--orange);
-        font-size: 58px;
-        line-height: 1;
-        letter-spacing: -0.02em;
+        font-size: 22px;
+        line-height: 1.1;
+        letter-spacing: -0.01em;
         font-weight: 700;
+        text-align: right;
+        justify-self: end;
       }
-      .site { margin: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
 
       .issued-row {
         margin-top: 16px;
@@ -929,7 +947,7 @@ export default function ProjectClaimDetailPage() {
         margin: 0;
         color: #4b5563;
         white-space: pre-line;
-        font-size: 15px;
+        font-size: 13px;
         line-height: 1.3;
       }
       .issued-meta .row {
@@ -949,7 +967,7 @@ export default function ProjectClaimDetailPage() {
       .issued-meta .v {
         color: #4b5563;
         text-align: right;
-        font-size: 14px;
+        font-size: 12px;
       }
       .project-lead {
         margin: 14px 0 10px;
@@ -957,8 +975,8 @@ export default function ProjectClaimDetailPage() {
       .project-lead .project-line {
         margin: 0 0 2px;
         color: #1f2937;
-        font-size: 32px;
-        line-height: 1.05;
+        font-size: 22px;
+        line-height: 1.15;
         font-weight: 700;
       }
       .project-lead .lead-note {
@@ -986,6 +1004,7 @@ export default function ProjectClaimDetailPage() {
         text-align: left;
         padding: 5px 8px;
       }
+      thead th.col-progress { white-space: nowrap; }
       tbody td {
         border-top: 1px solid var(--line);
         padding: 6px 8px;
@@ -1027,18 +1046,18 @@ export default function ProjectClaimDetailPage() {
       .payment-details p {
         margin: 0 0 4px;
         color: #374151;
-        font-size: 12px;
+        font-size: 11px;
       }
       .payment-details p strong { color: #1f2937; }
       .payment-details .thanks {
         margin-top: 10px;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
         color: #1f2937;
       }
       .payment-details .legal {
         margin-top: 12px;
-        font-size: 12px;
+        font-size: 11px;
         line-height: 1.35;
         font-weight: 700;
       }
@@ -1109,23 +1128,6 @@ export default function ProjectClaimDetailPage() {
         font-size: 11px;
       }
       .terms p { margin: 0 0 8px; }
-      .signature {
-        margin-top: 18px;
-        text-align: right;
-      }
-      .signature .scribble {
-        font-family: "Brush Script MT", "Segoe Script", cursive;
-        font-size: 36px;
-        color: #6b7280;
-        line-height: 1;
-      }
-      .signature .name {
-        margin-top: 4px;
-        font-size: 16px;
-        font-weight: 700;
-        color: #1f2937;
-        line-height: 1;
-      }
       .doc-footer {
         margin-top: 18px;
         padding-top: 10px;
@@ -1155,14 +1157,13 @@ export default function ProjectClaimDetailPage() {
           <div class="logo-wrap">${logoMarkup}</div>
         </div>
         <p class="title">Payment Claim</p>
-        <p class="site">www.tradesstack.com</p>
       </header>
 
       <section class="issued-row">
         <div>
           <p class="issued-title">Issued To:</p>
-          <p class="issued-text">${escapeHtml(printableProjectName)}
-${escapeHtml(printableOrgName)}</p>
+          <p class="issued-text">${escapeHtml(printableIssuedToName)}
+${escapeHtml(printableIssuedToAddress)}</p>
         </div>
         <div class="issued-meta">
           <div class="row"><span class="k">Payment Claim No:</span><span class="v">${escapeHtml(printableClaimNumber)}</span></div>
@@ -1173,10 +1174,8 @@ ${escapeHtml(printableOrgName)}</p>
 
       <section class="project-lead">
         <p class="project-line">Project: ${escapeHtml(printableProjectName)}</p>
-        <p class="lead-note">We greatly appreciate your support. Please see the payment claim breakdown below.</p>
       </section>
 
-      <h2 class="section-title">Claim Line Items</h2>
       <table>
         <thead>
           <tr>
@@ -1204,11 +1203,7 @@ ${escapeHtml(printableOrgName)}</p>
             <h3>Claim Summary</h3>
             <div class="summary-row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
             <div class="summary-row"><span class="k">Approved Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
-            <div class="summary-row strong"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
-
-            <div class="summary-divider"></div>
-            <p class="summary-block-title">Previous Claims</p>
-            <div class="summary-row"><span class="k">Total Previously Claimed</span><span class="v">${toMoney(previousClaimsTotal)}</span></div>
+            <div class="summary-row"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
 
             <div class="summary-divider"></div>
             <p class="summary-block-title">This Claim</p>
@@ -1225,10 +1220,6 @@ ${escapeHtml(printableOrgName)}</p>
             <div class="row total-row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(total)}</span></div>
           </section>
         </div>
-      </section>
-
-      <section class="signature">
-        <div class="scribble">${escapeHtml(raisedBy || "Signature")}</div>
       </section>
 
       ${notes.trim() ? `<section class="terms"><p><strong>Claim Notes</strong></p><p>${escapeHtml(notes.trim())}</p></section>` : ""}
