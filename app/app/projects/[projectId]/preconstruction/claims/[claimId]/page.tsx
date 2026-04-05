@@ -140,6 +140,54 @@ function toDayMonthYearLabel(value: string | null) {
   });
 }
 
+function toMonthDayLabel(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleDateString("en-NZ", {
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function toPeriodRangeLabel(start: string | null, end: string | null) {
+  if (!start && !end) {
+    return "—";
+  }
+
+  const startDate = start ? new Date(`${start}T00:00:00`) : null;
+  const endDate = end ? new Date(`${end}T00:00:00`) : null;
+  const startValid = startDate && !Number.isNaN(startDate.getTime());
+  const endValid = endDate && !Number.isNaN(endDate.getTime());
+
+  if (!startValid || !endValid) {
+    const fallbackStart = toDayMonthYearLabel(start);
+    const fallbackEnd = toDayMonthYearLabel(end);
+    if (fallbackStart === "—") {
+      return fallbackEnd;
+    }
+    if (fallbackEnd === "—") {
+      return fallbackStart;
+    }
+    return `${fallbackStart} - ${fallbackEnd}`;
+  }
+
+  if (
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth()
+  ) {
+    return `${startDate.toLocaleDateString("en-NZ", { month: "long" })} ${startDate.getDate()} - ${endDate.getDate()}`;
+  }
+
+  return `${toMonthDayLabel(start)} - ${toMonthDayLabel(end)}`;
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -179,10 +227,18 @@ export default function ProjectClaimDetailPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
+  const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
+  const [organizationBusinessNumber, setOrganizationBusinessNumber] = useState("");
+  const [organizationBankAccountDetails, setOrganizationBankAccountDetails] = useState("");
+  const [organizationGstNumber, setOrganizationGstNumber] = useState("");
+  const [organizationContactName, setOrganizationContactName] = useState("");
+  const [organizationContactEmail, setOrganizationContactEmail] = useState("");
+  const [organizationContactPhone, setOrganizationContactPhone] = useState("");
   const [projectDbId, setProjectDbId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
   const [clientCompanyName, setClientCompanyName] = useState("");
+  const [clientContactName, setClientContactName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -503,11 +559,18 @@ export default function ProjectClaimDetailPage() {
 
         const { data: organizationRow } = await supabase
           .from("organizations")
-          .select("name, logo_path")
+          .select("name, logo_path, brand_primary_color, business_number, bank_account_details, gst_number, contact_name, contact_email, contact_phone")
           .eq("id", resolvedOrganizationId)
           .maybeSingle();
         if (!cancelled) {
           setOrganizationName(organizationRow?.name ?? "");
+          setOrganizationBrandPrimaryColor((organizationRow?.brand_primary_color ?? "").trim());
+          setOrganizationBusinessNumber((organizationRow?.business_number ?? "").trim());
+          setOrganizationBankAccountDetails((organizationRow?.bank_account_details ?? "").trim());
+          setOrganizationGstNumber((organizationRow?.gst_number ?? "").trim());
+          setOrganizationContactName((organizationRow?.contact_name ?? "").trim());
+          setOrganizationContactEmail((organizationRow?.contact_email ?? "").trim());
+          setOrganizationContactPhone((organizationRow?.contact_phone ?? "").trim());
           if (organizationRow?.logo_path) {
             const { data: logoUrlData } = supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path);
             setOrganizationLogoUrl(logoUrlData.publicUrl);
@@ -530,6 +593,7 @@ export default function ProjectClaimDetailPage() {
           setProjectName(projectRow.name ?? "");
           setProjectLocation(projectRow.location ?? "");
           setClientCompanyName("");
+          setClientContactName("");
         }
 
         if (projectRow.client_id) {
@@ -540,7 +604,9 @@ export default function ProjectClaimDetailPage() {
             .eq("id", projectRow.client_id)
             .maybeSingle();
           if (!cancelled) {
-            setClientCompanyName((clientRow?.company_name ?? "").trim() || (clientRow?.name ?? "").trim());
+            const resolvedContactName = (clientRow?.name ?? "").trim();
+            setClientCompanyName((clientRow?.company_name ?? "").trim() || resolvedContactName);
+            setClientContactName(resolvedContactName);
           }
         }
 
@@ -845,8 +911,18 @@ export default function ProjectClaimDetailPage() {
     const printableProjectName = projectName || routeProjectSlug?.replaceAll("-", " ") || "Project";
     const printableIssuedToName = clientCompanyName.trim() || printableProjectName;
     const printableIssuedToAddress = projectLocation.trim() || printableOrgName;
+    const printableIssuedToContact = clientContactName.trim();
+    const printableIssuedToLines = [
+      printableIssuedToName,
+      printableIssuedToAddress,
+      printableIssuedToContact ? `Contact: ${printableIssuedToContact}` : "",
+    ]
+      .filter((line) => line.trim().length > 0)
+      .map((line) => escapeHtml(line))
+      .join("\n");
     const printableClaimNumber = claimNumber || "Unassigned";
     const issueDate = toDayMonthYearLabel(claimDate || new Date().toISOString().slice(0, 10));
+    const printablePeriodRange = toPeriodRangeLabel(periodStart || null, periodEnd || null);
     const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableClaimNumber}`;
     const logoMarkup = organizationLogoUrl
       ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
@@ -876,6 +952,31 @@ export default function ProjectClaimDetailPage() {
     const subtotal = currentClaimAmount;
     const gst = subtotal * gstRate;
     const total = subtotal + gst;
+    const sanitizedBrandPrimaryColor = organizationBrandPrimaryColor.trim();
+    const pdfPrimaryColor = /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(sanitizedBrandPrimaryColor)
+      ? sanitizedBrandPrimaryColor
+      : "#0B2739";
+    const organizationMetaRows = [
+      organizationBusinessNumber
+        ? `<p><strong>ABN / NZBN:</strong> ${escapeHtml(organizationBusinessNumber)}</p>`
+        : "",
+      organizationBankAccountDetails
+        ? `<p><strong>Bank Account Details:</strong> ${escapeHtml(organizationBankAccountDetails)}</p>`
+        : "",
+      organizationGstNumber
+        ? `<p><strong>GST Number:</strong> ${escapeHtml(organizationGstNumber)}</p>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
+    const organizationDetailsRows = [
+      printableOrgName ? `<p><strong>Company:</strong> ${escapeHtml(printableOrgName)}</p>` : "",
+      organizationContactName ? `<p><strong>Contact:</strong> ${escapeHtml(organizationContactName)}</p>` : "",
+      organizationContactPhone ? `<p><strong>Phone:</strong> ${escapeHtml(organizationContactPhone)}</p>` : "",
+      organizationContactEmail ? `<p><strong>Email:</strong> ${escapeHtml(organizationContactEmail)}</p>` : "",
+    ]
+      .filter(Boolean)
+      .join("");
 
     const html = `<!doctype html>
 <html lang="en">
@@ -884,7 +985,7 @@ export default function ProjectClaimDetailPage() {
     <title>${escapeHtml(exportDocumentTitle)}</title>
     <style>
       :root {
-        --orange: #0B2739;
+        --orange: ${pdfPrimaryColor};
         --text: #2d3137;
         --muted: #697587;
         --line: #cfd6e0;
@@ -969,6 +1070,9 @@ export default function ProjectClaimDetailPage() {
         text-align: right;
         font-size: 12px;
       }
+      .issued-meta .v.nowrap {
+        white-space: nowrap;
+      }
       .project-lead {
         margin: 14px 0 10px;
       }
@@ -1033,7 +1137,8 @@ export default function ProjectClaimDetailPage() {
         gap: 18px;
       }
       .payment-details .bar {
-        display: inline-block;
+        display: block;
+        width: 100%;
         background: var(--orange);
         color: #fff;
         font-size: 10px;
@@ -1061,15 +1166,26 @@ export default function ProjectClaimDetailPage() {
         line-height: 1.35;
         font-weight: 700;
       }
-
-      .claim-summary h3 {
-        margin: 0 0 8px;
-        color: #1f2937;
+      .payment-details .org-meta {
+        margin-top: 12px;
+      }
+      .payment-details .org-meta p {
+        margin: 0 0 4px;
+        color: #374151;
         font-size: 11px;
-        line-height: 1;
-        font-weight: 700;
-        letter-spacing: 0.09em;
+      }
+
+      .claim-summary .bar {
+        display: block;
+        width: 100%;
+        background: var(--orange);
+        color: #fff;
+        font-size: 10px;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
+        font-weight: 700;
+        padding: 6px 12px;
+        margin: 0 0 8px;
       }
       .summary-row {
         display: grid;
@@ -1078,6 +1194,9 @@ export default function ProjectClaimDetailPage() {
         padding: 4px 0;
         border-bottom: 1px solid var(--line);
         font-size: 11px;
+      }
+      .summary-row.no-divider {
+        border-bottom: 0;
       }
       .summary-row .k { color: #607089; }
       .summary-row .v { color: #253248; font-weight: 600; }
@@ -1162,12 +1281,12 @@ export default function ProjectClaimDetailPage() {
       <section class="issued-row">
         <div>
           <p class="issued-title">Issued To:</p>
-          <p class="issued-text">${escapeHtml(printableIssuedToName)}
-${escapeHtml(printableIssuedToAddress)}</p>
+          <p class="issued-text">${printableIssuedToLines}</p>
         </div>
         <div class="issued-meta">
           <div class="row"><span class="k">Payment Claim No:</span><span class="v">${escapeHtml(printableClaimNumber)}</span></div>
           <div class="row"><span class="k">Date:</span><span class="v">${escapeHtml(issueDate)}</span></div>
+          <div class="row"><span class="k">Period:</span><span class="v nowrap">${escapeHtml(printablePeriodRange)}</span></div>
           <div class="row"><span class="k">Due Date:</span><span class="v">${escapeHtml(toDayMonthYearLabel(dueDate || null))}</span></div>
         </div>
       </section>
@@ -1191,27 +1310,25 @@ ${escapeHtml(printableIssuedToAddress)}</p>
       <section class="lower">
         <section class="payment-details">
           <div class="bar">Payment Details</div>
-          <p><strong>Claim Type:</strong> ${escapeHtml(claimType)}</p>
-          <p><strong>Status:</strong> ${escapeHtml(status)}</p>
-          <p><strong>Project:</strong> ${escapeHtml(printableProjectName)}</p>
+          ${organizationDetailsRows ? `<div class="org-details">${organizationDetailsRows}</div>` : ""}
+          ${organizationMetaRows ? `<div class="org-meta">${organizationMetaRows}</div>` : ""}
           <p class="thanks">Thank you for your business!</p>
           <p class="legal">This is a Payment Claim under the Construction Contracts Act 2002.</p>
         </section>
 
         <div>
           <section class="claim-summary">
-            <h3>Claim Summary</h3>
+            <div class="bar">Claim Summary</div>
             <div class="summary-row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
             <div class="summary-row"><span class="k">Approved Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
-            <div class="summary-row"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
+            <div class="summary-row no-divider"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
 
             <div class="summary-divider"></div>
             <p class="summary-block-title">This Claim</p>
             <div class="summary-row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(valueEarnedToDate)}</span></div>
-            <div class="summary-row"><span class="k">Less Previous Claims</span><span class="v">-${toMoney(previousClaimsTotal)}</span></div>
-
+            <div class="summary-row no-divider"><span class="k">Less Previous Claims</span><span class="v">-${toMoney(previousClaimsTotal)}</span></div>
             <div class="summary-divider"></div>
-            <div class="summary-row strong"><span class="k">Current Claim</span><span class="v">${toMoney(currentClaimAmount)}</span></div>
+
           </section>
 
           <section class="totals-inline">
@@ -1224,11 +1341,6 @@ ${escapeHtml(printableIssuedToAddress)}</p>
 
       ${notes.trim() ? `<section class="terms"><p><strong>Claim Notes</strong></p><p>${escapeHtml(notes.trim())}</p></section>` : ""}
 
-      <footer class="doc-footer">
-        <span>📞 021 123 456</span>
-        <span class="center">✉ admin@tradesstack.com</span>
-        <span class="right page">Page </span>
-      </footer>
     </main>
   </body>
 </html>`;
@@ -1508,34 +1620,25 @@ ${escapeHtml(printableIssuedToAddress)}</p>
                 <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Contract Position</p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Original Contract</span><span>{toMoney(baseQuoteValue)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Approved Variations</span><span>{toMoney(approvedVariationsValue)}</span></p>
-                <p className="flex items-center justify-between text-[15px] font-semibold text-[#0F172A]"><span>Revised Contract Value</span><span>{toMoney(revisedContractValue)}</span></p>
+                <div className="h-px bg-[#C7D2E1]" />
+                <p className="flex items-center justify-between"><span className="text-[#64748B]">Revised Contract Value</span><span>{toMoney(revisedContractValue)}</span></p>
               </section>
 
-              <div className="h-px bg-[#E7ECF3]" />
+              <div className="h-px bg-[#C7D2E1]" />
 
               <section className="space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Previous Claims</p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Total Previously Claimed</span><span>{toMoney(previousClaimsTotal)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Previous % Complete</span><span>{previousPercentComplete.toFixed(2)}%</span></p>
               </section>
 
-              <div className="h-px bg-[#E7ECF3]" />
+              <div className="h-px bg-[#C7D2E1]" />
 
               <section className="space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">This Claim</p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">% Complete (Current)</span><span>{parsedPercentComplete.toFixed(2)}%</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">This Claim %</span><span>{thisClaimPercent.toFixed(2)}%</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Value Earned to Date</span><span>{toMoney(valueEarnedToDate)}</span></p>
                 <p className="flex items-center justify-between"><span className="text-[#64748B]">Less Previous Claims</span><span>-{toMoney(previousClaimsTotal)}</span></p>
               </section>
 
-              <div className="h-px bg-[#E7ECF3]" />
-
-              <section className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Payment Position</p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Paid to Date</span><span>{toMoney(paidToDateTotal)}</span></p>
-                <p className="flex items-center justify-between text-[15px] font-semibold text-[#0F172A]"><span>Outstanding</span><span>{toMoney(balance)}</span></p>
-              </section>
 
               <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
                 <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Current Claim</p>

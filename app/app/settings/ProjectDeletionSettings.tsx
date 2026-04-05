@@ -88,9 +88,9 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
   };
 
   return (
-    <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-      <CardHeader className="pb-3 pt-6">
-        <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Project Deletion</CardTitle>
+    <Card className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] shadow-none">
+      <CardHeader className="pb-2 pt-7">
+        <CardTitle className="text-[30px] font-semibold leading-tight tracking-[-0.02em] text-[#0F172A] sm:text-[32px]">Project Deletion</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className={`${interMedium.className} text-sm font-medium leading-relaxed text-[#5F7390]`}>
@@ -101,12 +101,12 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
           <p className={`${interMedium.className} text-sm font-medium text-[#5f6f89]`}>No projects available to delete.</p>
         ) : (
           <div className="space-y-3">
-            <div className="space-y-2">
-              <label className={`${interMedium.className} text-sm font-medium text-[#1d2433]`}>Select project</label>
+            <div className="space-y-2.5">
+              <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Select project</label>
               <select
                 value={selectedProjectId}
                 onChange={(event) => setSelectedProjectId(event.target.value)}
-                className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none`}
               >
                 <option value="">Choose a project to delete</option>
                 {items.map((project) => (
@@ -129,7 +129,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
                   value={confirmText}
                   onChange={(event) => setConfirmText(event.target.value)}
                   placeholder='Type "delete" to confirm'
-                  className={`${interMedium.className} mt-3 h-10 rounded-[6px] border-[#EAB8B8] bg-white text-[#1d2433]`}
+                  className={`${interMedium.className} mt-3 h-10 rounded-[10px] border-[#EAB8B8] bg-white text-[#1d2433]`}
                 />
               </div>
             ) : null}
@@ -138,7 +138,7 @@ export function ProjectDeletionSettings({ organizationId, projects }: ProjectDel
               type="button"
               onClick={onDeleteProject}
               disabled={!canDelete || isDeleting}
-              className={`${interMedium.className} h-10 rounded-[6px] bg-[#B42318] px-4 text-sm font-medium text-white hover:bg-[#9e1f16] disabled:bg-[#d98d88]`}
+              className={`${interMedium.className} h-10 rounded-[10px] bg-[#B42318] px-4 text-sm font-medium text-white hover:bg-[#9e1f16] disabled:bg-[#d98d88]`}
             >
               {isDeleting ? "Deleting..." : "Delete Project"}
             </Button>
