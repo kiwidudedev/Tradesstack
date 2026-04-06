@@ -47,6 +47,14 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
 
   const postAuthPath = useMemo(() => getPostAuthPath(searchParams.get("next")), [searchParams]);
 
+  const inviteTokenFromUrl = useMemo(() => {
+    const token = searchParams.get("token");
+    return token ? token.trim() : "";
+  }, [searchParams]);
+
+  const effectiveInviteToken = inviteTokenFromUrl;
+  const businessNameLabel = effectiveInviteToken ? "Business name (optional)" : "Business name";
+
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -57,6 +65,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
       const result = await register({
         fullName: name,
         organizationName,
+        inviteToken: effectiveInviteToken,
         email,
         password,
       });
@@ -83,7 +92,9 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
   return (
     <div className="mx-auto w-full max-w-[1260px]">
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded-[1.2rem] border border-[#0B2639]/8 bg-white px-6 py-6 sm:px-9 sm:py-8 lg:h-[560px] lg:px-10 lg:py-8">
+        <section
+          className="rounded-[1.2rem] border border-[#0B2639]/8 bg-white px-6 py-6 sm:px-9 sm:py-8 lg:h-[560px] lg:px-10 lg:py-8"
+        >
           <div className="mx-auto flex h-full max-w-[560px] flex-col">
             {closeHref ? (
               <Link
@@ -96,7 +107,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
               </Link>
             ) : null}
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-4 space-y-2">
               <h1
                 className={`${akzidenz.className} max-w-[15ch] text-[2.65rem] font-bold leading-[0.924] tracking-[-0.07em] text-[#0B2639] sm:max-w-none sm:text-[3.25rem]`}
               >
@@ -105,7 +116,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
               </h1>
             </div>
 
-            <form className="mt-6 flex flex-1 flex-col space-y-4" onSubmit={onSubmit}>
+            <form className="mt-5 flex flex-1 flex-col space-y-2.5" onSubmit={onSubmit}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label htmlFor="name" className="text-sm font-semibold text-[#5A5061]" style={graphikStyle}>
@@ -124,7 +135,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
 
                 <div className="space-y-2">
                   <label htmlFor="organizationName" className="text-sm font-semibold text-[#5A5061]" style={graphikStyle}>
-                    Business name
+                    {businessNameLabel}
                   </label>
                   <Input
                     id="organizationName"
@@ -133,7 +144,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
                     placeholder="Acme Projects"
                     className="h-[58px] rounded-[0.55rem] border-[#cfd3dd] bg-white px-4 text-[0.98rem] font-semibold text-[#1F2430] placeholder:text-[#6b7d8c] focus-visible:ring-[#F74917]/20"
                     style={graphikStyle}
-                    required
+                    required={!effectiveInviteToken}
                   />
                 </div>
               </div>
@@ -172,7 +183,7 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
                 </div>
               </div>
 
-              <div className="min-h-[28px]">
+              <div className="min-h-[16px]">
                 {error ? (
                   <p className="text-sm text-red-600" style={graphikStyle}>
                     {error}
@@ -195,14 +206,14 @@ export function RegisterShowcasePanel({ closeHref }: RegisterShowcasePanelProps)
 
               <Button
                 type="submit"
-                className="mt-auto h-[58px] w-full rounded-[0.55rem] bg-[#F74917] px-6 text-[0.98rem] font-semibold text-white hover:bg-[#E84B1D]"
+                className="mt-0.5 h-[54px] w-full rounded-[0.55rem] bg-[#F74917] px-6 text-[0.98rem] font-semibold text-white hover:bg-[#E84B1D]"
                 style={graphikStyle}
                 disabled={isSubmitting}
               >
                 <span>{isSubmitting ? "Creating account..." : "Sign up now"}</span>
               </Button>
 
-              <p className="-mt-[10px] text-[13px] text-[#0B2639]" style={graphikStyle}>
+              <p className="-mt-1 text-[13px] text-[#0B2639]" style={graphikStyle}>
                 Already have a TradeStack account?{" "}
                 <Link href="/login" className="font-semibold text-[#F74917] transition hover:text-[#d95a1c]">
                   Sign in

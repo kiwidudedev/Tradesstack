@@ -295,7 +295,7 @@ export function ProjectTimeSheetsBoard() {
         company_name: entry.company_name?.trim() || session.organizationName?.trim() || "TradesStack",
         trade_name:
           entry.trade_name?.trim() ||
-          (entry.worker_user_id === session.id && session.role === "admin" ? "Management" : "Site Crew"),
+          (entry.worker_user_id === session.id && (session.role === "owner" || session.role === "admin") ? "Management" : "Site Crew"),
       }));
 
       setContext({
@@ -360,7 +360,7 @@ export function ProjectTimeSheetsBoard() {
           worker_member_id: context.memberId,
           worker_name: session.name || "Worker",
           company_name: session.organizationName?.trim() || "TradesStack",
-          trade_name: session.role === "admin" ? "Management" : "Site Crew",
+          trade_name: session.role === "owner" || session.role === "admin" ? "Management" : "Site Crew",
           clock_in_at: nowIso,
           clock_in_latitude: location.latitude,
           clock_in_longitude: location.longitude,

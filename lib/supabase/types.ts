@@ -1,4 +1,4 @@
-export type OrganizationMemberRole = "admin" | "member";
+export type OrganizationMemberRole = "owner" | "admin" | "qs" | "project_manager" | "worker";
 
 export type OrganizationInviteStatus = "pending" | "accepted" | "revoked" | "expired";
 
@@ -77,6 +77,7 @@ export interface Database {
           id: string;
           organization_id: string;
           invited_email: string;
+          invited_name: string | null;
           invited_by: string;
           role: OrganizationMemberRole;
           token: string;
@@ -90,6 +91,7 @@ export interface Database {
           id?: string;
           organization_id: string;
           invited_email: string;
+          invited_name?: string | null;
           invited_by: string;
           role?: OrganizationMemberRole;
           token?: string;
@@ -103,12 +105,85 @@ export interface Database {
           id?: string;
           organization_id?: string;
           invited_email?: string;
+          invited_name?: string | null;
           invited_by?: string;
           role?: OrganizationMemberRole;
           token?: string;
           status?: OrganizationInviteStatus;
           expires_at?: string;
           accepted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      app_permissions: {
+        Row: {
+          permission_key: string;
+          description: string;
+          created_at: string;
+        };
+        Insert: {
+          permission_key: string;
+          description?: string;
+          created_at?: string;
+        };
+        Update: {
+          permission_key?: string;
+          description?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      role_permissions: {
+        Row: {
+          role: OrganizationMemberRole;
+          permission_key: string;
+          is_allowed: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          role: OrganizationMemberRole;
+          permission_key: string;
+          is_allowed?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          role?: OrganizationMemberRole;
+          permission_key?: string;
+          is_allowed?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      member_permission_overrides: {
+        Row: {
+          id: string;
+          organization_member_id: string;
+          permission_key: string;
+          is_allowed: boolean;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_member_id: string;
+          permission_key: string;
+          is_allowed: boolean;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_member_id?: string;
+          permission_key?: string;
+          is_allowed?: boolean;
+          created_by?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -984,6 +1059,21 @@ export interface Database {
       ensure_organization_membership: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      has_permission: {
+        Args: {
+          p_permission_key: string;
+        };
+        Returns: boolean;
+      };
+      get_organization_member_emails: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: {
+          user_id: string;
+          email: string;
+        }[];
       };
       can_access_project_drawing_storage_object: {
         Args: {

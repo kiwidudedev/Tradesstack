@@ -20,6 +20,7 @@ type RegisterInput = {
   password: string;
   fullName: string;
   organizationName: string;
+  inviteToken?: string;
 };
 
 type MemberRow = Database["public"]["Tables"]["organization_members"]["Row"];
@@ -112,7 +113,7 @@ function toAuthMessage(error: unknown, fallback: string) {
 }
 
 function isUserRole(value: unknown): value is UserRole {
-  return value === "admin" || value === "member";
+  return value === "owner" || value === "admin" || value === "qs" || value === "project_manager" || value === "worker";
 }
 
 function resolveRole(user: User, member: MemberRow | null): UserRole {
@@ -124,7 +125,7 @@ function resolveRole(user: User, member: MemberRow | null): UserRole {
     return user.user_metadata.role;
   }
 
-  return "member";
+  return "worker";
 }
 
 function resolveName(user: User, member: MemberRow | null): string {
@@ -315,10 +316,11 @@ export function useAuth() {
 
     const fullName = input.fullName.trim();
     const organizationName = input.organizationName.trim();
+    const inviteToken = (input.inviteToken ?? "").trim();
 
-    if (!fullName || !organizationName) {
+    if (!fullName || (!organizationName && !inviteToken)) {
       return {
-        error: "Full name and organization name are required.",
+        error: "Full name is required, plus organization name or invite token.",
         requiresEmailConfirmation: false,
       };
     }
@@ -329,7 +331,8 @@ export function useAuth() {
       options: {
         data: {
           full_name: fullName,
-          organization_name: organizationName,
+          organization_name: organizationName || undefined,
+          invite_token: inviteToken || undefined,
         },
       },
     });

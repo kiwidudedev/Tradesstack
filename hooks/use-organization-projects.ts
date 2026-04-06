@@ -52,26 +52,30 @@ export function useOrganizationProjects() {
       setIsLoading(true);
     }
 
-    const [projectsResult, hiddenWorkspaceResult] = await Promise.all([
-      supabase
-        .from("organization_projects")
-        .select(sidebarProjectSelect)
-        .eq("organization_id", organizationId)
-        .order("created_at", { ascending: false })
-        .limit(SIDEBAR_PROJECT_LIMIT),
-      supabase
-        .from("organization_opportunities")
-        .select("workspace_project_id")
-        .eq("organization_id", organizationId)
-        .not("workspace_project_id", "is", null),
-    ]);
+    const projectsResult = await supabase
+      .from("organization_projects")
+      .select(sidebarProjectSelect)
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(SIDEBAR_PROJECT_LIMIT);
+
+    const projectRows = (projectsResult.data ?? []) as SidebarProject[];
+    const projectIds = projectRows.map((project) => project.id);
+    const hiddenWorkspaceScopedResult =
+      projectIds.length > 0
+        ? await supabase
+            .from("organization_opportunities")
+            .select("workspace_project_id")
+            .eq("organization_id", organizationId)
+            .in("workspace_project_id", projectIds)
+        : { data: [], error: null };
 
     const hiddenWorkspaceProjectIds = new Set(
-      (hiddenWorkspaceResult.data ?? [])
+      (hiddenWorkspaceScopedResult.data ?? [])
         .map((row) => row.workspace_project_id)
         .filter((value): value is string => Boolean(value))
     );
-    const nextProjects = ((projectsResult.data ?? []) as SidebarProject[]).filter(
+    const nextProjects = projectRows.filter(
       (project) => !hiddenWorkspaceProjectIds.has(project.id)
     );
     projectsByOrganizationCache.set(organizationId, nextProjects);

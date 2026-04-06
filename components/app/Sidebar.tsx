@@ -607,7 +607,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                 <span style={graphikRegularTextStyle}>Notifications</span>
               </DropdownMenuItem>
               <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
-                <Link href="/app/settings" className="flex h-full w-full items-center px-3">
+                <Link href="/app/settings/organization" className="flex h-full w-full items-center px-3">
                   <Settings className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
                   <span style={graphikRegularTextStyle}>Settings</span>
                 </Link>

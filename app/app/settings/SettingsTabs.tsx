@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Building2, Landmark, ShieldCheck, SlidersHorizontal, UsersRound, Workflow } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 
 const tabs = [
@@ -16,11 +17,13 @@ const tabs = [
 
 export function SettingsTabs() {
   const pathname = usePathname();
+  const { session } = useAuth();
+  const visibleTabs = tabs.filter((tab) => tab.href !== "/app/settings/users-permissions" || session?.role === "owner");
 
   return (
     <section className="overflow-x-auto">
       <div className="inline-flex min-w-max items-center gap-1">
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = pathname === tab.href;
           return (

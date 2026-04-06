@@ -64,13 +64,20 @@ export const getCurrentOrganizationMember = cache(async (): Promise<Organization
   return data ?? null;
 });
 
-async function getHiddenWorkspaceProjectIds(organizationId: string): Promise<Set<string>> {
+async function getHiddenWorkspaceProjectIds(organizationId: string, candidateProjectIds?: string[]): Promise<Set<string>> {
   const supabase = await createServerSupabaseClient();
-  const { data, error } = await supabase
+  const baseQuery = supabase
     .from("organization_opportunities")
     .select("workspace_project_id")
     .eq("organization_id", organizationId)
     .not("workspace_project_id", "is", null);
+
+  const scopedQuery =
+    candidateProjectIds && candidateProjectIds.length > 0
+      ? baseQuery.in("workspace_project_id", candidateProjectIds)
+      : baseQuery;
+
+  const { data, error } = await scopedQuery;
 
   if (error) {
     return new Set();
@@ -102,7 +109,10 @@ export async function getOrganizationProjectsForCurrentUser(): Promise<Organizat
     return [];
   }
 
-  const hiddenWorkspaceProjectIds = await getHiddenWorkspaceProjectIds(member.organization_id);
+  const hiddenWorkspaceProjectIds = await getHiddenWorkspaceProjectIds(
+    member.organization_id,
+    projects.map((project) => project.id)
+  );
   const visibleProjects = projects.filter((project) => !hiddenWorkspaceProjectIds.has(project.id));
 
   const clientIds = Array.from(

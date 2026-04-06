@@ -16,10 +16,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className={`${interMedium.className} ${interBold.variable} app-shell min-h-screen bg-[#F8F9FC]`}>
       <div className="mx-auto flex w-full max-w-[1720px] gap-0">
         <Sidebar />
-        <div className="app-shell-main min-w-0 flex-1 bg-[#F3F4F6] p-[0.384rem] sm:p-[1.024rem]">
+        <main className="min-w-0 flex-1 bg-[#F3F4F6] p-[0.384rem] sm:p-[1.024rem]">
           <Topbar />
           <AppPageSurface>{children}</AppPageSurface>
-        </div>
+        </main>
       </div>
     </div>
   );
