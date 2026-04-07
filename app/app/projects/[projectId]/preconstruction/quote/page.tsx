@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import { ChevronDown, ExternalLink, PenLine, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { ChevronDown, ExternalLink, PenLine, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -131,13 +131,17 @@ function toLines(value: string | null | undefined) {
 export default function ProjectQuoteRegisterPage() {
   const params = useParams<{ projectId: string }>();
   const routeProjectSlug = params?.projectId;
+  const router = useRouter();
   const { session } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quoteRows, setQuoteRows] = useState<QuoteRegisterRow[]>([]);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [isQuoteHistoryOpen, setIsQuoteHistoryOpen] = useState(false);
   const [isDeletingSummaryQuote, setIsDeletingSummaryQuote] = useState(false);
 
@@ -209,6 +213,8 @@ export default function ProjectQuoteRegisterPage() {
           return;
         }
 
+        setOrganizationId(resolvedOrganizationId);
+        setProjectId(projectRow.id);
         setQuoteRows((quotes ?? []) as QuoteRegisterRow[]);
       } catch (loadError) {
         if (!cancelled) {
@@ -234,6 +240,43 @@ export default function ProjectQuoteRegisterPage() {
   const excludedLines = toLines(summaryQuote?.scope_exclusions || summaryQuote?.terms_exclusions);
   const assumptionLines = toLines(summaryQuote?.assumptions);
   const keyNotesLines = toLines(summaryQuote?.scope_notes ?? summaryQuote?.clarifications);
+
+  const createQuoteAndOpen = useCallback(async () => {
+    if (!supabase || !organizationId || !projectId || isCreating) {
+      return;
+    }
+
+    setIsCreating(true);
+    setError(null);
+
+    try {
+      const { data: createdRow, error: createError } = await supabase
+        .from("project_quotes")
+        .insert({
+          organization_id: organizationId,
+          project_id: projectId,
+          created_by: userId,
+          quote_title: "New Quote",
+          quote_number: "",
+          status: "Draft",
+        })
+        .select("id")
+        .single();
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      if (!createdRow?.id) {
+        throw new Error("Quote was created but no identifier was returned.");
+      }
+
+      router.push(`/app/projects/${routeProjectSlug}/preconstruction/quote/${createdRow.id}?mode=edit`);
+    } catch (createErr) {
+      setError(createErr instanceof Error ? createErr.message : "Unable to create quote.");
+      setIsCreating(false);
+    }
+  }, [isCreating, organizationId, projectId, userId, routeProjectSlug, router, supabase]);
 
   async function handleDeleteSummaryQuote() {
     if (!summaryQuote || !supabase || isDeletingSummaryQuote) {
@@ -285,52 +328,70 @@ export default function ProjectQuoteRegisterPage() {
           </p>
         </div>
         <div className={styles.heroActions}>
-          {summaryQuote ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
-                  aria-label="Quote actions"
-                >
-                  Actions
-                  <ChevronDown className="ml-1 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                side="top"
-                align="end"
-                sideOffset={8}
-                className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                aria-label="Quote actions"
               >
-                <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
-                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Open
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
-                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
-                    <PenLine className="mr-2 h-4 w-4" />
-                    Edit
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-                <DropdownMenuItem
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    void handleDeleteSummaryQuote();
-                  }}
-                  disabled={isDeletingSummaryQuote}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  {isDeletingSummaryQuote ? "Deleting..." : "Delete"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
+                Actions
+                <ChevronDown className="ml-1 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="top"
+              align="end"
+              sideOffset={8}
+              className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}
+            >
+              {summaryQuote ? (
+                <>
+                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                    <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Open
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                    <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
+                      <PenLine className="mr-2 h-4 w-4" />
+                      Edit
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                </>
+              ) : null}
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  void createQuoteAndOpen();
+                }}
+                disabled={isCreating || isLoading}
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {isCreating ? "Creating..." : "New Quote"}
+              </DropdownMenuItem>
+              {summaryQuote ? (
+                <>
+                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void handleDeleteSummaryQuote();
+                    }}
+                    disabled={isDeletingSummaryQuote}
+                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeletingSummaryQuote ? "Deleting..." : "Delete"}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </section>
 
@@ -371,6 +432,10 @@ export default function ProjectQuoteRegisterPage() {
                     <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
                       No accepted quote yet — create or link one to start tracking this job
                     </p>
+                    <Button onClick={() => void createQuoteAndOpen()} disabled={isCreating || isLoading} className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      {isCreating ? "Creating..." : "Create First Quote"}
+                    </Button>
                   </div>
                 )}
 

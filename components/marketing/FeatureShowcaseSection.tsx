@@ -202,7 +202,7 @@ const features = [
     visual: (
       <div className="relative aspect-[1.06/1] overflow-hidden rounded-[24px] bg-[#AACFDF]">
         <Image
-          src="/All In One Platform Blue v2.png"
+          src="/All In One Platform (4).png"
           alt="TradeStack all-in-one platform preview"
           fill
           className="object-cover"

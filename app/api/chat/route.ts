@@ -7,7 +7,7 @@ import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 export const runtime = "nodejs";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/responses";
-const DEFAULT_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || "gpt-5-mini";
+const DEFAULT_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || "gpt-4.1";
 const CHAT_TIMEOUT_MS = 35_000;
 const MAX_MESSAGE_CHARS = 4_000;
 const MAX_CONVERSATION_CHARS = 20_000;

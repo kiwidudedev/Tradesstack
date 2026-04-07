@@ -226,333 +226,336 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   return (
     <form
       id="organization-settings-form"
-      className="space-y-5"
       onSubmit={(event) => {
         event.preventDefault();
         void onSaveName();
       }}
     >
-        <section className="rounded-[16px] border border-[#d1d5db] bg-[#F3F4F6]">
-          <button
-            type="button"
-            onClick={() => setIsCompanyProfileOpen((current) => !current)}
-            className="flex w-full items-center justify-between px-5 py-3"
-          >
-            <p className={`${interMedium.className} text-[14px] font-semibold uppercase tracking-[0.12em] text-[#6B6B6B]`}>Company Profile</p>
-            <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isCompanyProfileOpen ? "rotate-180" : ""}`} />
-          </button>
+      <section className="overflow-visible rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6">
+        <div className="space-y-4">
+          <div className="pb-1 pt-1">
+            <p className="text-[30px] font-semibold leading-[1.2] tracking-[-0.02em] text-[#1d2433]">
+              Organization
+            </p>
+          </div>
 
-          {isCompanyProfileOpen ? (
-            <div className="space-y-4 border-t border-[#d1d5db] px-5 pb-5 pt-4">
-          <div className="max-w-[240px] space-y-2">
-            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company logo</p>
-            <label className="group block">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={onUploadLogo}
-                disabled={!props.canEdit || isUploading}
-                className="hidden"
-              />
-              <span
-                className={`relative flex h-24 w-full items-center justify-center overflow-hidden rounded-[12px] border border-[#d8e0ec] bg-[#F3F4F6] transition-colors ${
-                  !props.canEdit || isUploading
-                    ? "cursor-not-allowed opacity-70"
-                    : "cursor-pointer group-hover:border-[#9fb2ce] group-hover:bg-[#e9edf3]"
-                }`}
-              >
-                {logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={logoUrl} alt="Organization logo" className="h-full w-full object-contain" />
-                ) : (
-                  <span className={`${interMedium.className} text-[11px] text-[#72839d]`}>No logo uploaded</span>
-                )}
-                <span
-                  className={`${interMedium.className} pointer-events-none absolute inset-0 inline-flex items-center justify-center text-sm font-semibold text-[#1d2433] transition-opacity ${
-                    !props.canEdit || isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"
-                  }`}
+          {error ? (
+            <p className={`${interMedium.className} rounded-[10px] border border-[#f1c5c5] bg-[#fff1f1] px-3 py-2 text-sm text-[#8f2d2d]`}>{error}</p>
+          ) : null}
+          {message ? (
+            <p className={`${interMedium.className} rounded-[10px] border border-[#c5dfc1] bg-[#f1faf0] px-3 py-2 text-sm text-[#2d6b35]`}>{message}</p>
+          ) : null}
+
+          {/* Company Profile */}
+          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
+            <button
+              type="button"
+              onClick={() => setIsCompanyProfileOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
+            >
+              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Company Profile</h3>
+              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isCompanyProfileOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {isCompanyProfileOpen && <div className="space-y-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4">
+                <div className="max-w-[240px] space-y-2">
+                  <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company logo</p>
+                  <label className="group block">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={onUploadLogo}
+                      disabled={!props.canEdit || isUploading}
+                      className="hidden"
+                    />
+                    <span
+                      className={`relative flex h-24 w-full items-center justify-center overflow-hidden rounded-[12px] border border-[#d8e0ec] bg-white transition-colors ${
+                        !props.canEdit || isUploading
+                          ? "cursor-not-allowed opacity-70"
+                          : "cursor-pointer group-hover:border-[#9fb2ce] group-hover:bg-[#e9edf3]"
+                      }`}
+                    >
+                      {logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={logoUrl} alt="Organization logo" className="h-full w-full object-contain" />
+                      ) : (
+                        <span className={`${interMedium.className} text-[11px] text-[#72839d]`}>No logo uploaded</span>
+                      )}
+                      <span
+                        className={`${interMedium.className} pointer-events-none absolute inset-0 inline-flex items-center justify-center text-sm font-semibold text-[#1d2433] transition-opacity ${
+                          !props.canEdit || isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"
+                        }`}
+                      >
+                        {isUploading ? "Uploading..." : logoUrl ? "Change logo" : "Upload logo"}
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2 md:col-span-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company name</label>
+                    <Input
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 1</label>
+                    <Input
+                      value={addressLine1}
+                      onChange={(event) => setAddressLine1(event.target.value)}
+                      placeholder="Street number and name"
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 2</label>
+                    <Input
+                      value={addressLine2}
+                      onChange={(event) => setAddressLine2(event.target.value)}
+                      placeholder="Suburb, suite, or unit (optional)"
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>City</label>
+                    <Input
+                      value={city}
+                      onChange={(event) => setCity(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Postcode</label>
+                    <Input
+                      value={postcode}
+                      onChange={(event) => setPostcode(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Country</label>
+                    <Input
+                      value={country}
+                      onChange={(event) => setCountry(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact name</label>
+                    <Input
+                      value={contactName}
+                      onChange={(event) => setContactName(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact phone</label>
+                    <Input
+                      value={contactPhone}
+                      onChange={(event) => setContactPhone(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact email</label>
+                    <Input
+                      value={contactEmail}
+                      onChange={(event) => setContactEmail(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    />
+                  </div>
+              </div>
+            </div>}
+          </div>
+
+          {/* Branding */}
+          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
+            <button
+              type="button"
+              onClick={() => setIsBrandingOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
+            >
+              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Branding</h3>
+              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isBrandingOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {isBrandingOpen && <div className="grid gap-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand primary colour</label>
+                  <div className="flex h-12 items-center gap-2 rounded-[10px] border border-[#D9DEE5] bg-white px-2.5">
+                    <input
+                      type="color"
+                      value={brandPrimaryColor}
+                      onChange={(event) => setBrandPrimaryColor(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                    />
+                    <Input
+                      value={brandPrimaryColor}
+                      onChange={(event) => setBrandPrimaryColor(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-9 border-none bg-transparent px-1 text-[14px] text-[#1d2433] shadow-none focus-visible:ring-0`}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand accent colour</label>
+                  <div className="flex h-12 items-center gap-2 rounded-[10px] border border-[#D9DEE5] bg-white px-2.5">
+                    <input
+                      type="color"
+                      value={brandAccentColor}
+                      onChange={(event) => setBrandAccentColor(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                    />
+                    <Input
+                      value={brandAccentColor}
+                      onChange={(event) => setBrandAccentColor(event.target.value)}
+                      disabled={!props.canEdit || isSaving}
+                      className={`${interMedium.className} h-9 border-none bg-transparent px-1 text-[14px] text-[#1d2433] shadow-none focus-visible:ring-0`}
+                    />
+                  </div>
+                </div>
+              </div>}
+          </div>
+
+          {/* Financial Settings */}
+          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
+            <button
+              type="button"
+              onClick={() => setIsFinancialSettingsOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
+            >
+              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Financial Settings</h3>
+              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isFinancialSettingsOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {isFinancialSettingsOpen && <div className="grid gap-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>ABN / NZBN</label>
+                  <Input
+                    value={businessNumber}
+                    onChange={(event) => setBusinessNumber(event.target.value)}
+                    placeholder="e.g. 123-456-789"
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Bank account details</label>
+                  <Input
+                    value={bankAccountDetails}
+                    onChange={(event) => setBankAccountDetails(event.target.value)}
+                    placeholder="e.g. 12-1234-1234567-00"
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>GST Number</label>
+                  <Input
+                    value={gstNumber}
+                    onChange={(event) => setGstNumber(event.target.value)}
+                    placeholder="e.g. 123-456-789"
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                  />
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax mode</label>
+                  <select
+                    value={defaultTaxMode}
+                    onChange={(event) => setDefaultTaxMode(event.target.value)}
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#D9DEE5] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                  >
+                    <option value="GST Inclusive">GST Inclusive</option>
+                    <option value="GST Exclusive">GST Exclusive</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2 md:col-span-1">
+                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax rate (%)</label>
+                  <Input
+                    value={defaultTaxRate}
+                    onChange={(event) => setDefaultTaxRate(event.target.value)}
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                  />
+                </div>
+              </div>}
+            </div>
+
+          {/* Regional Settings */}
+          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
+            <button
+              type="button"
+              onClick={() => setIsRegionalSettingsOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
+            >
+              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Regional Settings</h3>
+              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isRegionalSettingsOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {isRegionalSettingsOpen && <div className="grid gap-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default currency</label>
+                <select
+                  value={defaultCurrency}
+                  onChange={(event) => setDefaultCurrency(event.target.value)}
+                  disabled={!props.canEdit || isSaving}
+                  className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#D9DEE5] bg-white px-3 text-sm text-[#1d2433] outline-none`}
                 >
-                  {isUploading ? "Uploading..." : logoUrl ? "Change logo" : "Upload logo"}
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company name</label>
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={!props.canEdit || isSaving}
-                className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-              />
-            </div>
-
-
-              <div className="space-y-2 md:col-span-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 1</label>
-                <Input
-                  value={addressLine1}
-                  onChange={(event) => setAddressLine1(event.target.value)}
-                  placeholder="Street number and name"
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 2</label>
-                <Input
-                  value={addressLine2}
-                  onChange={(event) => setAddressLine2(event.target.value)}
-                  placeholder="Suburb, suite, or unit (optional)"
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>City</label>
-                <Input
-                  value={city}
-                  onChange={(event) => setCity(event.target.value)}
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
+                  <option value="NZD">NZD</option>
+                  <option value="AUD">AUD</option>
+                </select>
               </div>
 
               <div className="space-y-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Postcode</label>
-                <Input
-                  value={postcode}
-                  onChange={(event) => setPostcode(event.target.value)}
+                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Timezone</label>
+                <select
+                  value={timezone}
+                  onChange={(event) => setTimezone(event.target.value)}
                   disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
+                  className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#D9DEE5] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                >
+                  <option value="Pacific/Auckland">Pacific/Auckland</option>
+                  <option value="Australia/Sydney">Australia/Sydney</option>
+                  <option value="UTC">UTC</option>
+                </select>
               </div>
-
-              <div className="space-y-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Country</label>
-                <Input
-                  value={country}
-                  onChange={(event) => setCountry(event.target.value)}
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact name</label>
-                <Input
-                  value={contactName}
-                  onChange={(event) => setContactName(event.target.value)}
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact phone</label>
-                <Input
-                  value={contactPhone}
-                  onChange={(event) => setContactPhone(event.target.value)}
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact email</label>
-                <Input
-                  value={contactEmail}
-                  onChange={(event) => setContactEmail(event.target.value)}
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-                />
-              </div>
+            </div>}
           </div>
-            </div>
+
+          {!props.canEdit ? (
+            <p className={`${interMedium.className} text-sm text-[#5f6f89]`}>You do not have permission to update organization settings.</p>
           ) : null}
-        </section>
-
-        <section className="rounded-[16px] border border-[#d1d5db] bg-[#F3F4F6]">
-          <button
-            type="button"
-            onClick={() => setIsBrandingOpen((current) => !current)}
-            className="flex w-full items-center justify-between px-5 py-3"
-          >
-            <p className={`${interMedium.className} text-[14px] font-semibold uppercase tracking-[0.12em] text-[#6B6B6B]`}>Branding</p>
-            <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isBrandingOpen ? "rotate-180" : ""}`} />
-          </button>
-
-          {isBrandingOpen ? (
-            <div className="grid gap-4 border-t border-[#d1d5db] px-5 pb-5 pt-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand primary colour</label>
-            <div className="flex h-12 items-center gap-2 rounded-[10px] border border-[#d1d9e6] bg-[#F3F4F6] px-2.5">
-              <input
-                type="color"
-                value={brandPrimaryColor}
-                onChange={(event) => setBrandPrimaryColor(event.target.value)}
-                disabled={!props.canEdit || isSaving}
-                className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-              />
-              <Input
-                value={brandPrimaryColor}
-                onChange={(event) => setBrandPrimaryColor(event.target.value)}
-                disabled={!props.canEdit || isSaving}
-                className={`${interMedium.className} h-9 border-none bg-transparent px-1 text-[14px] text-[#1d2433] shadow-none focus-visible:ring-0`}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand accent colour</label>
-            <div className="flex h-12 items-center gap-2 rounded-[10px] border border-[#d1d9e6] bg-[#F3F4F6] px-2.5">
-              <input
-                type="color"
-                value={brandAccentColor}
-                onChange={(event) => setBrandAccentColor(event.target.value)}
-                disabled={!props.canEdit || isSaving}
-                className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-              />
-              <Input
-                value={brandAccentColor}
-                onChange={(event) => setBrandAccentColor(event.target.value)}
-                disabled={!props.canEdit || isSaving}
-                className={`${interMedium.className} h-9 border-none bg-transparent px-1 text-[14px] text-[#1d2433] shadow-none focus-visible:ring-0`}
-              />
-            </div>
-          </div>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="rounded-[16px] border border-[#d1d5db] bg-[#F3F4F6]">
-          <button
-            type="button"
-            onClick={() => setIsFinancialSettingsOpen((current) => !current)}
-            className="flex w-full items-center justify-between px-5 py-3"
-          >
-            <p className={`${interMedium.className} text-[14px] font-semibold uppercase tracking-[0.12em] text-[#6B6B6B]`}>Financial Settings</p>
-            <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isFinancialSettingsOpen ? "rotate-180" : ""}`} />
-          </button>
-
-          {isFinancialSettingsOpen ? (
-            <div className="grid gap-4 border-t border-[#d1d5db] px-5 pb-5 pt-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>ABN / NZBN</label>
-            <Input
-              value={businessNumber}
-              onChange={(event) => setBusinessNumber(event.target.value)}
-              placeholder="e.g. 123-456-789"
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Bank account details</label>
-            <Input
-              value={bankAccountDetails}
-              onChange={(event) => setBankAccountDetails(event.target.value)}
-              placeholder="e.g. 12-1234-1234567-00"
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>GST Number</label>
-            <Input
-              value={gstNumber}
-              onChange={(event) => setGstNumber(event.target.value)}
-              placeholder="e.g. 123-456-789"
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-            />
-          </div>
-
-          <div className="space-y-2 md:col-span-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax mode</label>
-            <select
-              value={defaultTaxMode}
-              onChange={(event) => setDefaultTaxMode(event.target.value)}
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#d1d9e6] bg-[#F3F4F6] px-3 text-sm text-[#1d2433] outline-none`}
-            >
-              <option value="GST Inclusive">GST Inclusive</option>
-              <option value="GST Exclusive">GST Exclusive</option>
-            </select>
-          </div>
-
-          <div className="space-y-2 md:col-span-1">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax rate (%)</label>
-            <Input
-              value={defaultTaxRate}
-              onChange={(event) => setDefaultTaxRate(event.target.value)}
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 rounded-[10px] border-[#d1d9e6] bg-[#F3F4F6] text-[15px] text-[#1d2433]`}
-            />
-          </div>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="rounded-[16px] border border-[#d1d5db] bg-[#F3F4F6]">
-          <button
-            type="button"
-            onClick={() => setIsRegionalSettingsOpen((current) => !current)}
-            className="flex w-full items-center justify-between px-5 py-3"
-          >
-            <p className={`${interMedium.className} text-[14px] font-semibold uppercase tracking-[0.12em] text-[#6B6B6B]`}>Regional Settings</p>
-            <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isRegionalSettingsOpen ? "rotate-180" : ""}`} />
-          </button>
-
-          {isRegionalSettingsOpen ? (
-            <div className="grid gap-4 border-t border-[#d1d5db] px-5 pb-5 pt-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default currency</label>
-            <select
-              value={defaultCurrency}
-              onChange={(event) => setDefaultCurrency(event.target.value)}
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#d1d9e6] bg-[#F3F4F6] px-3 text-sm text-[#1d2433] outline-none`}
-            >
-              <option value="NZD">NZD</option>
-              <option value="AUD">AUD</option>
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Timezone</label>
-            <select
-              value={timezone}
-              onChange={(event) => setTimezone(event.target.value)}
-              disabled={!props.canEdit || isSaving}
-              className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#d1d9e6] bg-[#F3F4F6] px-3 text-sm text-[#1d2433] outline-none`}
-            >
-              <option value="Pacific/Auckland">Pacific/Auckland</option>
-              <option value="Australia/Sydney">Australia/Sydney</option>
-              <option value="UTC">UTC</option>
-            </select>
-          </div>
-
-            </div>
-          ) : null}
-        </section>
-
-        {!props.canEdit ? (
-          <p className={`${interMedium.className} text-sm text-[#5f6f89]`}>You do not have permission to update organization settings.</p>
-        ) : null}
-
-        {error ? (
-          <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-        ) : null}
-
-        {message ? <p className={`${interMedium.className} px-5 text-sm italic text-[#475569]`}>{message}</p> : null}
-
+        </div>
+      </section>
     </form>
   );
 }

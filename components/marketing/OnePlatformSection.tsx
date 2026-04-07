@@ -59,7 +59,7 @@ export function OnePlatformSection() {
               <div className="relative w-full max-w-[560px] overflow-hidden rounded-[28px] bg-white">
                 <div className="relative aspect-square">
                   <Image
-                    src="/All In One Platform Blue v2.png"
+                    src="/All In One Platform (4).png"
                     alt="TradeStack all-in-one platform overview"
                     fill
                     priority={false}

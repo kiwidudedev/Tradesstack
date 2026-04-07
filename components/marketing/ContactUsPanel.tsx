@@ -28,8 +28,10 @@ export function ContactUsPanel({ closeHref = "/" }: ContactUsPanelProps) {
   const [country, setCountry] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
 
@@ -39,21 +41,33 @@ export function ContactUsPanel({ closeHref = "/" }: ContactUsPanelProps) {
       return;
     }
 
-    const subject = encodeURIComponent(`TradeStack contact from ${firstName.trim()} ${lastName.trim()}`.trim());
-    const body = encodeURIComponent(
-      [
-        `First name: ${firstName.trim()}`,
-        `Last name: ${lastName.trim() || "-"}`,
-        `Email address: ${emailValue}`,
-        `Phone number: ${phone.trim() || "-"}`,
-        `Country: ${country.trim() || "-"}`,
-        "",
-        "Message:",
-        message.trim(),
-      ].join("\n"),
-    );
+    setIsSubmitting(true);
 
-    window.location.href = `mailto:hi@tradesstack.com?subject=${subject}&body=${body}`;
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: emailValue,
+          phone: phone.trim(),
+          message: message.trim(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error("Failed to send message.");
+      }
+
+      setIsSubmitted(true);
+    } catch {
+      setError("Something went wrong. Please try again or email us at hi@tradesstack.com.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -94,6 +108,16 @@ export function ContactUsPanel({ closeHref = "/" }: ContactUsPanelProps) {
         </section>
 
         <section className="rounded-[1.2rem] border border-[#0B2639]/8 bg-white px-6 py-6 shadow-[0_18px_40px_rgba(11,38,57,0.08)] sm:px-9 sm:py-8">
+          {isSubmitted ? (
+            <div className="flex min-h-[300px] flex-col items-center justify-center text-center">
+              <h2 className={`${akzidenzProBoldEx.className} text-[1.8rem] leading-[1] tracking-[-0.04em] text-[#16061D]`}>
+                Thank you!
+              </h2>
+              <p className="mt-4 max-w-[28rem] text-[1.05rem] leading-[1.45] text-[#24122C]" style={graphikStyle}>
+                Your message has been sent. We&apos;ll get back to you soon.
+              </p>
+            </div>
+          ) : (
           <form className="flex flex-col space-y-5" onSubmit={onSubmit}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="relative pt-3">
@@ -224,13 +248,15 @@ export function ContactUsPanel({ closeHref = "/" }: ContactUsPanelProps) {
             <div>
               <Button
                 type="submit"
+                disabled={isSubmitting}
                 className="h-[50px] rounded-[0.55rem] bg-[#16061D] px-6 text-[1rem] font-semibold text-white hover:bg-[#24122C]"
                 style={graphikStyle}
               >
-                Submit
+                {isSubmitting ? "Sending..." : "Submit"}
               </Button>
             </div>
           </form>
+          )}
         </section>
       </div>
     </div>
