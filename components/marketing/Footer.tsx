@@ -1,5 +1,10 @@
+ "use client";
+
+import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { akzidenzProBoldEx } from "@/lib/fonts";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const footerColumns = [
   {
@@ -33,6 +38,51 @@ const bottomLinks = [
 ] as const;
 
 export function Footer() {
+  const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  async function handleSubscribe(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setIsSuccess(false);
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch("/api/marketing/early-access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not subscribe right now.");
+      }
+
+      setEmail("");
+      setIsSuccess(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not subscribe right now.";
+      setIsSuccess(false);
+      setErrorMessage(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <footer className="overflow-hidden bg-[#0B2639] px-4 pb-8 pt-16 text-white sm:px-6 sm:pt-20 lg:px-8 lg:pt-24">
       <div className="mx-auto w-full max-w-[1380px]">
@@ -52,21 +102,43 @@ export function Footer() {
               >
                 Subscribe to our newsletter
               </p>
-              <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <form onSubmit={handleSubscribe} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <input
                   type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
                   placeholder="Enter your email"
                   className="min-h-[50px] w-full rounded-full border border-[#AACFDF]/18 bg-white/8 px-5 text-[0.95rem] text-white placeholder:text-white/58 outline-none transition focus:border-[#AACFDF] sm:min-w-[330px]"
                   style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
                 />
                 <button
                   type="submit"
+                  disabled={isSubmitting}
                   className="inline-flex min-h-[50px] items-center justify-center rounded-full bg-[#F74918] px-6 text-[0.95rem] font-bold text-white transition-opacity hover:opacity-90"
                   style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
                 >
-                  Subscribe
+                  {isSubmitting ? "Submitting..." : "Subscribe"}
                 </button>
               </form>
+              {isSuccess ? (
+                <p
+                  role="status"
+                  className="mt-3 text-[0.9rem] text-white"
+                  style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+                >
+                  Thanks, you&apos;re on the waitlist.
+                </p>
+              ) : null}
+              {errorMessage ? (
+                <p
+                  role="alert"
+                  className="mt-3 text-[0.9rem] text-[#FECACA]"
+                  style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+                >
+                  {errorMessage}
+                </p>
+              ) : null}
               <p
                 className="mt-3 text-[0.82rem] leading-[1.35] text-white/72"
                 style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
