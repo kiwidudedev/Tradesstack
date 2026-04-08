@@ -8,6 +8,7 @@ import { Check, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteLineItemSection, QuoteStatus } from "@/lib/supabase/types";
+import { canManageCommercialData } from "@/lib/role-permissions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,6 +17,7 @@ import { interMedium } from "@/lib/fonts";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 type LineItemSection = QuoteLineItemSection;
+type RpcResultRow = Record<string, unknown>;
 
 interface LineItem {
   id: string;
@@ -265,6 +267,7 @@ export default function PreconstructionQuotePage() {
   const { session, isLoading: isAuthLoading } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
+  const canManageQuote = canManageCommercialData(session?.role);
 
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -323,7 +326,7 @@ export default function PreconstructionQuotePage() {
   const [scopeCostItems, setScopeCostItems] = useState<ScopeCostCategoryItem[]>([]);
   const [selectedScopeCostItemIds, setSelectedScopeCostItemIds] = useState<string[]>([]);
   const [isTermsOpen, setIsTermsOpen] = useState(true);
-  const [isQuoteContentHidden, setIsQuoteContentHidden] = useState(false);
+  const [isQuoteContentHidden] = useState(false);
   const loadedRouteRef = useRef<string | null>(null);
 
   const normalizeAllowedStatus = useCallback((status: QuoteStatus): QuoteStatus => {
@@ -854,6 +857,11 @@ export default function PreconstructionQuotePage() {
       return;
     }
 
+    if (!canManageQuote) {
+      setError("You do not have permission to edit quotes.");
+      return;
+    }
+
     const trimmedTitle = quoteTitle.trim();
     let trimmedNumber = quoteNumber.trim();
     const resolvedProjectCode = projectCode ?? deriveProjectCodeFromSlug(routeProjectSlug);
@@ -876,94 +884,62 @@ export default function PreconstructionQuotePage() {
     setSaveMessage(null);
 
     try {
-      const payload = {
-        organization_id: organizationId,
-        project_id: dbProjectId,
-        created_by: session.id,
-        quote_title: trimmedTitle,
-        quote_number: trimmedNumber,
-        client_name: clientName.trim(),
-        company_name: companyName.trim(),
-        contact_person: contactPerson.trim(),
-        client_email: email.trim(),
-        client_phone: phone.trim(),
-        site_address: siteAddress.trim(),
-        project_name: projectName.trim(),
-        quote_date: quoteDate || null,
-        expiry_date: expiryDate || null,
-        status: quoteStatus,
-        optional_items_notes: optionalItemsNotes,
-        scope_exclusions: scopeExclusions.trim(),
-        assumptions: assumptions.trim(),
-        scope_notes: scopeNotes.trim() || clarifications.trim(),
-        subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
-        optional_subtotal: Number(pricingSummary.optionalSubtotal.toFixed(2)),
-        margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
-        margin_amount: Number(pricingSummary.margin.toFixed(2)),
-        discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
-        contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
-        gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
-        gst_amount: Number(pricingSummary.gst.toFixed(2)),
-        total_quote_price: Number(pricingSummary.grandTotal.toFixed(2)),
-        validity_period: validityPeriod,
-        payment_terms: paymentTerms,
-        lead_time: leadTime,
-        terms_inclusions: termsInclusions,
-        terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
-        clarifications: clarifications.trim() || scopeNotes.trim(),
-        acceptance_notes: acceptanceNotes,
-      };
+      const lineItemsPayload = lineItems.map((item) => ({
+        id: item.id,
+        section: item.section,
+        description: item.description.trim(),
+        quantity: Number(item.quantity),
+        unit: item.unit.trim(),
+        rate: Number(item.rate),
+        isOptional: item.isOptional,
+      }));
 
-      let resolvedQuoteId = quoteId;
+      const { data: saveRows, error: saveError } = await supabase.rpc("save_project_quote_draft", {
+        p_organization_id: organizationId,
+        p_project_id: dbProjectId,
+        p_quote_id: quoteId,
+        p_expected_updated_at: null,
+        p_quote_title: trimmedTitle,
+        p_quote_number: trimmedNumber,
+        p_client_name: clientName.trim(),
+        p_company_name: companyName.trim(),
+        p_contact_person: contactPerson.trim(),
+        p_client_email: email.trim(),
+        p_client_phone: phone.trim(),
+        p_site_address: siteAddress.trim(),
+        p_project_name: projectName.trim(),
+        p_quote_date: quoteDate || null,
+        p_expiry_date: expiryDate || null,
+        p_status: quoteStatus,
+        p_optional_items_notes: optionalItemsNotes,
+        p_scope_exclusions: scopeExclusions.trim(),
+        p_assumptions: assumptions.trim(),
+        p_scope_notes: scopeNotes.trim() || clarifications.trim(),
+        p_margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
+        p_discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
+        p_contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
+        p_gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
+        p_validity_period: validityPeriod,
+        p_payment_terms: paymentTerms,
+        p_lead_time: leadTime,
+        p_terms_inclusions: termsInclusions,
+        p_terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
+        p_clarifications: clarifications.trim() || scopeNotes.trim(),
+        p_acceptance_notes: acceptanceNotes,
+        p_line_items: lineItemsPayload,
+      });
 
-      if (quoteId) {
-        const { data, error: updateError } = await supabase
-          .from("project_quotes")
-          .update(payload)
-          .eq("id", quoteId)
-          .select("id, updated_at")
-          .single();
-        if (updateError) {
-          throw new Error(updateError.message);
-        }
-        resolvedQuoteId = data.id;
-      } else {
-        const { data, error: insertError } = await supabase.from("project_quotes").insert(payload).select("id, updated_at").single();
-        if (insertError) {
-          throw new Error(insertError.message);
-        }
-        resolvedQuoteId = data.id;
-        setQuoteId(data.id);
+      if (saveError) {
+        throw new Error(saveError.message);
       }
 
-      const { error: deleteItemsError } = await supabase
-        .from("project_quote_line_items")
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("quote_id", resolvedQuoteId);
-      if (deleteItemsError) {
-        throw new Error(deleteItemsError.message);
+      const savedRow = (Array.isArray(saveRows) ? saveRows[0] : null) as RpcResultRow | null;
+      const savedQuoteId = typeof savedRow?.id === "string" ? savedRow.id : null;
+      if (!savedQuoteId) {
+        throw new Error("Quote was saved but no identifier was returned.");
       }
 
-      if (lineItems.length > 0) {
-        const itemsPayload = lineItems.map((item, index) => ({
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          quote_id: resolvedQuoteId,
-          section: item.section,
-          description: item.description.trim(),
-          quantity: Number(item.quantity),
-          unit: item.unit.trim(),
-          rate: Number(item.rate),
-          total: Number(lineItemTotal(item).toFixed(2)),
-          is_optional: item.isOptional,
-          sort_order: index,
-        }));
-        const { error: insertItemsError } = await supabase.from("project_quote_line_items").insert(itemsPayload);
-        if (insertItemsError) {
-          throw new Error(insertItemsError.message);
-        }
-      }
+      setQuoteId(savedQuoteId);
 
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
       if (quoteStatus === "Expired") {
@@ -981,6 +957,11 @@ export default function PreconstructionQuotePage() {
   const deleteQuote = useCallback(async () => {
     if (!quoteId || !supabase || !organizationId) {
       setError("Quote delete is not ready. Please refresh and try again.");
+      return;
+    }
+
+    if (!canManageQuote) {
+      setError("You do not have permission to delete quotes.");
       return;
     }
 
@@ -1021,7 +1002,7 @@ export default function PreconstructionQuotePage() {
     } finally {
       setIsDeleting(false);
     }
-  }, [organizationId, quoteId, quoteNumber, routeProjectSlug, router, supabase]);
+  }, [canManageQuote, organizationId, quoteId, quoteNumber, routeProjectSlug, router, supabase]);
 
   const exportQuotePdf = useCallback(() => {
     if (typeof window === "undefined") {
@@ -1498,7 +1479,7 @@ export default function PreconstructionQuotePage() {
                       event.preventDefault();
                       void saveQuote();
                     }}
-                    disabled={isSaving}
+                    disabled={!canManageQuote || isSaving}
                     className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
                   >
                     {isSaving ? "Saving..." : "Save Quote"}
@@ -1508,8 +1489,13 @@ export default function PreconstructionQuotePage() {
                 <DropdownMenuItem
                   onSelect={(event) => {
                     event.preventDefault();
+                    if (!canManageQuote) {
+                      setError("You do not have permission to edit quotes.");
+                      return;
+                    }
                     setIsEditing(true);
                   }}
+                  disabled={!canManageQuote}
                   className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
                 >
                   Edit Quote
@@ -1535,7 +1521,7 @@ export default function PreconstructionQuotePage() {
                       event.preventDefault();
                       void deleteQuote();
                     }}
-                    disabled={isDeleting}
+                    disabled={!canManageQuote || isDeleting}
                     className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -1549,6 +1535,11 @@ export default function PreconstructionQuotePage() {
       </section>
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {!canManageQuote && session ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          You can review this quote, but only owner, admin, QS, and project manager roles can edit or delete it.
+        </p>
       ) : null}
       {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
@@ -2098,7 +2089,7 @@ export default function PreconstructionQuotePage() {
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveQuote} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
+                <Button type="button" onClick={saveQuote} disabled={!canManageQuote || isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Quote"}
                 </Button>
                 <Button type="button" onClick={exportQuotePdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}>

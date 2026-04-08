@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { requirePermission } from "@/lib/permissions-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const PROFILE_TAGS = ["High Value", "Difficult", "Slow Payer", "Custom"] as const;
@@ -26,6 +27,7 @@ function SectionTitle({ title, description }: { title: string; description?: str
 
 export default async function NewClientPage() {
   const member = await getCurrentOrganizationMember();
+  await requirePermission("leads.clients.write", "/app/leads-clients/clients");
 
   async function createClient(formData: FormData) {
     "use server";
@@ -34,6 +36,8 @@ export default async function NewClientPage() {
     if (!currentMember) {
       redirect("/app/leads-clients/clients");
     }
+
+    await requirePermission("leads.clients.write", "/app/leads-clients/clients");
 
     const supabase = await createServerSupabaseClient();
     const {

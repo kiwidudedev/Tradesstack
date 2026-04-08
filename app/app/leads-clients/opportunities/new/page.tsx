@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { canManageCommercialData } from "@/lib/role-permissions";
 
 const NEW_CLIENT_OPTION = "__new_client__";
 type OrganizationClient = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
@@ -44,6 +45,7 @@ export default function NewOpportunityPage() {
   const [isLoadingFormData, setIsLoadingFormData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const canManageOpportunities = canManageCommercialData(session?.role);
 
   const resolveOrganizationId = useCallback(async (): Promise<string | null> => {
     if (!session || !supabase) {
@@ -148,6 +150,11 @@ export default function NewOpportunityPage() {
     event.preventDefault();
     if (!supabase || !session || isAuthLoading) {
       setError("You must be signed in.");
+      return;
+    }
+
+    if (!canManageOpportunities) {
+      setError("You do not have permission to create opportunities.");
       return;
     }
 
@@ -306,6 +313,11 @@ export default function NewOpportunityPage() {
 
   return (
     <main className="space-y-6 pb-8">
+      {!isAuthLoading && session && !canManageOpportunities ? (
+        <p className={`${interMedium.className} rounded-[6px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          Only owner, admin, QS, and project manager roles can create opportunities.
+        </p>
+      ) : null}
       <Button
         type="button"
         variant="ghost"
@@ -517,7 +529,7 @@ export default function NewOpportunityPage() {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || isAuthLoading || isLoadingFormData}
+                  disabled={!canManageOpportunities || isSubmitting || isAuthLoading || isLoadingFormData}
                   className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
                 >
                   {isSubmitting ? "Creating..." : "Create Tender"}

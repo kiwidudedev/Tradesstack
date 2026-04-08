@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { requirePermission } from "@/lib/permissions-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const CLIENT_TAGS = ["Good Client", "High Value", "Difficult", "Slow Payer"] as const;
@@ -18,6 +19,7 @@ export default async function EditClientPage({
 }) {
   const { clientId } = await params;
   const member = await getCurrentOrganizationMember();
+  await requirePermission("leads.clients.write", "/app/leads-clients/clients");
 
   if (!member) {
     redirect("/app/leads-clients/clients");
@@ -47,6 +49,8 @@ export default async function EditClientPage({
     if (!currentMember) {
       redirect("/app/leads-clients/clients");
     }
+
+    await requirePermission("leads.clients.write", "/app/leads-clients/clients");
 
     const contactName = String(formData.get("name") ?? "").trim();
     const companyName = String(formData.get("companyName") ?? "").trim();

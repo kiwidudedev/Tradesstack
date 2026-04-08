@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { canManageCommercialData } from "@/lib/role-permissions";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Pending Approval" | "Approved" | "Issued" | "Received" | "Invoiced" | "Cancelled";
@@ -286,6 +287,7 @@ export default function ProjectVariationsPage() {
   const isNewVariationRoute = routePurchaseOrderId === "new";
   const router = useRouter();
   const { session } = useAuth();
+  const canManagePurchaseOrder = canManageCommercialData(session?.role);
 
   const [variations, setVariations] = useState<VariationItem[]>([]);
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
@@ -727,6 +729,10 @@ export default function ProjectVariationsPage() {
     if (isCreatingPurchaseOrderRef.current) {
       return;
     }
+    if (!canManagePurchaseOrder) {
+      setError("You do not have permission to create purchase orders.");
+      return;
+    }
     isCreatingPurchaseOrderRef.current = true;
     try {
       setError(null);
@@ -777,9 +783,14 @@ export default function ProjectVariationsPage() {
     } finally {
       isCreatingPurchaseOrderRef.current = false;
     }
-  }, [dbProjectId, jobCode, organizationId, refreshSummary, routeProjectSlug, router, session?.id, supabase, variations]);
+  }, [canManagePurchaseOrder, dbProjectId, jobCode, organizationId, refreshSummary, routeProjectSlug, router, session?.id, supabase, variations]);
 
   const deletePurchaseOrder = useCallback(async (purchaseOrderId: string) => {
+    if (!canManagePurchaseOrder) {
+      setError("You do not have permission to delete purchase orders.");
+      return;
+    }
+
     const purchaseOrder = variations.find((item) => item.id === purchaseOrderId);
     if (!purchaseOrder) {
       return;
@@ -844,7 +855,7 @@ export default function ProjectVariationsPage() {
     } finally {
       setIsDeleting(false);
     }
-  }, [dbProjectId, organizationId, persistedVariationIds, refreshSummary, routeProjectSlug, router, supabase, variations]);
+  }, [canManagePurchaseOrder, dbProjectId, organizationId, persistedVariationIds, refreshSummary, routeProjectSlug, router, supabase, variations]);
 
   useEffect(() => {
     if (!isNewVariationRoute || isLoadingVariations) {
@@ -964,6 +975,11 @@ export default function ProjectVariationsPage() {
   const saveVariation = async () => {
     if (!activeVariation || !supabase || !organizationId || !dbProjectId) {
       setError("Purchase Order save is not ready. Please refresh and try again.");
+      return;
+    }
+
+    if (!canManagePurchaseOrder) {
+      setError("You do not have permission to edit purchase orders.");
       return;
     }
 
@@ -1579,6 +1595,7 @@ export default function ProjectVariationsPage() {
                   event.preventDefault();
                   void createPurchaseOrder();
                 }}
+                disabled={!canManagePurchaseOrder}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -1589,7 +1606,7 @@ export default function ProjectVariationsPage() {
                   event.preventDefault();
                   void saveVariation();
                 }}
-                disabled={isSaving}
+                disabled={!canManagePurchaseOrder || isSaving}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 {isSaving ? "Saving..." : "Save Purchase Order"}
@@ -1611,7 +1628,7 @@ export default function ProjectVariationsPage() {
                       event.preventDefault();
                       void deletePurchaseOrder(activeVariation.id);
                     }}
-                    disabled={isDeleting}
+                    disabled={!canManagePurchaseOrder || isDeleting}
                     className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -1626,6 +1643,11 @@ export default function ProjectVariationsPage() {
 
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {!canManagePurchaseOrder && session ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          You can review this purchase order, but only owner, admin, QS, and project manager roles can edit or delete it.
+        </p>
       ) : null}
       {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
@@ -1913,7 +1935,7 @@ export default function ProjectVariationsPage() {
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
+                <Button type="button" onClick={saveVariation} disabled={!canManagePurchaseOrder || isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Purchase Order"}
                 </Button>
                 <Button

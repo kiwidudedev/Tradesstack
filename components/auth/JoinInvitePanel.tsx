@@ -129,6 +129,16 @@ export function JoinInvitePanel({ closeHref }: JoinInvitePanelProps) {
               <p className="max-w-[30rem] text-[1.02rem] leading-[1.5] text-[#495d6f]" style={graphikStyle}>
                 Sign in to accept this organization invite.
               </p>
+              <p className="text-sm text-[#495d6f]" style={graphikStyle}>
+                Need an account?{" "}
+                <Link
+                  href={inviteToken ? `/register?token=${encodeURIComponent(inviteToken)}` : "/register"}
+                  className="font-semibold text-[#F74917] underline underline-offset-2"
+                >
+                  Create one with this invite
+                </Link>
+                .
+              </p>
             </div>
 
             <form className="mt-7 flex flex-col space-y-5" onSubmit={onSubmit}>

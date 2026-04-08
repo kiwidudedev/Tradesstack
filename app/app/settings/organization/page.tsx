@@ -1,5 +1,7 @@
 import { OrganizationSettingsForm } from "../OrganizationSettingsForm";
 import { getSettingsContext } from "../settings-data";
+import { hasPermission } from "@/lib/permissions-server";
+import { canManageOrganizationSettings } from "@/lib/role-permissions";
 
 export default async function OrganizationSettingsPage() {
   const { currentMember, organizationRow, initialLogoUrl } = await getSettingsContext();
@@ -8,32 +10,34 @@ export default async function OrganizationSettingsPage() {
     return null;
   }
 
-  const organization = organizationRow as any;
+  const canEdit =
+    canManageOrganizationSettings(currentMember.role) &&
+    (await hasPermission("settings.organization.update"));
 
   return (
     <OrganizationSettingsForm
-      organizationId={organization.id}
-      initialName={organization.name}
-      initialLogoPath={organization.logo_path}
+      organizationId={organizationRow.id}
+      initialName={organizationRow.name}
+      initialLogoPath={organizationRow.logo_path}
       initialLogoUrl={initialLogoUrl}
-      initialBrandPrimaryColor={organization.brand_primary_color}
-      initialBrandAccentColor={organization.brand_accent_color}
-      initialBusinessNumber={organization.business_number}
-      initialBankAccountDetails={organization.bank_account_details}
-      initialGstNumber={organization.gst_number}
-      initialAddressLine1={organization.address_line_1}
-      initialAddressLine2={organization.address_line_2}
-      initialCity={organization.city}
-      initialPostcode={organization.postcode}
-      initialCountry={organization.country}
-      initialContactName={organization.contact_name}
-      initialContactEmail={organization.contact_email}
-      initialContactPhone={organization.contact_phone}
-      initialDefaultCurrency={organization.default_currency}
-      initialTimezone={organization.timezone}
-      initialDefaultTaxMode={organization.default_tax_mode}
-      initialDefaultTaxRate={organization.default_tax_rate}
-      canEdit
+      initialBrandPrimaryColor={organizationRow.brand_primary_color}
+      initialBrandAccentColor={organizationRow.brand_accent_color}
+      initialBusinessNumber={organizationRow.business_number}
+      initialBankAccountDetails={organizationRow.bank_account_details}
+      initialGstNumber={organizationRow.gst_number}
+      initialAddressLine1={organizationRow.address_line_1}
+      initialAddressLine2={organizationRow.address_line_2}
+      initialCity={organizationRow.city}
+      initialPostcode={organizationRow.postcode}
+      initialCountry={organizationRow.country}
+      initialContactName={organizationRow.contact_name}
+      initialContactEmail={organizationRow.contact_email}
+      initialContactPhone={organizationRow.contact_phone}
+      initialDefaultCurrency={organizationRow.default_currency}
+      initialTimezone={organizationRow.timezone}
+      initialDefaultTaxMode={organizationRow.default_tax_mode}
+      initialDefaultTaxRate={organizationRow.default_tax_rate}
+      canEdit={canEdit}
     />
   );
 }

@@ -41,6 +41,7 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
 
   const isRegisterMode = mode === "register";
   const postAuthPath = useMemo(() => getPostAuthPath(searchParams.get("next")), [searchParams]);
+  const inviteToken = useMemo(() => searchParams.get("token")?.trim() || "", [searchParams]);
 
   const navigateAfterAuth = () => {
     router.push(postAuthPath);
@@ -59,6 +60,7 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
           organizationName,
           email,
           password,
+          inviteToken: inviteToken || undefined,
         });
 
         if (result.error) {
@@ -216,7 +218,7 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
                 {!isRegisterMode ? (
                   <p className="mt-1.5 text-[13px] leading-5 text-[#9F1239]">
                     Need access?{" "}
-                    <Link href="/register" className="font-semibold underline underline-offset-2">
+                    <Link href={inviteToken ? `/register?token=${encodeURIComponent(inviteToken)}` : "/register"} className="font-semibold underline underline-offset-2">
                       Create an account
                     </Link>{" "}
                     or contact your organization admin.
@@ -246,7 +248,18 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
           {!compact ? (
             <p className="mt-4 text-sm text-[#1d1d1d]">
               {isRegisterMode ? "Already have a TradesStack account? " : "New to TradesStack? "}
-              <Link href={isRegisterMode ? "/login" : "/register"} className="font-medium text-[#ff5406] hover:underline">
+              <Link
+                href={
+                  isRegisterMode
+                    ? inviteToken
+                      ? `/login?token=${encodeURIComponent(inviteToken)}`
+                      : "/login"
+                    : inviteToken
+                      ? `/register?token=${encodeURIComponent(inviteToken)}`
+                      : "/register"
+                }
+                className="font-medium text-[#ff5406] hover:underline"
+              >
                 {isRegisterMode ? "Sign in" : "Create an account"}
               </Link>
             </p>

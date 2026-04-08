@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { canManageCommercialData } from "@/lib/role-permissions";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
@@ -123,6 +124,8 @@ interface PurchaseOrderLineOption {
   unit: string;
   rate: number;
 }
+
+type RpcResultRow = Record<string, unknown>;
 
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Priced", "Sent", "Client Review", "Approved", "Rejected", "Invoiced"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Client Request", "Drawing Revision", "Site Instruction", "RFI", "Unknown"];
@@ -251,6 +254,7 @@ export default function ProjectVariationsPage() {
   const isNewVariationRoute = routeVariationId === "new";
   const router = useRouter();
   const { session } = useAuth();
+  const canManageVariation = canManageCommercialData(session?.role);
 
   const [variations, setVariations] = useState<VariationItem[]>([]);
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
@@ -274,7 +278,6 @@ export default function ProjectVariationsPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
-  const [savedStatusById, setSavedStatusById] = useState<Map<string, VariationStatus>>(new Map());
   const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
   const [isTermsOpen, setIsTermsOpen] = useState(true);
   const [isDocsOpen, setIsDocsOpen] = useState(true);
@@ -401,7 +404,6 @@ export default function ProjectVariationsPage() {
         setVariations([]);
         setActiveVariationId(null);
         setPersistedVariationIds(new Set());
-        setSavedStatusById(new Map());
         setIsLoadingVariations(false);
         return;
       }
@@ -514,7 +516,6 @@ export default function ProjectVariationsPage() {
         return hydratedVariations[0].id;
       });
       setPersistedVariationIds(new Set(hydratedVariations.map((item) => item.id)));
-      setSavedStatusById(new Map(hydratedVariations.map((item) => [item.id, item.status])));
       setIsLoadingVariations(false);
     };
 
@@ -595,6 +596,10 @@ export default function ProjectVariationsPage() {
     if (isCreatingVariation) {
       return;
     }
+    if (!canManageVariation) {
+      setError("You do not have permission to create variations.");
+      return;
+    }
     if (!supabase || !organizationId || !dbProjectId) {
       setError("Variation creation is not ready. Please refresh and try again.");
       return;
@@ -659,11 +664,6 @@ export default function ProjectVariationsPage() {
         return [createdVariation, ...current];
       });
       setPersistedVariationIds((current) => new Set([...current, createdVariation.id]));
-      setSavedStatusById((current) => {
-        const next = new Map(current);
-        next.set(createdVariation.id, createdVariation.status);
-        return next;
-      });
 
       setActiveVariationId(createdVariation.id);
       router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations/${createdVariation.id}`);
@@ -672,7 +672,7 @@ export default function ProjectVariationsPage() {
     } finally {
       setIsCreatingVariation(false);
     }
-  }, [dbProjectId, isCreatingVariation, jobCode, organizationId, routeProjectSlug, router, supabase]);
+  }, [canManageVariation, dbProjectId, isCreatingVariation, jobCode, organizationId, routeProjectSlug, router, supabase]);
 
   useEffect(() => {
     if (!isNewVariationRoute) {
@@ -834,188 +834,80 @@ export default function ProjectVariationsPage() {
       return;
     }
 
+    if (!canManageVariation) {
+      setError("You do not have permission to edit variations.");
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     setSaveMessage(null);
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const variationTable = (supabase as any).from("project_variations");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const lineItemsTable = (supabase as any).from("project_variation_line_items");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attachmentsTable = (supabase as any).from("project_variation_attachments");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const statusEventsTable = (supabase as any).from("project_variation_status_events");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const invoiceItemsTable = (supabase as any).from("project_variation_invoice_items");
+      const lineItemsPayload = activeVariation.costLines.map((line) => ({
+        id: line.id,
+        section: line.section,
+        description: line.description,
+        quantity: Number(line.quantity),
+        unit: line.unit,
+        rate: Number(line.rate),
+        sourcePurchaseOrderId: line.sourcePurchaseOrderId ?? null,
+        sourcePurchaseOrderLineItemId: line.sourcePurchaseOrderLineItemId ?? null,
+        sourcePurchaseOrderNumber: line.sourcePurchaseOrderNumber ?? "",
+      }));
 
-      const sectionTotals = {
-        Labour: 0,
-        Materials: 0,
-        Subcontractors: 0,
-        Plant: 0,
-        Margin: 0,
-      } satisfies Record<CostSection, number>;
+      const attachmentsPayload = activeVariation.attachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        type: attachment.type,
+        storagePath: attachment.storagePath,
+        externalUrl: attachment.externalUrl,
+      }));
 
-      for (const line of activeVariation.costLines) {
-        sectionTotals[line.section] += lineTotal(line);
+      const { data: saveRows, error: saveError } = await supabase.rpc("save_project_variation_draft", {
+        p_organization_id: organizationId,
+        p_project_id: dbProjectId,
+        p_variation_id: activeVariation.id,
+        p_expected_updated_at: null,
+        p_variation_title: activeVariation.title.trim() || activeVariation.code,
+        p_variation_number: activeVariation.code,
+        p_status: activeVariation.status,
+        p_origin: activeVariation.origin,
+        p_requested_by: activeVariation.requestedBy,
+        p_requested_date: activeVariation.requestedDate || null,
+        p_due_date: activeVariation.dueDate || null,
+        p_sent_to_client_at: activeVariation.clientSentAt || null,
+        p_approved_at: activeVariation.approvedAt || null,
+        p_invoice_ready: activeVariation.invoiceReady,
+        p_notes: activeVariation.notes,
+        p_margin_percent: Number(numberOrZero(activeVariation.marginPercent).toFixed(3)),
+        p_discount_amount: Number(numberOrZero(activeVariation.discountAmount).toFixed(2)),
+        p_contingency_amount: Number(numberOrZero(activeVariation.contingencyAmount).toFixed(2)),
+        p_gst_percent: Number(numberOrZero(activeVariation.gstPercent).toFixed(3)),
+        p_include_margin_in_export: activeVariation.includeMarginInExport,
+        p_include_discount_in_export: activeVariation.includeDiscountInExport,
+        p_include_contingency_in_export: activeVariation.includeContingencyInExport,
+        p_validity_period: activeVariation.validityPeriod,
+        p_payment_terms: activeVariation.paymentTerms,
+        p_lead_time: activeVariation.leadTime,
+        p_terms_inclusions: activeVariation.inclusions,
+        p_terms_exclusions: activeVariation.exclusions,
+        p_clarifications: activeVariation.clarifications,
+        p_assumptions: activeVariation.assumptions,
+        p_line_items: lineItemsPayload,
+        p_attachments: attachmentsPayload,
+      });
+
+      if (saveError) {
+        throw new Error(saveError.message);
       }
 
-      const payload = {
-        id: activeVariation.id,
-        organization_id: organizationId,
-        project_id: dbProjectId,
-        created_by: session?.id,
-        variation_title: activeVariation.title.trim() || activeVariation.code,
-        variation_number: activeVariation.code,
-        status: activeVariation.status,
-        origin: activeVariation.origin,
-        requested_by: activeVariation.requestedBy,
-        requested_date: activeVariation.requestedDate || null,
-        due_date: activeVariation.dueDate || null,
-        sent_to_client_at: activeVariation.clientSentAt || null,
-        approved_at: activeVariation.approvedAt || null,
-        invoice_ready: activeVariation.invoiceReady,
-        notes: activeVariation.notes,
-        labour_total: Number(sectionTotals.Labour.toFixed(2)),
-        materials_total: Number(sectionTotals.Materials.toFixed(2)),
-        subcontractors_total: Number(sectionTotals.Subcontractors.toFixed(2)),
-        plant_total: Number(sectionTotals.Plant.toFixed(2)),
-        margin_total: Number(sectionTotals.Margin.toFixed(2)),
-        subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
-        margin_percent: Number(numberOrZero(activeVariation.marginPercent).toFixed(3)),
-        discount_amount: Number(numberOrZero(activeVariation.discountAmount).toFixed(2)),
-        contingency_amount: Number(numberOrZero(activeVariation.contingencyAmount).toFixed(2)),
-        gst_percent: Number(numberOrZero(activeVariation.gstPercent).toFixed(3)),
-        include_margin_in_export: activeVariation.includeMarginInExport,
-        include_discount_in_export: activeVariation.includeDiscountInExport,
-        include_contingency_in_export: activeVariation.includeContingencyInExport,
-        validity_period: activeVariation.validityPeriod,
-        payment_terms: activeVariation.paymentTerms,
-        lead_time: activeVariation.leadTime,
-        terms_inclusions: activeVariation.inclusions,
-        terms_exclusions: activeVariation.exclusions,
-        clarifications: activeVariation.clarifications,
-        assumptions: activeVariation.assumptions,
-        gst_total: Number(pricingSummary.gst.toFixed(2)),
-        total_variation_price: Number(pricingSummary.grandTotal.toFixed(2)),
-      };
-
-      if (persistedVariationIds.has(activeVariation.id)) {
-        const { error: updateError } = await variationTable
-          .update(payload)
-          .eq("organization_id", organizationId)
-          .eq("id", activeVariation.id);
-        if (updateError) {
-          throw new Error(updateError.message);
-        }
-      } else {
-        const { error: insertError } = await variationTable.insert(payload);
-        if (insertError) {
-          throw new Error(insertError.message);
-        }
-      }
-
-      const { error: deleteLineItemsError } = await lineItemsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("variation_id", activeVariation.id);
-      if (deleteLineItemsError) {
-        throw new Error(deleteLineItemsError.message);
-      }
-
-      if (activeVariation.costLines.length > 0) {
-        const lineItemsPayload = activeVariation.costLines.map((line, index) => ({
-          id: line.id,
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          variation_id: activeVariation.id,
-          section: line.section,
-          description: line.description,
-          quantity: Number(line.quantity),
-          unit: line.unit,
-          rate: Number(line.rate),
-          total: Number(lineTotal(line).toFixed(2)),
-          sort_order: index,
-          source_purchase_order_id: line.sourcePurchaseOrderId ?? null,
-          source_purchase_order_line_item_id: line.sourcePurchaseOrderLineItemId ?? null,
-          source_purchase_order_number: line.sourcePurchaseOrderNumber ?? "",
-        }));
-        const { error: insertLineItemsError } = await lineItemsTable.insert(lineItemsPayload);
-        if (insertLineItemsError) {
-          throw new Error(insertLineItemsError.message);
-        }
-      }
-
-      const { error: deleteAttachmentsError } = await attachmentsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("variation_id", activeVariation.id);
-      if (deleteAttachmentsError) {
-        throw new Error(deleteAttachmentsError.message);
-      }
-
-      if (activeVariation.attachments.length > 0) {
-        const attachmentsPayload = activeVariation.attachments.map((attachment) => ({
-          id: attachment.id,
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          variation_id: activeVariation.id,
-          file_kind: attachment.type,
-          file_name: attachment.name,
-          storage_path: attachment.storagePath,
-          external_url: attachment.externalUrl,
-          uploaded_by: session?.id ?? null,
-        }));
-        const { error: insertAttachmentsError } = await attachmentsTable.insert(attachmentsPayload);
-        if (insertAttachmentsError) {
-          throw new Error(insertAttachmentsError.message);
-        }
-      }
-
-      const previousSavedStatus = savedStatusById.get(activeVariation.id);
-      if (previousSavedStatus !== activeVariation.status) {
-        const { error: insertStatusEventError } = await statusEventsTable.insert({
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          variation_id: activeVariation.id,
-          from_status: previousSavedStatus ?? null,
-          to_status: activeVariation.status,
-          changed_by: session?.id ?? null,
-        });
-        if (insertStatusEventError) {
-          throw new Error(insertStatusEventError.message);
-        }
-      }
-
-      if (activeVariation.invoiceReady) {
-        const { error: upsertInvoiceItemError } = await invoiceItemsTable.upsert(
-          {
-            organization_id: organizationId,
-            project_id: dbProjectId,
-            variation_id: activeVariation.id,
-            amount: Number(pricingSummary.grandTotal.toFixed(2)),
-            status: "Ready",
-          },
-          { onConflict: "variation_id" }
-        );
-        if (upsertInvoiceItemError) {
-          throw new Error(upsertInvoiceItemError.message);
-        }
-      } else {
-        await invoiceItemsTable
-          .delete()
-          .eq("organization_id", organizationId)
-          .eq("variation_id", activeVariation.id);
+      const savedRow = (Array.isArray(saveRows) ? saveRows[0] : null) as RpcResultRow | null;
+      if (!savedRow) {
+        throw new Error("Variation was saved but no result was returned.");
       }
 
       setPersistedVariationIds((current) => new Set([...current, activeVariation.id]));
-      setSavedStatusById((current) => {
-        const next = new Map(current);
-        next.set(activeVariation.id, activeVariation.status);
-        return next;
-      });
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save variation.");
@@ -1025,6 +917,11 @@ export default function ProjectVariationsPage() {
   };
 
   const deleteVariation = useCallback(async (variationId: string) => {
+    if (!canManageVariation) {
+      setError("You do not have permission to delete variations.");
+      return;
+    }
+
     const variation = variations.find((item) => item.id === variationId);
     if (!variation) {
       return;
@@ -1087,11 +984,6 @@ export default function ProjectVariationsPage() {
         next.delete(variationId);
         return next;
       });
-      setSavedStatusById((current) => {
-        const next = new Map(current);
-        next.delete(variationId);
-        return next;
-      });
 
       if (nextRows.length === 0) {
         router.replace(`/app/projects/${routeProjectSlug}/preconstruction/variations`);
@@ -1105,7 +997,7 @@ export default function ProjectVariationsPage() {
     } finally {
       setIsDeleting(false);
     }
-  }, [organizationId, persistedVariationIds, routeProjectSlug, router, supabase, variations]);
+  }, [canManageVariation, organizationId, persistedVariationIds, routeProjectSlug, router, supabase, variations]);
 
   const exportVariationPdf = useCallback(() => {
     if (typeof window === "undefined" || !activeVariation) {
@@ -1602,7 +1494,7 @@ export default function ProjectVariationsPage() {
                   event.preventDefault();
                   void createVariation();
                 }}
-                disabled={isCreatingVariation}
+                disabled={!canManageVariation || isCreatingVariation}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -1613,7 +1505,7 @@ export default function ProjectVariationsPage() {
                   event.preventDefault();
                   void saveVariation();
                 }}
-                disabled={isSaving}
+                disabled={!canManageVariation || isSaving}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 {isSaving ? "Saving..." : "Save Variation"}
@@ -1635,7 +1527,7 @@ export default function ProjectVariationsPage() {
                       event.preventDefault();
                       void deleteVariation(activeVariation.id);
                     }}
-                    disabled={isDeleting}
+                    disabled={!canManageVariation || isDeleting}
                     className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -1650,6 +1542,11 @@ export default function ProjectVariationsPage() {
 
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {!canManageVariation && session ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          You can review this variation, but only owner, admin, QS, and project manager roles can edit or delete it.
+        </p>
       ) : null}
       {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
@@ -2075,7 +1972,7 @@ export default function ProjectVariationsPage() {
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
+                <Button type="button" onClick={saveVariation} disabled={!canManageVariation || isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
                   {isSaving ? "Saving..." : "Save Variation"}
                 </Button>
                 <Button

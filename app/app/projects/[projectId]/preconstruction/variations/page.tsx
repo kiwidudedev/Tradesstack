@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { canManageCommercialData } from "@/lib/role-permissions";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
@@ -102,6 +103,7 @@ export default function ProjectVariationRegisterPage() {
   const router = useRouter();
   const { session } = useAuth();
   const sessionOrganizationId = session?.organizationId ?? null;
+  const canManageVariations = canManageCommercialData(session?.role);
 
   const [projectName, setProjectName] = useState("");
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -234,6 +236,11 @@ export default function ProjectVariationRegisterPage() {
       return;
     }
 
+    if (!canManageVariations) {
+      setError("You do not have permission to create variations.");
+      return;
+    }
+
     setIsCreating(true);
     setError(null);
 
@@ -259,7 +266,7 @@ export default function ProjectVariationRegisterPage() {
       setError(createErr instanceof Error ? createErr.message : "Unable to create variation.");
       setIsCreating(false);
     }
-  }, [isCreating, organizationId, projectId, routeProjectSlug, router, supabase]);
+  }, [canManageVariations, isCreating, organizationId, projectId, routeProjectSlug, router, supabase]);
 
   return (
     <div className={`${styles.scope} -mb-8 space-y-6`}>
@@ -295,7 +302,7 @@ export default function ProjectVariationRegisterPage() {
                   event.preventDefault();
                   void createVariationAndOpen();
                 }}
-                disabled={isCreating || isLoading}
+                disabled={!canManageVariations || isCreating || isLoading}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -308,6 +315,11 @@ export default function ProjectVariationRegisterPage() {
 
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {!canManageVariations && session ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          Only owner, admin, QS, and project manager roles can create or edit variations.
+        </p>
       ) : null}
 
       <section className="overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6">

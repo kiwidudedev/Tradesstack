@@ -32,6 +32,7 @@ interface OrganizationSettingsFormProps {
 }
 
 const DEFAULT_BRAND_PRIMARY_COLOR = "#0B2739";
+const ALLOWED_LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 function normalizeHexColor(value: string | null | undefined, fallback: string) {
   const normalized = (value ?? "").trim();
@@ -168,8 +169,8 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      setError("Please upload an image file.");
+    if (!ALLOWED_LOGO_MIME_TYPES.has(file.type)) {
+      setError("Please upload a PNG, JPEG, or WebP logo.");
       return;
     }
 
@@ -263,7 +264,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                   <label className="group block">
                     <input
                       type="file"
-                      accept="image/*"
+                        accept="image/png,image/jpeg,image/webp"
                       onChange={onUploadLogo}
                       disabled={!props.canEdit || isUploading}
                       className="hidden"

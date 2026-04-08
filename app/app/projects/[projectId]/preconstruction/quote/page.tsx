@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
+import { canManageCommercialData } from "@/lib/role-permissions";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 interface QuoteRegisterRow {
@@ -135,6 +136,7 @@ export default function ProjectQuoteRegisterPage() {
   const { session } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
+  const canManageQuotes = canManageCommercialData(session?.role);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -246,11 +248,16 @@ export default function ProjectQuoteRegisterPage() {
       return;
     }
 
+    if (!canManageQuotes) {
+      setError("You do not have permission to create quotes.");
+      return;
+    }
+
     setIsCreating(true);
     setError(null);
 
     try {
-      const { data: createdRow, error: createError } = await supabase
+      const { data: createdRows, error: createError } = await supabase
         .from("project_quotes")
         .insert({
           organization_id: organizationId,
@@ -261,12 +268,13 @@ export default function ProjectQuoteRegisterPage() {
           status: "Draft",
         })
         .select("id")
-        .single();
+        .limit(1);
 
       if (createError) {
         throw new Error(createError.message);
       }
 
+      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
       if (!createdRow?.id) {
         throw new Error("Quote was created but no identifier was returned.");
       }
@@ -276,10 +284,15 @@ export default function ProjectQuoteRegisterPage() {
       setError(createErr instanceof Error ? createErr.message : "Unable to create quote.");
       setIsCreating(false);
     }
-  }, [isCreating, organizationId, projectId, userId, routeProjectSlug, router, supabase]);
+  }, [canManageQuotes, isCreating, organizationId, projectId, userId, routeProjectSlug, router, supabase]);
 
   async function handleDeleteSummaryQuote() {
     if (!summaryQuote || !supabase || isDeletingSummaryQuote) {
+      return;
+    }
+
+    if (!canManageQuotes) {
+      setError("You do not have permission to delete quotes.");
       return;
     }
 
@@ -368,7 +381,7 @@ export default function ProjectQuoteRegisterPage() {
                   event.preventDefault();
                   void createQuoteAndOpen();
                 }}
-                disabled={isCreating || isLoading}
+                disabled={!canManageQuotes || isCreating || isLoading}
                 className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -382,7 +395,7 @@ export default function ProjectQuoteRegisterPage() {
                       event.preventDefault();
                       void handleDeleteSummaryQuote();
                     }}
-                    disabled={isDeletingSummaryQuote}
+                    disabled={!canManageQuotes || isDeletingSummaryQuote}
                     className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -397,6 +410,11 @@ export default function ProjectQuoteRegisterPage() {
 
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+      {!canManageQuotes && session ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          Only owner, admin, QS, and project manager roles can create, edit, or delete quotes.
+        </p>
       ) : null}
 
       <section
@@ -432,7 +450,7 @@ export default function ProjectQuoteRegisterPage() {
                     <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
                       No accepted quote yet — create or link one to start tracking this job
                     </p>
-                    <Button onClick={() => void createQuoteAndOpen()} disabled={isCreating || isLoading} className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
+                    <Button onClick={() => void createQuoteAndOpen()} disabled={!canManageQuotes || isCreating || isLoading} className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
                       <Plus className="mr-1 h-3.5 w-3.5" />
                       {isCreating ? "Creating..." : "Create First Quote"}
                     </Button>
