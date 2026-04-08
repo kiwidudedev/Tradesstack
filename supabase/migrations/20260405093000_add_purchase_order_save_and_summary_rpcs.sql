@@ -193,7 +193,8 @@ begin
     unit,
     rate,
     total,
-    sort_order
+    sort_order,
+    source_time_sheet_entry_id
   )
   select
     case
@@ -212,7 +213,11 @@ begin
     coalesce(line.item->>'unit', ''),
     coalesce((line.item->>'rate')::numeric, 0),
     round(coalesce((line.item->>'quantity')::numeric, 0) * coalesce((line.item->>'rate')::numeric, 0), 2),
-    (line.ordinality - 1)::integer
+    (line.ordinality - 1)::integer,
+    case
+      when nullif(line.item->>'source_time_sheet_entry_id', '') is null then null
+      else (line.item->>'source_time_sheet_entry_id')::uuid
+    end
   from jsonb_array_elements(coalesce(p_line_items, '[]'::jsonb)) with ordinality as line(item, ordinality);
 
   delete from public.project_purchase_order_attachments a

@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Clock3, FileWarning, Sparkles } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  CheckCircle2,
+  ClipboardList,
+  FileSearch,
+  Pencil,
+  ReceiptText,
+  Sparkles,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
@@ -65,6 +73,16 @@ const EMPTY_METRICS: DashboardMetrics = {
   inspectionsToday: 0,
 };
 
+const EMPTY_FINANCIALS: FinancialSummary = {
+  quoteValue: 0,
+  variationTotal: 0,
+  claimsSubmitted: 0,
+  claimsPaidAmount: 0,
+  claimsUnpaidAmount: 0,
+  poOutstandingCount: 0,
+  poOutstandingAmount: 0,
+};
+
 function formatDateTime(value: string | null) {
   if (!value) {
     return "Unknown";
@@ -91,11 +109,11 @@ export function ProjectDashboardBoard() {
 
   const [context, setContext] = useState<ProjectContext | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics>(EMPTY_METRICS);
+  const [financials, setFinancials] = useState<FinancialSummary>(EMPTY_FINANCIALS);
   const [aiInsights, setAiInsights] = useState<string[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
-  const [isPriorityLoading, setIsPriorityLoading] = useState(true);
-  const [isProjectActivityOpen, setIsProjectActivityOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
 
   const isLoadingRef = useRef(false);
 
@@ -109,21 +127,83 @@ export function ProjectDashboardBoard() {
 
   const projectBase = useMemo(() => `/app/projects/${routeProjectSlug}`, [routeProjectSlug]);
   const tradePackCardClassName =
-    "rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]";
+    "rounded-[30px] border border-[rgba(17,17,17,0.1)] !bg-[#F6F7F9] shadow-[0_20px_40px_rgba(17,17,17,0.04),0_4px_14px_rgba(17,17,17,0.03)]";
 
-  const actionRequired = useMemo(
-    () =>
-      [
-      { label: "Overdue tasks", value: metrics.overdueTasks, href: `${projectBase}/job-management/todos` },
-      { label: "Variations awaiting approval", value: metrics.awaitingVariationApproval, href: `${projectBase}/preconstruction/variations` },
-      { label: "Claims ready to send", value: metrics.claimReadyToSend, href: `${projectBase}/preconstruction/claims` },
-      { label: "Open issues", value: metrics.openIssues, href: `${projectBase}/job-management/quality-assurance` },
-      { label: "Failed inspections", value: metrics.failedInspections, href: `${projectBase}/job-management/quality-assurance` },
-      ]
-        .filter((item) => item.value > 0)
-        .slice(0, 7),
-    [metrics.awaitingVariationApproval, metrics.claimReadyToSend, metrics.failedInspections, metrics.openIssues, metrics.overdueTasks, projectBase]
+  const overviewCards = useMemo(
+    () => [
+      {
+        label: "Tasks due today",
+        value: String(metrics.tasksDueToday),
+        meta: `${metrics.overdueTasks} overdue`,
+        href: `${projectBase}/job-management/todos`,
+        icon: ClipboardList,
+        iconClassName: "bg-[#ffe9de] text-[#f74917]",
+      },
+      {
+        label: "Open issues",
+        value: String(metrics.openIssues),
+        meta: `${metrics.failedInspections} failed inspections`,
+        href: `${projectBase}/job-management/quality-assurance`,
+        icon: FileSearch,
+        iconClassName: "bg-[#e8eef2] text-[#0b2639]",
+      },
+      {
+        label: "Active workers",
+        value: String(metrics.activeWorkers),
+        meta: `${metrics.inspectionsToday} inspections today`,
+        href: `${projectBase}/job-management/time-sheets`,
+        icon: BriefcaseBusiness,
+        iconClassName: "bg-[#dff1e5] text-[#2f6b4f]",
+      },
+      {
+        label: "Pipeline value",
+        value: formatMoney(financials.quoteValue + financials.variationTotal),
+        meta: `${financials.claimsSubmitted} claims submitted`,
+        href: `${projectBase}/preconstruction/claims`,
+        icon: ReceiptText,
+        iconClassName: "bg-[#f3ead6] text-[#8a6731]",
+      },
+    ],
+    [
+      financials.claimsSubmitted,
+      financials.quoteValue,
+      financials.variationTotal,
+      metrics.activeWorkers,
+      metrics.failedInspections,
+      metrics.inspectionsToday,
+      metrics.openIssues,
+      metrics.overdueTasks,
+      metrics.tasksDueToday,
+      projectBase,
+    ]
   );
+
+  const focusItems = useMemo(
+    () =>
+      aiInsights.slice(0, 2).map((insight, index) => ({
+        id: `focus-${index}`,
+        eyebrow: index === 0 ? "Priority focus" : "Project insight",
+        title: insight,
+        detail:
+          index === 0
+            ? `${metrics.tasksDueToday} due today, ${metrics.overdueTasks} overdue.`
+            : `${metrics.pendingVariations} pending variations and ${metrics.openIssues} open issues in play.`,
+        href: `${projectBase}/drawing-intelligence`,
+      })),
+    [aiInsights, metrics.openIssues, metrics.overdueTasks, metrics.pendingVariations, metrics.tasksDueToday, projectBase]
+  );
+
+  const upcomingItems = useMemo(() => activity.slice(0, 4), [activity]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const loadData = async () => {
     if (!supabase || !routeProjectSlug || !session?.id || isLoadingRef.current) {
@@ -131,7 +211,6 @@ export function ProjectDashboardBoard() {
     }
 
     isLoadingRef.current = true;
-    setIsPriorityLoading(true);
     setError(null);
 
     try {
@@ -315,7 +394,6 @@ export function ProjectDashboardBoard() {
         clientName: String(clientResult.data?.name ?? "Unassigned"),
       });
       setMetrics(nextMetrics);
-      setIsPriorityLoading(false);
 
       const [
         inspectionsTodayCountResult,
@@ -526,12 +604,12 @@ export function ProjectDashboardBoard() {
         pendingSignoffs: pendingSignoffsCountResult.count ?? 0,
         inspectionsToday: inspectionsTodayCountResult.count ?? 0,
       }));
+      setFinancials(nextFinancials);
       setAiInsights(nextInsights);
       setActivity(sortedActivity);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load project command centre.");
     } finally {
-      setIsPriorityLoading(false);
       isLoadingRef.current = false;
     }
   };
@@ -542,134 +620,178 @@ export function ProjectDashboardBoard() {
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 
   return (
-    <main className="-mb-8 space-y-6 bg-[#F3F4F6]">
-      <div className="pb-1 pt-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-[41.6px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">
-              {context?.projectName ?? "Project Command Centre"}
-            </h1>
-          </div>
+    <main className="-mb-8 space-y-6 bg-[#f3f4f6] pb-10">
+      <section className="flex flex-col justify-between gap-4 pt-[0.15rem] xl:flex-row xl:items-start">
+        <div className="space-y-2">
+          <h1 className="mt-[0.45rem] max-w-[920px] text-[clamp(1.55rem,2.8vw,2.6rem)] font-semibold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
+            {context?.projectName ?? "Project Dashboard"}
+          </h1>
+          <p className={`${interMedium.className} mt-[0.65rem] max-w-none text-[15px] leading-[1.45] text-[#6b6b6b]`}>
+            Your project dashboard
+          </p>
         </div>
-      </div>
 
-      <div className={`overflow-x-auto ${tradePackCardClassName}`}>
-        <div className="flex min-w-[820px] divide-x divide-[#E3E8F0]">
-          <Link href={`${projectBase}/job-management/todos`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
-            <Clock3 className="h-5 w-5 text-[#B45309]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Tasks Due Today</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.tasksDueToday}</p>
-            </div>
-          </Link>
-          <Link href={`${projectBase}/job-management/quality-assurance`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
-            <AlertTriangle className="h-5 w-5 text-[#DC2626]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Open Issues</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.openIssues}</p>
-            </div>
-          </Link>
-          <Link href={`${projectBase}/preconstruction/variations`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
-            <FileWarning className="h-5 w-5 text-[#1D4ED8]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Pending Variations</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.pendingVariations}</p>
-            </div>
-          </Link>
-          <Link href={`${projectBase}/preconstruction/claims`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
-            <CalendarClock className="h-5 w-5 text-[#0F766E]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Claims This Month</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.claimsThisMonth}</p>
-            </div>
-          </Link>
-          <Link href={`${projectBase}/job-management/time-sheets`} className="flex flex-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-[#F7F8FA]">
-            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Active Workers</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{metrics.activeWorkers}</p>
-            </div>
-          </Link>
-        </div>
-      </div>
-
-      <Card className={tradePackCardClassName}>
-        <CardHeader className="pb-3 pt-5">
-          <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Action Required</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 pb-5">
-          {isPriorityLoading ? <p className={`${interMedium.className} text-sm text-[#64748B]`}>Loading priority items...</p> : null}
-          {!isPriorityLoading && actionRequired.length === 0 ? (
-            <div className="rounded-[8px] border border-dashed border-[#CBD5E1] bg-white px-4 py-4">
-              <p className={`${interMedium.className} text-sm text-[#0F172A]`}>No immediate project blockers right now.</p>
-            </div>
-          ) : null}
-          {actionRequired.map((item) => (
-            <Link key={item.label} href={item.href} className="block">
-              <div className="flex items-center justify-between rounded-[8px] border border-[#FCA5A5] bg-[#FEF2F2] px-4 py-3 transition-colors hover:bg-[#FEE2E2]">
-                <p className={`${interMedium.className} text-sm font-semibold text-[#7F1D1D]`}>{item.label}</p>
-                <div className="flex items-center gap-2">
-                  <span className={`${interMedium.className} rounded-full border border-[#FCA5A5] bg-white px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[#B91C1C]`}>
-                    {item.value}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-[#B91C1C]" />
-                </div>
-              </div>
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className={tradePackCardClassName}>
-        <CardHeader className="pb-3 pt-5">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-[#1D4ED8]" />
-            <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Project Insights</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2 pb-5">
-          {aiInsights.map((insight, index) => (
-            <Link key={`${insight}-${index}`} href={`${projectBase}/drawing-intelligence`} className="block rounded-[8px] border border-[#E6EAF0] bg-white px-3 py-2 hover:bg-[#F8FAFC]">
-              <p className={`${interMedium.className} text-sm text-[#0F172A]`}>{insight}</p>
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className={tradePackCardClassName}>
-        <CardHeader className="pb-3 pt-5">
+        <div className="flex flex-col items-start gap-[0.55rem] xl:items-end">
+          <p className={`${interMedium.className} m-0 max-w-[260px] text-[15px] text-[#6b6b6b] xl:text-right`}>
+            {new Intl.DateTimeFormat("en-NZ", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              hour: "numeric",
+              minute: "2-digit",
+              second: "2-digit",
+            }).format(currentTime)}
+          </p>
           <button
             type="button"
-            onClick={() => setIsProjectActivityOpen((current) => !current)}
-            className="flex w-full items-center justify-between text-left"
+            className="inline-flex items-center gap-[0.4rem] rounded-[999px] border border-[#0b2639] bg-[#0b2639] px-[0.7rem] py-[0.55rem] text-[15px] text-white transition hover:opacity-90"
           >
-            <CardTitle className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">Project Activity</CardTitle>
-            <ChevronRight className={`h-4 w-4 text-[#334155] transition-transform ${isProjectActivityOpen ? "rotate-90" : ""}`} />
+            <Pencil className="h-4 w-4" />
+            Edit dashboard
           </button>
-        </CardHeader>
-        {isProjectActivityOpen ? (
-          <CardContent className="space-y-2 pb-5">
-            {activity.length === 0 ? (
-              <p className={`${interMedium.className} text-sm text-[#64748B]`}>No recent project activity.</p>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        <Card className={tradePackCardClassName}>
+          <CardHeader className="pb-[0.7rem]">
+            <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Project Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-[0.65rem] pt-0">
+            <div className="space-y-4">
+              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
+                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Project name</p>
+                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.projectName ?? "Loading project..."}</p>
+              </div>
+              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
+                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Client</p>
+                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.clientName ?? "Unassigned"}</p>
+              </div>
+              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
+                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Stage</p>
+                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.stage ?? "Planning"}</p>
+              </div>
+              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
+                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Location</p>
+                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.location || "Not set"}</p>
+              </div>
+              <div>
+                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Created</p>
+                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{formatDateTime(context?.createdAt ?? null)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={tradePackCardClassName}>
+          <CardHeader className="pb-[0.7rem]">
+            <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Performance at a glance</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid gap-[0.7rem] md:grid-cols-2">
+              {overviewCards.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className="rounded-[1.15rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] p-[0.9rem] shadow-[0_10px_24px_rgba(17,17,17,0.03)] transition hover:bg-white"
+                  >
+                    <div className="flex items-center gap-[0.55rem]">
+                      <span className={`inline-flex h-[1.7rem] w-[1.7rem] items-center justify-center rounded-[0.65rem] ${item.iconClassName}`}>
+                        <Icon className="h-[1.125rem] w-[1.125rem]" />
+                      </span>
+                      <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>{item.label}</p>
+                    </div>
+                    <p className="mt-[0.7rem] text-[clamp(1.4rem,2.1vw,1.95rem)] font-semibold leading-none tracking-[0.01em] text-[#1d1d1d]">{item.value}</p>
+                    <p className={`${interMedium.className} mt-[0.45rem] text-[15px] text-[#6b6b6b]`}>{item.meta}</p>
+                  </Link>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        <Card className={tradePackCardClassName}>
+          <CardHeader className="pb-[0.7rem]">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-[1rem] w-[1rem] text-[#f74917]" />
+              <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Focus for the day</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-[0.65rem] pt-0">
+            {(focusItems.length > 0 ? focusItems : aiInsights.map((insight, index) => ({
+              id: `insight-${index}`,
+              eyebrow: "Project insight",
+              title: insight,
+              detail: "Open the workspace to keep this item moving.",
+              href: `${projectBase}/drawing-intelligence`,
+            }))).map((item) => (
+              <Link
+                key={item.id}
+                href={item.href}
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-[0.7rem] rounded-[1rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] px-[0.75rem] py-[0.7rem] shadow-[0_8px_18px_rgba(17,17,17,0.025)] transition hover:bg-white"
+              >
+                <span className="inline-flex h-[1.65rem] w-[1.65rem] shrink-0 items-center justify-center rounded-full bg-[#dff1e5] text-[#2f6b4f]">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#f74917]`}>{item.eyebrow}</p>
+                  <p className="mt-[0.25rem] text-[15px] font-semibold text-[#1d1d1d]">{item.title}</p>
+                  <p className={`${interMedium.className} mt-[0.25rem] text-[15px] leading-[1.5] text-[#6b6b6b]`}>{item.detail}</p>
+                </div>
+                <span className={`${interMedium.className} rounded-full bg-white px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-[#0b2639] shadow-[0_10px_20px_-22px_rgba(17,17,17,0.45)]`}>
+                  Open
+                </span>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className={tradePackCardClassName}>
+          <CardHeader className="pb-[0.7rem]">
+            <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">What&apos;s coming up next</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-[0.65rem] pt-0">
+            {upcomingItems.length === 0 ? (
+              <div className="rounded-[1rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] px-4 py-4 shadow-[0_8px_18px_rgba(17,17,17,0.025)]">
+                <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>No recent project activity.</p>
+              </div>
             ) : (
-              activity.map((item) => (
-                <Link key={item.id} href={item.href} className="flex items-center justify-between rounded-[8px] border border-[#E6EAF0] bg-white px-3 py-2 hover:bg-[#F8FAFC]">
-                  <div className="min-w-0">
-                    <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{item.label}</p>
-                    <p className={`${interMedium.className} truncate text-xs text-[#64748B]`}>{item.detail}</p>
+              upcomingItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className="block rounded-[1rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] px-[0.75rem] py-[0.7rem] shadow-[0_8px_18px_rgba(17,17,17,0.025)] transition hover:bg-white"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-semibold text-[#1d1d1d]">{item.label}</p>
+                      <p className={`${interMedium.className} mt-[0.25rem] truncate text-[15px] text-[#6b6b6b]`}>{item.detail}</p>
+                    </div>
+                    <span className={`${interMedium.className} shrink-0 rounded-full bg-[rgba(255,228,215,0.95)] px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-[#f74917]`}>
+                      Live
+                    </span>
                   </div>
-                  <p className={`${interMedium.className} ml-3 text-xs text-[#64748B]`}>{formatDateTime(item.at)}</p>
+                  <div className="mt-[0.45rem] flex items-center justify-between gap-3">
+                    <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>{formatDateTime(item.at)}</p>
+                    <span className="text-[15px] font-semibold text-[#0b2639]">View</span>
+                  </div>
                 </Link>
               ))
             )}
             {error ? (
-              <div className="rounded-[6px] border border-rose-200 bg-rose-50 px-3 py-2">
-                <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
+              <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3">
+                <p className={`${interMedium.className} text-sm text-rose-800`}>{error}</p>
               </div>
             ) : null}
           </CardContent>
-        ) : null}
-      </Card>
+        </Card>
+      </section>
+
     </main>
   );
 }

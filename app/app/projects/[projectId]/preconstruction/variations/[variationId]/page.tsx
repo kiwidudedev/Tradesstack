@@ -34,6 +34,9 @@ interface CostLine {
   quantity: number;
   unit: string;
   rate: number;
+  sourcePurchaseOrderId?: string | null;
+  sourcePurchaseOrderLineItemId?: string | null;
+  sourcePurchaseOrderNumber?: string;
 }
 
 interface AttachmentItem {
@@ -102,6 +105,23 @@ interface VariationRow {
   terms_exclusions?: string | null;
   clarifications?: string | null;
   assumptions?: string | null;
+}
+
+interface PurchaseOrderOption {
+  id: string;
+  purchase_order_number: string;
+  purchase_order_title: string;
+  status: string;
+}
+
+interface PurchaseOrderLineOption {
+  id: string;
+  purchase_order_id: string;
+  section: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
 }
 
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Priced", "Sent", "Client Review", "Approved", "Rejected", "Invoiced"];
@@ -242,6 +262,11 @@ export default function ProjectVariationsPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
   const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderOption[]>([]);
+  const [purchaseOrderLines, setPurchaseOrderLines] = useState<PurchaseOrderLineOption[]>([]);
+  const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState("");
+  const [selectedPurchaseOrderLineIds, setSelectedPurchaseOrderLineIds] = useState<Set<string>>(new Set());
+  const [isPurchaseOrderImportOpen, setIsPurchaseOrderImportOpen] = useState(false);
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -338,14 +363,30 @@ export default function ProjectVariationsPage() {
       const lineItemsTable = (supabase as any).from("project_variation_line_items");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const attachmentsTable = (supabase as any).from("project_variation_attachments");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const purchaseOrderLineItemsTable = (supabase as any).from("project_purchase_order_line_items");
 
-        const { data: variationRowsRaw, error: variationError } = await variationsTable
+      const [{ data: variationRowsRaw, error: variationError }, { data: purchaseOrderRowsRaw }, { data: purchaseOrderLineRowsRaw }] = await Promise.all([
+        variationsTable
           .select(
           "id, variation_number, variation_title, status, origin, requested_by, requested_date, due_date, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes, validity_period, payment_terms, lead_time, terms_inclusions, terms_exclusions, clarifications, assumptions"
         )
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", projectRow.id)
-        .order("updated_at", { ascending: false });
+        .order("updated_at", { ascending: false }),
+        purchaseOrdersTable
+          .select("id, purchase_order_number, purchase_order_title, status")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("updated_at", { ascending: false }),
+        purchaseOrderLineItemsTable
+          .select("id, purchase_order_id, section, description, quantity, unit, rate")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("sort_order", { ascending: true }),
+      ]);
 
       if (variationError) {
         setError(variationError.message);
@@ -354,6 +395,8 @@ export default function ProjectVariationsPage() {
       }
 
       const variationRows = (variationRowsRaw ?? []) as VariationRow[];
+      setPurchaseOrders((purchaseOrderRowsRaw ?? []) as PurchaseOrderOption[]);
+      setPurchaseOrderLines((purchaseOrderLineRowsRaw ?? []) as PurchaseOrderLineOption[]);
       if (variationRows.length === 0) {
         setVariations([]);
         setActiveVariationId(null);
@@ -366,7 +409,7 @@ export default function ProjectVariationsPage() {
       const variationIds = variationRows.map((row) => row.id);
       const [{ data: lineRowsRaw }, { data: attachmentRowsRaw }] = await Promise.all([
         lineItemsTable
-          .select("id, variation_id, section, description, quantity, unit, rate")
+          .select("id, variation_id, section, description, quantity, unit, rate, source_purchase_order_id, source_purchase_order_line_item_id, source_purchase_order_number")
           .in("variation_id", variationIds)
           .order("sort_order", { ascending: true }),
         attachmentsTable
@@ -383,6 +426,9 @@ export default function ProjectVariationsPage() {
         quantity: number;
         unit: string;
         rate: number;
+        source_purchase_order_id: string | null;
+        source_purchase_order_line_item_id: string | null;
+        source_purchase_order_number: string | null;
       }>;
       const attachmentRows = (attachmentRowsRaw ?? []) as Array<{
         id: string;
@@ -403,6 +449,9 @@ export default function ProjectVariationsPage() {
           quantity: Number(lineRow.quantity ?? 0),
           unit: lineRow.unit ?? "",
           rate: Number(lineRow.rate ?? 0),
+          sourcePurchaseOrderId: lineRow.source_purchase_order_id ?? null,
+          sourcePurchaseOrderLineItemId: lineRow.source_purchase_order_line_item_id ?? null,
+          sourcePurchaseOrderNumber: lineRow.source_purchase_order_number ?? "",
         });
         linesByVariationId.set(lineRow.variation_id, current);
       }
@@ -481,6 +530,25 @@ export default function ProjectVariationsPage() {
     [activeVariationId, variations]
   );
   const hasVariations = variations.length > 0;
+  const selectedPurchaseOrder = useMemo(
+    () => purchaseOrders.find((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId) ?? null,
+    [purchaseOrders, selectedPurchaseOrderId]
+  );
+  const selectedPurchaseOrderLineOptions = useMemo(
+    () => purchaseOrderLines.filter((line) => line.purchase_order_id === selectedPurchaseOrderId),
+    [purchaseOrderLines, selectedPurchaseOrderId]
+  );
+
+  useEffect(() => {
+    if (selectedPurchaseOrderId && purchaseOrders.some((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId)) {
+      return;
+    }
+    setSelectedPurchaseOrderId(purchaseOrders[0]?.id ?? "");
+  }, [purchaseOrders, selectedPurchaseOrderId]);
+
+  useEffect(() => {
+    setSelectedPurchaseOrderLineIds(new Set());
+  }, [selectedPurchaseOrderId]);
 
   useEffect(() => {
     if (!routeVariationId || variations.length === 0) {
@@ -490,36 +558,6 @@ export default function ProjectVariationsPage() {
       setActiveVariationId(routeVariationId);
     }
   }, [routeVariationId, variations]);
-
-  const summary = useMemo(() => {
-    const totals = {
-      totalValue: 0,
-      draft: 0,
-      awaitingClient: 0,
-      approved: 0,
-      invoiceReady: 0,
-    };
-
-    for (const variation of variations) {
-      const variationTotal = variation.costLines.reduce((acc, line) => acc + lineTotal(line), 0);
-      totals.totalValue += variationTotal;
-
-      if (variation.status === "Draft") {
-        totals.draft += 1;
-      }
-      if (variation.status === "Sent" || variation.status === "Client Review") {
-        totals.awaitingClient += 1;
-      }
-      if (variation.status === "Approved") {
-        totals.approved += 1;
-      }
-      if (variation.invoiceReady) {
-        totals.invoiceReady += 1;
-      }
-    }
-
-    return totals;
-  }, [variations]);
 
   const pricingSummary = useMemo(() => {
     if (!activeVariation) {
@@ -658,6 +696,51 @@ export default function ProjectVariationsPage() {
   const addCostLine = (section: CostSection = "Labour") => {
     if (!activeVariation) return;
     updateActiveVariation("costLines", [...activeVariation.costLines, makeDefaultCostLine(section)]);
+  };
+
+  const togglePurchaseOrderLine = (lineId: string) => {
+    setSelectedPurchaseOrderLineIds((current) => {
+      const next = new Set(current);
+      if (next.has(lineId)) {
+        next.delete(lineId);
+      } else {
+        next.add(lineId);
+      }
+      return next;
+    });
+  };
+
+  const importSelectedPurchaseOrderLines = () => {
+    if (!activeVariation || !selectedPurchaseOrder) {
+      return;
+    }
+
+    const existingSourceIds = new Set(
+      activeVariation.costLines
+        .map((line) => line.sourcePurchaseOrderLineItemId)
+        .filter((value): value is string => Boolean(value))
+    );
+
+    const importedLines = selectedPurchaseOrderLineOptions
+      .filter((line) => selectedPurchaseOrderLineIds.has(line.id) && !existingSourceIds.has(line.id))
+      .map((line) => ({
+        id: crypto.randomUUID(),
+        section: COST_SECTIONS.includes(line.section as CostSection) ? (line.section as CostSection) : "Labour",
+        description: line.description ?? "",
+        quantity: Number(line.quantity ?? 0),
+        unit: line.unit ?? "",
+        rate: Number(line.rate ?? 0),
+        sourcePurchaseOrderId: selectedPurchaseOrder.id,
+        sourcePurchaseOrderLineItemId: line.id,
+        sourcePurchaseOrderNumber: selectedPurchaseOrder.purchase_order_number,
+      } satisfies CostLine));
+
+    if (importedLines.length === 0) {
+      return;
+    }
+
+    updateActiveVariation("costLines", [...activeVariation.costLines, ...importedLines]);
+    setSelectedPurchaseOrderLineIds(new Set());
   };
 
   const updateCostLine = <K extends keyof CostLine>(lineId: string, key: K, value: CostLine[K]) => {
@@ -855,6 +938,9 @@ export default function ProjectVariationsPage() {
           rate: Number(line.rate),
           total: Number(lineTotal(line).toFixed(2)),
           sort_order: index,
+          source_purchase_order_id: line.sourcePurchaseOrderId ?? null,
+          source_purchase_order_line_item_id: line.sourcePurchaseOrderLineItemId ?? null,
+          source_purchase_order_number: line.sourcePurchaseOrderNumber ?? "",
         }));
         const { error: insertLineItemsError } = await lineItemsTable.insert(lineItemsPayload);
         if (insertLineItemsError) {
@@ -1623,6 +1709,97 @@ export default function ProjectVariationsPage() {
                   <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[8px] bg-[#0B2739] px-3 text-sm font-medium text-white hover:bg-[#0B2739]`}><Plus className="mr-1 h-4 w-4" />Add Item</Button>
                 </div>
 
+                <div className="rounded-[8px] border border-[#D9DEE5] bg-[#F8F9FC]">
+                  <button
+                    type="button"
+                    onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
+                    className="flex w-full items-center justify-between px-3 py-3 text-left"
+                  >
+                    <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#607089]`}>
+                      Import From Purchase Order
+                    </p>
+                    <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isPurchaseOrderImportOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {isPurchaseOrderImportOpen ? (
+                    <div className="border-t border-[#E5EAF2] px-3 pb-3 pt-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={selectedPurchaseOrderId}
+                          onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
+                          className={`${interMedium.className} h-10 min-w-[260px] rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                        >
+                          <option value="">Select purchase order</option>
+                          {purchaseOrders.map((purchaseOrder) => (
+                            <option key={purchaseOrder.id} value={purchaseOrder.id}>
+                              {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={importSelectedPurchaseOrderLines}
+                          disabled={selectedPurchaseOrderLineIds.size === 0}
+                          className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                        >
+                          Import Selected PO Lines
+                        </Button>
+                      </div>
+                      {selectedPurchaseOrder ? (
+                        <div className="mt-3 overflow-hidden rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC]">
+                          <div className={`${interMedium.className} grid grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
+                            <span />
+                            <span>Description</span>
+                            <span>Section</span>
+                            <span>Qty</span>
+                            <span>Rate</span>
+                            <span className="text-right">Total</span>
+                          </div>
+                          <div className="divide-y divide-[#EEF2F7]">
+                            {selectedPurchaseOrderLineOptions.length > 0 ? (
+                              selectedPurchaseOrderLineOptions.map((line) => {
+                                const alreadyImported = activeVariation?.costLines.some((costLine) => costLine.sourcePurchaseOrderLineItemId === line.id) ?? false;
+                                return (
+                                  <label key={line.id} className="grid cursor-pointer grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 px-3 py-2">
+                                    <span className="flex items-center justify-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedPurchaseOrderLineIds.has(line.id)}
+                                        onChange={() => togglePurchaseOrderLine(line.id)}
+                                        disabled={alreadyImported}
+                                        className="h-4 w-4 rounded border-[#CBD5E1]"
+                                      />
+                                    </span>
+                                    <span className="min-w-0">
+                                      <span className="block truncate text-sm font-medium text-[#1d2433]">{line.description || "Untitled line item"}</span>
+                                      {alreadyImported ? (
+                                        <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[#64748B]`}>
+                                          Already imported into this variation
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                    <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.section}</span>
+                                    <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.quantity}</span>
+                                    <span className={`${interMedium.className} text-sm text-[#475569]`}>{toMoney(line.rate)}</span>
+                                    <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>
+                                      {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
+                                    </span>
+                                  </label>
+                                );
+                              })
+                            ) : (
+                              <p className={`${interMedium.className} px-3 py-3 text-sm text-[#64748B]`}>
+                                No purchase order line items available to import.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
                 <div className="rounded-[6px] border border-[#E5EAF2] overflow-visible">
                   <div className={`${interMedium.className} grid items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089]`} style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
                     <span>Description</span><span>Section</span><span>Qty</span><span>Unit</span><span>Rate</span><span className="text-right">Total</span>
@@ -1631,10 +1808,17 @@ export default function ProjectVariationsPage() {
                   <div className="divide-y divide-[#EEF2F7]">
                     {activeVariation.costLines.map((line) => (
                       <div key={line.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
-                        <DescriptionInputWithPreview
-                          value={line.description}
-                          onChange={(value) => updateCostLine(line.id, "description", value)}
-                        />
+                        <div>
+                          <DescriptionInputWithPreview
+                            value={line.description}
+                            onChange={(value) => updateCostLine(line.id, "description", value)}
+                          />
+                          {line.sourcePurchaseOrderNumber ? (
+                            <p className={`${interMedium.className} mt-1 text-[11px] text-[#64748B]`}>
+                              Snapshot from {line.sourcePurchaseOrderNumber}
+                            </p>
+                          ) : null}
+                        </div>
                         <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}>
                           {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
                         </select>

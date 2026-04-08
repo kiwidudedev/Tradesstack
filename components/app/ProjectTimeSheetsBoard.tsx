@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, Clock3, Download, FileText, Timer, Users } from "lucide-react";
+import { Check, ChevronDown, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -13,14 +14,15 @@ type DashboardRange = "Today" | "This week" | "All recent";
 
 const MAX_ENTRY_ROWS = 1000;
 const MAX_EVENT_ROWS = 80;
-const MAX_TIMELINE_ROWS = 120;
-
 interface TimeEntryRow {
   id: string;
   worker_user_id: string;
   worker_name: string;
   company_name: string;
   trade_name: string;
+  purchase_order_id: string | null;
+  purchase_order_number: string;
+  purchase_order_title: string;
   clock_in_at: string;
   clock_out_at: string | null;
   clock_in_latitude: number | null;
@@ -48,6 +50,13 @@ interface ProjectContext {
   projectId: string;
   projectName: string;
   memberId: string | null;
+}
+
+interface PurchaseOrderOption {
+  id: string;
+  purchase_order_number: string;
+  purchase_order_title: string;
+  status: string;
 }
 
 function startOfLocalDay(date: Date) {
@@ -94,6 +103,17 @@ function formatTime(value: string | null) {
     return "—";
   }
   return parsed.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "—";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "—";
+  }
+  return parsed.toLocaleDateString("en-NZ", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function formatHours(hours: number) {
@@ -168,15 +188,15 @@ export function ProjectTimeSheetsBoard() {
   const [context, setContext] = useState<ProjectContext | null>(null);
   const [entries, setEntries] = useState<TimeEntryRow[]>([]);
   const [events, setEvents] = useState<TimeEventRow[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderOption[]>([]);
   const [range, setRange] = useState<DashboardRange>("This week");
   const [tradeFilter, setTradeFilter] = useState("All trades");
   const [companyFilter, setCompanyFilter] = useState("All companies");
   const [workerFilter, setWorkerFilter] = useState("All workers");
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState("");
+  const [, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const isLoadingRef = useRef(false);
 
   const supabase = useMemo(() => {
@@ -209,6 +229,13 @@ export function ProjectTimeSheetsBoard() {
       message: payload.message,
     });
   };
+
+  const isWorkerRole = session?.role === "worker";
+
+  const selectedPurchaseOrder = useMemo(
+    () => purchaseOrders.find((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId) ?? null,
+    [purchaseOrders, selectedPurchaseOrderId]
+  );
 
   const loadData = async (options?: { showLoading?: boolean }) => {
     if (!supabase || !routeProjectSlug || !session?.id || isLoadingRef.current) {
@@ -264,10 +291,10 @@ export function ProjectTimeSheetsBoard() {
       since.setDate(since.getDate() - 120);
       const sinceIso = since.toISOString();
 
-      const [entriesResult, eventsResult] = await Promise.all([
+      const [entriesResult, eventsResult, purchaseOrdersResult] = await Promise.all([
         entriesTable
           .select(
-            "id, worker_user_id, worker_name, company_name, trade_name, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, clock_out_latitude, clock_out_longitude, clock_out_accuracy_meters, warning_8h5_at, auto_clocked_out, auto_clocked_out_at, total_hours, notes"
+            "id, worker_user_id, worker_name, company_name, trade_name, purchase_order_id, purchase_order_number, purchase_order_title, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, clock_out_latitude, clock_out_longitude, clock_out_accuracy_meters, warning_8h5_at, auto_clocked_out, auto_clocked_out_at, total_hours, notes"
           )
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
@@ -281,6 +308,12 @@ export function ProjectTimeSheetsBoard() {
           .gte("created_at", sinceIso)
           .order("created_at", { ascending: false })
           .limit(MAX_EVENT_ROWS),
+        supabase
+          .from("project_purchase_orders")
+          .select("id, purchase_order_number, purchase_order_title, status")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("created_at", { ascending: false }),
       ]);
 
       if (entriesResult.error) {
@@ -289,6 +322,9 @@ export function ProjectTimeSheetsBoard() {
       if (eventsResult.error) {
         throw new Error(eventsResult.error.message);
       }
+      if (purchaseOrdersResult.error) {
+        throw new Error(purchaseOrdersResult.error.message);
+      }
 
       const normalizedEntries = ((entriesResult.data ?? []) as TimeEntryRow[]).map((entry) => ({
         ...entry,
@@ -296,6 +332,8 @@ export function ProjectTimeSheetsBoard() {
         trade_name:
           entry.trade_name?.trim() ||
           (entry.worker_user_id === session.id && (session.role === "owner" || session.role === "admin") ? "Management" : "Site Crew"),
+        purchase_order_number: entry.purchase_order_number?.trim() || "",
+        purchase_order_title: entry.purchase_order_title?.trim() || "",
       }));
 
       setContext({
@@ -306,6 +344,7 @@ export function ProjectTimeSheetsBoard() {
       });
       setEntries(normalizedEntries);
       setEvents((eventsResult.data ?? []) as TimeEventRow[]);
+      setPurchaseOrders((purchaseOrdersResult.data ?? []) as PurchaseOrderOption[]);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load time sheets.");
     } finally {
@@ -320,6 +359,19 @@ export function ProjectTimeSheetsBoard() {
     void loadData({ showLoading: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
+
+  useEffect(() => {
+    if (!isWorkerRole) {
+      setSelectedPurchaseOrderId("");
+      return;
+    }
+
+    if (selectedPurchaseOrderId && purchaseOrders.some((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId)) {
+      return;
+    }
+
+    setSelectedPurchaseOrderId(purchaseOrders[0]?.id ?? "");
+  }, [isWorkerRole, purchaseOrders, selectedPurchaseOrderId]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -343,9 +395,12 @@ export function ProjectTimeSheetsBoard() {
 
     setIsSaving(true);
     setError(null);
-    setNotice(null);
 
     try {
+      if (isWorkerRole && !selectedPurchaseOrder) {
+        throw new Error("Select a purchase order before clocking in.");
+      }
+
       const location = await captureLocation();
       const nowIso = new Date().toISOString();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -361,6 +416,9 @@ export function ProjectTimeSheetsBoard() {
           worker_name: session.name || "Worker",
           company_name: session.organizationName?.trim() || "TradesStack",
           trade_name: session.role === "owner" || session.role === "admin" ? "Management" : "Site Crew",
+          purchase_order_id: isWorkerRole ? selectedPurchaseOrder?.id ?? null : null,
+          purchase_order_number: isWorkerRole ? selectedPurchaseOrder?.purchase_order_number ?? "" : "",
+          purchase_order_title: isWorkerRole ? selectedPurchaseOrder?.purchase_order_title ?? "" : "",
           clock_in_at: nowIso,
           clock_in_latitude: location.latitude,
           clock_in_longitude: location.longitude,
@@ -376,10 +434,9 @@ export function ProjectTimeSheetsBoard() {
       await writeEvent({
         entryId: data?.id ?? null,
         eventType: "clock_in",
-        message: `${session.name || "Worker"} clocked in - ${formatTime(nowIso)}`,
+        message: `${session.name || "Worker"} clocked in - ${formatTime(nowIso)}${isWorkerRole && selectedPurchaseOrder ? ` (${selectedPurchaseOrder.purchase_order_number})` : ""}`,
       });
 
-      setNotice(`Clocked in at ${formatTime(nowIso)} with location captured.`);
       await loadData({ showLoading: false });
     } catch (clockInError) {
       setError(clockInError instanceof Error ? clockInError.message : "Unable to clock in.");
@@ -395,7 +452,6 @@ export function ProjectTimeSheetsBoard() {
 
     setIsSaving(true);
     setError(null);
-    setNotice(null);
 
     try {
       const location = await captureLocation();
@@ -425,7 +481,6 @@ export function ProjectTimeSheetsBoard() {
         message: `${activeMyEntry.worker_name} clocked out - ${formatTime(nowIso)}`,
       });
 
-      setNotice(`Clocked out at ${formatTime(nowIso)} with location captured.`);
       await loadData({ showLoading: false });
     } catch (clockOutError) {
       setError(clockOutError instanceof Error ? clockOutError.message : "Unable to clock out.");
@@ -474,30 +529,6 @@ export function ProjectTimeSheetsBoard() {
     return { onSiteNow, totalHours, workersToday, avgHours, overtimeAlerts, missingClockOuts };
   }, [filteredEntries, liveWorkforce.length, now]);
 
-  const timelineRows = useMemo(() => {
-    return filteredEntries
-      .slice()
-      .sort((a, b) => new Date(a.clock_in_at).getTime() - new Date(b.clock_in_at).getTime())
-      .slice(0, MAX_TIMELINE_ROWS)
-      .map((entry) => {
-        const start = new Date(entry.clock_in_at);
-        const end = entry.clock_out_at ? new Date(entry.clock_out_at) : now;
-        const dayStart = startOfLocalDay(start);
-        const minutesFromDayStart = (start.getTime() - dayStart.getTime()) / 60_000;
-        const durationMinutes = Math.max(1, (end.getTime() - start.getTime()) / 60_000);
-        const leftPct = Math.max(0, Math.min(100, (minutesFromDayStart / (24 * 60)) * 100));
-        const widthPct = Math.max(1, Math.min(100 - leftPct, (durationMinutes / (24 * 60)) * 100));
-        return {
-          id: entry.id,
-          workerName: entry.worker_name,
-          rangeLabel: `${formatTime(entry.clock_in_at)} → ${formatTime(entry.clock_out_at)}`,
-          leftPct,
-          widthPct,
-          isOvertime: getHours(entry, now) >= 9,
-        };
-      });
-  }, [filteredEntries, now]);
-
   const insights = useMemo(() => {
     const overNineHours = filteredEntries.filter((entry) => getHours(entry, now) > 9).length;
     const autoClockedCount = filteredEntries.filter((entry) => entry.auto_clocked_out).length;
@@ -513,61 +544,18 @@ export function ProjectTimeSheetsBoard() {
     ];
   }, [events.length, filteredEntries, now]);
 
-  const registerGroups = useMemo(() => {
-    const groups = new Map<
-      string,
-      {
-        key: string;
-        trade: string;
-        company: string;
-        entries: TimeEntryRow[];
-      }
-    >();
-
-    filteredEntries.forEach((entry) => {
-      const trade = entry.trade_name || "Unassigned";
-      const company = entry.company_name || "Unassigned";
-      const key = `${trade}__${company}`;
-      if (!groups.has(key)) {
-        groups.set(key, { key, trade, company, entries: [] });
-      }
-      groups.get(key)?.entries.push(entry);
-    });
-
-    return Array.from(groups.values())
-      .map((group) => {
-        const sortedEntries = group.entries
-          .slice()
-          .sort((a, b) => new Date(b.clock_in_at).getTime() - new Date(a.clock_in_at).getTime());
-        const totalHours = sortedEntries.reduce((sum, entry) => sum + getHours(entry, now), 0);
-        const riskCount = sortedEntries.filter((entry) => getHours(entry, now) >= 8.5 || entry.auto_clocked_out).length;
-        return {
-          ...group,
-          entries: sortedEntries,
-          totalHours,
-          riskCount,
-          entryCount: sortedEntries.length,
-        };
-      })
-      .sort((a, b) => a.trade.localeCompare(b.trade) || a.company.localeCompare(b.company));
-  }, [filteredEntries, now]);
-
-  useEffect(() => {
-    setExpandedGroups((current) => {
-      const next: Record<string, boolean> = {};
-      registerGroups.forEach((group, index) => {
-        next[group.key] = current[group.key] ?? index === 0;
-      });
-      return next;
-    });
-  }, [registerGroups]);
+  const sortedEntries = useMemo(
+    () => filteredEntries.slice().sort((a, b) => new Date(b.clock_in_at).getTime() - new Date(a.clock_in_at).getTime()),
+    [filteredEntries]
+  );
 
   const exportCsv = () => {
-    const header = ["Worker", "Trade", "Company", "Clock In", "Clock Out", "Total Hours", "Overtime Flag", "Auto Clocked", "Clock In Location", "Clock Out Location", "Notes"];
+    const header = ["Worker", "Trade", "Company", "Purchase Order", "Clock In", "Clock Out", "Total Hours", "Overtime Flag", "Auto Clocked", "Clock In Location", "Clock Out Location", "Notes"];
     const rows = filteredEntries.map((entry) => [
       entry.worker_name,
       entry.trade_name,
       entry.company_name,
+      entry.purchase_order_number ? `${entry.purchase_order_number}${entry.purchase_order_title ? ` - ${entry.purchase_order_title}` : ""}` : "",
       entry.clock_in_at,
       entry.clock_out_at ?? "",
       getHours(entry, now).toFixed(2),
@@ -591,205 +579,260 @@ export function ProjectTimeSheetsBoard() {
   };
 
   return (
-    <div className="space-y-4 bg-[#F8F9FC]">
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-4 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Time Sheets</CardTitle>
-              <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-                Real-time labour visibility and control for {context?.projectName ?? "this job"}.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={range}
-                onChange={(event) => setRange(event.target.value as DashboardRange)}
-                className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}
-              >
-                <option value="Today">Today</option>
-                <option value="This week">This week</option>
-                <option value="All recent">All recent</option>
-              </select>
-              <Button type="button" variant="outline" className="h-10 rounded-[6px] border-[#D6DDE9] bg-white px-3 text-[#1D2433]" onClick={exportCsv}>
-                <Download className="mr-1.5 h-4 w-4" />
-                CSV
-              </Button>
-              <Button type="button" variant="outline" className="h-10 rounded-[6px] border-[#D6DDE9] bg-white px-3 text-[#1D2433]" onClick={() => window.print()}>
-                <FileText className="mr-1.5 h-4 w-4" />
-                PDF
-              </Button>
-            </div>
+    <div className="min-h-full space-y-4 bg-[#F3F4F6]">
+      <section className="space-y-4 bg-[#F3F4F6] pt-2">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-[41.6px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Time Sheets</h1>
+            <p className={`${interMedium.className} mt-4 text-[15px] font-medium text-[#6B7280]`}>
+              Real-time labour visibility and control for {context?.projectName ?? "this job"}.
+            </p>
           </div>
-          {notice ? <p className={`${interMedium.className} mt-4 rounded-[6px] border border-[#D6E7FB] bg-[#EFF6FF] px-3 py-2 text-sm font-medium text-[#1D4ED8]`}>{notice}</p> : null}
-          {error ? <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p> : null}
-        </CardHeader>
-      </Card>
 
-      <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
-        <div className="flex min-w-[900px] divide-x divide-[#E3E8F0]">
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Users className="h-5 w-5 text-[#1D4ED8]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>On Site Now</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.onSiteNow}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Clock3 className="h-5 w-5 text-[#B45309]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Overtime Alerts</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{summary.overtimeAlerts}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Complete</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{Math.max(0, summary.workersToday - summary.missingClockOuts)}</p>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center gap-3 px-5 py-4">
-            <Timer className="h-5 w-5 text-[#0F766E]" />
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Total Hours</p>
-              <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{formatHours(summary.totalHours)}</p>
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={`${interMedium.className} h-8 rounded-[999px] border-[#D9DEE5] !bg-[#F7F8FA] px-3 text-[13px] text-[#0B2639] shadow-none hover:!border-[#D9DEE5] hover:!bg-[#F7F8FA] hover:!text-[#0B2639]`}
+                >
+                  Actions
+                  <ChevronDown className="ml-1 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side="top"
+                align="end"
+                sideOffset={8}
+                className="!z-[200] min-w-[220px] rounded-[12px] border border-[#D9DEE5] !bg-[#F3F4F6] p-1.5 opacity-100 shadow-[0_10px_20px_rgba(16,24,40,0.12)]"
+              >
+                <DropdownMenuItem
+                  onClick={() => setRange("Today")}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                >
+                  <span className="mr-2 inline-flex w-4 items-center justify-center">
+                    {range === "Today" ? <Check className="h-4 w-4" /> : null}
+                  </span>
+                  Today
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setRange("This week")}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                >
+                  <span className="mr-2 inline-flex w-4 items-center justify-center">
+                    {range === "This week" ? <Check className="h-4 w-4" /> : null}
+                  </span>
+                  This week
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setRange("All recent")}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                >
+                  <span className="mr-2 inline-flex w-4 items-center justify-center">
+                    {range === "All recent" ? <Check className="h-4 w-4" /> : null}
+                  </span>
+                  All recent
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                <DropdownMenuItem
+                  onClick={exportCsv}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => window.print()}
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-      </div>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        {error ? (
+          <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
+            {error}
+          </p>
+        ) : null}
+      </section>
+
+      {activeMyEntry ? (
+        <section className="sticky top-4 z-30">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#BDE7C9] bg-[#ECFDF3] px-4 py-3 shadow-[0_10px_22px_-18px_rgba(15,23,42,0.18)]">
+            <div>
+              <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>
+                You are clocked in
+              </p>
+              <p className="mt-1 text-[15px] font-semibold text-[#14532D]">
+                {formatTime(activeMyEntry.clock_in_at)} → Now ({formatHours(getHours(activeMyEntry, now))})
+              </p>
+              {activeMyEntry.purchase_order_number ? (
+                <p className={`${interMedium.className} mt-1 text-[12px] font-medium text-[#166534]`}>
+                  Linked to {activeMyEntry.purchase_order_number}
+                  {activeMyEntry.purchase_order_title ? ` - ${activeMyEntry.purchase_order_title}` : ""}
+                </p>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              onClick={() => void clockOut()}
+              disabled={isSaving}
+              className="h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]"
+            >
+              Clock Out
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="bg-[#F3F4F6]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>On Site Now</p>
+            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{summary.onSiteNow}</p>
+            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
+              Workers currently clocked in on site.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#E11D48]`}>Overtime Alerts</p>
+            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{summary.overtimeAlerts}</p>
+            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
+              Entries trending over the overtime threshold.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#0F766E]`}>Complete</p>
+            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">
+              {Math.max(0, summary.workersToday - summary.missingClockOuts)}
+            </p>
+            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
+              Finished shifts recorded in this range.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#B45309]`}>Total Hours</p>
+            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{formatHours(summary.totalHours)}</p>
+            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
+              Total labour hours captured in the selected range.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <Card className="rounded-[30px] border border-[#D9DEE5] !bg-[#F6F7F9] shadow-none">
         <CardHeader className="pb-3 pt-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Workforce Register</h3>
-              <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#64748B]`}>{insights[0]}</p>
+              <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>
+                Workforce Register
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7F97]`}>Site Clocking</p>
-              {activeMyEntry ? (
-                <span className={`${interMedium.className} inline-flex items-center gap-1 text-xs font-semibold text-[#1F2E45]`}>
-                  <Timer className="h-3.5 w-3.5 text-[#F74917]" />
-                  {formatHours(getHours(activeMyEntry, now))}
-                </span>
+              <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>Site Clocking</p>
+              {isWorkerRole ? (
+                <select
+                  value={selectedPurchaseOrderId}
+                  onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
+                  disabled={isSaving || Boolean(activeMyEntry)}
+                  className={`${interMedium.className} h-9 min-w-[240px] rounded-[8px] border border-[#D6DDE9] bg-white px-3 text-[12px] font-medium text-[#1D2433] disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#94A3B8]`}
+                >
+                  <option value="">Select purchase order</option>
+                  {purchaseOrders.map((purchaseOrder) => (
+                    <option key={purchaseOrder.id} value={purchaseOrder.id}>
+                      {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
+                    </option>
+                  ))}
+                </select>
               ) : null}
-              <Button type="button" onClick={() => void clockIn()} disabled={isSaving || Boolean(activeMyEntry)} className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]">Clock In</Button>
-              <Button type="button" variant="outline" onClick={() => void clockOut()} disabled={isSaving || !activeMyEntry} className="h-9 rounded-[6px] border-[#D6DDE9] bg-white px-3 text-xs font-medium text-[#1D2433]">Clock Out</Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  if (activeMyEntry) {
+                    void clockOut();
+                    return;
+                  }
+                  void clockIn();
+                }}
+                disabled={isSaving}
+                className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]"
+              >
+                {activeMyEntry ? "Clock Out" : "Clock In"}
+              </Button>
             </div>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
+            <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
               {tradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
-            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
+            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
               {companyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
-            <select value={workerFilter} onChange={(event) => setWorkerFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[6px] border border-[#D6DDE9] bg-[#F8FAFC] px-3 text-sm font-medium text-[#1D2433]`}>
+            <select value={workerFilter} onChange={(event) => setWorkerFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
               {workerOptions.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </div>
         </CardHeader>
         <CardContent className="pt-0 pb-5">
-          <section className="overflow-hidden rounded-[6px] border border-[#E8EDF5]">
-            <div className={`${interMedium.className} grid grid-cols-[1.8fr_0.9fr_0.9fr_0.9fr] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
-              <p>Group</p>
-              <p className="text-right">Entries</p>
-              <p className="text-right">Total Hours</p>
-              <p className="text-right">Risks</p>
-            </div>
-
-            {isLoading ? (
-              <p className={`${interMedium.className} px-3 py-4 text-sm font-medium text-[#64748B]`}>Loading register...</p>
-            ) : registerGroups.length === 0 ? (
-              <p className={`${interMedium.className} px-3 py-4 text-sm font-medium text-[#64748B]`}>No time entries in this selection.</p>
-            ) : (
-              <div>
-                {registerGroups.map((group) => (
-                  <div key={group.key} className="border-t border-[#EEF2F7] first:border-t-0">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedGroups((current) => ({ ...current, [group.key]: !current[group.key] }))}
-                      className="grid w-full grid-cols-[1.8fr_0.9fr_0.9fr_0.9fr] items-center px-3 py-2.5 text-left transition-colors hover:bg-[#FBFDFF]"
-                    >
-                      <p className="text-sm font-semibold text-[#0F172A]">
-                        <span className="mr-2 inline-block w-3 text-[#64748B]">{expandedGroups[group.key] ? "−" : "+"}</span>
-                        {group.trade} / {group.company}
-                      </p>
-                      <p className={`${interMedium.className} text-right text-sm font-medium text-[#334155]`}>{group.entryCount}</p>
-                      <p className={`${interMedium.className} text-right text-sm font-medium text-[#334155]`}>{formatHours(group.totalHours)}</p>
-                      <p className={`text-right text-sm font-semibold ${group.riskCount > 0 ? "text-[#B45309]" : "text-[#64748B]"}`}>{group.riskCount}</p>
-                    </button>
-
-                    {expandedGroups[group.key] ? (
-                      <div className="border-t border-[#EEF2F7] bg-[#FCFDFF] px-3 py-2.5">
-                        <div className="overflow-auto rounded-[6px] border border-[#E9EEF5] bg-white">
-                          <table className="min-w-[860px] border-collapse">
-                            <thead>
-                              <tr className={`${interMedium.className} bg-[#F8FAFC] text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>
-                                <th className="px-3 py-2 text-left">Worker</th>
-                                <th className="px-3 py-2 text-left">Clock In</th>
-                                <th className="px-3 py-2 text-left">Clock Out</th>
-                                <th className="px-3 py-2 text-left">Duration</th>
-                                <th className="px-3 py-2 text-left">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.entries.map((entry) => {
-                                const status = registerStatus(entry, now);
-                                return (
-                                  <tr key={entry.id} className="border-t border-[#EEF2F7] first:border-t-0">
-                                    <td className="px-3 py-2 text-sm font-semibold text-[#0F172A]">{entry.worker_name}</td>
-                                    <td className={`${interMedium.className} px-3 py-2 text-sm font-medium text-[#334155]`}>{formatTime(entry.clock_in_at)}</td>
-                                    <td className={`${interMedium.className} px-3 py-2 text-sm font-medium text-[#334155]`}>{formatTime(entry.clock_out_at)}</td>
-                                    <td className={`${interMedium.className} px-3 py-2 text-sm font-medium text-[#334155]`}>{formatHours(getHours(entry, now))}</td>
-                                    <td className="px-3 py-2">
-                                      <span className={`inline-flex rounded-[6px] border px-2 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-          <p className={`${interMedium.className} mt-3 text-xs text-[#7A889C]`}>
+          <p className={`${interMedium.className} mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>
+            Register Summary
+          </p>
+          <div className="mt-3 overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-white">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className={`${interMedium.className} bg-[#F8F9FB] text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>
+                  <th className="px-4 py-3 text-left">Worker</th>
+                  <th className="px-4 py-3 text-left">Purchase Order</th>
+                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-4 py-3 text-left">Clock In</th>
+                  <th className="px-4 py-3 text-left">Clock Out</th>
+                  <th className="px-4 py-3 text-left">Duration</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedEntries.map((entry) => {
+                  const status = registerStatus(entry, now);
+                  return (
+                    <tr key={entry.id} className="border-t border-[#E5E7EB] first:border-t-0">
+                      <td className="px-4 py-3 text-[14px] font-semibold text-[#202124]">{entry.worker_name}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>
+                        {entry.purchase_order_number ? (
+                          <span>
+                            {entry.purchase_order_number}
+                            {entry.purchase_order_title ? ` - ${entry.purchase_order_title}` : ""}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatDate(entry.clock_in_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatTime(entry.clock_in_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatTime(entry.clock_out_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatHours(getHours(entry, now))}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-[999px] border px-2.5 py-1 text-[12px] font-semibold ${status.tone}`}>{status.label}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className={`${interMedium.className} mt-3 text-[12px] text-[#7A889C]`}>
             {insights[2]} Coordinates are logged at clock in/out for audit traceability.
           </p>
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-2 pt-5">
-          <h3 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Workforce Overview</h3>
-        </CardHeader>
-        <CardContent className="pb-5">
-          <div className="space-y-2">
-            {timelineRows.length === 0 ? (
-              <p className={`${interMedium.className} rounded-[6px] border border-dashed border-[#D7DFEC] bg-[#FAFCFF] px-4 py-3 text-sm font-medium text-[#64748B]`}>No timeline data in this range.</p>
-            ) : (
-              <>
-                <div className="relative h-0"><div className="absolute left-[50%] top-0 z-10 h-4 border-l-2 border-dashed border-[#94A3B8]" /></div>
-                {timelineRows.map((row) => (
-                  <div key={row.id} className="grid items-center gap-2 md:grid-cols-[220px_1fr_130px]">
-                    <p className={`${interMedium.className} text-sm font-semibold text-[#1F2E45]`}>{row.workerName}</p>
-                    <div className="relative h-6 rounded-[6px] bg-[#EAF0F8]">
-                      <div className={`absolute bottom-0 top-0 rounded-[6px] ${row.isOvertime ? "bg-[#F59E0B]" : "bg-[#0B4F8A]"}`} style={{ left: `${row.leftPct}%`, width: `${row.widthPct}%` }} />
-                    </div>
-                    <p className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>{row.rangeLabel}</p>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

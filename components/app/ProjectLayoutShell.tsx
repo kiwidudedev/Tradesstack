@@ -14,6 +14,11 @@ export default function ProjectLayoutShell({
   const projectId = params?.projectId ?? "";
   const projectDashboardPath = projectId ? `/app/projects/${projectId}/dashboard` : null;
   const projectBackHref = pathname === projectDashboardPath ? "/app/dashboard" : (projectDashboardPath ?? "/app/projects");
+  const isProjectTimeSheetsPage = projectId ? pathname === `/app/projects/${projectId}/job-management/time-sheets` : false;
+
+  if (isProjectTimeSheetsPage) {
+    return <>{children}</>;
+  }
 
   return (
     <main className="project-theme space-y-8 bg-[#F8F9FC] pb-8">

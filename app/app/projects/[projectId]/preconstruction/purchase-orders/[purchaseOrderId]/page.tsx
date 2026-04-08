@@ -33,6 +33,7 @@ interface CostLine {
   quantity: number;
   unit: string;
   rate: number;
+  sourceTimeSheetEntryId?: string | null;
 }
 
 interface AttachmentItem {
@@ -128,9 +129,11 @@ const PURCHASE_ORDER_ATTACHMENTS_BUCKET = "project-variation-attachments";
 function DescriptionInputWithPreview({
   value,
   onChange,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const hasContent = value.trim().length > 0;
 
@@ -140,6 +143,7 @@ function DescriptionInputWithPreview({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-10 min-w-[200px] rounded-[6px]"
+        disabled={disabled}
       />
       {hasContent ? (
         <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
@@ -385,7 +389,7 @@ export default function ProjectVariationsPage() {
           .eq("id", purchaseOrderId)
           .maybeSingle(),
         lineItemsTable
-          .select("id, purchase_order_id, section, description, quantity, unit, rate")
+          .select("id, purchase_order_id, section, description, quantity, unit, rate, source_time_sheet_entry_id")
           .eq("organization_id", resolvedOrganizationId)
           .eq("purchase_order_id", purchaseOrderId)
           .order("sort_order", { ascending: true }),
@@ -412,6 +416,7 @@ export default function ProjectVariationsPage() {
         quantity: number;
         unit: string;
         rate: number;
+        source_time_sheet_entry_id: string | null;
       }>;
       const attachmentRows = (attachmentRowsRaw ?? []) as Array<{
         id: string;
@@ -430,6 +435,7 @@ export default function ProjectVariationsPage() {
             quantity: Number(lineRow.quantity ?? 0),
             unit: lineRow.unit ?? "",
             rate: Number(lineRow.rate ?? 0),
+            sourceTimeSheetEntryId: lineRow.source_time_sheet_entry_id ?? null,
           }))
         : [makeDefaultCostLine("Labour")];
 
@@ -1056,6 +1062,7 @@ export default function ProjectVariationsPage() {
           quantity: Number(line.quantity),
           unit: line.unit,
           rate: Number(line.rate),
+          source_time_sheet_entry_id: line.sourceTimeSheetEntryId ?? null,
         })),
         p_attachments: activeVariation.attachments.map((attachment) => ({
           id: attachment.id,
@@ -1775,12 +1782,13 @@ export default function ProjectVariationsPage() {
                         <DescriptionInputWithPreview
                           value={line.description}
                           onChange={(value) => updateCostLine(line.id, "description", value)}
+                          disabled={Boolean(line.sourceTimeSheetEntryId)}
                         />
-                        <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}>
+                        <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} disabled={Boolean(line.sourceTimeSheetEntryId)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433] disabled:cursor-not-allowed disabled:bg-[#EEF2F7] disabled:text-[#7A889C]`}>
                           {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
                         </select>
-                        <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
-                        <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
+                        <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} disabled={Boolean(line.sourceTimeSheetEntryId)} className="h-10 w-[72px] rounded-[6px] px-2 disabled:bg-[#EEF2F7] disabled:text-[#7A889C]" />
+                        <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} disabled={Boolean(line.sourceTimeSheetEntryId)} className="h-10 w-[72px] rounded-[6px] px-2 disabled:bg-[#EEF2F7] disabled:text-[#7A889C]" />
                         <div className="relative w-[100px]">
                           <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                           <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-10 w-[100px] rounded-[6px] pl-6 pr-2" />
@@ -1791,6 +1799,7 @@ export default function ProjectVariationsPage() {
                             type="button"
                             variant="ghost"
                             onClick={() => removeCostLine(line.id)}
+                            disabled={Boolean(line.sourceTimeSheetEntryId)}
                             className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
                             aria-label="Delete line item"
                           >
