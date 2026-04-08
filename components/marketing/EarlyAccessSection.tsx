@@ -53,11 +53,10 @@ export function EarlyAccessSection() {
 
   return (
     <section
-      className="h-[800px] overflow-hidden bg-[#F5EFE6] bg-no-repeat px-6 pb-28 pt-28 text-[#0B2639] sm:px-8 sm:pb-32 sm:pt-32 lg:px-24 lg:pb-40 lg:pt-40"
+      className="h-[800px] overflow-hidden bg-[#F5EFE6] bg-[length:180%_auto] bg-no-repeat px-6 pb-28 pt-28 text-[#0B2639] sm:bg-[length:100%_auto] sm:px-8 sm:pb-32 sm:pt-32 lg:px-24 lg:pb-40 lg:pt-40"
       style={{
         backgroundImage: "url('/early access sign up background.png')",
         backgroundPosition: "right bottom",
-        backgroundSize: "100% auto",
       }}
     >
       <div className="mx-auto w-full max-w-[1380px] px-6 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8">

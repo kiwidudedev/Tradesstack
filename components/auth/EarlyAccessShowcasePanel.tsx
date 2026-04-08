@@ -91,10 +91,10 @@ export function EarlyAccessShowcasePanel({ closeHref }: EarlyAccessShowcasePanel
 
             <div className="mt-9 space-y-3">
               <h1
-                className={`${akzidenz.className} max-w-[15ch] text-[2.65rem] font-bold leading-[0.924] tracking-[-0.07em] text-[#0B2639] sm:max-w-none sm:text-[3.25rem]`}
+                className={`${akzidenz.className} max-w-[15ch] text-[2.2rem] font-bold leading-[0.924] tracking-[-0.07em] text-[#0B2639] sm:max-w-none sm:text-[3.25rem]`}
               >
-                <span className={`${akzidenzProBoldEx.className} block whitespace-nowrap font-black tracking-[-0.036em]`}>Get early access</span>
-                <span className={`${akzidenzProBoldEx.className} block whitespace-nowrap font-black tracking-[-0.036em]`}>to TradeStack</span>
+                <span className={`${akzidenzProBoldEx.className} block font-black tracking-[-0.036em] sm:whitespace-nowrap`}>Get early access</span>
+                <span className={`${akzidenzProBoldEx.className} block font-black tracking-[-0.036em] sm:whitespace-nowrap`}>to TradeStack</span>
               </h1>
               <p className="max-w-[30rem] text-[1.02rem] leading-[1.5] text-[#495d6f]" style={graphikStyle}>
                 This isn&apos;t a commitment and we&apos;re not taking your money, just giving you early access.

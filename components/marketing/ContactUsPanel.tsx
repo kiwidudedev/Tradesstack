@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { ArrowLeftCircle } from "lucide-react";
 import { akzidenzProBoldEx } from "@/lib/fonts";
@@ -239,10 +238,8 @@ export function ContactUsPanel({ closeHref = "/" }: ContactUsPanelProps) {
 
             <p className="text-[13px] text-[#0B2639]" style={graphikStyle}>
               By submitting this form I confirm I have read and accepted TradeStack&apos;s{" "}
-              <Link href="/privacy-policy" className="font-semibold underline underline-offset-2">
-                Privacy Policy
-              </Link>
-              .
+              <span className="font-semibold underline underline-offset-2">Privacy Policy</span> and{" "}
+              <span className="font-semibold underline underline-offset-2">Terms and Conditions</span>.
             </p>
 
             <div>

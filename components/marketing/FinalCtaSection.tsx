@@ -23,7 +23,33 @@ export function FinalCtaSection() {
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div className="flex flex-col gap-2">
+            <div className="mx-auto flex w-full max-w-[320px] flex-col gap-3 sm:hidden">
+              <Link
+                href="/contact-us"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] border-[1.5px] bg-transparent px-7 text-[15px] font-bold"
+                style={{
+                  fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif',
+                  borderColor: "#0B2639",
+                  color: "#0B2639",
+                }}
+              >
+                Contact Us
+              </Link>
+              <Link
+                href="/early-access"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+                style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+              >
+                Get Early Access
+              </Link>
+              <p
+                className="max-w-[260px] text-[14.4px] leading-[1.4] text-black"
+                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
+              >
+                No payment needed. Just sign up and we&apos;ll show you what we&apos;re building.
+              </p>
+            </div>
+            <div className="hidden flex-col gap-2 sm:flex">
               <Link
                 href="/early-access"
                 className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90"
@@ -40,7 +66,7 @@ export function FinalCtaSection() {
             </div>
             <Link
               href="/contact-us"
-              className="inline-flex min-h-[52px] items-center justify-center rounded-[8px] border-[1.5px] bg-transparent px-7 text-[15px] font-bold"
+              className="hidden min-h-[52px] items-center justify-center rounded-[8px] border-[1.5px] bg-transparent px-7 text-[15px] font-bold sm:inline-flex"
               style={{
                 fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif',
                 borderColor: "#0B2639",

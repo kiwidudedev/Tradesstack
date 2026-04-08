@@ -5,6 +5,36 @@ import { akzidenzProBoldEx } from "@/lib/fonts";
 
 const features = [
   {
+    label: "All-in-one Platform",
+    title: "Run the full job in one connected system",
+    description:
+      "From quoting and pricing through to invoicing and variations, TradeStack brings everything into one place — so you can run jobs properly without jumping between systems.",
+    bullets: [
+      "Quotes and job pricing",
+      "Variations and change tracking",
+      "Invoicing and payment tracking",
+      "Project scheduling and job tracking",
+      "Client and job management",
+      "Document and file management",
+      "All-in-one platform — no extra subscriptions",
+    ],
+    visual: (
+      <div className="relative aspect-[1.06/1] overflow-hidden rounded-[24px] bg-[#AACFDF]">
+        <video
+          className="h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-label="TradeStack all-in-one platform preview"
+        >
+          <source src="/Tradesstack-quote-feature.mp4" type="video/mp4" />
+        </video>
+      </div>
+    ),
+  },
+  {
     label: "Trade Pack Builder",
     title: "Instantly generate trade packs from full drawing sets",
     description:
@@ -18,13 +48,17 @@ const features = [
     ],
     visual: (
       <div className="relative aspect-[1.06/1] overflow-hidden rounded-[24px] bg-[#AACFDF]">
-        <Image
-          src="/Tradepack Features.png"
-          alt="TradeStack trade pack builder preview"
-          fill
-          className="object-cover"
-          sizes="(max-width: 1024px) 100vw, 42vw"
-        />
+        <video
+          className="h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-label="TradeStack trade pack builder preview"
+        >
+          <source src="/Tradesstack-tradepack-feature.mp4" type="video/mp4" />
+        </video>
       </div>
     ),
   },
@@ -42,13 +76,17 @@ const features = [
     ],
     visual: (
       <div className="relative aspect-[1.06/1] overflow-hidden rounded-[24px] bg-[#AACFDF]">
-        <Image
-          src="/tradesstackscopebuilder.png"
-          alt="TradeStack scope builder preview"
-          fill
-          className="object-cover"
-          sizes="(max-width: 1024px) 100vw, 42vw"
-        />
+        <video
+          className="h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-label="TradeStack scope builder preview"
+        >
+          <source src="/Tradesstack-scope-feature.mp4" type="video/mp4" />
+        </video>
       </div>
     ),
   },
@@ -112,46 +150,29 @@ const features = [
   },
   {
     label: "AI Assistant",
-    title: "Find answers across your project in seconds",
+    title: "Ask questions on the job & get answers instantly",
     description:
-      "Search drawings, scopes, RFIs, and project data instantly — so your team can find what they need without digging through files, messages, or notes.",
+      "From site details to methods and edge cases, get clear answers when you're unsure — without digging through documents or second guessing.",
     bullets: [
-      "Search drawings, scopes, and RFIs instantly",
-      "Find answers across all project information",
-      "Reduce time spent digging through files",
-      "Keep decisions based on the latest project data",
-      "Get clarity without chasing information",
+      "Get help with real on-site situations",
+      "Understand what to do, not just what it means",
+      "Quick answers across all trades",
+      "Reduce delays caused by uncertainty",
+      "Make confident calls, faster",
     ],
     visual: (
-      <div className="flex aspect-[1.06/1] items-center rounded-[24px] bg-[#AACFDF] p-5 sm:p-6">
-        <div className="w-full rounded-[18px] bg-white p-4 shadow-[0_12px_28px_rgba(11,38,57,0.08)]">
-          <div className="rounded-[14px] border border-[#0B2639]/10 px-4 py-3">
-            <p
-              className="text-[13px] leading-[1.18] text-[#0B2639]"
-              style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
-            >
-              Search drawings, scopes, RFIs, notes, and project details...
-            </p>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <div className="max-w-[85%] rounded-[16px] bg-[#0B2639] px-4 py-3 text-white">
-              <p
-                className="text-[13px] leading-[1.3]"
-                style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
-              >
-                Which drawings mention fire-rated access panels?
-              </p>
-            </div>
-          </div>
-          <div className="mt-3 max-w-[88%] rounded-[16px] bg-[#F5EFE6] px-4 py-3">
-            <p
-              className="text-[13px] leading-[1.22] text-[#0B2639]"
-              style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
-            >
-              TradeStack found references in the reflected ceiling plans, partition details, and the latest fire
-              stopping notes for Level 1 and Level 2.
-            </p>
-          </div>
+      <div className="relative aspect-[1.06/1] overflow-hidden rounded-[24px] bg-[#AACFDF]">
+        <div className="relative h-full w-full">
+          <video
+            className="h-full w-full object-cover"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+          >
+            <source src="/Tradesstack-assistant-feature.mp4" type="video/mp4" />
+          </video>
         </div>
       </div>
     ),
@@ -173,41 +194,14 @@ const features = [
         <div className="relative h-full w-full">
           <video
             className="h-full w-full object-cover"
+            src="/Tradesstack-newzealand-feature.mov"
             autoPlay
             muted
             loop
             playsInline
             preload="metadata"
-          >
-            <source src="/tradesstackaichat.mp4" type="video/mp4" />
-          </video>
+          />
         </div>
-      </div>
-    ),
-  },
-  {
-    label: "All-in-one Platform",
-    title: "Run the full job in one connected system",
-    description:
-      "From quoting and pricing through to invoicing and variations, TradeStack brings everything into one place — so you can run jobs properly without jumping between systems.",
-    bullets: [
-      "Quotes and job pricing",
-      "Variations and change tracking",
-      "Invoicing and payment tracking",
-      "Project scheduling and job tracking",
-      "Client and job management",
-      "Document and file management",
-      "All-in-one platform — no extra subscriptions",
-    ],
-    visual: (
-      <div className="relative aspect-[1.06/1] overflow-hidden rounded-[24px] bg-[#AACFDF]">
-        <Image
-          src="/All In One Platform (4).png"
-          alt="TradeStack all-in-one platform preview"
-          fill
-          className="object-cover"
-          sizes="(max-width: 1024px) 100vw, 42vw"
-        />
       </div>
     ),
   },

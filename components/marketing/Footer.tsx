@@ -28,8 +28,8 @@ const footerColumns = [
 ] as const;
 
 const bottomLinks = [
-  { label: "Privacy Policy", href: "/privacy-policy" },
-  { label: "Terms and Conditions", href: "/terms-of-service" },
+  { label: "Privacy Policy" },
+  { label: "Terms and Conditions" },
 ] as const;
 
 export function Footer() {
@@ -71,17 +71,26 @@ export function Footer() {
                 className="mt-3 text-[0.82rem] leading-[1.35] text-white/72"
                 style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
               >
-                By subscribing you agree to our{" "}
-                <Link href="/privacy-policy" className="text-white underline underline-offset-2">
-                  Privacy Policy
-                </Link>
+                By subscribing you agree to our <span className="text-white underline underline-offset-2">Privacy Policy</span> and{" "}
+                <span className="text-white underline underline-offset-2">Terms and Conditions</span>
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-2 lg:ml-36 lg:grid-cols-3 lg:gap-x-2 lg:gap-y-10">
             {footerColumns.map((column) => (
-              <div key={column.title} className={column.title === "Follow us" ? "col-span-2 lg:col-span-1 lg:pr-2" : "lg:pr-2"}>
+              <div
+                key={column.title}
+                className={
+                  column.title === "Product"
+                    ? "hidden lg:block lg:pr-2"
+                    : column.title === "Follow us"
+                      ? "col-span-2 lg:col-span-1 lg:pr-2"
+                      : "lg:pr-2"
+                }
+              >
+                {column.title === "Product" ? null : (
+                  <>
                 <h3
                   className="text-[1rem] font-bold text-[#AACFDF]"
                   style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
@@ -103,6 +112,8 @@ export function Footer() {
                     </li>
                   ))}
                 </ul>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -120,14 +131,13 @@ export function Footer() {
               </p>
 
               {bottomLinks.map((link) => (
-                <Link
+                <span
                   key={link.label}
-                  href={link.href}
-                  className="whitespace-nowrap text-[0.95rem] leading-[1.35] text-white transition hover:text-white"
+                  className="whitespace-nowrap text-[0.95rem] leading-[1.35] text-white"
                   style={{ fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif' }}
                 >
                   {link.label}
-                </Link>
+                </span>
               ))}
             </div>
           </div>

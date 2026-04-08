@@ -65,8 +65,8 @@ export function PreHeroInsights() {
           <h2
             className={`${akzidenzProBoldEx.className} text-[2rem] leading-[1.06] tracking-[-0.04em] text-[#0B2639] sm:text-[2.9rem] lg:text-[3.55rem]`}
           >
-            Why Tradies in NZ
-            <br />
+            Why Tradies in NZ{" "}
+            <br className="hidden sm:block" />
             Love TradesStack
           </h2>
           <p
@@ -79,7 +79,7 @@ export function PreHeroInsights() {
           </p>
           <div className="mt-8">
             <Link
-              href="/#trade-pack"
+              href="/#platform-features"
               className="inline-flex min-h-[52px] w-full items-center justify-center rounded-[8px] bg-[#F74918] px-7 text-[15px] font-bold text-white transition-opacity hover:opacity-90 sm:w-auto"
               style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
             >
