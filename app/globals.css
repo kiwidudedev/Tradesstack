@@ -6,8 +6,12 @@
   --brand-blue: #061A25;
   --brand-orange: #F74917;
   --brand-white: #ffffff;
+  --app-canvas: #FBFEFE;
+  --app-surface: #FBFEFE;
+  --app-surface-muted: #FBFEFE;
+  --app-border: rgba(6, 26, 37, 0.06);
 
-  --background: 220 27% 96%;
+  --background: 180 33% 99%;
   --foreground: 215 40% 12%;
   --card: 0 0% 100%;
   --card-foreground: 215 42% 13%;
@@ -36,12 +40,35 @@
 
 body {
   margin: 0;
-  background: hsl(var(--background));
+  background: var(--app-canvas);
   color: hsl(var(--foreground));
   text-rendering: geometricPrecision;
 }
 
+html,
+body,
+.app-shell,
+.app-shell > div,
+.app-shell main,
+.app-page-surface,
+.app-page-surface > main,
+.app-page-surface > div {
+  background-color: var(--app-canvas);
+}
+
 @layer components {
+  .app-canvas {
+    background-color: var(--app-canvas);
+  }
+
+  .app-surface {
+    background-color: var(--app-surface);
+  }
+
+  .app-surface-border {
+    border-color: var(--app-border);
+  }
+
   .marketing-surface {
     background: var(--brand-blue);
   }
@@ -51,23 +78,23 @@ body {
   }
 
   .square-cards [class*="rounded"][class*="border"][class*="bg-white"]:not(button):not(a):not(input):not(select):not(textarea) {
-    background-color: #F8F9FC !important;
+    background-color: var(--app-surface) !important;
   }
 
   .square-cards .ui-card {
-    background-color: #F8F9FC !important;
+    background-color: var(--app-surface) !important;
   }
 
   .square-cards .app-page-surface [class*="border"][class*="bg-white"]:not(button):not(a):not(input):not(select):not(textarea) {
-    background-color: #F8F9FC !important;
+    background-color: var(--app-surface) !important;
   }
 
   .square-cards .app-page-surface div[class~="bg-white"] {
-    background-color: #F8F9FC !important;
+    background-color: var(--app-surface) !important;
   }
 
   .square-cards .app-page-surface [class~="bg-white"]:not(button):not(a):not(input):not(select):not(textarea) {
-    background-color: #F8F9FC !important;
+    background-color: var(--app-surface) !important;
   }
 
   .square-cards .app-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
@@ -76,28 +103,80 @@ body {
   .square-cards .app-page-surface input[class~="bg-white"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
   .square-cards .app-page-surface select[class~="bg-white"],
   .square-cards .app-page-surface textarea[class~="bg-white"] {
-    background-color: #F8F9FC !important;
-  }
-
-  .project-theme [class*="bg-white"] {
-    background-color: #F8F9FC !important;
-  }
-
-  .project-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-  .project-theme select,
-  .project-theme textarea {
-    background-color: #F8F9FC !important;
+    background-color: var(--app-surface) !important;
   }
 
   .pill {
     @apply rounded-[6px] px-5 py-2 text-sm font-semibold tracking-tight;
   }
 
-  /* Flatten the detected first page-level card surface inside /app pages */
   .app-page-surface .app-page-header-card {
-    border-color: transparent !important;
-    background: transparent !important;
+    border-color: var(--app-border) !important;
+    background: var(--app-surface);
     box-shadow: none !important;
+  }
+
+  .app-shell [class*="bg-[#F3F4F6]"]:not(button):not(a),
+  .app-shell [class*="bg-[#F6F7F9]"]:not(button):not(a),
+  .app-shell [class*="bg-[#f6f7f9]"]:not(button):not(a),
+  .app-shell [class*="bg-[#F7FAFB]"]:not(button):not(a),
+  .app-shell [class*="bg-[#EEF3F3]"]:not(button):not(a),
+  .app-shell [class*="bg-[#F8F9FC]"]:not(button):not(a),
+  .app-shell [class*="bg-[#F8FAFC]"]:not(button):not(a),
+  .app-shell [class~="bg-white"]:not(button):not(a):not(.marketing-surface) {
+    background-color: var(--app-surface);
+  }
+
+  .app-shell input[class*="bg-[#F3F4F6]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class*="bg-[#F6F7F9]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class*="bg-[#f6f7f9]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class*="bg-[#F7FAFB]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class*="bg-[#EEF3F3]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class*="bg-[#F8F9FC]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class*="bg-[#F8FAFC]"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell input[class~="bg-white"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .app-shell select[class*="bg-[#F3F4F6]"],
+  .app-shell select[class*="bg-[#F6F7F9]"],
+  .app-shell select[class*="bg-[#f6f7f9]"],
+  .app-shell select[class*="bg-[#F7FAFB]"],
+  .app-shell select[class*="bg-[#EEF3F3]"],
+  .app-shell select[class*="bg-[#F8F9FC]"],
+  .app-shell select[class*="bg-[#F8FAFC]"],
+  .app-shell select[class~="bg-white"],
+  .app-shell textarea[class*="bg-[#F3F4F6]"],
+  .app-shell textarea[class*="bg-[#F6F7F9]"],
+  .app-shell textarea[class*="bg-[#f6f7f9]"],
+  .app-shell textarea[class*="bg-[#F7FAFB]"],
+  .app-shell textarea[class*="bg-[#EEF3F3]"],
+  .app-shell textarea[class*="bg-[#F8F9FC]"],
+  .app-shell textarea[class*="bg-[#F8FAFC]"],
+  .app-shell textarea[class~="bg-white"] {
+    background-color: var(--app-surface);
+  }
+
+  .app-shell [class*="border-[#d9dee5]"],
+  .app-shell [class*="border-[#D9DEE5]"],
+  .app-shell [class*="border-[#d1d9e6]"],
+  .app-shell [class*="border-[#d3dbe8]"],
+  .app-shell [class*="border-[#d6dfeb]"],
+  .app-shell [class*="border-[#E6EAF0]"],
+  .app-shell [class*="border-[#E5EAF2]"],
+  .app-shell [class*="border-[#E7EDF3]"],
+  .app-shell [class*="border-[#E6ECF5]"] {
+    border-color: var(--app-border);
+  }
+
+  .app-shell [class*="shadow-[0_1px_0_rgba(255,255,255,0.75)_inset"],
+  .app-shell [class*="shadow-[0_16px_34px_-28px_rgba(17,17,17,0.28)]"],
+  .app-shell [class*="shadow-[0_24px_70px_rgba(11,38,57,0.08)]"],
+  .app-shell [class*="shadow-[0_22px_50px_rgba(11,38,57,0.1)]"],
+  .app-shell [class*="shadow-[0_18px_48px_rgba(2,6,23,0.28)]"],
+  .app-shell [class*="shadow-[0_18px_48px_rgba(11,38,57,0.18)]"],
+  .app-shell [class*="shadow-[0_16px_40px_rgba(11,38,57,0.06)]"],
+  .app-shell [class*="shadow-[0_14px_28px_rgba(15,23,42,0.14)]"],
+  .app-shell [class*="shadow-[0_14px_28px_rgba(15,23,42,0.22)]"],
+  .app-shell [class*="shadow-[0_16px_34px_rgba(15,23,42,0.24)]"] {
+    box-shadow: none;
   }
 
   .eyebrow {

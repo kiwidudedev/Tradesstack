@@ -14,7 +14,7 @@ interface StatCardProps {
 
 export function StatCard({ title, value, helper, caption, status, rating, ratingText }: StatCardProps) {
   return (
-    <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+    <Card className="app-surface app-surface-border relative overflow-hidden shadow-none">
       <CardHeader className="pb-3 pt-7">
         <CardTitle className="text-2xl font-semibold leading-none tracking-[-0.02em] text-[#0F172A]">{title}</CardTitle>
       </CardHeader>
@@ -27,7 +27,7 @@ export function StatCard({ title, value, helper, caption, status, rating, rating
         ) : null}
         <p className="text-[1.08rem] leading-relaxed text-[#4a5770]">{helper}</p>
         {rating ? (
-          <div className="rounded-[6px] border border-[#d9deea] bg-white px-3 py-2.5">
+          <div className="app-surface app-surface-border rounded-[6px] border px-3 py-2.5">
             <div className="flex items-center gap-2 text-2xl font-semibold text-[#1e2430]">
               <Star className="h-4 w-4 fill-[var(--brand-orange)] text-[var(--brand-orange)]" />
               {rating}

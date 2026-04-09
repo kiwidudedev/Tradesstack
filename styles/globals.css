@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f4f2;
-  --surface: #ffffff;
+  --app-canvas: #FBFEFE;
+  --app-surface: #FBFEFE;
+  --app-surface-muted: #FBFEFE;
+  --app-border: #EAF3F3;
+  --background: #FBFEFE;
+  --surface: #FBFEFE;
   --surface-muted: #f7f7f5;
   --text: #1d1d1d;
   --text-muted: #6b6b6b;
@@ -39,7 +43,7 @@ body {
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--background);
+  background: var(--app-canvas);
   color: var(--text);
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   overflow-x: hidden;
@@ -156,9 +160,9 @@ nextjs-portal {
 }
 
 .app-shell:has(.dashboardScope) {
-  background: #f4f4f2;
+  background: var(--app-canvas);
 }
 
 .app-shell-main:has(.dashboardScope) {
-  background: #f4f4f2;
+  background: var(--app-canvas);
 }

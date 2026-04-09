@@ -13,10 +13,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className={`${interMedium.className} ${interBold.variable} app-shell min-h-screen bg-[#F8F9FC]`}>
-      <div className="mx-auto flex w-full max-w-[1720px] gap-0">
+    <div className={`${interMedium.className} ${interBold.variable} app-shell app-canvas min-h-screen`}>
+      <div className="mx-auto flex w-full max-w-[1760px] gap-0">
         <Sidebar />
-        <main className="min-w-0 flex-1 bg-[#F3F4F6] p-[0.384rem] sm:p-[1.024rem]">
+        <main className="app-canvas min-w-0 flex-1 p-[0.384rem] sm:p-[1.024rem]">
           <Topbar />
           <AppPageSurface>{children}</AppPageSurface>
         </main>

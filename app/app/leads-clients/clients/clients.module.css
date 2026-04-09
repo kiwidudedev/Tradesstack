@@ -1,7 +1,7 @@
 .clientsScope {
-  --dash-bg: #f3f4f6;
-  --dash-panel: #ffffff;
-  --dash-panel-muted: #f7f7f5;
+  --dash-bg: #FBFEFE;
+  --dash-panel: #FBFEFE;
+  --dash-panel-muted: #FBFEFE;
   --dash-border: rgba(17, 17, 17, 0.1);
   --dash-border-strong: rgba(17, 17, 17, 0.12);
   --dash-ink: #061a25;

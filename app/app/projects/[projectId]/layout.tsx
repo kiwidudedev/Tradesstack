@@ -16,5 +16,9 @@ export default async function ProjectLayout({
     notFound();
   }
 
-  return <ProjectLayoutShell>{children}</ProjectLayoutShell>;
+  return (
+    <ProjectLayoutShell projectName={project.name} projectStage={project.stage}>
+      {children}
+    </ProjectLayoutShell>
+  );
 }

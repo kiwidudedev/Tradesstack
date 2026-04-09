@@ -33,7 +33,7 @@ export function Topbar() {
         </div>
         <SheetContent
           side="left"
-          className="w-[292px] rounded-r-none border-0 bg-[#04234D] p-5"
+          className="w-[320px] rounded-r-none border-0 bg-[var(--app-surface)] p-3"
         >
           <SidebarNavContent />
         </SheetContent>

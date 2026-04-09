@@ -8,8 +8,8 @@ interface ProjectSectionCardProps {
 
 export function ProjectSectionCard({ title, description }: ProjectSectionCardProps) {
   return (
-    <main className="space-y-8 pb-8">
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+    <main className="app-canvas space-y-8 pb-8">
+      <Card className="app-surface app-surface-border relative overflow-hidden shadow-none">
         <CardHeader className="pt-7">
           <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{title}</CardTitle>
         </CardHeader>

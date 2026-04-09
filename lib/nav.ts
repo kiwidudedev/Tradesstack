@@ -5,7 +5,8 @@ export const marketingLinks = [
 
 export const mainDashboardNav = [
   { label: "Dashboard", href: "/app/dashboard", icon: "LayoutGrid" },
-  { label: "Leads & Clients", href: "/app/leads-clients", icon: "Users" },
+  { label: "Opportunities", href: "/app/leads-clients/opportunities", icon: "TrendingUp" },
+  { label: "Clients", href: "/app/leads-clients/clients", icon: "Users" },
   { label: "Projects", href: "/app/projects", icon: "FolderKanban" },
   { label: "Settings", href: "/app/settings", icon: "Settings" }
 ] as const;

@@ -127,7 +127,7 @@ export function ProjectDashboardBoard() {
 
   const projectBase = useMemo(() => `/app/projects/${routeProjectSlug}`, [routeProjectSlug]);
   const tradePackCardClassName =
-    "rounded-[30px] border border-[rgba(17,17,17,0.1)] !bg-[#F6F7F9] shadow-[0_20px_40px_rgba(17,17,17,0.04),0_4px_14px_rgba(17,17,17,0.03)]";
+    "app-surface app-surface-border rounded-[30px] border shadow-none";
 
   const overviewCards = useMemo(
     () => [
@@ -620,7 +620,7 @@ export function ProjectDashboardBoard() {
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 
   return (
-    <main className="-mb-8 space-y-6 bg-[#f3f4f6] pb-10">
+    <main className="app-canvas -mb-8 space-y-6 pb-10">
       <section className="flex flex-col justify-between gap-4 pt-[0.15rem] xl:flex-row xl:items-start">
         <div className="space-y-2">
           <h1 className="mt-[0.45rem] max-w-[920px] text-[clamp(1.55rem,2.8vw,2.6rem)] font-semibold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
@@ -695,7 +695,7 @@ export function ProjectDashboardBoard() {
                   <Link
                     key={item.label}
                     href={item.href}
-                    className="rounded-[1.15rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] p-[0.9rem] shadow-[0_10px_24px_rgba(17,17,17,0.03)] transition hover:bg-white"
+                    className="app-surface app-surface-border rounded-[1.15rem] border p-[0.9rem] shadow-none transition hover:bg-[var(--app-surface)]"
                   >
                     <div className="flex items-center gap-[0.55rem]">
                       <span className={`inline-flex h-[1.7rem] w-[1.7rem] items-center justify-center rounded-[0.65rem] ${item.iconClassName}`}>
@@ -733,7 +733,7 @@ export function ProjectDashboardBoard() {
               <Link
                 key={item.id}
                 href={item.href}
-                className="grid grid-cols-[auto_1fr_auto] items-center gap-[0.7rem] rounded-[1rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] px-[0.75rem] py-[0.7rem] shadow-[0_8px_18px_rgba(17,17,17,0.025)] transition hover:bg-white"
+                className="app-surface app-surface-border grid grid-cols-[auto_1fr_auto] items-center gap-[0.7rem] rounded-[1rem] border px-[0.75rem] py-[0.7rem] shadow-none transition hover:bg-[var(--app-surface)]"
               >
                 <span className="inline-flex h-[1.65rem] w-[1.65rem] shrink-0 items-center justify-center rounded-full bg-[#dff1e5] text-[#2f6b4f]">
                   <CheckCircle2 className="h-4 w-4" />
@@ -743,7 +743,7 @@ export function ProjectDashboardBoard() {
                   <p className="mt-[0.25rem] text-[15px] font-semibold text-[#1d1d1d]">{item.title}</p>
                   <p className={`${interMedium.className} mt-[0.25rem] text-[15px] leading-[1.5] text-[#6b6b6b]`}>{item.detail}</p>
                 </div>
-                <span className={`${interMedium.className} rounded-full bg-white px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-[#0b2639] shadow-[0_10px_20px_-22px_rgba(17,17,17,0.45)]`}>
+                <span className={`${interMedium.className} app-surface rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-[#0b2639] shadow-none`}>
                   Open
                 </span>
               </Link>
@@ -757,7 +757,7 @@ export function ProjectDashboardBoard() {
           </CardHeader>
           <CardContent className="space-y-[0.65rem] pt-0">
             {upcomingItems.length === 0 ? (
-              <div className="rounded-[1rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] px-4 py-4 shadow-[0_8px_18px_rgba(17,17,17,0.025)]">
+              <div className="app-surface app-surface-border rounded-[1rem] border px-4 py-4 shadow-none">
                 <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>No recent project activity.</p>
               </div>
             ) : (
@@ -765,7 +765,7 @@ export function ProjectDashboardBoard() {
                 <Link
                   key={item.id}
                   href={item.href}
-                  className="block rounded-[1rem] border border-[rgba(17,17,17,0.1)] bg-[#f3f4f6] px-[0.75rem] py-[0.7rem] shadow-[0_8px_18px_rgba(17,17,17,0.025)] transition hover:bg-white"
+                  className="app-surface app-surface-border block rounded-[1rem] border px-[0.75rem] py-[0.7rem] shadow-none transition hover:bg-[var(--app-surface)]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
