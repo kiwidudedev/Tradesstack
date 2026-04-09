@@ -50,6 +50,13 @@ export function Navbar({ session, onLoginClick, loginHref }: NavbarProps) {
         {!session ? (
           <div className="hidden items-center gap-3 sm:gap-4 lg:flex">
             <Link
+              href={loginHref ?? "/login"}
+              className="inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-white/60 bg-white/8 px-4 text-[14px] font-bold text-white transition-opacity hover:opacity-80 sm:text-[15.6px]"
+              style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
+            >
+              Login
+            </Link>
+            <Link
               href="/early-access"
               className="inline-flex min-h-[44px] items-center justify-center rounded-[8px] bg-[#F74918] px-4 text-[14px] font-bold text-white transition-opacity hover:opacity-80 sm:text-[15.6px]"
               style={{ fontFamily: '"Akzidenz-Grotesk Bold", Helvetica, Arial, sans-serif' }}
