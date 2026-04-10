@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { ChevronDown } from "lucide-react";
 
 interface OrganizationSettingsFormProps {
   organizationId: string;
@@ -88,10 +87,6 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   const [defaultTaxRate, setDefaultTaxRate] = useState(
     props.initialDefaultTaxRate != null ? String(props.initialDefaultTaxRate) : "15",
   );
-  const [isCompanyProfileOpen, setIsCompanyProfileOpen] = useState(false);
-  const [isBrandingOpen, setIsBrandingOpen] = useState(false);
-  const [isFinancialSettingsOpen, setIsFinancialSettingsOpen] = useState(false);
-  const [isRegionalSettingsOpen, setIsRegionalSettingsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +146,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
     if (updateError) {
       setError(toSettingsErrorMessage(updateError));
     } else {
-      setMessage("Settings confirmed.");
+      setMessage("Settings Saved.");
     }
 
     setIsSaving(false);
@@ -232,10 +227,10 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
         void onSaveName();
       }}
     >
-      <section className="overflow-visible rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6">
-        <div className="space-y-4">
+      <section className="overflow-visible bg-transparent px-0 pb-0 pt-0">
+        <div className="max-w-[672px] space-y-5">
           <div className="pb-1 pt-1">
-            <p className="text-[30px] font-semibold leading-[1.2] tracking-[-0.02em] text-[#1d2433]">
+            <p className="text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-[#1d2433]">
               Organization
             </p>
           </div>
@@ -248,19 +243,14 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
           ) : null}
 
           {/* Company Profile */}
-          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
-            <button
-              type="button"
-              onClick={() => setIsCompanyProfileOpen((v) => !v)}
-              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
-            >
-              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Company Profile</h3>
-              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isCompanyProfileOpen ? "rotate-180" : ""}`} />
-            </button>
+          <div className="overflow-hidden rounded-[22px] border border-[#D9DEE5] bg-white px-5 pb-5 pt-4">
+            <div className="pb-4">
+              <h3 className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">Company Profile</h3>
+            </div>
 
-            {isCompanyProfileOpen && <div className="space-y-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4">
-                <div className="max-w-[240px] space-y-2">
-                  <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company logo</p>
+            <div className="space-y-3">
+                <div className="max-w-[220px] space-y-1.5">
+                  <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company logo</p>
                   <label className="group block">
                     <input
                       type="file"
@@ -270,7 +260,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                       className="hidden"
                     />
                     <span
-                      className={`relative flex h-24 w-full items-center justify-center overflow-hidden rounded-[12px] border border-[#d8e0ec] bg-white transition-colors ${
+                      className={`relative flex h-20 w-full items-center justify-center overflow-hidden rounded-[10px] border border-[#d8e0ec] bg-white transition-colors ${
                         !props.canEdit || isUploading
                           ? "cursor-not-allowed opacity-70"
                           : "cursor-pointer group-hover:border-[#9fb2ce] group-hover:bg-[#e9edf3]"
@@ -280,10 +270,10 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={logoUrl} alt="Organization logo" className="h-full w-full object-contain" />
                       ) : (
-                        <span className={`${interMedium.className} text-[11px] text-[#72839d]`}>No logo uploaded</span>
+                        <span className={`${interMedium.className} text-[10px] text-[#72839d]`}>No logo uploaded</span>
                       )}
                       <span
-                        className={`${interMedium.className} pointer-events-none absolute inset-0 inline-flex items-center justify-center text-sm font-semibold text-[#1d2433] transition-opacity ${
+                        className={`${interMedium.className} pointer-events-none absolute inset-0 inline-flex items-center justify-center text-[13px] font-semibold text-[#1d2433] transition-opacity ${
                           !props.canEdit || isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"
                         }`}
                       >
@@ -293,117 +283,112 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                   </label>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-2 md:col-span-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company name</label>
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Company name</label>
                     <Input
                       value={name}
                       onChange={(event) => setName(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 1</label>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 1</label>
                     <Input
                       value={addressLine1}
                       onChange={(event) => setAddressLine1(event.target.value)}
                       placeholder="Street number and name"
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 2</label>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Address line 2</label>
                     <Input
                       value={addressLine2}
                       onChange={(event) => setAddressLine2(event.target.value)}
                       placeholder="Suburb, suite, or unit (optional)"
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>City</label>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>City</label>
                     <Input
                       value={city}
                       onChange={(event) => setCity(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Postcode</label>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Postcode</label>
                     <Input
                       value={postcode}
                       onChange={(event) => setPostcode(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Country</label>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Country</label>
                     <Input
                       value={country}
                       onChange={(event) => setCountry(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact name</label>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact name</label>
                     <Input
                       value={contactName}
                       onChange={(event) => setContactName(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact phone</label>
+                  <div className="space-y-1.5">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact phone</label>
                     <Input
                       value={contactPhone}
                       onChange={(event) => setContactPhone(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
-                    <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact email</label>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Contact email</label>
                     <Input
                       value={contactEmail}
                       onChange={(event) => setContactEmail(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                     />
                   </div>
               </div>
-            </div>}
+            </div>
           </div>
 
           {/* Branding */}
-          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
-            <button
-              type="button"
-              onClick={() => setIsBrandingOpen((v) => !v)}
-              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
-            >
-              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Branding</h3>
-              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isBrandingOpen ? "rotate-180" : ""}`} />
-            </button>
+          <div className="overflow-hidden rounded-[22px] border border-[#D9DEE5] bg-white px-5 pb-5 pt-4">
+            <div className="pb-4">
+              <h3 className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">Branding</h3>
+            </div>
 
-            {isBrandingOpen && <div className="grid gap-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand primary colour</label>
-                  <div className="flex h-12 items-center gap-2 rounded-[10px] border border-[#D9DEE5] bg-white px-2.5">
+            <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand primary colour</label>
+                  <div className="flex h-10 items-center gap-2 rounded-[8px] border border-[#D9DEE5] bg-white px-2.5">
                     <input
                       type="color"
                       value={brandPrimaryColor}
@@ -415,14 +400,14 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                       value={brandPrimaryColor}
                       onChange={(event) => setBrandPrimaryColor(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-9 border-none bg-transparent px-1 text-[14px] text-[#1d2433] shadow-none focus-visible:ring-0`}
+                      className={`${interMedium.className} h-8 border-none bg-transparent px-1 text-[13px] text-[#1d2433] shadow-none focus-visible:ring-0`}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand accent colour</label>
-                  <div className="flex h-12 items-center gap-2 rounded-[10px] border border-[#D9DEE5] bg-white px-2.5">
+                <div className="space-y-1.5">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Brand accent colour</label>
+                  <div className="flex h-10 items-center gap-2 rounded-[8px] border border-[#D9DEE5] bg-white px-2.5">
                     <input
                       type="color"
                       value={brandAccentColor}
@@ -434,122 +419,112 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                       value={brandAccentColor}
                       onChange={(event) => setBrandAccentColor(event.target.value)}
                       disabled={!props.canEdit || isSaving}
-                      className={`${interMedium.className} h-9 border-none bg-transparent px-1 text-[14px] text-[#1d2433] shadow-none focus-visible:ring-0`}
+                      className={`${interMedium.className} h-8 border-none bg-transparent px-1 text-[13px] text-[#1d2433] shadow-none focus-visible:ring-0`}
                     />
                   </div>
                 </div>
-              </div>}
+              </div>
           </div>
 
           {/* Financial Settings */}
-          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
-            <button
-              type="button"
-              onClick={() => setIsFinancialSettingsOpen((v) => !v)}
-              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
-            >
-              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Financial Settings</h3>
-              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isFinancialSettingsOpen ? "rotate-180" : ""}`} />
-            </button>
+          <div className="overflow-hidden rounded-[22px] border border-[#D9DEE5] bg-white px-5 pb-5 pt-4">
+            <div className="pb-4">
+              <h3 className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">Financial Settings</h3>
+            </div>
 
-            {isFinancialSettingsOpen && <div className="grid gap-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>ABN / NZBN</label>
+            <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>ABN / NZBN</label>
                   <Input
                     value={businessNumber}
                     onChange={(event) => setBusinessNumber(event.target.value)}
                     placeholder="e.g. 123-456-789"
                     disabled={!props.canEdit || isSaving}
-                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Bank account details</label>
+                <div className="space-y-1.5">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Bank account details</label>
                   <Input
                     value={bankAccountDetails}
                     onChange={(event) => setBankAccountDetails(event.target.value)}
                     placeholder="e.g. 12-1234-1234567-00"
                     disabled={!props.canEdit || isSaving}
-                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>GST Number</label>
+                <div className="space-y-1.5">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>GST Number</label>
                   <Input
                     value={gstNumber}
                     onChange={(event) => setGstNumber(event.target.value)}
                     placeholder="e.g. 123-456-789"
                     disabled={!props.canEdit || isSaving}
-                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                   />
                 </div>
 
-                <div className="space-y-2 md:col-span-2">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax mode</label>
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax mode</label>
                   <select
                     value={defaultTaxMode}
                     onChange={(event) => setDefaultTaxMode(event.target.value)}
                     disabled={!props.canEdit || isSaving}
-                    className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#D9DEE5] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                    className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#D9DEE5] bg-white px-3 text-[13px] text-[#1d2433] outline-none`}
                   >
                     <option value="GST Inclusive">GST Inclusive</option>
                     <option value="GST Exclusive">GST Exclusive</option>
                   </select>
                 </div>
 
-                <div className="space-y-2 md:col-span-1">
-                  <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax rate (%)</label>
+                <div className="space-y-1.5 md:col-span-1">
+                  <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default tax rate (%)</label>
                   <Input
                     value={defaultTaxRate}
                     onChange={(event) => setDefaultTaxRate(event.target.value)}
                     disabled={!props.canEdit || isSaving}
-                    className={`${interMedium.className} h-12 rounded-[10px] border-[#D9DEE5] bg-white text-[15px] text-[#1d2433]`}
+                    className={`${interMedium.className} h-10 rounded-[8px] border-[#D9DEE5] bg-white text-[14px] text-[#1d2433]`}
                   />
                 </div>
-              </div>}
-            </div>
+              </div>
+          </div>
 
           {/* Regional Settings */}
-          <div className="overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
-            <button
-              type="button"
-              onClick={() => setIsRegionalSettingsOpen((v) => !v)}
-              className="flex w-full items-center justify-between rounded-[18px] bg-[#F6F7F9] px-4 pb-2 pt-4"
-            >
-              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Regional Settings</h3>
-              <ChevronDown className={`h-4 w-4 text-[#6B6B6B] transition-transform ${isRegionalSettingsOpen ? "rotate-180" : ""}`} />
-            </button>
+          <div className="overflow-hidden rounded-[22px] border border-[#D9DEE5] bg-white px-5 pb-5 pt-4">
+            <div className="pb-4">
+              <h3 className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">Regional Settings</h3>
+            </div>
 
-            {isRegionalSettingsOpen && <div className="grid gap-4 border-t border-[#D9DEE5] px-4 pb-5 pt-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default currency</label>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Default currency</label>
                 <select
                   value={defaultCurrency}
                   onChange={(event) => setDefaultCurrency(event.target.value)}
                   disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#D9DEE5] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                  className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#D9DEE5] bg-white px-3 text-[13px] text-[#1d2433] outline-none`}
                 >
                   <option value="NZD">NZD</option>
                   <option value="AUD">AUD</option>
                 </select>
               </div>
 
-              <div className="space-y-2">
-                <label className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Timezone</label>
+              <div className="space-y-1.5">
+                <label className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Timezone</label>
                 <select
                   value={timezone}
                   onChange={(event) => setTimezone(event.target.value)}
                   disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} h-12 w-full rounded-[10px] border border-[#D9DEE5] bg-white px-3 text-sm text-[#1d2433] outline-none`}
+                  className={`${interMedium.className} h-10 w-full rounded-[8px] border border-[#D9DEE5] bg-white px-3 text-[13px] text-[#1d2433] outline-none`}
                 >
                   <option value="Pacific/Auckland">Pacific/Auckland</option>
                   <option value="Australia/Sydney">Australia/Sydney</option>
                   <option value="UTC">UTC</option>
                 </select>
               </div>
-            </div>}
+            </div>
           </div>
 
           {!props.canEdit ? (

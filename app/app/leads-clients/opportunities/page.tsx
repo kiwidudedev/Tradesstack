@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { CalendarDays, LayoutGrid, List, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CalendarDays, LayoutGrid, List, Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
 import { OpportunitiesBoard } from "./OpportunitiesBoard";
@@ -131,7 +130,7 @@ export default async function LeadsClientsOpportunitiesPage({
   };
 
   return (
-    <main className={`${styles.page} space-y-6 pb-8`}>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.page} space-y-6 pb-8`}>
       <section className={styles.heroBlock}>
         <div className={styles.heroCopy}>
           <h1 className={styles.heroTitle}>Tender Opportunities</h1>
@@ -140,9 +139,10 @@ export default async function LeadsClientsOpportunitiesPage({
           </p>
         </div>
         <div className={styles.heroActions}>
-          <Button className={`${interMedium.className} ${styles.heroButton}`} asChild>
-            <Link href="/app/leads-clients/opportunities/new">Create Opportunity</Link>
-          </Button>
+          <Link href="/app/leads-clients/opportunities/new" className={`${ibmPlexSans.className} ${styles.heroButton}`}>
+            <Plus className="h-4 w-4" strokeWidth={2.3} />
+            Create Opportunity
+          </Link>
         </div>
       </section>
 

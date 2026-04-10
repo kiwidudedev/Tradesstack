@@ -1,19 +1,19 @@
 .dashboardScope {
-  --dash-bg: #FBFEFE;
+  --dash-bg: #F9FAFC;
   --dash-panel: #ffffff;
-  --dash-panel-muted: #f7f7f5;
-  --dash-beige-soft: rgba(245, 239, 230, 0.3);
-  --dash-border: rgba(17, 17, 17, 0.1);
-  --dash-border-strong: rgba(17, 17, 17, 0.12);
-  --dash-ink: #061a25;
+  --dash-panel-muted: #F9FAFC;
+  --dash-beige-soft: rgba(245, 239, 230, 0.32);
+  --dash-border: #E2E8F1;
+  --dash-border-strong: #D7E1EC;
+  --dash-ink: #0E172B;
   --dash-text: #1d1d1d;
-  --dash-muted: #6b6b6b;
-  --dash-soft: #8a8a8a;
-  --dash-accent: #f74917;
-  --dash-sage: #dff1e5;
-  --dash-sage-ink: #2f6b4f;
-  --dash-gold: #f3ead6;
-  --dash-gold-ink: #8a6731;
+  --dash-muted: #4B5D79;
+  --dash-soft: #7B8CA5;
+  --dash-accent: #F15A29;
+  --dash-sage: #DFF1E5;
+  --dash-sage-ink: #2F6B4F;
+  --dash-gold: #F5EFE6;
+  --dash-gold-ink: #B96A12;
   background: var(--dash-bg);
 }
 
@@ -22,13 +22,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.15rem 0 0.35rem;
+  padding: 25px 0 0.35rem;
 }
 
 .heroActions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: flex-end;
   gap: 0.55rem;
 }
 
@@ -37,15 +37,16 @@
   color: var(--dash-muted);
   font-size: 15px;
   text-align: right;
+  white-space: nowrap;
 }
 
 .heroHeading {
-  margin: 0.45rem 0 0;
+  margin: 0;
   color: var(--dash-text);
-  font-size: clamp(1.55rem, 2.8vw, 2.6rem);
+  font-size: clamp(1.24rem, 2.24vw, 2.08rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .heroSummary {
@@ -61,19 +62,19 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  border: 1px solid #0b2639;
-  border-radius: 999px;
-  background: #0b2639;
-  color: #ffffff;
-  padding: 0.55rem 0.7rem;
+  border: 1px solid #CBD5E1;
+  border-radius: 0.9rem;
+  background: #FBFEFE;
+  color: #475569;
+  padding: 0.55rem 0.95rem;
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
 }
 
 .heroBadgeButton:hover {
-  background: #0b2639;
-  opacity: 0.92;
+  background: #F8FAFC;
+  opacity: 1;
 }
 
 .dashboardGrid {
@@ -86,15 +87,17 @@
 .todoCard,
 .todayCard,
 .leadsCard {
-  border: 1px solid var(--dash-border);
-  background: #ffffff;
+  border: 1.3px solid var(--dash-border);
+  border-radius: 14px;
+  background: #FBFEFE;
   box-shadow:
-    0 20px 40px rgba(17, 17, 17, 0.04),
-    0 4px 14px rgba(17, 17, 17, 0.03);
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.04);
 }
 
 .sectionHeader {
-  padding-bottom: 0.7rem;
+  padding-top: calc(0.7rem + 5px);
+  padding-bottom: calc(0.7rem + 5px);
 }
 
 .sectionHeaderRow {
@@ -105,7 +108,7 @@
 }
 
 .sectionTitle {
-  margin-top: 0.45rem;
+  margin-top: 0;
   color: var(--dash-text);
   font-size: 1.4rem;
   line-height: 1;
@@ -119,37 +122,42 @@
 }
 
 .metricTile {
-  border: 1px solid var(--dash-border);
-  border-radius: 1.15rem;
-  background: var(--dash-bg);
-  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.03);
-  padding: 0.9rem;
+  border: 1.3px solid var(--dash-border);
+  border-radius: 14px;
+  background: #FBFEFE;
+  min-height: 170px;
+  padding: 1.1rem 1.2rem;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.04);
 }
 
 .metricTop {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.8rem;
 }
 
 .metricLabel {
   color: var(--dash-muted);
-  font-size: 15px;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .metricValue {
-  margin: 0.7rem 0 0;
+  margin: auto 0 0;
+  padding-top: 1.25rem;
   color: var(--dash-text);
-  font-size: clamp(1.4rem, 2.1vw, 1.95rem);
+  font-size: clamp(2.1rem, 3vw, 2.75rem);
   line-height: 1;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.03em;
   font-weight: 600;
 }
 
 .metricMeta {
-  margin: 0.45rem 0 0;
+  margin: 0.75rem 0 0;
   color: var(--dash-muted);
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .iconBadgeAccent,
@@ -159,29 +167,29 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 1.7rem;
-  width: 1.7rem;
-  border-radius: 0.65rem;
+  height: 3.1rem;
+  width: 3.1rem;
+  border-radius: 1rem;
 }
 
 .iconBadgeAccent {
-  background: rgba(255, 228, 215, 0.95);
+  background: #FFE5D9;
   color: var(--dash-accent);
 }
 
 .iconBadgeInk {
-  background: #e8eef2;
-  color: var(--dash-ink);
+  background: #0E172B;
+  color: #D9E6F2;
 }
 
 .iconBadgeSage {
   background: var(--dash-sage);
-  color: var(--dash-sage-ink);
+  color: #18384C;
 }
 
 .iconBadgeGold {
   background: var(--dash-gold);
-  color: var(--dash-gold-ink);
+  color: var(--dash-accent);
 }
 
 .todoList,
@@ -194,10 +202,12 @@
 .todoRow,
 .todayRow,
 .leadRow {
-  border: 1px solid var(--dash-border);
-  border-radius: 1rem;
-  background: var(--dash-bg);
-  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.025);
+  border: 1.3px solid var(--dash-border);
+  border-radius: 14px;
+  background: #FBFEFE;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.04);
 }
 
 .todoRow {
@@ -344,10 +354,12 @@
 
 .emptyState {
   border: 1px dashed var(--dash-border-strong);
-  border-radius: 1rem;
+  border-radius: 14px;
   color: var(--dash-muted);
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.02);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.03);
   padding: 0.7rem 0.75rem;
   font-size: 15px;
 }
@@ -390,23 +402,32 @@
 
 @media (min-width: 1024px) {
   .dashboardGrid {
-    grid-template-columns: minmax(0, 1.4fr) minmax(252px, 0.9fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .overviewCard,
-  .todayCard {
-    grid-column: 1;
+  .overviewCard {
+    grid-column: 1 / -1;
+  }
+
+  .overviewGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .todoCard,
+  .todayCard,
   .leadsCard {
-    grid-column: 2;
+    grid-column: span 1;
   }
 }
 
 @media (max-width: 900px) {
   .heroBlock {
     flex-direction: column;
+  }
+
+  .heroActions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .overviewGrid {

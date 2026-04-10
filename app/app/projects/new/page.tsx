@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { PROJECT_STAGE_OPTIONS } from "@/lib/projects";
@@ -14,9 +13,7 @@ import {
   resolveUniqueTradePackWorkspaceSlug,
   toTradePackWorkspaceSlug,
 } from "@/lib/trade-pack-workspaces";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 
 const NEW_CLIENT_OPTION = "__new_client__";
 type OrganizationClient = Database["public"]["Tables"]["organization_clients"]["Row"];
@@ -274,181 +271,145 @@ export default function CreateProjectPage() {
     }
   };
 
-  return (
-    <main className="space-y-8 pb-8">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        asChild
-        className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-      >
-        <Link href="/app/dashboard">
-          <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-          Back to Main Dashboard
-        </Link>
-      </Button>
+  const inputClass = `${ibmPlexSans.className} h-[2.9rem] w-full rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[16px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]`;
+  const selectClass = `${ibmPlexSans.className} h-[2.9rem] w-full appearance-none rounded-[0.85rem] border border-[#CBD5E1] bg-white pl-4 pr-12 text-[16px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]`;
+  const labelClass = `${ibmPlexSans.className} text-[16px] font-semibold text-[#4B5D79] flex items-center`;
 
-      <Card className="relative overflow-hidden border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-4 pt-7">
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Create a Project</CardTitle>
-          <p className={`${interMedium.className} max-w-3xl text-base font-medium leading-relaxed text-[#4d5b74]`}>
-            Upload project documents and generate construction intelligence to support planning, pricing, and delivery.
-          </p>
-        </CardHeader>
-        <CardContent className="max-w-2xl pb-8">
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="space-y-2">
-              <label htmlFor="projectName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Project / Tender Name
-              </label>
-              <Input
-                id="projectName"
+  return (
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 pt-[25px] pb-8`}>
+      <form onSubmit={onSubmit}>
+        <Card className="app-surface h-fit rounded-[14px] border-[1.3px] border-[#E2E8F1] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
+            <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">
+              Create a Project
+            </CardTitle>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/app/projects"
+                className={`${ibmPlexSans.className} inline-flex shrink-0 items-center justify-center rounded-[0.5rem] border border-[#CBD5E1] bg-white px-5 py-2.5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+              >
+                Cancel
+              </Link>
+              <button
+                type="submit"
+                disabled={isSubmitting || isAuthLoading}
+                className={`${ibmPlexSans.className} inline-flex shrink-0 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:opacity-60`}
+              >
+                {isSubmitting ? "Creating..." : isAuthLoading ? "Loading..." : "Create Project"}
+              </button>
+            </div>
+          </CardHeader>
+
+          <CardContent className="pt-0 pb-8">
+            <div className="grid gap-x-4 gap-y-4 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
+
+              <p className={labelClass}>Project Name:</p>
+              <input
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 placeholder="Smith Renovation Project"
-                className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
+                className={inputClass}
                 required
               />
-            </div>
 
-            <div className="space-y-2">
-              <label htmlFor="projectClient" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Client
-              </label>
+              <p className={labelClass}>Client:</p>
               {isLoadingClients ? (
-                <p className={`${interMedium.className} text-sm font-medium text-[#687996]`}>Loading clients...</p>
+                <p className={`${ibmPlexSans.className} flex items-center text-[16px] font-medium text-[#687996]`}>Loading clients...</p>
               ) : clients.length > 0 ? (
-                <select
-                  id="projectClient"
-                  value={selectedClientId}
-                  onChange={(event) => setSelectedClientId(event.target.value)}
-                  className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
-                  required
-                >
-                  <option value="">Select a client</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.company_name?.trim() || "Unknown Company"}
-                    </option>
-                  ))}
-                  <option value={NEW_CLIENT_OPTION}>Add new client</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={selectedClientId}
+                    onChange={(e) => setSelectedClientId(e.target.value)}
+                    className={selectClass}
+                    required
+                  >
+                    <option value="">Select a client</option>
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.company_name?.trim() || "Unknown Company"}
+                      </option>
+                    ))}
+                    <option value={NEW_CLIENT_OPTION}>+ Add new client</option>
+                  </select>
+                  <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </div>
               ) : (
-                <p className={`${interMedium.className} text-sm font-medium text-[#687996]`}>
-                  No clients yet. Add a client below to continue.
+                <p className={`${ibmPlexSans.className} flex items-center text-[16px] font-medium text-[#687996]`}>
+                  No clients yet — fill in details below.
                 </p>
               )}
-            </div>
 
-            {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingClients ? (
-              <div className="rounded-[6px] border border-[#d7deea] bg-[#f8faff] p-3">
-                <p className={`${interMedium.className} mb-3 text-sm font-semibold text-[#1d2433]`}>New Client Details</p>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <label htmlFor="clientContactName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                      Contact Name *
-                    </label>
-                    <Input
-                      id="clientContactName"
-                      value={clientContactName}
-                      onChange={(event) => setClientContactName(event.target.value)}
-                      placeholder="John Smith"
-                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="clientCompanyName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                      Company Name *
-                    </label>
-                    <Input
-                      id="clientCompanyName"
-                      value={clientCompanyName}
-                      onChange={(event) => setClientCompanyName(event.target.value)}
-                      placeholder="Smith Developments"
-                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
-                      required
-                    />
-                  </div>
+              {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingClients ? (
+                <>
+                  <p className={labelClass}>Contact Name:</p>
+                  <input
+                    value={clientContactName}
+                    onChange={(e) => setClientContactName(e.target.value)}
+                    placeholder="John Smith"
+                    className={inputClass}
+                    required
+                  />
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label htmlFor="clientEmail" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                        Email
-                      </label>
-                      <Input
-                        id="clientEmail"
-                        type="email"
-                        value={clientEmail}
-                        onChange={(event) => setClientEmail(event.target.value)}
-                        placeholder="client@company.com"
-                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
-                      />
-                    </div>
+                  <p className={labelClass}>Company Name:</p>
+                  <input
+                    value={clientCompanyName}
+                    onChange={(e) => setClientCompanyName(e.target.value)}
+                    placeholder="Smith Developments"
+                    className={inputClass}
+                    required
+                  />
 
-                    <div className="space-y-2">
-                      <label htmlFor="clientPhone" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                        Phone
-                      </label>
-                      <Input
-                        id="clientPhone"
-                        value={clientPhone}
-                        onChange={(event) => setClientPhone(event.target.value)}
-                        placeholder="+64 21 123 4567"
-                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
-                      />
-                    </div>
-                  </div>
-                </div>
+                  <p className={labelClass}>Email:</p>
+                  <input
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="client@company.com"
+                    className={inputClass}
+                  />
+
+                  <p className={labelClass}>Phone:</p>
+                  <input
+                    value={clientPhone}
+                    onChange={(e) => setClientPhone(e.target.value)}
+                    placeholder="+64 21 123 4567"
+                    className={inputClass}
+                  />
+                </>
+              ) : null}
+
+              <p className={labelClass}>Stage:</p>
+              <div className="relative">
+                <select
+                  value={stage}
+                  onChange={(e) => setStage(e.target.value as ProjectStage)}
+                  className={selectClass}
+                >
+                  {PROJECT_STAGE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
-            ) : null}
 
-            <div className="space-y-2">
-              <label htmlFor="projectStage" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Job Stage
-              </label>
-              <select
-                id="projectStage"
-                value={stage}
-                onChange={(event) => setStage(event.target.value as ProjectStage)}
-                className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-[#F8F9FC] px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
-              >
-                {PROJECT_STAGE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="projectLocation" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Project Location
-              </label>
-              <Input
-                id="projectLocation"
+              <p className={labelClass}>Location:</p>
+              <input
                 value={location}
-                onChange={(event) => setLocation(event.target.value)}
+                onChange={(e) => setLocation(e.target.value)}
                 placeholder="Auckland"
-                className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-[#F8F9FC] text-[#1d2433]`}
+                className={inputClass}
               />
+
+              {error ? (
+                <>
+                  <span />
+                  <p className={`${ibmPlexSans.className} rounded-[0.85rem] border border-red-200 bg-red-50 px-4 py-2.5 text-[14px] font-medium text-red-700`}>{error}</p>
+                </>
+              ) : null}
             </div>
-
-            {error ? (
-              <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-            ) : null}
-
-            <Button
-              type="submit"
-              disabled={isSubmitting || isAuthLoading}
-              className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
-            >
-              {isSubmitting ? "Creating project..." : isAuthLoading ? "Loading account..." : "Create Project"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </form>
     </main>
   );
 }

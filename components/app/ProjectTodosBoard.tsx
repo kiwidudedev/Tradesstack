@@ -1084,7 +1084,7 @@ export function ProjectTodosBoard() {
 
   return (
     <div className="space-y-6 pb-8">
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+      <Card className="border-[#D9DEE5] bg-white shadow-none">
         <CardHeader className="pb-4 pt-7">
           <CardTitle className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Tasks</CardTitle>
           <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
@@ -1120,7 +1120,7 @@ export function ProjectTodosBoard() {
         </CardContent>
       </Card>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+      <Card className="border-[#D9DEE5] bg-white shadow-none">
         <CardHeader className="pb-3 pt-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">

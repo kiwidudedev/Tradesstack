@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, MapPin, Plus } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { getTradePackWorkspacesForCurrentUser } from "@/lib/trade-pack-workspaces-server";
 
 function getStageTone(stage: string | null) {
@@ -19,38 +18,34 @@ export default async function ProjectSpacePage() {
   const projects = await getTradePackWorkspacesForCurrentUser();
 
   return (
-    <main className="space-y-8 bg-[#FBFEFE] pb-8">
-      <Card className="overflow-hidden rounded-[34px] border-[var(--app-border)] bg-[var(--app-surface)] shadow-none">
-        <CardHeader className="border-b border-[#EEF3F7] pb-6 pt-7">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.18em] text-[#93A1AE]`}>
-                Project Directory
-              </p>
-              <CardTitle className="mt-3 text-[44px] leading-none text-[#10283B]">Projects</CardTitle>
-              <p className={`${interMedium.className} mt-3 max-w-2xl text-[16px] text-[#607080]`}>
-                Open a project from here, then use the dedicated project navigation to move between that
-                project&apos;s dashboard, financials, delivery tools, and AI workflows.
-              </p>
-            </div>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme space-y-6 bg-[#FBFEFE] pb-8`}>
+      <section className="flex items-start justify-between gap-4 pt-[25px]">
+        <div>
+          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
+            Projects
+          </h1>
+          <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
+            Open a project from here, then use the dedicated project navigation to move between that
+            project&apos;s dashboard.
+          </p>
+        </div>
 
-            <Link
-              href="/app/projects/new"
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-[#F74917] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#E63F10]"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.4} />
-              Create Project
-            </Link>
-          </div>
-        </CardHeader>
+        <Link
+          href="/app/projects/new"
+          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
+        >
+          <Plus className="h-4 w-4" strokeWidth={2.3} />
+          Create Project
+        </Link>
+      </section>
 
-        <CardContent className="grid gap-5 pb-8 pt-7 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
           {projects.length > 0 ? (
             projects.map((project) => (
               <Link
                 key={project.id}
                 href={`/app/projects/${project.slug}/dashboard`}
-                className="group rounded-[28px] border border-[var(--app-border)] bg-[var(--app-surface)] p-6 shadow-none transition-colors duration-200 hover:bg-[var(--app-surface)]"
+                className="group rounded-[14px] border border-[var(--app-border)] bg-[var(--app-surface)] p-6 shadow-none transition-colors duration-200 hover:bg-[var(--app-surface)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -91,8 +86,7 @@ export default async function ProjectSpacePage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </main>
   );
 }

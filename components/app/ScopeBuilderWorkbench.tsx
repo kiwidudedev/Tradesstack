@@ -493,7 +493,7 @@ export function ScopeBuilderWorkbench({
 
   const isProjectScopePage = Boolean(projectDashboardHref);
   const projectCardClassName =
-    "rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8";
+    "rounded-[28px] border border-[#d9dee5] bg-white p-7 shadow-none md:p-8";
 
   return (
     <main className={`${styles.scope} ${projectDashboardHref ? "-mb-8" : "pb-8"} space-y-6`}>
@@ -520,7 +520,7 @@ export function ScopeBuilderWorkbench({
 
       <section className="space-y-5">
         <div className={styles.dashboardGrid}>
-          <div className={`lg:col-span-2 ${styles.card} ${isProjectScopePage ? "rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] px-7 pb-6 pt-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-6 md:pt-8" : "p-6"}`}>
+          <div className={`lg:col-span-2 ${styles.card} ${isProjectScopePage ? "rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-6 pt-7 shadow-none md:px-8 md:pb-6 md:pt-8" : "p-6"}`}>
             <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
               <p className={styles.sectionTitle}>Generate a Scope Build</p>
               {isProjectScopePage ? (

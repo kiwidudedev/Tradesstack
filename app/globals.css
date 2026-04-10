@@ -179,6 +179,19 @@ body,
     box-shadow: none;
   }
 
+  .project-theme {
+    --app-canvas: #F9FAFC;
+    --app-surface: #FFFFFF;
+    --app-surface-muted: #F9FAFC;
+    --app-border: rgba(15, 23, 42, 0.08);
+    font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif;
+  }
+
+  .project-theme,
+  .project-theme *:not(svg):not(path):not(circle):not(rect):not(line):not(polyline):not(polygon) {
+    font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  }
+
   .eyebrow {
     color: var(--brand-orange);
     @apply text-xs font-semibold uppercase tracking-[0.2em];

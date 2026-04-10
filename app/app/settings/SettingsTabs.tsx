@@ -2,17 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, Landmark, ShieldCheck, SlidersHorizontal, UsersRound, Workflow } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
 
 const tabs = [
-  { href: "/app/settings/organization", label: "Organization", icon: Building2 },
-  { href: "/app/settings/users-permissions", label: "Users & Permissions", icon: UsersRound },
-  { href: "/app/settings/financial-settings", label: "Financial Settings", icon: Landmark },
-  { href: "/app/settings/integrations", label: "Integrations", icon: Workflow },
-  { href: "/app/settings/compliance-contracts", label: "Compliance & Contracts", icon: ShieldCheck },
-  { href: "/app/settings/platform-preferences", label: "Platform Preferences", icon: SlidersHorizontal },
+  { href: "/app/settings/organization", label: "Organization" },
+  { href: "/app/settings/users-permissions", label: "Users & Permissions" },
+  { href: "/app/settings/financial-settings", label: "Financial Settings" },
+  { href: "/app/settings/integrations", label: "Integrations" },
+  { href: "/app/settings/compliance-contracts", label: "Compliance & Contracts" },
+  { href: "/app/settings/platform-preferences", label: "Platform Preferences" },
 ];
 
 export function SettingsTabs() {
@@ -21,28 +20,26 @@ export function SettingsTabs() {
   const visibleTabs = tabs.filter((tab) => tab.href !== "/app/settings/users-permissions" || session?.role === "owner");
 
   return (
-    <section className="overflow-x-auto">
-      <div className="inline-flex min-w-max items-center gap-1">
+    <section className="w-full">
+      <nav className="flex flex-col gap-1.5">
         {visibleTabs.map((tab) => {
-          const Icon = tab.icon;
           const isActive = pathname === tab.href;
           return (
             <Link
               key={tab.href}
               href={tab.href}
-              className={`${interMedium.className} inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm ${
+              className={`${interMedium.className} inline-flex min-h-[42px] items-center rounded-[14px] px-5 text-[15px] ${
                 isActive
-                  ? "border border-[#d1d9e6] bg-[#F8F9FC] font-medium text-[#1d2433] shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
-                  : "border border-transparent font-medium text-[#4B5563] hover:border-[#d1d9e6] hover:bg-[#F8F9FC] hover:text-[#1d2433]"
+                  ? "bg-[#E9EDF1] font-semibold text-[#1d2433]"
+                  : "font-medium text-[#4B5563] hover:bg-[#F4F7FA] hover:text-[#1d2433]"
               }`}
               aria-current={isActive ? "page" : undefined}
             >
-              <Icon className="h-4 w-4" />
               {tab.label}
             </Link>
           );
         })}
-      </div>
+      </nav>
     </section>
   );
 }

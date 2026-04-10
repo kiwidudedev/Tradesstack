@@ -53,6 +53,18 @@ export const interBold = localFont({
   variable: "--font-inter-bold",
 });
 
+export const ibmPlexSans = localFont({
+  src: [
+    { path: "../public/fonts/ibm plex sans/IBMPlexSans-Regular.ttf", weight: "400", style: "normal" },
+    { path: "../public/fonts/ibm plex sans/IBMPlexSans-Medium.ttf", weight: "500", style: "normal" },
+    { path: "../public/fonts/ibm plex sans/IBMPlexSans-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "../public/fonts/ibm plex sans/IBMPlexSans-Bold.ttf", weight: "700", style: "normal" },
+  ],
+  display: "swap",
+  fallback: ["Arial", "sans-serif"],
+  variable: "--font-ibm-plex-sans",
+});
+
 export const mulishBody = localFont({
   src: [
     { path: "../public/fonts/inter/inter-latin-500-normal.woff2", weight: "500", style: "normal" },

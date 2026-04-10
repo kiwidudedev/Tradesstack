@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 export function Topbar() {
   return (
-    <div className="mb-8 space-y-3">
+    <div className="mb-8 space-y-3 lg:mb-0">
       <Sheet>
         <div className="-mx-3 -mt-3 lg:hidden">
           <div className="flex items-center justify-between bg-[#04234D] px-4 py-3 text-white shadow-[0_6px_20px_rgba(4,35,77,0.26)]">

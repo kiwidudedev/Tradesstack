@@ -115,7 +115,7 @@ function toHistoryStatusLabel(isCurrent: boolean) {
 function historyStatusClassName(isCurrent: boolean) {
   return isCurrent
     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-    : "border-[#D9DEE5] bg-[#F3F4F6] text-[#6b7280]";
+    : "border-[#D9DEE5] bg-[#FBFEFE] text-[#6b7280]";
 }
 
 function toLines(value: string | null | undefined) {
@@ -357,17 +357,17 @@ export default function ProjectQuoteRegisterPage() {
               side="top"
               align="end"
               sideOffset={8}
-              className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}
+              className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-white p-1.5 opacity-100`}
             >
               {summaryQuote ? (
                 <>
-                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
                     <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Open
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
                     <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
                       <PenLine className="mr-2 h-4 w-4" />
                       Edit
@@ -382,7 +382,7 @@ export default function ProjectQuoteRegisterPage() {
                   void createQuoteAndOpen();
                 }}
                 disabled={!canManageQuotes || isCreating || isLoading}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 {isCreating ? "Creating..." : "New Quote"}
@@ -418,9 +418,9 @@ export default function ProjectQuoteRegisterPage() {
       ) : null}
 
       <section
-        className="overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6"
+        className="overflow-hidden rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-7 pt-5 shadow-none md:px-8 md:pb-8 md:pt-6"
       >
-        <div className="bg-[#F3F4F6]">
+        <div className="bg-white">
           <div className="space-y-6">
             {isLoading ? (
               <p className={`${interMedium.className} py-8 text-sm font-medium text-[#6b6b6b]`}>Loading quote register...</p>
@@ -460,7 +460,7 @@ export default function ProjectQuoteRegisterPage() {
                 <div className="space-y-3">
                   <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Scope Summary</h3>
                     <div className="grid gap-3 md:grid-cols-3">
-                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
                       <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-emerald-700`}>Included</p>
                       <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
                         {includedLines.length > 0 ? (
@@ -470,7 +470,7 @@ export default function ProjectQuoteRegisterPage() {
                         )}
                       </ul>
                     </div>
-                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
                       <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-rose-700`}>Excluded</p>
                       <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
                         {excludedLines.length > 0 ? (
@@ -480,7 +480,7 @@ export default function ProjectQuoteRegisterPage() {
                         )}
                       </ul>
                     </div>
-                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
                       <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-amber-700`}>Assumptions</p>
                       <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
                         {assumptionLines.length > 0 ? (
@@ -495,7 +495,7 @@ export default function ProjectQuoteRegisterPage() {
 
                 <div className="space-y-3">
                   <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Key Notes / Qualifications</h3>
-                  <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#F3F4F6" }}>
+                  <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
                     {keyNotesLines.length > 0 ? (
                       <ul className={`${interMedium.className} space-y-1 text-sm text-[#334155]`}>
                         {keyNotesLines.map((line) => <li key={`note-${line}`}>{line}</li>)}
@@ -524,7 +524,7 @@ export default function ProjectQuoteRegisterPage() {
                     </Button>
                   </div>
                   {isQuoteHistoryOpen ? (
-                    <div id="quote-history-table" className="overflow-x-auto rounded-[12px] border border-[#D9DEE5] bg-[#F6F7F9]">
+                    <div id="quote-history-table" className="overflow-x-auto rounded-[16px] border border-[#D9DEE5] bg-white">
                       <table className="min-w-full border-collapse">
                         <thead>
                           <tr className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#6b6b6b]`}>
@@ -549,7 +549,7 @@ export default function ProjectQuoteRegisterPage() {
                             return (
                               <tr
                                 key={row.id}
-                                className="border-t border-[#D9DEE5] bg-[#F3F4F6] transition-colors"
+                                className="border-t border-[#D9DEE5] bg-[#FBFEFE] transition-colors"
                               >
                                 <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
                                   {row.quote_number}

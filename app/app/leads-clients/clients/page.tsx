@@ -1,11 +1,9 @@
 import Link from "next/link";
-import { SlidersHorizontal } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { interMedium } from "@/lib/fonts";
+import { Award, DollarSign, Plus, TrendingUp, Users } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import styles from "./clients.module.css";
 
 const CLIENT_TAGS = ["Good Client", "High Value", "Difficult", "Slow Payer"] as const;
 const TOP_CLIENT_PERIOD_OPTIONS = [
@@ -101,6 +99,8 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   const clientSearchParam = resolvedSearchParams.clientSearch;
   const clientSearchRaw = Array.isArray(clientSearchParam) ? clientSearchParam[0] : clientSearchParam;
   const clientSearch = (clientSearchRaw ?? "").trim();
+  const statusFilterRaw = resolvedSearchParams.statusFilter;
+  const statusFilter = (Array.isArray(statusFilterRaw) ? statusFilterRaw[0] : statusFilterRaw) ?? "all";
   const topClientPeriod = TOP_CLIENT_PERIOD_OPTIONS.some((option) => option.key === topClientPeriodRaw)
     ? (topClientPeriodRaw as TopClientPeriodKey)
     : "12m";
@@ -110,6 +110,15 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
     if (nextTopClientPeriod !== "12m") {
       params.set("topClientPeriod", nextTopClientPeriod);
     }
+    if (statusFilter !== "all") params.set("statusFilter", statusFilter);
+    const query = params.toString();
+    return query ? `/app/leads-clients/clients?${query}` : "/app/leads-clients/clients";
+  };
+  const buildStatusHref = (nextStatusFilter: string): string => {
+    const params = new URLSearchParams();
+    if (topClientPeriod !== "12m") params.set("topClientPeriod", topClientPeriod);
+    if (nextStatusFilter !== "all") params.set("statusFilter", nextStatusFilter);
+    if (clientSearch) params.set("clientSearch", clientSearch);
     const query = params.toString();
     return query ? `/app/leads-clients/clients?${query}` : "/app/leads-clients/clients";
   };
@@ -117,13 +126,10 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   const member = await getCurrentOrganizationMember();
   if (!member) {
     return (
-      <main className={`${styles.clientsScope} space-y-6 pb-8`}>
-        <Card className={styles.overviewCard}>
-          <CardHeader className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Clients</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <p className={`${interMedium.className} ${styles.heroSummary}`}>Sign in to view organization clients.</p>
+      <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
+        <Card className="overflow-hidden rounded-[32px] border-none bg-[var(--app-surface)] shadow-none">
+          <CardContent className="px-6 py-6">
+            <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>Sign in to view organization clients.</p>
           </CardContent>
         </Card>
       </main>
@@ -162,13 +168,10 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
 
   if (clientsResult.error || projectsResult.error || opportunitiesResult.error) {
     return (
-      <main className={`${styles.clientsScope} space-y-6 pb-8`}>
-        <Card className={styles.overviewCard}>
-          <CardHeader className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Clients</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <p className={`${interMedium.className} ${styles.heroSummary}`}>Could not load client data right now. Please refresh.</p>
+      <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
+        <Card className="overflow-hidden rounded-[32px] border-none bg-[var(--app-surface)] shadow-none">
+          <CardContent className="px-6 py-6">
+            <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>Could not load client data right now. Please refresh.</p>
           </CardContent>
         </Card>
       </main>
@@ -437,11 +440,11 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
     return best;
   }, null);
   const filteredClientRows = rows.filter((client) => {
-    if (!clientSearch) {
-      return true;
-    }
     const company = client.company_name?.trim() || "";
-    return company.toLowerCase().includes(clientSearch.toLowerCase());
+    if (clientSearch && !company.toLowerCase().includes(clientSearch.toLowerCase())) return false;
+    if (statusFilter === "active" && client.activeLeads === 0) return false;
+    if (statusFilter === "inactive" && client.activeLeads > 0) return false;
+    return true;
   });
   const highestValueWonClient = rows.reduce<{
     id: string;
@@ -463,168 +466,267 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   }, null);
 
   return (
-    <main className={`${styles.clientsScope} space-y-6 pb-8`}>
-      <section className={styles.heroBlock}>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
+      <section className="flex items-start justify-between gap-4 pt-[25px]">
         <div>
-          <h1 className={styles.heroHeading}>Clients</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
+            Clients
+          </h1>
+          <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
             Track who you work with most and keep client relationships moving.
           </p>
         </div>
-        <Button asChild className={styles.heroButton}>
-          <Link href="/app/leads-clients/clients/new">+ Add Client</Link>
-        </Button>
+        <Link
+          href="/app/leads-clients/clients/new"
+          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
+        >
+          <Plus className="h-4 w-4" strokeWidth={2.3} />
+          Add Client
+        </Link>
       </section>
 
-      <section className={styles.grid}>
-        <Card className={`${styles.overviewCard} relative`}>
-          <div className="absolute right-6 top-6 z-20 flex items-center gap-2">
-            <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6A7B95]`}>
-              {TOP_CLIENT_PERIOD_OPTIONS.find((option) => option.key === topClientPeriod)?.label ?? "12M"}
-            </span>
-            <details className="relative">
-              <summary className="flex h-[32px] w-[32px] cursor-pointer list-none items-center justify-center rounded-full border border-[#DCE3EC] bg-white text-[#4D607D] transition hover:bg-[#EEF3F9]">
-                <SlidersHorizontal className="h-[13px] w-[13px]" />
-              </summary>
-              <div className="absolute right-0 top-11 z-20 min-w-[128px] rounded-[12px] border border-[#DCE3EC] bg-white p-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
-                {TOP_CLIENT_PERIOD_OPTIONS.map((option) => {
-                  const isActive = option.key === topClientPeriod;
-                  const href = buildClientsHref(option.key);
-                  return (
-                    <Link
-                      key={option.key}
-                      href={href}
-                      className={`block rounded-[8px] px-2.5 py-1.5 text-xs font-semibold ${
-                        isActive ? "bg-[#1D293D] text-white" : "text-[#4D607D] hover:bg-[#EEF3F9]"
-                      }`}
-                    >
-                      {option.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </details>
+      <div className="space-y-5">
+        {/* Client Summary */}
+        <div className="flex items-center justify-between gap-2 pb-0.5">
+          <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#6A7A89]`}>Top clients</p>
+          <div className="flex items-center gap-1">
+            {TOP_CLIENT_PERIOD_OPTIONS.map((option) => {
+              const isActive = option.key === topClientPeriod;
+              return (
+                <Link
+                  key={option.key}
+                  href={buildClientsHref(option.key)}
+                  className={`${ibmPlexSans.className} rounded-[0.45rem] px-3 py-1 text-[12px] font-semibold transition ${
+                    isActive ? "bg-[#0B2739] text-white" : "border border-[#E2E8F1] bg-white text-[#4D607D] hover:bg-[#EEF3F9]"
+                  }`}
+                >
+                  {option.label}
+                </Link>
+              );
+            })}
           </div>
-          <CardHeader className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Client Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className={styles.overviewGrid}>
-              {bestConversionClientInTopPeriod ? (
-                <Link href={`/app/leads-clients/clients/${bestConversionClientInTopPeriod.id}`} className="block">
-                  <article className={`${styles.metricTile} cursor-pointer`}>
-                    <div className={styles.metricTop}>
-                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Best Conversion Client</span>
-                    </div>
-                    <p className={styles.metricValue}>{bestConversionClientInTopPeriod.displayName}</p>
-                  </article>
-                </Link>
-              ) : (
-                <article className={styles.metricTile}>
-                  <div className={styles.metricTop}>
-                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Best Conversion Client</span>
-                  </div>
-                  <p className={styles.metricValue}>—</p>
-                </article>
-              )}
-              {highestValueWonClient ? (
-                <Link href={`/app/leads-clients/clients/${highestValueWonClient.id}`} className="block">
-                  <article className={`${styles.metricTile} cursor-pointer`}>
-                    <div className={styles.metricTop}>
-                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Highest Value Won Client</span>
-                    </div>
-                    <p className={styles.metricValue}>{highestValueWonClient.displayName}</p>
-                  </article>
-                </Link>
-              ) : (
-                <article className={styles.metricTile}>
-                  <div className={styles.metricTop}>
-                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Highest Value Won Client</span>
-                  </div>
-                  <p className={styles.metricValue}>—</p>
-                </article>
-              )}
-              {mostRepeatWinsClient ? (
-                <Link href={`/app/leads-clients/clients/${mostRepeatWinsClient.id}`} className="block">
-                  <article className={`${styles.metricTile} cursor-pointer`}>
-                    <div className={styles.metricTop}>
-                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Most Repeat Wins</span>
-                    </div>
-                    <p className={styles.metricValue}>{mostRepeatWinsClient.displayName}</p>
-                  </article>
-                </Link>
-              ) : (
-                <article className={styles.metricTile}>
-                  <div className={styles.metricTop}>
-                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Most Repeat Wins</span>
-                  </div>
-                  <p className={styles.metricValue}>—</p>
-                </article>
-              )}
-              {fastestDecisionClient ? (
-                <Link href={`/app/leads-clients/clients/${fastestDecisionClient.id}`} className="block">
-                  <article className={`${styles.metricTile} cursor-pointer`}>
-                    <div className={styles.metricTop}>
-                      <span className={`${interMedium.className} ${styles.metricLabel}`}>Fastest Decision Client</span>
-                    </div>
-                    <p className={styles.metricValue}>{fastestDecisionClient.displayName}</p>
-                  </article>
-                </Link>
-              ) : (
-                <article className={styles.metricTile}>
-                  <div className={styles.metricTop}>
-                    <span className={`${interMedium.className} ${styles.metricLabel}`}>Fastest Decision Client</span>
-                  </div>
-                  <p className={styles.metricValue}>—</p>
-                </article>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        </div>
+        <div className="grid gap-4 grid-cols-4">
+            {/* Best Conversion Rate */}
+            {bestConversionClientInTopPeriod ? (
+              <Link href={`/app/leads-clients/clients/${bestConversionClientInTopPeriod.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
+                    <TrendingUp className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Best Conversion Rate</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.1rem,2vw,1.4rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[#111827]`}>{bestConversionClientInTopPeriod.displayName}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#F15A29]`}>{Math.round(bestConversionClientInTopPeriod.conversionRate * 100)}% conversion rate</p>
+              </Link>
+            ) : (
+              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
+                    <TrendingUp className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Best Conversion Rate</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[1.4rem] font-semibold text-[#B0BEC8]`}>—</p>
+              </div>
+            )}
 
-        <Card className={styles.tableCard}>
-          <CardHeader className={`${styles.sectionHeader} !flex-row !items-center !justify-between !space-y-0 gap-3`}>
-            <CardTitle className={styles.sectionTitle}>Client list</CardTitle>
-            <form action="/app/leads-clients/clients" method="get" className="flex items-center gap-2">
-              {topClientPeriod !== "12m" ? <input type="hidden" name="topClientPeriod" value={topClientPeriod} /> : null}
-              <input
-                type="text"
-                name="clientSearch"
-                defaultValue={clientSearch}
-                placeholder="Search"
-                className={`${interMedium.className} ${styles.actionButton} w-auto outline-none placeholder:text-[#7b8aa3] focus:border-[#bfc9d8]`}
-              />
-            </form>
-          </CardHeader>
-          <CardContent className="pt-0">
+            {/* Highest Value Won */}
+            {highestValueWonClient ? (
+              <Link href={`/app/leads-clients/clients/${highestValueWonClient.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#0E172B]">
+                    <DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Highest Value Won</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.1rem,2vw,1.4rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[#111827]`}>{highestValueWonClient.displayName}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#0E172B]`}>${((wonValueByClientId.get(highestValueWonClient.id) ?? 0) / 1_000_000).toFixed(1)}M won</p>
+              </Link>
+            ) : (
+              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#0E172B]">
+                    <DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Highest Value Won</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[1.4rem] font-semibold text-[#B0BEC8]`}>—</p>
+              </div>
+            )}
+
+            {/* Most Active Client */}
+            {mostRepeatWinsClient ? (
+              <Link href={`/app/leads-clients/clients/${mostRepeatWinsClient.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#DFF1E5]">
+                    <Award className="h-5 w-5 text-[#18384C]" strokeWidth={2.2} />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Most Repeat Wins</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.1rem,2vw,1.4rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[#111827]`}>{mostRepeatWinsClient.displayName}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#18384C]`}>{mostRepeatWinsClient.wonCount} jobs won</p>
+              </Link>
+            ) : (
+              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#DFF1E5]">
+                    <Award className="h-5 w-5 text-[#18384C]" strokeWidth={2.2} />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Most Repeat Wins</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[1.4rem] font-semibold text-[#B0BEC8]`}>—</p>
+              </div>
+            )}
+
+            {/* Total Clients */}
+            <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
+                  <Users className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
+                </span>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Total Clients</p>
+              </div>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{rows.length}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>{rows.filter(r => r.activeLeads > 0).length} active</p>
+            </div>
+          </div>
+
+        {/* Search + Filter bar */}
+        <form action="/app/leads-clients/clients" method="get" className="flex items-center gap-3 mt-4">
+          {topClientPeriod !== "12m" ? <input type="hidden" name="topClientPeriod" value={topClientPeriod} /> : null}
+          <div className="flex flex-1 items-center gap-2 rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 h-[42px]">
+            <svg width="14" height="14" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="#9AAAB8" strokeWidth="1.3"/><path d="M9 9l2.5 2.5" stroke="#9AAAB8" strokeWidth="1.3" strokeLinecap="round"/></svg>
+            <input
+              type="text"
+              name="clientSearch"
+              defaultValue={clientSearch}
+              placeholder="Search clients..."
+              className={`${ibmPlexSans.className} h-full flex-1 border-0 bg-transparent text-[14px] text-[#1d1d1d] outline-none placeholder:text-[#9AAAB8]`}
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            {(["all", "active", "inactive"] as const).map((s) => {
+              const isActive = statusFilter === s;
+              const label = s.charAt(0).toUpperCase() + s.slice(1);
+              return (
+                <Link
+                  key={s}
+                  href={buildStatusHref(s)}
+                  className={`${ibmPlexSans.className} inline-flex h-[42px] items-center rounded-[0.8rem] px-5 text-[14px] font-semibold transition ${
+                    isActive ? "bg-[#0B2739] text-white" : "border border-[#E2E8F1] bg-white text-[#10283B] hover:bg-[#EEF3F9]"
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        </form>
+
+        {/* Client List */}
+        <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
+          <CardContent className="p-0">
             {filteredClientRows.length === 0 ? (
-              <div className={styles.simpleEmptyPanel}>
-                <p className={`${interMedium.className} ${styles.simpleEmptyText}`}>
-                  No matching clients found.
-                </p>
+              <div className="px-6 pb-6">
+                <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
+                  <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>No matching clients found.</p>
+                </div>
               </div>
             ) : (
-              <div className={styles.simpleList}>
-                {filteredClientRows.map((client) => (
-                  <article key={client.id} className={styles.simpleListItem}>
-                    <p className={`${interMedium.className} ${styles.simpleListTitle}`}>{client.company_name || "Unknown Company"}</p>
-                    <Button variant="ghost" asChild className={styles.actionButton}>
-                      <Link href={`/app/leads-clients/clients/${client.id}`}>View</Link>
-                    </Button>
-                  </article>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
+                      {["Client", "Contact", "Projects", "Status", "Actions"].map((h) => (
+                        <th key={h} className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#6A7B95]`}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredClientRows.map((client) => {
+                      const displayName = client.company_name?.trim() || "Unknown Company";
+                      const initials = displayName.split(/\s+/).slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? "").join("");
+                      const isOverdue = overdueClientIds.has(client.id);
+                      const totalProjects = client.projectsCount;
+                      const activeProjects = client.activeLeads;
+
+                      return (
+                        <tr key={client.id} className="group border-b border-[#E2E8F1] last:border-0 transition-colors hover:bg-[#F8FBFB]">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <span className={`${ibmPlexSans.className} inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F15A29] text-[13px] font-semibold text-white`}>
+                                {initials}
+                              </span>
+                              <div>
+                                <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>{displayName}</p>
+                                {client.name ? <p className={`${ibmPlexSans.className} text-[13px] text-[#6A7A89]`}>{client.name}</p> : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="space-y-1">
+                              {client.email ? (
+                                <p className={`${ibmPlexSans.className} flex items-center gap-1.5 text-[13px] text-[#4B5D79]`}>
+                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="2.5" width="10" height="7" rx="1.2" stroke="#6A7A89" strokeWidth="1.1"/><path d="M1 4l5 3.5L11 4" stroke="#6A7A89" strokeWidth="1.1" strokeLinecap="round"/></svg>
+                                  {client.email}
+                                </p>
+                              ) : null}
+                              {client.phone ? (
+                                <p className={`${ibmPlexSans.className} flex items-center gap-1.5 text-[13px] text-[#4B5D79]`}>
+                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2.5C2 2.5 2.5 1 3.5 1c.5 0 1 .5 1.5 1.5S5.5 4 5 4.5C4.5 5 5 6 6 7s2 1.5 2.5 1c.5-.5 1.5-.5 2-.5s1.5 1 1.5 1.5c0 1-1.5 1.5-1.5 1.5C8 11 1 4 2 2.5z" stroke="#6A7A89" strokeWidth="1.1" strokeLinecap="round"/></svg>
+                                  {client.phone}
+                                </p>
+                              ) : null}
+                              {!client.email && !client.phone ? <p className={`${ibmPlexSans.className} text-[13px] text-[#B0BEC8]`}>—</p> : null}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>
+                              {activeProjects} active / {totalProjects} total
+                            </p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${
+                              isOverdue
+                                ? "bg-[#FEE2E2] text-[#B91C1C]"
+                                : activeProjects > 0
+                                ? "bg-[#DCFCE7] text-[#15803D]"
+                                : "bg-[#F1F5F9] text-[#64748B]"
+                            }`}>
+                              {isOverdue ? "Overdue" : activeProjects > 0 ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <Link
+                              href={`/app/leads-clients/clients/${client.id}`}
+                              className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                            >
+                              View
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className={styles.tableCard}>
-          <CardHeader className={styles.sectionHeader}>
-            <CardTitle className={styles.sectionTitle}>Client Insights (AI)</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0" />
+        {/* Client Insights */}
+        <Card className="overflow-hidden rounded-[32px] border-none bg-[var(--app-surface)] shadow-none">
+          <div className="px-6 pt-6 pb-4">
+            <h2 className={`${interMedium.className} text-[1.4rem] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+              Client Insights (AI)
+            </h2>
+          </div>
+          <CardContent className="pb-8 pt-0" />
         </Card>
-      </section>
+      </div>
     </main>
   );
 }

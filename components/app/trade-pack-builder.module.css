@@ -1,7 +1,7 @@
 .scope {
-  --dash-bg: #f3f4f6;
+  --dash-bg: #fbfefe;
   --dash-panel: #ffffff;
-  --dash-panel-muted: #f7f7f5;
+  --dash-panel-muted: #fbfefe;
   --dash-border: rgba(17, 17, 17, 0.1);
   --dash-border-strong: rgba(17, 17, 17, 0.12);
   --dash-text: #1d1d1d;
@@ -17,13 +17,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.15rem 0 0.35rem;
+  padding: 25px 0 0.35rem;
 }
 
 .heroActions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: flex-end;
   gap: 0.55rem;
 }
 
@@ -35,9 +35,9 @@
 }
 
 .heroTitle {
-  margin: 0.45rem 0 0;
+  margin: 0;
   color: var(--dash-text);
-  font-size: clamp(1.55rem, 2.8vw, 2.6rem);
+  font-size: clamp(1.24rem, 2.24vw, 2.08rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
   font-weight: 600;
@@ -74,11 +74,9 @@
 
 .card {
   border: 1px solid rgba(17, 17, 17, 0.08);
-  border-radius: 1.9rem;
-  background: #f6f7f9;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 16px 34px -28px rgba(17, 17, 17, 0.28);
+  border-radius: 1.75rem;
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .sectionHeader {
@@ -98,7 +96,6 @@
   border: 1px solid var(--dash-border);
   border-radius: 1.15rem;
   background: var(--dash-bg);
-  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.03);
   padding: 0.9rem;
 }
 
@@ -130,7 +127,7 @@
   min-height: 44px;
   border: 1px solid var(--dash-border-strong);
   border-radius: 1rem;
-  background: var(--dash-bg);
+  background: var(--dash-panel);
   padding: 0 0.6rem;
 }
 
@@ -139,7 +136,7 @@
   width: 100%;
   border: 1px solid var(--dash-border-strong);
   border-radius: 1rem;
-  background: var(--dash-bg);
+  background: var(--dash-panel);
   padding: 0 0.9rem;
   color: var(--dash-text);
   font-size: 15px;
@@ -148,8 +145,7 @@
 .selectionBox {
   border: 1px solid var(--dash-border);
   border-radius: 1rem;
-  background: var(--dash-bg);
-  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.025);
+  background: var(--dash-panel);
   padding: 0.7rem 0.8rem;
 }
 
@@ -174,56 +170,57 @@
   border-color: var(--dash-border-strong) !important;
   background: var(--dash-panel) !important;
   color: var(--dash-ink) !important;
+  box-shadow: none !important;
 }
 
 .listRow {
   border: 1px solid var(--dash-border);
   border-radius: 12px;
   background: var(--dash-panel);
-  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.025);
+  box-shadow: none;
 }
 
 .menuPanel {
   border: 1px solid var(--dash-border-strong);
   border-radius: 0.75rem;
   background: var(--dash-panel);
-  box-shadow: 0 10px 20px rgba(16, 24, 40, 0.12);
+  box-shadow: none;
 }
 
 .infoPanel {
   border: 1px solid var(--dash-border);
   border-radius: 1rem;
-  background: var(--dash-panel-muted);
+  background: var(--dash-panel);
 }
 
 .cardMuted {
   border: 1px solid var(--dash-border);
   border-radius: 1rem;
-  background: #F6F7F9;
-  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.025);
+  background: var(--dash-bg);
+  box-shadow: none;
 }
 
 .producedCardProjectTone {
-  background: #F6F7F9 !important;
-  border-color: #E5E7EB !important;
+  background: #ffffff !important;
+  border-color: #D9DEE5 !important;
 }
 
 .producedRowProjectTone {
-  background: #f6f7f9 !important;
+  background: #fbfefe !important;
   border-color: #d9dee5 !important;
 }
 
 .producedActionButtonProjectTone {
-  background: #F7F8FA !important;
+  background: #ffffff !important;
 }
 
 .scopeWorkbenchActionButtonGrey {
-  background: #F3F4F5 !important;
+  background: #ffffff !important;
   border-color: #d9dee5 !important;
 }
 
 .scopeWorkbenchActionButtonGrey:hover {
-  background: #F3F4F5 !important;
+  background: #F7FAFB !important;
   border-color: #d9dee5 !important;
 }
 

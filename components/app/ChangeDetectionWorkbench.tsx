@@ -382,7 +382,7 @@ export function ChangeDetectionWorkbench({
 
       <section className="space-y-5">
         <div className={styles.dashboardGrid}>
-          <div className={`lg:col-span-2 ${styles.card} rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] px-7 pb-6 pt-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-6 md:pt-8`}>
+          <div className={`lg:col-span-2 ${styles.card} rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-6 pt-7 shadow-none md:px-8 md:pb-6 md:pt-8`}>
             <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[260px]`}>
               <p className={styles.sectionTitle}>Run Change Detection</p>
               <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
@@ -460,7 +460,7 @@ export function ChangeDetectionWorkbench({
           </div>
         </div>
 
-        <section className={`${styles.card} space-y-4 rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8`}>
+        <section className={`${styles.card} space-y-4 rounded-[28px] border border-[#d9dee5] bg-white p-7 shadow-none md:p-8`}>
           <h3 className={styles.sectionTitle}>Stored Change Runs</h3>
           <div className={`${styles.listRow} ${styles.producedRowProjectTone} p-[14px_18px]`}>
             <div className="flex flex-wrap items-center gap-2">

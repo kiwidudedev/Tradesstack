@@ -13,7 +13,7 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans } from "@/lib/fonts";
 import styles from "./dashboard.module.css";
 
 type OverviewTone = "accent" | "ink" | "sage" | "gold";
@@ -73,7 +73,6 @@ function formatAucklandTime(value: Date) {
     timeZone: "Pacific/Auckland",
     hour: "numeric",
     minute: "2-digit",
-    second: "2-digit",
     hour12: true,
   }).format(value);
 }
@@ -157,10 +156,10 @@ export function DashboardWorkspace(props: DashboardWorkspaceProps) {
                       <span className={styles[`iconBadge${item.tone[0].toUpperCase()}${item.tone.slice(1)}`]}>
                         <Icon className="h-4.5 w-4.5" strokeWidth={2.2} />
                       </span>
-                      <span className={`${interMedium.className} ${styles.metricLabel}`}>{item.label}</span>
+                      <span className={`${ibmPlexSans.className} ${styles.metricLabel}`}>{item.label}</span>
                     </div>
                     <p className={styles.metricValue}>{item.value}</p>
-                    <p className={`${interMedium.className} ${styles.metricMeta}`}>{item.meta}</p>
+                    <p className={`${ibmPlexSans.className} ${styles.metricMeta}`}>{item.meta}</p>
                   </article>
                 );
               })}
@@ -187,7 +186,7 @@ export function DashboardWorkspace(props: DashboardWorkspaceProps) {
                     <span className={styles.todoCount}>{item.count}</span>
                     <div className={styles.todoText}>
                       <p className={styles.todoTitle}>{item.title}</p>
-                      <p className={`${interMedium.className} ${styles.todoMeta}`}>{item.detail}</p>
+                      <p className={`${ibmPlexSans.className} ${styles.todoMeta}`}>{item.detail}</p>
                     </div>
                     <ArrowUpRight className={styles.todoArrow} strokeWidth={2.1} />
                   </article>
@@ -219,11 +218,11 @@ export function DashboardWorkspace(props: DashboardWorkspaceProps) {
                       <CheckCircle2 className="h-4 w-4" strokeWidth={2.3} />
                     </span>
                     <div className={styles.todayText}>
-                      <p className={`${interMedium.className} ${styles.todayEyebrow}`}>{item.eyebrow}</p>
+                      <p className={`${ibmPlexSans.className} ${styles.todayEyebrow}`}>{item.eyebrow}</p>
                       <p className={styles.todayTitle}>{item.title}</p>
-                      <p className={`${interMedium.className} ${styles.todayMeta}`}>{item.detail}</p>
+                      <p className={`${ibmPlexSans.className} ${styles.todayMeta}`}>{item.detail}</p>
                     </div>
-                    <span className={`${interMedium.className} ${styles.todayBadge}`}>{item.badge}</span>
+                    <span className={`${ibmPlexSans.className} ${styles.todayBadge}`}>{item.badge}</span>
                   </article>
                 ))
               ) : (
@@ -251,12 +250,12 @@ export function DashboardWorkspace(props: DashboardWorkspaceProps) {
                   <div className={styles.leadTop}>
                     <div>
                       <p className={styles.leadTitle}>{lead.title}</p>
-                      <p className={`${interMedium.className} ${styles.leadMeta}`}>{lead.client}</p>
+                      <p className={`${ibmPlexSans.className} ${styles.leadMeta}`}>{lead.client}</p>
                     </div>
-                    <span className={`${interMedium.className} ${styles.leadStage}`}>{lead.stage}</span>
+                    <span className={`${ibmPlexSans.className} ${styles.leadStage}`}>{lead.stage}</span>
                   </div>
                   <div className={styles.leadBottom}>
-                    <span className={`${interMedium.className} ${styles.leadDue}`}>{lead.dueLabel}</span>
+                    <span className={`${ibmPlexSans.className} ${styles.leadDue}`}>{lead.dueLabel}</span>
                     <span className={styles.leadValue}>{lead.value}</span>
                   </div>
                 </article>
@@ -271,23 +270,23 @@ export function DashboardWorkspace(props: DashboardWorkspaceProps) {
   };
 
   return (
-    <main className={`${styles.dashboardScope} space-y-6 pb-8`}>
+    <main className={`${ibmPlexSans.className} ${styles.dashboardScope} space-y-6 pb-8`}>
       <section className={styles.heroBlock}>
         <div>
           <h1 className={styles.heroHeading}>
             {props.greeting}, {props.firstName}
           </h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+          <p className={`${ibmPlexSans.className} ${styles.heroSummary}`}>
             See what needs attention, track your jobs, and keep everything moving in one place.
           </p>
         </div>
         <div className={styles.heroActions}>
-          <p className={`${interMedium.className} ${styles.heroDate}`}>
+          <p className={`${ibmPlexSans.className} ${styles.heroDate}`}>
             {props.dateLabel} {formatAucklandTime(currentTime)}
           </p>
           <button type="button" className={styles.heroBadgeButton} onClick={() => setIsEditing((current) => !current)}>
             <Pencil className="h-4 w-4" strokeWidth={2.3} />
-            <span className={interMedium.className}>{isEditing ? "Done editing" : "Edit dashboard"}</span>
+            <span className={ibmPlexSans.className}>{isEditing ? "Done editing" : "Edit dashboard"}</span>
           </button>
         </div>
       </section>

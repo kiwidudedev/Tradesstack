@@ -737,7 +737,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
                 >
                   {message.role === "assistant" ? (
                     <div className="w-fit max-w-[82%] px-1 py-2 sm:max-w-[76%]">
-                      <div className="min-w-0 max-w-full rounded-[24px] border border-[#E3E7EC] bg-[#F3F4F6] px-6 py-5">
+                      <div className="min-w-0 max-w-full rounded-[24px] border border-[#E3E7EC] bg-white px-6 py-5">
                         <div className="break-words bg-transparent p-0 text-[#283D4D]">
                           {renderAssistantContent(message.content)}
                         </div>
@@ -757,7 +757,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string }) {
           {isLoading ? (
             <div className="w-full">
               <div className="w-fit max-w-[82%] px-1 py-2 sm:max-w-[76%]">
-                <div className="min-w-0 max-w-full rounded-[24px] border border-[#E3E7EC] bg-[#F3F4F6] px-6 py-5">
+                <div className="min-w-0 max-w-full rounded-[24px] border border-[#E3E7EC] bg-white px-6 py-5">
                   <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#6B7C8F]">TS</p>
                   <p className="inline-flex items-center gap-1 text-[15px] leading-[1.75] text-[#1b324f]">
                     TS is thinking...

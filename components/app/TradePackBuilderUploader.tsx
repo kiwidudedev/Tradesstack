@@ -1700,7 +1700,7 @@ export function TradePackBuilderUploader({
                 variant="ghost"
                 onClick={cancelRenameDrawingSet}
                 disabled={renamingId === drawingSet.id || isGeneratingPack || deletingDrawingSetId !== null}
-                className="h-8 rounded-[6px] px-3 text-[13px] text-[#6b6b6b] hover:bg-[#F3F4F6]"
+                className="h-8 rounded-[6px] px-3 text-[13px] text-[#6b6b6b] hover:bg-[#F7FAFB]"
               >
                 Cancel
               </Button>
@@ -1765,7 +1765,7 @@ export function TradePackBuilderUploader({
                       type="button"
                       onClick={() => startRenameDrawingSet(drawingSet)}
                       disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                      className="flex h-8 w-full items-center rounded-[6px] px-2.5 text-left text-sm text-[#1d1d1d] hover:bg-[#F3F4F6] disabled:text-[#8a8a8a]"
+                      className="flex h-8 w-full items-center rounded-[6px] px-2.5 text-left text-sm text-[#1d1d1d] hover:bg-[#F7FAFB] disabled:text-[#8a8a8a]"
                     >
                       Rename
                     </button>
@@ -1833,7 +1833,7 @@ export function TradePackBuilderUploader({
       <section className={styles.dashboardGrid}>
         <div className="space-y-3 lg:col-span-2">
           <div
-            className={`${styles.card} rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8`}
+            className={`${styles.card} rounded-[28px] border border-[#d9dee5] bg-white p-7 shadow-none md:p-8`}
           >
             <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
               <p className={styles.sectionTitle}>Create Trade Pack</p>
@@ -1904,7 +1904,7 @@ export function TradePackBuilderUploader({
 
             <div className="mt-4 space-y-2">
               {generationStep ? (
-                <div className="space-y-2 rounded-[6px] border border-[rgba(17,17,17,0.12)] bg-[#F3F4F6] px-3 py-2">
+                <div className="space-y-2 rounded-[6px] border border-[rgba(17,17,17,0.12)] bg-[#FBFEFE] px-3 py-2">
                   <p className="inline-flex items-center gap-2 text-sm text-[#6b6b6b]">
                     <Loader2 className="h-4 w-4 animate-spin text-[#ff5406]" />
                     {generationStep}
@@ -1941,7 +1941,7 @@ export function TradePackBuilderUploader({
       </section>
 
       <section
-        className={`${styles.card} ${producedCardToneClass} space-y-5 rounded-[32px] border p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8`}
+        className={`${styles.card} ${producedCardToneClass} space-y-5 rounded-[28px] border p-7 shadow-none md:p-8`}
       >
         <h3 className={styles.sectionTitle}>Produced Trade Packs</h3>
         <div className="space-y-2">

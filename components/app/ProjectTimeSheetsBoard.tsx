@@ -579,8 +579,8 @@ export function ProjectTimeSheetsBoard() {
   };
 
   return (
-    <div className="min-h-full space-y-4 bg-[#F3F4F6]">
-      <section className="space-y-4 bg-[#F3F4F6] pt-2">
+    <div className="min-h-full space-y-4 bg-[#FBFEFE]">
+      <section className="space-y-4 bg-[#FBFEFE] pt-[25px]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-[41.6px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Time Sheets</h1>
@@ -595,7 +595,7 @@ export function ProjectTimeSheetsBoard() {
                 <Button
                   type="button"
                   variant="outline"
-                  className={`${interMedium.className} h-8 rounded-[999px] border-[#D9DEE5] !bg-[#F7F8FA] px-3 text-[13px] text-[#0B2639] shadow-none hover:!border-[#D9DEE5] hover:!bg-[#F7F8FA] hover:!text-[#0B2639]`}
+                className={`${interMedium.className} h-8 rounded-[999px] border-[#D9DEE5] !bg-white px-3 text-[13px] text-[#0B2639] shadow-none hover:!border-[#D9DEE5] hover:!bg-[#F7FAFB] hover:!text-[#0B2639]`}
                 >
                   Actions
                   <ChevronDown className="ml-1 h-4 w-4" />
@@ -605,11 +605,11 @@ export function ProjectTimeSheetsBoard() {
                 side="top"
                 align="end"
                 sideOffset={8}
-                className="!z-[200] min-w-[220px] rounded-[12px] border border-[#D9DEE5] !bg-[#F3F4F6] p-1.5 opacity-100 shadow-[0_10px_20px_rgba(16,24,40,0.12)]"
+                className="!z-[200] min-w-[220px] rounded-[12px] border border-[#D9DEE5] !bg-white p-1.5 opacity-100 shadow-none"
               >
                 <DropdownMenuItem
                   onClick={() => setRange("Today")}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
                 >
                   <span className="mr-2 inline-flex w-4 items-center justify-center">
                     {range === "Today" ? <Check className="h-4 w-4" /> : null}
@@ -618,7 +618,7 @@ export function ProjectTimeSheetsBoard() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setRange("This week")}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
                 >
                   <span className="mr-2 inline-flex w-4 items-center justify-center">
                     {range === "This week" ? <Check className="h-4 w-4" /> : null}
@@ -627,7 +627,7 @@ export function ProjectTimeSheetsBoard() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setRange("All recent")}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
                 >
                   <span className="mr-2 inline-flex w-4 items-center justify-center">
                     {range === "All recent" ? <Check className="h-4 w-4" /> : null}
@@ -637,14 +637,14 @@ export function ProjectTimeSheetsBoard() {
                 <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
                 <DropdownMenuItem
                   onClick={exportCsv}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
                 >
                   <Download className="mr-2 h-4 w-4" />
                   CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => window.print()}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
                 >
                   <FileText className="mr-2 h-4 w-4" />
                   PDF
@@ -690,9 +690,9 @@ export function ProjectTimeSheetsBoard() {
         </section>
       ) : null}
 
-      <section className="bg-[#F3F4F6]">
+      <section className="bg-[#FBFEFE]">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
             <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>On Site Now</p>
             <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{summary.onSiteNow}</p>
             <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
@@ -700,7 +700,7 @@ export function ProjectTimeSheetsBoard() {
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
             <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#E11D48]`}>Overtime Alerts</p>
             <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{summary.overtimeAlerts}</p>
             <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
@@ -708,7 +708,7 @@ export function ProjectTimeSheetsBoard() {
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
             <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#0F766E]`}>Complete</p>
             <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">
               {Math.max(0, summary.workersToday - summary.missingClockOuts)}
@@ -718,7 +718,7 @@ export function ProjectTimeSheetsBoard() {
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-[#F3F4F6] px-5 py-4.5">
+          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
             <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#B45309]`}>Total Hours</p>
             <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{formatHours(summary.totalHours)}</p>
             <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
@@ -728,7 +728,7 @@ export function ProjectTimeSheetsBoard() {
         </div>
       </section>
 
-      <Card className="rounded-[30px] border border-[#D9DEE5] !bg-[#F6F7F9] shadow-none">
+      <Card className="rounded-[28px] border border-[#D9DEE5] !bg-white shadow-none">
         <CardHeader className="pb-3 pt-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>

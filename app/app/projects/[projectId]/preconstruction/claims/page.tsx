@@ -346,8 +346,8 @@ export default function ProjectClaimsRegisterPage() {
                 <ChevronDown className="ml-1 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-white p-1.5 opacity-100`}>
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
                 <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
                   <ExternalLink className="mr-2 h-4 w-4" />
                   Project Dashboard
@@ -360,7 +360,7 @@ export default function ProjectClaimsRegisterPage() {
                   void createClaimAndOpen();
                 }}
                 disabled={isLoading || isCreatingClaim}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 {isCreatingClaim ? "Creating..." : "New Claim"}
@@ -374,7 +374,7 @@ export default function ProjectClaimsRegisterPage() {
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
       ) : null}
 
-      <section className="overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-6 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8">
+      <section className="overflow-hidden rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-7 pt-6 shadow-none md:px-8 md:pb-8">
         {isLoading ? (
           <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading claims register...</p>
         ) : (
@@ -383,19 +383,19 @@ export default function ProjectClaimsRegisterPage() {
               Project Claims & Invoices
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#F6F7F9] px-5 py-4">
+              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
                 <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#64748B]`}>Current Project Total</p>
                 <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.contractValue)}</p>
               </div>
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#F6F7F9] px-5 py-4">
+              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
                 <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#B45309]`}>Submitted</p>
                 <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.dueValue)}</p>
               </div>
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#F6F7F9] px-5 py-4">
+              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
                 <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#047857]`}>Paid</p>
                 <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.paidValue)}</p>
               </div>
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#F6F7F9] px-5 py-4">
+              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
                 <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#B45309]`}>Outstanding</p>
                 <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.outstanding)}</p>
               </div>
@@ -418,7 +418,7 @@ export default function ProjectClaimsRegisterPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-[12px] border border-[#D9DEE5] bg-[#F6F7F9]">
+                <div className="overflow-x-auto rounded-[16px] border border-[#D9DEE5] bg-white">
                   <table className="min-w-full border-collapse">
                     <thead>
                       <tr className={`${interMedium.className} text-[13px] font-medium tracking-[0.01em] text-[#6b7280]`}>
@@ -440,7 +440,7 @@ export default function ProjectClaimsRegisterPage() {
                           <tr
                             key={claim.id}
                             onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`)}
-                            className="cursor-pointer border-t border-[#D9DEE5] bg-[#F3F4F6] transition-colors hover:bg-[#EEF2F7]"
+                            className="cursor-pointer border-t border-[#D9DEE5] bg-[#FBFEFE] transition-colors hover:bg-[#F7FAFB]"
                           >
                             <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
                               <span className="hover:underline">{claim.claim_number}</span>

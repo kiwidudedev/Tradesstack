@@ -3,9 +3,9 @@ import { interMedium } from "@/lib/fonts";
 
 export default function FinancialSettingsPage() {
   return (
-    <Card className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] shadow-none">
-      <CardHeader className="pb-2 pt-7">
-        <CardTitle className="text-[30px] font-semibold leading-tight tracking-[-0.02em] text-[#0F172A] sm:text-[32px]">
+    <Card className="rounded-[22px] border border-[#D9DEE5] bg-white shadow-none">
+      <CardHeader className="pb-4 pt-4">
+        <CardTitle className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">
           Financial Settings
         </CardTitle>
       </CardHeader>

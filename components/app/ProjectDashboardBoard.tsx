@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Fragment } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -8,7 +9,6 @@ import {
   CheckCircle2,
   ClipboardList,
   FileSearch,
-  Pencil,
   ReceiptText,
   Sparkles,
 } from "lucide-react";
@@ -57,6 +57,26 @@ interface ActivityItem {
   detail: string;
   at: string;
   href: string;
+}
+
+interface ProjectDetailsDraft {
+  projectName: string;
+  clientName: string;
+  stage: string;
+  location: string;
+  createdAt: string;
+}
+
+function formatStageLabel(stage: string | null | undefined) {
+  if (!stage) {
+    return "Project";
+  }
+
+  if (stage === "Pricing") {
+    return "In Progress";
+  }
+
+  return stage;
 }
 
 const EMPTY_METRICS: DashboardMetrics = {
@@ -113,8 +133,14 @@ export function ProjectDashboardBoard() {
   const [aiInsights, setAiInsights] = useState<string[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState(() => new Date());
-
+  const [isEditingProjectDetails, setIsEditingProjectDetails] = useState(false);
+  const [projectDetailsDraft, setProjectDetailsDraft] = useState<ProjectDetailsDraft>({
+    projectName: "",
+    clientName: "",
+    stage: "",
+    location: "",
+    createdAt: "",
+  });
   const isLoadingRef = useRef(false);
 
   const supabase = useMemo(() => {
@@ -127,17 +153,18 @@ export function ProjectDashboardBoard() {
 
   const projectBase = useMemo(() => `/app/projects/${routeProjectSlug}`, [routeProjectSlug]);
   const tradePackCardClassName =
-    "app-surface app-surface-border rounded-[30px] border shadow-none";
+    "app-surface rounded-[14px] border-[1.3px] border-[#E2E8F1] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]";
 
   const overviewCards = useMemo(
     () => [
       {
-        label: "Tasks due today",
+        label: "Due today",
         value: String(metrics.tasksDueToday),
         meta: `${metrics.overdueTasks} overdue`,
         href: `${projectBase}/job-management/todos`,
         icon: ClipboardList,
-        iconClassName: "bg-[#ffe9de] text-[#f74917]",
+        iconClassName: "bg-[#F74919] text-white shadow-[0_4px_10px_rgba(247,73,25,0.14)]",
+        metaClassName: "text-[#F74919]",
       },
       {
         label: "Open issues",
@@ -145,7 +172,8 @@ export function ProjectDashboardBoard() {
         meta: `${metrics.failedInspections} failed inspections`,
         href: `${projectBase}/job-management/quality-assurance`,
         icon: FileSearch,
-        iconClassName: "bg-[#e8eef2] text-[#0b2639]",
+        iconClassName: "bg-[#0E172B] text-[#D9E6F2] shadow-[0_4px_10px_rgba(14,23,43,0.12)]",
+        metaClassName: "text-[#0E172B]",
       },
       {
         label: "Active workers",
@@ -153,7 +181,8 @@ export function ProjectDashboardBoard() {
         meta: `${metrics.inspectionsToday} inspections today`,
         href: `${projectBase}/job-management/time-sheets`,
         icon: BriefcaseBusiness,
-        iconClassName: "bg-[#dff1e5] text-[#2f6b4f]",
+        iconClassName: "bg-[#AACFDF] text-[#18384C] shadow-[0_4px_10px_rgba(80,119,139,0.10)]",
+        metaClassName: "text-[#0E172B]",
       },
       {
         label: "Pipeline value",
@@ -161,7 +190,8 @@ export function ProjectDashboardBoard() {
         meta: `${financials.claimsSubmitted} claims submitted`,
         href: `${projectBase}/preconstruction/claims`,
         icon: ReceiptText,
-        iconClassName: "bg-[#f3ead6] text-[#8a6731]",
+        iconClassName: "bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]",
+        metaClassName: "text-[#F74919]",
       },
     ],
     [
@@ -194,16 +224,6 @@ export function ProjectDashboardBoard() {
   );
 
   const upcomingItems = useMemo(() => activity.slice(0, 4), [activity]);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, []);
 
   const loadData = async () => {
     if (!supabase || !routeProjectSlug || !session?.id || isLoadingRef.current) {
@@ -392,6 +412,13 @@ export function ProjectDashboardBoard() {
         location: String(projectRow.location ?? ""),
         createdAt: typeof projectRow.created_at === "string" ? projectRow.created_at : nowIso,
         clientName: String(clientResult.data?.name ?? "Unassigned"),
+      });
+      setProjectDetailsDraft({
+        projectName: String(projectRow.name ?? "Project"),
+        clientName: String(clientResult.data?.name ?? "Unassigned"),
+        stage: String(projectRow.stage ?? "Planning"),
+        location: String(projectRow.location ?? ""),
+        createdAt: typeof projectRow.created_at === "string" ? projectRow.created_at : nowIso,
       });
       setMetrics(nextMetrics);
 
@@ -619,145 +646,206 @@ export function ProjectDashboardBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 
+  const detailRows = [
+    {
+      key: "projectName",
+      label: "Project Name:",
+      value: context?.projectName ?? "Loading project...",
+      draftValue: projectDetailsDraft.projectName,
+    },
+    {
+      key: "clientName",
+      label: "Client:",
+      value: context?.clientName ?? "Unassigned",
+      draftValue: projectDetailsDraft.clientName,
+    },
+    {
+      key: "stage",
+      label: "Stage:",
+      value: context?.stage ?? "Planning",
+      draftValue: projectDetailsDraft.stage,
+    },
+    {
+      key: "location",
+      label: "Location:",
+      value: context?.location || "Not set",
+      draftValue: projectDetailsDraft.location,
+    },
+    {
+      key: "createdAt",
+      label: "Created:",
+      value: formatDateTime(context?.createdAt ?? null),
+      draftValue: projectDetailsDraft.createdAt,
+    },
+  ] as const;
+
   return (
-    <main className="app-canvas -mb-8 space-y-6 pb-10">
-      <section className="flex flex-col justify-between gap-4 pt-[0.15rem] xl:flex-row xl:items-start">
-        <div className="space-y-2">
-          <h1 className="mt-[0.45rem] max-w-[920px] text-[clamp(1.55rem,2.8vw,2.6rem)] font-semibold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
-            {context?.projectName ?? "Project Dashboard"}
-          </h1>
-          <p className={`${interMedium.className} mt-[0.65rem] max-w-none text-[15px] leading-[1.45] text-[#6b6b6b]`}>
-            Your project dashboard
-          </p>
-        </div>
-
-        <div className="flex flex-col items-start gap-[0.55rem] xl:items-end">
-          <p className={`${interMedium.className} m-0 max-w-[260px] text-[15px] text-[#6b6b6b] xl:text-right`}>
-            {new Intl.DateTimeFormat("en-NZ", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              hour: "numeric",
-              minute: "2-digit",
-              second: "2-digit",
-            }).format(currentTime)}
-          </p>
-          <button
-            type="button"
-            className="inline-flex items-center gap-[0.4rem] rounded-[999px] border border-[#0b2639] bg-[#0b2639] px-[0.7rem] py-[0.55rem] text-[15px] text-white transition hover:opacity-90"
-          >
-            <Pencil className="h-4 w-4" />
-            Edit dashboard
-          </button>
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        <Card className={tradePackCardClassName}>
-          <CardHeader className="pb-[0.7rem]">
-            <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Project Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-[0.65rem] pt-0">
-            <div className="space-y-4">
-              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Project name</p>
-                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.projectName ?? "Loading project..."}</p>
-              </div>
-              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Client</p>
-                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.clientName ?? "Unassigned"}</p>
-              </div>
-              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Stage</p>
-                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.stage ?? "Planning"}</p>
-              </div>
-              <div className="border-b border-[rgba(17,17,17,0.08)] pb-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Location</p>
-                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{context?.location || "Not set"}</p>
-              </div>
-              <div>
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#8a8a8a]`}>Created</p>
-                <p className="mt-[0.3rem] text-[15px] font-semibold text-[#1d1d1d]">{formatDateTime(context?.createdAt ?? null)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className={tradePackCardClassName}>
-          <CardHeader className="pb-[0.7rem]">
-            <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Performance at a glance</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="grid gap-[0.7rem] md:grid-cols-2">
-              {overviewCards.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className="app-surface app-surface-border rounded-[1.15rem] border p-[0.9rem] shadow-none transition hover:bg-[var(--app-surface)]"
-                  >
-                    <div className="flex items-center gap-[0.55rem]">
-                      <span className={`inline-flex h-[1.7rem] w-[1.7rem] items-center justify-center rounded-[0.65rem] ${item.iconClassName}`}>
-                        <Icon className="h-[1.125rem] w-[1.125rem]" />
-                      </span>
-                      <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>{item.label}</p>
-                    </div>
-                    <p className="mt-[0.7rem] text-[clamp(1.4rem,2.1vw,1.95rem)] font-semibold leading-none tracking-[0.01em] text-[#1d1d1d]">{item.value}</p>
-                    <p className={`${interMedium.className} mt-[0.45rem] text-[15px] text-[#6b6b6b]`}>{item.meta}</p>
-                  </Link>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        <Card className={tradePackCardClassName}>
-          <CardHeader className="pb-[0.7rem]">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-[1rem] w-[1rem] text-[#f74917]" />
-              <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Focus for the day</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-[0.65rem] pt-0">
-            {(focusItems.length > 0 ? focusItems : aiInsights.map((insight, index) => ({
-              id: `insight-${index}`,
-              eyebrow: "Project insight",
-              title: insight,
-              detail: "Open the workspace to keep this item moving.",
-              href: `${projectBase}/drawing-intelligence`,
-            }))).map((item) => (
+    <main className="app-canvas -mb-8 space-y-4 bg-[#F9FAFC] pb-10">
+      <section className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {overviewCards.map((item) => {
+            const Icon = item.icon;
+            return (
               <Link
-                key={item.id}
+                key={item.label}
                 href={item.href}
-                className="app-surface app-surface-border grid grid-cols-[auto_1fr_auto] items-center gap-[0.7rem] rounded-[1rem] border px-[0.75rem] py-[0.7rem] shadow-none transition hover:bg-[var(--app-surface)]"
+                className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
               >
-                <span className="inline-flex h-[1.65rem] w-[1.65rem] shrink-0 items-center justify-center rounded-full bg-[#dff1e5] text-[#2f6b4f]">
-                  <CheckCircle2 className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#f74917]`}>{item.eyebrow}</p>
-                  <p className="mt-[0.25rem] text-[15px] font-semibold text-[#1d1d1d]">{item.title}</p>
-                  <p className={`${interMedium.className} mt-[0.25rem] text-[15px] leading-[1.5] text-[#6b6b6b]`}>{item.detail}</p>
+                <div className="flex items-center gap-4">
+                  <span className={`inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] ${item.iconClassName}`}>
+                    <Icon className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
+                  </span>
+                  <p className="text-[18px] font-medium leading-none text-[#4B5D79]">{item.label}</p>
                 </div>
-                <span className={`${interMedium.className} app-surface rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-[#0b2639] shadow-none`}>
-                  Open
-                </span>
+                <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">{item.value}</p>
+                <p className={`mt-3 text-[16px] font-medium ${item.metaClassName}`}>{item.meta}</p>
               </Link>
-            ))}
-          </CardContent>
-        </Card>
+            );
+          })}
+        </div>
 
-        <Card className={tradePackCardClassName}>
-          <CardHeader className="pb-[0.7rem]">
-            <CardTitle className="mt-[0.45rem] text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">What&apos;s coming up next</CardTitle>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1.35fr)] xl:items-start">
+          <Card className={`${tradePackCardClassName} h-fit`}>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
+              <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Project Details</CardTitle>
+              {isEditingProjectDetails ? (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (context) {
+                        setProjectDetailsDraft({
+                          projectName: context.projectName,
+                          clientName: context.clientName,
+                          stage: context.stage,
+                          location: context.location,
+                          createdAt: context.createdAt,
+                        });
+                      }
+                      setIsEditingProjectDetails(false);
+                    }}
+                    className="inline-flex shrink-0 items-center justify-center rounded-[1rem] border border-[#CBD5E1] bg-white px-5 py-2.5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContext((previous) =>
+                        previous
+                          ? {
+                              ...previous,
+                              projectName: projectDetailsDraft.projectName,
+                              clientName: projectDetailsDraft.clientName,
+                              stage: projectDetailsDraft.stage,
+                              location: projectDetailsDraft.location,
+                              createdAt: projectDetailsDraft.createdAt,
+                            }
+                          : previous
+                      );
+                      setIsEditingProjectDetails(false);
+                    }}
+                    className="inline-flex shrink-0 items-center justify-center rounded-[1rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingProjectDetails(true)}
+                  className="inline-flex shrink-0 items-center rounded-[0.9rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
+                  style={{ fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif", fontWeight: 500 }}
+                >
+                  Edit details
+                </button>
+              )}
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid gap-x-4 gap-y-3 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
+                {detailRows.map((row) => (
+                  <Fragment key={row.key}>
+                    <p className="text-[16px] font-semibold text-[#4B5D79]">{row.label}</p>
+                    {isEditingProjectDetails ? (
+                      <input
+                        value={row.draftValue}
+                        onChange={(event) =>
+                          setProjectDetailsDraft((previous) => ({
+                            ...previous,
+                            [row.key]: event.target.value,
+                          }))
+                        }
+                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[16px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
+                      />
+                    ) : (
+                      <p className="text-[16px] font-medium text-[#111827]">{row.value}</p>
+                    )}
+                  </Fragment>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={`${tradePackCardClassName} h-full`}>
+            <CardHeader className="pb-[1.15rem] pt-[1.35rem]">
+              <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Today&apos;s Priority</CardTitle>
+            </CardHeader>
+            <CardContent className="flex h-full flex-col pt-0">
+              {(focusItems.length > 0 ? focusItems : aiInsights.map((insight, index) => ({
+                id: `insight-${index}`,
+                title: insight,
+                href: `${projectBase}/drawing-intelligence`,
+              }))).map((item, index, items) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className={`grid grid-cols-[auto_1fr] items-start gap-4 py-5 transition-colors hover:bg-[var(--app-surface)] ${index < items.length - 1 ? "border-b border-[#E2E8F1]" : ""}`}
+                >
+                  <span className="inline-flex h-[3.15rem] w-[3.15rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#DCE9FF]">
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      readOnly
+                      aria-label={`Mark ${item.title} complete`}
+                      className="h-5 w-5 shrink-0 accent-[#2F67F6]"
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[16px] font-semibold leading-[1.3] text-[#111827]">{item.title}</p>
+                    <p className="mt-1.5 text-[15px] font-medium text-[#64748B]">
+                      Assigned to: {index === 0 ? "Project Lead" : index === 1 ? "Site Manager" : "Operations Team"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <span
+                        className={`rounded-[10px] px-3 py-1.5 text-[14px] font-semibold ${
+                          index === 0
+                            ? "bg-[#FDE7E5] text-[#C2410C]"
+                            : "bg-[#FEF3C7] text-[#B7791F]"
+                        }`}
+                      >
+                        {index === 0 ? "High Priority" : "Medium Priority"}
+                      </span>
+                      <span className="text-[15px] font-medium text-[#64748B]">
+                        Due: {index === 0 ? "Today" : index === 1 ? "Tomorrow" : "This Week"}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
+        <Card className={`${tradePackCardClassName} h-fit`}>
+          <CardHeader className="pb-[1.15rem] pt-[1.35rem]">
+            <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">What&apos;s Coming Up Next</CardTitle>
           </CardHeader>
           <CardContent className="space-y-[0.65rem] pt-0">
             {upcomingItems.length === 0 ? (
-              <div className="app-surface app-surface-border rounded-[1rem] border px-4 py-4 shadow-none">
+              <div className="app-surface rounded-[14px] border-[1.3px] border-[#E2E8F1] px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>No recent project activity.</p>
               </div>
             ) : (
@@ -765,7 +853,7 @@ export function ProjectDashboardBoard() {
                 <Link
                   key={item.id}
                   href={item.href}
-                  className="app-surface app-surface-border block rounded-[1rem] border px-[0.75rem] py-[0.7rem] shadow-none transition hover:bg-[var(--app-surface)]"
+                  className="app-surface block rounded-[14px] border-[1.3px] border-[#E2E8F1] px-[0.75rem] py-[0.7rem] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -790,6 +878,7 @@ export function ProjectDashboardBoard() {
             ) : null}
           </CardContent>
         </Card>
+        <div />
       </section>
 
     </main>

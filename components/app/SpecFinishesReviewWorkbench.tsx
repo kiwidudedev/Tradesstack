@@ -247,7 +247,7 @@ export function SpecFinishesReviewWorkbench({
   const activeResult = runResult?.result ?? selectedStoredRun?.result ?? null;
   const isProjectSpecReviewPage = Boolean(projectDashboardHref);
   const projectCardClassName =
-    "rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] p-7 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:p-8";
+    "rounded-[28px] border border-[#d9dee5] bg-white p-7 shadow-none md:p-8";
   const activeMeta = runResult
     ? { fileName: runResult.fileName, generatedAt: runResult.generatedAt }
     : selectedStoredRun
@@ -500,8 +500,8 @@ export function SpecFinishesReviewWorkbench({
         <div className={styles.heroActions} />
       </section>
 
-      <Card className={`${styles.card} ${isProjectSpecReviewPage ? projectCardClassName : "bg-[#F6F7F9]"}`}>
-        <CardContent className={`${isProjectSpecReviewPage ? "space-y-0 p-0" : "space-y-5 bg-[#F6F7F9] p-5"}`}>
+      <Card className={`${styles.card} ${isProjectSpecReviewPage ? projectCardClassName : "bg-white"}`}>
+        <CardContent className={`${isProjectSpecReviewPage ? "space-y-0 p-0" : "space-y-5 bg-white p-5"}`}>
           <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
             <CardTitle className={styles.sectionTitle}>Generate Specification Review</CardTitle>
             <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">

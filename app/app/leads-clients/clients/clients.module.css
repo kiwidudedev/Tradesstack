@@ -1,7 +1,7 @@
 .clientsScope {
   --dash-bg: #FBFEFE;
   --dash-panel: #FBFEFE;
-  --dash-panel-muted: #FBFEFE;
+  --dash-panel-muted: #f7f7f5;
   --dash-border: rgba(17, 17, 17, 0.1);
   --dash-border-strong: rgba(17, 17, 17, 0.12);
   --dash-ink: #061a25;
@@ -21,13 +21,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.15rem 0 0.35rem;
+  padding: 25px 0 0.35rem;
 }
 
 .heroHeading {
-  margin: 0.45rem 0 0;
+  margin: 0;
   color: var(--dash-text);
-  font-size: clamp(1.55rem, 2.8vw, 2.6rem);
+  font-size: clamp(1.24rem, 2.24vw, 2.08rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
   font-weight: 600;
@@ -41,15 +41,18 @@
 }
 
 .heroButton {
-  display: inline-flex;
-  align-items: center;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.4rem !important;
   border-radius: 999px !important;
+  border: 1px solid #0b2639 !important;
   background: #0b2639 !important;
   color: #ffffff !important;
-  min-height: 2.75rem;
-  padding: 0 1rem !important;
+  min-height: auto;
+  padding: 0.55rem 0.7rem !important;
   font-size: 15px !important;
   font-weight: 500 !important;
+  box-shadow: none !important;
 }
 
 .heroButton:hover {
@@ -68,17 +71,16 @@
   border: 1px solid var(--dash-border) !important;
   border-radius: 1rem !important;
   background: var(--dash-panel) !important;
-  box-shadow:
-    0 20px 40px rgba(17, 17, 17, 0.04),
-    0 4px 14px rgba(17, 17, 17, 0.03) !important;
+  box-shadow: none !important;
 }
 
 .sectionHeader {
-  padding-bottom: 0.7rem !important;
+  padding-top: calc(0.7rem + 5px) !important;
+  padding-bottom: calc(0.7rem + 5px) !important;
 }
 
 .sectionTitle {
-  margin-top: 0.45rem;
+  margin-top: 0;
   color: var(--dash-text) !important;
   font-size: 1.4rem !important;
   line-height: 1 !important;
@@ -96,7 +98,7 @@
   border: 1px solid var(--dash-border);
   border-radius: 1.15rem;
   background: var(--dash-bg);
-  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.03);
+  box-shadow: none;
   padding: 0.9rem;
 }
 

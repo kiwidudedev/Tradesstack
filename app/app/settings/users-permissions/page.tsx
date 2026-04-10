@@ -212,10 +212,10 @@ export default async function UsersPermissionsPage({
   const staffBadgeColor = isHexColor(organizationRow?.brand_accent_color) ? organizationRow!.brand_accent_color! : "#E7ECF2";
 
   return (
-    <section className="overflow-visible rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6">
-      <div className="space-y-4">
+    <section className="overflow-visible bg-transparent px-0 pb-0 pt-0">
+      <div className="space-y-5">
         <div className="pb-1 pt-1">
-          <p className="truncate text-[30px] font-semibold leading-[1.04] tracking-[-0.02em] text-[#1d2433]">
+          <p className="truncate text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-[#1d2433]">
             Users & Permissions
           </p>
         </div>
@@ -231,41 +231,43 @@ export default async function UsersPermissionsPage({
           </p>
         ) : null}
 
-        <div className="overflow-visible rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
-          <div className="px-4 pb-2 pt-4">
-            <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Owner</h3>
+        <div className="overflow-hidden rounded-[22px] border border-[#D9DEE5] bg-white px-5 pb-5 pt-4">
+          <div className="pb-4">
+            <h3 className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">Owner</h3>
           </div>
           {ownerRows.length === 0 ? (
-            <p className={`${interMedium.className} px-4 pb-4 text-sm text-[#5B6879]`}>No owner role assigned yet.</p>
+            <p className={`${interMedium.className} text-sm text-[#5B6879]`}>No owner role assigned yet.</p>
           ) : (
-            ownerRows.map((row, index) => (
-              <MemberRowItem
-                key={row.id}
-                row={row}
-                isLast={index === ownerRows.length - 1}
-                ownerBadgeColor={ownerBadgeColor}
-                staffBadgeColor={staffBadgeColor}
-              />
-            ))
+            <div className="overflow-hidden rounded-[16px] border border-[#D9DEE5] bg-white">
+              {ownerRows.map((row, index) => (
+                <MemberRowItem
+                  key={row.id}
+                  row={row}
+                  isLast={index === ownerRows.length - 1}
+                  ownerBadgeColor={ownerBadgeColor}
+                  staffBadgeColor={staffBadgeColor}
+                />
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="overflow-visible rounded-[18px] border border-[#D9DEE5] bg-[#F6F7F9]">
-          <div className="flex items-center justify-between px-4 pb-2 pt-4">
-            <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Staff ({staffRows.length})</h3>
+        <div className="overflow-hidden rounded-[22px] border border-[#D9DEE5] bg-white px-5 pb-5 pt-4">
+          <div className="flex items-center justify-between pb-4">
+            <h3 className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">Staff ({staffRows.length})</h3>
             <div className="flex items-center gap-3">
               <div className="relative">
                 <input id="invite-user-modal-toggle" type="checkbox" className="peer sr-only" />
                 <label
                   htmlFor="invite-user-modal-toggle"
-                  className={`${interMedium.className} inline-flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-full bg-[#0B2739] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#0B2739]`}
+                  className={`${interMedium.className} inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-[#0B2739] bg-[#0B2739] px-[0.7rem] py-[0.55rem] text-[15px] font-medium text-white shadow-none transition-opacity hover:bg-[#0B2739] hover:opacity-90`}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-4 w-4" />
                   Invite user
                 </label>
 
                 <div className="fixed inset-0 z-[80] hidden items-center justify-center bg-[rgba(17,24,39,0.45)] p-4 peer-checked:flex">
-                  <div className="relative w-full max-w-[390px] rounded-[16px] border border-[#D9DEE5] bg-[#F3F4F6] p-3.5 shadow-[0_14px_28px_rgba(15,23,42,0.22)] sm:p-4">
+                  <div className="relative w-full max-w-[390px] rounded-[22px] border border-[#D9DEE5] bg-white p-4 shadow-[0_14px_28px_rgba(15,23,42,0.22)] sm:p-5">
                     <label
                       htmlFor="invite-user-modal-toggle"
                       className="absolute right-4 top-4 inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-[#D9DEE5] bg-white text-[18px] leading-none text-[#1d2433] transition-colors hover:bg-[#E9EEF5]"
@@ -309,7 +311,7 @@ export default async function UsersPermissionsPage({
                       </label>
                       <button
                         type="submit"
-                        className={`${interMedium.className} mt-1 inline-flex h-9 items-center justify-center gap-2 rounded-[10px] bg-[#0B2739] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#081c28]`}
+                        className={`${interMedium.className} mt-1 inline-flex items-center justify-center gap-2 rounded-full border border-[#0B2739] bg-[#0B2739] px-[0.7rem] py-[0.55rem] text-[15px] font-medium text-white shadow-none transition-opacity hover:bg-[#0B2739] hover:opacity-90`}
                       >
                         Invite user
                       </button>
@@ -321,9 +323,9 @@ export default async function UsersPermissionsPage({
           </div>
 
           {staffRows.length === 0 ? (
-            <p className={`${interMedium.className} px-4 pb-4 text-sm text-[#5B6879]`}>No staff users or pending invites yet.</p>
+            <p className={`${interMedium.className} text-sm text-[#5B6879]`}>No staff users or pending invites yet.</p>
           ) : (
-            <div>
+            <div className="overflow-hidden rounded-[16px] border border-[#D9DEE5] bg-white">
               {staffRows.map((row, index) => (
                 <MemberRowItem
                   key={row.id}

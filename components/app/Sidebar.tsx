@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
 import { mockUser } from "@/lib/mock";
 import {
   DropdownMenu,
@@ -30,22 +29,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ibmPlexSans } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 
-const graphikRegularTextStyle = {
-  fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif',
-  fontWeight: 400,
-} as const;
-
 const sidebarItemBaseClass =
-  "group flex min-h-[42px] items-center justify-between gap-2.5 rounded-[16px] px-4 text-[15px] font-medium transition-all";
+  "group flex min-h-[38px] items-center justify-between gap-2 rounded-[10px] px-3.5 text-[15px] font-medium transition-all";
 
-const sidebarItemActiveClass = "bg-[#10283B] text-white shadow-[0_6px_16px_rgba(16,40,59,0.10)]";
+const sidebarItemActiveClass = "bg-[#F15A29] text-white shadow-none";
 
-const sidebarItemInactiveClass = "text-[#445668] hover:bg-[#F4F7FA] hover:text-[#10283B]";
+const sidebarItemInactiveClass = "text-[#8FA1B9] hover:bg-[#16233C] hover:text-[#E7ECF5]";
 
 const sidebarSubItemClass =
-  "flex min-h-[29px] w-full min-w-0 items-center pl-[48px] text-[14px] text-[#4B5A69] transition-colors hover:text-[#10283B]";
+  "flex min-h-[36px] w-full min-w-0 items-center pl-[44px] text-[13.5px] font-medium text-[#8FA1B9] transition-colors hover:text-[#E7ECF5]";
 
 const PRIMARY_NAV_ITEMS = [
   { label: "Dashboard", href: "/app/dashboard", icon: LayoutGrid },
@@ -68,11 +63,6 @@ const PRIMARY_NAV_ITEMS = [
   { label: "Team", icon: UsersRound },
   { label: "Reports", icon: BarChart3 },
   { label: "AI Assistant", icon: Sparkles },
-] as const;
-
-const UTILITY_NAV_ITEMS = [
-  { label: "Settings", href: "/app/settings/organization", icon: Settings },
-  { label: "Help", icon: HelpCircle },
 ] as const;
 
 function getInitials(name: string) {
@@ -102,11 +92,11 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[30px] border border-[var(--app-border)] bg-[#FBFEFE] px-4 py-4 shadow-[0_8px_24px_rgba(11,38,57,0.025)]">
-      <div className="px-3 pb-[1rem] pt-[0.9rem]">
+    <div className={`${ibmPlexSans.className} flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#0E172B] px-3 py-3`}>
+      <div className="pb-[1rem] pl-0 pr-3 pt-[calc(1.55rem+5px)]">
         <Link href="/app/dashboard" className="inline-flex items-center" onClick={onNavigate}>
           <Image
-            src="/Tradesstack Logo Dash.png"
+            src="/tradesstacklogowhite.png"
             alt="TradesStack"
             width={220}
             height={52}
@@ -117,7 +107,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
         </Link>
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-0 overflow-y-auto pr-1">
+      <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 pt-6">
         {PRIMARY_NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = "href" in item && item.href ? pathname.startsWith(item.href) : false;
@@ -132,23 +122,23 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                   className={cn(
                     sidebarItemBaseClass,
                     "w-full",
-                    "text-[#445668] hover:bg-[#F4F7FA] hover:text-[#10283B]"
+                    "text-[#8FA1B9] hover:bg-[#16233C] hover:text-[#E7ECF5]"
                   )}
                 >
                   <span className="flex items-center gap-3">
                     <Icon
                       strokeWidth={2.2}
-                      className="h-5 w-5 text-[#4E5E6D]"
+                      className="h-5 w-5 text-[#8FA1B9]"
                     />
-                    <span className="text-[15px] font-semibold leading-none" style={graphikRegularTextStyle}>{item.label}</span>
+                    <span className="text-[15px] leading-none">{item.label}</span>
                   </span>
                   <ChevronDown
-                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[#4E5E6D] transition-transform", isFinancialsExpanded ? "rotate-180" : "rotate-0")}
+                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[#8FA1B9] transition-transform", isFinancialsExpanded ? "rotate-180" : "rotate-0")}
                   />
                 </button>
 
                 {isFinancialsExpanded ? (
-                  <div className="space-y-0.5 py-0.5">
+                  <div className="space-y-0.5 py-1">
                     {item.children.map((child) =>
                       child.href ? (
                         <Link
@@ -157,7 +147,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                           onClick={onNavigate}
                           className={sidebarSubItemClass}
                         >
-                          <span className="truncate font-semibold" style={graphikRegularTextStyle}>{child.label}</span>
+                          <span className="truncate">{child.label}</span>
                         </Link>
                       ) : (
                         <button
@@ -165,7 +155,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                           type="button"
                           className={cn(sidebarSubItemClass, "w-full text-left")}
                         >
-                          <span className="truncate font-semibold" style={graphikRegularTextStyle}>{child.label}</span>
+                          <span className="truncate">{child.label}</span>
                         </button>
                       )
                     )}
@@ -189,9 +179,9 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                 <span className="flex items-center gap-3">
                   <Icon
                     strokeWidth={2.2}
-                    className={cn("h-5 w-5", isActive ? "text-white" : "text-[#4E5E6D] group-hover:text-[#10283B]")}
+                    className={cn("h-5 w-5", isActive ? "text-white" : "text-[#8FA1B9] group-hover:text-[#E7ECF5]")}
                   />
-                  <span className="text-[15px] font-semibold leading-none" style={graphikRegularTextStyle}>{item.label}</span>
+                  <span className="text-[15px] leading-none">{item.label}</span>
                 </span>
               </Link>
             );
@@ -206,108 +196,84 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               <span className="flex items-center gap-3">
                 <Icon
                   strokeWidth={2.2}
-                  className="h-5 w-5 text-[#4E5E6D] group-hover:text-[#10283B]"
+                  className="h-5 w-5 text-[#8FA1B9] group-hover:text-[#E7ECF5]"
                 />
-                <span className="text-[15px] font-semibold leading-none" style={graphikRegularTextStyle}>{item.label}</span>
+                <span className="text-[15px] leading-none">{item.label}</span>
               </span>
             </button>
           );
         })}
       </nav>
 
-      <div className="mt-3 border-t border-[#EEF3F7] pt-3">
-        <div className="mb-2 space-y-0">
-          {UTILITY_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = "href" in item && item.href ? pathname.startsWith(item.href) : false;
-
-            if ("href" in item && item.href) {
-              return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    sidebarItemBaseClass,
-                    isActive ? sidebarItemActiveClass : sidebarItemInactiveClass
-                  )}
-                >
-                  <span className="flex items-center gap-3">
-                    <Icon
-                      strokeWidth={2.2}
-                      className={cn("h-5 w-5", isActive ? "text-white" : "text-[#4E5E6D] group-hover:text-[#10283B]")}
-                    />
-                    <span className="text-[15px] font-semibold leading-none" style={graphikRegularTextStyle}>{item.label}</span>
-                  </span>
-                </Link>
-              );
-            }
-
-            return (
+      <div className="mt-3 border-t border-[#1B2640] pt-4">
+        <div className="flex items-center justify-between gap-3 px-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                key={item.label}
                 type="button"
-                className={cn(sidebarItemBaseClass, sidebarItemInactiveClass, "w-full")}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F74917] text-[15px] font-semibold text-white transition-transform hover:scale-[1.02]"
+                title={displayName}
               >
-                <span className="flex items-center gap-3">
-                  <Icon strokeWidth={2.2} className="h-5 w-5 text-[#4E5E6D] group-hover:text-[#10283B]" />
-                  <span className="text-[15px] font-semibold leading-none" style={graphikRegularTextStyle}>{item.label}</span>
-                </span>
+                {initials}
               </button>
-            );
-          })}
-        </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              side="top"
+              sideOffset={12}
+              className="w-52 rounded-[16px] border border-slate-200/80 bg-white p-2 shadow-[0_18px_48px_rgba(11,38,57,0.18)]"
+            >
+              <DropdownMenuItem className="h-11 rounded-[12px] px-3 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
+                <Bell className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
+                <span>Notifications</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
+                <Link href="/app/settings/organization" className="flex h-full w-full items-center px-3">
+                  <Settings className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
+                  <span>Settings</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
+                <Link href="/app/settings" className="flex h-full w-full items-center px-3">
+                  <Clock3 className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
+                  <span>Time settings</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="h-11 rounded-[12px] px-3 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900"
+              >
+                <LogOut className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              className="flex w-full items-center gap-3 rounded-[16px] px-3 py-2 text-left transition-colors hover:bg-[#F6F8FA]"
-              title={displayName}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[#98A2B3] transition-colors hover:bg-[#16233C] hover:text-[#E7ECF5]"
+              aria-label="Help"
             >
-              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F74917] text-[15px] font-semibold text-white">
-                {initials}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className={`${interMedium.className} truncate text-[15px] font-semibold text-[#10283B]`}>
-                  {displayName}
-                </p>
-                <p className={`${interMedium.className} mt-0.5 text-[13px] text-[#738191]`}>Profile</p>
-              </div>
-              <ChevronDown className="h-4 w-4 shrink-0 text-[#7A8897]" strokeWidth={2.2} />
+              <HelpCircle className="h-6 w-6" strokeWidth={2.1} />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            side="top"
-            sideOffset={12}
-            className="w-52 rounded-[16px] border border-slate-200/80 bg-white p-2 shadow-[0_18px_48px_rgba(11,38,57,0.18)]"
-          >
-            <DropdownMenuItem className="h-11 rounded-[12px] px-3 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
-              <Bell className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-              <span style={graphikRegularTextStyle}>Notifications</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
-              <Link href="/app/settings/organization" className="flex h-full w-full items-center px-3">
-                <Settings className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-                <span style={graphikRegularTextStyle}>Settings</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
-              <Link href="/app/settings" className="flex h-full w-full items-center px-3">
-                <Clock3 className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-                <span style={graphikRegularTextStyle}>Time settings</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={handleLogout}
-              className="h-11 rounded-[12px] px-3 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900"
+
+            <Link
+              href="/app/settings/organization"
+              onClick={onNavigate}
+              className={cn(
+                "inline-flex h-11 w-11 items-center justify-center rounded-full transition-colors",
+                pathname.startsWith("/app/settings")
+                  ? "bg-[#F15A29] text-white"
+                  : "text-[#98A2B3] hover:bg-[#16233C] hover:text-[#E7ECF5]"
+              )}
+              aria-label="Settings"
             >
-              <LogOut className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-              <span style={graphikRegularTextStyle}>Log out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <Settings className="h-6 w-6" strokeWidth={2.1} />
+            </Link>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -317,7 +283,7 @@ export function Sidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[240px] shrink-0 self-start bg-[#FBFEFE] px-3 py-3 lg:flex",
+        "sticky top-0 hidden h-screen w-[240px] shrink-0 self-start border-r border-[#1B2640] bg-[#0E172B] lg:flex",
         className
       )}
     >

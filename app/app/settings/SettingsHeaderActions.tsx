@@ -19,7 +19,7 @@ export function SettingsHeaderActions(_props: SettingsHeaderActionsProps) {
     <Button
       type="submit"
       form="organization-settings-form"
-      className={`${interMedium.className} h-10 rounded-[10px] bg-[#0B2739] px-4 text-sm font-medium text-white hover:bg-[#0a2232]`}
+      className={`${interMedium.className} inline-flex items-center gap-2 rounded-full border border-[#0B2739] bg-[#0B2739] px-[0.7rem] py-[0.55rem] text-[15px] font-medium text-white shadow-none transition-opacity hover:bg-[#0B2739] hover:opacity-90`}
     >
       Save organization
     </Button>

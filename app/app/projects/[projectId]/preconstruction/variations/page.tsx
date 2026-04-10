@@ -289,8 +289,8 @@ export default function ProjectVariationRegisterPage() {
                 <ChevronDown className="ml-1 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-white p-1.5 opacity-100`}>
+              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
                 <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
                   <ExternalLink className="mr-2 h-4 w-4" />
                   Project Dashboard
@@ -303,7 +303,7 @@ export default function ProjectVariationRegisterPage() {
                   void createVariationAndOpen();
                 }}
                 disabled={!canManageVariations || isCreating || isLoading}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 {isCreating ? "Creating..." : "New Variation"}
@@ -322,7 +322,7 @@ export default function ProjectVariationRegisterPage() {
         </p>
       ) : null}
 
-      <section className="overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#F3F4F6] px-7 pb-7 pt-5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)] md:px-8 md:pb-8 md:pt-6">
+      <section className="overflow-hidden rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-7 pt-5 shadow-none md:px-8 md:pb-8 md:pt-6">
         <div className="space-y-6">
           {isLoading ? (
             <p className={`${interMedium.className} py-8 text-sm font-medium text-[#6b6b6b]`}>Loading variation register...</p>
@@ -359,7 +359,7 @@ export default function ProjectVariationRegisterPage() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-[12px] border border-[#D9DEE5] bg-[#F6F7F9]">
+                  <div className="overflow-x-auto rounded-[16px] border border-[#D9DEE5] bg-white">
                     <table className="min-w-full border-collapse">
                       <thead>
                         <tr className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#6b6b6b]`}>
@@ -377,7 +377,7 @@ export default function ProjectVariationRegisterPage() {
                           <tr
                             key={row.id}
                             onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/variations/${row.id}`)}
-                            className="cursor-pointer border-t border-[#D9DEE5] bg-[#F3F4F6] transition-colors hover:bg-[#EEF2F7]"
+                            className="cursor-pointer border-t border-[#D9DEE5] bg-[#FBFEFE] transition-colors hover:bg-[#F7FAFB]"
                           >
                             <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
                               <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations/${row.id}`} className="hover:underline">
