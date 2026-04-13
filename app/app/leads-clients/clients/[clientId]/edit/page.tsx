@@ -109,7 +109,7 @@ export default async function EditClientPage({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Edit Client</CardTitle>
-              <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
+              <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
                 Update contact details and company info.
               </p>
             </div>

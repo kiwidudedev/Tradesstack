@@ -754,7 +754,7 @@ export function ProjectDashboardBoard() {
                 <button
                   type="button"
                   onClick={() => setIsEditingProjectDetails(true)}
-                  className="inline-flex shrink-0 items-center rounded-[0.9rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
+                  className="inline-flex shrink-0 items-center rounded-[0.72rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
                   style={{ fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif", fontWeight: 500 }}
                 >
                   Edit details
@@ -765,7 +765,7 @@ export function ProjectDashboardBoard() {
               <div className="grid gap-x-4 gap-y-3 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
                 {detailRows.map((row) => (
                   <Fragment key={row.key}>
-                    <p className="text-[16px] font-semibold text-[#4B5D79]">{row.label}</p>
+                    <p className="text-[18px] font-semibold text-[#4B5D79]">{row.label}</p>
                     {isEditingProjectDetails ? (
                       <input
                         value={row.draftValue}
@@ -775,10 +775,10 @@ export function ProjectDashboardBoard() {
                             [row.key]: event.target.value,
                           }))
                         }
-                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[16px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
+                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
                       />
                     ) : (
-                      <p className="text-[16px] font-medium text-[#111827]">{row.value}</p>
+                      <p className="text-[18px] font-medium text-[#111827]">{row.value}</p>
                     )}
                   </Fragment>
                 ))}

@@ -1,5 +1,5 @@
 .dashboardScope {
-  --dash-bg: #F9FAFC;
+  --dash-bg: #FBFEFE;
   --dash-panel: #ffffff;
   --dash-panel-muted: #F9FAFC;
   --dash-beige-soft: rgba(245, 239, 230, 0.32);
@@ -126,38 +126,38 @@
   border-radius: 14px;
   background: #FBFEFE;
   min-height: 170px;
-  padding: 1.1rem 1.2rem;
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.05),
-    0 3px 8px rgba(15, 23, 42, 0.04);
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px rgba(15, 23, 42, 0.04);
 }
 
 .metricTop {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.7rem;
 }
 
 .metricLabel {
-  color: var(--dash-muted);
-  font-size: 18px;
-  line-height: 1;
+  color: #6b6b6b;
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 500;
 }
 
 .metricValue {
   margin: auto 0 0;
-  padding-top: 1.25rem;
-  color: var(--dash-text);
-  font-size: clamp(2.1rem, 3vw, 2.75rem);
-  line-height: 1;
+  padding-top: 1rem;
+  color: #111827;
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  line-height: 1.1;
   letter-spacing: -0.03em;
   font-weight: 600;
 }
 
 .metricMeta {
-  margin: 0.75rem 0 0;
-  color: var(--dash-muted);
-  font-size: 16px;
+  margin: 0.65rem 0 0;
+  color: #4b5d79;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .iconBadgeAccent,

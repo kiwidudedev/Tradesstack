@@ -158,7 +158,7 @@ export function DashboardWorkspace(props: DashboardWorkspaceProps) {
                       </span>
                       <span className={`${ibmPlexSans.className} ${styles.metricLabel}`}>{item.label}</span>
                     </div>
-                    <p className={styles.metricValue}>{item.value}</p>
+                    <p className={`${ibmPlexSans.className} ${styles.metricValue}`}>{item.value}</p>
                     <p className={`${ibmPlexSans.className} ${styles.metricMeta}`}>{item.meta}</p>
                   </article>
                 );

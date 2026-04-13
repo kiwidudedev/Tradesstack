@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ArrowRight, MapPin, Plus } from "lucide-react";
+import { ArrowRight, MapPin } from "lucide-react";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { getTradePackWorkspacesForCurrentUser } from "@/lib/trade-pack-workspaces-server";
+import { CreateProjectDialog } from "./CreateProjectDialog";
 
 function getStageTone(stage: string | null) {
   switch (stage) {
@@ -14,8 +15,17 @@ function getStageTone(stage: string | null) {
   }
 }
 
-export default async function ProjectSpacePage() {
+export default async function ProjectSpacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ createProject?: string | string[] }>;
+}) {
+  const query = await searchParams;
   const projects = await getTradePackWorkspacesForCurrentUser();
+  const shouldOpenCreateProject =
+    typeof query.createProject === "string"
+      ? query.createProject === "1" || query.createProject.toLowerCase() === "true"
+      : false;
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme space-y-6 bg-[#FBFEFE] pb-8`}>
@@ -30,13 +40,7 @@ export default async function ProjectSpacePage() {
           </p>
         </div>
 
-        <Link
-          href="/app/projects/new"
-          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
-        >
-          <Plus className="h-4 w-4" strokeWidth={2.3} />
-          Create Project
-        </Link>
+        <CreateProjectDialog initialOpen={shouldOpenCreateProject} />
       </section>
 
       <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">

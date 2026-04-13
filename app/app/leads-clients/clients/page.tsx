@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { Award, DollarSign, Plus, TrendingUp, Users } from "lucide-react";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { Award, DollarSign, TrendingUp, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import { requirePermission } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { AddClientDialog } from "./AddClientDialog";
+import { CopyableClientContact } from "./CopyableClientContact";
 
 const CLIENT_TAGS = ["Good Client", "High Value", "Difficult", "Slow Payer"] as const;
 const TOP_CLIENT_PERIOD_OPTIONS = [
@@ -124,6 +129,58 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   };
 
   const member = await getCurrentOrganizationMember();
+
+  async function createClient(formData: FormData) {
+    "use server";
+
+    const currentMember = await getCurrentOrganizationMember();
+    if (!currentMember) {
+      redirect("/app/leads-clients/clients");
+    }
+
+    await requirePermission("leads.clients.write", "/app/leads-clients/clients");
+
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      redirect("/app/leads-clients/clients");
+    }
+
+    const companyName = String(formData.get("companyName") ?? "").trim();
+    const contactName = String(formData.get("contactName") ?? "").trim();
+    const email = String(formData.get("email") ?? "").trim();
+    const phone = String(formData.get("phone") ?? "").trim();
+
+    const tags = formData
+      .getAll("profileTags")
+      .map((value) => String(value))
+      .filter(Boolean);
+
+    if (!companyName || !contactName) {
+      redirect("/app/leads-clients/clients");
+    }
+
+    const { error } = await supabase.from("organization_clients").insert({
+      organization_id: currentMember.organization_id,
+      created_by: user.id,
+      name: contactName,
+      company_name: companyName,
+      email: email || null,
+      phone: phone || null,
+      tags,
+    });
+
+    if (error) {
+      redirect("/app/leads-clients/clients");
+    }
+
+    revalidatePath("/app/leads-clients/clients");
+    redirect("/app/leads-clients/clients");
+  }
+
   if (!member) {
     return (
       <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
@@ -414,31 +471,6 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
     }
     return best;
   }, null);
-  const fastestDecisionClient = rows.reduce<{
-    id: string;
-    displayName: string;
-    avgDecisionDays: number;
-    decidedCount: number;
-  } | null>((best, row) => {
-    const samples = decisionDaysSamplesInTopPeriodByClientId.get(row.id) ?? [];
-    if (samples.length === 0) {
-      return best;
-    }
-    const avgDecisionDays = samples.reduce((sum, days) => sum + days, 0) / samples.length;
-    if (
-      !best ||
-      avgDecisionDays < best.avgDecisionDays ||
-      (avgDecisionDays === best.avgDecisionDays && samples.length > best.decidedCount)
-    ) {
-      return {
-        id: row.id,
-        displayName: getClientDisplayName(row),
-        avgDecisionDays,
-        decidedCount: samples.length,
-      };
-    }
-    return best;
-  }, null);
   const filteredClientRows = rows.filter((client) => {
     const company = client.company_name?.trim() || "";
     if (clientSearch && !company.toLowerCase().includes(clientSearch.toLowerCase())) return false;
@@ -476,56 +508,51 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
             Track who you work with most and keep client relationships moving.
           </p>
         </div>
-        <Link
-          href="/app/leads-clients/clients/new"
-          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
-        >
-          <Plus className="h-4 w-4" strokeWidth={2.3} />
-          Add Client
-        </Link>
+        <AddClientDialog createClientAction={createClient} />
       </section>
 
       <div className="space-y-5">
         {/* Client Summary */}
-        <div className="flex items-center justify-between gap-2 pb-0.5">
-          <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#6A7A89]`}>Top clients</p>
-          <div className="flex items-center gap-1">
-            {TOP_CLIENT_PERIOD_OPTIONS.map((option) => {
-              const isActive = option.key === topClientPeriod;
-              return (
-                <Link
-                  key={option.key}
-                  href={buildClientsHref(option.key)}
-                  className={`${ibmPlexSans.className} rounded-[0.45rem] px-3 py-1 text-[12px] font-semibold transition ${
-                    isActive ? "bg-[#0B2739] text-white" : "border border-[#E2E8F1] bg-white text-[#4D607D] hover:bg-[#EEF3F9]"
-                  }`}
-                >
-                  {option.label}
-                </Link>
-              );
-            })}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className={`${ibmPlexSans.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>Top clients</p>
+            <div className="flex items-center gap-1">
+              {TOP_CLIENT_PERIOD_OPTIONS.map((option) => {
+                const isActive = option.key === topClientPeriod;
+                return (
+                  <Link
+                    key={option.key}
+                    href={buildClientsHref(option.key)}
+                    className={`${ibmPlexSans.className} rounded-[0.45rem] px-3 py-1 text-[12px] font-semibold transition ${
+                      isActive ? "bg-[#0B2739] text-white" : "border border-[#E2E8F1] bg-white text-[#4D607D] hover:bg-[#EEF3F9]"
+                    }`}
+                  >
+                    {option.label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        </div>
-        <div className="grid gap-4 grid-cols-4">
+          <div className="grid gap-4 grid-cols-4">
             {/* Best Conversion Rate */}
             {bestConversionClientInTopPeriod ? (
-              <Link href={`/app/leads-clients/clients/${bestConversionClientInTopPeriod.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
+              <Link href={`/app/leads-clients/clients/${bestConversionClientInTopPeriod.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
                 <div className="flex items-center gap-3">
                   <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
                     <TrendingUp className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
                   </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Best Conversion Rate</p>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Best Conversion Rate</p>
                 </div>
                 <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.1rem,2vw,1.4rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[#111827]`}>{bestConversionClientInTopPeriod.displayName}</p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#F15A29]`}>{Math.round(bestConversionClientInTopPeriod.conversionRate * 100)}% conversion rate</p>
               </Link>
             ) : (
-              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
                   <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
                     <TrendingUp className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
                   </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Best Conversion Rate</p>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Best Conversion Rate</p>
                 </div>
                 <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[1.4rem] font-semibold text-[#B0BEC8]`}>—</p>
               </div>
@@ -533,23 +560,23 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
 
             {/* Highest Value Won */}
             {highestValueWonClient ? (
-              <Link href={`/app/leads-clients/clients/${highestValueWonClient.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
+              <Link href={`/app/leads-clients/clients/${highestValueWonClient.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
                 <div className="flex items-center gap-3">
                   <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#0E172B]">
                     <DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />
                   </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Highest Value Won</p>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Highest Value Won</p>
                 </div>
                 <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.1rem,2vw,1.4rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[#111827]`}>{highestValueWonClient.displayName}</p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#0E172B]`}>${((wonValueByClientId.get(highestValueWonClient.id) ?? 0) / 1_000_000).toFixed(1)}M won</p>
               </Link>
             ) : (
-              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
                   <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#0E172B]">
                     <DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />
                   </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Highest Value Won</p>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Highest Value Won</p>
                 </div>
                 <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[1.4rem] font-semibold text-[#B0BEC8]`}>—</p>
               </div>
@@ -557,40 +584,41 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
 
             {/* Most Active Client */}
             {mostRepeatWinsClient ? (
-              <Link href={`/app/leads-clients/clients/${mostRepeatWinsClient.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
+              <Link href={`/app/leads-clients/clients/${mostRepeatWinsClient.id}`} className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[#F3F9F9]">
                 <div className="flex items-center gap-3">
                   <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#DFF1E5]">
                     <Award className="h-5 w-5 text-[#18384C]" strokeWidth={2.2} />
                   </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Most Repeat Wins</p>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Most Repeat Wins</p>
                 </div>
                 <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.1rem,2vw,1.4rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[#111827]`}>{mostRepeatWinsClient.displayName}</p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#18384C]`}>{mostRepeatWinsClient.wonCount} jobs won</p>
               </Link>
             ) : (
-              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
                   <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#DFF1E5]">
                     <Award className="h-5 w-5 text-[#18384C]" strokeWidth={2.2} />
                   </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Most Repeat Wins</p>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Most Repeat Wins</p>
                 </div>
                 <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[1.4rem] font-semibold text-[#B0BEC8]`}>—</p>
               </div>
             )}
 
             {/* Total Clients */}
-            <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
                   <Users className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
                 </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#4B5D79]`}>Total Clients</p>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Total Clients</p>
               </div>
               <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{rows.length}</p>
               <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>{rows.filter(r => r.activeLeads > 0).length} active</p>
             </div>
           </div>
+        </div>
 
         {/* Search + Filter bar */}
         <form action="/app/leads-clients/clients" method="get" className="flex items-center gap-3 mt-4">
@@ -639,7 +667,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
                   <thead>
                     <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
                       {["Client", "Contact", "Projects", "Status", "Actions"].map((h) => (
-                        <th key={h} className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#6A7B95]`}>
+                        <th key={h} className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
                           {h}
                         </th>
                       ))}
@@ -667,18 +695,16 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="space-y-1">
+                              <div className="space-y-1">
                               {client.email ? (
-                                <p className={`${ibmPlexSans.className} flex items-center gap-1.5 text-[13px] text-[#4B5D79]`}>
-                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="2.5" width="10" height="7" rx="1.2" stroke="#6A7A89" strokeWidth="1.1"/><path d="M1 4l5 3.5L11 4" stroke="#6A7A89" strokeWidth="1.1" strokeLinecap="round"/></svg>
-                                  {client.email}
-                                </p>
+                                <CopyableClientContact label="email" value={client.email}>
+                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="1" y="2.5" width="10" height="7" rx="1.2" stroke="#6A7A89" strokeWidth="1.1"/><path d="M1 4l5 3.5L11 4" stroke="#6A7A89" strokeWidth="1.1" strokeLinecap="round"/></svg>
+                                </CopyableClientContact>
                               ) : null}
                               {client.phone ? (
-                                <p className={`${ibmPlexSans.className} flex items-center gap-1.5 text-[13px] text-[#4B5D79]`}>
-                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2.5C2 2.5 2.5 1 3.5 1c.5 0 1 .5 1.5 1.5S5.5 4 5 4.5C4.5 5 5 6 6 7s2 1.5 2.5 1c.5-.5 1.5-.5 2-.5s1.5 1 1.5 1.5c0 1-1.5 1.5-1.5 1.5C8 11 1 4 2 2.5z" stroke="#6A7A89" strokeWidth="1.1" strokeLinecap="round"/></svg>
-                                  {client.phone}
-                                </p>
+                                <CopyableClientContact label="phone number" value={client.phone}>
+                                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 2.5C2 2.5 2.5 1 3.5 1c.5 0 1 .5 1.5 1.5S5.5 4 5 4.5C4.5 5 5 6 6 7s2 1.5 2.5 1c.5-.5 1.5-.5 2-.5s1.5 1 1.5 1.5c0 1-1.5 1.5-1.5 1.5C8 11 1 4 2 2.5z" stroke="#6A7A89" strokeWidth="1.1" strokeLinecap="round"/></svg>
+                                </CopyableClientContact>
                               ) : null}
                               {!client.email && !client.phone ? <p className={`${ibmPlexSans.className} text-[13px] text-[#B0BEC8]`}>—</p> : null}
                             </div>
@@ -720,7 +746,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
         {/* Client Insights */}
         <Card className="overflow-hidden rounded-[32px] border-none bg-[var(--app-surface)] shadow-none">
           <div className="px-6 pt-6 pb-4">
-            <h2 className={`${interMedium.className} text-[1.4rem] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+            <h2 className={`${ibmPlexSans.className} m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]`}>
               Client Insights (AI)
             </h2>
           </div>

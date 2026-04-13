@@ -2,14 +2,13 @@
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, CircleDot, Clock3, FileText, ListTodo, Trash2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AlertCircle, Calendar, CheckCircle2, CircleDot, Clock3, FileText, Flag, ListTodo, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -120,6 +119,27 @@ function formatDueDate(value: string | null) {
     return "No due date";
   }
   return date.toLocaleDateString("en-NZ", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatTaskTableDate(value: string | null, dueAt: string | null) {
+  const source = dueAt ?? (value ? `${value}T00:00:00` : null);
+  if (!source) {
+    return "No due date";
+  }
+  const date = new Date(source);
+  if (Number.isNaN(date.getTime())) {
+    return "No due date";
+  }
+  return date.toLocaleDateString("en-NZ", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "NA";
 }
 
 function toDateInputValue(value: string | null) {
@@ -298,7 +318,7 @@ export function ProjectTodosBoard() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("To Do");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [assigneeFilter, setAssigneeFilter] = useState("All");
   const [tradeFilter, setTradeFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
@@ -778,6 +798,27 @@ export function ProjectTodosBoard() {
     ],
     [organizationUsers]
   );
+  const statusSections = useMemo(() => {
+    const orderedStatuses: Array<{
+      key: TodoStatus | "Need Review";
+      label: string;
+      icon: typeof CircleDot;
+      accent: string;
+      countColor: string;
+    }> = [
+      { key: "To Do", label: "To-do", icon: ListTodo, accent: "text-[#8B5CF6]", countColor: "text-[#A855F7]" },
+      { key: "In Progress", label: "On Progress", icon: Clock3, accent: "text-[#0EA5E9]", countColor: "text-[#38BDF8]" },
+      { key: "Need Review", label: "Need Review", icon: AlertCircle, accent: "text-[#F59E0B]", countColor: "text-[#F59E0B]" },
+      { key: "Complete", label: "Done", icon: CheckCircle2, accent: "text-[#22C55E]", countColor: "text-[#16A34A]" },
+    ];
+
+    return orderedStatuses
+      .map((section) => ({
+        ...section,
+        items: filteredTodos.filter((task) => task.status === section.key),
+      }))
+      .filter((section) => statusFilter === "All" || statusFilter === section.key);
+  }, [filteredTodos, statusFilter]);
 
   const resetCreateForm = () => {
     setNewTitle("");
@@ -1066,302 +1107,344 @@ export function ProjectTodosBoard() {
     }
   };
 
-  const renderLinkedBadge = (task: TodoRow) => {
-    if (task.linkedIssueId) {
-      return <Badge className="border border-[#CBD5E1] bg-white text-[#334155]">Issue</Badge>;
-    }
-    if (task.linkedInspectionId || task.linkedInspectionItemId) {
-      return <Badge className="border border-[#CBD5E1] bg-white text-[#334155]">Inspection</Badge>;
-    }
-    if (task.sourceType === "qa_issue") {
-      return <Badge className="border border-[#CBD5E1] bg-white text-[#334155]">Auto from Issue</Badge>;
-    }
-    if (task.sourceType === "inspection_fail") {
-      return <Badge className="border border-[#CBD5E1] bg-white text-[#334155]">Auto from Inspection</Badge>;
-    }
-    return <Badge className="border border-[#CBD5E1] bg-white text-[#334155]">Standalone</Badge>;
-  };
-
   return (
     <div className="space-y-6 pb-8">
-      <Card className="border-[#D9DEE5] bg-white shadow-none">
-        <CardHeader className="pb-4 pt-7">
-          <CardTitle className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Tasks</CardTitle>
-          <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-            Execution layer for job tasks linked to issues and inspections.
-          </p>
-        </CardHeader>
-        <CardContent className="pb-7">
-          <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
-            <div className="flex min-w-[760px] divide-x divide-[#E3E8F0]">
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <ListTodo className="h-5 w-5 text-[#334155]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>To Do</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{stats.todoCount}</p>
-                </div>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Tasks</h1>
+              <div className="inline-flex items-center gap-2 rounded-[12px] bg-[#FEE2E2] px-4 py-2 text-[14px] font-medium text-[#B91C1C]">
+                <AlertCircle className="h-4 w-4" strokeWidth={2} />
+                {stats.overdueCount} Overdue
               </div>
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <Clock3 className="h-5 w-5 text-[#B45309]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Overdue</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{stats.overdueCount}</p>
-                </div>
-              </div>
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Complete</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{stats.completeCount}</p>
-                </div>
+              <div className="inline-flex items-center rounded-[14px] border border-[#E2E8F1] bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-[10px] px-4 py-2 text-[13px] font-medium text-[#475569]"
+                >
+                  <CircleDot className="h-4 w-4" strokeWidth={2} />
+                  Kanban
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-[10px] bg-[#F8FAFC] px-4 py-2 text-[13px] font-medium text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                >
+                  <ListTodo className="h-4 w-4" strokeWidth={2} />
+                  List
+                </button>
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <Card className="border-[#D9DEE5] bg-white shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="h-9 w-[220px] border-[#CBD5E1] bg-white"
-              />
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-              >
-                <option value="All">All status</option>
-                <option value="To Do">To Do</option>
-                <option value="Complete">Completed</option>
-              </select>
-              <select
-                value={groupBy}
-                onChange={(event) => setGroupBy(event.target.value as GroupByMode)}
-                className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-              >
-                <option value="All">All tasks</option>
-                <option value="Status">Group by status</option>
-                <option value="Assignee">Group by assignee</option>
-                <option value="Trade">Group by trade</option>
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setSearch("");
-                  setStatusFilter("To Do");
-                  setAssigneeFilter("All");
-                  setTradeFilter("All");
-                  setPriorityFilter("All");
-                  setDueFilter("All");
-                  setLinkedTypeFilter("All");
-                  setGroupBy("All");
-                }}
-                className="h-9 border-[#CBD5E1] bg-white text-[#334155]"
-              >
-                Reset Filters
-              </Button>
-            </div>
+          <div className="flex items-center gap-3">
             <Button
               type="button"
               onClick={() => setIsCreateOpen(true)}
-              className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-semibold text-white hover:bg-[#e63f10]"
+              className="h-9 rounded-[12px] bg-[#F74917] px-4 text-[14px] font-semibold text-white hover:bg-[#e63f10]"
             >
+              <span className="mr-1 text-[16px] leading-none">+</span>
               Add Task
             </Button>
           </div>
+        </div>
 
-          <div className="grid gap-2 rounded-[8px] border border-[#E6EAF0] bg-white p-3 md:grid-cols-5">
-            <select
-              value={assigneeFilter}
-              onChange={(event) => setAssigneeFilter(event.target.value)}
-              className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-            >
-              {assigneeFilterOptions.map((option) => (
-                <option key={`${option.value}-${option.label}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={tradeFilter}
-              onChange={(event) => setTradeFilter(event.target.value)}
-              className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-            >
-              <option value="All">All trades</option>
-              {tradeOptions.filter((option) => option !== "All").map((trade) => (
-                <option key={trade} value={trade}>
-                  {trade}
-                </option>
-              ))}
-            </select>
-            <select
-              value={priorityFilter}
-              onChange={(event) => setPriorityFilter(event.target.value)}
-              className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-            >
-              <option value="All">All priority</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-            <select
-              value={dueFilter}
-              onChange={(event) => setDueFilter(event.target.value)}
-              className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-            >
-              <option value="All">All due dates</option>
-              <option value="Overdue">Overdue</option>
-              <option value="Due Today">Due today</option>
-              <option value="No Due Date">No due date</option>
-            </select>
-            <select
-              value={linkedTypeFilter}
-              onChange={(event) => setLinkedTypeFilter(event.target.value)}
-              className={`${interMedium.className} h-9 rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-            >
-              <option value="All">All links</option>
-              <option value="Issue">Issue</option>
-              <option value="Inspection">Inspection</option>
-              <option value="None">None</option>
-            </select>
+        <div className="p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[260px] flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search..."
+                  className="h-10 rounded-[12px] border-[#D9E3EE] bg-white pl-11 text-[14px]"
+                />
+              </div>
+              <div className="relative">
+                <AlertCircle className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white pl-10 pr-8 text-[14px] text-[#0F172A]`}
+                >
+                  <option value="All">All Status</option>
+                  <option value="To Do">To Do</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Complete">Completed</option>
+                </select>
+              </div>
+              <div className="relative">
+                <Flag className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+                <select
+                  value={priorityFilter}
+                  onChange={(event) => setPriorityFilter(event.target.value)}
+                  className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white pl-10 pr-8 text-[14px] text-[#0F172A]`}
+                >
+                  <option value="All">Filter</option>
+                  <option value="High">High priority</option>
+                  <option value="Medium">Medium priority</option>
+                  <option value="Low">Low priority</option>
+                </select>
+              </div>
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+                <select
+                  value={dueFilter}
+                  onChange={(event) => setDueFilter(event.target.value)}
+                  className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white pl-10 pr-8 text-[14px] text-[#0F172A]`}
+                >
+                  <option value="All">Sort</option>
+                  <option value="Overdue">Overdue</option>
+                  <option value="Due Today">Due Today</option>
+                  <option value="No Due Date">No Due Date</option>
+                </select>
+              </div>
+              <div className="relative">
+                <UserCircle2 className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+                <select
+                  value={assigneeFilter}
+                  onChange={(event) => setAssigneeFilter(event.target.value)}
+                  className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white pl-10 pr-8 text-[14px] text-[#0F172A]`}
+                >
+                  {assigneeFilterOptions.map((option) => (
+                    <option key={`${option.value}-${option.label}`} value={option.value}>
+                      {option.label === "All assignees" ? "People" : option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
+        </div>
 
-          {error ? (
-            <div className="rounded-[6px] border border-rose-200 bg-rose-50 px-3 py-2">
-              <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
-            </div>
-          ) : null}
-        </CardHeader>
+        <div className="space-y-4">
+            {error ? (
+              <div className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2">
+                <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
+              </div>
+            ) : null}
 
-        <CardContent className="space-y-4 pb-6">
-          {isLoading ? <p className={`${interMedium.className} text-sm text-[#64748B]`}>Loading tasks...</p> : null}
-
-          {!isLoading && filteredTodos.length === 0 ? (
-            <div className="rounded-[8px] border border-dashed border-[#CBD5E1] bg-white px-4 py-7 text-center">
-              <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>No tasks yet</p>
-              <p className={`${interMedium.className} mt-1 text-xs text-[#64748B]`}>
-                Add tasks to manage work on this job.
-              </p>
-            </div>
-          ) : null}
-
-          {!isLoading &&
-            groupedTodos.map((group) => (
-              <div key={group.key} className="space-y-2">
-                {groupBy !== "All" ? (
-                  <p className={`${interMedium.className} px-1 text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>
-                    {group.label}
-                  </p>
-                ) : null}
-                {group.items.map((task) => {
-                  const overdue = isOverdue(task.dueDate, task.dueAt, task.status);
-                  const assignedName = task.assignedUserId ? userNameById.get(task.assignedUserId) ?? "Team Member" : "Unassigned";
-                  const pdfCount = attachmentCountsByTodoId[task.id] ?? 0;
-                  const linkedIssueName = task.linkedIssueId ? issueNameById.get(task.linkedIssueId) ?? "Linked issue" : "";
-                  const linkedInspectionName = task.linkedInspectionId
-                    ? inspectionNameById.get(task.linkedInspectionId) ?? "Linked inspection"
-                    : task.linkedInspectionItemId
-                      ? inspectionNameById.get(inspectionItemById.get(task.linkedInspectionItemId)?.inspectionId ?? "") ??
-                        "Linked inspection"
-                      : "";
-
-                  return (
-                    <button
-                      key={task.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedTaskId(task.id);
-                        setIsDetailOpen(true);
-                      }}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-[8px] border bg-white px-3 py-3 text-left transition-colors hover:bg-[#F8FAFC]",
-                        overdue ? "border-rose-200" : "border-[#E6EAF0]"
-                      )}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <CircleDot className="h-4 w-4 text-[#64748B]" />
-                        <div className="min-w-0">
-                          <p className={`${interMedium.className} truncate text-sm font-semibold text-[#0F172A]`}>{task.title}</p>
-                          <p className={`${interMedium.className} truncate text-xs text-[#64748B]`}>
-                            {task.trade || "No trade"} • {assignedName} • {formatDueLabel(task.dueDate, task.dueAt)}
-                          </p>
-                          {linkedIssueName || linkedInspectionName ? (
-                            <p className={`${interMedium.className} truncate text-xs text-[#475569]`}>
-                              {linkedIssueName || linkedInspectionName}
+            {!isLoading ? (
+              <div className="space-y-4">
+                {filteredTodos.length === 0 ? (
+                  <div className="rounded-[16px] border border-[#D9E3EE] bg-white px-4 py-8 text-center shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+                    <p className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>
+                      {todos.length === 0 ? "No tasks yet" : "No matching tasks"}
+                    </p>
+                    <p className={`${interMedium.className} mt-1 text-xs text-[#64748B]`}>
+                      {todos.length === 0 ? "Add tasks to manage work on this job." : "Try adjusting your filters or search."}
+                    </p>
+                  </div>
+                ) : (
+                  statusSections.map((section) => {
+                    return (
+                      <div key={section.key} className="space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                          <div className="flex items-center gap-2">
+                            <p className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">
+                              {section.key === "To Do" ? "To Do" : section.label}
                             </p>
-                          ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsCreateOpen(true)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[#E2E8F1] bg-white text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#334155]"
+                            aria-label={`Add task to ${section.label}`}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <div className="overflow-hidden rounded-[18px] border border-[#D9E3EE] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                        <div className="grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
+                          {[
+                            "Task Name",
+                            "Descriptions",
+                            "Priority",
+                            "Timeline Date",
+                            "People",
+                            "Progress",
+                            " ",
+                          ].map((heading) => (
+                            <div key={heading} className="flex items-center gap-2">
+                              <p className={`${interMedium.className} m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
+                                {heading}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div>
+                          {section.items.length === 0 ? (
+                            <div className="px-5 py-6">
+                              <p className={`${interMedium.className} m-0 text-[13px] text-[#6B7C93]`}>No tasks in this section yet.</p>
+                            </div>
+                          ) : section.items.map((task) => {
+                            const overdue = isOverdue(task.dueDate, task.dueAt, task.status);
+                            const assignedName = task.assignedUserId ? userNameById.get(task.assignedUserId) ?? "Team Member" : "Unassigned";
+                            const linkedIssueName = task.linkedIssueId ? issueNameById.get(task.linkedIssueId) ?? "Linked issue" : "";
+                            const linkedInspectionName = task.linkedInspectionId
+                              ? inspectionNameById.get(task.linkedInspectionId) ?? "Linked inspection"
+                              : task.linkedInspectionItemId
+                                ? inspectionNameById.get(inspectionItemById.get(task.linkedInspectionItemId)?.inspectionId ?? "") ?? "Linked inspection"
+                                : "";
+                            const progressValue = task.status === "Complete" ? 10 : task.status === "In Progress" ? 5 : 1;
+                            const detailSummary = task.description || linkedIssueName || linkedInspectionName || "No description added";
+
+                            return (
+                              <div
+                                key={task.id}
+                                className={cn(
+                                  "grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] items-center border-b border-[#EEF3F8] px-5 py-3 last:border-b-0",
+                                  overdue ? "bg-[#FFF6F6]" : "bg-white"
+                                )}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedTaskId(task.id);
+                                    setIsDetailOpen(true);
+                                  }}
+                                  className="min-w-0 text-left"
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <span className="mt-0.5 h-4 w-4 rounded-[4px] border border-[#D7E0EA] bg-white" />
+                                    <div className="min-w-0">
+                                      <p className={`${interMedium.className} m-0 truncate text-[14px] font-semibold text-[#0F172A]`}>{task.title}</p>
+                                      {task.trade ? (
+                                        <p className={`${interMedium.className} mt-1 truncate text-[12px] text-[#6B7C93]`}>
+                                          {task.trade}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </button>
+
+                                <div className="min-w-0 pr-4">
+                                  <p className={`${interMedium.className} m-0 truncate text-[13px] text-[#0F172A]`}>{detailSummary}</p>
+                                </div>
+
+                                <div className="flex items-center">
+                                  <span
+                                    className={cn(
+                                      "inline-flex rounded-full px-3 py-1 text-[12px] font-medium",
+                                      task.priority === "Low"
+                                        ? "bg-[#DCFCE7] text-[#15803D]"
+                                        : task.priority === "High"
+                                          ? "bg-[#FEE2E2] text-[#B91C1C]"
+                                          : "bg-[#FEF3C7] text-[#A16207]"
+                                    )}
+                                  >
+                                    {task.priority}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <Calendar className={cn("h-4 w-4", overdue ? "text-[#FF3B30]" : "text-[#64748B]")} strokeWidth={2} />
+                                  <div>
+                                    <p className={cn(`${interMedium.className} m-0 text-[13px]`, overdue ? "font-semibold text-[#FF3B30]" : "text-[#0F172A]")}>
+                                      {formatTaskTableDate(task.dueDate, task.dueAt)}
+                                    </p>
+                                    {overdue ? (
+                                      <p className={`${interMedium.className} m-0 text-[11px] font-medium uppercase tracking-[0.06em] text-[#B91C1C]`}>
+                                        Overdue
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#F74917] text-[12px] font-semibold text-white">
+                                    {getInitials(assignedName)}
+                                  </span>
+                                  <p className={`${interMedium.className} m-0 truncate text-[13px] text-[#0F172A]`}>{assignedName}</p>
+                                </div>
+
+                                <div className="pr-4">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className={`${interMedium.className} m-0 text-[11px] text-[#64748B]`}>Checklist</p>
+                                    <p className={`${interMedium.className} m-0 text-[11px] font-medium text-[#0F172A]`}>{progressValue}/10</p>
+                                  </div>
+                                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E6EDF5]">
+                                    <div
+                                      className="h-full rounded-full bg-[#1DA1F2]"
+                                      style={{ width: `${(progressValue / 10) * 100}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedTaskId(task.id);
+                                      setIsDetailOpen(true);
+                                    }}
+                                    className={`${ibmPlexSans.className} inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] bg-[#F74917] px-3.5 text-[13px] font-semibold text-white transition hover:bg-[#e63f10]`}
+                                    aria-label={`Edit ${task.title}`}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
+                                    Edit
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                         </div>
                       </div>
-                      <div className="ml-3 flex flex-wrap items-center justify-end gap-2">
-                        {renderLinkedBadge(task)}
-                        {pdfCount > 0 ? (
-                          <span className={`${interMedium.className} rounded-full border border-[#CBD5E1] bg-white px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[#334155]`}>
-                            {pdfCount} PDF
-                          </span>
-                        ) : null}
-                        <span
-                          className={`${interMedium.className} rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${priorityTone(task.priority)}`}
-                        >
-                          {task.priority}
-                        </span>
-                        {overdue ? (
-                          <span className={`${interMedium.className} rounded-full border border-rose-200 bg-rose-100 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-rose-700`}>
-                            Overdue
-                          </span>
-                        ) : null}
-                        <span
-                          className={`${interMedium.className} rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${statusTone(task.status)}`}
-                        >
-                          {task.status}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
-            ))}
-        </CardContent>
-      </Card>
+            ) : (
+              <p className={`${interMedium.className} text-sm text-[#64748B]`}>Loading tasks...</p>
+            )}
+        </div>
+      </div>
 
-      <Sheet open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <SheetContent side="right" className="w-full max-w-[520px] overflow-y-auto border-l border-[#E6EAF0] bg-[#F8F9FC] p-5">
-          <div className="space-y-4">
-            <div>
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Tasks</p>
-              <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Add Task</h3>
-            </div>
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+          <div className="space-y-0">
+            <DialogHeader className="px-7 pb-6 pt-7">
+              <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
+                Add Task
+              </DialogTitle>
+            </DialogHeader>
 
-            <div className="space-y-1">
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Title</p>
-              <Input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
-            </div>
-
-            <div className="space-y-1">
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Description</p>
-              <textarea
-                value={newDescription}
-                onChange={(event) => setNewDescription(event.target.value)}
-                rows={4}
-                className={`${interMedium.className} w-full rounded-[6px] border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#1E293B] outline-none ring-0`}
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Trade</p>
-                <Input value={newTrade} onChange={(event) => setNewTrade(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
+            <div className="space-y-3.5 px-7 pb-4">
+              <div>
+                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                  Title
+                </label>
+                <Input
+                  value={newTitle}
+                  onChange={(event) => setNewTitle(event.target.value)}
+                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                />
               </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Assign To</p>
+
+              <div>
+                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                  Description
+                </label>
+                <textarea
+                  value={newDescription}
+                  onChange={(event) => setNewDescription(event.target.value)}
+                  rows={3}
+                  className={`${ibmPlexSans.className} w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                />
+              </div>
+
+              <div>
+                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                  Assignee
+                </label>
                 <select
                   value={newAssignedUserId}
                   onChange={(event) => setNewAssignedUserId(event.target.value)}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
+                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
                 >
                   {assigneeOptions.map((member) => (
                     <option key={`${member.userId}-${member.name}`} value={member.userId}>
@@ -1370,156 +1453,115 @@ export function ProjectTodosBoard() {
                   ))}
                 </select>
               </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Due Date</p>
+
+              <div>
+                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                  Due Date
+                </label>
                 <Input
                   type="date"
                   value={newDueDate}
                   onChange={(event) => setNewDueDate(event.target.value)}
-                  className="h-10 border-[#CBD5E1] bg-white"
+                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
                 />
               </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Due Time</p>
-                <Input
-                  type="time"
-                  value={newDueTime}
-                  onChange={(event) => setNewDueTime(event.target.value)}
-                  className="h-10 border-[#CBD5E1] bg-white"
-                />
-              </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Priority</p>
-                <select
-                  value={newPriority}
-                  onChange={(event) => setNewPriority(event.target.value as TodoPriority)}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                >
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Status</p>
-                <select
-                  value={newStatus}
-                  onChange={(event) => setNewStatus(event.target.value as TodoStatus)}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                >
-                  <option value="To Do">To Do</option>
-                  <option value="In Progress">In Progress</option>
-                  <option value="Complete">Complete</option>
-                </select>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Priority
+                  </label>
+                  <select
+                    value={newPriority}
+                    onChange={(event) => setNewPriority(event.target.value as TodoPriority)}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Status
+                  </label>
+                  <select
+                    value={newStatus}
+                    onChange={(event) => setNewStatus(event.target.value as TodoStatus)}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  >
+                    <option value="To Do">To Do</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Complete">Complete</option>
+                  </select>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-[8px] border border-[#E6EAF0] bg-white p-3">
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Link</p>
-              <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                <select
-                  value={newLinkedIssueId}
-                  onChange={(event) => setNewLinkedIssueId(event.target.value)}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                >
-                  <option value="">No linked issue</option>
-                  {issueOptions.map((issue) => (
-                    <option key={issue.id} value={issue.id}>
-                      {issue.title}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={newLinkedInspectionId}
-                  onChange={(event) => setNewLinkedInspectionId(event.target.value)}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                >
-                  <option value="">No linked inspection</option>
-                  {inspectionOptions.map((inspection) => (
-                    <option key={inspection.id} value={inspection.id}>
-                      {inspection.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="rounded-[8px] border border-[#E6EAF0] bg-white p-3">
-              <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Attach PDF</p>
-              <label className="mt-2 flex h-14 w-full cursor-pointer items-center justify-between rounded-[12px] border border-[#CBD5E1] bg-white px-4 transition-colors hover:bg-[#F8FAFC]">
-                <span className={`${interMedium.className} truncate text-sm font-semibold text-[#334155]`}>
-                  {newPdfName || "Choose PDF"}
-                </span>
-                <span className="ml-3 inline-flex h-10 min-w-[110px] items-center justify-center rounded-[12px] bg-[#0F172A] px-4 text-sm font-semibold text-white">
-                  Browse
-                </span>
-                <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(event) => void handleCreatePdfSelect(event)} />
-              </label>
-            </div>
-
-            <div className="flex items-center justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="h-9 border-[#CBD5E1] bg-white text-[#334155]">
+            <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateOpen(false)}
+                className={`${ibmPlexSans.className} h-10 rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+              >
                 Cancel
               </Button>
               <Button
                 type="button"
                 onClick={() => void createTask()}
                 disabled={isSaving || !newTitle.trim()}
-                className="h-9 rounded-[6px] bg-[#F74917] px-4 text-xs font-semibold text-white hover:bg-[#e63f10]"
+                className={`${ibmPlexSans.className} h-10 rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]`}
               >
                 Save Task
               </Button>
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      <Sheet open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <SheetContent side="right" className="w-full max-w-[620px] overflow-y-auto border-l border-[#E6EAF0] bg-[#F8F9FC] p-5">
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
           {selectedTask ? (
-            <div className="space-y-4">
-              <div>
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Task Detail</p>
-                <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">{selectedTask.title}</h3>
-              </div>
+            <div className="space-y-0">
+              <DialogHeader className="px-7 pb-6 pt-7">
+                <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
+                  Edit Task
+                </DialogTitle>
+              </DialogHeader>
 
-              <div className="grid gap-2 rounded-[8px] border border-[#E6EAF0] bg-white p-3 sm:grid-cols-2">
+              <div className="space-y-3.5 px-7 pb-4">
                 <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Created</p>
-                  <p className={`${interMedium.className} text-sm text-[#334155]`}>{formatEventTime(selectedTask.createdAt)}</p>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Title
+                  </label>
+                  <Input
+                    value={detailTitle}
+                    onChange={(event) => setDetailTitle(event.target.value)}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  />
                 </div>
+
                 <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Updated</p>
-                  <p className={`${interMedium.className} text-sm text-[#334155]`}>{formatEventTime(selectedTask.updatedAt)}</p>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Description
+                  </label>
+                  <textarea
+                    value={detailDescription}
+                    onChange={(event) => setDetailDescription(event.target.value)}
+                    rows={3}
+                    className={`${ibmPlexSans.className} w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  />
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Title</p>
-                <Input value={detailTitle} onChange={(event) => setDetailTitle(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
-              </div>
-
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Notes</p>
-                <textarea
-                  value={detailDescription}
-                  onChange={(event) => setDetailDescription(event.target.value)}
-                  rows={4}
-                  className={`${interMedium.className} w-full rounded-[6px] border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#1E293B] outline-none ring-0`}
-                />
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Trade</p>
-                  <Input value={detailTrade} onChange={(event) => setDetailTrade(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
-                </div>
-                <div className="space-y-1">
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Assign To</p>
+                <div>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Assignee
+                  </label>
                   <select
                     value={detailAssignedUserId}
                     onChange={(event) => setDetailAssignedUserId(event.target.value)}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
                   >
                     {assigneeOptions.map((member) => (
                       <option key={`${member.userId}-${member.name}`} value={member.userId}>
@@ -1528,180 +1570,75 @@ export function ProjectTodosBoard() {
                     ))}
                   </select>
                 </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Due Date</p>
-                <Input
-                  type="date"
-                  value={detailDueDate}
-                  onChange={(event) => setDetailDueDate(event.target.value)}
-                  className="h-10 border-[#CBD5E1] bg-white"
-                />
-              </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Due Time</p>
-                <Input
-                  type="time"
-                  value={detailDueTime}
-                  onChange={(event) => setDetailDueTime(event.target.value)}
-                  className="h-10 border-[#CBD5E1] bg-white"
-                />
-              </div>
-              <div className="space-y-1">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Priority</p>
-                  <select
-                    value={detailPriority}
-                    onChange={(event) => setDetailPriority(event.target.value as TodoPriority)}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                  >
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Status</p>
-                  <select
-                    value={detailStatus}
-                    onChange={(event) => setDetailStatus(event.target.value as TodoStatus)}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                  >
-                    <option value="To Do">To Do</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Complete">Complete</option>
-                  </select>
-                </div>
-              </div>
 
-              <div className="rounded-[8px] border border-[#E6EAF0] bg-white p-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Links</p>
-                <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  <select
-                    value={detailLinkedIssueId}
-                    onChange={(event) => setDetailLinkedIssueId(event.target.value)}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                  >
-                    <option value="">No linked issue</option>
-                    {issueOptions.map((issue) => (
-                      <option key={issue.id} value={issue.id}>
-                        {issue.title}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={detailLinkedInspectionId}
-                    onChange={(event) => setDetailLinkedInspectionId(event.target.value)}
-                    className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}
-                  >
-                    <option value="">No linked inspection</option>
-                    {inspectionOptions.map((inspection) => (
-                      <option key={inspection.id} value={inspection.id}>
-                        {inspection.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="rounded-[8px] border border-[#E6EAF0] bg-white p-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>PDF Attachments</p>
-                <div className="mt-2 space-y-2">
-                  <label className="flex h-14 w-full cursor-pointer items-center justify-between rounded-[12px] border border-[#CBD5E1] bg-white px-4 transition-colors hover:bg-[#F8FAFC]">
-                    <span className={`${interMedium.className} truncate text-sm font-semibold text-[#334155]`}>
-                      {detailPdfName || "Choose PDF"}
-                    </span>
-                    <span className="ml-3 inline-flex h-10 min-w-[110px] items-center justify-center rounded-[12px] bg-[#0F172A] px-4 text-sm font-semibold text-white">
-                      Browse
-                    </span>
-                    <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(event) => void handleDetailPdfSelect(event)} />
+                <div>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Due Date
                   </label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void addAttachmentToSelectedTask()}
-                    disabled={isSaving || !detailPdfDataUrl}
-                    className="h-9 border-[#CBD5E1] bg-white text-[#334155]"
-                  >
-                    Attach PDF
-                  </Button>
+                  <Input
+                    type="date"
+                    value={detailDueDate}
+                    onChange={(event) => setDetailDueDate(event.target.value)}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  />
                 </div>
-                <div className="mt-3 space-y-2">
-                  {selectedTaskAttachments.length === 0 ? (
-                    <p className={`${interMedium.className} text-xs text-[#64748B]`}>No PDFs attached to this task.</p>
-                  ) : (
-                    selectedTaskAttachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between rounded-[6px] border border-[#E6EAF0] bg-[#F8FAFC] px-3 py-2">
-                        <div className="min-w-0">
-                          <p className={`${interMedium.className} truncate text-sm font-semibold text-[#0F172A]`}>
-                            {attachment.fileName}
-                          </p>
-                          <p className={`${interMedium.className} text-xs text-[#64748B]`}>
-                            {formatBytes(attachment.fileSizeBytes) || "PDF"} • {formatEventTime(attachment.createdAt)}
-                          </p>
-                        </div>
-                        <div className="ml-3 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void openAttachment(attachment)}
-                            className="inline-flex items-center gap-1 rounded-[6px] border border-[#CBD5E1] bg-white px-2 py-1 text-xs font-semibold text-[#334155] hover:bg-[#F8FAFC]"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            Open
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void deleteAttachment(attachment.id)}
-                            className="inline-flex items-center rounded-[6px] border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                      Priority
+                    </label>
+                    <select
+                      value={detailPriority}
+                      onChange={(event) => setDetailPriority(event.target.value as TodoPriority)}
+                      className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                    >
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                      Status
+                    </label>
+                    <select
+                      value={detailStatus}
+                      onChange={(event) => setDetailStatus(event.target.value as TodoStatus)}
+                      className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                    >
+                      <option value="To Do">To Do</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Complete">Complete</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-[8px] border border-[#E6EAF0] bg-white p-3">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Activity</p>
-                <div className="mt-2 space-y-2">
-                  <p className={`${interMedium.className} text-xs text-[#475569]`}>Created: {formatEventTime(selectedTask.createdAt)}</p>
-                  <p className={`${interMedium.className} text-xs text-[#475569]`}>Last updated: {formatEventTime(selectedTask.updatedAt)}</p>
-                  <p className={`${interMedium.className} text-xs text-[#475569]`}>
-                    Linked source: {selectedTask.sourceType === "qa_issue" ? "Issue" : selectedTask.sourceType === "inspection_fail" ? "Inspection Fail" : "Manual"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Button type="button" variant="outline" onClick={() => void deleteTask()} disabled={isSaving} className="h-9 border-rose-200 bg-white text-rose-700 hover:bg-rose-50">
-                  Delete Task
+              <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDetailOpen(false)}
+                  className={`${ibmPlexSans.className} h-10 rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                >
+                  Cancel
                 </Button>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDetailStatus("Complete")}
-                    disabled={isSaving || detailStatus === "Complete"}
-                    className="h-9 border-[#CBD5E1] bg-white text-[#334155]"
-                  >
-                    Mark Complete
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => void saveTask()}
-                    disabled={isSaving || !detailTitle.trim()}
-                    className="h-9 rounded-[6px] bg-[#F74917] px-4 text-xs font-semibold text-white hover:bg-[#e63f10]"
-                  >
-                    Save Changes
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  onClick={() => void saveTask()}
+                  disabled={isSaving || !detailTitle.trim()}
+                  className={`${ibmPlexSans.className} h-10 rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]`}
+                >
+                  Save Task
+                </Button>
               </div>
             </div>
           ) : (
             <p className={`${interMedium.className} text-sm text-[#64748B]`}>Select a task to view details.</p>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

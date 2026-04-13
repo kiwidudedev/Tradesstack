@@ -8,7 +8,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { resolveUniqueProjectSlug, toProjectSlug } from "@/lib/projects";
 import { interMedium } from "@/lib/fonts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -311,19 +310,18 @@ export default function NewOpportunityPage() {
     }
   };
 
+  const inputClass = `font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
+  const selectClass = `font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`;
+  const labelClass = `font-[family-name:var(--font-ibm-plex-sans)] mb-1 block text-[13px] font-semibold text-[#1d2433]`;
+
   return (
-    <main className="space-y-6 pb-8">
-      {!isAuthLoading && session && !canManageOpportunities ? (
-        <p className={`${interMedium.className} rounded-[6px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
-          Only owner, admin, QS, and project manager roles can create opportunities.
-        </p>
-      ) : null}
+    <main className="pb-8">
       <Button
         type="button"
         variant="ghost"
         size="sm"
         asChild
-        className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+        className={`${interMedium.className} mb-6 h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
       >
         <Link href="/app/leads-clients/opportunities">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -331,42 +329,51 @@ export default function NewOpportunityPage() {
         </Link>
       </Button>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-4 pt-7">
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Create Tender Opportunity</CardTitle>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium text-[#5F7390]`}>
+      <div className="w-full max-w-[660px] rounded-[18px] border border-[#E2E8F1] bg-white shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+        {!isAuthLoading && session && !canManageOpportunities ? (
+          <p className={`${interMedium.className} mx-7 mt-7 rounded-[0.6rem] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+            Only owner, admin, QS, and project manager roles can create opportunities.
+          </p>
+        ) : null}
+
+        <div className="px-7 pb-6 pt-7">
+          <h1 className="font-[family-name:var(--font-ibm-plex-sans)] m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]">
+            Create Tender Opportunity
+          </h1>
+          <p className={`${interMedium.className} mt-3 text-sm font-medium text-[#5F7390]`}>
             Log a new tender so the team can start pricing.
           </p>
-        </CardHeader>
-        <CardContent className="max-w-2xl pb-8">
-          <form className="space-y-6" onSubmit={onSubmit}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <label htmlFor="opportunityName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                  Tender Name *
-                </label>
-                <Input
-                  id="opportunityName"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Hobson Office Upgrade"
-                  className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                  required
-                />
-              </div>
+        </div>
 
-              <div className="space-y-2">
-                <label htmlFor="opportunityClient" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                  Client *
-                </label>
-                {isLoadingFormData ? (
-                  <p className={`${interMedium.className} text-sm font-medium text-[#687996]`}>Loading clients...</p>
-                ) : clients.length > 0 ? (
+        <form className="space-y-3.5 px-7 pb-4" onSubmit={onSubmit}>
+          {/* Tender Name + Client */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label htmlFor="opportunityName" className={labelClass}>
+                Tender Name <span className="text-[#FF4C14]">*</span>
+              </label>
+              <Input
+                id="opportunityName"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Hobson Office Upgrade"
+                className={inputClass}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="opportunityClient" className={labelClass}>
+                Client <span className="text-[#FF4C14]">*</span>
+              </label>
+              {isLoadingFormData ? (
+                <p className="text-[14px] font-medium text-[#687996]">Loading clients...</p>
+              ) : clients.length > 0 ? (
+                <div className="relative">
                   <select
                     id="opportunityClient"
                     value={selectedClientId}
                     onChange={(event) => setSelectedClientId(event.target.value)}
-                    className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
+                    className={selectClass}
                     disabled={isAuthLoading}
                     required={clients.length > 0}
                   >
@@ -378,167 +385,163 @@ export default function NewOpportunityPage() {
                     ))}
                     <option value={NEW_CLIENT_OPTION}>Add new client</option>
                   </select>
-                ) : (
-                  <p className={`${interMedium.className} text-sm font-medium text-[#687996]`}>
-                    No clients yet. Add a client below to continue.
-                  </p>
-                )}
+                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </div>
+              ) : (
+                <p className="text-[14px] font-medium text-[#687996]">No clients yet. Add a client below.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Project Location */}
+          <div>
+            <label htmlFor="opportunityLocation" className={labelClass}>Project Location</label>
+            <Input
+              id="opportunityLocation"
+              autoComplete="street-address"
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              placeholder="Hobson Street, Auckland"
+              className={inputClass}
+            />
+          </div>
+
+          {/* New client fields */}
+          {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingFormData ? (
+            <>
+              <div>
+                <label htmlFor="clientContactName" className={labelClass}>
+                  Contact Name <span className="text-[#FF4C14]">*</span>
+                </label>
+                <Input
+                  id="clientContactName"
+                  value={clientContactName}
+                  onChange={(event) => setClientContactName(event.target.value)}
+                  placeholder="John Andrews"
+                  className={inputClass}
+                  required
+                />
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="opportunityLocation" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Project Location
-              </label>
-              <Input
-                id="opportunityLocation"
-                autoComplete="street-address"
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-                placeholder="Hobson Street, Auckland"
-                className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-              />
-            </div>
-
-            {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingFormData ? (
-              <div className="space-y-3">
-                <p className={`${interMedium.className} text-sm font-semibold text-[#1d2433]`}>New Client Details</p>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <label htmlFor="clientContactName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                      Contact Name *
-                    </label>
-                    <Input
-                      id="clientContactName"
-                      value={clientContactName}
-                      onChange={(event) => setClientContactName(event.target.value)}
-                      placeholder="John Smith"
-                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="clientCompanyName" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                      Company Name *
-                    </label>
-                    <Input
-                      id="clientCompanyName"
-                      value={clientCompanyName}
-                      onChange={(event) => setClientCompanyName(event.target.value)}
-                      placeholder="Meridian PM"
-                      className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                      required
-                    />
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label htmlFor="clientEmail" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                        Email
-                      </label>
-                      <Input
-                        id="clientEmail"
-                        type="email"
-                        value={clientEmail}
-                        onChange={(event) => setClientEmail(event.target.value)}
-                        placeholder="client@company.com"
-                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label htmlFor="clientPhone" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                        Phone
-                      </label>
-                      <Input
-                        id="clientPhone"
-                        value={clientPhone}
-                        onChange={(event) => setClientPhone(event.target.value)}
-                        placeholder="+64 21 123 4567"
-                        className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                      />
-                    </div>
-                  </div>
+              <div>
+                <label htmlFor="clientCompanyName" className={labelClass}>
+                  Company Name <span className="text-[#FF4C14]">*</span>
+                </label>
+                <Input
+                  id="clientCompanyName"
+                  value={clientCompanyName}
+                  onChange={(event) => setClientCompanyName(event.target.value)}
+                  placeholder="Auckland Developments Ltd"
+                  className={inputClass}
+                  required
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label htmlFor="clientEmail" className={labelClass}>Email</label>
+                  <Input
+                    id="clientEmail"
+                    type="email"
+                    value={clientEmail}
+                    onChange={(event) => setClientEmail(event.target.value)}
+                    placeholder="Email@example.com"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="clientPhone" className={labelClass}>Phone</label>
+                  <Input
+                    id="clientPhone"
+                    value={clientPhone}
+                    onChange={(event) => setClientPhone(event.target.value)}
+                    placeholder="+64 21 123 4567"
+                    className={inputClass}
+                  />
                 </div>
               </div>
-            ) : null}
+            </>
+          ) : null}
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                  <label htmlFor="opportunityDueDate" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                    Tender Due Date *
-                  </label>
-                <Input
-                    id="opportunityDueDate"
-                    type="date"
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
-                  className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                    required
-                />
-              </div>
-              <div className="space-y-2">
-                  <label htmlFor="opportunityValue" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                    Estimated Value (NZD)
-                  </label>
-                <Input
-                    id="opportunityValue"
-                    type="number"
-                    min="0"
-                    step="100"
-                    value={estimatedValue}
-                    onChange={(event) => setEstimatedValue(event.target.value)}
-                    placeholder="500000"
-                  className={`${interMedium.className} h-11 rounded-[6px] border-[#cdd4e2] bg-white text-[#1d2433]`}
-                />
-              </div>
+          {/* Due Date + Estimated Value */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label htmlFor="opportunityDueDate" className={labelClass}>
+                Tender Due Date <span className="text-[#FF4C14]">*</span>
+              </label>
+              <Input
+                id="opportunityDueDate"
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+                className={inputClass}
+                required
+              />
             </div>
-
-            <div className="space-y-2">
-                <label htmlFor="opportunityOwner" className={`${interMedium.className} block text-sm font-medium text-[#1d2433]`}>
-                Estimator / Owner *
-                </label>
-                {isLoadingFormData ? (
-                  <p className={`${interMedium.className} text-sm font-medium text-[#687996]`}>Loading estimators...</p>
-                ) : (
-                  <select
-                    id="opportunityOwner"
-                    value={selectedOwnerUserId}
-                    onChange={(event) => setSelectedOwnerUserId(event.target.value)}
-                    className={`${interMedium.className} h-11 w-full rounded-[6px] border border-[#cdd4e2] bg-white px-3 text-sm text-[#1d2433] outline-none focus:border-[#94a3b8]`}
-                  >
-                    {members.map((member) => (
-                      <option key={member.user_id} value={member.user_id}>
-                        {member.display_name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+            <div>
+              <label htmlFor="opportunityValue" className={labelClass}>Estimated Value (NZD)</label>
+              <Input
+                id="opportunityValue"
+                type="number"
+                min="0"
+                step="100"
+                value={estimatedValue}
+                onChange={(event) => setEstimatedValue(event.target.value)}
+                placeholder="500000"
+                className={inputClass}
+              />
             </div>
+          </div>
 
-            {error ? (
-              <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
-                {error}
-              </p>
-            ) : null}
-
-            <div className="border-t border-[#E6EAF0] pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <Button type="button" variant="ghost" asChild className="h-10 rounded-[6px] px-4 text-sm">
-                  <Link href="/app/leads-clients/opportunities">Cancel</Link>
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={!canManageOpportunities || isSubmitting || isAuthLoading || isLoadingFormData}
-                  className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-[18px] text-sm font-medium text-white hover:bg-[#e63f10]`}
+          {/* Estimator / Owner */}
+          <div>
+            <label htmlFor="opportunityOwner" className={labelClass}>
+              Estimator / Owner <span className="text-[#FF4C14]">*</span>
+            </label>
+            {isLoadingFormData ? (
+              <p className="text-[14px] font-medium text-[#687996]">Loading estimators...</p>
+            ) : (
+              <div className="relative">
+                <select
+                  id="opportunityOwner"
+                  value={selectedOwnerUserId}
+                  onChange={(event) => setSelectedOwnerUserId(event.target.value)}
+                  className={selectClass}
                 >
-                  {isSubmitting ? "Creating..." : "Create Tender"}
-                </Button>
+                  {members.map((member) => (
+                    <option key={member.user_id} value={member.user_id}>
+                      {member.display_name}
+                    </option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+            )}
+          </div>
+
+          {error ? (
+            <p className="rounded-[0.6rem] border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] font-medium text-red-700">
+              {error}
+            </p>
+          ) : null}
+        </form>
+
+        <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+          <Link
+            href="/app/leads-clients/opportunities"
+            className="font-[family-name:var(--font-ibm-plex-sans)] inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
+          >
+            Cancel
+          </Link>
+          <button
+            type="submit"
+            form="opportunityForm"
+            disabled={!canManageOpportunities || isSubmitting || isAuthLoading || isLoadingFormData}
+            onClick={(e) => { e.preventDefault(); document.querySelector<HTMLFormElement>("form")?.requestSubmit(); }}
+            className="font-[family-name:var(--font-ibm-plex-sans)] inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:opacity-60"
+          >
+            {isSubmitting ? "Creating..." : "Create Tender"}
+          </button>
+        </div>
+      </div>
     </main>
   );
 }

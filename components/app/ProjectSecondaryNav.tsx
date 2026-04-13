@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import {
   ArrowLeft,
+  Bot,
   ClipboardCheck,
   DollarSign,
   FileText,
   FolderOpen,
   LayoutGrid,
   ShieldCheck,
-  Sparkles,
   TimerReset,
   WandSparkles,
 } from "lucide-react";
@@ -26,7 +26,7 @@ const PROJECT_TOP_NAV_ITEMS = [
   { label: "Files", segment: "drawing-intelligence", icon: FolderOpen },
   { label: "Timeline", segment: "job-management/time-sheets", icon: TimerReset },
   { label: "Health & Safety", segment: "job-management/quality-assurance", icon: ShieldCheck },
-  { label: "AI Assistant", segment: "ai-chatbot", icon: Sparkles },
+  { label: "AI Assistant", segment: "ai-chatbot", icon: Bot },
 ] as const;
 
 export function ProjectSecondaryNav({

@@ -1,0 +1,392 @@
+import { notFound, redirect } from "next/navigation";
+import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
+import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export type ClientRow = {
+  id: string;
+  name: string;
+  company_name: string | null;
+  email: string | null;
+  phone: string | null;
+  tags: string[] | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectRow = {
+  id: string;
+  slug: string;
+  name: string;
+  stage: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OpportunityRow = {
+  id: string;
+  slug: string;
+  name: string;
+  stage: string;
+  estimated_value: number | null;
+  due_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectQuoteRow = {
+  id: string;
+  project_id: string;
+  quote_title: string;
+  quote_number: string;
+  status: string;
+  total_quote_price: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OpportunityQuoteRow = {
+  id: string;
+  opportunity_id: string;
+  quote_title: string;
+  quote_number: string;
+  status: string;
+  total_quote_price: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClaimRow = {
+  id: string;
+  project_id: string;
+  claim_number: string;
+  claim_title: string;
+  status: string | null;
+  claim_date: string | null;
+  due_date: string | null;
+  claim_amount: number | null;
+  paid_amount: number | null;
+  notes: string | null;
+  updated_at: string;
+};
+
+export type VariationRow = {
+  id: string;
+  project_id: string;
+  variation_number: string;
+  variation_title: string;
+  status: string;
+  total_variation_price: number | null;
+  approved_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DrawingSetRow = {
+  id: string;
+  project_id: string;
+  file_name: string;
+  storage_path: string;
+  file_size_bytes: number | null;
+  created_at: string;
+  download_url?: string | null;
+};
+
+type UntypedResult<T> = {
+  data: T[] | null;
+  error: { message: string } | null;
+};
+
+export type TimelineEvent = {
+  id: string;
+  at: string;
+  title: string;
+  detail: string;
+  href: string | null;
+};
+
+export type RiskTone = "green" | "orange" | "red";
+
+export function toMoney(value: number): string {
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function toDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatDate(value: string | null | undefined): string {
+  const date = toDate(value);
+  if (!date) return "-";
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+export function formatDateTime(value: string | null | undefined): string {
+  const date = toDate(value);
+  if (!date) return "-";
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function dayDiff(from: string | null | undefined, to: string | null | undefined): number | null {
+  const fromDate = toDate(from);
+  const toDateValue = toDate(to);
+  if (!fromDate || !toDateValue) return null;
+  const ms = toDateValue.getTime() - fromDate.getTime();
+  if (ms < 0) return null;
+  return ms / (1000 * 60 * 60 * 24);
+}
+
+export function toPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+export function toNumeric(value: number | null | undefined): number {
+  return Number(value ?? 0);
+}
+
+function isOpenQuote(status: string): boolean {
+  return status === "Draft" || status === "Ready to Send" || status === "Sent" || status === "Viewed";
+}
+
+export function quoteHref(
+  quote: ProjectQuoteRow | OpportunityQuoteRow,
+  projectById: Map<string, ProjectRow>,
+  opportunityById: Map<string, OpportunityRow>
+): string | null {
+  if ("project_id" in quote) {
+    const project = projectById.get(quote.project_id);
+    return project ? `/app/projects/${project.slug}/preconstruction/quote/${quote.id}` : null;
+  }
+  const opportunity = opportunityById.get(quote.opportunity_id);
+  return opportunity ? `/app/leads-clients/opportunities/${opportunity.slug}/quote` : null;
+}
+
+export function getQuoteStatusTone(status: string): "blue" | "green" | "yellow" | "slate" {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "sent" || normalized === "viewed") return "blue";
+  if (normalized === "accepted" || normalized === "approved" || normalized === "won") return "green";
+  if (normalized === "draft" || normalized === "ready to send" || normalized === "pending") return "yellow";
+  return "slate";
+}
+
+export async function getClientDetailData(clientId: string) {
+  const member = await getCurrentOrganizationMember();
+  if (!member) redirect("/app/leads-clients/clients");
+
+  const supabase = await createServerSupabaseClient();
+  const [clientResult, projectsResult, opportunitiesResult] = await Promise.all([
+    supabase
+      .from("organization_clients")
+      .select("id, name, company_name, email, phone, tags, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("id", clientId)
+      .maybeSingle<ClientRow>(),
+    supabase
+      .from("organization_projects")
+      .select("id, slug, name, stage, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false })
+      .returns<ProjectRow[]>(),
+    supabase
+      .from("organization_opportunities")
+      .select("id, slug, name, stage, estimated_value, due_date, notes, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false })
+      .returns<OpportunityRow[]>(),
+  ]);
+
+  if (clientResult.error || !clientResult.data) notFound();
+
+  const client = clientResult.data;
+  const projects = projectsResult.error ? [] : (projectsResult.data ?? []);
+  const opportunities = opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []);
+  const projectIdSet = new Set(projects.map((project) => project.id));
+  const opportunityIdSet = new Set(opportunities.map((opportunity) => opportunity.id));
+
+  const untypedSupabase = supabase as unknown as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => Promise<UntypedResult<Record<string, unknown>>>;
+      };
+    };
+  };
+
+  const [projectQuotesResult, opportunityQuotesRawResult, claimsRawResult, variationsRawResult, filesRawResult] = await Promise.all([
+    supabase
+      .from("project_quotes")
+      .select("id, project_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .returns<ProjectQuoteRow[]>(),
+    untypedSupabase.from("opportunity_quotes").select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at").eq("organization_id", member.organization_id),
+    untypedSupabase.from("project_claims").select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, notes, updated_at").eq("organization_id", member.organization_id),
+    untypedSupabase.from("project_variations").select("id, project_id, variation_number, variation_title, status, total_variation_price, approved_at, notes, created_at, updated_at").eq("organization_id", member.organization_id),
+    untypedSupabase.from("project_drawing_sets").select("id, project_id, file_name, storage_path, file_size_bytes, created_at").eq("organization_id", member.organization_id),
+  ]);
+
+  const projectQuotes = (projectQuotesResult.error ? [] : (projectQuotesResult.data ?? [])).filter((quote) => projectIdSet.has(quote.project_id));
+  const opportunityQuotes = ((opportunityQuotesRawResult.error ? [] : (opportunityQuotesRawResult.data ?? [])) as OpportunityQuoteRow[]).filter((quote) => opportunityIdSet.has(quote.opportunity_id));
+  const claims = ((claimsRawResult.error ? [] : (claimsRawResult.data ?? [])) as ClaimRow[]).filter((claim) => projectIdSet.has(claim.project_id));
+  const variations = ((variationsRawResult.error ? [] : (variationsRawResult.data ?? [])) as VariationRow[]).filter((variation) => projectIdSet.has(variation.project_id));
+  const drawingSets = ((filesRawResult.error ? [] : (filesRawResult.data ?? [])) as DrawingSetRow[]).filter((file) => projectIdSet.has(file.project_id));
+  const drawingSetsWithDownloads = await Promise.all(
+    drawingSets.map(async (file) => {
+      const signed = await supabase.storage.from(PROJECT_DRAWING_SETS_BUCKET).createSignedUrl(file.storage_path, 60 * 60);
+      return {
+        ...file,
+        download_url: signed.error ? null : signed.data.signedUrl,
+      };
+    })
+  );
+
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
+
+  const totalRevenue = claims.reduce((sum, claim) => sum + toNumeric(claim.paid_amount), 0);
+  const totalClaimed = claims.reduce((sum, claim) => sum + toNumeric(claim.claim_amount), 0);
+  const outstanding = Math.max(0, totalClaimed - totalRevenue);
+  const latestJobDate = projects.reduce<string | null>((latest, project) => (!latest || project.updated_at > latest ? project.updated_at : latest), null);
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+
+  const paidClaims = claims.filter((claim) => {
+    const paidAmount = toNumeric(claim.paid_amount);
+    const claimAmount = toNumeric(claim.claim_amount);
+    const status = (claim.status ?? "").toLowerCase();
+    return status === "paid" || paidAmount >= claimAmount;
+  });
+
+  const daySamples = paidClaims.map((claim) => dayDiff(claim.claim_date, claim.updated_at)).filter((value): value is number => value !== null);
+  const avgDaysToPay = daySamples.length > 0 ? daySamples.reduce((sum, value) => sum + value, 0) / daySamples.length : null;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const overdueClaims = claims.filter((claim) => {
+    const dueDate = claim.due_date;
+    const claimAmount = toNumeric(claim.claim_amount);
+    const paidAmount = toNumeric(claim.paid_amount);
+    const balance = Math.max(0, claimAmount - paidAmount);
+    const status = (claim.status ?? "").toLowerCase();
+    return status === "overdue" || Boolean(dueDate && dueDate < todayIso && balance > 0);
+  });
+  const overdueAmount = overdueClaims.reduce((sum, claim) => sum + Math.max(0, toNumeric(claim.claim_amount) - toNumeric(claim.paid_amount)), 0);
+  const paymentReliability = claims.length > 0 ? (paidClaims.length / claims.length) * 100 : null;
+  const repeatJobs = Math.max(0, projects.length - 1);
+  const repeatJobsPercent = projects.length > 0 ? (repeatJobs / projects.length) * 100 : 0;
+  const openQuotesValue = [...projectQuotes, ...opportunityQuotes].filter((quote) => isOpenQuote(quote.status)).reduce((sum, quote) => sum + toNumeric(quote.total_quote_price), 0);
+  const activeOpportunitiesValue = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost").reduce((sum, opportunity) => sum + toNumeric(opportunity.estimated_value), 0);
+  const forecastRevenue = openQuotesValue + activeOpportunitiesValue;
+
+  const now = new Date();
+  const last90Start = new Date(now);
+  last90Start.setDate(last90Start.getDate() - 90);
+  const previous90Start = new Date(last90Start);
+  previous90Start.setDate(previous90Start.getDate() - 90);
+
+  let revenueLast90 = 0;
+  let revenuePrevious90 = 0;
+  for (const claim of claims) {
+    const paidAmount = toNumeric(claim.paid_amount);
+    if (paidAmount <= 0 || !claim.updated_at) continue;
+    const paidAt = toDate(claim.updated_at);
+    if (!paidAt) continue;
+    if (paidAt >= last90Start) revenueLast90 += paidAmount;
+    else if (paidAt >= previous90Start && paidAt < last90Start) revenuePrevious90 += paidAmount;
+  }
+
+  const spendDeclinePercent = revenuePrevious90 > 0 ? ((revenuePrevious90 - revenueLast90) / revenuePrevious90) * 100 : revenueLast90 === 0 ? 0 : -100;
+  const rejectedVariationCount = variations.filter((variation) => variation.status === "Rejected").length;
+
+  const riskFlags: Array<{ tone: RiskTone; label: string; detail: string }> = [];
+  if (overdueAmount > 0) riskFlags.push({ tone: "red", label: "Overdue invoices", detail: `${overdueClaims.length} overdue, ${toMoney(overdueAmount)} outstanding` });
+  if (rejectedVariationCount > 0) riskFlags.push({ tone: "orange", label: "Dispute signal", detail: `${rejectedVariationCount} rejected variation${rejectedVariationCount === 1 ? "" : "s"}` });
+  if (spendDeclinePercent >= 25 && revenuePrevious90 > 0) riskFlags.push({ tone: spendDeclinePercent >= 50 ? "red" : "orange", label: "Declining spend", detail: `${toPercent(spendDeclinePercent)} down vs prior 90 days` });
+  if (avgDaysToPay !== null && avgDaysToPay > 45) riskFlags.push({ tone: "orange", label: "Slow payment behavior", detail: `${Math.round(avgDaysToPay)} days average to pay` });
+  if (riskFlags.length === 0) riskFlags.push({ tone: "green", label: "Healthy profile", detail: "No immediate risk indicators found" });
+
+  const noteEntries = opportunities
+    .filter((opportunity) => (opportunity.notes ?? "").trim().length > 0)
+    .map((opportunity) => ({
+      id: opportunity.id,
+      title: opportunity.name,
+      body: (opportunity.notes ?? "").trim(),
+      at: opportunity.updated_at,
+      href: `/app/leads-clients/opportunities/${opportunity.slug}`,
+    }))
+    .sort((left, right) => right.at.localeCompare(left.at));
+
+  const timeline: TimelineEvent[] = [{ id: `client-created-${client.id}`, at: client.created_at, title: "Client profile created", detail: client.company_name?.trim() || client.name, href: null }];
+
+  for (const project of projects) timeline.push({ id: `project-${project.id}`, at: project.created_at, title: "Job created", detail: project.name, href: `/app/projects/${project.slug}/dashboard` });
+  for (const opportunity of opportunities) timeline.push({ id: `opportunity-${opportunity.id}`, at: opportunity.updated_at, title: "Opportunity updated", detail: `${opportunity.name} · ${opportunity.stage}`, href: `/app/leads-clients/opportunities/${opportunity.slug}` });
+  for (const quote of opportunityQuotes) {
+    const linkedOpportunity = opportunityById.get(quote.opportunity_id);
+    timeline.push({ id: `opportunity-quote-${quote.id}`, at: quote.updated_at || quote.created_at, title: quote.status === "Sent" || quote.status === "Viewed" ? "Quote sent" : "Quote issued", detail: `${quote.quote_number} · ${quote.quote_title}`, href: linkedOpportunity ? `/app/leads-clients/opportunities/${linkedOpportunity.slug}/quote` : null });
+  }
+  for (const claim of claims) {
+    const linkedProject = projectById.get(claim.project_id);
+    timeline.push({ id: `claim-issued-${claim.id}`, at: claim.claim_date || claim.updated_at, title: "Invoice / claim issued", detail: `${claim.claim_number} · ${claim.claim_title}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/claims/${claim.id}` : null });
+    if (toNumeric(claim.paid_amount) > 0) timeline.push({ id: `claim-paid-${claim.id}`, at: claim.updated_at, title: "Payment received", detail: `${claim.claim_number} · ${toMoney(toNumeric(claim.paid_amount))}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/claims/${claim.id}` : null });
+  }
+  for (const variation of variations) {
+    if (!variation.approved_at) continue;
+    const linkedProject = projectById.get(variation.project_id);
+    timeline.push({ id: `variation-approved-${variation.id}`, at: variation.approved_at, title: "Variation approved", detail: `${variation.variation_number} · ${variation.variation_title}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/variations/${variation.id}` : null });
+  }
+  for (const note of noteEntries) timeline.push({ id: `note-${note.id}`, at: note.at, title: "Note added", detail: note.title, href: note.href });
+
+  const timelineRows = timeline.sort((left, right) => right.at.localeCompare(left.at));
+  const recentClaims = [...claims].sort((left, right) => (right.due_date || right.updated_at).localeCompare(left.due_date || left.updated_at));
+  const recentQuotes = [...projectQuotes, ...opportunityQuotes].sort((left, right) => (right.updated_at || right.created_at).localeCompare(left.updated_at || left.created_at));
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+  const closedOpportunities = opportunities.filter((opportunity) => opportunity.stage === "Won" || opportunity.stage === "Lost");
+  const wonOpportunities = opportunities.filter((opportunity) => opportunity.stage === "Won");
+  const conversionRate = closedOpportunities.length > 0 ? (wonOpportunities.length / closedOpportunities.length) * 100 : null;
+
+  return {
+    client,
+    projects,
+    opportunities,
+    projectQuotes,
+    opportunityQuotes,
+    claims,
+    variations,
+    drawingSets: drawingSetsWithDownloads,
+    projectById,
+    opportunityById,
+    totalRevenue,
+    outstanding,
+    latestJobDate,
+    jobsInProgress,
+    avgDaysToPay,
+    overdueAmount,
+    paymentReliability,
+    repeatJobsPercent,
+    openQuotesValue,
+    forecastRevenue,
+    riskFlags,
+    noteEntries,
+    timelineRows,
+    recentClaims,
+    recentQuotes,
+    activeOpportunities,
+    conversionRate,
+  };
+}
