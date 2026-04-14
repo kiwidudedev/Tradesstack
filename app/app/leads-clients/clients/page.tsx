@@ -743,15 +743,6 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
           </CardContent>
         </Card>
 
-        {/* Client Insights */}
-        <Card className="overflow-hidden rounded-[32px] border-none bg-[var(--app-surface)] shadow-none">
-          <div className="px-6 pt-6 pb-4">
-            <h2 className={`${ibmPlexSans.className} m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]`}>
-              Client Insights (AI)
-            </h2>
-          </div>
-          <CardContent className="pb-8 pt-0" />
-        </Card>
       </div>
     </main>
   );

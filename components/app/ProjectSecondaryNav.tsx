@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Bot,
   ClipboardCheck,
+  Clock3,
   DollarSign,
   FileText,
   FolderOpen,
@@ -24,7 +25,7 @@ const PROJECT_TOP_NAV_ITEMS = [
   { label: "Variations", segment: "preconstruction/variations", icon: WandSparkles },
   { label: "Financials", segment: "preconstruction/claims", icon: DollarSign },
   { label: "Files", segment: "drawing-intelligence", icon: FolderOpen },
-  { label: "Timeline", segment: "job-management/time-sheets", icon: TimerReset },
+  { label: "Timesheets", segment: "job-management/time-sheets", icon: TimerReset },
   { label: "Health & Safety", segment: "job-management/quality-assurance", icon: ShieldCheck },
   { label: "AI Assistant", segment: "ai-chatbot", icon: Bot },
 ] as const;
@@ -72,7 +73,7 @@ export function ProjectSecondaryNav({
               const isActive = isDashboard
                 ? pathname === `/app/projects/${projectId}` || pathname === href
                 : pathname.startsWith(href);
-              const Icon = item.icon;
+              const Icon = item.icon ?? Clock3;
 
               return (
                 <Link

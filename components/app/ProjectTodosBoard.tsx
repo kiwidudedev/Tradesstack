@@ -2,7 +2,7 @@
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { AlertCircle, Calendar, CheckCircle2, CircleDot, Clock3, FileText, Flag, ListTodo, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock3, FileText, Flag, ListTodo, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -12,7 +12,7 @@ import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-type TodoStatus = "To Do" | "In Progress" | "Complete";
+type TodoStatus = "To Do" | "In Progress" | "Need Review" | "Done";
 type TodoPriority = "Low" | "Medium" | "High";
 type TodoSourceType = "qa_issue" | "inspection_fail" | null;
 type GroupByMode = "All" | "Status" | "Assignee" | "Trade";
@@ -88,9 +88,12 @@ const EMPTY_TASK_STATS: TaskStats = {
 
 function normalizeStatus(value: unknown): TodoStatus {
   if (value === "Archived") {
-    return "Complete";
+    return "Done";
   }
-  if (value === "To Do" || value === "In Progress" || value === "Complete") {
+  if (value === "Complete") {
+    return "Done";
+  }
+  if (value === "To Do" || value === "In Progress" || value === "Need Review" || value === "Done") {
     return value;
   }
   return "To Do";
@@ -240,7 +243,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 }
 
 function isOverdue(dueDate: string | null, dueAt: string | null, status: TodoStatus) {
-  if (status === "Complete") {
+  if (status === "Done") {
     return false;
   }
   if (dueAt) {
@@ -260,7 +263,7 @@ function isOverdue(dueDate: string | null, dueAt: string | null, status: TodoSta
 }
 
 function statusTone(status: TodoStatus) {
-  if (status === "Complete") {
+  if (status === "Done") {
     return "bg-emerald-100 text-emerald-800 border-emerald-200";
   }
   if (status === "In Progress") {
@@ -379,13 +382,19 @@ export function ProjectTodosBoard() {
     [organizationUsers]
   );
   const statusesToLoad = useMemo(() => {
-    if (statusFilter === "Complete") {
-      return ["Complete", "Archived"];
+    if (statusFilter === "Done") {
+      return ["Done", "Complete", "Archived"];
     }
     if (statusFilter === "To Do") {
       return ["To Do"];
     }
-    return ["To Do", "In Progress"];
+    if (statusFilter === "In Progress") {
+      return ["In Progress"];
+    }
+    if (statusFilter === "Need Review") {
+      return ["Need Review"];
+    }
+    return ["To Do", "In Progress", "Need Review"];
   }, [statusFilter]);
 
   useEffect(() => {
@@ -570,7 +579,7 @@ export function ProjectTodosBoard() {
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
-          .in("status", ["Complete", "Archived"]),
+          .in("status", ["Done", "Complete", "Archived"]),
         todosTable
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
@@ -704,7 +713,7 @@ export function ProjectTodosBoard() {
 
   const filteredTodos = useMemo(() => {
     return todos.filter((task) => {
-      if (statusFilter === "All" && task.status === "Complete") {
+      if (statusFilter === "All" && task.status === "Done") {
         return false;
       }
 
@@ -809,7 +818,7 @@ export function ProjectTodosBoard() {
       { key: "To Do", label: "To-do", icon: ListTodo, accent: "text-[#8B5CF6]", countColor: "text-[#A855F7]" },
       { key: "In Progress", label: "On Progress", icon: Clock3, accent: "text-[#0EA5E9]", countColor: "text-[#38BDF8]" },
       { key: "Need Review", label: "Need Review", icon: AlertCircle, accent: "text-[#F59E0B]", countColor: "text-[#F59E0B]" },
-      { key: "Complete", label: "Done", icon: CheckCircle2, accent: "text-[#22C55E]", countColor: "text-[#16A34A]" },
+      { key: "Done", label: "Done", icon: CheckCircle2, accent: "text-[#22C55E]", countColor: "text-[#16A34A]" },
     ];
 
     return orderedStatuses
@@ -906,7 +915,7 @@ export function ProjectTodosBoard() {
           trade: newTrade.trim(),
           priority: newPriority,
           status: newStatus,
-          is_completed: newStatus === "Complete",
+          is_completed: newStatus === "Done",
           source_type: null,
           source_id: null,
           linked_issue_id: newLinkedIssueId || null,
@@ -968,7 +977,7 @@ export function ProjectTodosBoard() {
           trade: detailTrade.trim(),
           priority: detailPriority,
           status: detailStatus,
-          is_completed: detailStatus === "Complete",
+          is_completed: detailStatus === "Done",
           linked_issue_id: detailLinkedIssueId || null,
           linked_inspection_id: detailLinkedInspectionId || null,
         })
@@ -981,7 +990,7 @@ export function ProjectTodosBoard() {
       }
 
       await loadData({ showLoading: false });
-      if (detailStatus === "Complete") {
+      if (detailStatus === "Done") {
         setIsDetailOpen(false);
         setSelectedTaskId(null);
       }
@@ -1119,20 +1128,10 @@ export function ProjectTodosBoard() {
                 {stats.overdueCount} Overdue
               </div>
               <div className="inline-flex items-center rounded-[14px] border border-[#E2E8F1] bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-[10px] px-4 py-2 text-[13px] font-medium text-[#475569]"
-                >
-                  <CircleDot className="h-4 w-4" strokeWidth={2} />
-                  Kanban
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-[10px] bg-[#F8FAFC] px-4 py-2 text-[13px] font-medium text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
-                >
+                <div className="inline-flex items-center gap-2 rounded-[10px] bg-[#F8FAFC] px-4 py-2 text-[13px] font-medium text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
                   <ListTodo className="h-4 w-4" strokeWidth={2} />
                   List
-                </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1171,7 +1170,8 @@ export function ProjectTodosBoard() {
                   <option value="All">All Status</option>
                   <option value="To Do">To Do</option>
                   <option value="In Progress">In Progress</option>
-                  <option value="Complete">Completed</option>
+                  <option value="Need Review">Need Review</option>
+                  <option value="Done">Done</option>
                 </select>
               </div>
               <div className="relative">
@@ -1289,7 +1289,7 @@ export function ProjectTodosBoard() {
                               : task.linkedInspectionItemId
                                 ? inspectionNameById.get(inspectionItemById.get(task.linkedInspectionItemId)?.inspectionId ?? "") ?? "Linked inspection"
                                 : "";
-                            const progressValue = task.status === "Complete" ? 10 : task.status === "In Progress" ? 5 : 1;
+                            const progressValue = task.status === "Done" ? 10 : task.status === "In Progress" ? 5 : 1;
                             const detailSummary = task.description || linkedIssueName || linkedInspectionName || "No description added";
 
                             return (
@@ -1454,16 +1454,30 @@ export function ProjectTodosBoard() {
                 </select>
               </div>
 
-              <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                  Due Date
-                </label>
-                <Input
-                  type="date"
-                  value={newDueDate}
-                  onChange={(event) => setNewDueDate(event.target.value)}
-                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Due Date
+                  </label>
+                  <Input
+                    type="date"
+                    value={newDueDate}
+                    onChange={(event) => setNewDueDate(event.target.value)}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  />
+                </div>
+                <div>
+                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    Due Time
+                  </label>
+                  <Input
+                    type="time"
+                    step="60"
+                    value={newDueTime}
+                    onChange={(event) => setNewDueTime(event.target.value)}
+                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29] [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-datetime-edit]:text-[#10283B] [&::-webkit-datetime-edit-fields-wrapper]:text-[#10283B]`}
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1492,7 +1506,8 @@ export function ProjectTodosBoard() {
                   >
                     <option value="To Do">To Do</option>
                     <option value="In Progress">In Progress</option>
-                    <option value="Complete">Complete</option>
+                    <option value="Need Review">Need Review</option>
+                    <option value="Done">Done</option>
                   </select>
                 </div>
               </div>
@@ -1571,16 +1586,30 @@ export function ProjectTodosBoard() {
                   </select>
                 </div>
 
-                <div>
-                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                    Due Date
-                  </label>
-                  <Input
-                    type="date"
-                    value={detailDueDate}
-                    onChange={(event) => setDetailDueDate(event.target.value)}
-                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                      Due Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={detailDueDate}
+                      onChange={(event) => setDetailDueDate(event.target.value)}
+                      className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                      Due Time
+                    </label>
+                    <Input
+                      type="time"
+                      step="60"
+                      value={detailDueTime}
+                      onChange={(event) => setDetailDueTime(event.target.value)}
+                      className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29] [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-datetime-edit]:text-[#10283B] [&::-webkit-datetime-edit-fields-wrapper]:text-[#10283B]`}
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1609,7 +1638,8 @@ export function ProjectTodosBoard() {
                     >
                       <option value="To Do">To Do</option>
                       <option value="In Progress">In Progress</option>
-                      <option value="Complete">Complete</option>
+                      <option value="Need Review">Need Review</option>
+                      <option value="Done">Done</option>
                     </select>
                   </div>
                 </div>

@@ -3,9 +3,12 @@ import { Search, TrendingUp, DollarSign, CheckCircle2, Clock } from "lucide-reac
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
+import type { QuoteStatus } from "@/lib/supabase/types";
 import { OpportunitiesTable } from "./OpportunitiesTable";
 import { NewOpportunityDialog } from "./NewOpportunityDialog";
 import styles from "./opportunities.module.css";
+
+const SUBMITTED_QUOTE_STATUSES: QuoteStatus[] = ["Sent", "Viewed", "Accepted"];
 
 function formatCurrencyCompactNZD(value: number) {
   return new Intl.NumberFormat("en-NZ", {
@@ -70,10 +73,15 @@ export default async function LeadsClientsOpportunitiesPage({
   ]);
 
   // Stats
+  const submittedQuoteRows = allRows.filter(
+    (r) =>
+      r.valueNZD > 0 &&
+      (r.stage === "Quoted" || r.stage === "Won" || SUBMITTED_QUOTE_STATUSES.includes(r.latestQuoteStatus ?? "Draft"))
+  );
   const pipelineRows = allRows.filter((r) => r.group === "pipeline");
   const wonRows = allRows.filter((r) => r.stage === "Won");
   const lostRows = allRows.filter((r) => r.stage === "Lost");
-  const pipelineValue = pipelineRows.reduce((sum, r) => sum + r.valueNZD, 0);
+  const submittedQuoteValue = submittedQuoteRows.reduce((sum, r) => sum + r.valueNZD, 0);
 
   const winRate =
     wonRows.length + lostRows.length > 0
@@ -93,12 +101,32 @@ export default async function LeadsClientsOpportunitiesPage({
   }).length;
 
   // Tab filtering
-  const activeRows: LiveOpportunityRow[] = allRows.filter(
-    (r) => r.stage !== "Lost" && r.stage !== "Won"
-  );
-  const pastRows: LiveOpportunityRow[] = allRows.filter((r) => r.stage === "Lost");
+  const isSubmittedQuote = (row: LiveOpportunityRow) =>
+    row.stage === "Quoted" || SUBMITTED_QUOTE_STATUSES.includes(row.latestQuoteStatus ?? "Draft");
 
-  const tabRows = tab === "past" ? pastRows : activeRows;
+  const activeRows: LiveOpportunityRow[] = allRows.filter(
+    (r) => r.stage !== "Lost" && r.stage !== "Won" && !isSubmittedQuote(r) && Boolean(r.dueDateIso)
+  );
+  const sentRows: LiveOpportunityRow[] = allRows.filter(
+    (r) => r.latestQuoteStatus === "Sent" || r.latestQuoteStatus === "Viewed"
+  );
+  const wonRowsByQuote: LiveOpportunityRow[] = allRows.filter(
+    (r) => r.latestQuoteStatus === "Accepted" || r.stage === "Won" || Boolean(r.convertedProjectId)
+  );
+  const closedRows: LiveOpportunityRow[] = allRows.filter(
+    (r) =>
+      r.latestQuoteStatus === "Rejected" ||
+      r.latestQuoteStatus === "Expired"
+  );
+
+  const tabRows =
+    tab === "past"
+      ? sentRows
+      : tab === "won"
+        ? wonRowsByQuote
+        : tab === "closed"
+          ? closedRows
+          : activeRows;
 
   const searchedRows = q
     ? tabRows.filter((r) => {
@@ -109,8 +137,12 @@ export default async function LeadsClientsOpportunitiesPage({
 
   const sectionLabel =
     tab === "past"
-      ? "Past opportunities — not awarded"
-      : "Pending quotes";
+      ? "Outstanding quotes"
+      : tab === "won"
+        ? "Won quotes"
+      : tab === "closed"
+        ? "Lost quotes"
+      : "Upcoming quotes";
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.page} space-y-6 pb-8`}>
@@ -128,9 +160,9 @@ export default async function LeadsClientsOpportunitiesPage({
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
-          label="Pipeline Value"
-          value={formatCurrencyCompactNZD(pipelineValue)}
-          sub={`${pipelineRows.length} active opportunities`}
+          label="Submitted Quote Value"
+          value={formatCurrencyCompactNZD(submittedQuoteValue)}
+          sub={`${submittedQuoteRows.length} submitted quotes`}
           icon={<DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />}
           iconBg="bg-[#0E172B]"
           iconColor="text-[#0E172B]"
@@ -166,12 +198,12 @@ export default async function LeadsClientsOpportunitiesPage({
         <Link
           href={`/app/leads-clients/opportunities?tab=active${q ? `&q=${encodeURIComponent(q)}` : ""}`}
           className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
-            tab !== "past"
+            tab === "active"
               ? "bg-[#F15A29] text-white shadow-sm"
               : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
           }`}
         >
-          Active Quotes
+          Upcoming Quotes
         </Link>
         <Link
           href={`/app/leads-clients/opportunities?tab=past${q ? `&q=${encodeURIComponent(q)}` : ""}`}
@@ -181,7 +213,27 @@ export default async function LeadsClientsOpportunitiesPage({
               : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
           }`}
         >
-          Past (Not Awarded)
+          Outstanding Quotes
+        </Link>
+        <Link
+          href={`/app/leads-clients/opportunities?tab=won${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
+            tab === "won"
+              ? "bg-[#F15A29] text-white shadow-sm"
+              : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
+          }`}
+        >
+          Won
+        </Link>
+        <Link
+          href={`/app/leads-clients/opportunities?tab=closed${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
+            tab === "closed"
+              ? "bg-[#F15A29] text-white shadow-sm"
+              : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
+          }`}
+        >
+          Lost
         </Link>
       </div>
 
