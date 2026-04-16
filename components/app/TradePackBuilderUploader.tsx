@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
 import { Upload as TusUpload } from "tus-js-client";
-import { CheckCircle2, ChevronDown, ExternalLink, FileText, FolderOpen, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, CloudUpload, ExternalLink, FileText, FolderOpen, Info, Loader2, UploadCloud } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -758,6 +758,7 @@ export function TradePackBuilderUploader({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [deletingDrawingSetId, setDeletingDrawingSetId] = useState<string | null>(null);
   const [localSourceFile, setLocalSourceFile] = useState<File | null>(null);
+  const [isDropZoneActive, setIsDropZoneActive] = useState(false);
   const [selectedTradeId, setSelectedTradeId] = useState<string>(TRADE_PACK_TRADES[0]?.id ?? "");
   const [selectedOutputDrawingSetId, setSelectedOutputDrawingSetId] = useState<string | null>(null);
   const [isGeneratingPack, setIsGeneratingPack] = useState(false);
@@ -805,10 +806,7 @@ export function TradePackBuilderUploader({
     };
   }, [isGeneratingPack, generationStartedAtMs]);
 
-  const onLocalSourceFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
-
+  const selectLocalSourceFile = (file: File | null) => {
     if (!file) {
       return;
     }
@@ -835,6 +833,40 @@ export function TradePackBuilderUploader({
 
     setLocalSourceFile(file);
     setLastGenerationSummary(null);
+  };
+
+  const onLocalSourceFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    selectLocalSourceFile(file);
+  };
+
+  const onDropZoneDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (isGeneratingPack || deletingDrawingSetId !== null) {
+      return;
+    }
+    setIsDropZoneActive(true);
+  };
+
+  const onDropZoneDragLeave = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setIsDropZoneActive(false);
+  };
+
+  const onDropZoneDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDropZoneActive(false);
+
+    if (isGeneratingPack || deletingDrawingSetId !== null) {
+      return;
+    }
+
+    const file = event.dataTransfer.files?.[0] ?? null;
+    selectLocalSourceFile(file);
   };
 
   const downloadDrawingSet = async (drawingSet: ProjectDrawingSet) => {
@@ -1694,7 +1726,7 @@ export function TradePackBuilderUploader({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 rounded-[10px] bg-[#F7F8FA] p-1">
+        <div className="flex shrink-0 items-center gap-2">
           {editingDrawingSetId === drawingSet.id ? (
             <>
               <Button
@@ -1723,22 +1755,6 @@ export function TradePackBuilderUploader({
             </>
           ) : (
             <>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => downloadDrawingSet(drawingSet)}
-                disabled={downloadingPath === drawingSet.storage_path || isGeneratingPack || deletingDrawingSetId !== null}
-                className={`${styles.controlButton} ${producedActionButtonToneClass} ${useOpportunityTone ? "h-10 rounded-[0.9rem] border-[#D0D8E4] bg-white px-4 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]" : "h-8 px-3 text-[13px]"}`}
-                style={useOpportunityTone ? leadsButtonLabelStyle : undefined}
-              >
-                {downloadingPath === drawingSet.storage_path ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                )}
-                Download
-              </Button>
-
               {showTradePackBadge ? (
                 <Button
                   type="button"
@@ -1747,11 +1763,12 @@ export function TradePackBuilderUploader({
                     setSelectedOutputDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                  className={`${styles.controlButton} ${producedActionButtonToneClass} h-8 px-3 text-[13px]`}
+                  className={`${styles.controlButton} ${producedActionButtonToneClass} ${useOpportunityTone ? "inline-flex h-10 items-center justify-center gap-1.5 rounded-[0.9rem] border-[#D0D8E4] bg-white px-4 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]" : "h-8 px-3 text-[13px]"}`}
+                  style={useOpportunityTone ? leadsButtonLabelStyle : undefined}
                 >
                   Why
                   <ChevronDown
-                    className={`ml-1 h-4 w-4 transition-transform ${
+                    className={`h-4 w-4 transition-transform ${
                       selectedOutputDrawingSetId === drawingSet.id ? "rotate-180" : "rotate-0"
                     }`}
                   />
@@ -1766,11 +1783,12 @@ export function TradePackBuilderUploader({
                     setSettingsMenuDrawingSetId((currentId) => (currentId === drawingSet.id ? null : drawingSet.id))
                   }
                   disabled={renamingId !== null || isGeneratingPack || deletingDrawingSetId !== null}
-                  className={`${styles.controlButton} ${producedActionButtonToneClass} h-8 px-3 text-[13px]`}
+                  className={`${styles.controlButton} ${producedActionButtonToneClass} ${useOpportunityTone ? "inline-flex h-10 items-center justify-center gap-1.5 rounded-[0.9rem] border-[#D0D8E4] bg-white px-4 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]" : "h-8 px-3 text-[13px]"}`}
+                  style={useOpportunityTone ? leadsButtonLabelStyle : undefined}
                 >
                   Settings
                   <ChevronDown
-                    className={`ml-1 h-4 w-4 transition-transform ${
+                    className={`h-4 w-4 transition-transform ${
                       settingsMenuDrawingSetId === drawingSet.id ? "rotate-180" : "rotate-0"
                     }`}
                   />
@@ -1802,6 +1820,21 @@ export function TradePackBuilderUploader({
                   </div>
                 ) : null}
               </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => downloadDrawingSet(drawingSet)}
+                disabled={downloadingPath === drawingSet.storage_path || isGeneratingPack || deletingDrawingSetId !== null}
+                className={`${styles.controlButton} ${useOpportunityTone ? "inline-flex h-10 items-center justify-center gap-1.5 rounded-[0.9rem] border-[#F15A29] bg-[#F15A29] px-4 text-[14px] font-semibold text-white hover:bg-[#db4d1f] hover:border-[#db4d1f]" : `${producedActionButtonToneClass} h-8 px-3 text-[13px]`}`}
+              >
+                Download
+                {downloadingPath === drawingSet.storage_path ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="h-4 w-4" />
+                )}
+              </Button>
             </>
           )}
         </div>
@@ -1809,7 +1842,7 @@ export function TradePackBuilderUploader({
 
       {showTradePackBadge && selectedOutputDrawingSetId === drawingSet.id ? (
         <div className="mt-4 border-t border-[#E6EAF0] pt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6b6b6b]">Why pages were extracted</p>
+          <p className="text-[15px] font-semibold text-[#1d2433]">Why Pages Were Extracted</p>
           {extractedPageReasons.length > 0 ? (
             <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
               {extractedPageReasons.map((reason, reasonIndex) => {
@@ -1839,114 +1872,118 @@ export function TradePackBuilderUploader({
     <div
       className={`${styles.scope} ${useOpportunityTone ? styles.scopeOpportunityTone : ""} ${projectDashboardHref ? "-mb-8" : "pb-8"} space-y-6`}
     >
-      {useOpportunityTone ? (
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center gap-4">
-              <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
-                <FileText className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-              </span>
-              <p style={leadsBodyLabelStyle}>Produced Trade Packs</p>
-            </div>
-            <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
-              {generatedTradePacks.length}
-            </p>
-            <p className="mt-3 text-[16px] font-medium text-[#F74919]">
-              {generatedTradePacks.length === 0
-                ? "No trade packs generated yet"
-                : `${generatedTradePacks.length} pack${generatedTradePacks.length === 1 ? "" : "s"} generated`}
-            </p>
-          </div>
-
-          <div className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center gap-4">
-              <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
-                <FolderOpen className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-              </span>
-              <p style={leadsBodyLabelStyle}>Trade Category&apos;s Generated</p>
-            </div>
-            <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
-              {generatedTradeLabels.length > 0 ? generatedTradeLabels.join(", ") : "No trade packs generated"}
-            </p>
-            <p className="mt-3 text-[16px] font-medium text-[#F74919]">
-              {generatedTradeLabels.length > 0
-                ? "Generated trade pack types"
-                : "Generate a trade pack to list it here"}
-            </p>
-          </div>
-        </section>
-      ) : null}
-
       <section className="space-y-3">
         <div className="space-y-3">
           <div
-            className={`${styles.card} ${useOpportunityTone ? styles.opportunityPanelTone : ""} rounded-[28px] border border-[#d9dee5] p-7 shadow-none md:p-8`}
+            className={`${styles.card} ${useOpportunityTone ? styles.opportunityPanelTone : ""} rounded-[28px] border-0 p-7 shadow-none md:p-8`}
           >
-            <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
+            <div className={`${styles.sectionHeader} pb-5`}>
               <p className={`${interBold.className} ${styles.sectionTitle}`} style={leadsSectionTitleStyle}>Create Trade Pack</p>
-              <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
-                <Button
-                  type="button"
-                  onClick={generateTradePack}
-                  disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
-                  className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
-                >
-                  {isGeneratingPack ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Building Pack
-                    </>
-                  ) : (
-                    "Generate"
-                  )}
-                </Button>
-              </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <label htmlFor="localSourcePdfInput" className={styles.metricLabel} style={leadsBodyLabelStyle}>
-                  Source PDF
-                </label>
-                <div className={`${styles.fieldBox} ${useOpportunityTone ? styles.opportunityInsetTone : ""}`}>
-                  <input
-                    id="localSourcePdfInput"
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    onChange={onLocalSourceFileSelect}
-                    disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                    className="hidden"
-                  />
-                  <p className={`${ibmPlexSans.className} truncate pr-1`} style={leadsBodyValueStyle}>
-                    {localSourceFile ? localSourceFile.name : "No source PDF selected"}
-                  </p>
-                  <label
-                    htmlFor="localSourcePdfInput"
-                  className={`${ibmPlexSans.className} ml-auto inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[999px] border border-[#D0D8E4] bg-white px-3 transition hover:bg-[#F8FAFC]`}
-                  style={leadsButtonLabelStyle}
-                  >
-                    Select PDF
-                  </label>
+            <div className="mt-2 grid gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-stretch">
+              <div className="relative flex h-full flex-col gap-3 pt-[1.625rem]">
+                <div className="absolute left-0 top-[1.625rem] -translate-y-[calc(100%+0.5rem)] space-y-1">
+                  <span className={styles.stepBadge}>Step 1</span>
                 </div>
+                <input
+                  id="localSourcePdfInput"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={onLocalSourceFileSelect}
+                  disabled={isGeneratingPack || deletingDrawingSetId !== null}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="localSourcePdfInput"
+                  onDragOver={onDropZoneDragOver}
+                  onDragLeave={onDropZoneDragLeave}
+                  onDrop={onDropZoneDrop}
+                  className={`${styles.dropZone} ${useOpportunityTone ? styles.opportunityDropZone : ""} ${
+                    isDropZoneActive ? styles.dropZoneActive : ""
+                  } ${isGeneratingPack || deletingDrawingSetId !== null ? "pointer-events-none opacity-70" : "cursor-pointer"}`}
+                >
+                  <span className={styles.dropZoneIcon}>
+                    <CloudUpload className="h-7 w-7" strokeWidth={2.1} />
+                  </span>
+                  <div className="space-y-1 text-center">
+                    <p className={`${ibmPlexSans.className} text-[1.05rem] font-medium text-[#111827]`}>
+                      Drag & Drop or <span className="text-[#F15A29]">Choose file</span> to upload
+                    </p>
+                    <p className="text-sm text-[#7A7F87]">
+                      Supported format: PDF. File size max {formatFileSize(MAX_DRAWING_SET_UPLOAD_SIZE_BYTES)}
+                    </p>
+                  </div>
+                </label>
+
               </div>
 
-              <div className="space-y-1.5">
-                <label htmlFor="tradeSelector" className={styles.metricLabel} style={leadsBodyLabelStyle}>
-                  Trade
-                </label>
-                <select
-                  id="tradeSelector"
-                  value={selectedTradeId}
-                  onChange={(event) => setSelectedTradeId(event.target.value)}
-                  disabled={isGeneratingPack || deletingDrawingSetId !== null}
-                  className={`${ibmPlexSans.className} ${styles.fieldSelect} ${useOpportunityTone ? styles.opportunityInsetTone : ""} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/20`}
-                >
-                  {TRADE_PACK_TRADES.map((trade) => (
-                    <option key={trade.id} value={trade.id}>
-                      {trade.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex h-full flex-col gap-3 pt-[1.625rem]">
+                <div className={styles.uploadedFileCard}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className={styles.uploadedFileIcon}>
+                      <FileText className="h-5 w-5" strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-medium text-[#111827]">
+                        {localSourceFile ? localSourceFile.name : "No source file selected"}
+                      </p>
+                      <p className="mt-0.5 text-sm text-[#7A7F87]">
+                        {localSourceFile ? `PDF | ${formatFileSize(localSourceFile.size)}` : "Select a PDF to continue"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1 pt-2">
+                  <span className={styles.stepBadge}>Step 2</span>
+                </div>
+                <div className={`${styles.selectionBox} ${useOpportunityTone ? styles.opportunityInsetTone : ""} flex flex-1 flex-col justify-between p-5`}>
+                <div className="space-y-5">
+                  <div className="w-full space-y-1.5">
+                    <p className="text-[15px] font-medium text-[#111827]">
+                      Choose the trade for this pack
+                    </p>
+                    <div className="relative">
+                      <select
+                        id="tradeSelector"
+                        value={selectedTradeId}
+                        onChange={(event) => setSelectedTradeId(event.target.value)}
+                        disabled={isGeneratingPack || deletingDrawingSetId !== null}
+                        className={`${ibmPlexSans.className} ${styles.fieldSelect} ${useOpportunityTone ? styles.opportunityInsetTone : ""} bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/20`}
+                      >
+                        {TRADE_PACK_TRADES.map((trade) => (
+                          <option key={trade.id} value={trade.id}>
+                            {trade.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#0F172A]"
+                        strokeWidth={2}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={generateTradePack}
+                    disabled={isGeneratingPack || !canGenerateTradePack || deletingDrawingSetId !== null}
+                    className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
+                  >
+                    {isGeneratingPack ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Building Pack
+                      </>
+                    ) : (
+                      "Generate"
+                    )}
+                  </Button>
+                </div>
+                </div>
               </div>
             </div>
 
@@ -1983,6 +2020,7 @@ export function TradePackBuilderUploader({
               ) : null}
               {error ? <p className="rounded-[6px] border border-red-300/70 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
             </div>
+
           </div>
 
         </div>

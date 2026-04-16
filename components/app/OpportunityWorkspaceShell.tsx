@@ -93,9 +93,15 @@ export function OpportunityWorkspaceShell({
                       href={item.href}
                       prefetch
                       className={`${leadsShellTabClassName} ${
-                        item.active ? "text-[#F15A29]" : "text-[#4B5D79] hover:text-[#4B5D79]"
+                        item.active
+                          ? "border-b-2 text-[#F15A29]"
+                          : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
                       }`}
-                      style={item.active ? { borderBottomColor: leadsPageSurfaceTheme.accent } : undefined}
+                      style={
+                        item.active
+                          ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
+                          : undefined
+                      }
                     >
                       <Icon
                         strokeWidth={2.2}

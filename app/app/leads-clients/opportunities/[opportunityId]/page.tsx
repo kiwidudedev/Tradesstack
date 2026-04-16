@@ -215,6 +215,11 @@ function getInitials(name: string): string {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
+const leadDetailsValueStyle = {
+  ...leadsBodyValueStyle,
+  fontWeight: 500,
+} as const;
+
 function isDueToday(isoDate: string | null | undefined): boolean {
   if (!isoDate) {
     return false;
@@ -368,7 +373,6 @@ export default async function OpportunityWorkspacePage({
     status: typeof task.status === "string" ? task.status : "To Do",
   }));
   const dueTasksTodayCount = leadTasks.filter((task) => isDueToday(task.dueDate)).length;
-
   async function saveOpportunityDetails(formData: FormData) {
     "use server";
 
@@ -627,7 +631,7 @@ export default async function OpportunityWorkspacePage({
 
           </div>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1.35fr)] xl:items-stretch">
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.945fr)_minmax(0,1.35fr)] xl:items-stretch">
             <Card className={`${leadsPanelClassName} app-surface h-full`}>
               <input id="lead-details-edit-toggle" type="checkbox" className="peer sr-only" />
               <div className="peer-checked:[&_.lead-details-edit-actions]:flex peer-checked:[&_.lead-details-edit-form]:block peer-checked:[&_.lead-details-edit-toggle]:hidden peer-checked:[&_.lead-details-view]:hidden">
@@ -650,34 +654,35 @@ export default async function OpportunityWorkspacePage({
                   </div>
                   <label
                     htmlFor="lead-details-edit-toggle"
-                    className="lead-details-edit-toggle inline-flex shrink-0 cursor-pointer items-center rounded-[0.72rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
+                    className="lead-details-edit-toggle inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-[0.72rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
                     style={leadsButtonLabelStyle}
                   >
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
                     Edit details
                   </label>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="lead-details-view">
-                    <div className="grid gap-x-4 gap-y-3 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
+                    <div className="grid gap-x-[19.2px] gap-y-[14.4px] pt-[1.2rem] md:grid-cols-[160px_minmax(0,1fr)]">
                       <p style={leadsBodyLabelStyle}>Project Name:</p>
-                      <p style={leadsBodyValueStyle}>{activeOpportunity.name}</p>
+                      <p style={leadDetailsValueStyle}>{activeOpportunity.name}</p>
 
                       <p style={leadsBodyLabelStyle}>Client:</p>
-                      <p style={leadsBodyValueStyle}>{activeOpportunity.clientName || "Unassigned"}</p>
+                      <p style={leadDetailsValueStyle}>{activeOpportunity.clientName || "Unassigned"}</p>
 
                       <p style={leadsBodyLabelStyle}>Location:</p>
-                      <p style={leadsBodyValueStyle}>{activeOpportunity.location || "Not set"}</p>
+                      <p style={leadDetailsValueStyle}>{activeOpportunity.location || "Not set"}</p>
 
                       <p style={leadsBodyLabelStyle}>Lead Due Date:</p>
-                      <p style={leadsBodyValueStyle}>{formatDueDate(activeOpportunity.dueDate)}</p>
+                      <p style={leadDetailsValueStyle}>{formatDueDate(activeOpportunity.dueDate)}</p>
 
                       <p style={leadsBodyLabelStyle}>Created:</p>
-                      <p style={leadsBodyValueStyle}>{formatDateTime(activeOpportunity.createdAt)}</p>
+                      <p style={leadDetailsValueStyle}>{formatDateTime(activeOpportunity.createdAt)}</p>
                     </div>
                   </div>
 
                   <form id="opportunity-details-form" action={saveOpportunityDetails} className="lead-details-edit-form hidden">
-                    <div className="grid gap-x-4 gap-y-3 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
+                    <div className="grid gap-x-[19.2px] gap-y-[14.4px] pt-[1.2rem] md:grid-cols-[160px_minmax(0,1fr)]">
                       <p className="text-[18px] font-semibold text-[#4B5D79]">Project Name:</p>
                       <input
                         name="projectName"
@@ -724,7 +729,7 @@ export default async function OpportunityWorkspacePage({
                 <button
                   type="submit"
                   form="opportunity-notes-form"
-                  className="inline-flex shrink-0 items-center justify-center rounded-[1rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
+                  className="inline-flex shrink-0 items-center justify-center rounded-[0.72rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
                 >
                   Save
                 </button>
