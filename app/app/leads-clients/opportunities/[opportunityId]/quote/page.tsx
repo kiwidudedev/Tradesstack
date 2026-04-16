@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, FileText, FolderOpen, LayoutGrid, Plus, Trash2 } from "lucide-react";
+import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
 import { useAuth } from "@/hooks/use-auth";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteLineItemSection, QuoteStatus } from "@/lib/supabase/types";
@@ -273,6 +274,12 @@ export default function PreconstructionQuotePage() {
     }
   }, []);
   const shouldShowEditor = isEditing || !quoteId;
+  const navItems = [
+    { label: "Overview", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}`, icon: LayoutGrid, active: false },
+    { label: "Generate Trade Pack", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}/drawing-intelligence`, icon: FolderOpen, active: false },
+    { label: "Build Scope", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}/scope-builder`, icon: FileText, active: false },
+    { label: "Start Pricing", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}/quote`, icon: FileText, active: true },
+  ] as const;
 
   const mainLineItems = useMemo(() => lineItems.filter((item) => !item.isOptional), [lineItems]);
   const optionalLineItems = useMemo(() => lineItems.filter((item) => item.isOptional), [lineItems]);
@@ -1156,22 +1163,8 @@ export default function PreconstructionQuotePage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-        >
-          <Link href={`/app/leads-clients/opportunities/${routeOpportunitySlug}`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Back to Lead Dashboard
-          </Link>
-        </Button>
-      </div>
-
+    <OpportunityWorkspaceShell title={projectName || "Opportunity"} opportunityId={routeOpportunitySlug ?? ""} activeTab="start-pricing">
+      <div className="px-5">
       <Card className={`shadow-none ${shouldShowEditor ? "border-[#E6EAF0] bg-[#F8F9FC]" : "border-[#E6EAF0] bg-[#F8F9FC]"}`}>
         <CardHeader className={`${shouldShowEditor ? "pb-5 pt-6" : "pb-4 pt-4"}`}>
           <div className={`flex flex-wrap items-start justify-between ${shouldShowEditor ? "gap-4" : "gap-3"}`}>
@@ -1877,6 +1870,7 @@ export default function PreconstructionQuotePage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </OpportunityWorkspaceShell>
   );
 }

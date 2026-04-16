@@ -6,7 +6,7 @@
   --brand-blue: #061A25;
   --brand-orange: #F74917;
   --brand-white: #ffffff;
-  --app-canvas: #FBFEFE;
+  --app-canvas: #F9FAFC;
   --app-surface: #FBFEFE;
   --app-surface-muted: #FBFEFE;
   --app-border: rgba(6, 26, 37, 0.06);
@@ -49,11 +49,14 @@ html,
 body,
 .app-shell,
 .app-shell > div,
-.app-shell main,
+.app-shell main {
+  background-color: var(--app-canvas);
+}
+
 .app-page-surface,
 .app-page-surface > main,
 .app-page-surface > div {
-  background-color: var(--app-canvas);
+  background-color: transparent;
 }
 
 @layer components {

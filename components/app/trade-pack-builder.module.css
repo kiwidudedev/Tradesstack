@@ -9,7 +9,19 @@
   --dash-soft: #8a8a8a;
   --dash-ink: #061a25;
   --dash-accent: #f74917;
-  background: var(--dash-bg);
+}
+
+.scopeOpportunityTone {
+  --dash-bg: #FBFEFE;
+  --dash-panel: #FBFEFE;
+  --dash-panel-muted: #F9FAFC;
+  --dash-border: #E2E8F1;
+  --dash-border-strong: #D7E1EC;
+  --dash-text: #1D1D1D;
+  --dash-muted: #4B5D79;
+  --dash-soft: #7B8CA5;
+  --dash-ink: #0E172B;
+  --dash-accent: #F15A29;
 }
 
 .heroBlock {
@@ -35,12 +47,13 @@
 }
 
 .heroTitle {
+  font-family: var(--font-inter-bold), "Inter", Arial, sans-serif !important;
   margin: 0;
-  color: var(--dash-text);
-  font-size: clamp(1.24rem, 2.24vw, 2.08rem);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
-  font-weight: 600;
+  color: #1D1D1D;
+  font-size: 22px;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 700;
 }
 
 .heroSummary {
@@ -84,12 +97,13 @@
 }
 
 .sectionTitle {
+  font-family: var(--font-inter-bold), "Inter", Arial, sans-serif !important;
   margin-top: 0.45rem;
-  color: var(--dash-text);
-  font-size: 1.4rem;
-  line-height: 1;
+  color: #1D1D1D;
+  font-size: 22px;
+  line-height: 1.02;
   letter-spacing: -0.03em;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .metricTile {
@@ -124,22 +138,23 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-height: 44px;
+  min-height: 58px;
   border: 1px solid var(--dash-border-strong);
   border-radius: 1rem;
   background: var(--dash-panel);
-  padding: 0 0.6rem;
+  padding: 0 0.75rem;
 }
 
 .fieldSelect {
-  min-height: 44px;
+  min-height: 58px;
   width: 100%;
   border: 1px solid var(--dash-border-strong);
   border-radius: 1rem;
   background: var(--dash-panel);
-  padding: 0 0.9rem;
-  color: var(--dash-text);
+  padding: 0 1rem;
+  color: #111827;
   font-size: 15px;
+  font-weight: 500;
 }
 
 .selectionBox {
@@ -205,6 +220,14 @@
   border-color: #D9DEE5 !important;
 }
 
+.opportunityPanelTone {
+  background: #FBFEFE !important;
+}
+
+.opportunityInsetTone {
+  background: #FBFEFE !important;
+}
+
 .producedRowProjectTone {
   background: #fbfefe !important;
   border-color: #d9dee5 !important;
@@ -212,6 +235,24 @@
 
 .producedActionButtonProjectTone {
   background: #ffffff !important;
+}
+
+.scopeOpportunityTone .heroPrimaryButton {
+  border-color: #F15A29 !important;
+  background: #F15A29 !important;
+  color: #FFFFFF !important;
+}
+
+.scopeOpportunityTone .heroPrimaryButton:hover {
+  background: #db4d1f !important;
+  opacity: 1;
+}
+
+.scopeOpportunityTone .heroPrimaryButton:disabled {
+  border-color: #98A5B3 !important;
+  background: #98A5B3 !important;
+  color: #FFFFFF !important;
+  opacity: 1;
 }
 
 .scopeWorkbenchActionButtonGrey {

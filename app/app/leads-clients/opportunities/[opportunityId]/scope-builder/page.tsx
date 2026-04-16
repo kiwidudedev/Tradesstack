@@ -1,15 +1,14 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { ScopeBuilderWorkbench } from "@/components/app/ScopeBuilderWorkbench";
+import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
 import {
   getTradePackWorkspaceBySlugForCurrentUser,
   getTradePackWorkspaceDrawingSetsForCurrentUser,
 } from "@/lib/trade-pack-workspaces-server";
 import { getOrCreateOpportunityWorkspaceSlugForCurrentUser } from "@/lib/leads-clients-server";
+import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { TRADE_PACK_TRADES } from "@/lib/trade-pack-builder";
-import { interMedium } from "@/lib/fonts";
 import {
   getGeneratedTradePackTradeId,
   getGeneratedTradePackTradeLabel,
@@ -223,11 +222,27 @@ export default async function OpportunityScopeBuilderPage({
   }>;
 }) {
   const [{ opportunityId }, query] = await Promise.all([params, searchParams]);
+  const member = await getCurrentOrganizationMember();
+  const supabase = await createServerSupabaseClient();
   const workspaceSlug = await getOrCreateOpportunityWorkspaceSlugForCurrentUser(opportunityId);
-  const project = await getTradePackWorkspaceBySlugForCurrentUser(workspaceSlug);
+  const [project, opportunityResult] = await Promise.all([
+    getTradePackWorkspaceBySlugForCurrentUser(workspaceSlug),
+    member
+      ? supabase
+          .from("organization_opportunities")
+          .select("name")
+          .eq("organization_id", member.organization_id)
+          .eq("slug", opportunityId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
   if (!project) {
     notFound();
+  }
+
+  if (opportunityResult.error) {
+    throw new Error(opportunityResult.error.message);
   }
 
   const drawingSets = await getTradePackWorkspaceDrawingSetsForCurrentUser(project.id);
@@ -244,7 +259,6 @@ export default async function OpportunityScopeBuilderPage({
     }));
   const generatedTradePacksById = new Map(generatedTradePacks.map((tradePack) => [tradePack.id, tradePack]));
 
-  const supabase = await createServerSupabaseClient();
   let initialStoredRuns: ScopeBuilderStoredRun[] = [];
   const { data: scopeRuns, error: scopeRunsError } = await supabase
     .from("scope_runs")
@@ -294,25 +308,22 @@ export default async function OpportunityScopeBuilderPage({
     throw scopeRunsError;
   }
 
+  const headerTitle = opportunityResult.data?.name?.trim() || project.name;
+
   return (
-    <main className="space-y-4 pb-8">
-      <Link
-        href={`/app/leads-clients/opportunities/${opportunityId}`}
-        className={`${interMedium.className} inline-flex h-8 w-fit items-center gap-1.5 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:text-[#344054]`}
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to Lead Dashboard
-      </Link>
-      <ScopeBuilderWorkbench
-        projectId={project.id}
-        organizationId={project.organization_id}
-        initialTradeId={readSearchParam(query.tradeId)}
-        initialStoragePath={readSearchParam(query.storagePath)}
-        initialFileName={readSearchParam(query.fileName)}
-        initialDrawingSetId={readSearchParam(query.drawingSetId)}
-        initialGeneratedTradePacks={generatedTradePacks}
-        initialStoredRuns={initialStoredRuns}
-      />
-    </main>
+    <OpportunityWorkspaceShell title={headerTitle} opportunityId={opportunityId} activeTab="build-scope">
+      <div className="min-w-0 flex-1">
+        <ScopeBuilderWorkbench
+          projectId={project.id}
+          organizationId={project.organization_id}
+          initialTradeId={readSearchParam(query.tradeId)}
+          initialStoragePath={readSearchParam(query.storagePath)}
+          initialFileName={readSearchParam(query.fileName)}
+          initialDrawingSetId={readSearchParam(query.drawingSetId)}
+          initialGeneratedTradePacks={generatedTradePacks}
+          initialStoredRuns={initialStoredRuns}
+        />
+      </div>
+    </OpportunityWorkspaceShell>
   );
 }

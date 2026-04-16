@@ -6,6 +6,14 @@ import { ChevronDown, Copy, Download, FileText, Loader2 } from "lucide-react";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { getTradeById, TRADE_PACK_TRADES } from "@/lib/trade-pack-builder";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import {
+  leadsBodyLabelStyle,
+  leadsBodyValueStyle,
+  leadsButtonLabelStyle,
+  leadsCardTitleStyle,
+  leadsPanelClassName,
+  leadsSectionTitleStyle,
+} from "@/components/app/LeadsPagePrimitives";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { interMedium } from "@/lib/fonts";
@@ -493,13 +501,13 @@ export function ScopeBuilderWorkbench({
 
   const isProjectScopePage = Boolean(projectDashboardHref);
   const projectCardClassName =
-    "rounded-[28px] border border-[#d9dee5] bg-white p-7 shadow-none md:p-8";
+    `${leadsPanelClassName} p-7 md:p-8`;
 
   return (
     <main className={`${styles.scope} ${projectDashboardHref ? "-mb-8" : "pb-8"} space-y-6`}>
       <section className={styles.heroBlock}>
         <div>
-          <h1 className={styles.heroTitle}>Scope Builder</h1>
+          <h1 className={styles.heroTitle} style={leadsSectionTitleStyle}>Scope Builder</h1>
           <p className={`${interMedium.className} ${styles.heroSummary}`}>
             Instantly generate AI trade scopes
           </p>
@@ -522,13 +530,14 @@ export function ScopeBuilderWorkbench({
         <div className={styles.dashboardGrid}>
           <div className={`lg:col-span-2 ${styles.card} ${isProjectScopePage ? "rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-6 pt-7 shadow-none md:px-8 md:pb-6 md:pt-8" : "p-6"}`}>
             <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
-              <p className={styles.sectionTitle}>Generate a Scope Build</p>
+              <p className={styles.sectionTitle} style={leadsSectionTitleStyle}>Generate a Scope Build</p>
               {isProjectScopePage ? (
                 <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
                   <Button
                     className={`${interMedium.className} ${styles.heroPrimaryButton}`}
                     onClick={runScopeBuilder}
                     disabled={isGenerating || isLoadingLinkedPdf}
+                    style={leadsButtonLabelStyle}
                   >
                     {isGenerating || isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Run Scope Builder"}
@@ -539,7 +548,7 @@ export function ScopeBuilderWorkbench({
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
-                <label className={styles.metricLabel}>Trade heading</label>
+                <label className={styles.metricLabel} style={leadsBodyLabelStyle}>Trade heading</label>
                 <select
                   className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
                   value={selectedTradeId}
@@ -555,7 +564,7 @@ export function ScopeBuilderWorkbench({
               </div>
 
               <div className="space-y-1.5">
-                <label className={styles.metricLabel}>Trade pack source</label>
+                <label className={styles.metricLabel} style={leadsBodyLabelStyle}>Trade pack source</label>
                 <select
                   className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
                   value={selectedGeneratedTradePackId ?? ""}
@@ -572,7 +581,7 @@ export function ScopeBuilderWorkbench({
               </div>
 
               <div className="space-y-1.5">
-                <label className={styles.metricLabel}>Source PDF</label>
+                <label className={styles.metricLabel} style={leadsBodyLabelStyle}>Source PDF</label>
                 <div className={styles.fieldBox}>
                   <input
                     id="scope-builder-source-pdf"
@@ -582,12 +591,13 @@ export function ScopeBuilderWorkbench({
                     onChange={onFileChange}
                     disabled={isGenerating || isLoadingLinkedPdf}
                   />
-                  <p className="truncate pr-1 text-sm text-[#6b6b6b]">
+                  <p className="truncate pr-1" style={leadsBodyValueStyle}>
                     {selectedPdfFile ? selectedPdfFile.name : "No source PDF selected"}
                   </p>
                   <label
                     htmlFor="scope-builder-source-pdf"
                     className="ml-auto inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[999px] bg-[#0B2739] px-3 text-xs font-medium text-white hover:bg-[#092132]"
+                    style={{ ...leadsButtonLabelStyle, color: "#ffffff" }}
                   >
                     Select PDF
                   </label>
@@ -617,7 +627,7 @@ export function ScopeBuilderWorkbench({
 
         <div className={`${styles.card} ${isProjectScopePage ? projectCardClassName : "space-y-2 p-5"}`}>
           <div>
-          <p className={`${styles.sectionTitle} !mt-0`}>Stored Scope Builds</p>
+          <p className={`${styles.sectionTitle} !mt-0`} style={leadsSectionTitleStyle}>Stored Scope Builds</p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <div className="w-full sm:w-[360px]">
               <select
@@ -639,6 +649,7 @@ export function ScopeBuilderWorkbench({
               className={`${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
               onClick={copyOutput}
               disabled={!runResult || isGenerating}
+              style={leadsButtonLabelStyle}
             >
               <Copy className="mr-2 h-4 w-4" />
               Copy Output
@@ -648,6 +659,7 @@ export function ScopeBuilderWorkbench({
               className={`${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
               onClick={downloadOutput}
               disabled={!runResult || isGenerating}
+              style={leadsButtonLabelStyle}
             >
               <Download className="mr-2 h-4 w-4" />
               Download
@@ -664,7 +676,7 @@ export function ScopeBuilderWorkbench({
       {runResult ? (
         <section className="space-y-5">
           <div className="space-y-1">
-            <h3 className={styles.sectionTitle}>Scope Output</h3>
+            <h3 className={styles.sectionTitle} style={leadsSectionTitleStyle}>Scope Output</h3>
             <p className="text-sm text-[#64748B]">{runResult.tradeLabel}</p>
           </div>
 
@@ -702,23 +714,23 @@ function ScopeSummaryCard({ summary, projectStyle = false }: { summary: ScopeStr
   const itemNumberClassName =
     "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eceff3] px-1.5 text-xs font-semibold text-[#5f6b7a]";
   const cardClassName = projectStyle
-    ? "rounded-[12px] border border-[#d9dee5] bg-[#F3F4F5] shadow-none"
+    ? leadsPanelClassName
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
   const rowClassName = projectStyle
-    ? "rounded-[10px] border border-[#d9dee5] bg-[#F3F4F5] px-4 py-3"
+    ? "rounded-[10px] border border-[#E2E8F1] bg-[#FBFEFE] px-4 py-3"
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3";
   const summaryClassName = projectStyle
-    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#F3F4F5] px-4 py-4 [&::-webkit-details-marker]:hidden"
+    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
     : "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden";
   const contentClassName = projectStyle
-    ? "border-t border-[#d9dee5] bg-[#F3F4F5] px-4 pb-4 pt-3"
+    ? "border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 pb-4 pt-3"
     : "border-t border-[#E6EAF0] px-4 pb-4 pt-3";
 
   return (
     <Card className={cardClassName}>
       <details className="group">
         <summary className={summaryClassName}>
-          <CardTitle className="text-[15px] font-semibold leading-6 text-[#1a2333]">Summary</CardTitle>
+          <CardTitle style={leadsCardTitleStyle}>Summary</CardTitle>
           <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
@@ -735,6 +747,7 @@ function ScopeSummaryCard({ summary, projectStyle = false }: { summary: ScopeStr
                 itemNumberClassName={itemNumberClassName}
                 sectionNumber={null}
                 showNumber={false}
+                projectStyle={projectStyle}
               />
             ))}
           </div>
@@ -760,16 +773,16 @@ function ScopeListCard({
     ? "inline-flex h-6 min-w-6 items-center justify-center rounded-[6px] bg-[#eceff3] px-1.5 text-[0.7rem] font-semibold text-[#5f6b7a]"
     : "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eceff3] px-1.5 text-xs font-semibold text-[#5f6b7a]";
   const rowClassName = projectStyle
-    ? "rounded-[10px] border border-[#d9dee5] bg-[#F3F4F5] px-4 py-3"
+    ? "rounded-[10px] border border-[#E2E8F1] bg-[#FBFEFE] px-4 py-3"
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3";
   const cardClassName = projectStyle
-    ? "rounded-[12px] border border-[#d9dee5] bg-[#F3F4F5] shadow-none"
+    ? leadsPanelClassName
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
   const summaryClassName = projectStyle
-    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#F3F4F5] px-4 py-4 [&::-webkit-details-marker]:hidden"
+    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
     : "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden";
   const contentClassName = projectStyle
-    ? "border-t border-[#d9dee5] bg-[#F3F4F5] px-4 pb-4 pt-3"
+    ? "border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 pb-4 pt-3"
     : "border-t border-[#E6EAF0] px-4 pb-4 pt-3";
   const sectionNumber = title.match(/^(\d+)\./)?.[1] ?? null;
 
@@ -777,7 +790,7 @@ function ScopeListCard({
     <Card className={cardClassName}>
       <details className="group">
         <summary className={summaryClassName}>
-          <CardTitle className={titleClassName}>{title}</CardTitle>
+          <CardTitle className={titleClassName} style={leadsCardTitleStyle}>{title}</CardTitle>
           <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
@@ -791,6 +804,7 @@ function ScopeListCard({
                 rowClassName={rowClassName}
                 itemNumberClassName={itemNumberClassName}
                 sectionNumber={sectionNumber}
+                projectStyle={projectStyle}
               />
             ))}
           </div>
@@ -802,22 +816,22 @@ function ScopeListCard({
 
 function ScopeStructuredTableCard({ title, rows, projectStyle = false }: { title: string; rows: ScopeStructuredItem[]; projectStyle?: boolean }) {
   const cardClassName = projectStyle
-    ? "rounded-[12px] border border-[#d9dee5] bg-[#F3F4F5] shadow-none"
+    ? leadsPanelClassName
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
   const headBorderClassName = projectStyle ? "border-[#d9dee5] text-[#6b6b6b]" : "border-[#e8edf6] text-[#61738f]";
   const rowBorderClassName = projectStyle ? "border-[#e5e7eb] text-[#1d2433]" : "border-[#f0f4fa] text-[#1f2a3d]";
   const summaryClassName = projectStyle
-    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#F3F4F5] px-4 py-4 [&::-webkit-details-marker]:hidden"
+    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
     : "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden";
   const contentClassName = projectStyle
-    ? "border-t border-[#d9dee5] bg-[#F3F4F5] px-4 pb-4 pt-3"
+    ? "border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 pb-4 pt-3"
     : "border-t border-[#E6EAF0] px-4 pb-4 pt-3";
 
   return (
     <Card className={cardClassName}>
       <details className="group">
         <summary className={summaryClassName}>
-          <CardTitle className="text-[15px] font-semibold leading-6 text-[#1a2333]">{title}</CardTitle>
+          <CardTitle style={leadsCardTitleStyle}>{title}</CardTitle>
           <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
@@ -853,6 +867,7 @@ function ReadableItemRow({
   itemNumberClassName,
   sectionNumber,
   showNumber = true,
+  projectStyle = false,
 }: {
   index: number;
   item: ScopeStructuredItem;
@@ -861,6 +876,7 @@ function ReadableItemRow({
   itemNumberClassName: string;
   sectionNumber: string | null;
   showNumber?: boolean;
+  projectStyle?: boolean;
 }) {
   const rowNumberLabel = sectionNumber ? `${sectionNumber}.${index + 1}` : `${index + 1}`;
   const headline = item.title.trim() || "Untitled";
@@ -877,6 +893,7 @@ function ReadableItemRow({
                 ? "text-[15px] font-semibold leading-6 text-[#1f2a3d]"
                 : "text-[15px] font-semibold leading-6 text-[#1f2a3d]"
             }
+            style={leadsCardTitleStyle}
           >
             {headline}
           </p>
@@ -886,6 +903,7 @@ function ReadableItemRow({
                 ? "mt-1 text-[13px] leading-[1.6] text-[#475569]"
                 : "mt-1 text-[13px] leading-[1.6] text-[#475569]"
             }
+            style={projectStyle ? leadsBodyLabelStyle : undefined}
           >
             {detail}
           </p>

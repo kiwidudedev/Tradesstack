@@ -43,16 +43,7 @@ function getDaysLeftBadge(isoDate: string | null) {
   return <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[12px] font-semibold ${bg}`}>{label}</span>;
 }
 
-function getWinProbability(stage: LiveOpportunityRow["stage"]): number {
-  if (stage === "Won") return 100;
-  if (stage === "Lost") return 0;
-  if (stage === "Quoted") return 65;
-  if (stage === "Pricing" || stage === "Reviewing") return 40;
-  return 20;
-}
-
-function WinProbabilityBar({ stage }: { stage: LiveOpportunityRow["stage"] }) {
-  const pct = getWinProbability(stage);
+function WinProbabilityBar({ pct }: { pct: LiveOpportunityRow["clientWinRatePct"] }) {
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#E9ECF2]">
@@ -156,7 +147,7 @@ export function OpportunitiesTable({ rows }: { rows: LiveOpportunityRow[] }) {
 
               {/* Win probability */}
               <td className="px-4 py-4">
-                <WinProbabilityBar stage={row.stage} />
+                <WinProbabilityBar pct={row.clientWinRatePct} />
               </td>
             </tr>
           ))}

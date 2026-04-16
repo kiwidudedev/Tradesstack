@@ -21,6 +21,7 @@ export interface LiveOpportunityRow {
   name: string;
   location: string;
   stage: OpportunityStage;
+  clientWinRatePct: number;
   clientId: string | null;
   clientName: string;
   ownerName: string;
@@ -456,10 +457,27 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
     clients.map((client) => [client.id, client.company_name?.trim() || "Unknown Company"])
   );
   const ownerNameByUserId = new Map(members.map((memberRow) => [memberRow.user_id, memberRow.display_name]));
+  const wonCountByClientId = new Map<string, number>();
+  const lostCountByClientId = new Map<string, number>();
   const latestQuoteByOpportunityId = new Map<
     string,
     { status: QuoteStatus; updatedIso: string | null; totalNZD: number | null }
   >();
+
+  for (const opportunity of opportunities) {
+    if (!opportunity.client_id) {
+      continue;
+    }
+
+    if (opportunity.stage === "Won") {
+      wonCountByClientId.set(opportunity.client_id, (wonCountByClientId.get(opportunity.client_id) ?? 0) + 1);
+    }
+
+    if (opportunity.stage === "Lost") {
+      lostCountByClientId.set(opportunity.client_id, (lostCountByClientId.get(opportunity.client_id) ?? 0) + 1);
+    }
+  }
+
   for (const quote of quotes) {
     if (latestQuoteByOpportunityId.has(quote.opportunity_id)) {
       continue;
@@ -477,6 +495,10 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
     const estimatedValue = Number(opportunity.estimated_value ?? 0);
     const quoteValue = latestQuote?.totalNZD ?? null;
     const resolvedValueNZD = quoteValue !== null && quoteValue > 0 ? quoteValue : estimatedValue;
+    const clientWins = opportunity.client_id ? wonCountByClientId.get(opportunity.client_id) ?? 0 : 0;
+    const clientLosses = opportunity.client_id ? lostCountByClientId.get(opportunity.client_id) ?? 0 : 0;
+    const clientWinRatePct =
+      clientWins + clientLosses > 0 ? Math.round((clientWins / (clientWins + clientLosses)) * 100) : 0;
 
     return {
       opportunityId: opportunity.id,
@@ -484,6 +506,7 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
       name: opportunity.name,
       location: opportunity.location,
       stage: opportunity.stage,
+      clientWinRatePct,
       clientId: opportunity.client_id,
       clientName: opportunity.client_id ? clientNameById.get(opportunity.client_id) ?? "Unassigned client" : "Unassigned client",
       ownerName: ownerNameByUserId.get(ownerUserId) ?? "Unassigned",

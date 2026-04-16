@@ -19,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         style={{ background: "linear-gradient(90deg, #0E172B 0 240px, transparent 240px)" }}
       >
         <Sidebar />
-        <main className="app-canvas min-w-0 flex-1 p-[0.384rem] sm:p-[1.024rem]">
+        <main className="min-w-0 flex-1 bg-[#FBFEFE] p-[0.384rem] sm:p-[1.024rem]">
           <Topbar />
           <AppPageSurface>{children}</AppPageSurface>
         </main>

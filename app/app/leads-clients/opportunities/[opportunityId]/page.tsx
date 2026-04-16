@@ -2,6 +2,17 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Calendar, DollarSign, FileText, FolderOpen, LayoutGrid, Pencil, TrendingUp } from "lucide-react";
+import {
+  LeadsPageContent,
+  LeadsPanel,
+  leadsBodyLabelStyle,
+  leadsBodyValueStyle,
+  leadsButtonLabelStyle,
+  leadsMetricPanelClassName,
+  leadsPanelClassName,
+  leadsSectionTitleStyle,
+} from "@/components/app/LeadsPagePrimitives";
+import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ibmPlexSans } from "@/lib/fonts";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -542,95 +553,17 @@ export default async function OpportunityWorkspacePage({
   }
 
   return (
-    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme app-canvas -mx-[0.384rem] pb-8 sm:-mx-[1.024rem]`}>
-      <div className="space-y-6 bg-[#F9FAFC]">
-        <div className="bg-white shadow-none">
-          <div className="flex flex-col gap-3 bg-white px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center">
-                <h2 className={`${ibmPlexSans.className} truncate text-[1.7rem] font-bold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
-                  {activeOpportunity.name}
-                </h2>
-              </div>
-            </div>
-
-            <Link
-              href="/app/leads-clients/opportunities"
-              prefetch
-              className="inline-flex items-center gap-[0.4rem] rounded-[0.9rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Opportunities
-            </Link>
-          </div>
-
-          <div className="sticky top-0 z-20 border-b-2 bg-white px-5" style={{ borderBottomColor: "#E2E8F1" }}>
-            <nav className="overflow-x-auto">
-              <div className="flex min-w-max items-center gap-8">
-                {[
-                  {
-                    label: "Overview",
-                    href: tabHref(opportunityId, "Summary"),
-                    icon: LayoutGrid,
-                    active: true,
-                  },
-                  {
-                    label: "Generate Trade Pack",
-                    href: generateTradePackHref,
-                    icon: FolderOpen,
-                    active: false,
-                  },
-                  {
-                    label: "Build Scope",
-                    href: buildScopeHref,
-                    icon: FileText,
-                    active: false,
-                  },
-                  {
-                    label: "Start Pricing",
-                    href: `/app/leads-clients/opportunities/${opportunityId}/quote`,
-                    icon: FileText,
-                    active: false,
-                  },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.label}
-                      href={item.href}
-                      prefetch
-                      className={`group -mx-[0.35rem] inline-flex items-center gap-2 px-[0.35rem] py-3 text-[15px] font-medium transition-colors ${
-                        item.active
-                          ? "text-[#F15A29]"
-                          : "text-[#4B5D79] hover:text-[#4B5D79]"
-                      }`}
-                      style={item.active ? { borderBottomWidth: "2px", borderBottomStyle: "solid", borderBottomColor: "#F15A29" } : undefined}
-                    >
-                      <Icon
-                        strokeWidth={2.2}
-                        className={`h-4 w-4 shrink-0 ${item.active ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
-                      />
-                      <span className="whitespace-nowrap text-[15px] leading-none">
-                        {item.label}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </nav>
-          </div>
-        </div>
-
-        <div className="min-w-0 flex-1 bg-[#F9FAFC] px-5">
+    <OpportunityWorkspaceShell title={activeOpportunity.name} opportunityId={opportunityId} activeTab="overview">
+      <LeadsPageContent>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5`}>
               <div className="flex items-center gap-4">
                 <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
                   <LayoutGrid className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
                 </span>
-                <p className="text-[15px] font-medium leading-none text-[#4B5D79]">{leadDateCard.label}</p>
+                <p style={leadsBodyLabelStyle}>{leadDateCard.label}</p>
               </div>
-              <p className="mt-auto pt-5 text-[clamp(1.75rem,2.2vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">
+              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
                 {leadDateCard.value}
               </p>
               <p className="mt-3 text-[16px] font-medium text-[#F74919]">{leadDateCard.meta}</p>
@@ -639,15 +572,15 @@ export default async function OpportunityWorkspacePage({
             <Link
               href={activeOpportunity.clientId ? `/app/leads-clients/clients/${activeOpportunity.clientId}` : "/app/leads-clients/clients"}
               prefetch
-              className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
+              className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5 transition hover:bg-[var(--app-surface)]`}
             >
               <div className="flex items-center gap-4">
                 <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
                   <TrendingUp className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
                 </span>
-                <p className="text-[15px] font-medium leading-none text-[#4B5D79]">Client conversion rate</p>
+                <p style={leadsBodyLabelStyle}>Client conversion rate</p>
               </div>
-              <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">
+              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
                 {clientConversionRate}%
               </p>
               <p className="mt-3 text-[16px] font-medium text-[#F74919]">
@@ -658,15 +591,15 @@ export default async function OpportunityWorkspacePage({
             <Link
               href={`/app/leads-clients/opportunities/${opportunityId}/quote`}
               prefetch
-              className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
+              className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5 transition hover:bg-[var(--app-surface)]`}
             >
               <div className="flex items-center gap-4">
                 <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
                   <DollarSign className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
                 </span>
-                <p className="text-[15px] font-medium leading-none text-[#4B5D79]">Quote Total</p>
+                <p style={leadsBodyLabelStyle}>Quote Total</p>
               </div>
-              <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">
+              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
                 {formatCurrencyNZD(latestQuoteTotal)}
               </p>
               <p className="mt-3 text-[16px] font-medium text-[#F74919]">
@@ -676,15 +609,15 @@ export default async function OpportunityWorkspacePage({
 
             <Link
               href="#lead-todos"
-              className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
+              className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5 transition hover:bg-[var(--app-surface)]`}
             >
               <div className="flex items-center gap-4">
                 <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
                   <Calendar className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
                 </span>
-                <p className="text-[15px] font-medium leading-none text-[#4B5D79]">Due Today</p>
+                <p style={leadsBodyLabelStyle}>Due Today</p>
               </div>
-              <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">
+              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
                 {dueTasksTodayCount}
               </p>
               <p className="mt-3 text-[16px] font-medium text-[#F74919]">
@@ -695,11 +628,11 @@ export default async function OpportunityWorkspacePage({
           </div>
 
           <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1.35fr)] xl:items-stretch">
-            <Card className="app-surface h-full rounded-[14px] border-[1.3px] border-[#E2E8F1] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <Card className={`${leadsPanelClassName} app-surface h-full`}>
               <input id="lead-details-edit-toggle" type="checkbox" className="peer sr-only" />
               <div className="peer-checked:[&_.lead-details-edit-actions]:flex peer-checked:[&_.lead-details-edit-form]:block peer-checked:[&_.lead-details-edit-toggle]:hidden peer-checked:[&_.lead-details-view]:hidden">
                 <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
-                  <CardTitle className="mt-0 text-[22.4px] leading-none tracking-[-0.03em] text-[#1d1d1d]">Lead Details</CardTitle>
+                  <CardTitle className="mt-0" style={leadsSectionTitleStyle}>Lead Details</CardTitle>
                   <div className="lead-details-edit-actions hidden items-center gap-3">
                     <label
                       htmlFor="lead-details-edit-toggle"
@@ -718,7 +651,7 @@ export default async function OpportunityWorkspacePage({
                   <label
                     htmlFor="lead-details-edit-toggle"
                     className="lead-details-edit-toggle inline-flex shrink-0 cursor-pointer items-center rounded-[0.72rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
-                    style={{ fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif", fontWeight: 500 }}
+                    style={leadsButtonLabelStyle}
                   >
                     Edit details
                   </label>
@@ -726,20 +659,20 @@ export default async function OpportunityWorkspacePage({
                 <CardContent className="pt-0">
                   <div className="lead-details-view">
                     <div className="grid gap-x-4 gap-y-3 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
-                      <p className="text-[15px] font-semibold text-[#4B5D79]">Project Name:</p>
-                      <p className="text-[15px] font-medium text-[#111827]">{activeOpportunity.name}</p>
+                      <p style={leadsBodyLabelStyle}>Project Name:</p>
+                      <p style={leadsBodyValueStyle}>{activeOpportunity.name}</p>
 
-                      <p className="text-[15px] font-semibold text-[#4B5D79]">Client:</p>
-                      <p className="text-[15px] font-medium text-[#111827]">{activeOpportunity.clientName || "Unassigned"}</p>
+                      <p style={leadsBodyLabelStyle}>Client:</p>
+                      <p style={leadsBodyValueStyle}>{activeOpportunity.clientName || "Unassigned"}</p>
 
-                      <p className="text-[15px] font-semibold text-[#4B5D79]">Location:</p>
-                      <p className="text-[15px] font-medium text-[#111827]">{activeOpportunity.location || "Not set"}</p>
+                      <p style={leadsBodyLabelStyle}>Location:</p>
+                      <p style={leadsBodyValueStyle}>{activeOpportunity.location || "Not set"}</p>
 
-                      <p className="text-[15px] font-semibold text-[#4B5D79]">Lead Due Date:</p>
-                      <p className="text-[15px] font-medium text-[#111827]">{formatDueDate(activeOpportunity.dueDate)}</p>
+                      <p style={leadsBodyLabelStyle}>Lead Due Date:</p>
+                      <p style={leadsBodyValueStyle}>{formatDueDate(activeOpportunity.dueDate)}</p>
 
-                      <p className="text-[15px] font-semibold text-[#4B5D79]">Created:</p>
-                      <p className="text-[15px] font-medium text-[#111827]">{formatDateTime(activeOpportunity.createdAt)}</p>
+                      <p style={leadsBodyLabelStyle}>Created:</p>
+                      <p style={leadsBodyValueStyle}>{formatDateTime(activeOpportunity.createdAt)}</p>
                     </div>
                   </div>
 
@@ -785,9 +718,9 @@ export default async function OpportunityWorkspacePage({
               </div>
             </Card>
 
-            <Card className="app-surface h-full rounded-[14px] border-[1.3px] border-[#E2E8F1] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <Card className={`${leadsPanelClassName} app-surface h-full`}>
               <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
-                <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Notes</CardTitle>
+                <CardTitle className="mt-0" style={leadsSectionTitleStyle}>Notes</CardTitle>
                 <button
                   type="submit"
                   form="opportunity-notes-form"
@@ -809,11 +742,11 @@ export default async function OpportunityWorkspacePage({
             </Card>
           </div>
 
-          <div id="lead-todos" className="mt-4 scroll-mt-24 space-y-3">
-            <input id="lead-task-create-toggle" type="checkbox" className="peer sr-only" />
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <p className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">
+            <div id="lead-todos" className="mt-4 scroll-mt-24 space-y-3">
+              <input id="lead-task-create-toggle" type="checkbox" className="peer sr-only" />
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                <p className="m-0" style={leadsSectionTitleStyle}>
                   To Do
                 </p>
               </div>
@@ -828,7 +761,7 @@ export default async function OpportunityWorkspacePage({
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[18px] border border-[#D9E3EE] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <LeadsPanel className="overflow-hidden rounded-[18px] border-[#D9E3EE]">
               <div className="grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
                 {[
                   "Task Name",
@@ -1029,7 +962,7 @@ export default async function OpportunityWorkspacePage({
                   })
                 )}
               </div>
-            </div>
+            </LeadsPanel>
 
             <div className="pointer-events-none fixed inset-0 z-40 hidden items-center justify-center bg-[#0F172A]/45 px-4 py-8 peer-checked:flex">
               <label htmlFor="lead-task-create-toggle" className="absolute inset-0" aria-hidden="true" />
@@ -1145,8 +1078,7 @@ export default async function OpportunityWorkspacePage({
               </form>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+      </LeadsPageContent>
+    </OpportunityWorkspaceShell>
   );
 }

@@ -37,7 +37,7 @@ export function AppPageSurface({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   return (
-    <div ref={rootRef} className="app-page-surface app-canvas min-h-full">
+    <div ref={rootRef} className="app-page-surface min-h-full">
       {children}
     </div>
   );
