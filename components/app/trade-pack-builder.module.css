@@ -407,6 +407,17 @@
   border-color: #d8dee8;
 }
 
+.opportunityDropZone:hover {
+  background: #eef2f7;
+  border-color: #cfd8e3;
+}
+
+.opportunityDropZone.dropZoneActive {
+  background: #e8eef5;
+  border-color: #c3cfdd;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.14);
+}
+
 .producedRowProjectTone {
   background: #fbfefe !important;
   border-color: #d9dee5 !important;

@@ -502,12 +502,12 @@ function DescriptionInputWithPreview({
         onBlur={closePreview}
         placeholder={placeholder}
         title={value.trim() || placeholder || ""}
-        className="h-10 min-w-[200px] rounded-[6px]"
+        className="h-11 min-w-[200px] rounded-[12px] border border-[#D7E1EC] bg-[#FBFEFE] px-3.5"
       />
       {hasContent && isPreviewOpen && previewPosition && typeof document !== "undefined"
         ? createPortal(
             <div
-              className="pointer-events-none fixed z-[300] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)]"
+              className="pointer-events-none fixed z-[300] rounded-[12px] border border-[#D7E1EC] bg-[#FBFEFE] p-3.5 shadow-[0_14px_28px_rgba(15,23,42,0.14)]"
               style={{
                 top: previewPosition.top,
                 left: previewPosition.left,
@@ -697,12 +697,20 @@ export function QuoteEditorLayout({
   const subtotalExcludingGstLabel = STANDARD_QUOTE_PRICING_LABELS.subtotalExcludingGst;
   const totalIncludingMarginLabel = STANDARD_QUOTE_PRICING_LABELS.totalIncludingMargin;
   const totalQuotePriceLabel = STANDARD_QUOTE_PRICING_LABELS.totalQuotePrice;
+  const currentStatusLabel = STATUS_OPTIONS.find((status) => status.value === quoteStatus)?.label ?? quoteStatus;
+  const headerTitle = quoteTitle.trim() || heroTitle;
 
   return (
     <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`} aria-busy={isLoadingQuote}>
       <section className={styles.heroBlock}>
-        <div>
-          <h1 className={styles.quotePageTitle}>{heroTitle}</h1>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={styles.quotePageTitle}>{headerTitle}</h1>
+            <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border border-[#D7E1EC] bg-[#FBFEFE] px-3 py-1.5 text-[12px] uppercase tracking-[0.08em] text-[#4B5D79]`}>
+              {currentStatusLabel}
+            </span>
+          </div>
+          <p className={styles.quoteBodyLabel}>Quote</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <DropdownMenu>
@@ -802,32 +810,32 @@ export function QuoteEditorLayout({
           </div>
         </div>
       ) : shouldShowEditor ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
-          <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
-            <section className="border-b border-[#E8EDF5] pb-5">
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_input]:text-[#1D1D1D] [&_input]:outline-none [&_input]:ring-0 [&_input:focus]:outline-none [&_input:focus]:ring-0 [&_input:focus-visible]:outline-none [&_input:focus-visible]:ring-0 [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_select]:text-[#1D1D1D] [&_select]:outline-none [&_select]:ring-0 [&_select:focus]:outline-none [&_select:focus]:ring-0 [&_select:focus-visible]:outline-none [&_select:focus-visible]:ring-0 [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE] [&_textarea]:text-[#1D1D1D] [&_textarea]:outline-none [&_textarea]:ring-0 [&_textarea:focus]:outline-none [&_textarea:focus]:ring-0 [&_textarea:focus-visible]:outline-none [&_textarea:focus-visible]:ring-0">
+          <div className="space-y-8">
+            <section className="rounded-[14px] border border-[#E2E8F1] bg-[#FBFEFE] px-6 py-5 sm:px-7">
               <button
                 type="button"
                 onClick={() => setIsQuoteDetailsOpen((current) => !current)}
                 className="flex w-full items-center justify-between"
               >
-                <h2 className={styles.quoteSectionTitle}>Quote Details</h2>
+                <h2 className={styles.quoteCardTitle}>Quote Setup</h2>
                 <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isQuoteDetailsOpen ? "rotate-180" : ""}`} />
               </button>
 
               {isQuoteDetailsOpen ? (
-                <div className="mt-4 space-y-5">
+                <div className="mt-5 space-y-5">
                   <div className="space-y-3">
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1.5 md:col-span-2">
                         <label className={styles.quoteBodyLabel}>Quote title</label>
-                        <Input value={quoteTitle} onChange={(event) => setQuoteTitle(event.target.value)} placeholder="Kitchen renovation quote" className="h-10 rounded-[6px]" />
+                        <Input value={quoteTitle} onChange={(event) => setQuoteTitle(event.target.value)} placeholder="Kitchen renovation quote" className="h-11 rounded-[12px]" />
                       </div>
                       <div className="space-y-1.5">
                         <label className={styles.quoteBodyLabel}>Status</label>
                         <select
                           value={quoteStatus}
                           onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}
-                          className={`${styles.quoteTabLabel} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3`}
+                          className={`${styles.quoteTabLabel} h-11 w-full rounded-[12px] border border-[#D7E1EC] bg-[#FBFEFE] px-3.5`}
                         >
                           {STATUS_OPTIONS.map((status) => (
                             <option key={status.value} value={status.value}>
@@ -840,44 +848,49 @@ export function QuoteEditorLayout({
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1.5">
                         <label className={styles.quoteBodyLabel}>Project name</label>
-                        <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-10 rounded-[6px]" />
+                        <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-11 rounded-[12px]" />
                       </div>
                       <div className="space-y-1.5">
                         <label className={styles.quoteBodyLabel}>Quote date</label>
-                        <Input type="date" value={quoteDate} onChange={(event) => setQuoteDate(event.target.value)} className="h-10 rounded-[6px]" />
+                        <Input type="date" value={quoteDate} onChange={(event) => setQuoteDate(event.target.value)} className="h-11 rounded-[12px]" />
                       </div>
                       <div className="space-y-1.5">
                         <label className={styles.quoteBodyLabel}>Expiry date</label>
-                        <Input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} className="h-10 rounded-[6px]" />
+                        <Input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} className="h-11 rounded-[12px]" />
                       </div>
                     </div>
                     <div className="max-w-[320px] space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Quote number</label>
-                      <Input value={quoteNumber} readOnly placeholder="Q-26001-1" className="h-10 rounded-[6px] bg-[#f8fafc]" />
+                      <Input value={quoteNumber} readOnly placeholder="Q-26001-1" className="h-11 rounded-[12px] bg-[#FBFEFE]" />
                     </div>
                   </div>
                 </div>
               ) : null}
             </section>
 
-            <section className="border-b border-[#E8EDF5] py-5">
-              <button
-                type="button"
-                onClick={() => setIsLineItemsOpen((current) => !current)}
-                className="flex w-full items-center justify-between"
-              >
-                <h2 className={styles.quoteSectionTitle}>Line Items</h2>
-                <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isLineItemsOpen ? "rotate-180" : ""}`} />
-              </button>
+            <div className={`${styles.quotePanelCard} px-6 py-6 sm:px-7`}>
+              <div className="pb-6">
+                <h2 className={styles.quoteSectionTitle}>Scope & Pricing</h2>
+              </div>
 
-              {isLineItemsOpen ? (
-                <div className="mt-4 space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" onClick={() => addLineItem(false)} className={`${styles.quoteButtonLabel} h-9 rounded-[6px] bg-[#0B2739] px-3 text-white hover:bg-[#0B2739]`}>
+              <section className="border-b border-[#E8EDF5] pb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsLineItemsOpen((current) => !current)}
+                  className="flex w-full items-center justify-between"
+                >
+                  <h3 className={styles.quoteCardTitle}>Line Items</h3>
+                  <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isLineItemsOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {isLineItemsOpen ? (
+                  <div className="mt-5 space-y-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" onClick={() => addLineItem(false)} className={`${styles.quoteButtonLabel} h-10 rounded-full bg-[#0B2739] px-4 text-white hover:bg-[#0B2739]`}>
                       <Plus className="mr-1 h-4 w-4" />
                       Add Item
                     </Button>
-                    <Button type="button" onClick={() => addLineItem(true)} variant="outline" className={`${styles.quoteButtonLabel} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3`}>
+                    <Button type="button" onClick={() => addLineItem(true)} variant="outline" className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}>
                       <Plus className="mr-1 h-4 w-4" />
                       Add Optional
                     </Button>
@@ -885,7 +898,7 @@ export function QuoteEditorLayout({
                       type="button"
                       variant="outline"
                       onClick={() => setIsScopeImportOpen((current) => !current)}
-                      className={`${styles.quoteButtonLabel} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3`}
+                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
                     >
                       <Plus className="mr-1 h-4 w-4" />
                       Import Scope Items
@@ -893,14 +906,14 @@ export function QuoteEditorLayout({
                   </div>
 
                   {isScopeImportOpen ? (
-                    <div className={`${styles.quoteMetricTile} min-h-0 p-3`}>
+                    <div className={`${styles.quoteMetricTile} min-h-0 rounded-[14px] p-4`}>
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <p className={styles.quoteCardTitle}>Cost Breakdown Categories</p>
                         <Button
                           type="button"
                           onClick={importSelectedScopeItems}
                           disabled={selectedScopeCostItemIds.length === 0}
-                          className={`${styles.quoteButtonLabel} h-8 rounded-[6px] bg-[#F74917] px-3 text-white hover:bg-[#e63f10] disabled:opacity-50`}
+                          className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F74917] px-4 text-white hover:bg-[#e63f10] disabled:opacity-50`}
                         >
                           Add Selected ({selectedScopeCostItemIds.length})
                         </Button>
@@ -910,7 +923,7 @@ export function QuoteEditorLayout({
                       ) : availableScopeCostItems.length > 0 ? (
                         <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
                           {availableScopeCostItems.map((item) => (
-                            <label key={item.id} className="flex cursor-pointer items-start gap-2 rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] px-2.5 py-2">
+                            <label key={item.id} className="flex cursor-pointer items-start gap-2 rounded-[12px] border border-[#E2E8F1] bg-[#FBFEFE] px-3 py-2.5">
                               <input
                                 type="checkbox"
                                 checked={selectedScopeCostItemIds.includes(item.id)}
@@ -935,57 +948,69 @@ export function QuoteEditorLayout({
                     </div>
                   ) : null}
 
-                  <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
+                  <div className="hidden overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] md:block">
                     <div className="overflow-x-auto">
                       <div className="min-w-[760px]">
                         <div
-                          className={`${styles.quoteTabLabel} grid items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em]`}
+                          className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
                           style={{ gridTemplateColumns: MAIN_LINE_GRID_TEMPLATE }}
                         >
-                          <span>Description</span>
-                          <span>Section</span>
-                          <span>Qty</span>
-                          <span>Unit</span>
-                          <span>Rate</span>
-                          <span className="text-right">Total</span>
+                          <span className="px-4 py-3 font-semibold">Description</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Item</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Qty.</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Unit</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Price</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 text-right font-semibold">Amount</span>
                         </div>
-                        <div className="divide-y divide-[#EEF2F7]">
+                        <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                           {mainLineItems.map((item) => (
-                            <div key={item.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: MAIN_LINE_GRID_TEMPLATE }}>
-                              <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
-                              <select
-                                value={item.section}
-                                onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                                className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}
-                              >
-                                {LINE_ITEM_SECTIONS.map((section) => (
-                                  <option key={section} value={section}>
-                                    {section}
-                                  </option>
-                                ))}
-                              </select>
-                              <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
-                              <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
-                              <div className="relative w-[100px]">
-                                <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                                <Input
-                                  type="number"
-                                  value={item.rate === 0 ? "" : item.rate}
-                                  onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                                  className="h-10 w-[100px] rounded-[6px] pl-6 pr-2"
-                                />
+                            <div key={item.id} className="group grid items-center gap-0 px-0 py-0" style={{ gridTemplateColumns: MAIN_LINE_GRID_TEMPLATE }}>
+                              <div className="px-3 py-2.5">
+                                <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
                               </div>
-                              <div className="flex items-center justify-end gap-1.5">
-                                <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  onClick={() => removeLineItem(item.id)}
-                                  className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
-                                  aria-label="Delete line item"
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <select
+                                  value={item.section}
+                                  onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
+                                  className={`${interMedium.className} h-11 w-full rounded-[12px] border border-[#D7E1EC] bg-[#FBFEFE] px-3 text-sm text-[#1d2433]`}
                                 >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                  {LINE_ITEM_SECTIONS.map((section) => (
+                                    <option key={section} value={section}>
+                                      {section}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-11 w-full rounded-[12px] px-3" />
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-11 w-full rounded-[12px] px-3" />
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <div className="relative w-full">
+                                  <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                                  <Input
+                                    type="number"
+                                    value={item.rate === 0 ? "" : item.rate}
+                                    onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
+                                    className="h-11 w-full rounded-[12px] pl-6 pr-3"
+                                  />
+                                </div>
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <div className="flex items-center justify-end gap-2">
+                                  <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => removeLineItem(item.id)}
+                                    className="h-8 w-8 rounded-[10px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                                    aria-label="Delete line item"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -1000,12 +1025,12 @@ export function QuoteEditorLayout({
                   <div className="space-y-2 md:hidden">
                     <p className={`${styles.quoteTabLabel} px-1 text-[11px] uppercase tracking-[0.08em]`}>Main line items</p>
                     {mainLineItems.map((item) => (
-                      <div key={item.id} className="space-y-2 rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] p-3">
+                      <div key={item.id} className="space-y-2 rounded-[14px] border border-[#E2E8F1] bg-[#FBFEFE] p-4">
                         <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
                         <select
                           value={item.section}
                           onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                          className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}
+                          className={`${interMedium.className} h-11 w-full rounded-[12px] border border-[#D7E1EC] bg-[#FBFEFE] px-3 text-sm text-[#1d2433]`}
                         >
                           {LINE_ITEM_SECTIONS.map((section) => (
                             <option key={section} value={section}>
@@ -1014,21 +1039,21 @@ export function QuoteEditorLayout({
                           ))}
                         </select>
                         <div className="grid grid-cols-3 gap-2">
-                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[6px] px-2" />
-                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[6px] px-2" />
+                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-11 w-full rounded-[12px] px-3" />
+                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-11 w-full rounded-[12px] px-3" />
                           <div className="relative">
                             <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                             <Input
                               type="number"
                               value={item.rate === 0 ? "" : item.rate}
                               onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                              className="h-10 w-full rounded-[6px] pl-6 pr-2"
+                              className="h-11 w-full rounded-[12px] pl-6 pr-3"
                             />
                           </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                          <Button type="button" variant="ghost" onClick={() => removeLineItem(item.id)} className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]" aria-label="Delete line item">
+                          <Button type="button" variant="ghost" onClick={() => removeLineItem(item.id)} className="h-8 w-8 rounded-[10px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]" aria-label="Delete line item">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -1039,45 +1064,55 @@ export function QuoteEditorLayout({
                     ) : null}
                   </div>
 
-                  <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
+                  <div className="hidden overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] md:block">
                     <div className="overflow-x-auto">
                       <div className="min-w-[640px]">
                         <div
-                          className={`${styles.quoteTabLabel} grid items-center gap-2 bg-[#FAFBFD] px-3 py-2 text-left text-[11px] uppercase tracking-[0.08em]`}
+                          className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
                           style={{ gridTemplateColumns: OPTIONAL_LINE_GRID_TEMPLATE }}
                         >
-                          <span>Optional Items</span>
-                          <span>Qty</span>
-                          <span>Unit</span>
-                          <span>Rate</span>
-                          <span className="text-right">Total</span>
+                          <span className="px-4 py-3 font-semibold">Description</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Qty.</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Unit</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 font-semibold">Price</span>
+                          <span className="border-l border-[#D7E1EC] px-4 py-3 text-right font-semibold">Amount</span>
                         </div>
-                        <div className="divide-y divide-[#EEF2F7]">
+                        <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                           {optionalLineItems.map((item) => (
-                            <div key={item.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: OPTIONAL_LINE_GRID_TEMPLATE }}>
-                              <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
-                              <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
-                              <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
-                              <div className="relative w-[100px]">
-                                <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                                <Input
-                                  type="number"
-                                  value={item.rate === 0 ? "" : item.rate}
-                                  onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                                  className="h-10 w-[100px] rounded-[6px] pl-6 pr-2"
-                                />
+                            <div key={item.id} className="group grid items-center gap-0 px-0 py-0" style={{ gridTemplateColumns: OPTIONAL_LINE_GRID_TEMPLATE }}>
+                              <div className="px-3 py-2.5">
+                                <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
                               </div>
-                              <div className="flex items-center justify-end gap-1.5">
-                                <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  onClick={() => removeLineItem(item.id)}
-                                  className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
-                                  aria-label="Delete optional line item"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-11 w-full rounded-[12px] px-3" />
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-11 w-full rounded-[12px] px-3" />
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <div className="relative w-full">
+                                  <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                                  <Input
+                                    type="number"
+                                    value={item.rate === 0 ? "" : item.rate}
+                                    onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
+                                    className="h-11 w-full rounded-[12px] pl-6 pr-3"
+                                  />
+                                </div>
+                              </div>
+                              <div className="border-l border-[#EEF2F7] px-3 py-2.5">
+                                <div className="flex items-center justify-end gap-2">
+                                  <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => removeLineItem(item.id)}
+                                    className="h-8 w-8 rounded-[10px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                                    aria-label="Delete optional line item"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -1092,24 +1127,24 @@ export function QuoteEditorLayout({
                   <div className="space-y-2 md:hidden">
                     <p className={`${styles.quoteTabLabel} px-1 text-[11px] uppercase tracking-[0.08em]`}>Optional items</p>
                     {optionalLineItems.map((item) => (
-                      <div key={item.id} className="space-y-2 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] p-3">
+                      <div key={item.id} className="space-y-2 rounded-[14px] border border-[#E2E8F1] bg-[#FBFEFE] p-4">
                         <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
                         <div className="grid grid-cols-3 gap-2">
-                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[6px] px-2" />
-                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[6px] px-2" />
+                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-11 w-full rounded-[12px] px-3" />
+                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-11 w-full rounded-[12px] px-3" />
                           <div className="relative">
                             <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
                             <Input
                               type="number"
                               value={item.rate === 0 ? "" : item.rate}
                               onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                              className="h-10 w-full rounded-[6px] pl-6 pr-2"
+                              className="h-11 w-full rounded-[12px] pl-6 pr-3"
                             />
                           </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                          <Button type="button" variant="ghost" onClick={() => removeLineItem(item.id)} className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]" aria-label="Delete optional line item">
+                          <Button type="button" variant="ghost" onClick={() => removeLineItem(item.id)} className="h-8 w-8 rounded-[10px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]" aria-label="Delete optional line item">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -1120,7 +1155,7 @@ export function QuoteEditorLayout({
                     ) : null}
                   </div>
 
-                  <div>
+                  <div className="pt-1">
                     <p className={styles.quoteCardTitle}>Section totals</p>
                     <div className="space-y-1.5">
                       {LINE_ITEM_SECTIONS.map((section) => (
@@ -1131,56 +1166,57 @@ export function QuoteEditorLayout({
                       ))}
                     </div>
                   </div>
-                </div>
-              ) : null}
-            </section>
+                  </div>
+                ) : null}
+              </section>
 
-            <section className="pt-5">
-              <button type="button" onClick={() => setIsTermsOpen((current) => !current)} className="flex w-full items-center justify-between">
-                <h2 className={styles.quoteSectionTitle}>Terms & Clarifications</h2>
-                <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isTermsOpen ? "rotate-180" : ""}`} />
-              </button>
-              {isTermsOpen ? (
-                <div className="mt-4 space-y-4">
+              <section className="pt-6">
+                <button type="button" onClick={() => setIsTermsOpen((current) => !current)} className="flex w-full items-center justify-between">
+                  <h3 className={styles.quoteCardTitle}>Terms & Clarifications</h3>
+                  <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isTermsOpen ? "rotate-180" : ""}`} />
+                </button>
+                {isTermsOpen ? (
+                  <div className="mt-5 space-y-5">
                   <div className="grid gap-3 md:grid-cols-3">
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Validity period</label>
-                      <Input value={validityPeriod} onChange={(event) => setValidityPeriod(event.target.value)} className="h-10 rounded-[6px]" />
+                      <Input value={validityPeriod} onChange={(event) => setValidityPeriod(event.target.value)} className="h-11 rounded-[12px]" />
                     </div>
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Payment terms</label>
-                      <Input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="h-10 rounded-[6px]" />
+                      <Input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="h-11 rounded-[12px]" />
                     </div>
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Lead time</label>
-                      <Input value={leadTime} onChange={(event) => setLeadTime(event.target.value)} className="h-10 rounded-[6px]" />
+                      <Input value={leadTime} onChange={(event) => setLeadTime(event.target.value)} className="h-11 rounded-[12px]" />
                     </div>
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Inclusions</label>
-                      <textarea value={termsInclusions} onChange={(event) => setTermsInclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                      <textarea value={termsInclusions} onChange={(event) => setTermsInclusions(event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[12px] border border-[#D7E1EC] px-3.5 py-3 text-sm`} />
                     </div>
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Exclusions</label>
-                      <textarea value={termsExclusions} onChange={(event) => setTermsExclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                      <textarea value={termsExclusions} onChange={(event) => setTermsExclusions(event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[12px] border border-[#D7E1EC] px-3.5 py-3 text-sm`} />
                     </div>
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Clarifications</label>
-                      <textarea value={clarifications} onChange={(event) => setClarifications(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                      <textarea value={clarifications} onChange={(event) => setClarifications(event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[12px] border border-[#D7E1EC] px-3.5 py-3 text-sm`} />
                     </div>
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Assumptions</label>
-                      <textarea value={assumptions} onChange={(event) => setAssumptions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                      <textarea value={assumptions} onChange={(event) => setAssumptions(event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[12px] border border-[#D7E1EC] px-3.5 py-3 text-sm`} />
                     </div>
                   </div>
-                </div>
-              ) : null}
-            </section>
+                  </div>
+                ) : null}
+              </section>
+            </div>
           </div>
 
-          <div className="xl:sticky xl:top-6 xl:self-start">
+          <div className="xl:self-start">
             <Card className={`${styles.quotePanelCard} overflow-hidden`}>
               <CardHeader className="pb-3 pt-5">
                 <CardTitle className={styles.quoteSectionTitle}>Pricing Summary</CardTitle>
@@ -1193,15 +1229,15 @@ export function QuoteEditorLayout({
                       type="button"
                       variant="outline"
                       onClick={() => setIncludeMarginInExport((current) => !current)}
-                      className={`${styles.quoteButtonLabel} h-6 rounded-[6px] px-2 text-[11px] ${
-                        includeMarginInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
+                      className={`${styles.quoteButtonLabel} h-7 rounded-full px-2.5 text-[11px] ${
+                        includeMarginInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#D7E1EC] bg-[#FBFEFE] text-[#64748B]"
                       }`}
                     >
                       <Check className="mr-1 h-3 w-3" />
                       Include
                     </Button>
                   </div>
-                  <Input type="number" value={marginPercent === "0" ? "" : marginPercent} onChange={(event) => setMarginPercent(event.target.value)} className="h-10 rounded-[6px]" />
+                  <Input type="number" value={marginPercent === "0" ? "" : marginPercent} onChange={(event) => setMarginPercent(event.target.value)} className="h-11 rounded-[12px]" />
                 </div>
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-2">
@@ -1210,15 +1246,15 @@ export function QuoteEditorLayout({
                       type="button"
                       variant="outline"
                       onClick={() => setIncludeDiscountInExport((current) => !current)}
-                      className={`${styles.quoteButtonLabel} h-6 rounded-[6px] px-2 text-[11px] ${
-                        includeDiscountInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
+                      className={`${styles.quoteButtonLabel} h-7 rounded-full px-2.5 text-[11px] ${
+                        includeDiscountInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#D7E1EC] bg-[#FBFEFE] text-[#64748B]"
                       }`}
                     >
                       <Check className="mr-1 h-3 w-3" />
                       Include
                     </Button>
                   </div>
-                  <Input type="number" value={discountAmount === "0" ? "" : discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} className="h-10 rounded-[6px]" />
+                  <Input type="number" value={discountAmount === "0" ? "" : discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} className="h-11 rounded-[12px]" />
                 </div>
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-2">
@@ -1227,19 +1263,19 @@ export function QuoteEditorLayout({
                       type="button"
                       variant="outline"
                       onClick={() => setIncludeContingencyInExport((current) => !current)}
-                      className={`${styles.quoteButtonLabel} h-6 rounded-[6px] px-2 text-[11px] ${
-                        includeContingencyInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
+                      className={`${styles.quoteButtonLabel} h-7 rounded-full px-2.5 text-[11px] ${
+                        includeContingencyInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#D7E1EC] bg-[#FBFEFE] text-[#64748B]"
                       }`}
                     >
                       <Check className="mr-1 h-3 w-3" />
                       Include
                     </Button>
                   </div>
-                  <Input type="number" value={contingencyAmount === "0" ? "" : contingencyAmount} onChange={(event) => setContingencyAmount(event.target.value)} className="h-10 rounded-[6px]" />
+                  <Input type="number" value={contingencyAmount === "0" ? "" : contingencyAmount} onChange={(event) => setContingencyAmount(event.target.value)} className="h-11 rounded-[12px]" />
                 </div>
                 <div className="grid gap-2">
                   <label className={styles.quoteBodyLabel}>GST (%)</label>
-                  <Input type="number" value={gstPercent} onChange={(event) => setGstPercent(event.target.value)} className="h-10 rounded-[6px]" />
+                  <Input type="number" value={gstPercent} onChange={(event) => setGstPercent(event.target.value)} className="h-11 rounded-[12px]" />
                 </div>
 
                 <div className="h-px bg-[#E7ECF3]" />

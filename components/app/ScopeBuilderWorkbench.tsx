@@ -1,22 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
-import Link from "next/link";
-import { ChevronDown, Copy, Download, FileText, Loader2 } from "lucide-react";
-import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
+import { ChevronDown, CloudUpload, Copy, Download, FileText, Loader2 } from "lucide-react";
+import { formatFileSize, MAX_DRAWING_SET_UPLOAD_SIZE_BYTES, PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { getTradeById, TRADE_PACK_TRADES } from "@/lib/trade-pack-builder";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   leadsBodyLabelStyle,
-  leadsBodyValueStyle,
-  leadsButtonLabelStyle,
   leadsCardTitleStyle,
   leadsPanelClassName,
   leadsSectionTitleStyle,
 } from "@/components/app/LeadsPagePrimitives";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans } from "@/lib/fonts";
 import styles from "./trade-pack-builder.module.css";
 
 interface ScopeStructuredItem {
@@ -160,6 +157,8 @@ export function ScopeBuilderWorkbench({
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingLinkedPdf, setIsLoadingLinkedPdf] = useState(false);
+  const [isDropZoneActive, setIsDropZoneActive] = useState(false);
+  const [isStepTwoVisible, setIsStepTwoVisible] = useState(false);
   const [loadedStoragePath, setLoadedStoragePath] = useState<string | null>(null);
   const [selectedGeneratedTradePackId, setSelectedGeneratedTradePackId] = useState<string | null>(
     initialDrawingSetId ?? null
@@ -250,6 +249,7 @@ export function ScopeBuilderWorkbench({
         setSelectedPdfFile(linkedFile);
         setLoadedStoragePath(params.storagePath);
         setSelectedGeneratedTradePackId(params.drawingSetId ?? null);
+        setIsStepTwoVisible(false);
         setStatus(`Loaded ${fileName}. Ready to run Scope Builder.`);
       } catch (loadError) {
         const message = loadError instanceof Error ? loadError.message : "Unable to load selected trade pack PDF.";
@@ -290,11 +290,8 @@ export function ScopeBuilderWorkbench({
     loadTradePackFromStorage,
   ]);
 
-  const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
+  const selectPdfFile = useCallback((file: File | null) => {
     setError(null);
-
     if (!file) {
       return;
     }
@@ -309,7 +306,40 @@ export function ScopeBuilderWorkbench({
     setLoadedStoragePath(null);
     setSelectedGeneratedTradePackId(null);
     setSelectedStoredTradeId("");
+    setIsStepTwoVisible(false);
     setStatus(`Selected ${file.name}`);
+  }, []);
+
+  const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    selectPdfFile(file);
+  };
+
+  const onDropZoneDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (isGenerating || isLoadingLinkedPdf) {
+      return;
+    }
+
+    setIsDropZoneActive(true);
+  };
+
+  const onDropZoneDragLeave = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDropZoneActive(false);
+  };
+
+  const onDropZoneDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDropZoneActive(false);
+
+    if (isGenerating || isLoadingLinkedPdf) {
+      return;
+    }
+
+    const file = event.dataTransfer.files?.[0] ?? null;
+    selectPdfFile(file);
   };
 
   const runScopeBuilder = async () => {
@@ -442,6 +472,7 @@ export function ScopeBuilderWorkbench({
 
   const onSelectGeneratedTradePackById = (tradePackId: string) => {
     setSelectedGeneratedTradePackId(tradePackId || null);
+    setIsStepTwoVisible(false);
     if (!tradePackId) {
       return;
     }
@@ -471,6 +502,7 @@ export function ScopeBuilderWorkbench({
     }
 
     setSelectedGeneratedTradePackId(storedRun.tradePackId);
+    setIsStepTwoVisible(true);
     setRunResult({
       tradeId: storedRun.tradeId,
       tradeLabel: storedRun.tradeLabel,
@@ -500,44 +532,31 @@ export function ScopeBuilderWorkbench({
   };
 
   const isProjectScopePage = Boolean(projectDashboardHref);
-  const projectCardClassName =
-    `${leadsPanelClassName} p-7 md:p-8`;
+  const canContinueToStepTwo = Boolean(selectedPdfFile) && !isLoadingLinkedPdf;
+
+  const revealStepTwo = () => {
+    if (!selectedPdfFile) {
+      setError("Select a trade pack or upload a PDF before continuing.");
+      return;
+    }
+
+    setError(null);
+    setIsStepTwoVisible(true);
+  };
 
   return (
     <main className={`${styles.scope} ${projectDashboardHref ? "-mb-8" : "pb-8"} space-y-6`}>
-      <section className={styles.heroBlock}>
-        <div>
-          <h1 className={styles.heroTitle} style={leadsSectionTitleStyle}>Scope Builder</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
-            Instantly generate AI trade scopes
-          </p>
-        </div>
-        <div className={styles.heroActions}>
-          {projectDashboardHref ? null : (
-            <Button
-              className={`${interMedium.className} ${styles.heroPrimaryButton}`}
-              onClick={runScopeBuilder}
-              disabled={isGenerating || isLoadingLinkedPdf}
-            >
-              {isGenerating || isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Run Scope Builder"}
-            </Button>
-          )}
-        </div>
-      </section>
-
       <section className="space-y-5">
         <div className={styles.dashboardGrid}>
-          <div className={`lg:col-span-2 ${styles.card} ${isProjectScopePage ? "rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-6 pt-7 shadow-none md:px-8 md:pb-6 md:pt-8" : "p-6"}`}>
+          <div className="lg:col-span-2 bg-white px-7 pb-6 pt-7 md:px-8 md:pb-6 md:pt-8">
             <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
-              <p className={styles.sectionTitle} style={leadsSectionTitleStyle}>Generate a Scope Build</p>
+              <p className={styles.sectionTitle} style={leadsSectionTitleStyle}>Generate Scope Build</p>
               {isProjectScopePage ? (
                 <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
                   <Button
-                    className={`${interMedium.className} ${styles.heroPrimaryButton}`}
+                    className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
                     onClick={runScopeBuilder}
                     disabled={isGenerating || isLoadingLinkedPdf}
-                    style={leadsButtonLabelStyle}
                   >
                     {isGenerating || isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Run Scope Builder"}
@@ -546,86 +565,142 @@ export function ScopeBuilderWorkbench({
               ) : null}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className={styles.metricLabel} style={leadsBodyLabelStyle}>Trade heading</label>
-                <select
-                  className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
-                  value={selectedTradeId}
-                  onChange={(event) => setSelectedTradeId(event.target.value)}
+            <div className="mt-2 space-y-5 lg:relative">
+              <div className={`${styles.selectionBox} flex h-full flex-col gap-4 p-4 lg:w-[49%] lg:max-w-[49%]`}>
+                <div className="space-y-2">
+                  <span className={styles.stepBadge}>Step 1</span>
+                  <p className={`${ibmPlexSans.className} relative top-1 text-[15px] font-semibold text-[#111827]`}>Upload or select a trade pack</p>
+                </div>
+
+                <input
+                  id="scope-builder-source-pdf"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  onChange={onFileChange}
                   disabled={isGenerating || isLoadingLinkedPdf}
+                />
+                <label
+                  htmlFor="scope-builder-source-pdf"
+                  onDragOver={onDropZoneDragOver}
+                  onDragLeave={onDropZoneDragLeave}
+                  onDrop={onDropZoneDrop}
+                  className={`${styles.dropZone} ${isProjectScopePage ? styles.opportunityDropZone : ""} ${
+                    isDropZoneActive ? styles.dropZoneActive : ""
+                  } ${isGenerating || isLoadingLinkedPdf ? "pointer-events-none opacity-70" : "cursor-pointer"} rounded-[20px] border-[2px] py-2.5`}
+                  style={{ minHeight: "112px" }}
                 >
-                  {TRADE_PACK_TRADES.map((trade) => (
-                    <option key={trade.id} value={trade.id}>
-                      {trade.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <span className={styles.dropZoneIcon}>
+                    <CloudUpload className="h-5 w-5" strokeWidth={2.1} />
+                  </span>
+                  <div className="space-y-1 text-center">
+                    <p className={`${ibmPlexSans.className} text-[0.98rem] font-medium text-[#111827]`}>
+                      Drag & Drop or <span className="text-[#F15A29]">Choose file</span> to upload
+                    </p>
+                    <p className="text-[13px] text-[#7A7F87]">
+                      Supported format: PDF. File size max {formatFileSize(MAX_DRAWING_SET_UPLOAD_SIZE_BYTES)}
+                    </p>
+                  </div>
+                </label>
 
-              <div className="space-y-1.5">
-                <label className={styles.metricLabel} style={leadsBodyLabelStyle}>Trade pack source</label>
-                <select
-                  className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
-                  value={selectedGeneratedTradePackId ?? ""}
-                  onChange={(event) => onSelectGeneratedTradePackById(event.target.value)}
-                  disabled={isGenerating || isLoadingLinkedPdf || generatedTradePacks.length === 0}
-                >
-                  <option value="">Select trade pack...</option>
-                  {generatedTradePacks.map((tradePack) => (
-                    <option key={tradePack.id} value={tradePack.id}>
-                      {getTradePackSelectLabel(tradePack)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="flex items-center gap-3 py-1">
+                  <span className="h-px flex-1 bg-[#E2E8F1]" />
+                  <span className={`${ibmPlexSans.className} text-[12px] font-medium uppercase tracking-[0.18em] text-[#94A3B8]`}>Or</span>
+                  <span className="h-px flex-1 bg-[#E2E8F1]" />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className={styles.metricLabel} style={leadsBodyLabelStyle}>Source PDF</label>
-                <div className={styles.fieldBox}>
-                  <input
-                    id="scope-builder-source-pdf"
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    className="hidden"
-                    onChange={onFileChange}
-                    disabled={isGenerating || isLoadingLinkedPdf}
-                  />
-                  <p className="truncate pr-1" style={leadsBodyValueStyle}>
-                    {selectedPdfFile ? selectedPdfFile.name : "No source PDF selected"}
-                  </p>
-                  <label
-                    htmlFor="scope-builder-source-pdf"
-                    className="ml-auto inline-flex h-8 shrink-0 cursor-pointer items-center rounded-[999px] bg-[#0B2739] px-3 text-xs font-medium text-white hover:bg-[#092132]"
-                    style={{ ...leadsButtonLabelStyle, color: "#ffffff" }}
+                <div className="w-full space-y-2">
+                  <div className="relative">
+                    <select
+                      className={`${ibmPlexSans.className} ${styles.fieldSelect} rounded-[16px] bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/20`}
+                      value={selectedGeneratedTradePackId ?? ""}
+                      onChange={(event) => onSelectGeneratedTradePackById(event.target.value)}
+                      disabled={isGenerating || isLoadingLinkedPdf || generatedTradePacks.length === 0}
+                    >
+                      <option value="">Select trade pack...</option>
+                      {generatedTradePacks.map((tradePack) => (
+                        <option key={tradePack.id} value={tradePack.id}>
+                          {getTradePackSelectLabel(tradePack)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] border border-[#E2E8F1] bg-[#F8FAFC] px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#FFF1EB] text-[#F15A29]">
+                      <FileText className="h-5 w-5" strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className={`${ibmPlexSans.className} truncate text-[15px] font-semibold text-[#0F172A]`}>
+                        {selectedPdfFile ? selectedPdfFile.name : "No source file selected"}
+                      </p>
+                      <p className="mt-0.5 truncate text-[13px] text-[#7A7F87]">
+                        {selectedPdfFile ? `PDF • ${formatFileSize(selectedPdfFile.size)}` : "Choose a trade pack above or upload a PDF"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={revealStepTwo}
+                    disabled={!canContinueToStepTwo}
+                    className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
                   >
-                    Select PDF
-                  </label>
+                    {isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {isLoadingLinkedPdf ? "Loading Trade Pack..." : "Upload Files"}
+                  </Button>
                 </div>
               </div>
-            </div>
 
-            {!isProjectScopePage ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button
-                  className={`${styles.controlButton} h-10 px-[18px] text-sm`}
-                  onClick={runScopeBuilder}
-                  disabled={isGenerating || isLoadingLinkedPdf}
-                >
-                  {isGenerating || isLoadingLinkedPdf ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <FileText className="mr-2 h-4 w-4" />
-                  )}
-                  {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Run Scope Builder"}
-                </Button>
-              </div>
-            ) : null}
+              {isStepTwoVisible ? (
+                <div className={`${styles.selectionBox} ml-auto flex flex-col justify-between gap-4 p-4 lg:absolute lg:right-0 lg:top-0 lg:w-[49%]`}>
+                  <div className="space-y-2">
+                    <span className={styles.stepBadge}>Step 2</span>
+                    <p className={`${ibmPlexSans.className} relative top-1 text-[15px] font-semibold text-[#111827]`}>Choose trade heading</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="w-full space-y-1.5">
+                      <div className="mt-4">
+                        <select
+                          className={`${ibmPlexSans.className} ${styles.fieldSelect} bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/20`}
+                          value={selectedTradeId}
+                          onChange={(event) => setSelectedTradeId(event.target.value)}
+                          disabled={isGenerating || isLoadingLinkedPdf}
+                        >
+                          {TRADE_PACK_TRADES.map((trade) => (
+                            <option key={trade.id} value={trade.id}>
+                              {trade.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={runScopeBuilder}
+                      disabled={isGenerating || isLoadingLinkedPdf}
+                      className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
+                    >
+                      {isGenerating || isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Generate Scope Builder"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
         </div>
 
-        <div className={`${styles.card} ${isProjectScopePage ? projectCardClassName : "space-y-2 p-5"}`}>
+        <div className={isProjectScopePage ? `${styles.card} space-y-2 p-5` : "px-7 md:px-8"}>
           <div>
           <p className={`${styles.sectionTitle} !mt-0`} style={leadsSectionTitleStyle}>Stored Scope Builds</p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -646,20 +721,18 @@ export function ScopeBuilderWorkbench({
             </div>
             <Button
               variant="outline"
-              className={`${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
+              className={`${ibmPlexSans.className} ${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
               onClick={copyOutput}
               disabled={!runResult || isGenerating}
-              style={leadsButtonLabelStyle}
             >
               <Copy className="mr-2 h-4 w-4" />
               Copy Output
             </Button>
             <Button
               variant="outline"
-              className={`${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
+              className={`${ibmPlexSans.className} ${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
               onClick={downloadOutput}
               disabled={!runResult || isGenerating}
-              style={leadsButtonLabelStyle}
             >
               <Download className="mr-2 h-4 w-4" />
               Download
@@ -674,10 +747,10 @@ export function ScopeBuilderWorkbench({
       </section>
 
       {runResult ? (
-        <section className="space-y-5">
+        <section className={`space-y-5 ${isProjectScopePage ? "px-7 md:px-8" : "mx-7 rounded-[28px] border border-white bg-white px-7 pb-6 pt-7 md:mx-8 md:px-8 md:pb-6 md:pt-8"}`}>
           <div className="space-y-1">
             <h3 className={styles.sectionTitle} style={leadsSectionTitleStyle}>Scope Output</h3>
-            <p className="text-sm text-[#64748B]">{runResult.tradeLabel}</p>
+            <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#111827]`}>{runResult.tradeLabel}</p>
           </div>
 
           <section className="space-y-3">
@@ -717,7 +790,7 @@ function ScopeSummaryCard({ summary, projectStyle = false }: { summary: ScopeStr
     ? leadsPanelClassName
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
   const rowClassName = projectStyle
-    ? "rounded-[10px] border border-[#E2E8F1] bg-[#FBFEFE] px-4 py-3"
+    ? "bg-transparent px-0 py-0"
     : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3";
   const summaryClassName = projectStyle
     ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
@@ -734,7 +807,7 @@ function ScopeSummaryCard({ summary, projectStyle = false }: { summary: ScopeStr
           <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
-          <div className="space-y-2.5">
+          <div className={projectStyle ? "space-y-4" : "space-y-2.5"}>
             {(summary.length > 0
               ? summary
               : [{ title: "Scope Overview", description: "No summary generated." }]).map((item, index) => (

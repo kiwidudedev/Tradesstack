@@ -1944,7 +1944,7 @@ export function TradePackBuilderUploader({
                     <p className="text-[15px] font-medium text-[#111827]">
                       Choose the trade for this pack
                     </p>
-                    <div className="relative">
+                    <div className="relative mt-4">
                       <select
                         id="tradeSelector"
                         value={selectedTradeId}

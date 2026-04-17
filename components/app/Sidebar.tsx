@@ -283,7 +283,7 @@ export function Sidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[240px] shrink-0 self-start border-r border-[#1B2640] bg-[#0E172B] lg:flex",
+        "sticky top-0 hidden h-screen w-[240px] shrink-0 self-start bg-[#0E172B] lg:flex",
         className
       )}
     >
