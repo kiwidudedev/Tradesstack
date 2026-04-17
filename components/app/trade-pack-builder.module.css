@@ -24,6 +24,93 @@
   --dash-accent: #F15A29;
 }
 
+.quoteDashboardScope {
+  --dash-bg: #FBFEFE;
+  --dash-panel: #ffffff;
+  --dash-panel-muted: #F9FAFC;
+  --dash-border: #E2E8F1;
+  --dash-border-strong: #E2E8F1;
+  --dash-text: #1d1d1d;
+  --dash-muted: #4B5D79;
+  --dash-soft: #6b6b6b;
+  --dash-ink: #111827;
+  --dash-accent: #F15A29;
+  background: var(--dash-bg);
+}
+
+.quotePageTitle {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  color: #1d1d1d;
+  font-size: clamp(1.24rem, 2.24vw, 2.08rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+
+.quoteSectionTitle {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  color: #1d1d1d;
+  font-size: 1.4rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+}
+
+.quotePanelCard {
+  border: 1.3px solid #E2E8F1;
+  border-radius: 14px;
+  background: #FBFEFE;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px rgba(15, 23, 42, 0.04);
+}
+
+.quoteMetricTile {
+  border: 1.3px solid #E2E8F1;
+  border-radius: 14px;
+  background: #FBFEFE;
+  min-height: 170px;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px rgba(15, 23, 42, 0.04);
+}
+
+.quoteCardTitle {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1d1d1d;
+}
+
+.quoteBodyLabel {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #6b6b6b;
+}
+
+.quoteBodyValue {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: #111827;
+}
+
+.quoteTabLabel {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  color: #4B5D79;
+}
+
+.quoteButtonLabel {
+  font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", "Mulish", "Inter", system-ui, sans-serif !important;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
 .heroBlock {
   display: flex;
   align-items: flex-start;

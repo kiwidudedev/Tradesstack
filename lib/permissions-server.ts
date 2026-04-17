@@ -20,6 +20,29 @@ export async function hasPermission(permissionKey: string): Promise<boolean> {
   return Boolean(data);
 }
 
+export async function hasOrganizationPermission(organizationId: string, permissionKey: string): Promise<boolean> {
+  if (!organizationId) {
+    return false;
+  }
+
+  const member = await getCurrentOrganizationMember();
+  if (!member) {
+    return false;
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.rpc("has_org_permission" as never, {
+    p_organization_id: organizationId,
+    p_permission_key: permissionKey,
+  } as never);
+
+  if (error) {
+    return false;
+  }
+
+  return Boolean(data);
+}
+
 export async function requirePermission(permissionKey: string, fallbackPath = "/app/dashboard"): Promise<void> {
   const allowed = await hasPermission(permissionKey);
   if (!allowed) {

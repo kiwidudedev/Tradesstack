@@ -1,129 +1,23 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Check, ChevronDown, FileText, FolderOpen, LayoutGrid, Plus, Trash2 } from "lucide-react";
 import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
 import { useAuth } from "@/hooks/use-auth";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { QuoteLineItemSection, QuoteStatus } from "@/lib/supabase/types";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { interMedium } from "@/lib/fonts";
-
-type LineItemSection = QuoteLineItemSection;
-
-interface LineItem {
-  id: string;
-  section: LineItemSection;
-  description: string;
-  quantity: number;
-  unit: string;
-  rate: number;
-  isOptional: boolean;
-}
-
-interface ScopeCostCategoryItem {
-  id: string;
-  title: string;
-  description: string;
-  tradeLabel: string;
-  generatedAt: string;
-}
-
-function DescriptionInputWithPreview({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  const hasContent = value.trim().length > 0;
-
-  return (
-    <div className="group relative">
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="h-10 min-w-[200px] rounded-[6px]"
-      />
-      {hasContent ? (
-        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-white p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-          <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
-            Full Description
-          </p>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium leading-relaxed text-[#1F2E45]`}>{value}</p>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-const STATUS_OPTIONS: Array<{ value: QuoteStatus; label: string }> = [
-  { value: "Sent", label: "Sent" },
-  { value: "Accepted", label: "Accepted" },
-  { value: "Rejected", label: "Lost" },
-  { value: "Expired", label: "Expired" },
-];
-const LINE_ITEM_SECTIONS: LineItemSection[] = ["Item", "Materials", "Labour", "Plant", "Subcontractors", "Preliminaries"];
-const MAIN_LINE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 130px 78px 78px 110px 110px";
-const OPTIONAL_LINE_GRID_TEMPLATE = "minmax(260px, 1fr) 90px 90px 120px 130px";
-
-function toMoney(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function numberOrZero(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function lineItemTotal(item: LineItem) {
-  return item.quantity * item.rate;
-}
-
-function toDayMonthYearLabel(value: string | null) {
-  if (!value) {
-    return "—";
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-
-  return parsed.toLocaleDateString("en-NZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function makeDefaultLineItem(isOptional = false): LineItem {
-  return {
-    id: crypto.randomUUID(),
-    section: "Labour",
-    description: "",
-    quantity: 1,
-    unit: isOptional ? "Item" : "hr",
-    rate: 0,
-    isOptional,
-  };
-}
+import type { QuoteStatus } from "@/lib/supabase/types";
+import {
+  buildQuotePdfHtml,
+  QuoteEditorLayout,
+  LINE_ITEM_SECTIONS,
+  type LineItem,
+  type LineItemSection,
+  type PricingSummary,
+  type ScopeCostCategoryItem,
+  lineItemTotal,
+  makeDefaultLineItem,
+  numberOrZero,
+} from "@/components/app/QuoteEditorShared";
 
 function normalizeForMatch(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -177,15 +71,6 @@ function toScopeCostCategoryItems(params: {
   return collected;
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function deriveOpportunityCodeFromSlug(slug: string | null | undefined) {
   const normalized = (slug ?? "")
     .replace(/[^a-z0-9]/gi, "")
@@ -201,6 +86,7 @@ export default function PreconstructionQuotePage() {
   const { session, isLoading: isAuthLoading } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
+  const canManageQuote = true;
 
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -223,6 +109,7 @@ export default function PreconstructionQuotePage() {
   const [siteAddress, setSiteAddress] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
+  const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
   const [projectName, setProjectName] = useState("");
   const [quoteDate, setQuoteDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -256,7 +143,6 @@ export default function PreconstructionQuotePage() {
   const [scopeCostItems, setScopeCostItems] = useState<ScopeCostCategoryItem[]>([]);
   const [selectedScopeCostItemIds, setSelectedScopeCostItemIds] = useState<string[]>([]);
   const [isTermsOpen, setIsTermsOpen] = useState(false);
-  const [isQuoteContentHidden, setIsQuoteContentHidden] = useState(false);
   const loadedOpportunitySlugRef = useRef<string | null>(null);
 
   const normalizeAllowedStatus = useCallback((status: QuoteStatus): QuoteStatus => {
@@ -274,12 +160,7 @@ export default function PreconstructionQuotePage() {
     }
   }, []);
   const shouldShowEditor = isEditing || !quoteId;
-  const navItems = [
-    { label: "Overview", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}`, icon: LayoutGrid, active: false },
-    { label: "Generate Trade Pack", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}/drawing-intelligence`, icon: FolderOpen, active: false },
-    { label: "Build Scope", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}/scope-builder`, icon: FileText, active: false },
-    { label: "Start Pricing", href: `/app/leads-clients/opportunities/${routeOpportunitySlug}/quote`, icon: FileText, active: true },
-  ] as const;
+  const isHydratingExistingQuote = isLoadingQuote;
 
   const mainLineItems = useMemo(() => lineItems.filter((item) => !item.isOptional), [lineItems]);
   const optionalLineItems = useMemo(() => lineItems.filter((item) => item.isOptional), [lineItems]);
@@ -402,11 +283,12 @@ export default function PreconstructionQuotePage() {
 
         const { data: organizationRow } = await supabase
           .from("organizations")
-          .select("name, logo_path")
+          .select("name, logo_path, brand_primary_color")
           .eq("id", resolvedOrganizationId)
           .maybeSingle();
         if (!cancelled) {
           setOrganizationName(organizationRow?.name ?? "");
+          setOrganizationBrandPrimaryColor((organizationRow?.brand_primary_color ?? "").trim());
           if (organizationRow?.logo_path) {
             const { data: logoUrlData } = supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path);
             setOrganizationLogoUrl(logoUrlData.publicUrl);
@@ -869,241 +751,31 @@ export default function PreconstructionQuotePage() {
       return;
     }
 
-    const lineItemsRows = lineItems.length > 0
-      ? lineItems
-          .map((item) => {
-            const description = item.description.trim() || "Untitled line item";
-            return `
-              <tr>
-                <td>${escapeHtml(description)}</td>
-                <td>${escapeHtml(item.section)}</td>
-                <td class="right">${item.quantity}</td>
-                <td>${escapeHtml(item.unit || "-")}</td>
-                <td class="right">${toMoney(item.rate)}</td>
-                <td class="right">${toMoney(lineItemTotal(item))}</td>
-              </tr>
-            `;
-          })
-          .join("")
-      : `<tr><td colspan="6" style="text-align:center;color:#64748b;">No line items added.</td></tr>`;
-
-    const issuedDate = toDayMonthYearLabel(quoteDate || new Date().toISOString().slice(0, 10));
-    const printableTitle = quoteTitle.trim() || "Quote";
-    const printableNumber = quoteNumber.trim() || "Unassigned";
-    const printableOrgName = organizationName.trim() || "Tradesstack";
-    const printableProjectName = projectName.trim() || "Project";
-    const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableNumber}`;
-    const logoMarkup = organizationLogoUrl
-      ? `<img src="${escapeHtml(organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
-      : `<div class="logo-fallback">${escapeHtml(printableOrgName.slice(0, 2).toUpperCase())}</div>`;
-    const optionalPricingRows = [
-      includeMarginInExport ? `<div class="row"><span class="k">Margin</span><span class="v">${toMoney(pricingSummary.margin)}</span></div>` : "",
-      includeDiscountInExport ? `<div class="row"><span class="k">Discount</span><span class="v">-${toMoney(pricingSummary.discount)}</span></div>` : "",
-      includeContingencyInExport ? `<div class="row"><span class="k">Contingency</span><span class="v">${toMoney(pricingSummary.contingency)}</span></div>` : "",
-    ].join("");
-
-    const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(exportDocumentTitle)}</title>
-    <style>
-      :root {
-        --navy: #082851;
-        --orange: #F74917;
-        --text: #0F172A;
-        --muted: #64748B;
-        --border: #E2E8F0;
-      }
-      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      @page { size: A4; margin: 14mm 14mm 16mm 14mm; }
-      html, body { margin: 0; padding: 0; background: #fff; color: var(--text); }
-      body { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; line-height: 1.4; }
-      .doc { position: relative; min-height: calc(297mm - 30mm); }
-      .accent { height: 3px; background: var(--orange); margin-bottom: 14px; }
-      .header {
-        display: grid;
-        grid-template-columns: 1fr 320px;
-        column-gap: 24px;
-        align-items: start;
-        padding-bottom: 12px;
-        border-bottom: 1px solid var(--border);
-      }
-      .brand { display: flex; align-items: center; gap: 12px; }
-      .logo-wrap { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-      .logo-img { width: 100%; height: 100%; object-fit: contain; }
-      .logo-fallback {
-        width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
-        border: 1px solid var(--border); color: var(--navy); font-weight: 700; letter-spacing: 0.06em;
-      }
-      .company-name { margin: 0; color: var(--navy); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-      .header-meta dl { margin: 0; }
-      .header-meta .row {
-        display: grid;
-        grid-template-columns: 84px 1fr;
-        gap: 8px;
-        padding: 2px 0;
-      }
-      .header-meta dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-      .header-meta dd { margin: 0; color: var(--text); font-weight: 600; }
-      .title-block { padding: 16px 0 14px; border-bottom: 1px solid var(--border); }
-      .quote-title { margin: 0; color: var(--navy); font-size: 34px; line-height: 1.05; letter-spacing: -0.02em; }
-      .details { padding: 12px 0; border-bottom: 1px solid var(--border); }
-      .details-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; row-gap: 6px; }
-      .details-row { display: grid; grid-template-columns: 94px 1fr; gap: 10px; }
-      .details-row .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-      .details-row .v { color: var(--text); font-weight: 600; }
-      .section-title {
-        margin: 16px 0 8px;
-        color: var(--navy);
-        font-size: 16px;
-        font-weight: 700;
-        letter-spacing: 0.01em;
-      }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      thead th {
-        background: #F8FAFC;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 10px;
-        font-weight: 700;
-        text-align: left;
-        padding: 8px 8px;
-        border-top: 1px solid var(--border);
-        border-bottom: 1px solid var(--border);
-      }
-      tbody td {
-        padding: 8px;
-        border-bottom: 1px solid #EEF2F7;
-        color: var(--text);
-        vertical-align: top;
-        word-break: break-word;
-      }
-      .right { text-align: right; }
-      .totals {
-        margin-top: 10px;
-        margin-left: auto;
-        width: 360px;
-      }
-      .totals .row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        padding: 3px 0;
-      }
-      .totals .k { color: var(--muted); }
-      .totals .v { text-align: right; font-weight: 600; }
-      .totals .divider { border-top: 2px solid var(--navy); margin-top: 6px; padding-top: 8px; }
-      .totals .final .k,
-      .totals .final .v { color: var(--navy); font-weight: 800; font-size: 22px; line-height: 1.05; }
-      .terms { margin-top: 18px; }
-      .term-section { margin: 0 0 14px; break-inside: avoid; page-break-inside: avoid; }
-      .term-section h3 {
-        margin: 0 0 4px;
-        color: var(--navy);
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .term-section p {
-        margin: 0;
-        color: var(--text);
-        font-size: 12px;
-        white-space: pre-wrap;
-      }
-      .doc-footer {
-        margin-top: 14px;
-        padding-top: 8px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        color: var(--muted);
-        font-size: 10px;
-      }
-      .doc-footer .page::before { content: counter(page); }
-      @media print {
-        .doc { min-height: auto; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="doc">
-      <div class="accent"></div>
-      <header class="header">
-        <div class="brand">
-          <div class="logo-wrap">${logoMarkup}</div>
-          <div>
-            <p class="company-name">${escapeHtml(printableOrgName)}</p>
-          </div>
-        </div>
-        <div class="header-meta">
-          <dl>
-            <div class="row"><dt>Quote #</dt><dd>${escapeHtml(printableNumber)}</dd></div>
-            <div class="row"><dt>Issued</dt><dd>${escapeHtml(issuedDate)}</dd></div>
-            <div class="row"><dt>Expiry</dt><dd>${escapeHtml(toDayMonthYearLabel(expiryDate))}</dd></div>
-          </dl>
-        </div>
-      </header>
-
-      <section class="title-block">
-        <h1 class="quote-title">${escapeHtml(printableTitle)}</h1>
-      </section>
-
-      <section class="details">
-        <div class="details-grid">
-          <div class="details-row"><span class="k">Client</span><span class="v">${escapeHtml(clientName || "-")}</span></div>
-          <div class="details-row"><span class="k">Company</span><span class="v">${escapeHtml(companyName || "-")}</span></div>
-          <div class="details-row"><span class="k">Phone</span><span class="v">${escapeHtml(phone || "-")}</span></div>
-          <div class="details-row"><span class="k">Email</span><span class="v">${escapeHtml(email || "-")}</span></div>
-          <div class="details-row"><span class="k">Site</span><span class="v">${escapeHtml(siteAddress || "-")}</span></div>
-          <div class="details-row"><span class="k">Project</span><span class="v">${escapeHtml(projectName || "-")}</span></div>
-        </div>
-      </section>
-
-      <h2 class="section-title">Line Items</h2>
-      <table>
-        <thead>
-          <tr>
-            <th style="width:33%">Description</th>
-            <th style="width:17%">Section</th>
-            <th class="right" style="width:10%">Qty</th>
-            <th style="width:10%">Unit</th>
-            <th class="right" style="width:15%">Rate</th>
-            <th class="right" style="width:15%">Total</th>
-          </tr>
-        </thead>
-        <tbody>${lineItemsRows}</tbody>
-      </table>
-
-      <section class="totals">
-        <div class="row"><span class="k">Subtotal</span><span class="v">${toMoney(pricingSummary.baseSubtotal)}</span></div>
-        ${optionalPricingRows}
-        <div class="row"><span class="k">GST</span><span class="v">${toMoney(pricingSummary.gst)}</span></div>
-        <div class="row"><span class="k">Optional Items</span><span class="v">${toMoney(pricingSummary.optionalSubtotal)}</span></div>
-        <div class="divider final">
-          <div class="row"><span class="k">Total</span><span class="v">${toMoney(pricingSummary.grandTotal)}</span></div>
-        </div>
-      </section>
-
-      <section class="terms">
-        <h2 class="section-title">Terms & Scope</h2>
-        <div class="term-section"><h3>Inclusions</h3><p>${escapeHtml(termsInclusions || "-")}</p></div>
-        <div class="term-section"><h3>Exclusions</h3><p>${escapeHtml(termsExclusions || "-")}</p></div>
-        <div class="term-section"><h3>Clarifications</h3><p>${escapeHtml(clarifications || "-")}</p></div>
-        <div class="term-section"><h3>Assumptions</h3><p>${escapeHtml(assumptions || "-")}</p></div>
-        <div class="term-section"><h3>Payment terms</h3><p>${escapeHtml(paymentTerms || "-")}</p></div>
-        <div class="term-section"><h3>Lead time</h3><p>${escapeHtml(leadTime || "-")}</p></div>
-        <div class="term-section"><h3>Acceptance notes</h3><p>${escapeHtml(acceptanceNotes || "-")}</p></div>
-      </section>
-
-      <footer class="doc-footer">
-        <span>${escapeHtml(printableOrgName)} • ${escapeHtml(printableNumber)}</span>
-        <span class="page">Page </span>
-      </footer>
-    </main>
-  </body>
-</html>`;
+    const html = buildQuotePdfHtml({
+      lineItems,
+      pricingSummary: pricingSummary as PricingSummary,
+      showMarginBreakout: includeMarginInExport === true,
+      includeDiscountInExport,
+      includeContingencyInExport,
+      quoteDate,
+      quoteNumber,
+      organizationName,
+      organizationLogoUrl,
+      organizationBrandPrimaryColor,
+      projectName,
+      companyName,
+      clientName,
+      siteAddress,
+      contactPerson,
+      email,
+      phone,
+      expiryDate,
+      gstPercent,
+      termsInclusions,
+      termsExclusions,
+      clarifications,
+      assumptions,
+    });
 
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1123,753 +795,113 @@ export default function PreconstructionQuotePage() {
     };
   }, [
     assumptions,
-    acceptanceNotes,
     clarifications,
     clientName,
     companyName,
+    contactPerson,
     email,
     expiryDate,
+    gstPercent,
     includeContingencyInExport,
     includeDiscountInExport,
     includeMarginInExport,
     lineItems,
-    leadTime,
     organizationLogoUrl,
+    organizationBrandPrimaryColor,
     organizationName,
     phone,
-    pricingSummary.baseSubtotal,
-    pricingSummary.contingency,
-    pricingSummary.discount,
-    pricingSummary.grandTotal,
-    pricingSummary.gst,
-    pricingSummary.margin,
-    pricingSummary.optionalSubtotal,
+    pricingSummary,
     projectName,
     quoteDate,
     quoteNumber,
-    quoteTitle,
+    siteAddress,
     termsExclusions,
     termsInclusions,
-    paymentTerms,
-    siteAddress,
   ]);
-
-  if (isLoadingQuote) {
-    return (
-      <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-4 sm:px-5">
-        <p className={`${interMedium.className} text-sm font-medium text-[#64748B]`}>Loading quote...</p>
-      </div>
-    );
-  }
 
   return (
     <OpportunityWorkspaceShell title={projectName || "Opportunity"} opportunityId={routeOpportunitySlug ?? ""} activeTab="start-pricing">
       <div className="px-5">
-      <Card className={`shadow-none ${shouldShowEditor ? "border-[#E6EAF0] bg-[#F8F9FC]" : "border-[#E6EAF0] bg-[#F8F9FC]"}`}>
-        <CardHeader className={`${shouldShowEditor ? "pb-5 pt-6" : "pb-4 pt-4"}`}>
-          <div className={`flex flex-wrap items-start justify-between ${shouldShowEditor ? "gap-4" : "gap-3"}`}>
-            <div>
-              <CardTitle className={`${shouldShowEditor ? "text-[26px] sm:text-[34px]" : "text-[24px] sm:text-[30px]"} font-semibold leading-none tracking-[-0.03em] text-[#0F172A]`}>
-                {shouldShowEditor ? `Quote - ${projectName || "Project Name"}` : quoteTitle || "Quote Overview"}
-              </CardTitle>
-              {!shouldShowEditor ? (
-                <div className={`${interMedium.className} mt-2 space-y-0.5 text-sm font-medium text-[#64748B]`}>
-                  <p className="text-[#4f5f77]">{companyName || "No company"}</p>
-                </div>
-              ) : (
-                <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>{companyName || "No company"}</p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsQuoteContentHidden((current) => !current)}
-                className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                aria-expanded={!isQuoteContentHidden}
-                aria-label={isQuoteContentHidden ? "Show quote content" : "Hide quote content"}
-              >
-                {isQuoteContentHidden ? "Show" : "Hide"}
-                <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${isQuoteContentHidden ? "-rotate-90" : "rotate-0"}`} />
-              </Button>
-              {shouldShowEditor ? (
-                <>
-                  <select
-                    value={quoteStatus}
-                    onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}
-                    className={`${interMedium.className} h-10 rounded-[6px] border border-[#cfd7e4] bg-white px-3 text-sm text-[#1d2433]`}
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    type="button"
-                    onClick={saveQuote}
-                    disabled={isSaving}
-                    className={`${interMedium.className} h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
-                  >
-                    {isSaving ? "Saving..." : "Save Quote"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={exportQuotePdf}
-                    disabled={isSaving}
-                    variant="outline"
-                    className={`${interMedium.className} h-10 rounded-[6px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                  >
-                    Export PDF
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    disabled={isSaving}
-                    variant="outline"
-                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                  >
-                    Edit Quote
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={exportQuotePdf}
-                    disabled={isSaving}
-                    variant="outline"
-                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-white px-4 text-sm font-medium text-[#1d2433] hover:bg-[#F8FAFC]`}
-                  >
-                    Export PDF
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-          {error ? (
-            <p className={`${interMedium.className} mt-4 rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-          ) : null}
-          {saveMessage ? <p className={`${interMedium.className} mt-2 text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
-        </CardHeader>
-      </Card>
-
-      {isQuoteContentHidden ? null : shouldShowEditor ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-3 py-4 sm:px-5">
-          <section className="border-b border-[#E8EDF5] pb-5">
-            <button
-              type="button"
-              onClick={() => setIsQuoteDetailsOpen((current) => !current)}
-              className="flex w-full items-center justify-between"
-            >
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Quote Details</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isQuoteDetailsOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {isQuoteDetailsOpen ? (
-              <div className="mt-4 space-y-5">
-                <div>
-                  <p className={`${interMedium.className} mb-3 text-sm font-semibold text-[#24324a]`}>Project & Quote</p>
-                  <div className="space-y-3">
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div className="space-y-1.5 md:col-span-2">
-                        <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Quote title</label>
-                        <Input value={quoteTitle} onChange={(event) => setQuoteTitle(event.target.value)} placeholder="Kitchen renovation quote" className="h-10 rounded-[6px]" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
-                        <select
-                          value={quoteStatus}
-                          onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}
-                          className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-white px-3 text-sm text-[#1d2433]`}
-                        >
-                          {STATUS_OPTIONS.map((status) => (
-                            <option key={status.value} value={status.value}>
-                              {status.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div className="space-y-1.5">
-                        <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Project name</label>
-                        <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-10 rounded-[6px]" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Quote date</label>
-                        <Input type="date" value={quoteDate} onChange={(event) => setQuoteDate(event.target.value)} className="h-10 rounded-[6px]" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Expiry date</label>
-                        <Input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} className="h-10 rounded-[6px]" />
-                      </div>
-                    </div>
-                    <div className="max-w-[320px] space-y-1.5">
-                      <label className={`${interMedium.className} block text-xs font-medium text-[#64748B]`}>Quote number</label>
-                      <Input value={quoteNumber} readOnly placeholder="Q-26001-1" className="h-10 rounded-[6px] bg-[#f8fafc]" />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            ) : null}
-          </section>
-
-          <section className="border-b border-[#E8EDF5] py-5">
-            <button
-              type="button"
-              onClick={() => setIsLineItemsOpen((current) => !current)}
-              className="flex w-full items-center justify-between"
-            >
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Line Items</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isLineItemsOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {isLineItemsOpen ? (
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addLineItem(false)} className={`${interMedium.className} h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]`}>
-                    <Plus className="mr-1 h-4 w-4" />
-                    Add Item
-                  </Button>
-                  <Button type="button" onClick={() => addLineItem(true)} variant="outline" className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}>
-                    <Plus className="mr-1 h-4 w-4" />
-                    Add Optional
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsScopeImportOpen((current) => !current)}
-                    className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-white px-3 text-xs font-medium text-[#1d2433]`}
-                  >
-                    <Plus className="mr-1 h-4 w-4" />
-                    Import Scope Items
-                  </Button>
-                </div>
-
-              {isScopeImportOpen ? (
-                <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FCFDFE] p-3">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className={`${interMedium.className} text-sm font-semibold text-[#24324A]`}>Cost Breakdown Categories</p>
-                    <Button
-                      type="button"
-                      onClick={importSelectedScopeItems}
-                      disabled={selectedScopeCostItemIds.length === 0}
-                      className={`${interMedium.className} h-8 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10] disabled:opacity-50`}
-                    >
-                      Add Selected ({selectedScopeCostItemIds.length})
-                    </Button>
-                  </div>
-                  {isLoadingScopeItems ? (
-                    <p className={`${interMedium.className} text-xs font-medium text-[#6B7D96]`}>Loading Scope Builder items...</p>
-                  ) : availableScopeCostItems.length > 0 ? (
-                    <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
-                      {availableScopeCostItems.map((item) => (
-                        <label key={item.id} className="flex cursor-pointer items-start gap-2 rounded-[6px] border border-[#E6ECF5] bg-white px-2.5 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedScopeCostItemIds.includes(item.id)}
-                            onChange={() => toggleScopeCostItem(item.id)}
-                            className="mt-0.5 h-4 w-4 rounded-[6px] border-[#cfd8e6]"
-                          />
-                          <span className="min-w-0">
-                            <span className={`${interMedium.className} block text-xs font-semibold text-[#23344D]`}>{item.title}</span>
-                            {item.description ? (
-                              <span className={`${interMedium.className} mt-0.5 block text-xs font-medium text-[#64748B]`}>
-                                {item.description}
-                              </span>
-                            ) : null}
-                            <span className={`${interMedium.className} mt-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8697AE]`}>
-                              {item.tradeLabel} · {toDayMonthYearLabel(item.generatedAt)}
-                            </span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className={`${interMedium.className} text-xs font-medium text-[#6B7D96]`}>
-                      No completed Scope Builder items found for this lead workspace.
-                    </p>
-                  )}
-                </div>
-              ) : null}
-
-              <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[760px]">
-                    <div
-                      className={`${interMedium.className} grid items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089]`}
-                      style={{ gridTemplateColumns: MAIN_LINE_GRID_TEMPLATE }}
-                    >
-                      <span>Description</span>
-                      <span>Section</span>
-                      <span>Qty</span>
-                      <span>Unit</span>
-                      <span>Rate</span>
-                      <span className="text-right">Total</span>
-                    </div>
-                    <div className="divide-y divide-[#EEF2F7]">
-                      {mainLineItems.map((item) => (
-                        <div key={item.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: MAIN_LINE_GRID_TEMPLATE }}>
-                          <DescriptionInputWithPreview
-                            value={item.description}
-                            onChange={(value) => updateLineItem(item.id, "description", value)}
-                            placeholder="Description"
-                          />
-                          <select
-                            value={item.section}
-                            onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                            className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-white px-2 text-sm text-[#1d2433]`}
-                          >
-                            {LINE_ITEM_SECTIONS.map((section) => (
-                              <option key={section} value={section}>
-                                {section}
-                              </option>
-                            ))}
-                          </select>
-                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
-                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
-                          <div className="relative w-[100px]">
-                            <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                            <Input
-                              type="number"
-                              value={item.rate === 0 ? "" : item.rate}
-                              onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                              className="h-10 w-[100px] rounded-[6px] pl-6 pr-2"
-                            />
-                          </div>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => removeLineItem(item.id)}
-                              className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
-                              aria-label="Delete line item"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      {mainLineItems.length === 0 ? (
-                        <div className={`${interMedium.className} px-3 py-5 text-center text-sm text-[#73839a]`}>No main line items yet.</div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2 md:hidden">
-                <p className={`${interMedium.className} px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6E7F97]`}>Main line items</p>
-                {mainLineItems.map((item) => (
-                  <div key={item.id} className="space-y-2 rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] p-3">
-                    <DescriptionInputWithPreview
-                      value={item.description}
-                      onChange={(value) => updateLineItem(item.id, "description", value)}
-                      placeholder="Description"
-                    />
-                    <select
-                      value={item.section}
-                      onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-white px-2 text-sm text-[#1d2433]`}
-                    >
-                      {LINE_ITEM_SECTIONS.map((section) => (
-                        <option key={section} value={section}>
-                          {section}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="grid grid-cols-3 gap-2">
-                      <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[6px] px-2" />
-                      <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[6px] px-2" />
-                      <div className="relative">
-                        <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                        <Input
-                          type="number"
-                          value={item.rate === 0 ? "" : item.rate}
-                          onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                          className="h-10 w-full rounded-[6px] pl-6 pr-2"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => removeLineItem(item.id)}
-                        className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
-                        aria-label="Delete line item"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {mainLineItems.length === 0 ? (
-                  <div className={`${interMedium.className} rounded-[6px] border border-[#E5EAF2] px-3 py-4 text-center text-sm text-[#73839a]`}>No main line items yet.</div>
-                ) : null}
-              </div>
-
-              <div className="hidden rounded-[6px] border border-[#E5EAF2] overflow-visible md:block">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[640px]">
-                    <div
-                      className={`${interMedium.className} grid items-center gap-2 bg-[#FAFBFD] px-3 py-2 text-left text-[11px] uppercase tracking-[0.08em] text-[#6E7F97]`}
-                      style={{ gridTemplateColumns: OPTIONAL_LINE_GRID_TEMPLATE }}
-                    >
-                      <span>Optional Items</span>
-                      <span>Qty</span>
-                      <span>Unit</span>
-                      <span>Rate</span>
-                      <span className="text-right">Total</span>
-                    </div>
-                    <div className="divide-y divide-[#EEF2F7]">
-                      {optionalLineItems.map((item) => (
-                        <div key={item.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: OPTIONAL_LINE_GRID_TEMPLATE }}>
-                          <DescriptionInputWithPreview
-                            value={item.description}
-                            onChange={(value) => updateLineItem(item.id, "description", value)}
-                            placeholder="Optional add-on"
-                          />
-                          <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
-                          <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
-                          <div className="relative w-[100px]">
-                            <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                            <Input
-                              type="number"
-                              value={item.rate === 0 ? "" : item.rate}
-                              onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                              className="h-10 w-[100px] rounded-[6px] pl-6 pr-2"
-                            />
-                          </div>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => removeLineItem(item.id)}
-                              className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
-                              aria-label="Delete optional line item"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      {optionalLineItems.length === 0 ? (
-                        <div className={`${interMedium.className} px-3 py-3 text-center text-xs text-[#7e8ca2]`}>No optional items yet.</div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2 md:hidden">
-                <p className={`${interMedium.className} px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6E7F97]`}>Optional items</p>
-                {optionalLineItems.map((item) => (
-                  <div key={item.id} className="space-y-2 rounded-[6px] border border-[#E5EAF2] bg-white p-3">
-                    <DescriptionInputWithPreview
-                      value={item.description}
-                      onChange={(value) => updateLineItem(item.id, "description", value)}
-                      placeholder="Optional add-on"
-                    />
-                    <div className="grid grid-cols-3 gap-2">
-                      <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-full rounded-[6px] px-2" />
-                      <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-10 w-full rounded-[6px] px-2" />
-                      <div className="relative">
-                        <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                        <Input
-                          type="number"
-                          value={item.rate === 0 ? "" : item.rate}
-                          onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                          className="h-10 w-full rounded-[6px] pl-6 pr-2"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(lineItemTotal(item))}</div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => removeLineItem(item.id)}
-                        className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
-                        aria-label="Delete optional line item"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {optionalLineItems.length === 0 ? (
-                  <div className={`${interMedium.className} rounded-[6px] border border-[#E5EAF2] px-3 py-4 text-center text-xs text-[#7e8ca2]`}>No optional items yet.</div>
-                ) : null}
-              </div>
-
-                <div>
-                  <p className={`${interMedium.className} mb-2 text-sm font-semibold text-[#24324a]`}>Section totals</p>
-                  <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
-                    {LINE_ITEM_SECTIONS.map((section) => (
-                      <p key={section} className="flex items-center justify-between">
-                        <span className="text-[#64748B]">{section}</span>
-                        <span>{toMoney(sectionSubtotals.get(section) ?? 0)}</span>
-                      </p>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
-            ) : null}
-          </section>
-
-          <section className="pt-5">
-            <button
-              type="button"
-              onClick={() => setIsTermsOpen((current) => !current)}
-              className="flex w-full items-center justify-between"
-            >
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#0F172A]">Terms & Clarifications</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isTermsOpen ? "rotate-180" : ""}`} />
-            </button>
-            {isTermsOpen ? (
-              <div className="mt-4 space-y-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Validity period</label>
-                    <Input value={validityPeriod} onChange={(event) => setValidityPeriod(event.target.value)} className="h-10 rounded-[6px]" />
-                </div>
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Payment terms</label>
-                    <Input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="h-10 rounded-[6px]" />
-                </div>
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Lead time</label>
-                    <Input value={leadTime} onChange={(event) => setLeadTime(event.target.value)} className="h-10 rounded-[6px]" />
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Inclusions</label>
-                  <textarea value={termsInclusions} onChange={(event) => setTermsInclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                </div>
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Exclusions</label>
-                  <textarea value={termsExclusions} onChange={(event) => setTermsExclusions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                </div>
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Clarifications</label>
-                  <textarea value={clarifications} onChange={(event) => setClarifications(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                </div>
-                <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assumptions</label>
-                  <textarea value={assumptions} onChange={(event) => setAssumptions(event.target.value)} className={`${interMedium.className} min-h-[84px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                </div>
-              </div>
-              </div>
-            ) : null}
-          </section>
-        </div>
-
-        <div className="xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-            <CardHeader className="pb-3 pt-5">
-              <CardTitle className="text-base font-semibold tracking-[-0.01em] text-[#0F172A]">Pricing Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pb-5">
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Margin (%)</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIncludeMarginInExport((current) => !current)}
-                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      includeMarginInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-white text-[#64748B]"
-                    }`}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    Include
-                  </Button>
-                </div>
-                <Input
-                  type="number"
-                  value={marginPercent === "0" ? "" : marginPercent}
-                  onChange={(event) => setMarginPercent(event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Discount</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIncludeDiscountInExport((current) => !current)}
-                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      includeDiscountInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-white text-[#64748B]"
-                    }`}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    Include
-                  </Button>
-                </div>
-                <Input
-                  type="number"
-                  value={discountAmount === "0" ? "" : discountAmount}
-                  onChange={(event) => setDiscountAmount(event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Contingency</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIncludeContingencyInExport((current) => !current)}
-                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      includeContingencyInExport ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d3dbe8] bg-white text-[#64748B]"
-                    }`}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    Include
-                  </Button>
-                </div>
-                <Input
-                  type="number"
-                  value={contingencyAmount === "0" ? "" : contingencyAmount}
-                  onChange={(event) => setContingencyAmount(event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
-              </div>
-              <div className="grid gap-2">
-                <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>GST (%)</label>
-                <Input type="number" value={gstPercent} onChange={(event) => setGstPercent(event.target.value)} className="h-10 rounded-[6px]" />
-              </div>
-
-              <div className="h-px bg-[#E7ECF3]" />
-
-              <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Margin</span><span>{toMoney(pricingSummary.margin)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span>-{toMoney(pricingSummary.discount)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Contingency</span><span>{toMoney(pricingSummary.contingency)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST</span><span>{toMoney(pricingSummary.gst)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Optional Items</span><span>{toMoney(pricingSummary.optionalSubtotal)}</span></p>
-              </div>
-
-              <div className="rounded-[6px] bg-[#04234D] px-4 py-3 text-white">
-                <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.08em] text-white/70`}>Total Quote Price</p>
-                <p className="mt-1 text-[32px] font-semibold leading-none">{toMoney(pricingSummary.grandTotal)}</p>
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveQuote} disabled={isSaving} className={`${interMedium.className} h-10 w-full rounded-[6px] bg-[#F74917] text-sm font-medium text-white hover:bg-[#e63f10]`}>
-                  {isSaving ? "Saving..." : "Save Quote"}
-                </Button>
-                <Button type="button" onClick={exportQuotePdf} disabled={isSaving} variant="outline" className={`${interMedium.className} h-10 w-full rounded-[6px] border-[#d3dbe8] bg-white text-sm font-medium text-[#1d2433]`}>
-                  Export PDF
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        </div>
-      ) : (
-        <div className="space-y-7">
-          <section className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-5 py-4">
-            <div className="mb-3 border-b border-[#E2E8F0] pb-2.5">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Quote Summary</h2>
-            </div>
-            <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div>
-                <p className="mt-1 text-[40px] font-semibold leading-none text-[#082851]">{toMoney(pricingSummary.grandTotal)}</p>
-              </div>
-              <div className={`${interMedium.className} grid gap-y-2 text-sm font-medium text-[#334155]`}>
-              </div>
-            </div>
-          </section>
-
-          <div className="space-y-7">
-            <section className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3">
-              <div className="mb-3 flex items-end justify-between border-b border-[#E2E8F0] pb-2.5">
-                <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Quote Details</h2>
-              </div>
-              <div className={`${interMedium.className} grid gap-x-8 gap-y-2 text-sm font-medium text-[#0F172A] md:grid-cols-2`}>
-                <div className="grid grid-cols-[84px_1fr] items-baseline gap-2"><span className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Client</span><span>{clientName || "—"}</span></div>
-                <div className="grid grid-cols-[84px_1fr] items-baseline gap-2"><span className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Site</span><span>{siteAddress || "—"}</span></div>
-                <div className="grid grid-cols-[84px_1fr] items-baseline gap-2"><span className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Project</span><span>{projectName || "—"}</span></div>
-                <div className="grid grid-cols-[84px_1fr] items-baseline gap-2"><span className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Issued</span><span>{toDayMonthYearLabel(quoteDate)}</span></div>
-                <div className="grid grid-cols-[84px_1fr] items-baseline gap-2"><span className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Quote #</span><span>{quoteNumber || "—"}</span></div>
-                <div className="grid grid-cols-[84px_1fr] items-baseline gap-2"><span className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Expiry</span><span>{toDayMonthYearLabel(expiryDate)}</span></div>
-              </div>
-            </section>
-
-            <section className="rounded-[6px] border border-[#dbe3ef] bg-white">
-              <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#E2E8F0] px-5 pb-3 pt-4">
-                <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Line Items</h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className={`${interMedium.className} min-w-full border-collapse text-left text-sm font-medium text-[#0F172A]`}>
-                  <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.08em] text-[#64748B]">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Description</th>
-                      <th className="px-4 py-3 font-semibold">Section</th>
-                      <th className="px-4 py-3 text-right font-semibold">Qty</th>
-                      <th className="px-4 py-3 font-semibold">Unit</th>
-                      <th className="px-4 py-3 text-right font-semibold">Rate</th>
-                      <th className="px-4 py-3 text-right font-semibold">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lineItems.map((item, index) => (
-                      <tr key={item.id} className={index === 0 ? "" : "border-t border-[#E2E8F0]"}>
-                        <td className="px-4 py-3">{item.description || "Untitled item"}</td>
-                        <td className="px-4 py-3">{item.section}{item.isOptional ? " (Optional)" : ""}</td>
-                        <td className="px-4 py-3 text-right">{item.quantity}</td>
-                        <td className="px-4 py-3">{item.unit || "—"}</td>
-                        <td className="px-4 py-3 text-right">{toMoney(item.rate)}</td>
-                        <td className="px-4 py-3 text-right font-semibold">{toMoney(lineItemTotal(item))}</td>
-                      </tr>
-                    ))}
-                    {lineItems.length === 0 ? (
-                      <tr>
-                        <td className="px-4 py-4 text-center text-[#64748B]" colSpan={6}>
-                          No line items added yet.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-              <div className="border-t border-[#E2E8F0] px-5 py-3">
-                <div className={`${interMedium.className} ml-auto max-w-[320px] text-xs font-medium text-[#334155]`}>
-                  <p className="flex items-center justify-between gap-3 text-sm font-semibold text-[#082851]">
-                    <span>Total</span>
-                    <span>{toMoney(pricingSummary.grandTotal)}</span>
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-[6px] border border-[#eef2f7] bg-[#fcfdff] px-5 py-4">
-              <div className="mb-3 border-b border-[#E2E8F0] pb-2.5">
-                <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#082851]">Terms & Clarifications</h2>
-              </div>
-              <div className={`${interMedium.className} grid gap-3 text-sm font-medium text-[#0F172A]`}>
-                <div className="grid grid-cols-[130px_1fr] gap-3 border-b border-[#eef3f8] pb-2.5"><p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Inclusions</p><p>{termsInclusions || "—"}</p></div>
-                <div className="grid grid-cols-[130px_1fr] gap-3 border-b border-[#eef3f8] pb-2.5"><p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Exclusions</p><p>{termsExclusions || "—"}</p></div>
-                <div className="grid grid-cols-[130px_1fr] gap-3 border-b border-[#eef3f8] pb-2.5"><p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Clarifications</p><p>{clarifications || "—"}</p></div>
-                <div className="grid grid-cols-[130px_1fr] gap-3"><p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Assumptions</p><p>{assumptions || "—"}</p></div>
-              </div>
-            </section>
-          </div>
-        </div>
-      )}
+        <QuoteEditorLayout
+          heroTitle="Quote"
+          backHref={`/app/leads-clients/opportunities/${routeOpportunitySlug}`}
+          backLabel="Back to Opportunity"
+          error={error}
+          saveMessage={saveMessage}
+          shouldShowEditor={shouldShowEditor}
+          isLoadingQuote={isLoadingQuote}
+          isHydratingExistingQuote={isHydratingExistingQuote}
+          canManageQuote={canManageQuote}
+          canDeleteQuote={false}
+          isSaving={isSaving}
+          isDeleting={false}
+          quoteId={quoteId}
+          quoteStatus={quoteStatus}
+          setQuoteStatus={setQuoteStatus}
+          quoteTitle={quoteTitle}
+          setQuoteTitle={setQuoteTitle}
+          clientName={clientName}
+          siteAddress={siteAddress}
+          projectName={projectName}
+          setProjectName={setProjectName}
+          quoteDate={quoteDate}
+          setQuoteDate={setQuoteDate}
+          expiryDate={expiryDate}
+          setExpiryDate={setExpiryDate}
+          quoteNumber={quoteNumber}
+          onSave={saveQuote}
+          onEdit={() => setIsEditing(true)}
+          onExport={exportQuotePdf}
+          lineItems={lineItems}
+          mainLineItems={mainLineItems}
+          optionalLineItems={optionalLineItems}
+          addLineItem={addLineItem}
+          updateLineItem={updateLineItem}
+          removeLineItem={removeLineItem}
+          isQuoteDetailsOpen={isQuoteDetailsOpen}
+          setIsQuoteDetailsOpen={setIsQuoteDetailsOpen}
+          isLineItemsOpen={isLineItemsOpen}
+          setIsLineItemsOpen={setIsLineItemsOpen}
+          isTermsOpen={isTermsOpen}
+          setIsTermsOpen={setIsTermsOpen}
+          isScopeImportOpen={isScopeImportOpen}
+          setIsScopeImportOpen={setIsScopeImportOpen}
+          isLoadingScopeItems={isLoadingScopeItems}
+          availableScopeCostItems={availableScopeCostItems}
+          selectedScopeCostItemIds={selectedScopeCostItemIds}
+          toggleScopeCostItem={toggleScopeCostItem}
+          importSelectedScopeItems={importSelectedScopeItems}
+          sectionSubtotals={sectionSubtotals}
+          validityPeriod={validityPeriod}
+          setValidityPeriod={setValidityPeriod}
+          paymentTerms={paymentTerms}
+          setPaymentTerms={setPaymentTerms}
+          leadTime={leadTime}
+          setLeadTime={setLeadTime}
+          termsInclusions={termsInclusions}
+          setTermsInclusions={setTermsInclusions}
+          termsExclusions={termsExclusions}
+          setTermsExclusions={setTermsExclusions}
+          clarifications={clarifications}
+          setClarifications={setClarifications}
+          assumptions={assumptions}
+          setAssumptions={setAssumptions}
+          marginPercent={marginPercent}
+          setMarginPercent={setMarginPercent}
+          discountAmount={discountAmount}
+          setDiscountAmount={setDiscountAmount}
+          contingencyAmount={contingencyAmount}
+          setContingencyAmount={setContingencyAmount}
+          gstPercent={gstPercent}
+          setGstPercent={setGstPercent}
+          includeMarginInExport={includeMarginInExport}
+          setIncludeMarginInExport={setIncludeMarginInExport}
+          includeDiscountInExport={includeDiscountInExport}
+          setIncludeDiscountInExport={setIncludeDiscountInExport}
+          includeContingencyInExport={includeContingencyInExport}
+          setIncludeContingencyInExport={setIncludeContingencyInExport}
+          pricingSummary={pricingSummary as PricingSummary}
+        />
       </div>
     </OpportunityWorkspaceShell>
   );

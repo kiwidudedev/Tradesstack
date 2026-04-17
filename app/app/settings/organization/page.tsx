@@ -1,7 +1,6 @@
 import { OrganizationSettingsForm } from "../OrganizationSettingsForm";
 import { getSettingsContext } from "../settings-data";
-import { hasPermission } from "@/lib/permissions-server";
-import { canManageOrganizationSettings } from "@/lib/role-permissions";
+import { hasOrganizationPermission } from "@/lib/permissions-server";
 
 export default async function OrganizationSettingsPage() {
   const { currentMember, organizationRow, initialLogoUrl } = await getSettingsContext();
@@ -10,9 +9,10 @@ export default async function OrganizationSettingsPage() {
     return null;
   }
 
-  const canEdit =
-    canManageOrganizationSettings(currentMember.role) &&
-    (await hasPermission("settings.organization.update"));
+  const canEdit = await hasOrganizationPermission(
+    currentMember.organization_id,
+    "settings.organization.update",
+  );
 
   return (
     <OrganizationSettingsForm
