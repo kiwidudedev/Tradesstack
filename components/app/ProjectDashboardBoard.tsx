@@ -67,6 +67,27 @@ interface ProjectDetailsDraft {
   createdAt: string;
 }
 
+interface OrganizationMemberOption {
+  id: string;
+  userId: string;
+  displayName: string;
+  role: string;
+}
+
+interface ProjectMemberListItem {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  organization_member_id: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  role: string;
+  user_id: string;
+  display_name: string;
+  avatar_path: string | null;
+}
+
 function formatStageLabel(stage: string | null | undefined) {
   if (!stage) {
     return "Project";
@@ -141,6 +162,13 @@ export function ProjectDashboardBoard() {
     location: "",
     createdAt: "",
   });
+  const [projectMembers, setProjectMembers] = useState<ProjectMemberListItem[]>([]);
+  const [organizationMembers, setOrganizationMembers] = useState<OrganizationMemberOption[]>([]);
+  const [isLoadingProjectMembers, setIsLoadingProjectMembers] = useState(false);
+  const [projectMembersError, setProjectMembersError] = useState<string | null>(null);
+  const [selectedProjectMemberToAdd, setSelectedProjectMemberToAdd] = useState("");
+  const [isAddingProjectMember, setIsAddingProjectMember] = useState(false);
+  const [removingProjectMemberId, setRemovingProjectMemberId] = useState<string | null>(null);
   const isLoadingRef = useRef(false);
 
   const supabase = useMemo(() => {
@@ -646,6 +674,171 @@ export function ProjectDashboardBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 
+  useEffect(() => {
+    if (!supabase || !context?.organizationId || !context.projectId) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadProjectTeamData = async () => {
+      setIsLoadingProjectMembers(true);
+      setProjectMembersError(null);
+      setSelectedProjectMemberToAdd("");
+
+      try {
+        const [projectMembersResult, organizationMembersResult] = await Promise.all([
+          supabase.rpc("list_project_members", {
+            p_organization_id: context.organizationId,
+            p_project_id: context.projectId,
+          }),
+          supabase
+            .from("organization_members")
+            .select("id, user_id, display_name, role")
+            .eq("organization_id", context.organizationId)
+            .order("display_name", { ascending: true }),
+        ]);
+
+        if (projectMembersResult.error || organizationMembersResult.error) {
+          throw new Error(projectMembersResult.error?.message ?? organizationMembersResult.error?.message ?? "Unable to load project team.");
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        const nextProjectMembers = (projectMembersResult.data ?? []) as ProjectMemberListItem[];
+        const nextOrganizationMembers = ((organizationMembersResult.data ?? []) as Array<Record<string, unknown>>)
+          .map((member) => ({
+            id: typeof member.id === "string" ? member.id : "",
+            userId: typeof member.user_id === "string" ? member.user_id : "",
+            displayName: typeof member.display_name === "string" && member.display_name.trim().length > 0 ? member.display_name : "Unnamed user",
+            role: typeof member.role === "string" ? member.role : "worker",
+          }))
+          .filter((member) => member.id && member.userId);
+
+        setProjectMembers(nextProjectMembers);
+        setOrganizationMembers(nextOrganizationMembers);
+      } catch (loadProjectTeamError) {
+        if (!isCancelled) {
+          setProjectMembersError(loadProjectTeamError instanceof Error ? loadProjectTeamError.message : "Unable to load project team.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingProjectMembers(false);
+        }
+      }
+    };
+
+    void loadProjectTeamData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [context?.organizationId, context?.projectId, supabase]);
+
+  const activeProjectMemberIds = useMemo(
+    () => new Set(projectMembers.filter((member) => member.is_active).map((member) => member.organization_member_id)),
+    [projectMembers]
+  );
+
+  const availableOrganizationMembers = useMemo(
+    () => organizationMembers.filter((member) => !activeProjectMemberIds.has(member.id)),
+    [activeProjectMemberIds, organizationMembers]
+  );
+
+  const handleAddProjectMember = async (organizationMemberId: string) => {
+    if (!supabase || !context?.organizationId || !context.projectId || !organizationMemberId || isAddingProjectMember) {
+      return;
+    }
+
+    setIsAddingProjectMember(true);
+    setProjectMembersError(null);
+
+    try {
+      const { data, error: addError } = await supabase.rpc("add_project_member", {
+        p_organization_id: context.organizationId,
+        p_project_id: context.projectId,
+        p_organization_member_id: organizationMemberId,
+      });
+
+      if (addError) {
+        throw new Error(addError.message);
+      }
+
+      const addedMember = (data?.[0] ?? null) as {
+        id: string;
+        organization_id: string;
+        project_id: string;
+        organization_member_id: string;
+        created_by: string;
+        is_active: boolean;
+        removed_at: string | null;
+        removed_by: string | null;
+        created_at: string;
+        updated_at: string;
+      } | null;
+
+      if (!addedMember) {
+        throw new Error("Project member could not be added.");
+      }
+
+      const matchingMember = organizationMembers.find((member) => member.id === organizationMemberId);
+
+      setProjectMembers((previous) => {
+        const nextRows = previous.filter((member) => member.organization_member_id !== organizationMemberId);
+        const nextMember: ProjectMemberListItem = {
+          id: addedMember.id,
+          organization_id: addedMember.organization_id,
+          project_id: addedMember.project_id,
+          organization_member_id: addedMember.organization_member_id,
+          is_active: addedMember.is_active,
+          created_at: addedMember.created_at,
+          updated_at: addedMember.updated_at,
+          role: matchingMember?.role ?? "worker",
+          user_id: matchingMember?.userId ?? "",
+          display_name: matchingMember?.displayName ?? "Unnamed user",
+          avatar_path: null,
+        };
+
+        return [...nextRows, nextMember].sort((left, right) => left.display_name.localeCompare(right.display_name, undefined, { sensitivity: "base" }));
+      });
+      setSelectedProjectMemberToAdd("");
+    } catch (addProjectMemberError) {
+      setProjectMembersError(addProjectMemberError instanceof Error ? addProjectMemberError.message : "Unable to add project member.");
+    } finally {
+      setIsAddingProjectMember(false);
+      setSelectedProjectMemberToAdd("");
+    }
+  };
+
+  const handleRemoveProjectMember = async (member: ProjectMemberListItem) => {
+    if (!supabase || !context?.organizationId || !context.projectId || removingProjectMemberId) {
+      return;
+    }
+
+    setRemovingProjectMemberId(member.id);
+    setProjectMembersError(null);
+
+    try {
+      const { error: removeError } = await supabase.rpc("remove_project_member", {
+        p_organization_id: context.organizationId,
+        p_project_id: context.projectId,
+        p_organization_member_id: member.organization_member_id,
+      });
+
+      if (removeError) {
+        throw new Error(removeError.message);
+      }
+
+      setProjectMembers((previous) => previous.filter((entry) => entry.id !== member.id));
+    } catch (removeProjectMemberError) {
+      setProjectMembersError(removeProjectMemberError instanceof Error ? removeProjectMemberError.message : "Unable to remove project member.");
+    } finally {
+      setRemovingProjectMemberId(null);
+    }
+  };
+
   const detailRows = [
     {
       key: "projectName",
@@ -782,6 +975,93 @@ export function ProjectDashboardBoard() {
                     )}
                   </Fragment>
                 ))}
+                {!isEditingProjectDetails ? (
+                  <>
+                    <p className="text-[18px] font-semibold text-[#4B5D79]">Project Team:</p>
+                    <div>
+                      {isLoadingProjectMembers ? (
+                        <p className="text-[18px] font-medium text-[#64748B]">Loading project team...</p>
+                      ) : projectMembers.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {projectMembers.map((member) => (
+                            <div key={member.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <p className="text-[18px] font-medium text-[#111827]">{member.display_name}</p>
+                              <span className="text-[14px] font-medium uppercase tracking-[0.06em] text-[#64748B]">
+                                {member.role.replace(/_/g, " ")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[18px] font-medium text-[#64748B]">No members assigned</p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+                {isEditingProjectDetails ? (
+                  <>
+                    <p className="text-[18px] font-semibold text-[#4B5D79]">Project Team:</p>
+                    <div className="space-y-3">
+                      {isLoadingProjectMembers ? (
+                        <p className="text-[16px] font-medium text-[#64748B]">Loading project team...</p>
+                      ) : projectMembers.length > 0 ? (
+                        <div className="space-y-2">
+                          {projectMembers.map((member) => (
+                            <div
+                              key={member.id}
+                              className="flex items-center justify-between gap-3 rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 py-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-[16px] font-medium text-[#111827]">{member.display_name}</p>
+                                <p className="mt-0.5 text-[13px] font-medium uppercase tracking-[0.06em] text-[#64748B]">
+                                  {member.role.replace(/_/g, " ")}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleRemoveProjectMember(member)}
+                                disabled={removingProjectMemberId === member.id || isAddingProjectMember}
+                                className="inline-flex shrink-0 items-center justify-center rounded-[0.7rem] border border-[#E2E8F0] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#C2410C] transition hover:bg-[#FFF7ED] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {removingProjectMemberId === member.id ? "Removing..." : "Remove"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[16px] font-medium text-[#64748B]">No members assigned yet</p>
+                      )}
+
+                      {availableOrganizationMembers.length > 0 ? (
+                        <select
+                          value={selectedProjectMemberToAdd}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setSelectedProjectMemberToAdd(nextValue);
+                            if (nextValue) {
+                              void handleAddProjectMember(nextValue);
+                            }
+                          }}
+                          disabled={isLoadingProjectMembers || isAddingProjectMember || Boolean(removingProjectMemberId)}
+                          className="h-[2.9rem] w-full rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[16px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29] disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
+                        >
+                          <option value="">{isAddingProjectMember ? "Adding member..." : "Add member"}</option>
+                          {availableOrganizationMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.displayName} ({member.role.replace(/_/g, " ")})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="text-[14px] font-medium text-[#64748B]">All organization members are already assigned.</p>
+                      )}
+
+                      {projectMembersError ? (
+                        <p className="text-[14px] font-medium text-[#B91C1C]">{projectMembersError}</p>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
               </div>
             </CardContent>
           </Card>

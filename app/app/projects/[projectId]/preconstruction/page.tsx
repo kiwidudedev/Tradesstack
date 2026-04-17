@@ -26,6 +26,18 @@ export default function PreconstructionPage() {
           >
             Variations
           </Link>
+          <Link
+            href="purchase-orders"
+            className={`${interMedium.className} mt-3 inline-flex h-10 items-center rounded-[6px] border border-[#D6DDE9] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1D2433] hover:bg-[#F1F5F9]`}
+          >
+            Purchase Orders
+          </Link>
+          <Link
+            href="claims"
+            className={`${interMedium.className} mt-3 inline-flex h-10 items-center rounded-[6px] border border-[#D6DDE9] bg-[#F8F9FC] px-4 text-sm font-medium text-[#1D2433] hover:bg-[#F1F5F9]`}
+          >
+            Claims
+          </Link>
         </div>
       </CardContent>
     </Card>

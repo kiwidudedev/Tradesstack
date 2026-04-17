@@ -120,6 +120,20 @@ interface OrganizationSupplier {
   phone: string | null;
 }
 
+interface ProjectMemberListItem {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  organization_member_id: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  role: string;
+  user_id: string;
+  display_name: string;
+  avatar_path: string | null;
+}
+
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approved", "Issued", "Received", "Invoiced", "Cancelled"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work", "Plant / Equipment Hire", "Site Expense", "Freight / Delivery", "Variation Order", "General Purchase", "Other"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
@@ -300,6 +314,12 @@ export default function ProjectVariationsPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
   const [suppliers, setSuppliers] = useState<OrganizationSupplier[]>([]);
+  const [projectMembers, setProjectMembers] = useState<ProjectMemberListItem[]>([]);
+  const [assignedMemberIds, setAssignedMemberIds] = useState<Set<string>>(new Set());
+  const [isLoadingAssignedWorkers, setIsLoadingAssignedWorkers] = useState(false);
+  const [assignmentPendingMemberIds, setAssignmentPendingMemberIds] = useState<Set<string>>(new Set());
+  const [assignedWorkerSearchQuery, setAssignedWorkerSearchQuery] = useState("");
+  const [isAssignedWorkerMenuOpen, setIsAssignedWorkerMenuOpen] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierCompanyName, setNewSupplierCompanyName] = useState("");
   const [newSupplierEmail, setNewSupplierEmail] = useState("");
@@ -658,6 +678,30 @@ export default function ProjectVariationsPage() {
     [activeVariationId, variations]
   );
   const hasVariations = variations.length > 0;
+  const assignableProjectMembers = useMemo(
+    () =>
+      projectMembers
+        .filter((member) => member.role === "worker")
+        .slice()
+        .sort((left, right) => left.display_name.localeCompare(right.display_name)),
+    [projectMembers]
+  );
+  const assignedWorkers = useMemo(
+    () => assignableProjectMembers.filter((member) => assignedMemberIds.has(member.organization_member_id)),
+    [assignableProjectMembers, assignedMemberIds]
+  );
+  const filteredAssignableWorkers = useMemo(() => {
+    const query = assignedWorkerSearchQuery.trim().toLowerCase();
+    return assignableProjectMembers.filter((member) => {
+      if (assignedMemberIds.has(member.organization_member_id)) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return member.display_name.toLowerCase().includes(query);
+    });
+  }, [assignableProjectMembers, assignedMemberIds, assignedWorkerSearchQuery]);
   const filteredSuppliers = useMemo(() => {
     const query = supplierSearchQuery.trim().toLowerCase();
     if (!query) {
@@ -686,6 +730,11 @@ export default function ProjectVariationsPage() {
   }, [activeVariation, suppliers]);
 
   useEffect(() => {
+    setAssignedWorkerSearchQuery("");
+    setIsAssignedWorkerMenuOpen(false);
+  }, [activeVariation?.id]);
+
+  useEffect(() => {
     if (!routePurchaseOrderId || variations.length === 0) {
       return;
     }
@@ -703,6 +752,68 @@ export default function ProjectVariationsPage() {
       setError(hydrateError instanceof Error ? hydrateError.message : "Unable to load purchase order details.");
     });
   }, [activeVariationId, hydratePurchaseOrderDetails, hydratedPurchaseOrderIds, organizationId]);
+
+  useEffect(() => {
+    if (!supabase || !organizationId || !dbProjectId || !activeVariation?.id) {
+      setProjectMembers([]);
+      setAssignedMemberIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAssignedWorkers = async () => {
+      setIsLoadingAssignedWorkers(true);
+
+      try {
+        const [projectMembersResult, assignmentsResult] = await Promise.all([
+          supabase.rpc("list_project_members", {
+            p_organization_id: organizationId,
+            p_project_id: dbProjectId,
+          }),
+          supabase.rpc("list_purchase_order_assignments", {
+            p_organization_id: organizationId,
+            p_project_id: dbProjectId,
+            p_purchase_order_id: activeVariation.id,
+          }),
+        ]);
+
+        if (projectMembersResult.error || assignmentsResult.error) {
+          throw new Error(projectMembersResult.error?.message ?? assignmentsResult.error?.message ?? "Unable to load assigned workers.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextProjectMembers = ((projectMembersResult.data ?? []) as ProjectMemberListItem[]).filter((member) => member.is_active);
+        const nextAssignedMemberIds = new Set(
+          ((assignmentsResult.data ?? []) as Array<{ organization_member_id: string; is_active: boolean }>)
+            .filter((assignment) => assignment.is_active)
+            .map((assignment) => assignment.organization_member_id)
+        );
+
+        setProjectMembers(nextProjectMembers);
+        setAssignedMemberIds(nextAssignedMemberIds);
+      } catch (assignmentLoadError) {
+        if (!cancelled) {
+          setError(assignmentLoadError instanceof Error ? assignmentLoadError.message : "Unable to load assigned workers.");
+          setProjectMembers([]);
+          setAssignedMemberIds(new Set());
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAssignedWorkers(false);
+        }
+      }
+    };
+
+    void loadAssignedWorkers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVariation?.id, dbProjectId, organizationId, supabase]);
 
   const pricingSummary = useMemo(() => {
     if (!activeVariation) {
@@ -1120,6 +1231,68 @@ export default function ProjectVariationsPage() {
       setIsSaving(false);
     }
   };
+
+  const toggleAssignedWorker = useCallback(async (organizationMemberId: string, shouldAssign: boolean) => {
+    if (!supabase || !organizationId || !dbProjectId || !activeVariation?.id) {
+      setError("Assigned workers are not ready yet. Please refresh and try again.");
+      return;
+    }
+
+    if (!canManagePurchaseOrder) {
+      setError("You do not have permission to manage assigned workers.");
+      return;
+    }
+
+    const previousAssignedMemberIds = new Set(assignedMemberIds);
+    const nextAssignedMemberIds = new Set(assignedMemberIds);
+    if (shouldAssign) {
+      nextAssignedMemberIds.add(organizationMemberId);
+    } else {
+      nextAssignedMemberIds.delete(organizationMemberId);
+    }
+
+    setAssignedMemberIds(nextAssignedMemberIds);
+    setAssignmentPendingMemberIds((current) => new Set([...current, organizationMemberId]));
+    setError(null);
+
+    try {
+      if (shouldAssign) {
+        const { error: addError } = await supabase.rpc("add_purchase_order_assignment", {
+          p_organization_id: organizationId,
+          p_project_id: dbProjectId,
+          p_purchase_order_id: activeVariation.id,
+          p_organization_member_id: organizationMemberId,
+        });
+
+        if (addError) {
+          throw new Error(addError.message);
+        }
+
+        setAssignedWorkerSearchQuery("");
+        setIsAssignedWorkerMenuOpen(false);
+      } else {
+        const { error: removeError } = await supabase.rpc("remove_purchase_order_assignment", {
+          p_organization_id: organizationId,
+          p_project_id: dbProjectId,
+          p_purchase_order_id: activeVariation.id,
+          p_organization_member_id: organizationMemberId,
+        });
+
+        if (removeError) {
+          throw new Error(removeError.message);
+        }
+      }
+    } catch (assignmentError) {
+      setAssignedMemberIds(previousAssignedMemberIds);
+      setError(assignmentError instanceof Error ? assignmentError.message : "Unable to update assigned workers.");
+    } finally {
+      setAssignmentPendingMemberIds((current) => {
+        const next = new Set(current);
+        next.delete(organizationMemberId);
+        return next;
+      });
+    }
+  }, [activeVariation?.id, assignedMemberIds, canManagePurchaseOrder, dbProjectId, organizationId, supabase]);
 
   const exportVariationPdf = useCallback(() => {
     if (typeof window === "undefined" || !activeVariation) {
@@ -1744,6 +1917,82 @@ export default function ProjectVariationsPage() {
                       </div>
                     ) : null}
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assigned Worker</label>
+                  <div className="relative">
+                    <Input
+                      value={assignedWorkerSearchQuery}
+                      onFocus={() => setIsAssignedWorkerMenuOpen(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => setIsAssignedWorkerMenuOpen(false), 100);
+                      }}
+                      onChange={(event) => {
+                        setAssignedWorkerSearchQuery(event.target.value);
+                        setIsAssignedWorkerMenuOpen(true);
+                      }}
+                      disabled={!canManagePurchaseOrder || isLoadingAssignedWorkers}
+                      className="h-10 rounded-[6px]"
+                      placeholder="Search workers..."
+                    />
+                    {isAssignedWorkerMenuOpen ? (
+                      <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[#d1d9e6] bg-white shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
+                        {filteredAssignableWorkers.length > 0 ? (
+                          filteredAssignableWorkers.map((member) => {
+                            const isPending = assignmentPendingMemberIds.has(member.organization_member_id);
+                            return (
+                              <button
+                                key={member.id}
+                                type="button"
+                                disabled={isPending || !canManagePurchaseOrder}
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  if (!isPending && canManagePurchaseOrder) {
+                                    void toggleAssignedWorker(member.organization_member_id, true);
+                                  }
+                                }}
+                                className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:text-[#94A3B8]`}
+                              >
+                                {member.display_name}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <p className={`${interMedium.className} px-3 py-2 text-sm text-[#64748B]`}>
+                            {assignedWorkers.length === assignableProjectMembers.length
+                              ? "All project workers are already assigned."
+                              : "No matching workers found."}
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  {assignedWorkers.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {assignedWorkers.map((member) => {
+                        const isPending = assignmentPendingMemberIds.has(member.organization_member_id);
+                        return (
+                          <div
+                            key={member.id}
+                            className="flex items-center gap-1.5 rounded-full border border-[#D6DFEB] bg-[#F8F9FC] px-3 py-1"
+                          >
+                            <span className={`${interMedium.className} text-xs text-[#1D2433]`}>{member.display_name}</span>
+                            <button
+                              type="button"
+                              disabled={!canManagePurchaseOrder || isPending}
+                              onClick={() => {
+                                void toggleAssignedWorker(member.organization_member_id, false);
+                              }}
+                              className={`${interMedium.className} text-[11px] font-semibold leading-none text-[#64748B] hover:text-[#B42318] disabled:cursor-not-allowed disabled:text-[#94A3B8]`}
+                              aria-label={`Remove ${member.display_name}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="space-y-1.5">
                   <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Supplier Contact</label>

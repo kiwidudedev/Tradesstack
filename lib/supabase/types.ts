@@ -366,6 +366,81 @@ export interface Database {
         };
         Relationships: [];
       };
+      project_members: {
+        Row: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          organization_member_id: string;
+          created_by: string;
+          is_active: boolean;
+          removed_at: string | null;
+          removed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          project_id: string;
+          organization_member_id: string;
+          created_by: string;
+          is_active?: boolean;
+          removed_at?: string | null;
+          removed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          project_id?: string;
+          organization_member_id?: string;
+          created_by?: string;
+          is_active?: boolean;
+          removed_at?: string | null;
+          removed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      project_purchase_order_assignments: {
+        Row: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          purchase_order_id: string;
+          organization_member_id: string;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          project_id: string;
+          purchase_order_id: string;
+          organization_member_id: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          project_id?: string;
+          purchase_order_id?: string;
+          organization_member_id?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       trade_pack_workspaces: {
         Row: {
           id: string;
@@ -1059,6 +1134,123 @@ export interface Database {
       ensure_organization_membership: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      add_project_member: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+          p_organization_member_id: string;
+        };
+        Returns: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          organization_member_id: string;
+          created_by: string;
+          is_active: boolean;
+          removed_at: string | null;
+          removed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        }[];
+      };
+      remove_project_member: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+          p_organization_member_id: string;
+        };
+        Returns: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          organization_member_id: string;
+          created_by: string;
+          is_active: boolean;
+          removed_at: string | null;
+          removed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        }[];
+      };
+      list_project_members: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+        };
+        Returns: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          organization_member_id: string;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+          role: string;
+          user_id: string;
+          display_name: string;
+          avatar_path: string | null;
+        }[];
+      };
+      add_purchase_order_assignment: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+          p_purchase_order_id: string;
+          p_organization_member_id: string;
+        };
+        Returns: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          purchase_order_id: string;
+          organization_member_id: string;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      remove_purchase_order_assignment: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+          p_purchase_order_id: string;
+          p_organization_member_id: string;
+        };
+        Returns: undefined;
+      };
+      list_purchase_order_assignments: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+          p_purchase_order_id: string;
+        };
+        Returns: {
+          id: string;
+          organization_id: string;
+          project_id: string;
+          purchase_order_id: string;
+          organization_member_id: string;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        }[];
+      };
+      list_worker_assigned_purchase_orders: {
+        Args: {
+          p_organization_id: string;
+          p_project_id: string;
+          p_organization_member_id: string;
+        };
+        Returns: {
+          id: string;
+          purchase_order_number: string;
+          title: string;
+          status: string;
+          created_at: string;
+        }[];
       };
       has_permission: {
         Args: {

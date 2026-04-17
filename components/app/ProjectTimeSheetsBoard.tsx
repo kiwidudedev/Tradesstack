@@ -291,6 +291,21 @@ export function ProjectTimeSheetsBoard() {
       since.setDate(since.getDate() - 120);
       const sinceIso = since.toISOString();
 
+      const purchaseOrdersPromise = isWorkerRole
+        ? memberRow?.id
+          ? supabase.rpc("list_worker_assigned_purchase_orders", {
+              p_organization_id: resolvedOrganizationId,
+              p_project_id: projectRow.id,
+              p_organization_member_id: memberRow.id,
+            })
+          : Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("project_purchase_orders")
+            .select("id, purchase_order_number, purchase_order_title, status")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("project_id", projectRow.id)
+            .order("created_at", { ascending: false });
+
       const [entriesResult, eventsResult, purchaseOrdersResult] = await Promise.all([
         entriesTable
           .select(
@@ -308,12 +323,7 @@ export function ProjectTimeSheetsBoard() {
           .gte("created_at", sinceIso)
           .order("created_at", { ascending: false })
           .limit(MAX_EVENT_ROWS),
-        supabase
-          .from("project_purchase_orders")
-          .select("id, purchase_order_number, purchase_order_title, status")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .order("created_at", { ascending: false }),
+        purchaseOrdersPromise,
       ]);
 
       if (entriesResult.error) {
@@ -335,6 +345,18 @@ export function ProjectTimeSheetsBoard() {
         purchase_order_number: entry.purchase_order_number?.trim() || "",
         purchase_order_title: entry.purchase_order_title?.trim() || "",
       }));
+      const normalizedPurchaseOrders = ((purchaseOrdersResult.data ?? []) as Array<Record<string, unknown>>).map((purchaseOrder) => ({
+        id: typeof purchaseOrder.id === "string" ? purchaseOrder.id : "",
+        purchase_order_number:
+          typeof purchaseOrder.purchase_order_number === "string" ? purchaseOrder.purchase_order_number.trim() : "",
+        purchase_order_title:
+          typeof purchaseOrder.purchase_order_title === "string"
+            ? purchaseOrder.purchase_order_title.trim()
+            : typeof purchaseOrder.title === "string"
+              ? purchaseOrder.title.trim()
+              : "",
+        status: typeof purchaseOrder.status === "string" ? purchaseOrder.status : "Draft",
+      }));
 
       setContext({
         organizationId: resolvedOrganizationId,
@@ -344,7 +366,7 @@ export function ProjectTimeSheetsBoard() {
       });
       setEntries(normalizedEntries);
       setEvents((eventsResult.data ?? []) as TimeEventRow[]);
-      setPurchaseOrders((purchaseOrdersResult.data ?? []) as PurchaseOrderOption[]);
+      setPurchaseOrders(normalizedPurchaseOrders.filter((purchaseOrder) => purchaseOrder.id));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load time sheets.");
     } finally {
@@ -366,11 +388,18 @@ export function ProjectTimeSheetsBoard() {
       return;
     }
 
+    if (purchaseOrders.length === 1) {
+      if (selectedPurchaseOrderId !== purchaseOrders[0]?.id) {
+        setSelectedPurchaseOrderId(purchaseOrders[0]?.id ?? "");
+      }
+      return;
+    }
+
     if (selectedPurchaseOrderId && purchaseOrders.some((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId)) {
       return;
     }
 
-    setSelectedPurchaseOrderId(purchaseOrders[0]?.id ?? "");
+    setSelectedPurchaseOrderId("");
   }, [isWorkerRole, purchaseOrders, selectedPurchaseOrderId]);
 
   useEffect(() => {
@@ -397,8 +426,12 @@ export function ProjectTimeSheetsBoard() {
     setError(null);
 
     try {
+      if (isWorkerRole && purchaseOrders.length === 0) {
+        throw new Error("No purchase order has been assigned to you for this project. Please contact your manager.");
+      }
+
       if (isWorkerRole && !selectedPurchaseOrder) {
-        throw new Error("Select a purchase order before clocking in.");
+        throw new Error("Select one of your assigned purchase orders before clocking in.");
       }
 
       const location = await captureLocation();
@@ -739,19 +772,28 @@ export function ProjectTimeSheetsBoard() {
             <div className="flex flex-wrap items-center gap-2">
               <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>Site Clocking</p>
               {isWorkerRole ? (
-                <select
-                  value={selectedPurchaseOrderId}
-                  onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
-                  disabled={isSaving || Boolean(activeMyEntry)}
-                  className={`${interMedium.className} h-9 min-w-[240px] rounded-[8px] border border-[#D6DDE9] bg-white px-3 text-[12px] font-medium text-[#1D2433] disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#94A3B8]`}
-                >
-                  <option value="">Select purchase order</option>
-                  {purchaseOrders.map((purchaseOrder) => (
-                    <option key={purchaseOrder.id} value={purchaseOrder.id}>
-                      {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
-                    </option>
-                  ))}
-                </select>
+                purchaseOrders.length === 1 && selectedPurchaseOrder ? (
+                  <div className="flex min-h-9 min-w-[240px] items-center rounded-[8px] border border-[#D6DDE9] bg-[#F8F9FB] px-3">
+                    <span className={`${interMedium.className} text-[12px] font-medium text-[#1D2433]`}>
+                      Assigned PO: {selectedPurchaseOrder.purchase_order_number} -{" "}
+                      {selectedPurchaseOrder.purchase_order_title || "Untitled purchase order"}
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedPurchaseOrderId}
+                    onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
+                    disabled={isSaving || Boolean(activeMyEntry)}
+                    className={`${interMedium.className} h-9 min-w-[240px] rounded-[8px] border border-[#D6DDE9] bg-white px-3 text-[12px] font-medium text-[#1D2433] disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#94A3B8]`}
+                  >
+                    <option value="">Select purchase order</option>
+                    {purchaseOrders.map((purchaseOrder) => (
+                      <option key={purchaseOrder.id} value={purchaseOrder.id}>
+                        {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
+                      </option>
+                    ))}
+                  </select>
+                )
               ) : null}
               <Button
                 type="button"
@@ -769,6 +811,11 @@ export function ProjectTimeSheetsBoard() {
               </Button>
             </div>
           </div>
+          {isWorkerRole && purchaseOrders.length === 0 ? (
+            <p className={`${interMedium.className} mt-3 text-[13px] font-medium text-amber-700`}>
+              No purchase order has been assigned to you for this project. Please contact your manager.
+            </p>
+          ) : null}
           <div className="mt-3 grid gap-2 md:grid-cols-3">
             <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
               {tradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
