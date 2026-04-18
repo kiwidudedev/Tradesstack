@@ -87,13 +87,11 @@ function numberOrZero(value: number | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function calculateVariationTotal(row: VariationRegisterRow, baseSubtotal: number) {
+function calculateVariationPreGstTotal(row: VariationRegisterRow, baseSubtotal: number) {
   const margin = baseSubtotal * (numberOrZero(row.margin_percent) / 100);
   const contingency = numberOrZero(row.contingency_amount);
   const discount = numberOrZero(row.discount_amount);
-  const preGstTotal = Math.max(0, baseSubtotal + margin + contingency - discount);
-  const gst = preGstTotal * (numberOrZero(row.gst_percent) / 100);
-  return preGstTotal + gst;
+  return Math.max(0, baseSubtotal + margin + contingency - discount);
 }
 
 export default function ProjectVariationRegisterPage() {
@@ -191,7 +189,7 @@ export default function ProjectVariationRegisterPage() {
             totalsById = new Map<string, number>(
               variationRows.map((row) => {
                 const baseSubtotal = baseSubtotalById.get(row.id) ?? 0;
-                return [row.id, calculateVariationTotal(row, baseSubtotal)];
+                return [row.id, calculateVariationPreGstTotal(row, baseSubtotal)];
               })
             );
           } else {
@@ -337,7 +335,7 @@ export default function ProjectVariationRegisterPage() {
                       <th className="w-[120px] px-4 py-2.5 text-left">Status</th>
                       <th className="w-[110px] px-4 py-2.5 text-left">Requested</th>
                       <th className="w-[90px] px-4 py-2.5 text-left">Due</th>
-                      <th className="w-[110px] px-4 py-2.5 text-left">Value</th>
+                      <th className="w-[140px] px-4 py-2.5 text-left">Value (excl. GST)</th>
                       <th className="w-[52px] px-3 py-2.5" />
                     </tr>
                   </thead>
@@ -434,7 +432,7 @@ export default function ProjectVariationRegisterPage() {
             {/* Total Value */}
             <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
               <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
-                <span>Total</span>
+                <span>Total (excl. GST)</span>
                 <span>{toMoney(totalVariationValue)}</span>
               </p>
             </div>

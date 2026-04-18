@@ -25,7 +25,7 @@ const PROJECT_TOP_NAV_ITEMS = [
   { label: "Tasks", segment: "job-management/todos", icon: ClipboardCheck },
   { label: "Variations", segment: "preconstruction/variations", icon: WandSparkles },
   { label: "Purchase Orders", segment: "preconstruction/purchase-orders", icon: FileSpreadsheet },
-  { label: "Financials", segment: "preconstruction/claims", icon: DollarSign },
+  { label: "Payment Claim", segment: "preconstruction/claims", icon: DollarSign },
   { label: "Files", segment: "drawing-intelligence", icon: FolderOpen },
   { label: "Timesheets", segment: "job-management/time-sheets", icon: TimerReset },
   { label: "Health & Safety", segment: "job-management/quality-assurance", icon: ShieldCheck },

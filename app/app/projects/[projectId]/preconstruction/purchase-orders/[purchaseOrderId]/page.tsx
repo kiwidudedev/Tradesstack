@@ -14,11 +14,11 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import styles from "@/components/app/trade-pack-builder.module.css";
@@ -138,7 +138,7 @@ const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approve
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work", "Plant / Equipment Hire", "Site Expense", "Freight / Delivery", "Variation Order", "General Purchase", "Other"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
 const NEW_SUPPLIER_OPTION = "__new_supplier__";
-const LINE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 130px 78px 78px 110px 110px";
+const LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 140px 120px 72px 72px 104px 104px";
 const PURCHASE_ORDER_ATTACHMENTS_BUCKET = "project-variation-attachments";
 
 function DescriptionInputWithPreview({
@@ -150,25 +150,13 @@ function DescriptionInputWithPreview({
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
-  const hasContent = value.trim().length > 0;
-
   return (
-    <div className="group relative">
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 min-w-[200px] rounded-[6px]"
-        disabled={disabled}
-      />
-      {hasContent ? (
-        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-          <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
-            Full Description
-          </p>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium leading-relaxed text-[#1F2E45]`}>{value}</p>
-        </div>
-      ) : null}
-    </div>
+    <Input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent"
+      disabled={disabled}
+    />
   );
 }
 
@@ -294,6 +282,18 @@ function normalizeOrigin(value: string): VariationOrigin {
   return "Other";
 }
 
+function purchaseOrderStatusBadgeClass(status: VariationStatus): string {
+  switch (status) {
+    case "Approved": return "border-[#BBF7D0] bg-[#DCFCE7] text-[#15803D]";
+    case "Cancelled": return "border-[#FECACA] bg-[#FEE2E2] text-[#DC2626]";
+    case "Invoiced": return "border-[#BFDBFE] bg-[#DBEAFE] text-[#1D4ED8]";
+    case "Issued": return "border-[#BFDBFE] bg-[#DBEAFE] text-[#1D4ED8]";
+    case "Pending Approval": return "border-[#FDE68A] bg-[#FEF3C7] text-[#92400E]";
+    case "Received": return "border-[#C7D2FE] bg-[#EEF2FF] text-[#4338CA]";
+    default: return "border-[#D7E1EC] bg-[#FBFEFE] text-[#4B5D79]";
+  }
+}
+
 export default function ProjectVariationsPage() {
   const params = useParams<{ projectId: string; purchaseOrderId: string }>();
   const routeProjectSlug = params?.projectId;
@@ -341,8 +341,6 @@ export default function ProjectVariationsPage() {
   });
   const [hydratedPurchaseOrderIds, setHydratedPurchaseOrderIds] = useState<Set<string>>(new Set());
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
-  const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
-  const [isDocsOpen, setIsDocsOpen] = useState(true);
   const isCreatingPurchaseOrderRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const hydratingPurchaseOrderIdsRef = useRef<Set<string>>(new Set());
@@ -834,6 +832,7 @@ export default function ProjectVariationsPage() {
       grandTotal,
     };
   }, [activeVariation]);
+  const purchaseOrderPreGstTotal = Math.max(0, pricingSummary.grandTotal - pricingSummary.gst);
   const isActiveVariationHydrated = activeVariation ? hydratedPurchaseOrderIds.has(activeVariation.id) : false;
 
   const createPurchaseOrder = useCallback(async () => {
@@ -1686,27 +1685,28 @@ export default function ProjectVariationsPage() {
 
   if (isLoadingVariations) {
     return (
-      <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
         <section className={styles.heroBlock}>
-          <div>
-            <h1 className={styles.heroTitle}>Purchase Order</h1>
-            <p className={`${interMedium.className} ${styles.heroSummary}`}>Manage procurement, approvals, and supplier scope for this job</p>
+          <div className="space-y-3">
+            <h1 className={styles.quotePageTitle}>Purchase Order</h1>
           </div>
-          <div className={styles.heroActions}>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="outline"
               disabled
-              className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px] opacity-60`}
+              className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] opacity-60`}
             >
-              Actions
-              <ChevronDown className="ml-1 h-4 w-4" />
+              Save Purchase Order
+            </Button>
+            <Button type="button" disabled className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white opacity-60`}>
+              Export PDF
             </Button>
           </div>
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+          <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-4">
               <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="grid gap-3 md:grid-cols-3">
@@ -1721,45 +1721,68 @@ export default function ProjectVariationsPage() {
               <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading purchase orders...</p>
             </div>
           </div>
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5">
-              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pb-5">
+          <div className={`${styles.quotePanelCard} overflow-hidden`}>
+            <div className="px-5 pb-3 pt-5">
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</h2>
+            </div>
+            <div className="space-y-3 px-5 pb-5">
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`${styles.scope} -mb-8 space-y-6`}>
+    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
       <section className={styles.heroBlock}>
-        <div>
-          <h1 className={styles.heroTitle}>Purchase Order</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>Manage procurement, approvals, and supplier scope for this job</p>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={styles.quotePageTitle}>{activeVariation?.code || "Purchase Order"}</h1>
+            {activeVariation ? (
+              <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] ${purchaseOrderStatusBadgeClass(activeVariation.status)}`}>
+                {activeVariation.status}
+              </span>
+            ) : null}
+          </div>
+          {saveMessage ? <p className={`${styles.quoteBodyLabel} text-xs`}>{saveMessage}</p> : null}
         </div>
-        <div className={styles.heroActions}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void saveVariation()}
+            disabled={!canManagePurchaseOrder || isSaving}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
+          >
+            {isSaving ? "Saving..." : "Save Purchase Order"}
+          </Button>
+          <Button
+            type="button"
+            onClick={exportVariationPdf}
+            disabled={isSaving}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
+          >
+            Export PDF
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
-                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569]`}
               >
-                Actions
-                <ChevronDown className="ml-1 h-4 w-4" />
+                <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[240px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+            <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[240px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+              <DropdownMenuItem asChild className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
                 <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders`}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
+                  <ExternalLink className="mr-2 h-4 w-4 text-[#64748B]" />
                   Purchase Order Dashboard
                 </Link>
               </DropdownMenuItem>
@@ -1769,40 +1792,21 @@ export default function ProjectVariationsPage() {
                   void createPurchaseOrder();
                 }}
                 disabled={!canManagePurchaseOrder}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4 text-[#64748B]" />
                 New Purchase Order
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void saveVariation();
-                }}
-                disabled={!canManagePurchaseOrder || isSaving}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
-              >
-                {isSaving ? "Saving..." : "Save Purchase Order"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  exportVariationPdf();
-                }}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
-              >
-                Export PDF
               </DropdownMenuItem>
               {activeVariation ? (
                 <>
-                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
                   <DropdownMenuItem
                     onSelect={(event) => {
                       event.preventDefault();
                       void deletePurchaseOrder(activeVariation.id);
                     }}
                     disabled={!canManagePurchaseOrder || isDeleting}
-                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                    className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]`}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -1822,22 +1826,21 @@ export default function ProjectVariationsPage() {
           You can review this purchase order, but only owner, admin, QS, and project manager roles can edit or delete it.
         </p>
       ) : null}
-      {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
       {hasVariations && activeVariation ? (
       isActiveVariationHydrated ? (
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
-        <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
-          <section className="border-b border-[#E8EDF5] py-5">
-            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Purchase Order Details</h2>
+      <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE]">
+        <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
+          <section className="border-b border-[#E8EDF5] pb-5">
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Purchase Order Details</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Purchase order title</label>
+                  <label className={styles.quoteBodyLabel}>Purchase order title</label>
                   <Input value={activeVariation.title} onChange={(event) => updateActiveVariation("title", event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
+                  <label className={styles.quoteBodyLabel}>Status</label>
                   <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
@@ -1845,19 +1848,19 @@ export default function ProjectVariationsPage() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Purchase Order Number</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Purchase Order Number</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>PO Type</label>
+                  <label className={styles.quoteBodyLabel}>PO Type</label>
                   <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     {ORIGIN_OPTIONS.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
                   </select>
                 </div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Raised By</label><Input value={activeVariation.requestedBy} onChange={(event) => updateActiveVariation("requestedBy", event.target.value)} className="h-10 rounded-[6px]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Raised By</label><Input value={activeVariation.requestedBy} onChange={(event) => updateActiveVariation("requestedBy", event.target.value)} className="h-10 rounded-[6px]" /></div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Issued To</label>
+                  <label className={styles.quoteBodyLabel}>Issued To</label>
                   <div className="relative">
                     <Input
                       value={supplierSearchQuery}
@@ -1919,22 +1922,45 @@ export default function ProjectVariationsPage() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assigned Worker</label>
+                  <label className={styles.quoteBodyLabel}>Assigned Worker</label>
                   <div className="relative">
-                    <Input
-                      value={assignedWorkerSearchQuery}
-                      onFocus={() => setIsAssignedWorkerMenuOpen(true)}
-                      onBlur={() => {
-                        window.setTimeout(() => setIsAssignedWorkerMenuOpen(false), 100);
-                      }}
-                      onChange={(event) => {
-                        setAssignedWorkerSearchQuery(event.target.value);
-                        setIsAssignedWorkerMenuOpen(true);
-                      }}
-                      disabled={!canManagePurchaseOrder || isLoadingAssignedWorkers}
-                      className="h-10 rounded-[6px]"
-                      placeholder="Search workers..."
-                    />
+                    <div className="min-h-10 rounded-[6px] border border-[#d1d9e6] bg-[#FBFEFE] px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {assignedWorkers.map((member) => {
+                          const isPending = assignmentPendingMemberIds.has(member.organization_member_id);
+                          return (
+                            <div key={member.id} className="flex items-center gap-1.5">
+                              <span className="font-body text-sm font-normal text-text">{member.display_name}</span>
+                              <button
+                                type="button"
+                                disabled={!canManagePurchaseOrder || isPending}
+                                onClick={() => {
+                                  void toggleAssignedWorker(member.organization_member_id, false);
+                                }}
+                                className="font-body text-sm font-normal leading-none text-text-muted hover:text-[#B42318] disabled:cursor-not-allowed disabled:text-[#94A3B8]"
+                                aria-label={`Remove ${member.display_name}`}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <Input
+                          value={assignedWorkerSearchQuery}
+                          onFocus={() => setIsAssignedWorkerMenuOpen(true)}
+                          onBlur={() => {
+                            window.setTimeout(() => setIsAssignedWorkerMenuOpen(false), 100);
+                          }}
+                          onChange={(event) => {
+                            setAssignedWorkerSearchQuery(event.target.value);
+                            setIsAssignedWorkerMenuOpen(true);
+                          }}
+                          disabled={!canManagePurchaseOrder || isLoadingAssignedWorkers}
+                          className="h-6 min-w-[160px] flex-1 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                          placeholder="Search workers..."
+                        />
+                      </div>
+                    </div>
                     {isAssignedWorkerMenuOpen ? (
                       <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[#d1d9e6] bg-white shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
                         {filteredAssignableWorkers.length > 0 ? (
@@ -1967,57 +1993,31 @@ export default function ProjectVariationsPage() {
                       </div>
                     ) : null}
                   </div>
-                  {assignedWorkers.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {assignedWorkers.map((member) => {
-                        const isPending = assignmentPendingMemberIds.has(member.organization_member_id);
-                        return (
-                          <div
-                            key={member.id}
-                            className="flex items-center gap-1.5 rounded-full border border-[#D6DFEB] bg-[#F8F9FC] px-3 py-1"
-                          >
-                            <span className={`${interMedium.className} text-xs text-[#1D2433]`}>{member.display_name}</span>
-                            <button
-                              type="button"
-                              disabled={!canManagePurchaseOrder || isPending}
-                              onClick={() => {
-                                void toggleAssignedWorker(member.organization_member_id, false);
-                              }}
-                              className={`${interMedium.className} text-[11px] font-semibold leading-none text-[#64748B] hover:text-[#B42318] disabled:cursor-not-allowed disabled:text-[#94A3B8]`}
-                              aria-label={`Remove ${member.display_name}`}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
                 </div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Supplier Contact</label>
+                  <label className={styles.quoteBodyLabel}>Supplier Contact</label>
                   <Input value={activeVariation.supplierContact} onChange={(event) => updateActiveVariation("supplierContact", event.target.value)} className="h-10 rounded-[6px]" placeholder="Contact name, email, or phone" />
                 </div>
               </div>
 
               {activeVariation.issuedToSupplierId === NEW_SUPPLIER_OPTION ? (
                 <div className="rounded-[6px] border border-[#d7deea] bg-[#f8faff] p-3">
-                  <p className={`${interMedium.className} mb-3 text-sm font-semibold text-[#1d2433]`}>Add New Supplier</p>
+                  <p className={styles.quoteCardTitle}>Add New Supplier</p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1.5">
-                      <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Contact Name</label>
+                      <label className={styles.quoteBodyLabel}>Contact Name</label>
                       <Input value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} className="h-10 rounded-[6px]" placeholder="Account contact or trading name" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Company name</label>
+                      <label className={styles.quoteBodyLabel}>Company name</label>
                       <Input value={newSupplierCompanyName} onChange={(event) => setNewSupplierCompanyName(event.target.value)} className="h-10 rounded-[6px]" placeholder="Supplier company" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Email</label>
+                      <label className={styles.quoteBodyLabel}>Email</label>
                       <Input type="email" value={newSupplierEmail} onChange={(event) => setNewSupplierEmail(event.target.value)} className="h-10 rounded-[6px]" placeholder="accounts@supplier.com" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Phone</label>
+                      <label className={styles.quoteBodyLabel}>Phone</label>
                       <Input value={newSupplierPhone} onChange={(event) => setNewSupplierPhone(event.target.value)} className="h-10 rounded-[6px]" placeholder="+64 21 123 4567" />
                     </div>
                   </div>
@@ -2025,53 +2025,98 @@ export default function ProjectVariationsPage() {
               ) : null}
 
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested Date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Requested Date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
               </div>
             </div>
           </section>
 
-          <section className="border-b border-[#E8EDF5] py-5">
-            <button type="button" onClick={() => setIsCostBuildUpOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isCostBuildUpOpen ? "rotate-180" : ""}`} />
-            </button>
+          <section className="py-5">
+            <div className="flex items-center justify-between">
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Line Items</h2>
+              <div className="h-10" />
+            </div>
 
-            {isCostBuildUpOpen ? (
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[8px] bg-[#0B2739] px-3 text-sm font-medium text-white hover:bg-[#0B2739]`}><Plus className="mr-1 h-4 w-4" />Add Item</Button>
-                </div>
-
-                <div className="rounded-[6px] border border-[#E5EAF2] overflow-visible">
-                  <div className={`${interMedium.className} grid items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089]`} style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
-                    <span>Description</span><span>Section</span><span>Qty</span><span>Unit</span><span>Rate</span><span className="text-right">Total</span>
+            <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+              <div>
+                <div>
+                  <div
+                    className={`${interMedium.className} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+                    style={{ gridTemplateColumns: `${LINE_GRID_TEMPLATE} 44px` }}
+                  >
+                    <span className="px-3 py-2.5 font-semibold">Description</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Source</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Item</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Qty.</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Unit</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Price</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Amount</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5" />
                   </div>
-
-                  <div className="divide-y divide-[#EEF2F7]">
+                  <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                     {activeVariation.costLines.map((line) => (
-                      <div key={line.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
-                        <DescriptionInputWithPreview
-                          value={line.description}
-                          onChange={(value) => updateCostLine(line.id, "description", value)}
-                          disabled={Boolean(line.sourceTimeSheetEntryId)}
-                        />
-                        <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} disabled={Boolean(line.sourceTimeSheetEntryId)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433] disabled:cursor-not-allowed disabled:bg-[#EEF2F7] disabled:text-[#7A889C]`}>
-                          {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
-                        </select>
-                        <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} disabled={Boolean(line.sourceTimeSheetEntryId)} className="h-10 w-[72px] rounded-[6px] px-2 disabled:bg-[#EEF2F7] disabled:text-[#7A889C]" />
-                        <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} disabled={Boolean(line.sourceTimeSheetEntryId)} className="h-10 w-[72px] rounded-[6px] px-2 disabled:bg-[#EEF2F7] disabled:text-[#7A889C]" />
-                        <div className="relative w-[100px]">
-                          <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                          <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-10 w-[100px] rounded-[6px] pl-6 pr-2" />
+                      <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${LINE_GRID_TEMPLATE} 44px` }}>
+                        <div className="flex items-center px-3 py-1.5">
+                          <DescriptionInputWithPreview
+                            value={line.description}
+                            onChange={(value) => updateCostLine(line.id, "description", value)}
+                            disabled={Boolean(line.sourceTimeSheetEntryId)}
+                          />
                         </div>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineTotal(line))}</div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <span className={`${interMedium.className} text-[12px] text-[#64748B]`}>
+                            {line.sourceTimeSheetEntryId ? "Synced from timesheet" : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <select
+                            value={line.section}
+                            onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)}
+                            disabled={Boolean(line.sourceTimeSheetEntryId)}
+                            className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:cursor-not-allowed disabled:!bg-transparent disabled:text-[#7A889C]`}
+                          >
+                            {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <Input
+                            type="number"
+                            value={line.quantity}
+                            onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))}
+                            disabled={Boolean(line.sourceTimeSheetEntryId)}
+                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]"
+                          />
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <Input
+                            value={line.unit}
+                            onChange={(event) => updateCostLine(line.id, "unit", event.target.value)}
+                            disabled={Boolean(line.sourceTimeSheetEntryId)}
+                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]"
+                          />
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <div className="relative w-full">
+                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                            <Input
+                              type="number"
+                              value={line.rate === 0 ? "" : line.rate}
+                              onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))}
+                              disabled={Boolean(line.sourceTimeSheetEntryId) ? !canManagePurchaseOrder : false}
+                              className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]"
+                              title={line.sourceTimeSheetEntryId ? "Synced from timesheet: rate is editable, other fields are locked." : undefined}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
+                          <div className={`${interMedium.className} text-right text-sm text-[#1d2433]`}>{toMoney(lineTotal(line))}</div>
+                        </div>
+                        <div className="flex items-center justify-center border-l border-[#EEF2F7] px-0 py-1.5">
                           <Button
                             type="button"
                             variant="ghost"
                             onClick={() => removeCostLine(line.id)}
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[#9AA8BC]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[#B42318] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-40"
                             aria-label="Delete line item"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -2082,17 +2127,28 @@ export default function ProjectVariationsPage() {
                   </div>
                 </div>
               </div>
-            ) : null}
+            </div>
+
+            <div className="mt-2 flex justify-end pr-12">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => addCostLine("Labour")}
+                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[#4B5D79] shadow-none hover:bg-transparent hover:text-[#22324A] focus-visible:outline-none focus-visible:ring-0`}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add Item
+              </Button>
+            </div>
           </section>
 
-          <section className="py-5">
-            <button type="button" onClick={() => setIsDocsOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Attachments & Notes</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isDocsOpen ? "rotate-180" : ""}`} />
-            </button>
+          <div className="border-t border-[#E8EDF5] py-6">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+              <div>
+                <section className="pt-0">
+                  <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Attachments & Notes</h2>
 
-            {isDocsOpen ? (
-              <div className="mt-4 space-y-4">
+                  <div className="mt-4 space-y-4">
                 <input
                   ref={attachmentInputRef}
                   type="file"
@@ -2108,13 +2164,13 @@ export default function ProjectVariationsPage() {
                   }
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Site Instruction")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
+                  <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
+                  <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
+                  <Button type="button" variant="outline" onClick={() => addAttachment("Site Instruction")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
                 </div>
 
                 <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
-                  <p className={`${interMedium.className} mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Linked Documentation</p>
+                  <label className={styles.quoteBodyLabel}>Linked Documentation</label>
                   <div className="space-y-2">
                     {activeVariation.attachments.map((attachment) => (
                       <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
@@ -2139,7 +2195,7 @@ export default function ProjectVariationsPage() {
 
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <label className={`${interMedium.className} block text-xs font-medium text-[#64748B]`}>Purchase order notes</label>
+                    <label className={styles.quoteBodyLabel}>Purchase order notes</label>
                     <Button
                       type="button"
                       variant="ghost"
@@ -2153,16 +2209,14 @@ export default function ProjectVariationsPage() {
                   <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
               </div>
-            ) : null}
-          </section>
-        </div>
+                </section>
+              </div>
 
-        <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5"><CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle></CardHeader>
-            <CardContent className="space-y-3 pb-5">
+              <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
+            <div className="space-y-5">
               <div className="grid gap-2">
-                <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>GST (%)</label>
+                <label className={styles.quoteBodyLabel}>GST (%)</label>
                 <Input
                   type="number"
                   value={activeVariation.gstPercent}
@@ -2173,14 +2227,16 @@ export default function ProjectVariationsPage() {
 
               <div className="h-px bg-[#E7ECF3]" />
 
-              <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span>{toMoney(pricingSummary.baseSubtotal)}</span></p>
-                <div className="my-1 h-px bg-[#CBD5E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({activeVariation.gstPercent.trim() || "15"}%)</span><span>{toMoney(pricingSummary.gst)}</span></p>
-              </div>
-              <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
-                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Purchase Order Price (incl. GST)</p>
-                <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
+              <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                <div className={`${interMedium.className} space-y-3 text-sm`}>
+                  <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span className="font-medium text-[#1d2433]">{toMoney(purchaseOrderPreGstTotal)}</span></p>
+                  <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({activeVariation.gstPercent.trim() || "15"}%)</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span></p>
+                  <div className="h-px bg-[#E7ECF3]" />
+                  <p className="flex items-center justify-between pt-1">
+                    <span className="text-[15px] font-semibold text-[#1d2433]">Total (incl. GST)</span>
+                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2 pt-1">
@@ -2197,13 +2253,15 @@ export default function ProjectVariationsPage() {
                   Export PDF
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+        <div className="space-y-6">
+          <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-4">
               <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="grid gap-3 md:grid-cols-3">
@@ -2215,19 +2273,19 @@ export default function ProjectVariationsPage() {
                 <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
                 <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               </div>
-              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading purchase order details...</p>
+              <p className={`${styles.quoteBodyLabel} pt-2`}>Loading purchase order details...</p>
             </div>
           </div>
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5">
-              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pb-5">
+          <div className={`${styles.quotePanelCard} overflow-hidden`}>
+            <div className="border-b border-[#E8EDF5] px-5 py-4">
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</h2>
+            </div>
+            <div className="space-y-3 px-5 py-5">
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )
       ) : (

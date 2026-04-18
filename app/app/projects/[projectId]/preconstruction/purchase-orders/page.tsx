@@ -21,8 +21,20 @@ interface PurchaseOrderRegisterRow {
   status: PurchaseOrderStatus;
   requested_date: string | null;
   due_date: string | null;
+  subtotal: number | null;
+  margin_percent: number | null;
+  discount_amount: number | null;
+  contingency_amount: number | null;
   total_purchase_order_price: number | null;
   updated_at: string;
+}
+
+function calculatePurchaseOrderPreGstTotal(row: PurchaseOrderRegisterRow) {
+  const subtotal = Number(row.subtotal ?? 0);
+  const marginPercent = Number(row.margin_percent ?? 0);
+  const discountAmount = Number(row.discount_amount ?? 0);
+  const contingencyAmount = Number(row.contingency_amount ?? 0);
+  return Math.max(0, subtotal + subtotal * (marginPercent / 100) + contingencyAmount - discountAmount);
 }
 
 function toMoney(value: number) {
@@ -135,7 +147,7 @@ export default function ProjectVariationRegisterPage() {
         const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
 
         const { data: purchaseOrdersRaw, error: purchaseOrdersError } = await purchaseOrdersTable
-          .select("id, purchase_order_number, purchase_order_title, issued_to_label, status, requested_date, due_date, total_purchase_order_price, updated_at")
+          .select("id, purchase_order_number, purchase_order_title, issued_to_label, status, requested_date, due_date, subtotal, margin_percent, discount_amount, contingency_amount, total_purchase_order_price, updated_at")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
           .order("updated_at", { ascending: false });
@@ -173,7 +185,7 @@ export default function ProjectVariationRegisterPage() {
   }, [routeProjectSlug, sessionOrganizationId, supabase]);
 
   const totalPurchaseOrderValue = useMemo(() => {
-    return purchaseOrderRows.reduce((sum, row) => sum + (row.total_purchase_order_price ?? 0), 0);
+    return purchaseOrderRows.reduce((sum, row) => sum + calculatePurchaseOrderPreGstTotal(row), 0);
   }, [purchaseOrderRows]);
 
   const createPurchaseOrderAndOpen = useCallback(async () => {
@@ -284,7 +296,7 @@ export default function ProjectVariationRegisterPage() {
                       <th className="w-[150px] px-4 py-2.5 text-left">Issued To</th>
                       <th className="w-[140px] px-4 py-2.5 text-left">Status</th>
                       <th className="w-[110px] px-4 py-2.5 text-left">Requested</th>
-                      <th className="w-[110px] px-4 py-2.5 text-left">Value</th>
+                      <th className="w-[140px] px-4 py-2.5 text-left">Value (excl. GST)</th>
                       <th className="w-[52px] px-3 py-2.5" />
                     </tr>
                   </thead>
@@ -329,7 +341,7 @@ export default function ProjectVariationRegisterPage() {
                           {toDayMonthYearLabel(row.requested_date)}
                         </td>
                         <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
-                          {toMoney(row.total_purchase_order_price ?? 0)}
+                          {toMoney(calculatePurchaseOrderPreGstTotal(row))}
                         </td>
                         <td className="px-2 py-3">
                           <div className="flex items-center justify-center">
@@ -378,7 +390,7 @@ export default function ProjectVariationRegisterPage() {
             {/* Total Value */}
             <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
               <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
-                <span>Total</span>
+                <span>Total (excl. GST)</span>
                 <span>{toMoney(totalPurchaseOrderValue)}</span>
               </p>
             </div>

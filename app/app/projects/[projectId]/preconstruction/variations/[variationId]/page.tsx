@@ -40,6 +40,11 @@ interface CostLine {
   sourcePurchaseOrderNumber?: string;
 }
 
+type CostLineIdentityFields = Pick<
+  CostLine,
+  "section" | "description" | "quantity" | "unit" | "rate" | "sourcePurchaseOrderLineItemId"
+>;
+
 interface AttachmentItem {
   id: string;
   name: string;
@@ -197,6 +202,74 @@ function lineTotal(line: CostLine) {
   return line.quantity * line.rate;
 }
 
+function getCostLineSignature(line: CostLineIdentityFields) {
+  return [
+    line.section,
+    line.description.trim(),
+    Number(line.quantity ?? 0).toFixed(6),
+    line.unit.trim(),
+    Number(line.rate ?? 0).toFixed(6),
+  ].join("::");
+}
+
+function normalizeCostLineId(line: CostLine) {
+  return line.id.trim();
+}
+
+function reconcileVariationCostLineIds(currentLines: CostLine[], persistedLines: CostLine[]) {
+  const persistedById = new Map(
+    persistedLines
+      .map((line) => [normalizeCostLineId(line), line] as const)
+      .filter(([id]) => id.length > 0)
+  );
+  const persistedBySourceLineId = new Map<string, CostLine[]>();
+  const persistedBySignature = new Map<string, CostLine[]>();
+
+  persistedLines.forEach((line) => {
+    if (line.sourcePurchaseOrderLineItemId) {
+      const existingBySource = persistedBySourceLineId.get(line.sourcePurchaseOrderLineItemId) ?? [];
+      existingBySource.push(line);
+      persistedBySourceLineId.set(line.sourcePurchaseOrderLineItemId, existingBySource);
+    }
+
+    const signature = getCostLineSignature(line);
+    const existingBySignature = persistedBySignature.get(signature) ?? [];
+    existingBySignature.push(line);
+    persistedBySignature.set(signature, existingBySignature);
+  });
+
+  const claimedPersistedIds = new Set<string>();
+
+  return currentLines.map((line) => {
+    const normalizedId = normalizeCostLineId(line);
+    if (normalizedId.length > 0 && persistedById.has(normalizedId)) {
+      claimedPersistedIds.add(normalizedId);
+      return { ...line, id: normalizedId };
+    }
+
+    if (line.sourcePurchaseOrderLineItemId) {
+      const sourceMatches = (persistedBySourceLineId.get(line.sourcePurchaseOrderLineItemId) ?? [])
+        .filter((candidate) => !claimedPersistedIds.has(candidate.id));
+      if (sourceMatches.length === 1) {
+        claimedPersistedIds.add(sourceMatches[0].id);
+        return { ...line, id: sourceMatches[0].id };
+      }
+    }
+
+    const signatureMatches = (persistedBySignature.get(getCostLineSignature(line)) ?? [])
+      .filter((candidate) => !claimedPersistedIds.has(candidate.id));
+    if (signatureMatches.length === 1) {
+      claimedPersistedIds.add(signatureMatches[0].id);
+      return { ...line, id: signatureMatches[0].id };
+    }
+
+    return {
+      ...line,
+      id: normalizedId || crypto.randomUUID(),
+    };
+  });
+}
+
 function makeDefaultCostLine(section: CostSection = "Labour"): CostLine {
   return {
     id: crypto.randomUUID(),
@@ -258,6 +331,7 @@ export default function ProjectVariationsPage() {
 
   const [variations, setVariations] = useState<VariationItem[]>([]);
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
+  const persistedCostLinesByVariationRef = useRef<Map<string, CostLine[]>>(new Map());
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
@@ -403,6 +477,7 @@ export default function ProjectVariationsPage() {
       if (variationRows.length === 0) {
         setVariations([]);
         setActiveVariationId(null);
+        persistedCostLinesByVariationRef.current = new Map();
         setPersistedVariationIds(new Set());
         setIsLoadingVariations(false);
         return;
@@ -505,6 +580,13 @@ export default function ProjectVariationsPage() {
         assumptions: row.assumptions ?? "",
       }));
 
+      persistedCostLinesByVariationRef.current = new Map(
+        hydratedVariations.map((variation) => [
+          variation.id,
+          variation.costLines.map((line) => ({ ...line })),
+        ])
+      );
+
       setVariations(hydratedVariations);
       setActiveVariationId((current) => {
         if (routeVariationId && hydratedVariations.some((item) => item.id === routeVariationId)) {
@@ -589,6 +671,7 @@ export default function ProjectVariationsPage() {
       grandTotal,
     };
   }, [activeVariation]);
+  const variationPreGstTotal = Math.max(0, pricingSummary.grandTotal - pricingSummary.gst);
 
   const showMarginBreakout = activeVariation?.includeMarginInExport === true;
 
@@ -663,6 +746,10 @@ export default function ProjectVariationsPage() {
         }
         return [createdVariation, ...current];
       });
+      persistedCostLinesByVariationRef.current.set(
+        createdVariation.id,
+        createdVariation.costLines.map((line) => ({ ...line }))
+      );
       setPersistedVariationIds((current) => new Set([...current, createdVariation.id]));
 
       setActiveVariationId(createdVariation.id);
@@ -844,7 +931,10 @@ export default function ProjectVariationsPage() {
     setSaveMessage(null);
 
     try {
-      const lineItemsPayload = activeVariation.costLines.map((line) => ({
+      const persistedCostLines = persistedCostLinesByVariationRef.current.get(activeVariation.id) ?? [];
+      const reconciledCostLines = reconcileVariationCostLineIds(activeVariation.costLines, persistedCostLines);
+
+      const lineItemsPayload = reconciledCostLines.map((line) => ({
         id: line.id,
         section: line.section,
         description: line.description,
@@ -907,6 +997,17 @@ export default function ProjectVariationsPage() {
         throw new Error("Variation was saved but no result was returned.");
       }
 
+      persistedCostLinesByVariationRef.current.set(
+        activeVariation.id,
+        reconciledCostLines.map((line) => ({ ...line }))
+      );
+      setVariations((current) =>
+        current.map((variation) =>
+          variation.id === activeVariation.id
+            ? { ...variation, costLines: reconciledCostLines }
+            : variation
+        )
+      );
       setPersistedVariationIds((current) => new Set([...current, activeVariation.id]));
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveError) {
@@ -979,6 +1080,7 @@ export default function ProjectVariationsPage() {
 
       const nextRows = variations.filter((item) => item.id !== variationId);
       setVariations(nextRows);
+      persistedCostLinesByVariationRef.current.delete(variationId);
       setPersistedVariationIds((current) => {
         const next = new Set(current);
         next.delete(variationId);
@@ -1453,7 +1555,7 @@ export default function ProjectVariationsPage() {
 
   return (
     <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-<section className={styles.heroBlock}>
+      <section className={styles.heroBlock}>
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className={styles.quotePageTitle}>{activeVariation?.code || "Variation"}</h1>
@@ -1595,7 +1697,7 @@ export default function ProjectVariationsPage() {
                 className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
               >
                 <Plus className="mr-1 h-4 w-4" />
-                Import Scope Items
+                Import PO Items
               </Button>
             </div>
 
@@ -1682,85 +1784,98 @@ export default function ProjectVariationsPage() {
             </div>
 
             {isPurchaseOrderImportOpen ? (
-              <div className="mt-3 rounded-[8px] border border-[#D9DEE5] bg-[#F8F9FC]">
-                <div className="px-3 pb-3 pt-3">
-                  <p className={`${interMedium.className} mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#607089]`}>
-                    Import From Purchase Order
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={selectedPurchaseOrderId}
-                      onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
-                      className={`${interMedium.className} h-10 min-w-[260px] rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                    >
-                      <option value="">Select purchase order</option>
-                      {purchaseOrders.map((purchaseOrder) => (
-                        <option key={purchaseOrder.id} value={purchaseOrder.id}>
-                          {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={importSelectedPurchaseOrderLines}
-                      disabled={selectedPurchaseOrderLineIds.size === 0}
-                      className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                    >
-                      Import Selected PO Lines
-                    </Button>
+              <div className="mt-3 min-h-0 rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8EDF5] pb-4">
+                  <div className="space-y-1">
+                    <h3 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Import From Purchase Order</h3>
+                    <p className={styles.quoteBodyLabel}>Select purchase order lines to add into this variation.</p>
                   </div>
-                  {selectedPurchaseOrder ? (
-                    <div className="mt-3 overflow-hidden rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC]">
-                      <div className={`${interMedium.className} grid grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
-                        <span />
-                        <span>Description</span>
-                        <span>Item</span>
-                        <span>Qty.</span>
-                        <span>Price</span>
-                        <span className="text-right">Amount</span>
-                      </div>
-                      <div className="divide-y divide-[#EEF2F7]">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={importSelectedPurchaseOrderLines}
+                    disabled={selectedPurchaseOrderLineIds.size === 0}
+                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4 disabled:opacity-50`}
+                  >
+                    Import Selected PO Lines
+                  </Button>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <select
+                    value={selectedPurchaseOrderId}
+                    onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
+                    className={`${interMedium.className} h-10 min-w-[260px] flex-1 rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                  >
+                    <option value="">Select purchase order</option>
+                    {purchaseOrders.map((purchaseOrder) => (
+                      <option key={purchaseOrder.id} value={purchaseOrder.id}>
+                        {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedPurchaseOrder ? (
+                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+                    <table className="min-w-full border-collapse">
+                      <thead>
+                        <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                          <th className="w-[44px] px-3 py-2.5 text-left" />
+                          <th className="px-3 py-2.5 text-left">Description</th>
+                          <th className="w-[140px] px-3 py-2.5 text-left">Item</th>
+                          <th className="w-[90px] px-3 py-2.5 text-left">Qty.</th>
+                          <th className="w-[110px] px-3 py-2.5 text-left">Price</th>
+                          <th className="w-[120px] px-3 py-2.5 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                         {selectedPurchaseOrderLineOptions.length > 0 ? (
                           selectedPurchaseOrderLineOptions.map((line) => {
                             const alreadyImported = activeVariation?.costLines.some((costLine) => costLine.sourcePurchaseOrderLineItemId === line.id) ?? false;
                             return (
-                              <label key={line.id} className="grid cursor-pointer grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 px-3 py-2">
-                                <span className="flex items-center justify-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedPurchaseOrderLineIds.has(line.id)}
-                                    onChange={() => togglePurchaseOrderLine(line.id)}
-                                    disabled={alreadyImported}
-                                    className="h-4 w-4 rounded border-[#CBD5E1]"
-                                  />
-                                </span>
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-medium text-[#1d2433]">{line.description || "Untitled line item"}</span>
+                              <tr key={line.id} className="transition-colors">
+                                <td className="px-3 py-3 align-middle">
+                                  <label className="flex items-center justify-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedPurchaseOrderLineIds.has(line.id)}
+                                      onChange={() => togglePurchaseOrderLine(line.id)}
+                                      disabled={alreadyImported}
+                                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                                    />
+                                  </label>
+                                </td>
+                                <td className="min-w-0 px-3 py-3 align-middle">
+                                  <span className={`${interMedium.className} block truncate text-sm font-medium text-[#1d2433]`}>
+                                    {line.description || "Untitled line item"}
+                                  </span>
                                   {alreadyImported ? (
                                     <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[#64748B]`}>
                                       Already imported into this variation
                                     </span>
                                   ) : null}
-                                </span>
-                                <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.section}</span>
-                                <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.quantity}</span>
-                                <span className={`${interMedium.className} text-sm text-[#475569]`}>{toMoney(line.rate)}</span>
-                                <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>
+                                </td>
+                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.section}</td>
+                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.quantity}</td>
+                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{toMoney(line.rate)}</td>
+                                <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[#0F172A] align-middle`}>
                                   {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
-                                </span>
-                              </label>
+                                </td>
+                              </tr>
                             );
                           })
                         ) : (
-                          <p className={`${interMedium.className} px-3 py-3 text-sm text-[#64748B]`}>
-                            No purchase order line items available to import.
-                          </p>
+                          <tr>
+                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[#64748B]`}>
+                              No purchase order line items available to import.
+                            </td>
+                          </tr>
                         )}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -1948,17 +2063,14 @@ export default function ProjectVariationsPage() {
                     <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.margin)}</span></p>
                   ) : null}
                   <div className="h-px bg-[#E7ECF3]" />
-                  <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Subtotal</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.baseSubtotal + pricingSummary.margin)}</span>
-                  </p>
+                  <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span className="font-medium text-[#1d2433]">{toMoney(variationPreGstTotal)}</span></p>
                   <p className="flex items-center justify-between">
                     <span className="text-[#64748B]">Total GST {activeVariation.gstPercent.trim() || "15"}.00%</span>
                     <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span>
                   </p>
                   <div className="h-px bg-[#E7ECF3]" />
                   <p className="flex items-center justify-between pt-1">
-                    <span className="text-[15px] font-semibold text-[#1d2433]">Total</span>
+                    <span className="text-[15px] font-semibold text-[#1d2433]">Total (incl. GST)</span>
                     <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
                   </p>
                 </div>

@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ExternalLink, FileDown, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
+import { ChevronDown, ExternalLink, FileDown, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
@@ -105,6 +104,11 @@ interface ClaimLineItem {
   sortOrder: number;
 }
 
+type ClaimLineIdentity = Pick<
+  ClaimLineItem,
+  "sourceKind" | "sourceDocumentId" | "sourceLineItemId" | "sourceNumber" | "sourceTitle" | "section" | "description" | "quantity" | "unit" | "rate" | "sourceTotal" | "sortOrder"
+>;
+
 function toMoney(value: number) {
   return new Intl.NumberFormat(undefined, {
     style: "currency",
@@ -116,6 +120,111 @@ function toMoney(value: number) {
 function numberOrZero(value: string | number | null | undefined) {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function calculateVariationPreGstTotal(row: Record<string, unknown>) {
+  const subtotal = numberOrZero(row.subtotal);
+  const marginPercent = numberOrZero(row.margin_percent);
+  const discountAmount = numberOrZero(row.discount_amount);
+  const contingencyAmount = numberOrZero(row.contingency_amount);
+  const marginAmount = subtotal * (marginPercent / 100);
+  return Math.max(0, subtotal + marginAmount + contingencyAmount - discountAmount);
+}
+
+function calculateQuotePreGstTotal(row: Record<string, unknown>) {
+  const subtotal = numberOrZero(row.subtotal);
+  const marginPercent = numberOrZero(row.margin_percent);
+  const discountAmount = numberOrZero(row.discount_amount);
+  const contingencyAmount = numberOrZero(row.contingency_amount);
+  const marginAmount = subtotal * (marginPercent / 100);
+  return Math.max(0, subtotal + marginAmount + contingencyAmount - discountAmount);
+}
+
+function getClaimLineSourceKey(row: Pick<ClaimLineItem, "sourceKind" | "sourceLineItemId">) {
+  return `${row.sourceKind}:${row.sourceLineItemId}`;
+}
+
+function getVariationLineMatchSignature(row: Pick<ClaimLineItem, "sourceDocumentId" | "section" | "description" | "quantity" | "unit" | "rate" | "sourceTotal">) {
+  return [
+    row.sourceDocumentId,
+    row.section.trim(),
+    row.description.trim(),
+    numberOrZero(row.quantity).toFixed(6),
+    row.unit.trim(),
+    numberOrZero(row.rate).toFixed(6),
+    numberOrZero(row.sourceTotal).toFixed(6),
+  ].join("::");
+}
+
+function applyCanonicalClaimLineIdentity(row: ClaimLineItem, canonical: ClaimLineIdentity): ClaimLineItem {
+  return {
+    ...row,
+    sourceKind: canonical.sourceKind,
+    sourceDocumentId: canonical.sourceDocumentId,
+    sourceLineItemId: canonical.sourceLineItemId,
+    sourceNumber: canonical.sourceNumber,
+    sourceTitle: canonical.sourceTitle,
+    section: canonical.section,
+    description: canonical.description,
+    quantity: canonical.quantity,
+    unit: canonical.unit,
+    rate: canonical.rate,
+    sourceTotal: canonical.sourceTotal,
+    sortOrder: canonical.sortOrder,
+  };
+}
+
+function normalizeClaimRowsAgainstLiveSource(rows: ClaimLineItem[], liveSourceRows: ClaimLineItem[]) {
+  const liveRowsByKey = new Map(liveSourceRows.map((row) => [getClaimLineSourceKey(row), row]));
+  const liveVariationRowsBySignature = new Map<string, ClaimLineItem[]>();
+
+  liveSourceRows.forEach((row) => {
+    if (row.sourceKind !== "Variation") {
+      return;
+    }
+    const signature = getVariationLineMatchSignature(row);
+    const existing = liveVariationRowsBySignature.get(signature) ?? [];
+    existing.push(row);
+    liveVariationRowsBySignature.set(signature, existing);
+  });
+
+  const normalizedRowsByKey = new Map<string, ClaimLineItem>();
+
+  rows.forEach((row) => {
+    const directMatch = liveRowsByKey.get(getClaimLineSourceKey(row));
+    let canonical = directMatch;
+
+    if (!canonical && row.sourceKind === "Variation") {
+      const signatureMatches = liveVariationRowsBySignature.get(getVariationLineMatchSignature(row)) ?? [];
+      if (signatureMatches.length === 1) {
+        canonical = signatureMatches[0];
+      }
+    }
+
+    if (!canonical) {
+      return;
+    }
+
+    const normalizedRow = applyCanonicalClaimLineIdentity(row, canonical);
+    const normalizedKey = getClaimLineSourceKey(normalizedRow);
+    const existing = normalizedRowsByKey.get(normalizedKey);
+
+    if (!existing) {
+      normalizedRowsByKey.set(normalizedKey, normalizedRow);
+      return;
+    }
+
+    const shouldReplace =
+      normalizedRow.claimPercent > existing.claimPercent
+      || normalizedRow.claimAmount > existing.claimAmount
+      || normalizedRow.previouslyClaimedAmount > existing.previouslyClaimedAmount;
+
+    if (shouldReplace) {
+      normalizedRowsByKey.set(normalizedKey, normalizedRow);
+    }
+  });
+
+  return Array.from(normalizedRowsByKey.values());
 }
 
 function toDayMonthYearLabel(value: string | null) {
@@ -291,12 +400,11 @@ export default function ProjectClaimDetailPage() {
     setNotes(claim.notes ?? "");
   }, []);
 
-  const loadClaimLineItems = useCallback(async (resolvedOrganizationId: string, resolvedClaimId: string) => {
+  const loadClaimSourceRows = useCallback(async (resolvedOrganizationId: string, applyToState = true): Promise<ClaimLineItem[]> => {
     if (!supabase) {
-      return;
+      return [];
     }
 
-    const loadFromSourceDocuments = async (applyToState = true): Promise<ClaimLineItem[]> => {
       const { data: quoteRows } = await supabase
         .from("project_quotes")
         .select("id, quote_number, quote_title, status, updated_at")
@@ -326,10 +434,10 @@ export default function ProjectClaimDetailPage() {
 
       const { data: variationRows } = await supabase
         .from("project_variations")
-        .select("id, variation_number, variation_title, total_variation_price, created_at")
+        .select("id, variation_number, variation_title, subtotal, margin_percent, discount_amount, contingency_amount, created_at")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", projectDbId)
-        .in("status", ["Approved", "Sent", "Invoiced"])
+        .eq("status", "Approved")
         .order("created_at", { ascending: true });
 
       const quoteMapped: ClaimLineItem[] = ((quoteLineItems.data ?? []) as Array<Record<string, unknown>>).map((row, index) => ({
@@ -354,34 +462,44 @@ export default function ProjectClaimDetailPage() {
         sortOrder: numberOrZero(row.sort_order) || index,
       }));
 
-      const variationMapped: ClaimLineItem[] = ((variationRows ?? []) as Array<Record<string, unknown>>).map((row, index) => ({
-        id: `variation-${String(row.id ?? crypto.randomUUID())}`,
-        sourceKind: "Variation",
-        sourceDocumentId: String(row.id ?? ""),
-        sourceLineItemId: String(row.id ?? ""),
-        sourceNumber: String(row.variation_number ?? ""),
-        sourceTitle: String(row.variation_title ?? "Variation"),
-        section: "Item",
-        description: String(row.variation_title ?? "Variation"),
-        quantity: 1,
-        unit: "Item",
-        rate: numberOrZero(row.total_variation_price),
-        sourceTotal: numberOrZero(row.total_variation_price),
-        previouslyClaimedAmount: 0,
-        previouslyClaimedPercent: 0,
-        claimPercent: 0,
-        claimAmount: 0,
-        cumulativeClaimedAmount: 0,
-        cumulativeClaimedPercent: 0,
-        sortOrder: 100000 + index,
-      }));
+      const variationMapped: ClaimLineItem[] = ((variationRows ?? []) as Array<Record<string, unknown>>).map((row, index) => {
+        const variationId = String(row.id ?? "");
+        const preGstTotal = calculateVariationPreGstTotal(row);
+        const variationTitle = String(row.variation_title ?? "Variation");
+        return {
+          id: `variation-${variationId || crypto.randomUUID()}`,
+          sourceKind: "Variation",
+          sourceDocumentId: variationId,
+          sourceLineItemId: variationId,
+          sourceNumber: String(row.variation_number ?? ""),
+          sourceTitle: variationTitle,
+          section: "Item",
+          description: variationTitle,
+          quantity: 1,
+          unit: "Item",
+          rate: preGstTotal,
+          sourceTotal: preGstTotal,
+          previouslyClaimedAmount: 0,
+          previouslyClaimedPercent: 0,
+          claimPercent: 0,
+          claimAmount: 0,
+          cumulativeClaimedAmount: 0,
+          cumulativeClaimedPercent: 0,
+          sortOrder: 100000 + index,
+        };
+      });
 
       const sourceRows = [...quoteMapped, ...variationMapped];
       if (applyToState) {
         setClaimLineItems(sourceRows);
       }
       return sourceRows;
-    };
+  }, [projectDbId, supabase]);
+
+  const loadClaimLineItems = useCallback(async (resolvedOrganizationId: string, resolvedClaimId: string) => {
+    if (!supabase) {
+      return;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claimLineItemsTable = (supabase as any).from("project_claim_line_items");
@@ -392,7 +510,7 @@ export default function ProjectClaimDetailPage() {
       .order("sort_order", { ascending: true });
 
     if (lineItemsError) {
-      await loadFromSourceDocuments(true);
+      await loadClaimSourceRows(resolvedOrganizationId, true);
       return;
     }
 
@@ -419,28 +537,19 @@ export default function ProjectClaimDetailPage() {
     }));
 
     if (nextRows.length === 0) {
-      await loadFromSourceDocuments(true);
+      await loadClaimSourceRows(resolvedOrganizationId, true);
       return;
     }
 
-    const liveSourceRows = await loadFromSourceDocuments(false);
-    const liveVariationKeys = new Set(
-      liveSourceRows
-        .filter((row) => row.sourceKind === "Variation")
-        .map((row) => `Variation:${row.sourceLineItemId}`)
-    );
-    const normalizedExistingRows = nextRows.filter(
-      (row) => row.sourceKind !== "Variation" || liveVariationKeys.has(`Variation:${row.sourceLineItemId}`)
-    );
-    const existingSourceKeys = new Set(
-      normalizedExistingRows.map((row) => `${row.sourceKind}:${row.sourceLineItemId}`)
-    );
+    const liveSourceRows = await loadClaimSourceRows(resolvedOrganizationId, false);
+    const normalizedExistingRows = normalizeClaimRowsAgainstLiveSource(nextRows, liveSourceRows);
+    const existingSourceKeys = new Set(normalizedExistingRows.map((row) => getClaimLineSourceKey(row)));
     const missingRows = liveSourceRows.filter(
-      (row) => !existingSourceKeys.has(`${row.sourceKind}:${row.sourceLineItemId}`)
+      (row) => !existingSourceKeys.has(getClaimLineSourceKey(row))
     );
     const mergedRows = [...normalizedExistingRows, ...missingRows].sort((left, right) => left.sortOrder - right.sortOrder);
     setClaimLineItems(mergedRows);
-  }, [projectDbId, supabase]);
+  }, [loadClaimSourceRows, supabase]);
 
   const refreshContractSummary = useCallback(async (resolvedOrganizationId: string, resolvedProjectId: string, existingClaimId: string | null) => {
     if (!supabase) {
@@ -452,13 +561,13 @@ export default function ProjectClaimDetailPage() {
     const [{ data: quoteRows }, { data: variationRows }, { data: claimsRowsRaw }] = await Promise.all([
       supabase
         .from("project_quotes")
-        .select("status, total_quote_price, updated_at")
+        .select("status, subtotal, margin_percent, discount_amount, contingency_amount, updated_at")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId)
         .order("updated_at", { ascending: false }),
       supabase
         .from("project_variations")
-        .select("status, total_variation_price")
+        .select("status, subtotal, margin_percent, discount_amount, contingency_amount")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
       claimsTable
@@ -476,10 +585,10 @@ export default function ProjectClaimDetailPage() {
       return 0;
     })[0];
 
-    const quoteValue = Number(bestQuote?.total_quote_price ?? 0);
+    const quoteValue = bestQuote ? calculateQuotePreGstTotal(bestQuote as Record<string, unknown>) : 0;
     const approvedVariations = (variationRows ?? [])
-      .filter((row) => row.status === "Approved" || row.status === "Sent" || row.status === "Invoiced")
-      .reduce((sum, row) => sum + Number(row.total_variation_price ?? 0), 0);
+      .filter((row) => row.status === "Approved")
+      .reduce((sum, row) => sum + calculateVariationPreGstTotal(row as Record<string, unknown>), 0);
 
     const claimRows = (claimsRowsRaw ?? []) as Array<{ id: string; claim_amount: number | null; paid_amount: number | null; status: ClaimStatus }>;
     const previousTotal = claimRows
@@ -714,6 +823,9 @@ export default function ProjectClaimDetailPage() {
     () => claimLineItemsComputed.reduce((sum, item) => sum + item.claimAmount, 0),
     [claimLineItemsComputed],
   );
+  const claimGstRate = 0.15;
+  const currentClaimGst = currentClaimAmount * claimGstRate;
+  const currentClaimTotalInclGst = currentClaimAmount + currentClaimGst;
   const revisedContractValue = baseQuoteValue + approvedVariationsValue;
   const valueEarnedToDate = previousClaimsTotal + currentClaimAmount;
   const parsedPercentComplete = revisedContractValue > 0 ? Math.min(100, Math.max(0, (valueEarnedToDate / revisedContractValue) * 100)) : 0;
@@ -743,59 +855,75 @@ export default function ProjectClaimDetailPage() {
   const renderLineItemRow = (line: (typeof claimLineItemsComputed)[number]) => (
     <div
       key={line.id}
-      className="grid items-center gap-2 border-b border-[#EEF2F7] px-3 py-2 last:border-b-0 [&>*:not(:first-child)]:border-l [&>*:not(:first-child)]:border-[#EEF2F7] [&>*:not(:first-child)]:pl-3"
+      className="grid items-stretch gap-0 border-b border-[#E8EDF5] px-0 py-0 last:border-b-0"
       style={{ gridTemplateColumns: lineItemsGridTemplate }}
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-[#1d2433]">
-          {line.sourceNumber || line.description || "Untitled line"}
-        </p>
-        {line.sourceKind === "Variation" && line.sourceTitle ? (
-          <p className={`${interMedium.className} truncate text-[11px] text-[#64748B]`}>
-            {line.sourceTitle}
+      <div className="flex min-w-0 items-center px-3 py-1.5">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-[#1d2433]">
+            {line.sourceNumber || line.description || "Untitled line"}
           </p>
-        ) : null}
+          {line.sourceKind === "Variation" && line.sourceTitle ? (
+            <p className={`${interMedium.className} truncate text-[11px] text-[#64748B]`}>
+              {line.sourceTitle}
+            </p>
+          ) : null}
+        </div>
       </div>
-      <span className={`${interMedium.className} min-w-0 truncate text-sm text-[#334155]`}>{line.section}</span>
-      <span className={`${interMedium.className} truncate text-xs text-[#64748B]`}>{line.sourceKind} {line.sourceNumber}</span>
-      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.sourceTotal)}</span>
-      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.previouslyClaimedAmount)}</span>
-      <div className="relative">
-        <Input
-          type="number"
-          min={0}
-          max={100}
-          step="0.1"
-          value={line.claimPercent.toString()}
-          onChange={(event) => updateClaimLinePercent(line.id, event.target.value)}
-          disabled={isSubmittedLocked}
-          className="h-10 rounded-[6px] pr-7 text-right"
-        />
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#64748B]">%</span>
+      <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-sm text-[#334155]`}>{line.section}</span>
       </div>
-      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(line.claimAmount)}</span>
-      <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.cumulativeClaimedAmount)}</span>
+      <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+        <span className={`${interMedium.className} truncate text-xs text-[#64748B]`}>{line.sourceKind} {line.sourceNumber}</span>
+      </div>
+      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.sourceTotal)}</span>
+      </div>
+      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.previouslyClaimedAmount)}</span>
+      </div>
+      <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+        <div className="relative w-full">
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            step="0.1"
+            value={line.claimPercent.toString()}
+            onChange={(event) => updateClaimLinePercent(line.id, event.target.value)}
+            disabled={isSubmittedLocked}
+            className="h-9 rounded-[6px] border-[#D7E1EC] bg-[#FBFEFE] pr-7 text-right"
+          />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#64748B]">%</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(line.claimAmount)}</span>
+      </div>
+      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.cumulativeClaimedAmount)}</span>
+      </div>
     </div>
   );
 
   const renderLineItemsTable = (containerClassName = "") => (
-    <div className={`overflow-x-auto rounded-[6px] border border-[#E5EAF2] ${containerClassName}`.trim()}>
+    <div className={`overflow-x-auto rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] ${containerClassName}`.trim()}>
       <div
-        className={`${interMedium.className} grid items-center gap-2 border-b border-[#E5EAF2] bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089] [&>*:not(:first-child)]:border-l [&>*:not(:first-child)]:border-[#E5EAF2] [&>*:not(:first-child)]:pl-3`}
+        className={`${styles.quoteButtonLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
         style={{ gridTemplateColumns: lineItemsGridTemplate }}
       >
-        <span>Description</span>
-        <span>Section</span>
-        <span>Source</span>
-        <span className="text-right">Line Total</span>
-        <span className="text-right">Prev Claimed</span>
-        <span>Claim %</span>
-        <span className="text-right">This Claim</span>
-        <span className="text-right">Claimed to Date</span>
+        <span className="px-3 py-2.5 font-semibold">Description</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Section</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Source</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Line Total</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Prev Claimed</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Claim %</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">This Claim</span>
+        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Claimed to Date</span>
       </div>
-      <div>
+      <div className="bg-[#FBFEFE]">
         {quoteLineItems.length > 0 ? (
-          <div className="border-b border-[#E5EAF2] bg-[#F8FAFC] px-3 py-2">
+          <div className="border-b border-[#E8EDF5] bg-[#F8FAFC] px-3 py-2">
             <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>
               Quote Value
             </p>
@@ -803,7 +931,7 @@ export default function ProjectClaimDetailPage() {
         ) : null}
         {quoteLineItems.map(renderLineItemRow)}
         {variationLineItems.length > 0 ? (
-          <div className="border-y border-[#E5EAF2] bg-[#F8FAFC] px-3 py-2">
+          <div className="border-y border-[#E8EDF5] bg-[#F8FAFC] px-3 py-2">
             <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>
               Variations Value
             </p>
@@ -811,7 +939,7 @@ export default function ProjectClaimDetailPage() {
         ) : null}
         {variationLineItems.map(renderLineItemRow)}
         {claimLineItemsComputed.length === 0 ? (
-          <p className={`${interMedium.className} px-3 py-6 text-center text-sm text-[#73839a]`}>No claimable line items found yet.</p>
+          <p className={`${styles.quoteBodyLabel} px-3 py-6 text-center`}>No claimable line items found yet.</p>
         ) : null}
       </div>
     </div>
@@ -828,6 +956,14 @@ export default function ProjectClaimDetailPage() {
     setSaveMessage(null);
 
     try {
+      const liveSourceRows = await loadClaimSourceRows(organizationId, false);
+      const normalizedLineItems = normalizeClaimRowsAgainstLiveSource(claimLineItemsComputed, liveSourceRows);
+      const normalizedSourceKeys = new Set(normalizedLineItems.map((item) => getClaimLineSourceKey(item)));
+      const missingRows = liveSourceRows.filter((row) => !normalizedSourceKeys.has(getClaimLineSourceKey(row)));
+      const rowsForSave = [...normalizedLineItems, ...missingRows].sort((left, right) => left.sortOrder - right.sortOrder);
+
+      setClaimLineItems(rowsForSave);
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error: saveError } = await (supabase as any).rpc("save_project_claim_draft", {
         p_organization_id: organizationId,
@@ -844,7 +980,7 @@ export default function ProjectClaimDetailPage() {
         p_percent_complete: Number(parsedPercentComplete.toFixed(3)),
         p_paid_amount: Number(Math.max(0, paidAmountNumber).toFixed(2)),
         p_notes: notes,
-        p_line_items: claimLineItemsComputed.map((item) => ({
+        p_line_items: rowsForSave.map((item) => ({
           source_kind: item.sourceKind,
           source_line_item_id: item.sourceLineItemId,
           claim_percent: Number(item.claimPercent.toFixed(3)),
@@ -948,10 +1084,9 @@ export default function ProjectClaimDetailPage() {
         ].join("")
       : `<tr><td colspan="4" style="text-align:center;color:#64748b;">No claimable line items.</td></tr>`;
 
-    const gstRate = 0.15;
     const subtotal = currentClaimAmount;
-    const gst = subtotal * gstRate;
-    const total = subtotal + gst;
+    const gst = currentClaimGst;
+    const total = currentClaimTotalInclGst;
     const sanitizedBrandPrimaryColor = organizationBrandPrimaryColor.trim();
     const pdfPrimaryColor = /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(sanitizedBrandPrimaryColor)
       ? sanitizedBrandPrimaryColor
@@ -1333,7 +1468,7 @@ export default function ProjectClaimDetailPage() {
 
           <section class="totals-inline">
             <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotal)}</span></div>
-            <div class="row"><span class="k">GST (${(gstRate * 100).toFixed(0)}%)</span><span class="v">${toMoney(gst)}</span></div>
+            <div class="row"><span class="k">GST (${(claimGstRate * 100).toFixed(0)}%)</span><span class="v">${toMoney(gst)}</span></div>
             <div class="row total-row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(total)}</span></div>
           </section>
         </div>
@@ -1365,96 +1500,141 @@ export default function ProjectClaimDetailPage() {
 
   if (isLoading) {
     return (
-      <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
         <section className={styles.heroBlock}>
-          <div>
-            <h1 className={styles.heroTitle}>Claim</h1>
-            <p className={`${interMedium.className} ${styles.heroSummary}`}>
-              Live claim calculation based on contract progress.
-            </p>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className={styles.quotePageTitle}>Payment Claim</h1>
+              <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border border-[#D7E1EC] bg-[#FBFEFE] px-3 py-1.5 text-[12px] text-[#4B5D79]`}>
+                Draft
+              </span>
+            </div>
+            <p className={`${styles.quoteBodyLabel} text-xs`}>Live claim calculation based on contract progress.</p>
           </div>
-          <div className={styles.heroActions}>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="outline"
               disabled
-              className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px] opacity-60`}
+              className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] opacity-60`}
             >
-              Actions
-              <ChevronDown className="ml-1 h-4 w-4" />
+              Save Claim
+            </Button>
+            <Button type="button" disabled className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white opacity-60`}>
+              Export PDF
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569] opacity-60`}
+            >
+              <ChevronDown className="h-4 w-4" />
             </Button>
           </div>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
-            <div className="space-y-4">
-              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+        <div className="space-y-6">
+          <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
+            <div className="space-y-5">
+              <section className="border-b border-[#E8EDF5] pb-5">
+                <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                </div>
+              </section>
+              <section className="border-b border-[#E8EDF5] py-5">
+                <div className="h-10 w-48 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                </div>
+              </section>
+              <section className="py-5">
+                <div className="h-10 w-40 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="mt-4 h-56 animate-pulse rounded-[18px] bg-[#E8EDF5]" />
+                <p className={`${styles.quoteBodyLabel} pt-4`}>Loading claim...</p>
+              </section>
+              <div className="border-t border-[#E8EDF5] py-6">
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+                  <div className="space-y-4">
+                    <div className="h-10 w-44 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                    <div className="h-28 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  </div>
+                  <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+                    <div className="space-y-3">
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              </div>
-              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading claim...</p>
             </div>
           </div>
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5">
-              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Claim Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pb-5">
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-            </CardContent>
-          </Card>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`${styles.scope} -mb-8 space-y-6`}>
+    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
       <section className={styles.heroBlock}>
-        <div className="space-y-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            asChild
-            className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-          >
-            <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-              Back to Claims Register
-            </Link>
-          </Button>
-          <h1 className={styles.heroTitle}>Claim</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={styles.quotePageTitle}>{claimNumber || "Payment Claim"}</h1>
+            <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] ${claimStatusClassName(status)}`}>
+              {status}
+            </span>
+          </div>
+          <p className={`${styles.quoteBodyLabel} text-xs`}>
             Live claim calculation based on contract progress{projectName ? ` for ${projectName}` : ""}.
           </p>
+          {saveMessage ? <p className={`${styles.quoteBodyLabel} text-xs`}>{saveMessage}</p> : null}
         </div>
-        <div className={styles.heroActions}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void saveClaim();
+            }}
+            disabled={isSaving || !claimId}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
+          >
+            {isSaving ? "Saving..." : "Save Claim"}
+          </Button>
+          <Button
+            type="button"
+            onClick={exportClaimPdf}
+            disabled={!claimId}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
+          >
+            Export PDF
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
-                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569]`}
               >
-                Actions
-                <ChevronDown className="ml-1 h-4 w-4" />
+                <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[230px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+            <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[220px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+              <DropdownMenuItem asChild className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
                 <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
+                  <ExternalLink className="mr-2 h-4 w-4 text-[#64748B]" />
                   Claims Register
                 </Link>
               </DropdownMenuItem>
@@ -1464,9 +1644,9 @@ export default function ProjectClaimDetailPage() {
                   void createClaim();
                 }}
                 disabled={isCreatingClaim || !projectDbId || !organizationId}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4 text-[#64748B]" />
                 {isCreatingClaim ? "Creating..." : "New Claim"}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -1475,9 +1655,9 @@ export default function ProjectClaimDetailPage() {
                   void saveClaim();
                 }}
                 disabled={isSaving || !claimId}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
               >
-                <Save className="mr-2 h-4 w-4" />
+                <Save className="mr-2 h-4 w-4 text-[#64748B]" />
                 {isSaving ? "Saving..." : "Save Claim"}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -1486,21 +1666,21 @@ export default function ProjectClaimDetailPage() {
                   exportClaimPdf();
                 }}
                 disabled={!claimId}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
               >
-                <FileDown className="mr-2 h-4 w-4" />
+                <FileDown className="mr-2 h-4 w-4 text-[#64748B]" />
                 Export PDF
               </DropdownMenuItem>
               {claimId ? (
                 <>
-                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
                   <DropdownMenuItem
                     onSelect={(event) => {
                       event.preventDefault();
                       void deleteClaim();
                     }}
                     disabled={isDeleting}
-                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                    className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]`}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -1515,35 +1695,34 @@ export default function ProjectClaimDetailPage() {
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
       ) : null}
-      {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
-        <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+      <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_input]:text-[#1D1D1D] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_select]:text-[#1D1D1D] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE] [&_textarea]:text-[#1D1D1D]">
+        <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
           <section className="border-b border-[#E8EDF5] pb-5">
-            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Claim Workspace</h2>
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Claim Workspace</h2>
             <div className="mt-4 space-y-3">
-              <div className="grid gap-3 md:grid-cols-12">
-                <div className="space-y-1.5 md:col-span-4">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim No.</label>
-                  <Input value={claimNumber} onChange={(event) => setClaimNumber(event.target.value)} className="h-10 rounded-[6px]" disabled />
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Claim No.</label>
+                  <Input value={claimNumber} onChange={(event) => setClaimNumber(event.target.value)} className="h-10 rounded-[6px] bg-[#f8fafc]" disabled />
                 </div>
-                <div className="space-y-1.5 md:col-span-8">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Title</label>
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className={styles.quoteBodyLabel}>Claim Title</label>
                   <Input value={claimTitle} onChange={(event) => setClaimTitle(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} />
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Type</label>
-                  <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] px-3 text-sm text-[#1d2433]`} disabled={isSubmittedLocked}>
+                  <label className={styles.quoteBodyLabel}>Claim Type</label>
+                  <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`} disabled={isSubmittedLocked}>
                     <option value="Progress">Progress</option>
                     <option value="Deposit">Deposit</option>
                     <option value="Final">Final</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
-                  <select value={status} onChange={(event) => setStatus(event.target.value as ClaimStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] px-3 text-sm text-[#1d2433]`}>
+                  <label className={styles.quoteBodyLabel}>Status</label>
+                  <select value={status} onChange={(event) => setStatus(event.target.value as ClaimStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     <option value="Draft">Draft</option>
                     <option value="Submitted">Submitted</option>
                     <option value="Unpaid">Unpaid</option>
@@ -1551,31 +1730,28 @@ export default function ProjectClaimDetailPage() {
                     <option value="Overdue">Overdue</option>
                     <option value="Cancelled">Cancelled</option>
                   </select>
-                  <span className={`${interMedium.className} inline-flex rounded-[6px] border px-2 py-0.5 text-[11px] font-semibold ${claimStatusClassName(status)}`}>
-                    {status}
-                  </span>
                 </div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>% Complete</label>
-                  <Input type="number" value={displayedPercentComplete} className="h-10 rounded-[6px]" disabled />
+                  <label className={styles.quoteBodyLabel}>% Complete</label>
+                  <Input type="number" value={displayedPercentComplete} className="h-10 rounded-[6px] bg-[#f8fafc]" disabled />
                 </div>
               </div>
             </div>
           </section>
 
           <section className="border-b border-[#E8EDF5] py-5">
-            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Claim Period</h2>
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Claim Period</h2>
             <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Claim Date</label><Input type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
-              <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Due Date</label><Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
-              <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Period Start</label><Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
-              <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Period End</label><Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+              <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Claim Date</label><Input type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+              <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Due Date</label><Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+              <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Period Start</label><Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
+              <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Period End</label><Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
             </div>
           </section>
 
           <section className="border-b border-[#E8EDF5] py-5">
             <button type="button" onClick={() => setIsLineItemsOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Line Items</h2>
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
@@ -1584,7 +1760,7 @@ export default function ProjectClaimDetailPage() {
                     event.stopPropagation();
                     setIsLineItemsExpanded(true);
                   }}
-                  className={`${interMedium.className} h-8 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-2.5 text-xs font-medium text-[#1d2433]`}
+                  className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-4`}
                 >
                   <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
                   Expand
@@ -1599,81 +1775,120 @@ export default function ProjectClaimDetailPage() {
             ) : null}
           </section>
 
-          <section className="py-5">
-            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Payment & Notes</h2>
-            <div className="mt-4 space-y-3">
-              <div className="space-y-1.5">
-                <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Notes</label>
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${interMedium.className} min-h-[110px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} disabled={isSubmittedLocked} />
+          <div className="border-t border-[#E8EDF5] py-6">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+              <div>
+                <section className="pt-0">
+                  <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Payment & Notes</h2>
+                  <div className="mt-4 space-y-4">
+                    <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-4 py-4">
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="space-y-1">
+                          <p className={styles.quoteCardTitle}>Claim Status</p>
+                          <p className={styles.quoteBodyLabel}>Current lifecycle state</p>
+                          <span className={`${styles.quoteButtonLabel} inline-flex rounded-full border px-3 py-1.5 text-[12px] ${claimStatusClassName(status)}`}>
+                            {status}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <p className={styles.quoteCardTitle}>This Claim</p>
+                          <p className={styles.quoteBodyLabel}>Current claim amount</p>
+                          <p className={styles.quoteBodyValue}>{toMoney(currentClaimAmount)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className={styles.quoteCardTitle}>Balance Outstanding</p>
+                          <p className={styles.quoteBodyLabel}>Based on earned less paid to date</p>
+                          <p className={styles.quoteBodyValue}>{toMoney(balance)}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className={styles.quoteBodyLabel}>Notes</label>
+                      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${interMedium.className} min-h-[110px] w-full rounded-[6px] border border-[#D7E1EC] px-3 py-2 text-sm`} disabled={isSubmittedLocked} />
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+                <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Claim Summary</h2>
+                <div className="space-y-5">
+                  <section className="space-y-2">
+                    <p className={styles.quoteCardTitle}>Contract Position</p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Original Contract</span><span className={styles.quoteBodyValue}>{toMoney(baseQuoteValue)}</span></p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Approved Variations</span><span className={styles.quoteBodyValue}>{toMoney(approvedVariationsValue)}</span></p>
+                    <div className="h-px bg-[#E7ECF3]" />
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Revised Contract Value</span><span className={styles.quoteBodyValue}>{toMoney(revisedContractValue)}</span></p>
+                  </section>
+
+                  <div className="h-px bg-[#E7ECF3]" />
+
+                  <section className="space-y-2">
+                    <p className={styles.quoteCardTitle}>Previous Claims</p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Total Previously Claimed</span><span className={styles.quoteBodyValue}>{toMoney(previousClaimsTotal)}</span></p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Paid to Date</span><span className={styles.quoteBodyValue}>{toMoney(paidToDateTotal)}</span></p>
+                  </section>
+
+                  <div className="h-px bg-[#E7ECF3]" />
+
+                  <section className="space-y-2">
+                    <p className={styles.quoteCardTitle}>This Claim</p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Value Earned to Date</span><span className={styles.quoteBodyValue}>{toMoney(valueEarnedToDate)}</span></p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Less Previous Claims</span><span className={styles.quoteBodyValue}>-{toMoney(previousClaimsTotal)}</span></p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>This Claim % of Contract</span><span className={styles.quoteBodyValue}>{thisClaimPercent.toFixed(2)}%</span></p>
+                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Earned to Date %</span><span className={styles.quoteBodyValue}>{parsedPercentComplete.toFixed(2)}%</span></p>
+                  </section>
+
+                  <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                    <div className={`${interMedium.className} space-y-3 text-sm`}>
+                      <p className="flex items-center justify-between"><span className="text-[#64748B]">Previous % Complete</span><span className="font-medium text-[#1d2433]">{previousPercentComplete.toFixed(2)}%</span></p>
+                      <p className="flex items-center justify-between"><span className="text-[#64748B]">Balance Outstanding</span><span className="font-medium text-[#1d2433]">{toMoney(balance)}</span></p>
+                      <div className="h-px bg-[#E7ECF3]" />
+                      <p className="flex items-center justify-between pt-1">
+                        <span className="text-[15px] font-semibold text-[#1d2433]">Current Claim (excl. GST)</span>
+                        <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(currentClaimAmount)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">GST (15%)</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(currentClaimGst)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[15px] font-semibold text-[#1d2433]">Total Payable (incl. GST)</span>
+                        <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(currentClaimTotalInclGst)}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <Button type="button" onClick={() => void saveClaim()} disabled={isSaving || !claimId} variant="outline" className={`${styles.quoteButtonLabel} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}>
+                      {isSaving ? "Saving..." : "Save Claim"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={exportClaimPdf}
+                      disabled={!claimId}
+                      className={`${styles.quoteButtonLabel} h-10 w-full rounded-full bg-[#0B2739] !text-white hover:bg-[#0B2739]`}
+                    >
+                      Export PDF
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
-          </section>
-        </div>
-
-        <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5">
-              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Claim Summary</CardTitle>
-            </CardHeader>
-            <CardContent className={`${interMedium.className} space-y-4 pb-5 text-sm font-medium text-[#334155]`}>
-              <section className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Contract Position</p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Original Contract</span><span>{toMoney(baseQuoteValue)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Approved Variations</span><span>{toMoney(approvedVariationsValue)}</span></p>
-                <div className="h-px bg-[#C7D2E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Revised Contract Value</span><span>{toMoney(revisedContractValue)}</span></p>
-              </section>
-
-              <div className="h-px bg-[#C7D2E1]" />
-
-              <section className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">Previous Claims</p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Total Previously Claimed</span><span>{toMoney(previousClaimsTotal)}</span></p>
-              </section>
-
-              <div className="h-px bg-[#C7D2E1]" />
-
-              <section className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.08em] text-[#64748B]">This Claim</p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Value Earned to Date</span><span>{toMoney(valueEarnedToDate)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Less Previous Claims</span><span>-{toMoney(previousClaimsTotal)}</span></p>
-              </section>
-
-
-              <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
-                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Current Claim</p>
-                <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(currentClaimAmount)}</p>
-              </div>
-
-              <div className="space-y-2 pt-1">
-                <Button type="button" onClick={() => void saveClaim()} disabled={isSaving || !claimId} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
-                  {isSaving ? "Saving..." : "Save Claim"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={exportClaimPdf}
-                  disabled={!claimId}
-                  variant="outline"
-                  className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}
-                >
-                  Export PDF
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
         </div>
       </div>
 
       {isLineItemsExpanded ? (
         <div className="fixed inset-0 z-[240] bg-[#0B1626]/55 p-4 sm:p-6">
-          <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col rounded-[18px] border border-[#d9dee5] bg-[#F6F7F9] shadow-[0_18px_48px_rgba(2,6,23,0.28)]">
+          <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] shadow-[0_18px_48px_rgba(2,6,23,0.28)]">
             <div className="flex items-center justify-between border-b border-[#E8EDF5] px-5 py-4">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
+              <h2 className={styles.quoteSectionTitle}>Line Items</h2>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsLineItemsExpanded(false)}
-                className={`${interMedium.className} h-8 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-2.5 text-xs font-medium text-[#1d2433]`}
+                className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-4`}
               >
                 <X className="mr-1.5 h-3.5 w-3.5" />
                 Close

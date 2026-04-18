@@ -37,14 +37,20 @@ interface ClaimRow {
 interface QuoteRow {
   id: string;
   status: QuoteStatus;
-  total_quote_price: number | null;
+  subtotal: number | null;
+  margin_percent: number | null;
+  discount_amount: number | null;
+  contingency_amount: number | null;
   updated_at: string;
 }
 
 interface VariationRow {
   id: string;
   status: string;
-  total_variation_price: number | null;
+  subtotal: number | null;
+  margin_percent: number | null;
+  discount_amount: number | null;
+  contingency_amount: number | null;
 }
 
 function toMoney(value: number) {
@@ -93,18 +99,34 @@ function toDayMonthYearLabel(value: string | null) {
   });
 }
 
-function pickBaseQuoteValue(quotes: QuoteRow[]) {
+function calculateQuotePreGstTotal(quote: QuoteRow) {
+  const subtotal = Number(quote.subtotal ?? 0);
+  const marginPercent = Number(quote.margin_percent ?? 0);
+  const discountAmount = Number(quote.discount_amount ?? 0);
+  const contingencyAmount = Number(quote.contingency_amount ?? 0);
+  return Math.max(0, subtotal + subtotal * (marginPercent / 100) + contingencyAmount - discountAmount);
+}
+
+function calculateVariationPreGstTotal(variation: VariationRow) {
+  const subtotal = Number(variation.subtotal ?? 0);
+  const marginPercent = Number(variation.margin_percent ?? 0);
+  const discountAmount = Number(variation.discount_amount ?? 0);
+  const contingencyAmount = Number(variation.contingency_amount ?? 0);
+  return Math.max(0, subtotal + subtotal * (marginPercent / 100) + contingencyAmount - discountAmount);
+}
+
+function pickBaseQuoteContractValue(quotes: QuoteRow[]) {
   const accepted = quotes.find((quote) => quote.status === "Accepted");
-  if (accepted?.total_quote_price) {
-    return Number(accepted.total_quote_price);
+  if (accepted) {
+    return calculateQuotePreGstTotal(accepted);
   }
 
   const sent = quotes.find((quote) => quote.status === "Sent");
-  if (sent?.total_quote_price) {
-    return Number(sent.total_quote_price);
+  if (sent) {
+    return calculateQuotePreGstTotal(sent);
   }
 
-  return Number(quotes[0]?.total_quote_price ?? 0);
+  return quotes[0] ? calculateQuotePreGstTotal(quotes[0]) : 0;
 }
 
 export default function ProjectClaimsRegisterPage() {
@@ -202,13 +224,13 @@ export default function ProjectClaimsRegisterPage() {
         const [{ data: quotesRaw }, { data: variationsRaw }] = await Promise.all([
           supabase
             .from("project_quotes")
-            .select("id, status, total_quote_price, updated_at")
+          .select("id, status, subtotal, margin_percent, discount_amount, contingency_amount, updated_at")
             .eq("organization_id", resolvedOrganizationId)
             .eq("project_id", projectRow.id)
             .order("updated_at", { ascending: false }),
           supabase
             .from("project_variations")
-            .select("id, status, total_variation_price")
+            .select("id, status, subtotal, margin_percent, discount_amount, contingency_amount")
             .eq("organization_id", resolvedOrganizationId)
             .eq("project_id", projectRow.id),
         ]);
@@ -221,8 +243,8 @@ export default function ProjectClaimsRegisterPage() {
         const variationRows = (variationsRaw ?? []) as VariationRow[];
 
         const approvedVariationTotal = variationRows
-          .filter((row) => row.status === "Approved" || row.status === "Sent" || row.status === "Invoiced")
-          .reduce((sum, row) => sum + Number(row.total_variation_price ?? 0), 0);
+          .filter((row) => row.status === "Approved")
+          .reduce((sum, row) => sum + calculateVariationPreGstTotal(row), 0);
 
         setQuotes(quoteRows);
         setApprovedVariationsValue(approvedVariationTotal);
@@ -273,7 +295,7 @@ export default function ProjectClaimsRegisterPage() {
   }, [isCreatingClaim, organizationId, projectId, routeProjectSlug, router, supabase]);
 
   const contractSummary = useMemo(() => {
-    const baseQuoteValue = pickBaseQuoteValue(quotes);
+    const baseQuoteValue = pickBaseQuoteContractValue(quotes);
     const revisedContractValue = baseQuoteValue + approvedVariationsValue;
     const activeClaims = claims.filter((claim) => claim.status !== "Cancelled");
     const approvedToDate = activeClaims

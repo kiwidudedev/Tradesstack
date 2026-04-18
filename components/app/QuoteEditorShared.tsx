@@ -691,6 +691,7 @@ export function QuoteEditorLayout({
   const subtotalExcludingGstLabel = STANDARD_QUOTE_PRICING_LABELS.subtotalExcludingGst;
   const totalIncludingMarginLabel = STANDARD_QUOTE_PRICING_LABELS.totalIncludingMargin;
   const totalQuotePriceLabel = STANDARD_QUOTE_PRICING_LABELS.totalQuotePrice;
+  const preGstPrimaryTotal = Math.max(0, pricingSummary.grandTotal - pricingSummary.gst);
   const currentStatusLabel = STATUS_OPTIONS.find((status) => status.value === quoteStatus)?.label ?? quoteStatus;
   const headerTitle = quoteNumber.trim() || quoteTitle.trim() || heroTitle;
   const statusTagClassName = {
@@ -1302,8 +1303,12 @@ export function QuoteEditorLayout({
                         </p>
                         <div className="my-5 h-px bg-[#D7E1EC]" />
                         <p className="flex items-center justify-between">
-                          <span className="text-[15px] font-medium text-[#1d2433]">Total</span>
-                          <span className="text-[18px] font-semibold text-[#0F172A]">{toMoney(pricingSummary.grandTotal)}</span>
+                          <span className="text-[15px] font-medium text-[#1d2433]">{subtotalExcludingGstLabel}</span>
+                          <span className="text-[18px] font-semibold text-[#0F172A]">{toMoney(preGstPrimaryTotal)}</span>
+                        </p>
+                        <p className="flex items-center justify-between">
+                          <span className={styles.quoteBodyLabel}>{totalQuotePriceLabel}</span>
+                          <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.grandTotal)}</span>
                         </p>
                       </div>
                     </div>
@@ -1428,28 +1433,14 @@ export function QuoteEditorLayout({
             ) : null}
             <div className="border-t border-[#E8EDF5] px-6 py-4">
               <div className="ml-auto max-w-[280px] space-y-1">
-                <p className={`${styles.quoteBodyLabel} text-right`}>Quote Summary</p>
-                <p className="text-right text-[22px] font-bold leading-none tracking-[-0.03em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
+                <p className={`${styles.quoteBodyLabel} text-right`}>{subtotalExcludingGstLabel}</p>
+                <p className="text-right text-[22px] font-bold leading-none tracking-[-0.03em] text-[#0B2739]">{toMoney(preGstPrimaryTotal)}</p>
               </div>
             </div>
           </section>
         </div>
       )}
 
-      {!shouldShowEditor && !isLoadingQuote && !isHydratingExistingQuote ? (
-        <div className="sticky bottom-0 z-10 mt-4 border-t border-[#E2E8F1] bg-[#FBFEFE]/95 px-6 py-4 backdrop-blur-sm">
-          <div className="ml-auto flex items-end justify-end gap-8">
-            <div className="space-y-1 text-right">
-              <p className={styles.quoteBodyLabel}>GST ({gstPercent || "15"}%)</p>
-              <p className="text-[18px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.gst)}</p>
-            </div>
-            <div className="space-y-1 text-right">
-              <p className={styles.quoteBodyLabel}>Quote Summary</p>
-              <p className="text-[22px] font-bold leading-none tracking-[-0.03em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
