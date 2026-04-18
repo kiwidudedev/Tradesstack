@@ -1,13 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink, MoreHorizontal, Pencil, Plus } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, DollarSign, MoreHorizontal, Pencil, Plus, Trash2, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import styles from "@/components/app/trade-pack-builder.module.css";
@@ -325,48 +324,35 @@ export default function ProjectClaimsRegisterPage() {
     };
   }, [approvedVariationsValue, claims, quotes]);
 
+  const ALL_CLAIM_STATUSES: ClaimStatus[] = ["Draft", "Submitted", "Unpaid", "Paid", "Overdue", "Cancelled"];
+
+  const updateClaimStatus = useCallback(async (claimId: string, newStatus: ClaimStatus) => {
+    if (!supabase || !organizationId) return;
+    setClaims((prev) => prev.map((c) => c.id === claimId ? { ...c, status: newStatus } : c));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from("project_claims").update({ status: newStatus }).eq("id", claimId).eq("organization_id", organizationId);
+  }, [organizationId, supabase]);
+
   return (
-    <div className={`${styles.scope} -mb-8 space-y-6`}>
-      <section className={styles.heroBlock}>
-        <div>
-          <h1 className={styles.heroTitle}>Claims</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
-            Create, track, submit, and reconcile payment claims for this job
-          </p>
+    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
+
+      {/* Hero */}
+      <section className={`${styles.heroBlock} mb-2`}>
+        <div className="min-w-0 flex-1">
+          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>Financials</h1>
+          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>Create, track, submit, and reconcile payment claims for this job</p>
         </div>
-        <div className={styles.heroActions}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
-              >
-                Actions
-                <ChevronDown className="ml-1 h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-white p-1.5 opacity-100`}>
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
-                <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Project Dashboard
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void createClaimAndOpen();
-                }}
-                disabled={isLoading || isCreatingClaim}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                {isCreatingClaim ? "Creating..." : "New Claim"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void createClaimAndOpen()}
+            disabled={isCreatingClaim || isLoading}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            {isCreatingClaim ? "Creating..." : "New Claim"}
+          </Button>
         </div>
       </section>
 
@@ -374,148 +360,183 @@ export default function ProjectClaimsRegisterPage() {
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
       ) : null}
 
-      <section className="overflow-hidden rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-7 pt-6 shadow-none md:px-8 md:pb-8">
+      <div className="px-0 py-0">
         {isLoading ? (
-          <p className={`${interMedium.className} py-8 text-sm font-medium text-[#64748B]`}>Loading claims register...</p>
+          <p className={`${interMedium.className} py-8 text-center text-sm font-medium text-[#6b6b6b]`}>Loading claims register...</p>
         ) : (
-          <div className="space-y-7">
-            <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>
-              Project Claims & Invoices
-            </h3>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
-                <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#64748B]`}>Current Project Total</p>
-                <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.contractValue)}</p>
+          <div className="space-y-6">
+
+            {/* Stat cards */}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-indigo-50">
+                    <DollarSign className="h-5 w-5 text-indigo-500" />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Project Total</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.contractValue)}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>incl. approved variations</p>
               </div>
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
-                <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#B45309]`}>Submitted</p>
-                <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.dueValue)}</p>
+              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-amber-50">
+                    <Clock className="h-5 w-5 text-amber-500" />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Submitted</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.dueValue)}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-amber-600`}>{contractSummary.dueClaimsCount} claim{contractSummary.dueClaimsCount !== 1 ? "s" : ""} awaiting payment</p>
               </div>
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
-                <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#047857]`}>Paid</p>
-                <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.paidValue)}</p>
+              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-emerald-50">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Paid</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.paidValue)}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-emerald-600`}>{contractSummary.paidClaimsCount} claim{contractSummary.paidClaimsCount !== 1 ? "s" : ""} received</p>
               </div>
-              <div className="rounded-[18px] border border-[#C5CDD8] bg-[#FBFEFE] px-5 py-4">
-                <p className={`${interMedium.className} text-[13px] font-semibold uppercase tracking-[0.09em] text-[#B45309]`}>Outstanding</p>
-                <p className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">{toMoney(contractSummary.outstanding)}</p>
+              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-rose-50">
+                    <TrendingUp className="h-5 w-5 text-rose-500" />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Outstanding</p>
+                </div>
+                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.outstanding)}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>{contractSummary.overdueClaimsCount > 0 ? `${contractSummary.overdueClaimsCount} overdue` : "no overdue claims"}</p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Claim Lists</h3>
-              <p className={`${interMedium.className} text-sm text-[#64748B]`}>The payment claims created in the last 30 days for this project.</p>
+            {/* Table */}
+            {claims.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-[#D7E1EC] bg-[#F8FAFC] px-6 py-14 text-center">
+                <p className={`${interMedium.className} text-sm font-medium text-[#6b6b6b]`}>No claims yet for this project.</p>
+                <Button
+                  onClick={() => void createClaimAndOpen()}
+                  disabled={isLoading || isCreatingClaim}
+                  className={`${styles.quoteButtonLabel} mt-4 h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  {isCreatingClaim ? "Creating..." : "Create First Claim"}
+                </Button>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC]">
+                <table className="min-w-full border-collapse">
+                  <thead>
+                    <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                      <th className="w-[130px] px-4 py-2.5 text-left">Claim #</th>
+                      <th className="w-[200px] px-4 py-2.5 text-left">Title</th>
+                      <th className="w-[110px] px-4 py-2.5 text-left">Date</th>
+                      <th className="w-[140px] px-4 py-2.5 text-left">Status</th>
+                      <th className="w-[110px] px-4 py-2.5 text-left">Total</th>
+                      <th className="w-[52px] px-3 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                    {claims.map((claim) => {
+                      const claimAmount = Number(claim.claim_amount ?? 0);
+                      const paidAmount = Number(claim.paid_amount ?? 0);
+                      const balance = Math.max(0, claimAmount - paidAmount);
 
-              {claims.length === 0 ? (
-                <div className={`${styles.cardMuted} ${styles.producedRowProjectTone} px-5 py-6 text-center`}>
-                  <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>No claims yet for this project.</p>
-                  <Button
-                    onClick={() => void createClaimAndOpen()}
-                    disabled={isLoading || isCreatingClaim}
-                    className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" />
-                    {isCreatingClaim ? "Creating..." : "Create First Claim"}
-                  </Button>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-[16px] border border-[#D9DEE5] bg-white">
-                  <table className="min-w-full border-collapse">
-                    <thead>
-                      <tr className={`${interMedium.className} text-[13px] font-medium tracking-[0.01em] text-[#6b7280]`}>
-                        <th className="px-4 py-3 text-left">Claim Number</th>
-                        <th className="px-4 py-3 text-left">Claim Title</th>
-                        <th className="px-4 py-3 text-left">Date</th>
-                        <th className="px-4 py-3 text-left">Status</th>
-                        <th className="px-4 py-3 text-right">Total</th>
-                        <th className="px-4 py-3 text-right"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {claims.map((claim) => {
-                        const claimAmount = Number(claim.claim_amount ?? 0);
-                        const paidAmount = Number(claim.paid_amount ?? 0);
-                        const balance = Math.max(0, claimAmount - paidAmount);
-
-                        return (
-                          <tr
-                            key={claim.id}
-                            onClick={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`)}
-                            className="cursor-pointer border-t border-[#D9DEE5] bg-[#FBFEFE] transition-colors hover:bg-[#F7FAFB]"
-                          >
-                            <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
-                              <span className="hover:underline">{claim.claim_number}</span>
-                            </td>
-                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
-                              {claim.claim_title || "Untitled claim"}
-                            </td>
-                            <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
-                              {toDayMonthYearLabel(claim.claim_date)}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-flex rounded-[8px] border px-2.5 py-0.5 text-xs font-semibold ${statusClassName(claim.status)}`}>
-                                {claim.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right text-sm font-semibold text-[#1d1d1d]">
-                              {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-[#6b6b6b]">
+                      return (
+                        <tr key={claim.id} className="transition-colors">
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                            {claim.claim_number}
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-medium text-[#1d2433]`}>
+                            {claim.claim_title || "Untitled claim"}
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
+                            {toDayMonthYearLabel(claim.claim_date)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className={`inline-flex cursor-pointer items-center gap-1 rounded-[8px] border px-2.5 py-0.5 text-[12px] font-semibold transition-opacity hover:opacity-80 ${statusClassName(claim.status)}`}>
+                                  {claim.status}
+                                  <ChevronDown className="h-3 w-3 opacity-60" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="start"
+                                className="!z-[200] min-w-[160px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                              >
+                                {ALL_CLAIM_STATUSES.map((s) => (
+                                  <DropdownMenuItem
+                                    key={s}
+                                    onSelect={() => void updateClaimStatus(claim.id, s)}
+                                    className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium focus:bg-[#F8FAFC] ${claim.status === s ? "text-[#F15A29]" : "text-[#1d2433]"}`}
+                                  >
+                                    <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${statusClassName(s)}`} />
+                                    {s}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                            {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
+                          </td>
+                          <td className="px-2 py-3">
+                            <div className="flex items-center justify-center">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     type="button"
-                                    variant="ghost"
+                                    variant="outline"
                                     size="icon"
-                                    onClick={(event) => event.stopPropagation()}
-                                    className="h-7 w-7 rounded-md text-[#6b6b6b] hover:bg-[#E7ECF2] hover:text-[#1d2433]"
+                                    className="h-8 w-8 rounded-full border-[#D7E1EC] bg-white text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#1d2433]"
                                   >
                                     <MoreHorizontal className="h-4 w-4" />
-                                    <span className="sr-only">Claim actions</span>
+                                    <span className="sr-only">Actions</span>
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent
                                   align="end"
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="min-w-[140px]"
+                                  className="!z-[200] min-w-[160px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
                                 >
                                   <DropdownMenuItem
-                                    onSelect={(event) => {
-                                      event.preventDefault();
-                                      router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`);
-                                    }}
+                                    onSelect={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`)}
+                                    className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
                                   >
-                                    <Pencil className="mr-2 h-4 w-4" />
+                                    <Pencil className="mr-2 h-3.5 w-3.5 text-[#64748B]" />
                                     Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
+                                  <DropdownMenuItem
+                                    onSelect={() => {}}
+                                    className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-rose-600 focus:bg-rose-50`}
+                                  >
+                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                    Delete
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Total */}
+            <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
+              <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
+                <span>Total Claimed</span>
+                <span>{toMoney(contractSummary.claimedToDate)}</span>
+              </p>
             </div>
 
-            <div className="space-y-3">
-              <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Linked Workflows</h3>
-              <div className="flex flex-wrap gap-2">
-                <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
-                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote`}>View Quote</Link>
-                </Button>
-                <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
-                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>View Variations</Link>
-                </Button>
-                <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
-                  <Link href={`/app/projects/${routeProjectSlug}/dashboard`}>Project Dashboard</Link>
-                </Button>
-              </div>
-            </div>
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }

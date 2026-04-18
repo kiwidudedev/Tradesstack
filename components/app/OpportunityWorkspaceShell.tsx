@@ -57,7 +57,7 @@ export function OpportunityWorkspaceShell({
   ] as const;
 
   return (
-    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme app-canvas -mx-[0.384rem] pb-8 sm:-mx-[1.024rem]`}>
+    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-[0.384rem] bg-[#FBFEFE] pb-8 sm:-mx-[1.024rem]`} style={{ "--app-canvas": "#FBFEFE" } as React.CSSProperties}>
       <div className={leadsShellHeaderClassName}>
         <div className={`${leadsShellHeaderClassName} shadow-none`}>
           <div className={`flex flex-col gap-3 ${leadsShellHeaderClassName} px-5 py-4 xl:flex-row xl:items-center xl:justify-between`}>

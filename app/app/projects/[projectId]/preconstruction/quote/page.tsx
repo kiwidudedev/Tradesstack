@@ -1,151 +1,155 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ExternalLink, PenLine, Plus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
-import styles from "@/components/app/trade-pack-builder.module.css";
-
-interface QuoteRegisterRow {
-  id: string;
-  quote_number: string;
-  quote_title: string;
-  status: QuoteStatus;
-  quote_date: string | null;
-  expiry_date: string | null;
-  total_quote_price: number;
-  updated_at: string;
-  terms_inclusions: string | null;
-  terms_exclusions: string | null;
-  assumptions: string | null;
-  clarifications: string | null;
-  scope_exclusions: string | null;
-  scope_notes: string | null;
+import {
+  buildQuotePdfHtml,
+  QuoteEditorLayout,
+  LINE_ITEM_SECTIONS,
+  type LineItem,
+  type LineItemSection,
+  type PricingSummary,
+  type ScopeCostCategoryItem,
+  lineItemTotal,
+  makeDefaultLineItem,
+  numberOrZero,
+} from "@/components/app/QuoteEditorShared";
+function normalizeForMatch(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function toMoney(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+function toScopeCostCategoryItems(params: {
+  runs: Array<{ id: string; trade_pack_id: string; result_json: Record<string, unknown>; created_at: string }>;
+  tradeLabelByTradePackId: Map<string, string>;
+}): ScopeCostCategoryItem[] {
+  const collected: ScopeCostCategoryItem[] = [];
+  const seen = new Set<string>();
 
-function toAccountingMoney(value: number) {
-  const safeValue = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    currencySign: "accounting",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(safeValue);
-}
+  for (const run of params.runs) {
+    const resultJson = run.result_json;
+    const pricingStructure = typeof resultJson?.pricingStructure === "object" && resultJson.pricingStructure !== null
+      ? (resultJson.pricingStructure as Record<string, unknown>)
+      : null;
+    const categories = Array.isArray(pricingStructure?.costBreakdownCategories)
+      ? (pricingStructure?.costBreakdownCategories as unknown[])
+      : [];
 
-function toDayMonthYearLabel(value: string | null) {
-  if (!value) {
-    return "—";
-  }
+    for (let index = 0; index < categories.length; index += 1) {
+      const entry = categories[index];
+      if (typeof entry !== "object" || entry === null) {
+        continue;
+      }
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-  }
+      const record = entry as Record<string, unknown>;
+      const title = typeof record.title === "string" ? record.title.trim() : "";
+      const description = typeof record.description === "string" ? record.description.trim() : "";
+      if (!title) {
+        continue;
+      }
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
+      const dedupeKey = `${normalizeForMatch(title)}|${normalizeForMatch(description)}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
 
-  return parsed.toLocaleDateString("en-NZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function toDayShortMonthYearLabel(value: string | null) {
-  if (!value) {
-    return "—";
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString("en-NZ", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
+      collected.push({
+        id: `${run.id}:${index}`,
+        title,
+        description,
+        tradeLabel: params.tradeLabelByTradePackId.get(run.trade_pack_id) ?? "Scope Builder",
+        generatedAt: run.created_at,
       });
     }
   }
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-
-  return parsed.toLocaleDateString("en-NZ", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return collected;
 }
 
-function getRevision(quoteNumber: string) {
-  const match = quoteNumber.match(/-(\d+)$/);
-  if (!match) {
-    return "—";
-  }
-  return `Rev ${match[1]}`;
-}
-
-function toHistoryStatusLabel(isCurrent: boolean) {
-  return isCurrent ? "Accepted" : "Superseded";
-}
-
-function historyStatusClassName(isCurrent: boolean) {
-  return isCurrent
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-    : "border-[#D9DEE5] bg-[#FBFEFE] text-[#6b7280]";
-}
-
-function toLines(value: string | null | undefined) {
-  if (!value) {
-    return [];
-  }
-
-  return value
-    .split(/\r?\n|[;]+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+function deriveProjectCodeFromSlug(slug: string | null | undefined) {
+  const normalized = (slug ?? "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toUpperCase()
+    .slice(0, 8);
+  return normalized || "PRJ";
 }
 
 export default function ProjectQuoteRegisterPage() {
   const params = useParams<{ projectId: string }>();
   const routeProjectSlug = params?.projectId;
-  const router = useRouter();
-  const { session } = useAuth();
+  const { session, isLoading: isAuthLoading } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
-  const canManageQuotes = canManageCommercialData(session?.role);
+  const canManageQuote = canManageCommercialData(session?.role);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [quoteRows, setQuoteRows] = useState<QuoteRegisterRow[]>([]);
+  const [quoteId, setQuoteId] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [isQuoteHistoryOpen, setIsQuoteHistoryOpen] = useState(false);
-  const [isDeletingSummaryQuote, setIsDeletingSummaryQuote] = useState(false);
+  const [dbProjectId, setDbProjectId] = useState<string | null>(null);
+  const [projectCode, setProjectCode] = useState<string | null>(null);
+  const [isLoadingQuote, setIsLoadingQuote] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>("Sent");
+  const [quoteTitle, setQuoteTitle] = useState("");
+  const [quoteNumber, setQuoteNumber] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [contactPerson, setContactPerson] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [siteAddress, setSiteAddress] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
+  const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("");
+  const [quoteDate, setQuoteDate] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+
+  const [lineItems, setLineItems] = useState<LineItem[]>([makeDefaultLineItem()]);
+
+  const [optionalItemsNotes, setOptionalItemsNotes] = useState("");
+  const [scopeExclusions, setScopeExclusions] = useState("");
+  const [assumptions, setAssumptions] = useState("");
+  const [scopeNotes, setScopeNotes] = useState("");
+
+  const [marginPercent, setMarginPercent] = useState("0");
+  const [discountAmount, setDiscountAmount] = useState("0");
+  const [contingencyAmount, setContingencyAmount] = useState("0");
+  const [gstPercent, setGstPercent] = useState("15");
+  const [includeMarginInExport, setIncludeMarginInExport] = useState(false);
+  const [includeDiscountInExport, setIncludeDiscountInExport] = useState(false);
+  const [includeContingencyInExport, setIncludeContingencyInExport] = useState(false);
+
+  const [validityPeriod, setValidityPeriod] = useState("30 days");
+  const [paymentTerms, setPaymentTerms] = useState("");
+  const [leadTime, setLeadTime] = useState("");
+  const [termsInclusions, setTermsInclusions] = useState("");
+  const [termsExclusions, setTermsExclusions] = useState("");
+  const [clarifications, setClarifications] = useState("");
+  const [acceptanceNotes, setAcceptanceNotes] = useState("");
+  const [isQuoteDetailsOpen, setIsQuoteDetailsOpen] = useState(true);
+  const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
+  const [isScopeImportOpen, setIsScopeImportOpen] = useState(false);
+  const [isLoadingScopeItems, setIsLoadingScopeItems] = useState(false);
+  const [hasLoadedScopeItems, setHasLoadedScopeItems] = useState(false);
+  const [scopeCostItems, setScopeCostItems] = useState<ScopeCostCategoryItem[]>([]);
+  const [selectedScopeCostItemIds, setSelectedScopeCostItemIds] = useState<string[]>([]);
+  const [isTermsOpen, setIsTermsOpen] = useState(true);
+  const loadedSlugRef = useRef<string | null>(null);
+
+  const normalizeAllowedStatus = useCallback((status: QuoteStatus): QuoteStatus => {
+    if (status === "Sent" || status === "Accepted" || status === "Rejected" || status === "Expired") {
+      return status;
+    }
+    return "Sent";
+  }, []);
 
   const supabase = useMemo(() => {
     try {
@@ -154,16 +158,82 @@ export default function ProjectQuoteRegisterPage() {
       return null;
     }
   }, []);
+  const shouldShowEditor = isEditing || !quoteId;
+  const isHydratingExistingQuote = isLoadingQuote && !!quoteId;
+
+  const mainLineItems = useMemo(() => lineItems.filter((item) => !item.isOptional), [lineItems]);
+  const optionalLineItems = useMemo(() => lineItems.filter((item) => item.isOptional), [lineItems]);
+  const availableScopeCostItems = useMemo(() => {
+    const existingDescriptions = new Set(lineItems.map((item) => normalizeForMatch(item.description)));
+    return scopeCostItems.filter((item) => {
+      const combinedDescription = item.description ? `${item.title} — ${item.description}` : item.title;
+      return !existingDescriptions.has(normalizeForMatch(combinedDescription));
+    });
+  }, [lineItems, scopeCostItems]);
+
+  const sectionSubtotals = useMemo(() => {
+    const subtotals = new Map<LineItemSection, number>(LINE_ITEM_SECTIONS.map((section) => [section, 0]));
+    for (const item of lineItems) {
+      const current = subtotals.get(item.section) ?? 0;
+      subtotals.set(item.section, current + lineItemTotal(item));
+    }
+    return subtotals;
+  }, [lineItems]);
+
+  const pricingSummary = useMemo(() => {
+    const baseSubtotal = lineItems.filter((item) => !item.isOptional).reduce((acc, item) => acc + lineItemTotal(item), 0);
+    const optionalSubtotal = lineItems.filter((item) => item.isOptional).reduce((acc, item) => acc + lineItemTotal(item), 0);
+    const margin = baseSubtotal * (numberOrZero(marginPercent) / 100);
+    const contingency = numberOrZero(contingencyAmount);
+    const discount = numberOrZero(discountAmount);
+    const preGstTotal = Math.max(0, baseSubtotal + margin + contingency - discount);
+    const gst = preGstTotal * (numberOrZero(gstPercent) / 100);
+    const grandTotal = preGstTotal + gst;
+    return { baseSubtotal, optionalSubtotal, margin, contingency, discount, gst, grandTotal };
+  }, [contingencyAmount, discountAmount, gstPercent, lineItems, marginPercent]);
+
+  const showMarginBreakout = includeMarginInExport === true;
+
+  const resolveNextQuoteNumber = useCallback(async (orgId: string, projectCodeValue: string): Promise<string> => {
+    if (!supabase) {
+      return `Q-${projectCodeValue}-1`;
+    }
+    const prefix = `Q-${projectCodeValue}-`;
+    const { data, error } = await supabase
+      .from("project_quotes")
+      .select("quote_number")
+      .eq("organization_id", orgId)
+      .like("quote_number", `${prefix}%`);
+    if (error) {
+      return `${prefix}1`;
+    }
+    let maxSuffix = 0;
+    const matcher = new RegExp(`^${prefix}(\\d+)$`);
+    for (const row of data ?? []) {
+      const match = matcher.exec(row.quote_number);
+      if (!match) continue;
+      const parsed = Number.parseInt(match[1], 10);
+      if (Number.isFinite(parsed) && parsed > maxSuffix) maxSuffix = parsed;
+    }
+    return `${prefix}${maxSuffix + 1}`;
+  }, [supabase]);
 
   useEffect(() => {
-    if (!supabase || !userId || !routeProjectSlug) {
-      return;
+    if (isAuthLoading) return;
+    if (!userId) {
+      setIsLoadingQuote(false);
+      setError("Please sign in to load this quote.");
     }
+  }, [isAuthLoading, userId]);
+
+  useEffect(() => {
+    if (!supabase || !userId || !routeProjectSlug || isAuthLoading) return;
+    if (loadedSlugRef.current === routeProjectSlug) return;
 
     let cancelled = false;
 
     const load = async () => {
-      setIsLoading(true);
+      setIsLoadingQuote(true);
       setError(null);
 
       try {
@@ -172,7 +242,6 @@ export default function ProjectQuoteRegisterPage() {
           const { data: ensuredOrganizationId } = await supabase.rpc("ensure_organization_membership");
           resolvedOrganizationId = ensuredOrganizationId ?? null;
         }
-
         if (!resolvedOrganizationId) {
           const { data: memberRow } = await supabase
             .from("organization_members")
@@ -181,433 +250,609 @@ export default function ProjectQuoteRegisterPage() {
             .order("created_at", { ascending: true })
             .limit(1)
             .maybeSingle();
-
           resolvedOrganizationId = memberRow?.organization_id ?? null;
         }
+        if (!resolvedOrganizationId) throw new Error("Could not resolve your organization.");
 
-        if (!resolvedOrganizationId) {
-          throw new Error("Could not resolve your organization.");
+        const { data: organizationRow } = await supabase
+          .from("organizations")
+          .select("name, logo_path")
+          .eq("id", resolvedOrganizationId)
+          .maybeSingle();
+        if (!cancelled) {
+          setOrganizationName(organizationRow?.name ?? "");
+          if (organizationRow?.logo_path) {
+            const { data: logoUrlData } = supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path);
+            setOrganizationLogoUrl(logoUrlData.publicUrl);
+          } else {
+            setOrganizationLogoUrl(null);
+          }
         }
 
-        const { data: projectRow, error: projectError } = await supabase
+        let projectRow: { id: string; client_id: string | null; name: string; location: string; project_code: string | null } | null = null;
+
+        const withCodeResult = await supabase
           .from("organization_projects")
-          .select("id, name")
+          .select("id, client_id, name, project_code, location")
           .eq("organization_id", resolvedOrganizationId)
           .eq("slug", routeProjectSlug)
           .maybeSingle();
 
-        if (projectError || !projectRow) {
-          throw new Error(projectError?.message ?? "Project not found.");
+        if (!withCodeResult.error && withCodeResult.data) {
+          projectRow = { ...withCodeResult.data, project_code: withCodeResult.data.project_code ?? null };
+        } else {
+          const fallbackResult = await supabase
+            .from("organization_projects")
+            .select("id, client_id, name, location")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("slug", routeProjectSlug)
+            .maybeSingle();
+          if (fallbackResult.error || !fallbackResult.data) {
+            throw new Error(withCodeResult.error?.message ?? fallbackResult.error?.message ?? "Project not found.");
+          }
+          projectRow = { ...fallbackResult.data, project_code: null };
         }
 
-        const { data: quotes, error: quotesError } = await supabase
+        if (!projectRow) throw new Error("Project not found.");
+        if (cancelled) return;
+
+        setOrganizationId(resolvedOrganizationId);
+        const resolvedProjectCode = projectRow.project_code ?? deriveProjectCodeFromSlug(routeProjectSlug);
+        setDbProjectId(projectRow.id);
+        setProjectCode(resolvedProjectCode);
+        setProjectName((current) => current || projectRow.name);
+        setSiteAddress((current) => current || projectRow.location || "");
+        setQuoteNumber((current) => current || `Q-${resolvedProjectCode}-1`);
+
+        let linkedClientName = "";
+        let linkedCompanyName = "";
+        let linkedContactPerson = "";
+        let linkedEmail = "";
+        let linkedPhone = "";
+
+        if (projectRow.client_id) {
+          const { data: clientRow } = await supabase
+            .from("organization_clients")
+            .select("name, company_name, email, phone")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("id", projectRow.client_id)
+            .maybeSingle();
+          if (clientRow) {
+            linkedClientName = clientRow.name || "";
+            linkedCompanyName = clientRow.company_name || "";
+            linkedContactPerson = clientRow.name || "";
+            linkedEmail = clientRow.email || "";
+            linkedPhone = clientRow.phone || "";
+            if (!cancelled) {
+              setClientName((current) => current || linkedClientName);
+              setCompanyName((current) => current || linkedCompanyName);
+              setContactPerson((current) => current || linkedContactPerson);
+              setEmail((current) => current || linkedEmail);
+              setPhone((current) => current || linkedPhone);
+            }
+          }
+        }
+
+        type QuoteRow = {
+          id: string;
+          status: QuoteStatus;
+          quote_title: string;
+          quote_number: string;
+          client_name: string | null;
+          company_name: string | null;
+          contact_person: string | null;
+          client_email: string | null;
+          client_phone: string | null;
+          site_address: string | null;
+          project_name: string | null;
+          quote_date: string | null;
+          expiry_date: string | null;
+          optional_items_notes: string;
+          scope_exclusions: string;
+          assumptions: string;
+          scope_notes: string;
+          margin_percent: number | null;
+          discount_amount: number | null;
+          contingency_amount: number | null;
+          gst_percent: number | null;
+          validity_period: string | null;
+          payment_terms: string;
+          lead_time: string;
+          terms_inclusions: string;
+          terms_exclusions: string;
+          clarifications: string;
+          acceptance_notes: string;
+        };
+
+        const { data: quoteRows, error: quoteError } = await supabase
           .from("project_quotes")
-          .select("id, quote_number, quote_title, status, quote_date, expiry_date, total_quote_price, updated_at, terms_inclusions, terms_exclusions, assumptions, clarifications, scope_exclusions, scope_notes")
+          .select("*")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
-          .order("updated_at", { ascending: false });
+          .order("updated_at", { ascending: false })
+          .limit(20);
 
-        if (quotesError) {
-          throw new Error(quotesError.message);
-        }
+        if (quoteError) throw new Error(quoteError.message);
 
-        if (cancelled) {
+        const selectedQuote = ((quoteRows ?? []).find((row) => row.status === "Accepted") ?? (quoteRows ?? []).find((row) => row.status === "Sent") ?? (quoteRows ?? [])[0] ?? null) as QuoteRow | null;
+
+        if (!selectedQuote || cancelled) {
+          const nextNumber = await resolveNextQuoteNumber(resolvedOrganizationId, resolvedProjectCode);
+          if (!cancelled) {
+            setQuoteNumber(nextNumber);
+            setIsEditing(true);
+          }
+          setQuoteDate(new Date().toISOString().slice(0, 10));
           return;
         }
 
-        setOrganizationId(resolvedOrganizationId);
-        setProjectId(projectRow.id);
-        setQuoteRows((quotes ?? []) as QuoteRegisterRow[]);
-      } catch (loadError) {
+        setQuoteId(selectedQuote.id);
+        setQuoteStatus(normalizeAllowedStatus(selectedQuote.status));
+        setQuoteTitle(selectedQuote.quote_title);
+        setQuoteNumber(selectedQuote.quote_number);
+        setClientName(linkedClientName || selectedQuote.client_name || "");
+        setCompanyName(linkedCompanyName || selectedQuote.company_name || "");
+        setContactPerson(linkedContactPerson || selectedQuote.contact_person || "");
+        setEmail(linkedEmail || selectedQuote.client_email || "");
+        setPhone(linkedPhone || selectedQuote.client_phone || "");
+        setSiteAddress(projectRow.location || selectedQuote.site_address || "");
+        setProjectName(selectedQuote.project_name || projectRow.name);
+        setQuoteDate(selectedQuote.quote_date ?? "");
+        setExpiryDate(selectedQuote.expiry_date ?? "");
+        setIsEditing(false);
+        setOptionalItemsNotes(selectedQuote.optional_items_notes);
+        setScopeExclusions(selectedQuote.scope_exclusions || selectedQuote.terms_exclusions || "");
+        setAssumptions(selectedQuote.assumptions || "");
+        setScopeNotes(selectedQuote.scope_notes || selectedQuote.clarifications || "");
+        setMarginPercent(String(selectedQuote.margin_percent ?? 0));
+        setDiscountAmount(String(selectedQuote.discount_amount ?? 0));
+        setContingencyAmount(String(selectedQuote.contingency_amount ?? 0));
+        setGstPercent(String(selectedQuote.gst_percent ?? 15));
+        setValidityPeriod(selectedQuote.validity_period ?? "30 days");
+        setPaymentTerms(selectedQuote.payment_terms);
+        setLeadTime(selectedQuote.lead_time);
+        setTermsInclusions(selectedQuote.terms_inclusions);
+        setTermsExclusions(selectedQuote.terms_exclusions || selectedQuote.scope_exclusions || "");
+        setClarifications(selectedQuote.clarifications || selectedQuote.scope_notes || "");
+        setAcceptanceNotes(selectedQuote.acceptance_notes);
+
+        const { data: itemRows, error: itemsError } = await supabase
+          .from("project_quote_line_items")
+          .select("id, section, description, quantity, unit, rate, is_optional, sort_order")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("quote_id", selectedQuote.id)
+          .order("sort_order", { ascending: true });
+        if (itemsError) throw new Error(itemsError.message);
+
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load quotes.");
+          const nextItems = (itemRows ?? []).map((item) => ({
+            id: item.id,
+            section: item.section,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            rate: item.rate,
+            isOptional: item.is_optional,
+          }));
+          setLineItems(nextItems.length > 0 ? nextItems : [makeDefaultLineItem()]);
         }
+      } catch (loadError) {
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Unable to load quote.");
       } finally {
         if (!cancelled) {
-          setIsLoading(false);
+          loadedSlugRef.current = routeProjectSlug;
+          setIsLoadingQuote(false);
         }
       }
     };
 
     void load();
+    return () => { cancelled = true; };
+  }, [isAuthLoading, normalizeAllowedStatus, resolveNextQuoteNumber, routeProjectSlug, sessionOrganizationId, supabase, userId]);
 
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    setHasLoadedScopeItems(false);
+    setScopeCostItems([]);
+    setSelectedScopeCostItemIds([]);
+    setIsLoadingScopeItems(false);
+  }, [dbProjectId, organizationId]);
+
+  useEffect(() => {
+    if (!isScopeImportOpen || hasLoadedScopeItems || !supabase || !organizationId || !dbProjectId) return;
+
+    let cancelled = false;
+
+    const loadScopeItems = async () => {
+      setIsLoadingScopeItems(true);
+      try {
+        const [scopeRunsResult, tradePacksResult] = await Promise.all([
+          supabase
+            .from("scope_runs")
+            .select("id, trade_pack_id, result_json, created_at")
+            .eq("organization_id", organizationId)
+            .eq("project_id", dbProjectId)
+            .eq("status", "complete")
+            .order("created_at", { ascending: false })
+            .limit(120),
+          supabase
+            .from("trade_packs")
+            .select("id, trade_label")
+            .eq("organization_id", organizationId)
+            .eq("project_id", dbProjectId),
+        ]);
+
+        if (cancelled) return;
+
+        if (!scopeRunsResult.error) {
+          const tradeLabelByTradePackId = new Map((tradePacksResult.data ?? []).map((row) => [row.id, row.trade_label]));
+          const normalizedItems = toScopeCostCategoryItems({
+            runs: (scopeRunsResult.data ?? []) as Array<{ id: string; trade_pack_id: string; result_json: Record<string, unknown>; created_at: string }>,
+            tradeLabelByTradePackId,
+          });
+          setScopeCostItems(normalizedItems);
+        } else {
+          setScopeCostItems([]);
+        }
+        setHasLoadedScopeItems(true);
+      } finally {
+        if (!cancelled) setIsLoadingScopeItems(false);
+      }
     };
-  }, [routeProjectSlug, sessionOrganizationId, supabase, userId]);
 
-  const acceptedQuote = quoteRows.find((row) => row.status === "Accepted") ?? null;
-  const summaryQuote = acceptedQuote ?? quoteRows[0] ?? null;
-  const includedLines = toLines(summaryQuote?.terms_inclusions);
-  const excludedLines = toLines(summaryQuote?.scope_exclusions || summaryQuote?.terms_exclusions);
-  const assumptionLines = toLines(summaryQuote?.assumptions);
-  const keyNotesLines = toLines(summaryQuote?.scope_notes ?? summaryQuote?.clarifications);
+    void loadScopeItems();
+    return () => { cancelled = true; };
+  }, [dbProjectId, hasLoadedScopeItems, isScopeImportOpen, organizationId, supabase]);
 
-  const createQuoteAndOpen = useCallback(async () => {
-    if (!supabase || !organizationId || !projectId || isCreating) {
+  const addLineItem = (isOptional = false) => {
+    setLineItems((current) => [...current, makeDefaultLineItem(isOptional)]);
+  };
+
+  const toggleScopeCostItem = (itemId: string) => {
+    setSelectedScopeCostItemIds((current) =>
+      current.includes(itemId) ? current.filter((value) => value !== itemId) : [...current, itemId]
+    );
+  };
+
+  const importSelectedScopeItems = () => {
+    if (selectedScopeCostItemIds.length === 0) return;
+    const selectedItems = availableScopeCostItems.filter((item) => selectedScopeCostItemIds.includes(item.id));
+    if (selectedItems.length === 0) return;
+
+    setLineItems((current) => {
+      const existingDescriptions = new Set(current.map((item) => normalizeForMatch(item.description)));
+      const importedItems: LineItem[] = [];
+      for (const item of selectedItems) {
+        const combinedDescription = item.description ? `${item.title} — ${item.description}` : item.title;
+        const normalizedDescription = normalizeForMatch(combinedDescription);
+        if (existingDescriptions.has(normalizedDescription)) continue;
+        existingDescriptions.add(normalizedDescription);
+        importedItems.push({ id: crypto.randomUUID(), section: "Item", description: combinedDescription, quantity: 1, unit: "Item", rate: 0, isOptional: false });
+      }
+      return importedItems.length > 0 ? [...importedItems, ...current] : current;
+    });
+
+    setSaveMessage(`${selectedItems.length} Scope Builder item${selectedItems.length === 1 ? "" : "s"} added to line items.`);
+    setSelectedScopeCostItemIds([]);
+    setIsScopeImportOpen(false);
+  };
+
+  const updateLineItem = <K extends keyof LineItem>(id: string, key: K, value: LineItem[K]) => {
+    setLineItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
+  };
+
+  const removeLineItem = (id: string) => {
+    setLineItems((current) => current.filter((item) => item.id !== id));
+  };
+
+  const saveQuote = async () => {
+    if (!supabase || !session || !organizationId || !dbProjectId || !routeProjectSlug) {
+      setError("Quote save is not ready. Please refresh and try again.");
+      return;
+    }
+    if (!canManageQuote) {
+      setError("You do not have permission to edit quotes.");
       return;
     }
 
-    if (!canManageQuotes) {
-      setError("You do not have permission to create quotes.");
+    const trimmedTitle = quoteTitle.trim();
+    let trimmedNumber = quoteNumber.trim();
+    const resolvedProjectCode = projectCode ?? deriveProjectCodeFromSlug(routeProjectSlug);
+    if (!trimmedNumber) {
+      trimmedNumber = await resolveNextQuoteNumber(organizationId, resolvedProjectCode);
+      setQuoteNumber(trimmedNumber);
+    }
+    if (!trimmedTitle || !trimmedNumber) {
+      setError("Quote title and quote number are required.");
       return;
     }
 
-    setIsCreating(true);
+    setIsSaving(true);
     setError(null);
+    setSaveMessage(null);
 
     try {
-      const { data: createdRows, error: createError } = await supabase
-        .from("project_quotes")
-        .insert({
+      const payload = {
+        organization_id: organizationId,
+        project_id: dbProjectId,
+        created_by: session.id,
+        quote_title: trimmedTitle,
+        quote_number: trimmedNumber,
+        client_name: clientName.trim(),
+        company_name: companyName.trim(),
+        contact_person: contactPerson.trim(),
+        client_email: email.trim(),
+        client_phone: phone.trim(),
+        site_address: siteAddress.trim(),
+        project_name: projectName.trim(),
+        quote_date: quoteDate || null,
+        expiry_date: expiryDate || null,
+        status: quoteStatus,
+        optional_items_notes: optionalItemsNotes,
+        scope_exclusions: scopeExclusions.trim(),
+        assumptions: assumptions.trim(),
+        scope_notes: scopeNotes.trim() || clarifications.trim(),
+        subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
+        optional_subtotal: Number(pricingSummary.optionalSubtotal.toFixed(2)),
+        margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
+        margin_amount: Number(pricingSummary.margin.toFixed(2)),
+        discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
+        contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
+        gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
+        gst_amount: Number(pricingSummary.gst.toFixed(2)),
+        total_quote_price: Number(pricingSummary.grandTotal.toFixed(2)),
+        validity_period: validityPeriod,
+        payment_terms: paymentTerms,
+        lead_time: leadTime,
+        terms_inclusions: termsInclusions,
+        terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
+        clarifications: clarifications.trim() || scopeNotes.trim(),
+        acceptance_notes: acceptanceNotes,
+      };
+
+      let savedQuoteId = quoteId;
+
+      if (quoteId) {
+        const { data, error: updateError } = await supabase
+          .from("project_quotes")
+          .update(payload)
+          .eq("id", quoteId)
+          .select("id")
+          .single();
+        if (updateError) throw new Error(updateError.message);
+        savedQuoteId = data.id;
+      } else {
+        const { data, error: insertError } = await supabase
+          .from("project_quotes")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (insertError) throw new Error(insertError.message);
+        savedQuoteId = data.id;
+        setQuoteId(data.id);
+      }
+
+      const { error: deleteItemsError } = await supabase
+        .from("project_quote_line_items")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("quote_id", savedQuoteId);
+      if (deleteItemsError) throw new Error(deleteItemsError.message);
+
+      if (lineItems.length > 0) {
+        const itemsPayload = lineItems.map((item, index) => ({
           organization_id: organizationId,
-          project_id: projectId,
-          created_by: userId,
-          quote_title: "New Quote",
-          quote_number: "",
-          status: "Draft",
-        })
-        .select("id")
-        .limit(1);
-
-      if (createError) {
-        throw new Error(createError.message);
+          project_id: dbProjectId,
+          quote_id: savedQuoteId,
+          section: item.section,
+          description: item.description.trim(),
+          quantity: Number(item.quantity),
+          unit: item.unit.trim(),
+          rate: Number(item.rate),
+          total: Number(lineItemTotal(item).toFixed(2)),
+          is_optional: item.isOptional,
+          sort_order: index,
+        }));
+        const { error: insertItemsError } = await supabase.from("project_quote_line_items").insert(itemsPayload);
+        if (insertItemsError) throw new Error(insertItemsError.message);
       }
 
-      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
-      if (!createdRow?.id) {
-        throw new Error("Quote was created but no identifier was returned.");
-      }
+      if (!savedQuoteId) throw new Error("Quote was saved but no identifier was returned.");
 
-      router.push(`/app/projects/${routeProjectSlug}/preconstruction/quote/${createdRow.id}?mode=edit`);
-    } catch (createErr) {
-      setError(createErr instanceof Error ? createErr.message : "Unable to create quote.");
-      setIsCreating(false);
+      setQuoteId(savedQuoteId);
+      setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
+      if (quoteStatus === "Expired") setSaveMessage("Quote marked as expired. Reprice required.");
+      setIsEditing(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save quote.");
+    } finally {
+      setIsSaving(false);
     }
-  }, [canManageQuotes, isCreating, organizationId, projectId, userId, routeProjectSlug, router, supabase]);
+  };
 
-  async function handleDeleteSummaryQuote() {
-    if (!summaryQuote || !supabase || isDeletingSummaryQuote) {
+  const deleteQuote = useCallback(async () => {
+    if (!quoteId || !supabase || !organizationId) {
+      setError("Quote delete is not ready. Please refresh and try again.");
       return;
     }
-
-    if (!canManageQuotes) {
+    if (!canManageQuote) {
       setError("You do not have permission to delete quotes.");
       return;
     }
 
-    const shouldDelete = window.confirm(`Delete quote ${summaryQuote.quote_number}? This cannot be undone.`);
-    if (!shouldDelete) {
-      return;
-    }
+    const confirmed = typeof window === "undefined" ? true : window.confirm(`Delete quote ${quoteNumber.trim() || quoteId}? This cannot be undone.`);
+    if (!confirmed) return;
 
-    setIsDeletingSummaryQuote(true);
+    setIsDeleting(true);
     setError(null);
+    setSaveMessage(null);
 
     try {
       const { error: deleteItemsError } = await supabase
         .from("project_quote_line_items")
         .delete()
-        .eq("quote_id", summaryQuote.id);
-
-      if (deleteItemsError) {
-        throw new Error(deleteItemsError.message);
-      }
+        .eq("organization_id", organizationId)
+        .eq("quote_id", quoteId);
+      if (deleteItemsError) throw new Error(deleteItemsError.message);
 
       const { error: deleteQuoteError } = await supabase
         .from("project_quotes")
         .delete()
-        .eq("id", summaryQuote.id);
+        .eq("organization_id", organizationId)
+        .eq("id", quoteId);
+      if (deleteQuoteError) throw new Error(deleteQuoteError.message);
 
-      if (deleteQuoteError) {
-        throw new Error(deleteQuoteError.message);
-      }
-
-      setQuoteRows((currentRows) => currentRows.filter((row) => row.id !== summaryQuote.id));
+      setQuoteId(null);
+      setQuoteTitle("");
+      setQuoteNumber("");
+      setLineItems([makeDefaultLineItem()]);
+      setIsEditing(true);
+      setSaveMessage(null);
+      loadedSlugRef.current = null;
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Unable to delete quote.");
     } finally {
-      setIsDeletingSummaryQuote(false);
+      setIsDeleting(false);
     }
-  }
+  }, [canManageQuote, organizationId, quoteId, quoteNumber, supabase]);
+
+  const exportQuotePdf = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const html = buildQuotePdfHtml({
+      lineItems,
+      pricingSummary: pricingSummary as PricingSummary,
+      showMarginBreakout,
+      includeDiscountInExport,
+      includeContingencyInExport,
+      quoteDate,
+      quoteNumber,
+      organizationName,
+      organizationLogoUrl,
+      organizationBrandPrimaryColor: "",
+      projectName,
+      companyName,
+      clientName,
+      siteAddress,
+      contactPerson,
+      email,
+      phone,
+      expiryDate,
+      gstPercent,
+      termsInclusions,
+      termsExclusions,
+      clarifications,
+      assumptions,
+    });
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const popup = window.open(url, "_blank", "width=1024,height=768");
+    if (!popup) {
+      URL.revokeObjectURL(url);
+      setError("Unable to export PDF. Please allow pop-ups and try again.");
+      return;
+    }
+    popup.focus();
+    popup.onload = () => { popup.print(); };
+    popup.onafterprint = () => { URL.revokeObjectURL(url); };
+  }, [
+    assumptions, clarifications, clientName, companyName, contactPerson, email, expiryDate,
+    includeContingencyInExport, includeDiscountInExport, showMarginBreakout, gstPercent, lineItems,
+    organizationLogoUrl, organizationName, phone, pricingSummary,
+    projectName, quoteDate, quoteNumber, termsExclusions, termsInclusions, siteAddress,
+  ]);
 
   return (
-    <div className={`${styles.scope} -mb-8 space-y-6`}>
-      <section className={styles.heroBlock}>
-        <div>
-          <h1 className={styles.heroTitle}>Quotation</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
-            Baseline pricing agreed for this job
-          </p>
-        </div>
-        <div className={styles.heroActions}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
-                aria-label="Quote actions"
-              >
-                Actions
-                <ChevronDown className="ml-1 h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side="top"
-              align="end"
-              sideOffset={8}
-              className={`${styles.menuPanel} !z-[200] min-w-[220px] !bg-white p-1.5 opacity-100`}
-            >
-              {summaryQuote ? (
-                <>
-                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
-                    <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      Open
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]">
-                    <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${summaryQuote.id}?mode=edit`}>
-                      <PenLine className="mr-2 h-4 w-4" />
-                      Edit
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-                </>
-              ) : null}
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void createQuoteAndOpen();
-                }}
-                disabled={!canManageQuotes || isCreating || isLoading}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                {isCreating ? "Creating..." : "New Quote"}
-              </DropdownMenuItem>
-              {summaryQuote ? (
-                <>
-                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      void handleDeleteSummaryQuote();
-                    }}
-                    disabled={!canManageQuotes || isDeletingSummaryQuote}
-                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {isDeletingSummaryQuote ? "Deleting..." : "Delete"}
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </section>
-
-      {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
-      ) : null}
-      {!canManageQuotes && session ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
-          Only owner, admin, QS, and project manager roles can create, edit, or delete quotes.
-        </p>
-      ) : null}
-
-      <section
-        className="overflow-hidden rounded-[28px] border border-[#d9dee5] bg-white px-7 pb-7 pt-5 shadow-none md:px-8 md:pb-8 md:pt-6"
-      >
-        <div className="bg-white">
-          <div className="space-y-6">
-            {isLoading ? (
-              <p className={`${interMedium.className} py-8 text-sm font-medium text-[#6b6b6b]`}>Loading quote register...</p>
-            ) : (
-              <>
-                {summaryQuote ? (
-                  <div className="py-1">
-                    <div className="grid gap-6 md:grid-cols-[1.45fr_1fr] md:items-end">
-                      <div className="min-w-0 space-y-3">
-                        <p className="truncate text-[30px] font-semibold leading-[1.04] tracking-[-0.02em] text-[#1d2433]">
-                          {summaryQuote.quote_title || "Untitled quote"}
-                        </p>
-                        <div className={`${interMedium.className} space-y-0.5 text-sm text-[#64748B]`}>
-                          <p>{summaryQuote.quote_number} · {getRevision(summaryQuote.quote_number)}</p>
-                          <p>Accepted {toDayShortMonthYearLabel(summaryQuote.quote_date || summaryQuote.updated_at)} · {session?.name || "—"}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-start gap-2 md:items-end">
-                        <p className="text-[36px] font-semibold leading-none tracking-[-0.02em] text-[#061A25]">
-                          {toAccountingMoney(summaryQuote.total_quote_price ?? 0)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className={`${styles.cardMuted} ${styles.producedRowProjectTone} px-5 py-6 text-center`}>
-                    <p className={`${interMedium.className} text-sm font-medium text-[#5b6879]`}>
-                      No accepted quote yet — create or link one to start tracking this job
-                    </p>
-                    <Button onClick={() => void createQuoteAndOpen()} disabled={!canManageQuotes || isCreating || isLoading} className={`${interMedium.className} mt-3 h-8 rounded-full bg-[#0B2739] px-3 text-[13px] text-white hover:bg-[#0B2739]`}>
-                      <Plus className="mr-1 h-3.5 w-3.5" />
-                      {isCreating ? "Creating..." : "Create First Quote"}
-                    </Button>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Scope Summary</h3>
-                    <div className="grid gap-3 md:grid-cols-3">
-                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
-                      <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-emerald-700`}>Included</p>
-                      <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
-                        {includedLines.length > 0 ? (
-                          includedLines.map((line) => <li key={`include-${line}`}>{line}</li>)
-                        ) : (
-                          <li className="text-[#64748B]">No inclusions captured in this quote.</li>
-                        )}
-                      </ul>
-                    </div>
-                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
-                      <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-rose-700`}>Excluded</p>
-                      <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
-                        {excludedLines.length > 0 ? (
-                          excludedLines.map((line) => <li key={`exclude-${line}`}>{line}</li>)
-                        ) : (
-                          <li className="text-[#64748B]">No exclusions captured in this quote.</li>
-                        )}
-                      </ul>
-                    </div>
-                    <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
-                      <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-amber-700`}>Assumptions</p>
-                      <ul className={`${interMedium.className} mt-2 space-y-1 text-sm text-[#334155]`}>
-                        {assumptionLines.length > 0 ? (
-                          assumptionLines.map((line) => <li key={`assumption-${line}`}>{line}</li>)
-                        ) : (
-                          <li className="text-[#64748B]">No assumptions captured in this quote.</li>
-                        )}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Key Notes / Qualifications</h3>
-                  <div className={`${styles.cardMuted} px-4 py-4`} style={{ backgroundColor: "#FBFEFE" }}>
-                    {keyNotesLines.length > 0 ? (
-                      <ul className={`${interMedium.className} space-y-1 text-sm text-[#334155]`}>
-                        {keyNotesLines.map((line) => <li key={`note-${line}`}>{line}</li>)}
-                      </ul>
-                    ) : (
-                      <p className={`${interMedium.className} text-sm text-[#64748B]`}>
-                        No key notes captured in this quote.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Quote History</h3>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsQuoteHistoryOpen((current) => !current)}
-                      className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
-                      aria-expanded={isQuoteHistoryOpen}
-                      aria-controls="quote-history-table"
-                    >
-                      {isQuoteHistoryOpen ? "Hide" : "Show"}
-                      <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${isQuoteHistoryOpen ? "rotate-180" : "rotate-0"}`} />
-                    </Button>
-                  </div>
-                  {isQuoteHistoryOpen ? (
-                    <div id="quote-history-table" className="overflow-x-auto rounded-[16px] border border-[#D9DEE5] bg-white">
-                      <table className="min-w-full border-collapse">
-                        <thead>
-                          <tr className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.08em] text-[#6b6b6b]`}>
-                            <th className="px-4 py-3 text-left">Quote #</th>
-                            <th className="px-4 py-3 text-left">Revision</th>
-                            <th className="px-4 py-3 text-left">Status</th>
-                            <th className="px-4 py-3 text-left">Date</th>
-                            <th className="px-4 py-3 text-right">Value</th>
-                            <th className="px-4 py-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {quoteRows.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className={`${interMedium.className} px-4 py-6 text-center text-sm text-[#6b6b6b]`}>
-                                No quote revisions yet.
-                              </td>
-                            </tr>
-                          ) : quoteRows.map((row) => {
-                            const isCurrent = acceptedQuote?.id === row.id;
-
-                            return (
-                              <tr
-                                key={row.id}
-                                className="border-t border-[#D9DEE5] bg-[#FBFEFE] transition-colors"
-                              >
-                                <td className="px-4 py-3 text-sm font-semibold text-[#1d1d1d]">
-                                  {row.quote_number}
-                                </td>
-                                <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
-                                  {getRevision(row.quote_number)}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className={`inline-flex rounded-[8px] border px-2.5 py-0.5 text-xs font-semibold ${historyStatusClassName(isCurrent)}`}>
-                                    {toHistoryStatusLabel(isCurrent)}
-                                  </span>
-                                </td>
-                                <td className={`${interMedium.className} px-4 py-3 text-sm font-medium text-[#1d1d1d]`}>
-                                  {toDayMonthYearLabel(row.quote_date || row.updated_at)}
-                                </td>
-                                <td className="px-4 py-3 text-right text-sm font-semibold text-[#1d1d1d]">
-                                  {toMoney(row.total_quote_price ?? 0)}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <Button
-                                      asChild
-                                      variant="outline"
-                                      className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
-                                    >
-                                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/quote/${row.id}?mode=edit`}>
-                                        View
-                                      </Link>
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="space-y-3">
-                  <h3 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.1em] text-[#6b6b6b]`}>Linked Workflows</h3>
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
-                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>View Variations</Link>
-                    </Button>
-                    <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
-                      <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>View Claims</Link>
-                    </Button>
-                    <Button asChild variant="outline" className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}>
-                      <Link href={`/app/projects/${routeProjectSlug}/scope-builder`}>View Scope</Link>
-                    </Button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-    </div>
+    <QuoteEditorLayout
+      heroTitle="Quote"
+      error={error}
+      saveMessage={saveMessage}
+      readOnlyMessage={!canManageQuote && session ? "You can review this quote, but only owner, admin, QS, and project manager roles can edit or delete it." : null}
+      shouldShowEditor={shouldShowEditor}
+      isLoadingQuote={isLoadingQuote}
+      isHydratingExistingQuote={isHydratingExistingQuote}
+      canManageQuote={canManageQuote}
+      canDeleteQuote={canManageQuote}
+      isSaving={isSaving}
+      isDeleting={isDeleting}
+      quoteId={quoteId}
+      quoteStatus={quoteStatus}
+      setQuoteStatus={setQuoteStatus}
+      quoteTitle={quoteTitle}
+      setQuoteTitle={setQuoteTitle}
+      clientName={clientName}
+      siteAddress={siteAddress}
+      projectName={projectName}
+      setProjectName={setProjectName}
+      quoteDate={quoteDate}
+      setQuoteDate={setQuoteDate}
+      expiryDate={expiryDate}
+      setExpiryDate={setExpiryDate}
+      quoteNumber={quoteNumber}
+      onSave={saveQuote}
+      onEdit={() => {
+        if (!canManageQuote) {
+          setError("You do not have permission to edit quotes.");
+          return;
+        }
+        setIsEditing(true);
+      }}
+      onExport={exportQuotePdf}
+      onDelete={deleteQuote}
+      lineItems={lineItems}
+      mainLineItems={mainLineItems}
+      optionalLineItems={optionalLineItems}
+      addLineItem={addLineItem}
+      updateLineItem={updateLineItem}
+      removeLineItem={removeLineItem}
+      isQuoteDetailsOpen={isQuoteDetailsOpen}
+      setIsQuoteDetailsOpen={setIsQuoteDetailsOpen}
+      isLineItemsOpen={isLineItemsOpen}
+      setIsLineItemsOpen={setIsLineItemsOpen}
+      isTermsOpen={isTermsOpen}
+      setIsTermsOpen={setIsTermsOpen}
+      isScopeImportOpen={isScopeImportOpen}
+      setIsScopeImportOpen={setIsScopeImportOpen}
+      isLoadingScopeItems={isLoadingScopeItems}
+      availableScopeCostItems={availableScopeCostItems}
+      selectedScopeCostItemIds={selectedScopeCostItemIds}
+      toggleScopeCostItem={toggleScopeCostItem}
+      importSelectedScopeItems={importSelectedScopeItems}
+      sectionSubtotals={sectionSubtotals}
+      validityPeriod={validityPeriod}
+      setValidityPeriod={setValidityPeriod}
+      paymentTerms={paymentTerms}
+      setPaymentTerms={setPaymentTerms}
+      leadTime={leadTime}
+      setLeadTime={setLeadTime}
+      termsInclusions={termsInclusions}
+      setTermsInclusions={setTermsInclusions}
+      termsExclusions={scopeExclusions}
+      setTermsExclusions={(value) => {
+        setScopeExclusions(value);
+        setTermsExclusions(value);
+      }}
+      clarifications={clarifications}
+      setClarifications={(value) => {
+        setClarifications(value);
+        setScopeNotes(value);
+      }}
+      assumptions={assumptions}
+      setAssumptions={setAssumptions}
+      marginPercent={marginPercent}
+      setMarginPercent={setMarginPercent}
+      discountAmount={discountAmount}
+      setDiscountAmount={setDiscountAmount}
+      contingencyAmount={contingencyAmount}
+      setContingencyAmount={setContingencyAmount}
+      gstPercent={gstPercent}
+      setGstPercent={setGstPercent}
+      includeMarginInExport={includeMarginInExport}
+      setIncludeMarginInExport={setIncludeMarginInExport}
+      includeDiscountInExport={includeDiscountInExport}
+      setIncludeDiscountInExport={setIncludeDiscountInExport}
+      includeContingencyInExport={includeContingencyInExport}
+      setIncludeContingencyInExport={setIncludeContingencyInExport}
+      pricingSummary={pricingSummary as PricingSummary}
+    />
   );
 }

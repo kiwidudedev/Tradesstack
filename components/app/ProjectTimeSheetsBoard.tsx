@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Check, ChevronDown, Download, FileText } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Clock, Download, FileText, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 type DashboardRange = "Today" | "This week" | "All recent";
 
@@ -612,261 +612,201 @@ export function ProjectTimeSheetsBoard() {
   };
 
   return (
-    <div className="min-h-full space-y-4 bg-[#FBFEFE]">
-      <section className="space-y-4 bg-[#FBFEFE] pt-[25px]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-[41.6px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Time Sheets</h1>
-            <p className={`${interMedium.className} mt-4 text-[15px] font-medium text-[#6B7280]`}>
-              Real-time labour visibility and control for {context?.projectName ?? "this job"}.
-            </p>
-          </div>
+    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                className={`${interMedium.className} h-8 rounded-[999px] border-[#D9DEE5] !bg-white px-3 text-[13px] text-[#0B2639] shadow-none hover:!border-[#D9DEE5] hover:!bg-[#F7FAFB] hover:!text-[#0B2639]`}
-                >
-                  Actions
-                  <ChevronDown className="ml-1 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                side="top"
-                align="end"
-                sideOffset={8}
-                className="!z-[200] min-w-[220px] rounded-[12px] border border-[#D9DEE5] !bg-white p-1.5 opacity-100 shadow-none"
-              >
-                <DropdownMenuItem
-                  onClick={() => setRange("Today")}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-                >
-                  <span className="mr-2 inline-flex w-4 items-center justify-center">
-                    {range === "Today" ? <Check className="h-4 w-4" /> : null}
-                  </span>
-                  Today
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setRange("This week")}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-                >
-                  <span className="mr-2 inline-flex w-4 items-center justify-center">
-                    {range === "This week" ? <Check className="h-4 w-4" /> : null}
-                  </span>
-                  This week
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setRange("All recent")}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-                >
-                  <span className="mr-2 inline-flex w-4 items-center justify-center">
-                    {range === "All recent" ? <Check className="h-4 w-4" /> : null}
-                  </span>
-                  All recent
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
-                <DropdownMenuItem
-                  onClick={exportCsv}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => window.print()}
-                  className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F7FAFB]"
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  PDF
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        {error ? (
-          <p className={`${interMedium.className} rounded-[6px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>
-            {error}
+      {/* Hero */}
+      <section className={`${styles.heroBlock} mb-2`}>
+        <div className="min-w-0 flex-1">
+          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>Timesheets</h1>
+          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>
+            Real-time labour visibility and control for {context?.projectName ?? "this job"}
           </p>
-        ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}>
+                Range: {range}
+                <ChevronDown className="ml-1 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="!z-[200] min-w-[180px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+              {(["Today", "This week", "All recent"] as DashboardRange[]).map((r) => (
+                <DropdownMenuItem key={r} onClick={() => setRange(r)} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium focus:bg-[#F8FAFC] ${range === r ? "text-[#F15A29]" : "text-[#1d2433]"}`}>
+                  <span className="mr-2 inline-flex w-4 items-center justify-center">{range === r ? <Check className="h-4 w-4" /> : null}</span>
+                  {r}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
+              <DropdownMenuItem onClick={exportCsv} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
+                <Download className="mr-2 h-4 w-4 text-[#64748B]" />Export CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.print()} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
+                <FileText className="mr-2 h-4 w-4 text-[#64748B]" />Print PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            type="button"
+            onClick={() => { if (activeMyEntry) { void clockOut(); } else { void clockIn(); } }}
+            disabled={isSaving}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F74917] px-5 !text-white hover:bg-[#e63f10]`}
+          >
+            {activeMyEntry ? "Clock Out" : "Clock In"}
+          </Button>
+        </div>
       </section>
 
-      {activeMyEntry ? (
-        <section className="sticky top-4 z-30">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#BDE7C9] bg-[#ECFDF3] px-4 py-3 shadow-[0_10px_22px_-18px_rgba(15,23,42,0.18)]">
-            <div>
-              <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>
-                You are clocked in
-              </p>
-              <p className="mt-1 text-[15px] font-semibold text-[#14532D]">
-                {formatTime(activeMyEntry.clock_in_at)} → Now ({formatHours(getHours(activeMyEntry, now))})
-              </p>
-              {activeMyEntry.purchase_order_number ? (
-                <p className={`${interMedium.className} mt-1 text-[12px] font-medium text-[#166534]`}>
-                  Linked to {activeMyEntry.purchase_order_number}
-                  {activeMyEntry.purchase_order_title ? ` - ${activeMyEntry.purchase_order_title}` : ""}
-                </p>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              onClick={() => void clockOut()}
-              disabled={isSaving}
-              className="h-10 rounded-[10px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]"
-            >
-              Clock Out
-            </Button>
-          </div>
-        </section>
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
       ) : null}
 
-      <section className="bg-[#FBFEFE]">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
-            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>On Site Now</p>
-            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{summary.onSiteNow}</p>
-            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
-              Workers currently clocked in on site.
+      {activeMyEntry ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#BDE7C9] bg-[#ECFDF3] px-4 py-3">
+          <div>
+            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>You are clocked in</p>
+            <p className={`${ibmPlexSans.className} mt-1 text-[15px] font-semibold text-[#14532D]`}>
+              {formatTime(activeMyEntry.clock_in_at)} → Now ({formatHours(getHours(activeMyEntry, now))})
             </p>
-          </div>
-
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
-            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#E11D48]`}>Overtime Alerts</p>
-            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{summary.overtimeAlerts}</p>
-            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
-              Entries trending over the overtime threshold.
-            </p>
-          </div>
-
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
-            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#0F766E]`}>Complete</p>
-            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">
-              {Math.max(0, summary.workersToday - summary.missingClockOuts)}
-            </p>
-            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
-              Finished shifts recorded in this range.
-            </p>
-          </div>
-
-          <div className="rounded-[24px] border border-[#D9DEE5] bg-white px-5 py-4.5">
-            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#B45309]`}>Total Hours</p>
-            <p className="mt-3 text-[1.5rem] font-semibold leading-none tracking-[-0.04em] text-[#0F172A]">{formatHours(summary.totalHours)}</p>
-            <p className={`${interMedium.className} mt-3 text-[14px] leading-[1.4] text-[#334155]`}>
-              Total labour hours captured in the selected range.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <Card className="rounded-[28px] border border-[#D9DEE5] !bg-white shadow-none">
-        <CardHeader className="pb-3 pt-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>
-                Workforce Register
+            {activeMyEntry.purchase_order_number ? (
+              <p className={`${interMedium.className} mt-1 text-[12px] font-medium text-[#166534]`}>
+                Linked to {activeMyEntry.purchase_order_number}{activeMyEntry.purchase_order_title ? ` - ${activeMyEntry.purchase_order_title}` : ""}
               </p>
+            ) : null}
+          </div>
+          <Button type="button" onClick={() => void clockOut()} disabled={isSaving} className="h-9 rounded-full bg-[#F74917] px-5 text-sm font-medium text-white hover:bg-[#e63f10]">
+            Clock Out
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="px-0 py-0">
+        <div className="space-y-6">
+
+          {/* Stat cards */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-emerald-50">
+                  <Users className="h-5 w-5 text-emerald-500" />
+                </span>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>On Site Now</p>
+              </div>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{summary.onSiteNow}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-emerald-600`}>Workers Currently Clocked In</p>
             </div>
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-rose-50">
+                  <AlertTriangle className="h-5 w-5 text-rose-500" />
+                </span>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Overtime Alerts</p>
+              </div>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{summary.overtimeAlerts}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>Entries Over Threshold</p>
+            </div>
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-indigo-50">
+                  <CheckCircle2 className="h-5 w-5 text-indigo-500" />
+                </span>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Complete</p>
+              </div>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{Math.max(0, summary.workersToday - summary.missingClockOuts)}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>Finished Shifts This Range</p>
+            </div>
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-amber-50">
+                  <Clock className="h-5 w-5 text-amber-500" />
+                </span>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Total Hours</p>
+              </div>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{formatHours(summary.totalHours)}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-amber-600`}>Labour Hours In Selected Range</p>
+            </div>
+          </div>
+
+          {/* Worker filters + PO selector */}
+          {isWorkerRole ? (
             <div className="flex flex-wrap items-center gap-2">
-              <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>Site Clocking</p>
-              {isWorkerRole ? (
-                purchaseOrders.length === 1 && selectedPurchaseOrder ? (
-                  <div className="flex min-h-9 min-w-[240px] items-center rounded-[8px] border border-[#D6DDE9] bg-[#F8F9FB] px-3">
-                    <span className={`${interMedium.className} text-[12px] font-medium text-[#1D2433]`}>
-                      Assigned PO: {selectedPurchaseOrder.purchase_order_number} -{" "}
-                      {selectedPurchaseOrder.purchase_order_title || "Untitled purchase order"}
-                    </span>
-                  </div>
-                ) : (
-                  <select
-                    value={selectedPurchaseOrderId}
-                    onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
-                    disabled={isSaving || Boolean(activeMyEntry)}
-                    className={`${interMedium.className} h-9 min-w-[240px] rounded-[8px] border border-[#D6DDE9] bg-white px-3 text-[12px] font-medium text-[#1D2433] disabled:cursor-not-allowed disabled:bg-[#F8F9FB] disabled:text-[#94A3B8]`}
-                  >
-                    <option value="">Select purchase order</option>
-                    {purchaseOrders.map((purchaseOrder) => (
-                      <option key={purchaseOrder.id} value={purchaseOrder.id}>
-                        {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
-                      </option>
-                    ))}
-                  </select>
-                )
+              {purchaseOrders.length === 1 && selectedPurchaseOrder ? (
+                <div className={`${interMedium.className} flex h-9 items-center rounded-full border border-[#D7E1EC] bg-[#F8F9FC] px-4 text-[13px] font-medium text-[#1D2433]`}>
+                  PO: {selectedPurchaseOrder.purchase_order_number} — {selectedPurchaseOrder.purchase_order_title || "Untitled"}
+                </div>
+              ) : (
+                <select
+                  value={selectedPurchaseOrderId}
+                  onChange={(e) => setSelectedPurchaseOrderId(e.target.value)}
+                  disabled={isSaving || Boolean(activeMyEntry)}
+                  className={`${interMedium.className} h-9 rounded-full border border-[#D7E1EC] bg-[#F8F9FC] px-4 text-[13px] font-medium text-[#1D2433] disabled:opacity-50`}
+                >
+                  <option value="">Select purchase order</option>
+                  {purchaseOrders.map((po) => (
+                    <option key={po.id} value={po.id}>{po.purchase_order_number} — {po.purchase_order_title || "Untitled"}</option>
+                  ))}
+                </select>
+              )}
+              {isWorkerRole && purchaseOrders.length === 0 ? (
+                <p className={`${interMedium.className} text-[13px] font-medium text-amber-700`}>No purchase order assigned. Contact your manager.</p>
               ) : null}
-              <Button
-                type="button"
-                onClick={() => {
-                  if (activeMyEntry) {
-                    void clockOut();
-                    return;
-                  }
-                  void clockIn();
-                }}
-                disabled={isSaving}
-                className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-medium text-white hover:bg-[#e63f10]"
-              >
-                {activeMyEntry ? "Clock Out" : "Clock In"}
-              </Button>
             </div>
-          </div>
-          {isWorkerRole && purchaseOrders.length === 0 ? (
-            <p className={`${interMedium.className} mt-3 text-[13px] font-medium text-amber-700`}>
-              No purchase order has been assigned to you for this project. Please contact your manager.
-            </p>
           ) : null}
-          <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
-              {tradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
-              {companyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={workerFilter} onChange={(event) => setWorkerFilter(event.target.value)} className={`${interMedium.className} h-10 rounded-[12px] border border-[#D6DDE9] bg-white px-3 text-[14px] font-medium text-[#1D2433]`}>
-              {workerOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            {([
+              { value: tradeFilter, onChange: setTradeFilter, options: tradeOptions },
+              { value: companyFilter, onChange: setCompanyFilter, options: companyOptions },
+              { value: workerFilter, onChange: setWorkerFilter, options: workerOptions },
+            ] as const).map((filter, i) => (
+              <div key={i} className="relative">
+                <select
+                  value={filter.value}
+                  onChange={(e) => filter.onChange(e.target.value)}
+                  className={`${interMedium.className} h-9 w-full appearance-none rounded-full border border-[#D7E1EC] bg-[#F8F9FC] pl-4 pr-9 text-[13px] font-medium text-[#1D2433]`}
+                >
+                  {filter.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9AA8BC]" />
+              </div>
+            ))}
           </div>
-        </CardHeader>
-        <CardContent className="pt-0 pb-5">
-          <p className={`${interMedium.className} mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>
-            Register Summary
-          </p>
-          <div className="mt-3 overflow-hidden rounded-[18px] border border-[#D9DEE5] bg-white">
-            <table className="w-full border-collapse">
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC]">
+            <table className="min-w-full border-collapse">
               <thead>
-                <tr className={`${interMedium.className} bg-[#F8F9FB] text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6E6E6E]`}>
-                  <th className="px-4 py-3 text-left">Worker</th>
-                  <th className="px-4 py-3 text-left">Purchase Order</th>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Clock In</th>
-                  <th className="px-4 py-3 text-left">Clock Out</th>
-                  <th className="px-4 py-3 text-left">Duration</th>
-                  <th className="px-4 py-3 text-left">Status</th>
+                <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                  <th className="w-[13%] px-4 py-2.5 text-left">Worker</th>
+                  <th className="w-[25%] px-4 py-2.5 text-left">Purchase Order</th>
+                  <th className="w-[12%] px-4 py-2.5 text-left">Date</th>
+                  <th className="w-[12%] whitespace-nowrap px-4 py-2.5 text-left">Clock In</th>
+                  <th className="w-[12%] whitespace-nowrap px-4 py-2.5 text-left">Clock Out</th>
+                  <th className="w-[12%] px-4 py-2.5 text-left">Duration</th>
+                  <th className="w-[14%] px-4 py-2.5 text-left">Status</th>
                 </tr>
               </thead>
-              <tbody>
-                {sortedEntries.map((entry) => {
+              <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                {sortedEntries.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className={`${interMedium.className} px-4 py-10 text-center text-[13px] text-[#6b6b6b]`}>
+                      No timesheet entries for the selected range.
+                    </td>
+                  </tr>
+                ) : sortedEntries.map((entry) => {
                   const status = registerStatus(entry, now);
                   return (
-                    <tr key={entry.id} className="border-t border-[#E5E7EB] first:border-t-0">
-                      <td className="px-4 py-3 text-[14px] font-semibold text-[#202124]">{entry.worker_name}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>
-                        {entry.purchase_order_number ? (
-                          <span>
-                            {entry.purchase_order_number}
-                            {entry.purchase_order_title ? ` - ${entry.purchase_order_title}` : ""}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
+                    <tr key={entry.id} className="transition-colors">
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>{entry.worker_name}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
+                        {entry.purchase_order_number ? `${entry.purchase_order_number}${entry.purchase_order_title ? ` — ${entry.purchase_order_title}` : ""}` : "—"}
                       </td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatDate(entry.clock_in_at)}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatTime(entry.clock_in_at)}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatTime(entry.clock_out_at)}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[14px] font-medium text-[#475569]`}>{formatHours(getHours(entry, now))}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>{formatDate(entry.clock_in_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>{formatTime(entry.clock_in_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>{formatTime(entry.clock_out_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] font-medium text-[#1d2433]`}>{formatHours(getHours(entry, now))}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-[999px] border px-2.5 py-1 text-[12px] font-semibold ${status.tone}`}>{status.label}</span>
+                        <span className={`inline-flex rounded-[8px] border px-2.5 py-0.5 text-[12px] font-semibold ${status.tone}`}>{status.label}</span>
                       </td>
                     </tr>
                   );
@@ -874,12 +814,17 @@ export function ProjectTimeSheetsBoard() {
               </tbody>
             </table>
           </div>
-          <p className={`${interMedium.className} mt-3 text-[12px] text-[#7A889C]`}>
-            {insights[2]} Coordinates are logged at clock in/out for audit traceability.
-          </p>
-        </CardContent>
-      </Card>
 
+          {/* Total */}
+          <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
+            <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
+              <span>Total Hours</span>
+              <span>{formatHours(summary.totalHours)}</span>
+            </p>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }

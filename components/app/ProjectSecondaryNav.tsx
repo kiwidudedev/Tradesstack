@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 
 const PROJECT_TOP_NAV_ITEMS = [
   { label: "Overview", segment: "dashboard", icon: LayoutGrid },
-  { label: "Scope / Pricing", segment: "preconstruction/quote", icon: FileText },
+  { label: "Quotation", segment: "preconstruction/quote", icon: FileText },
   { label: "Tasks", segment: "job-management/todos", icon: ClipboardCheck },
   { label: "Variations", segment: "preconstruction/variations", icon: WandSparkles },
   { label: "Purchase Orders", segment: "preconstruction/purchase-orders", icon: FileSpreadsheet },

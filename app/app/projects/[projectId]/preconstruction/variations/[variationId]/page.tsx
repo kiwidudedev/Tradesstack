@@ -15,11 +15,11 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import styles from "@/components/app/trade-pack-builder.module.css";
@@ -130,7 +130,7 @@ type RpcResultRow = Record<string, unknown>;
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Priced", "Sent", "Client Review", "Approved", "Rejected", "Invoiced"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Client Request", "Drawing Revision", "Site Instruction", "RFI", "Unknown"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
-const LINE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 130px 78px 78px 110px 110px";
+const LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 140px 120px 72px 72px 104px 104px 44px";
 const VARIATION_ATTACHMENTS_BUCKET = "project-variation-attachments";
 
 function DescriptionInputWithPreview({
@@ -140,24 +140,12 @@ function DescriptionInputWithPreview({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const hasContent = value.trim().length > 0;
-
   return (
-    <div className="group relative">
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 min-w-[200px] rounded-[6px]"
-      />
-      {hasContent ? (
-        <div className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 w-[min(560px,70vw)] rounded-[6px] border border-[#E6ECF5] bg-[#F8F9FC] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.14)] opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-          <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
-            Full Description
-          </p>
-          <p className={`${interMedium.className} mt-1 text-sm font-medium leading-relaxed text-[#1F2E45]`}>{value}</p>
-        </div>
-      ) : null}
-    </div>
+    <Input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none"
+    />
   );
 }
 
@@ -245,6 +233,18 @@ function normalizeOrigin(value: string): VariationOrigin {
     return value as VariationOrigin;
   }
   return "Unknown";
+}
+
+function variationStatusBadgeClass(status: VariationStatus): string {
+  switch (status) {
+    case "Approved": return "border-[#BBF7D0] bg-[#DCFCE7] text-[#15803D]";
+    case "Rejected": return "border-[#FECACA] bg-[#FEE2E2] text-[#DC2626]";
+    case "Invoiced": return "border-[#BFDBFE] bg-[#DBEAFE] text-[#1D4ED8]";
+    case "Sent": return "border-[#BFDBFE] bg-[#DBEAFE] text-[#1D4ED8]";
+    case "Client Review": return "border-[#FDE68A] bg-[#FEF3C7] text-[#92400E]";
+    case "Priced": return "border-[#C7D2FE] bg-[#EEF2FF] text-[#4338CA]";
+    default: return "border-[#D7E1EC] bg-[#FBFEFE] text-[#4B5D79]";
+  }
 }
 
 export default function ProjectVariationsPage() {
@@ -1408,29 +1408,19 @@ export default function ProjectVariationsPage() {
 
   if (isLoadingVariations) {
     return (
-      <div className={`${styles.scope} -mb-8 space-y-6`}>
+      <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
         <section className={styles.heroBlock}>
-          <div>
-            <h1 className={styles.heroTitle}>Variation</h1>
-            <p className={`${interMedium.className} ${styles.heroSummary}`}>
-              Manage pricing changes and approvals for this job
-            </p>
+          <div className="space-y-3">
+            <div className="h-9 w-48 animate-pulse rounded-full bg-[#E8EDF5]" />
           </div>
-          <div className={styles.heroActions}>
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px] opacity-60`}
-            >
-              Actions
-              <ChevronDown className="ml-1 h-4 w-4" />
-            </Button>
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-32 animate-pulse rounded-full bg-[#E8EDF5]" />
+            <div className="h-9 w-28 animate-pulse rounded-full bg-[#E8EDF5]" />
           </div>
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+          <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-4">
               <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="grid gap-3 md:grid-cols-3">
@@ -1445,48 +1435,69 @@ export default function ProjectVariationsPage() {
               <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading variations...</p>
             </div>
           </div>
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5">
-              <CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pb-5">
+          <div className={`${styles.quotePanelCard} overflow-hidden`}>
+            <div className="px-5 pb-3 pt-5">
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</h2>
+            </div>
+            <div className="space-y-3 px-5 pb-5">
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
               <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`${styles.scope} -mb-8 space-y-6`}>
-      <section className={styles.heroBlock}>
-        <div>
-          <h1 className={styles.heroTitle}>Variation</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>
-            Manage pricing changes and approvals for this job
-          </p>
+    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
+<section className={styles.heroBlock}>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={styles.quotePageTitle}>{activeVariation?.code || "Variation"}</h1>
+            {activeVariation ? (
+              <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] ${variationStatusBadgeClass(activeVariation.status)}`}>
+                {activeVariation.status}
+              </span>
+            ) : null}
+          </div>
+          {saveMessage ? <p className={`${styles.quoteBodyLabel} text-xs`}>{saveMessage}</p> : null}
         </div>
-        <div className={styles.heroActions}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void saveVariation()}
+            disabled={!canManageVariation || isSaving}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
+          >
+            {isSaving ? "Saving..." : "Save Variation"}
+          </Button>
+          <Button
+            type="button"
+            onClick={exportVariationPdf}
+            disabled={isSaving}
+            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
+          >
+            Export PDF
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
-                className={`${interMedium.className} ${styles.controlButton} ${styles.producedActionButtonProjectTone} h-8 px-3 text-[13px]`}
+                className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569]`}
               >
-                Actions
-                <ChevronDown className="ml-1 h-4 w-4" />
+                <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" sideOffset={8} className={`${styles.menuPanel} !z-[200] min-w-[230px] !bg-[#F3F4F6] p-1.5 opacity-100`}>
-              <DropdownMenuItem asChild className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]">
+            <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[220px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+              <DropdownMenuItem asChild className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
                 <Link href={`/app/projects/${routeProjectSlug}/preconstruction/variations`}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Variation Dashboard
+                  <ExternalLink className="mr-2 h-4 w-4 text-[#64748B]" />
+                  All Variations
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -1495,40 +1506,21 @@ export default function ProjectVariationsPage() {
                   void createVariation();
                 }}
                 disabled={!canManageVariation || isCreatingVariation}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
+                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4 text-[#64748B]" />
                 {isCreatingVariation ? "Creating..." : "New Variation"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void saveVariation();
-                }}
-                disabled={!canManageVariation || isSaving}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
-              >
-                {isSaving ? "Saving..." : "Save Variation"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  exportVariationPdf();
-                }}
-                className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#1d2433] focus:bg-[#F3F4F6]"
-              >
-                Export PDF
               </DropdownMenuItem>
               {activeVariation ? (
                 <>
-                  <DropdownMenuSeparator className="my-1 bg-[#E5E7EB]" />
+                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
                   <DropdownMenuItem
                     onSelect={(event) => {
                       event.preventDefault();
                       void deleteVariation(activeVariation.id);
                     }}
                     disabled={!canManageVariation || isDeleting}
-                    className="h-9 cursor-pointer rounded-[8px] px-2.5 text-[14px] text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]"
+                    className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]`}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -1548,43 +1540,42 @@ export default function ProjectVariationsPage() {
           You can review this variation, but only owner, admin, QS, and project manager roles can edit or delete it.
         </p>
       ) : null}
-      {saveMessage ? <p className={`${interMedium.className} text-xs font-medium text-[#5f6f89]`}>{saveMessage}</p> : null}
 
       {hasVariations && activeVariation ? (
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] [&_input]:bg-[#F8F9FC] [&_select]:bg-[#F8F9FC] [&_textarea]:bg-[#F8F9FC]">
-        <div className="rounded-[32px] border border-[#d9dee5] bg-[#F6F7F9] px-5 py-5 sm:px-6">
+      <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE]">
+        <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
           <section className="border-b border-[#E8EDF5] pb-5">
-            <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Variation Details</h2>
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Variation Details</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Variation title</label>
+                  <label className={styles.quoteBodyLabel}>Variation title</label>
                   <Input value={activeVariation.title} onChange={(event) => updateActiveVariation("title", event.target.value)} className="h-10 rounded-[6px]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Status</label>
-                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
+                  <label className={styles.quoteBodyLabel}>Status</label>
+                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] pl-3 pr-8 text-sm text-[#1d2433]`}>
                     {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Variation code</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Variation code</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Origin</label>
+                  <label className={styles.quoteBodyLabel}>Origin</label>
                   <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
                     {ORIGIN_OPTIONS.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
                   </select>
                 </div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested by</label><Input value={activeVariation.requestedBy} onChange={(event) => updateActiveVariation("requestedBy", event.target.value)} className="h-10 rounded-[6px]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Requested by</label><Input value={activeVariation.requestedBy} onChange={(event) => updateActiveVariation("requestedBy", event.target.value)} className="h-10 rounded-[6px]" /></div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Requested date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
-                <div className="space-y-1.5"><label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Due date</label><Input type="date" value={activeVariation.dueDate} onChange={(event) => updateActiveVariation("dueDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Requested date</label><Input type="date" value={activeVariation.requestedDate} onChange={(event) => updateActiveVariation("requestedDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Due date</label><Input type="date" value={activeVariation.dueDate} onChange={(event) => updateActiveVariation("dueDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
                 <div className="space-y-1.5">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Invoice ready</label>
+                  <label className={styles.quoteBodyLabel}>Invoice ready</label>
                   <button type="button" onClick={() => updateActiveVariation("invoiceReady", !activeVariation.invoiceReady)} className={`flex h-10 w-full items-center justify-between rounded-[6px] border px-3 text-sm ${activeVariation.invoiceReady ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d1d9e6] bg-[#F8F9FC] text-[#334155]"}`}>
                     <span className={interMedium.className}>{activeVariation.invoiceReady ? "Ready for invoice" : "Not ready"}</span>
                     <Check className="h-4 w-4" />
@@ -1594,144 +1585,78 @@ export default function ProjectVariationsPage() {
             </div>
           </section>
 
-          <section className="border-b border-[#E8EDF5] py-5">
-            <button type="button" onClick={() => setIsCostBuildUpOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Line Items</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isCostBuildUpOpen ? "rotate-180" : ""}`} />
-            </button>
+          <section className="py-5">
+            <div className="flex items-center justify-between">
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Line Items</h2>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
+                className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Import Scope Items
+              </Button>
+            </div>
 
-            {isCostBuildUpOpen ? (
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => addCostLine("Labour")} className={`${interMedium.className} h-9 rounded-[8px] bg-[#0B2739] px-3 text-sm font-medium text-white hover:bg-[#0B2739]`}><Plus className="mr-1 h-4 w-4" />Add Item</Button>
-                </div>
-
-                <div className="rounded-[8px] border border-[#D9DEE5] bg-[#F8F9FC]">
-                  <button
-                    type="button"
-                    onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
-                    className="flex w-full items-center justify-between px-3 py-3 text-left"
+            <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+              <div>
+                <div>
+                  <div
+                    className={`${interMedium.className} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+                    style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}
                   >
-                    <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#607089]`}>
-                      Import From Purchase Order
-                    </p>
-                    <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isPurchaseOrderImportOpen ? "rotate-180" : ""}`} />
-                  </button>
-
-                  {isPurchaseOrderImportOpen ? (
-                    <div className="border-t border-[#E5EAF2] px-3 pb-3 pt-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <select
-                          value={selectedPurchaseOrderId}
-                          onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
-                          className={`${interMedium.className} h-10 min-w-[260px] rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                        >
-                          <option value="">Select purchase order</option>
-                          {purchaseOrders.map((purchaseOrder) => (
-                            <option key={purchaseOrder.id} value={purchaseOrder.id}>
-                              {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
-                            </option>
-                          ))}
-                        </select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={importSelectedPurchaseOrderLines}
-                          disabled={selectedPurchaseOrderLineIds.size === 0}
-                          className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
-                        >
-                          Import Selected PO Lines
-                        </Button>
-                      </div>
-                      {selectedPurchaseOrder ? (
-                        <div className="mt-3 overflow-hidden rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC]">
-                          <div className={`${interMedium.className} grid grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
-                            <span />
-                            <span>Description</span>
-                            <span>Section</span>
-                            <span>Qty</span>
-                            <span>Rate</span>
-                            <span className="text-right">Total</span>
-                          </div>
-                          <div className="divide-y divide-[#EEF2F7]">
-                            {selectedPurchaseOrderLineOptions.length > 0 ? (
-                              selectedPurchaseOrderLineOptions.map((line) => {
-                                const alreadyImported = activeVariation?.costLines.some((costLine) => costLine.sourcePurchaseOrderLineItemId === line.id) ?? false;
-                                return (
-                                  <label key={line.id} className="grid cursor-pointer grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 px-3 py-2">
-                                    <span className="flex items-center justify-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedPurchaseOrderLineIds.has(line.id)}
-                                        onChange={() => togglePurchaseOrderLine(line.id)}
-                                        disabled={alreadyImported}
-                                        className="h-4 w-4 rounded border-[#CBD5E1]"
-                                      />
-                                    </span>
-                                    <span className="min-w-0">
-                                      <span className="block truncate text-sm font-medium text-[#1d2433]">{line.description || "Untitled line item"}</span>
-                                      {alreadyImported ? (
-                                        <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[#64748B]`}>
-                                          Already imported into this variation
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                    <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.section}</span>
-                                    <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.quantity}</span>
-                                    <span className={`${interMedium.className} text-sm text-[#475569]`}>{toMoney(line.rate)}</span>
-                                    <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>
-                                      {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
-                                    </span>
-                                  </label>
-                                );
-                              })
-                            ) : (
-                              <p className={`${interMedium.className} px-3 py-3 text-sm text-[#64748B]`}>
-                                No purchase order line items available to import.
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-[6px] border border-[#E5EAF2] overflow-visible">
-                  <div className={`${interMedium.className} grid items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-left text-[11px] uppercase tracking-[0.1em] text-[#607089]`} style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
-                    <span>Description</span><span>Section</span><span>Qty</span><span>Unit</span><span>Rate</span><span className="text-right">Total</span>
+                    <span className="px-3 py-2.5 font-semibold">Description</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Source</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Item</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Qty.</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Unit</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Price</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Amount</span>
+                    <span className="border-l border-[#D7E1EC] px-3 py-2.5" />
                   </div>
-
-                  <div className="divide-y divide-[#EEF2F7]">
+                  <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                     {activeVariation.costLines.map((line) => (
-                      <div key={line.id} className="group grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
-                        <div>
+                      <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
+                        <div className="flex items-center px-3 py-1.5">
                           <DescriptionInputWithPreview
                             value={line.description}
                             onChange={(value) => updateCostLine(line.id, "description", value)}
                           />
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
                           {line.sourcePurchaseOrderNumber ? (
-                            <p className={`${interMedium.className} mt-1 text-[11px] text-[#64748B]`}>
-                              Snapshot from {line.sourcePurchaseOrderNumber}
-                            </p>
+                            <span className={`${interMedium.className} text-[12px] text-[#64748B]`}>
+                              {line.sourcePurchaseOrderNumber}
+                            </span>
                           ) : null}
                         </div>
-                        <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-2 text-sm text-[#1d2433]`}>
-                          {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
-                        </select>
-                        <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-10 w-[72px] rounded-[6px] px-2" />
-                        <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-10 w-[72px] rounded-[6px] px-2" />
-                        <div className="relative w-[100px]">
-                          <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
-                          <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-10 w-[100px] rounded-[6px] pl-6 pr-2" />
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}>
+                            {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
+                          </select>
                         </div>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <div className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(lineTotal(line))}</div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                        </div>
+                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                          <div className="relative w-full">
+                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                            <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
+                          <div className={`${interMedium.className} text-right text-sm text-[#1d2433]`}>{toMoney(lineTotal(line))}</div>
+                        </div>
+                        <div className="flex items-center justify-center border-l border-[#EEF2F7] px-0 py-1.5">
                           <Button
                             type="button"
                             variant="ghost"
                             onClick={() => removeCostLine(line.id)}
-                            className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318] group-hover:text-[#94A3B8]"
+                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[#9AA8BC]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[#B42318] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0"
                             aria-label="Delete line item"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1742,62 +1667,151 @@ export default function ProjectVariationsPage() {
                   </div>
                 </div>
               </div>
-            ) : null}
-          </section>
+            </div>
 
-          <section className="border-b border-[#E8EDF5] py-5">
-            <button type="button" onClick={() => setIsTermsOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Terms & Clarifications</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isTermsOpen ? "rotate-180" : ""}`} />
-            </button>
-            {isTermsOpen ? (
-              <div className="mt-4 space-y-3">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Validity period</label>
-                    <Input value={activeVariation.validityPeriod} onChange={(event) => updateActiveVariation("validityPeriod", event.target.value)} className="h-10 rounded-[6px]" />
+            <div className="mt-2 flex justify-end pr-12">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => addCostLine("Labour")}
+                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[#4B5D79] shadow-none hover:bg-transparent hover:text-[#22324A] focus-visible:outline-none focus-visible:ring-0`}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add Item
+              </Button>
+            </div>
+
+            {isPurchaseOrderImportOpen ? (
+              <div className="mt-3 rounded-[8px] border border-[#D9DEE5] bg-[#F8F9FC]">
+                <div className="px-3 pb-3 pt-3">
+                  <p className={`${interMedium.className} mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#607089]`}>
+                    Import From Purchase Order
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={selectedPurchaseOrderId}
+                      onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
+                      className={`${interMedium.className} h-10 min-w-[260px] rounded-[6px] border border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                    >
+                      <option value="">Select purchase order</option>
+                      {purchaseOrders.map((purchaseOrder) => (
+                        <option key={purchaseOrder.id} value={purchaseOrder.id}>
+                          {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={importSelectedPurchaseOrderLines}
+                      disabled={selectedPurchaseOrderLineIds.size === 0}
+                      className={`${interMedium.className} h-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                    >
+                      Import Selected PO Lines
+                    </Button>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Payment terms</label>
-                    <Input value={activeVariation.paymentTerms} onChange={(event) => updateActiveVariation("paymentTerms", event.target.value)} className="h-10 rounded-[6px]" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Lead time</label>
-                    <Input value={activeVariation.leadTime} onChange={(event) => updateActiveVariation("leadTime", event.target.value)} className="h-10 rounded-[6px]" />
-                  </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Inclusions</label>
-                    <textarea value={activeVariation.inclusions} onChange={(event) => updateActiveVariation("inclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Exclusions</label>
-                    <textarea value={activeVariation.exclusions} onChange={(event) => updateActiveVariation("exclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                  </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Clarifications</label>
-                    <textarea value={activeVariation.clarifications} onChange={(event) => updateActiveVariation("clarifications", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Assumptions</label>
-                    <textarea value={activeVariation.assumptions} onChange={(event) => updateActiveVariation("assumptions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                  </div>
+                  {selectedPurchaseOrder ? (
+                    <div className="mt-3 overflow-hidden rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC]">
+                      <div className={`${interMedium.className} grid grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 bg-[#F8FAFC] px-3 py-2.5 text-[11px] uppercase tracking-[0.1em] text-[#607089]`}>
+                        <span />
+                        <span>Description</span>
+                        <span>Item</span>
+                        <span>Qty.</span>
+                        <span>Price</span>
+                        <span className="text-right">Amount</span>
+                      </div>
+                      <div className="divide-y divide-[#EEF2F7]">
+                        {selectedPurchaseOrderLineOptions.length > 0 ? (
+                          selectedPurchaseOrderLineOptions.map((line) => {
+                            const alreadyImported = activeVariation?.costLines.some((costLine) => costLine.sourcePurchaseOrderLineItemId === line.id) ?? false;
+                            return (
+                              <label key={line.id} className="grid cursor-pointer grid-cols-[44px_minmax(220px,1.5fr)_110px_90px_110px_110px] items-center gap-2 px-3 py-2">
+                                <span className="flex items-center justify-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedPurchaseOrderLineIds.has(line.id)}
+                                    onChange={() => togglePurchaseOrderLine(line.id)}
+                                    disabled={alreadyImported}
+                                    className="h-4 w-4 rounded border-[#CBD5E1]"
+                                  />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-medium text-[#1d2433]">{line.description || "Untitled line item"}</span>
+                                  {alreadyImported ? (
+                                    <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[#64748B]`}>
+                                      Already imported into this variation
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.section}</span>
+                                <span className={`${interMedium.className} text-sm text-[#475569]`}>{line.quantity}</span>
+                                <span className={`${interMedium.className} text-sm text-[#475569]`}>{toMoney(line.rate)}</span>
+                                <span className={`${interMedium.className} text-right text-sm font-semibold text-[#0F172A]`}>
+                                  {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
+                                </span>
+                              </label>
+                            );
+                          })
+                        ) : (
+                          <p className={`${interMedium.className} px-3 py-3 text-sm text-[#64748B]`}>
+                            No purchase order line items available to import.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
           </section>
 
-          <section className="py-5">
-            <button type="button" onClick={() => setIsDocsOpen((current) => !current)} className="flex w-full items-center justify-between">
-              <h2 className={`${interMedium.className} ${styles.sectionTitle}`}>Attachments & Notes</h2>
-              <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isDocsOpen ? "rotate-180" : ""}`} />
-            </button>
+          <div className="border-t border-[#E8EDF5] py-6">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+              <div>
+          <section className="pb-5">
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Terms & Clarifications</h2>
+            <div className="mt-4 space-y-3">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Validity period</label>
+                  <Input value={activeVariation.validityPeriod} onChange={(event) => updateActiveVariation("validityPeriod", event.target.value)} className="h-10 rounded-[6px]" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Payment terms</label>
+                  <Input value={activeVariation.paymentTerms} onChange={(event) => updateActiveVariation("paymentTerms", event.target.value)} className="h-10 rounded-[6px]" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Lead time</label>
+                  <Input value={activeVariation.leadTime} onChange={(event) => updateActiveVariation("leadTime", event.target.value)} className="h-10 rounded-[6px]" />
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Inclusions</label>
+                  <textarea value={activeVariation.inclusions} onChange={(event) => updateActiveVariation("inclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Exclusions</label>
+                  <textarea value={activeVariation.exclusions} onChange={(event) => updateActiveVariation("exclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Clarifications</label>
+                  <textarea value={activeVariation.clarifications} onChange={(event) => updateActiveVariation("clarifications", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>Assumptions</label>
+                  <textarea value={activeVariation.assumptions} onChange={(event) => updateActiveVariation("assumptions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                </div>
+              </div>
+            </div>
+          </section>
 
-            {isDocsOpen ? (
-              <div className="mt-4 space-y-4">
+          <section className="pt-5">
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Attachments & Notes</h2>
+
+            <div className="mt-4 space-y-4">
                 <input
                   ref={attachmentInputRef}
                   type="file"
@@ -1813,13 +1827,13 @@ export default function ProjectVariationsPage() {
                   }
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Drawing")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Email")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Site Instruction")} className={`${interMedium.className} h-9 rounded-[6px] border-[#d3dbe8] bg-[#F8F9FC] px-3 text-xs font-medium text-[#1d2433]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Drawing")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Email")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Site Instruction")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
                 </div>
 
                 <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
-                  <p className={`${interMedium.className} mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#64748B]`}>Linked Documentation</p>
+                  <label className={styles.quoteBodyLabel}>Linked Documentation</label>
                   <div className="space-y-2">
                     {activeVariation.attachments.map((attachment) => (
                       <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
@@ -1844,7 +1858,7 @@ export default function ProjectVariationsPage() {
 
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <label className={`${interMedium.className} block text-xs font-medium text-[#64748B]`}>Variation notes</label>
+                    <label className={styles.quoteBodyLabel}>Variation notes</label>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1858,117 +1872,96 @@ export default function ProjectVariationsPage() {
                   <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
                 </div>
               </div>
-            ) : null}
           </section>
-        </div>
-
-        <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <Card className={`${styles.card} overflow-hidden rounded-[32px] border border-[#d9dee5] bg-[#f6f7f9] shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_16px_34px_-28px_rgba(17,17,17,0.28)]`}>
-            <CardHeader className="pb-3 pt-5"><CardTitle className={`${interMedium.className} ${styles.sectionTitle}`}>Pricing Summary</CardTitle></CardHeader>
-            <CardContent className="space-y-3 pb-5">
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Mark up (%)</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => updateActiveVariation("includeMarginInExport", !activeVariation.includeMarginInExport)}
-                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      activeVariation.includeMarginInExport
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                        : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
-                    }`}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    Include
-                  </Button>
-                </div>
-                <Input
-                  type="number"
-                  value={activeVariation.marginPercent === "0" ? "" : activeVariation.marginPercent}
-                  onChange={(event) => updateActiveVariation("marginPercent", event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
               </div>
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>Discount</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => updateActiveVariation("includeDiscountInExport", !activeVariation.includeDiscountInExport)}
-                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      activeVariation.includeDiscountInExport
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                        : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
-                    }`}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    Include
-                  </Button>
+              <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={activeVariation.includeMarginInExport}
+                      onChange={() => updateActiveVariation("includeMarginInExport", !activeVariation.includeMarginInExport)}
+                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                    />
+                    <span className={styles.quoteBodyLabel}>Mark up (%)</span>
+                  </label>
+                  <Input
+                    type="number"
+                    value={activeVariation.marginPercent === "0" ? "" : activeVariation.marginPercent}
+                    onChange={(event) => updateActiveVariation("marginPercent", event.target.value)}
+                    className="h-10 rounded-[6px]"
+                  />
                 </div>
-                <Input
-                  type="number"
-                  value={activeVariation.discountAmount === "0" ? "" : activeVariation.discountAmount}
-                  onChange={(event) => updateActiveVariation("discountAmount", event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>P&G</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => updateActiveVariation("includeContingencyInExport", !activeVariation.includeContingencyInExport)}
-                    className={`${interMedium.className} h-6 rounded-[6px] px-2 text-[11px] ${
-                      activeVariation.includeContingencyInExport
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                        : "border-[#d3dbe8] bg-[#F8F9FC] text-[#64748B]"
-                    }`}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    Include
-                  </Button>
+                <div className="space-y-1.5">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={activeVariation.includeDiscountInExport}
+                      onChange={() => updateActiveVariation("includeDiscountInExport", !activeVariation.includeDiscountInExport)}
+                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                    />
+                    <span className={styles.quoteBodyLabel}>Discount</span>
+                  </label>
+                  <Input
+                    type="number"
+                    value={activeVariation.discountAmount === "0" ? "" : activeVariation.discountAmount}
+                    onChange={(event) => updateActiveVariation("discountAmount", event.target.value)}
+                    className="h-10 rounded-[6px]"
+                  />
                 </div>
-                <Input
-                  type="number"
-                  value={activeVariation.contingencyAmount === "0" ? "" : activeVariation.contingencyAmount}
-                  onChange={(event) => updateActiveVariation("contingencyAmount", event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
-              </div>
-              <div className="grid gap-2">
-                <label className={`${interMedium.className} text-xs font-medium text-[#64748B]`}>GST (%)</label>
-                <Input
-                  type="number"
-                  value={activeVariation.gstPercent}
-                  onChange={(event) => updateActiveVariation("gstPercent", event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
+                <div className="space-y-1.5">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={activeVariation.includeContingencyInExport}
+                      onChange={() => updateActiveVariation("includeContingencyInExport", !activeVariation.includeContingencyInExport)}
+                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                    />
+                    <span className={styles.quoteBodyLabel}>P&G</span>
+                  </label>
+                  <Input
+                    type="number"
+                    value={activeVariation.contingencyAmount === "0" ? "" : activeVariation.contingencyAmount}
+                    onChange={(event) => updateActiveVariation("contingencyAmount", event.target.value)}
+                    className="h-10 rounded-[6px]"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={styles.quoteBodyLabel}>GST (%)</label>
+                  <Input
+                    type="number"
+                    value={activeVariation.gstPercent}
+                    onChange={(event) => updateActiveVariation("gstPercent", event.target.value)}
+                    className="h-10 rounded-[6px]"
+                  />
+                </div>
               </div>
 
-              <div className="h-px bg-[#E7ECF3]" />
-
-              <div className={`${interMedium.className} space-y-1.5 text-sm font-medium text-[#334155]`}>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span>-{toMoney(pricingSummary.discount)}</span></p>
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span>{toMoney(pricingSummary.contingency)}</span></p>
-                <div className="my-1 h-px bg-[#CBD5E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span>{toMoney(showMarginBreakout ? pricingSummary.baseSubtotal : pricingSummary.baseSubtotal + pricingSummary.margin)}</span></p>
-                {showMarginBreakout ? (
-                  <>
-                    <div className="my-1 h-px bg-[#CBD5E1]" />
-                    <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span>{toMoney(pricingSummary.margin)}</span></p>
-                    <div className="my-1 h-px bg-[#CBD5E1]" />
-                    <p className="flex items-center justify-between"><span className="text-[#64748B]">Total (incl. margin)</span><span>{toMoney(pricingSummary.baseSubtotal + pricingSummary.margin)}</span></p>
-                  </>
-                ) : null}
-                <div className="my-1 h-px bg-[#CBD5E1]" />
-                <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({activeVariation.gstPercent.trim() || "15"}%)</span><span>{toMoney(pricingSummary.gst)}</span></p>
-              </div>
-              <div className="rounded-[6px] border-2 border-[#C9D6E3] bg-[#F6F7F9] px-4 py-3">
-                <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Total Variation Price (incl. GST)</p>
-                <p className="mt-[11px] text-[34px] font-semibold leading-none tracking-[-0.02em] text-[#0B2739]">{toMoney(pricingSummary.grandTotal)}</p>
+              <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                <div className={`${interMedium.className} space-y-3 text-sm`}>
+                  <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span className="font-medium text-[#1d2433]">-{toMoney(pricingSummary.discount)}</span></p>
+                  <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.contingency)}</span></p>
+                  {showMarginBreakout ? (
+                    <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.margin)}</span></p>
+                  ) : null}
+                  <div className="h-px bg-[#E7ECF3]" />
+                  <p className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Subtotal</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.baseSubtotal + pricingSummary.margin)}</span>
+                  </p>
+                  <p className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Total GST {activeVariation.gstPercent.trim() || "15"}.00%</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span>
+                  </p>
+                  <div className="h-px bg-[#E7ECF3]" />
+                  <p className="flex items-center justify-between pt-1">
+                    <span className="text-[15px] font-semibold text-[#1d2433]">Total</span>
+                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2 pt-1">
@@ -1985,8 +1978,10 @@ export default function ProjectVariationsPage() {
                   Export PDF
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       ) : (

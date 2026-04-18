@@ -101,6 +101,7 @@ export default function PreconstructionQuotePage() {
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>("Sent");
   const [quoteTitle, setQuoteTitle] = useState("");
   const [quoteNumber, setQuoteNumber] = useState("");
+  const [quoteCreatedAt, setQuoteCreatedAt] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
@@ -146,10 +147,10 @@ export default function PreconstructionQuotePage() {
   const loadedOpportunitySlugRef = useRef<string | null>(null);
 
   const normalizeAllowedStatus = useCallback((status: QuoteStatus): QuoteStatus => {
-    if (status === "Sent" || status === "Accepted" || status === "Rejected" || status === "Expired") {
+    if (status === "Draft" || status === "Sent" || status === "Accepted" || status === "Rejected" || status === "Expired") {
       return status;
     }
-    return "Sent";
+    return "Draft";
   }, []);
 
   const supabase = useMemo(() => {
@@ -444,12 +445,14 @@ export default function PreconstructionQuotePage() {
           if (!cancelled) {
             setQuoteNumber(nextNumber);
             setIsEditing(true);
+            setQuoteCreatedAt(new Date().toISOString());
           }
           setQuoteDate(new Date().toISOString().slice(0, 10));
           return;
         }
 
         setQuoteId(selectedQuote.id);
+        setQuoteCreatedAt(selectedQuote.created_at ?? null);
         setQuoteStatus(normalizeAllowedStatus(selectedQuote.status));
         setQuoteTitle(selectedQuote.quote_title);
         setQuoteNumber(selectedQuote.quote_number);
@@ -824,8 +827,7 @@ export default function PreconstructionQuotePage() {
       <div className="px-5">
         <QuoteEditorLayout
           heroTitle="Quote"
-          backHref={`/app/leads-clients/opportunities/${routeOpportunitySlug}`}
-          backLabel="Back to Opportunity"
+          createdAt={quoteCreatedAt}
           error={error}
           saveMessage={saveMessage}
           shouldShowEditor={shouldShowEditor}

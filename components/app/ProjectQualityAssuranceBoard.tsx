@@ -5,13 +5,13 @@ import { useParams } from "next/navigation";
 import { AlertTriangle, CalendarClock, Camera, CheckCircle2, Clock3, Download, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
-import { interMedium } from "@/lib/fonts";
+import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import styles from "@/components/app/trade-pack-builder.module.css";
 
 type QaTab = "Overview" | "Issues" | "Inspections" | "Photo Log" | "Sign-Offs";
 type IssueStatus = "Open" | "In Progress" | "Complete" | "Verified";
@@ -2556,98 +2556,105 @@ export function ProjectQualityAssuranceBoard() {
   }, [selectedSignoff, session?.id]);
 
   return (
-    <div className="space-y-6 pb-8">
-      <Card className="border-[#D9DEE5] bg-white shadow-none">
-        <CardHeader className="pb-4 pt-7">
-          <CardTitle className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Quality Assurance</CardTitle>
-          <p className={`${interMedium.className} mt-2 text-sm font-medium text-[#64748B]`}>
-            Site-based quality tracking with linked actions and visual proof.
-          </p>
-        </CardHeader>
-        <CardContent className="pb-7">
-          <div className="overflow-x-auto rounded-[8px] border border-[#E6EAF0] bg-[#F8FAFC]">
-            <div className="flex min-w-[760px] divide-x divide-[#E3E8F0]">
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <AlertTriangle className="h-5 w-5 text-[#DC2626]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Open Issues</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{issueStats.openCount}</p>
-                </div>
-              </div>
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <CalendarClock className="h-5 w-5 text-[#1D4ED8]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Inspections Today</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{issueStats.inspectionsToday}</p>
-                </div>
-              </div>
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <Clock3 className="h-5 w-5 text-[#B45309]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Overdue QA Items</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{issueStats.overdueCount}</p>
-                </div>
-              </div>
-              <div className="flex flex-1 items-center gap-3 px-5 py-4">
-                <CheckCircle2 className="h-5 w-5 text-[#15803D]" />
-                <div>
-                  <p className={`${interMedium.className} text-[11px] uppercase tracking-[0.12em] text-[#6E7F97]`}>Completed This Week</p>
-                  <p className={`${interMedium.className} text-xl font-semibold tracking-[-0.02em] text-[#0F172A]`}>{issueStats.completeCount}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
 
-      <Card className="border-[#D9DEE5] bg-white shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {TABS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={cn(
-                    `${interMedium.className} rounded-[6px] px-4 py-2 text-sm font-semibold transition-colors`,
-                    activeTab === tab ? "bg-[#0F172A] text-white" : "bg-white text-[#475569] hover:bg-[#F1F5F9]"
-                  )}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
+      {/* Hero */}
+      <section className={`${styles.heroBlock} mb-2`}>
+        <div className="min-w-0 flex-1">
+          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>Health & Safety</h1>
+          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>Site-based quality tracking with linked actions and visual proof</p>
+        </div>
+      </section>
+
+      {error ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+      ) : null}
+
+      {/* Stat cards */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-rose-50">
+              <AlertTriangle className="h-5 w-5 text-rose-500" />
+            </span>
+            <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Open Issues</p>
+          </div>
+          <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{issueStats.openCount}</p>
+          <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>Require Attention</p>
+        </div>
+        <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-indigo-50">
+              <CalendarClock className="h-5 w-5 text-indigo-500" />
+            </span>
+            <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Inspections Today</p>
+          </div>
+          <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{issueStats.inspectionsToday}</p>
+          <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>Scheduled For Today</p>
+        </div>
+        <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-amber-50">
+              <Clock3 className="h-5 w-5 text-amber-500" />
+            </span>
+            <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Overdue QA Items</p>
+          </div>
+          <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{issueStats.overdueCount}</p>
+          <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-amber-600`}>Past Due Date</p>
+        </div>
+        <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-emerald-50">
+              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+            </span>
+            <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Completed This Week</p>
+          </div>
+          <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{issueStats.completeCount}</p>
+          <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-emerald-600`}>Issues Resolved</p>
+        </div>
+      </div>
+
+      {/* Tab bar + content */}
+      <div className="px-0 py-0">
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-2">
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  `${interMedium.className} rounded-full px-4 py-2 text-[13px] font-semibold transition-colors`,
+                  activeTab === tab ? "bg-[#0B2739] text-white" : "border border-[#D7E1EC] bg-[#F8F9FC] text-[#475569] hover:bg-[#EEF2F7]"
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+            <div className="ml-auto">
               {activeTab === "Issues" ? (
-                <Button type="button" onClick={() => setIsCreateIssueSheetOpen(true)} className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-semibold text-white hover:bg-[#e63f10]">
+                <Button type="button" onClick={() => setIsCreateIssueSheetOpen(true)} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
                   Add Issue
                 </Button>
               ) : null}
               {activeTab === "Inspections" ? (
-                <Button type="button" onClick={() => setIsCreateInspectionSheetOpen(true)} className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-semibold text-white hover:bg-[#e63f10]">
+                <Button type="button" onClick={() => setIsCreateInspectionSheetOpen(true)} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
                   Add Inspection
                 </Button>
               ) : null}
               {activeTab === "Photo Log" ? (
-                <Button type="button" onClick={() => setIsCreatePhotoOpen(true)} className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-semibold text-white hover:bg-[#e63f10]">
+                <Button type="button" onClick={() => setIsCreatePhotoOpen(true)} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
                   Upload Photo
                 </Button>
               ) : null}
               {activeTab === "Sign-Offs" ? (
-                <Button type="button" onClick={() => setIsCreateSignoffSheetOpen(true)} className="h-9 rounded-[6px] bg-[#F74917] px-3 text-xs font-semibold text-white hover:bg-[#e63f10]">
+                <Button type="button" onClick={() => setIsCreateSignoffSheetOpen(true)} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
                   Add Sign-Off
                 </Button>
               ) : null}
             </div>
           </div>
-          {error ? (
-            <div className="rounded-[6px] border border-rose-200 bg-rose-50 px-3 py-2">
-              <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
-            </div>
-          ) : null}
-        </CardHeader>
-        <CardContent className="pb-6">
+        <div className="pb-6">
           {isLoading ? (
             <div className="space-y-2">
               <div className="h-4 w-48 animate-pulse rounded bg-[#E2E8F0]" />
@@ -3214,8 +3221,9 @@ export function ProjectQualityAssuranceBoard() {
               ))}
             </div>
           ) : null}
-        </CardContent>
-      </Card>
+        </div>
+        </div>
+      </div>
 
       <Sheet open={isCreateSignoffSheetOpen} onOpenChange={setIsCreateSignoffSheetOpen}>
         <SheetContent side="right" className="w-full max-w-[520px] overflow-y-auto border-l border-[#E6EAF0] bg-[#F8F9FC] p-5">
