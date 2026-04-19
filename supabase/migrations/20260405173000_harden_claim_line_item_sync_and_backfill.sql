@@ -80,7 +80,11 @@ begin
     sort_order
   )
   with claim_row as (
-    select c.claim_amount
+    select
+      c.id,
+      c.claim_amount,
+      c.claim_date,
+      c.created_at
     from public.project_claims c
     where c.id = p_claim_id
       and c.organization_id = p_organization_id
@@ -103,8 +107,20 @@ begin
      and c.project_id = p_project_id
      and c.id <> p_claim_id
      and c.status <> 'Cancelled'
+    cross join claim_row current_claim
     where cli.organization_id = p_organization_id
       and cli.project_id = p_project_id
+      and (
+        row(
+          coalesce(c.claim_date, 'infinity'::date),
+          c.created_at,
+          c.id
+        ) < row(
+          coalesce(current_claim.claim_date, 'infinity'::date),
+          current_claim.created_at,
+          current_claim.id
+        )
+      )
     group by cli.source_kind, cli.source_line_item_id
   ),
   existing_lines as (

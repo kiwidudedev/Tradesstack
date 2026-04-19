@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, FileDown, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,6 +15,20 @@ import styles from "@/components/app/trade-pack-builder.module.css";
 
 type ClaimStatus = "Draft" | "Submitted" | "Unpaid" | "Paid" | "Overdue" | "Cancelled";
 type ClaimType = "Progress" | "Deposit" | "Final";
+type RetentionMethod = "flat" | "sliding_scale";
+
+interface RetentionScaleBand {
+  id?: string;
+  up_to: number | null;
+  rate_percent: number | string;
+}
+
+interface RetentionScaleBandDraftRow {
+  id: string;
+  amount: string;
+  rate_percent: string;
+  is_remaining: boolean;
+}
 
 interface ClaimRow {
   id: string;
@@ -28,6 +43,21 @@ interface ClaimRow {
   percent_complete: number | null;
   claim_amount: number | null;
   paid_amount: number | null;
+  retention_method?: RetentionMethod | null;
+  retention_scale_bands?: RetentionScaleBand[] | null;
+  retention_percent: number | null;
+  retention_withheld_amount: number | null;
+  retention_released_amount: number | null;
+  retention_held_to_date: number | null;
+  retention_released_to_date: number | null;
+  retention_balance: number | null;
+  net_claim_excl_gst: number | null;
+  gst_amount: number | null;
+  total_payable: number | null;
+  linked_quote_value: number | null;
+  linked_approved_variations: number | null;
+  previous_claims_total: number | null;
+  revised_contract_value: number | null;
   notes: string | null;
   updated_at: string;
 }
@@ -44,6 +74,21 @@ interface CreateClaimDraftRow {
   period_end: string | null;
   percent_complete: number | null;
   paid_amount: number | null;
+  retention_method?: RetentionMethod | null;
+  retention_scale_bands?: RetentionScaleBand[] | null;
+  retention_percent: number | null;
+  retention_withheld_amount: number | null;
+  retention_released_amount: number | null;
+  retention_held_to_date: number | null;
+  retention_released_to_date: number | null;
+  retention_balance: number | null;
+  net_claim_excl_gst: number | null;
+  gst_amount: number | null;
+  total_payable: number | null;
+  linked_quote_value?: number | null;
+  linked_approved_variations?: number | null;
+  previous_claims_total?: number | null;
+  revised_contract_value?: number | null;
   notes: string | null;
   updated_at: string;
 }
@@ -58,6 +103,15 @@ interface SaveClaimDraftRow {
   percent_complete: number;
   paid_amount: number;
   status: ClaimStatus;
+  retention_percent: number;
+  retention_withheld_amount: number;
+  retention_released_amount: number;
+  retention_held_to_date: number;
+  retention_released_to_date: number;
+  retention_balance: number;
+  net_claim_excl_gst: number;
+  gst_amount: number;
+  total_payable: number;
 }
 
 interface ClaimLineItemRow {
@@ -122,6 +176,103 @@ function numberOrZero(value: string | number | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function calculateSlidingScaleRequiredRetentionToDate(
+  certifiedValueToDate: number,
+  bands: RetentionScaleBand[],
+) {
+  let requiredRetentionToDate = 0;
+  let lowerBound = 0;
+
+  bands.forEach((band) => {
+    const upperBound = band.up_to == null ? null : Math.max(0, numberOrZero(band.up_to));
+    const ratePercent = Math.max(0, Math.min(100, numberOrZero(band.rate_percent)));
+    const coveredAmount = upperBound == null
+      ? Math.max(0, certifiedValueToDate - lowerBound)
+      : Math.max(0, Math.min(certifiedValueToDate, upperBound) - lowerBound);
+
+    requiredRetentionToDate += coveredAmount * (ratePercent / 100);
+
+    if (upperBound != null) {
+      lowerBound = Math.max(lowerBound, upperBound);
+    }
+  });
+
+  return roundMoney(requiredRetentionToDate);
+}
+
+function normalizeRetentionScaleBandsForCompare(bands: RetentionScaleBand[]) {
+  return bands.map((band) => ({
+    up_to: band.up_to == null ? null : Number(Math.max(0, numberOrZero(band.up_to)).toFixed(2)),
+    rate_percent: Number(Math.max(0, Math.min(100, numberOrZero(band.rate_percent))).toFixed(3)),
+  }));
+}
+
+function toDraftNumericString(value: number, maximumFractionDigits = 3) {
+  const rounded = Number(value.toFixed(maximumFractionDigits));
+  return rounded.toString();
+}
+
+function deriveRetentionScaleBandDraftRows(bands: RetentionScaleBand[]): RetentionScaleBandDraftRow[] {
+  let previousUpperBound = 0;
+
+  return bands.map((band, index) => {
+    const isFinalBand = index === bands.length - 1;
+    const isRemainingBand = isFinalBand && band.up_to == null;
+    const resolvedUpperBound = band.up_to == null ? null : Math.max(0, numberOrZero(band.up_to));
+    const amount = isRemainingBand || resolvedUpperBound == null
+      ? ""
+      : toDraftNumericString(Math.max(0, resolvedUpperBound - previousUpperBound), 2);
+
+    if (resolvedUpperBound != null) {
+      previousUpperBound = resolvedUpperBound;
+    }
+
+    return {
+      id: band.id ?? `tier-${index + 1}`,
+      amount,
+      rate_percent: toDraftNumericString(Math.max(0, Math.min(100, numberOrZero(band.rate_percent)))),
+      is_remaining: isRemainingBand,
+    };
+  });
+}
+
+function convertRetentionScaleBandDraftRowsToCanonical(rows: RetentionScaleBandDraftRow[]): RetentionScaleBand[] {
+  let cumulativeUpperBound = 0;
+
+  return rows.map((row, index) => {
+    const isFinalRow = index === rows.length - 1;
+    const isRemainingRow = isFinalRow && row.is_remaining;
+    const amount = Math.max(0, numberOrZero(row.amount));
+    const nextUpTo = isRemainingRow ? null : cumulativeUpperBound + amount;
+
+    if (nextUpTo != null) {
+      cumulativeUpperBound = nextUpTo;
+    }
+
+    return {
+      id: row.id,
+      up_to: nextUpTo == null ? null : Number(nextUpTo.toFixed(2)),
+      rate_percent: row.rate_percent,
+    };
+  });
+}
+
+function createRetentionScaleBand(upTo: number | null, ratePercent: number): RetentionScaleBand {
+  return {
+    id: crypto.randomUUID(),
+    up_to: upTo,
+    rate_percent: ratePercent,
+  };
+}
+
+function createDefaultRetentionScaleBand(previousUpperBound: number, ratePercent: number): RetentionScaleBand {
+  return createRetentionScaleBand(previousUpperBound + 100000, ratePercent);
+}
+
 function calculateVariationPreGstTotal(row: Record<string, unknown>) {
   const subtotal = numberOrZero(row.subtotal);
   const marginPercent = numberOrZero(row.margin_percent);
@@ -173,6 +324,11 @@ function applyCanonicalClaimLineIdentity(row: ClaimLineItem, canonical: ClaimLin
     sortOrder: canonical.sortOrder,
   };
 }
+
+const RETENTION_PRESET_OPTIONS = [0, 2.5, 5, 10] as const;
+const retentionInputClass = "font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]";
+const retentionLabelClass = "font-[family-name:var(--font-ibm-plex-sans)] mb-1 block text-[13px] font-semibold text-[#1d2433]";
+const retentionChoiceButtonClass = "inline-flex h-[2.75rem] rounded-[0.6rem] border px-3.5 text-left text-[13px] font-medium transition";
 
 function normalizeClaimRowsAgainstLiveSource(rows: ClaimLineItem[], liveSourceRows: ClaimLineItem[]) {
   const liveRowsByKey = new Map(liveSourceRows.map((row) => [getClaimLineSourceKey(row), row]));
@@ -366,6 +522,13 @@ export default function ProjectClaimDetailPage() {
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
   const [paidAmount, setPaidAmount] = useState("0");
+  const [retentionMethod, setRetentionMethod] = useState<RetentionMethod>("flat");
+  const [retentionScaleBands, setRetentionScaleBands] = useState<RetentionScaleBand[]>([]);
+  const [retentionScaleBandDraftRows, setRetentionScaleBandDraftRows] = useState<RetentionScaleBandDraftRow[]>([]);
+  const [retentionPercent, setRetentionPercent] = useState("0");
+  const [retentionReleasedAmount, setRetentionReleasedAmount] = useState("0");
+  const [isRetentionSelectorOpen, setIsRetentionSelectorOpen] = useState(false);
+  const [isRetentionCustomMode, setIsRetentionCustomMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [claimLineItems, setClaimLineItems] = useState<ClaimLineItem[]>([]);
   const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
@@ -375,6 +538,25 @@ export default function ProjectClaimDetailPage() {
   const [approvedVariationsValue, setApprovedVariationsValue] = useState(0);
   const [previousClaimsTotal, setPreviousClaimsTotal] = useState(0);
   const [paidToDateTotal, setPaidToDateTotal] = useState(0);
+  const [previousRetentionHeldTotal, setPreviousRetentionHeldTotal] = useState(0);
+  const [previousRetentionReleasedTotal, setPreviousRetentionReleasedTotal] = useState(0);
+  const [snapshotClaimAmount, setSnapshotClaimAmount] = useState<number | null>(null);
+  const [snapshotLinkedQuoteValue, setSnapshotLinkedQuoteValue] = useState<number | null>(null);
+  const [snapshotLinkedApprovedVariations, setSnapshotLinkedApprovedVariations] = useState<number | null>(null);
+  const [snapshotPreviousClaimsTotal, setSnapshotPreviousClaimsTotal] = useState<number | null>(null);
+  const [snapshotRevisedContractValue, setSnapshotRevisedContractValue] = useState<number | null>(null);
+  const [snapshotPercentComplete, setSnapshotPercentComplete] = useState<number | null>(null);
+  const [snapshotRetentionMethod, setSnapshotRetentionMethod] = useState<RetentionMethod>("flat");
+  const [snapshotRetentionScaleBands, setSnapshotRetentionScaleBands] = useState<RetentionScaleBand[]>([]);
+  const [snapshotRetentionPercent, setSnapshotRetentionPercent] = useState<number | null>(null);
+  const [snapshotRetentionWithheldAmount, setSnapshotRetentionWithheldAmount] = useState<number | null>(null);
+  const [snapshotRetentionReleasedAmount, setSnapshotRetentionReleasedAmount] = useState<number | null>(null);
+  const [snapshotRetentionHeldToDate, setSnapshotRetentionHeldToDate] = useState<number | null>(null);
+  const [snapshotRetentionReleasedToDate, setSnapshotRetentionReleasedToDate] = useState<number | null>(null);
+  const [snapshotRetentionBalance, setSnapshotRetentionBalance] = useState<number | null>(null);
+  const [snapshotNetClaimExclGst, setSnapshotNetClaimExclGst] = useState<number | null>(null);
+  const [snapshotGstAmount, setSnapshotGstAmount] = useState<number | null>(null);
+  const [snapshotTotalPayable, setSnapshotTotalPayable] = useState<number | null>(null);
   const hasAutoCreatedOnNewRoute = useRef(false);
 
   const supabase = useMemo(() => {
@@ -397,6 +579,31 @@ export default function ProjectClaimDetailPage() {
     setPeriodStart(claim.period_start ?? "");
     setPeriodEnd(claim.period_end ?? "");
     setPaidAmount(String(claim.paid_amount ?? 0));
+    setRetentionMethod(claim.retention_method === "sliding_scale" ? "sliding_scale" : "flat");
+    const hydratedRetentionScaleBands = Array.isArray(claim.retention_scale_bands) ? claim.retention_scale_bands : [];
+    setRetentionScaleBands(hydratedRetentionScaleBands);
+    setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(hydratedRetentionScaleBands));
+    setRetentionPercent(String(claim.retention_percent ?? 0));
+    setRetentionReleasedAmount(String(claim.retention_released_amount ?? 0));
+    setSnapshotClaimAmount(Number(claim.claim_amount ?? 0));
+    setSnapshotLinkedQuoteValue(claim.linked_quote_value == null ? null : Number(claim.linked_quote_value));
+    setSnapshotLinkedApprovedVariations(claim.linked_approved_variations == null ? null : Number(claim.linked_approved_variations));
+    setSnapshotPreviousClaimsTotal(claim.previous_claims_total == null ? null : Number(claim.previous_claims_total));
+    setSnapshotRevisedContractValue(claim.revised_contract_value == null ? null : Number(claim.revised_contract_value));
+    setSnapshotPercentComplete(Number(claim.percent_complete ?? 0));
+    setSnapshotRetentionMethod(claim.retention_method === "sliding_scale" ? "sliding_scale" : "flat");
+    setSnapshotRetentionScaleBands(
+      normalizeRetentionScaleBandsForCompare(Array.isArray(claim.retention_scale_bands) ? claim.retention_scale_bands : []),
+    );
+    setSnapshotRetentionPercent(Number(claim.retention_percent ?? 0));
+    setSnapshotRetentionWithheldAmount(Number(claim.retention_withheld_amount ?? 0));
+    setSnapshotRetentionReleasedAmount(Number(claim.retention_released_amount ?? 0));
+    setSnapshotRetentionHeldToDate(Number(claim.retention_held_to_date ?? 0));
+    setSnapshotRetentionReleasedToDate(Number(claim.retention_released_to_date ?? 0));
+    setSnapshotRetentionBalance(Number(claim.retention_balance ?? 0));
+    setSnapshotNetClaimExclGst(Number(claim.net_claim_excl_gst ?? 0));
+    setSnapshotGstAmount(Number(claim.gst_amount ?? 0));
+    setSnapshotTotalPayable(Number(claim.total_payable ?? 0));
     setNotes(claim.notes ?? "");
   }, []);
 
@@ -571,7 +778,7 @@ export default function ProjectClaimDetailPage() {
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
       claimsTable
-        .select("id, claim_amount, paid_amount, status")
+        .select("id, claim_amount, paid_amount, retention_withheld_amount, retention_released_amount, status")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
     ]);
@@ -590,18 +797,33 @@ export default function ProjectClaimDetailPage() {
       .filter((row) => row.status === "Approved")
       .reduce((sum, row) => sum + calculateVariationPreGstTotal(row as Record<string, unknown>), 0);
 
-    const claimRows = (claimsRowsRaw ?? []) as Array<{ id: string; claim_amount: number | null; paid_amount: number | null; status: ClaimStatus }>;
+    const claimRows = (claimsRowsRaw ?? []) as Array<{
+      id: string;
+      claim_amount: number | null;
+      paid_amount: number | null;
+      retention_withheld_amount: number | null;
+      retention_released_amount: number | null;
+      status: ClaimStatus;
+    }>;
     const previousTotal = claimRows
       .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
       .reduce((sum, row) => sum + Number(row.claim_amount ?? 0), 0);
     const paidToDate = claimRows
       .filter((row) => row.status !== "Cancelled")
       .reduce((sum, row) => sum + Number(row.paid_amount ?? 0), 0);
+    const previousRetentionHeld = claimRows
+      .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
+      .reduce((sum, row) => sum + Number(row.retention_withheld_amount ?? 0), 0);
+    const previousRetentionReleased = claimRows
+      .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
+      .reduce((sum, row) => sum + Number(row.retention_released_amount ?? 0), 0);
 
     setBaseQuoteValue(quoteValue);
     setApprovedVariationsValue(approvedVariations);
     setPreviousClaimsTotal(previousTotal);
     setPaidToDateTotal(paidToDate);
+    setPreviousRetentionHeldTotal(previousRetentionHeld);
+    setPreviousRetentionReleasedTotal(previousRetentionReleased);
   }, [supabase]);
 
   const createClaim = useCallback(async () => {
@@ -723,7 +945,7 @@ export default function ProjectClaimDetailPage() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const claimsTable = (supabase as any).from("project_claims");
           const { data: claimRowRaw, error: claimError } = await claimsTable
-            .select("id, claim_number, claim_title, claim_type, status, claim_date, due_date, period_start, period_end, percent_complete, claim_amount, paid_amount, notes, updated_at")
+            .select("id, claim_number, claim_title, claim_type, status, claim_date, due_date, period_start, period_end, percent_complete, claim_amount, paid_amount, retention_method, retention_scale_bands, retention_percent, retention_withheld_amount, retention_released_amount, retention_held_to_date, retention_released_to_date, retention_balance, net_claim_excl_gst, gst_amount, total_payable, linked_quote_value, linked_approved_variations, previous_claims_total, revised_contract_value, notes, updated_at")
             .eq("organization_id", resolvedOrganizationId)
             .eq("id", routeClaimId)
             .maybeSingle();
@@ -824,17 +1046,241 @@ export default function ProjectClaimDetailPage() {
     [claimLineItemsComputed],
   );
   const claimGstRate = 0.15;
-  const currentClaimGst = currentClaimAmount * claimGstRate;
-  const currentClaimTotalInclGst = currentClaimAmount + currentClaimGst;
+  const retentionPercentNumber = Math.min(100, Math.max(0, numberOrZero(retentionPercent)));
+  const retentionReleasedAmountNumber = Math.max(0, numberOrZero(retentionReleasedAmount));
+  const hasCustomRetentionPercent = !RETENTION_PRESET_OPTIONS.some((option) => Math.abs(retentionPercentNumber - option) < 0.001);
+  const retentionPercentDisplay = retentionPercent.trim() === "" ? "0" : retentionPercent.trim();
+  const retentionSelectorDisplay = retentionMethod === "sliding_scale" ? "Sliding Scale" : retentionPercentDisplay;
+  const effectiveRetentionScaleBands = useMemo(
+    () => (
+      retentionMethod === "sliding_scale" && isRetentionSelectorOpen
+        ? convertRetentionScaleBandDraftRowsToCanonical(retentionScaleBandDraftRows)
+        : retentionScaleBands
+    ),
+    [isRetentionSelectorOpen, retentionMethod, retentionScaleBandDraftRows, retentionScaleBands],
+  );
+  const normalizedRetentionScaleBandsForCompare = useMemo(
+    () => normalizeRetentionScaleBandsForCompare(effectiveRetentionScaleBands),
+    [effectiveRetentionScaleBands],
+  );
+  const retentionScaleBandsDirty =
+    JSON.stringify(normalizedRetentionScaleBandsForCompare) !== JSON.stringify(snapshotRetentionScaleBands);
+  const currentClaimGrossExclGst = roundMoney(currentClaimAmount);
   const revisedContractValue = baseQuoteValue + approvedVariationsValue;
-  const valueEarnedToDate = previousClaimsTotal + currentClaimAmount;
+  const valueEarnedToDate = previousClaimsTotal + currentClaimGrossExclGst;
   const parsedPercentComplete = revisedContractValue > 0 ? Math.min(100, Math.max(0, (valueEarnedToDate / revisedContractValue) * 100)) : 0;
-  const previousPercentComplete = revisedContractValue > 0 ? (previousClaimsTotal / revisedContractValue) * 100 : 0;
-  const thisClaimPercent = revisedContractValue > 0 ? (currentClaimAmount / revisedContractValue) * 100 : 0;
   const paidAmountNumber = Number(paidAmount || 0);
-  const balance = Math.max(0, valueEarnedToDate - paidToDateTotal);
   const isSubmittedLocked = status === "Submitted";
-  const displayedPercentComplete = parsedPercentComplete.toFixed(2);
+  const isRetentionLocked = status !== "Draft";
+  const summaryOriginalContract = snapshotLinkedQuoteValue ?? baseQuoteValue;
+  const summaryApprovedVariations = snapshotLinkedApprovedVariations ?? approvedVariationsValue;
+  const summaryRevisedContractValue = snapshotRevisedContractValue ?? revisedContractValue;
+  const summaryPreviousClaimsTotal = snapshotPreviousClaimsTotal ?? previousClaimsTotal;
+  const shouldPreferLiveCurrentClaimGross =
+    numberOrZero(snapshotClaimAmount) === 0 && currentClaimGrossExclGst > 0;
+  const summaryGrossCurrentClaim = shouldPreferLiveCurrentClaimGross
+    ? currentClaimGrossExclGst
+    : (snapshotClaimAmount ?? currentClaimGrossExclGst);
+  const summaryPercentComplete = snapshotPercentComplete ?? parsedPercentComplete;
+  const summaryPreviousPercentComplete = summaryRevisedContractValue > 0 ? (summaryPreviousClaimsTotal / summaryRevisedContractValue) * 100 : 0;
+  const summaryThisClaimPercent = summaryRevisedContractValue > 0 ? (summaryGrossCurrentClaim / summaryRevisedContractValue) * 100 : 0;
+  const summaryValueEarnedToDate = summaryPreviousClaimsTotal + summaryGrossCurrentClaim;
+  const isRetentionDirty =
+    retentionMethod !== snapshotRetentionMethod
+    || retentionScaleBandsDirty
+    || retentionPercentNumber !== numberOrZero(snapshotRetentionPercent)
+    || retentionReleasedAmountNumber !== numberOrZero(snapshotRetentionReleasedAmount);
+  const certifiedValueToDate = summaryPreviousClaimsTotal + summaryGrossCurrentClaim;
+  const requiredRetentionToDate = retentionMethod === "flat"
+    ? roundMoney(certifiedValueToDate * (retentionPercentNumber / 100))
+    : calculateSlidingScaleRequiredRetentionToDate(certifiedValueToDate, effectiveRetentionScaleBands);
+  const priorRetentionBalance = roundMoney(previousRetentionHeldTotal - previousRetentionReleasedTotal);
+  const previewRetentionWithheld = roundMoney(
+    Math.max(0, requiredRetentionToDate - priorRetentionBalance),
+  );
+  const previewRetentionHeldToDate = roundMoney(previousRetentionHeldTotal + previewRetentionWithheld);
+  const previewRetentionReleasedToDate = roundMoney(previousRetentionReleasedTotal + retentionReleasedAmountNumber);
+  const previewRetentionBalance = roundMoney(previewRetentionHeldToDate - previewRetentionReleasedToDate);
+  const previewNet = roundMoney(summaryGrossCurrentClaim - previewRetentionWithheld + retentionReleasedAmountNumber);
+  const previewGst = roundMoney(previewNet * claimGstRate);
+  const previewTotal = roundMoney(previewNet + previewGst);
+  const shouldUseLiveClaimPreview = isRetentionDirty || shouldPreferLiveCurrentClaimGross;
+  const summaryRetentionPercent = isRetentionDirty
+    ? retentionPercentNumber
+    : (snapshotRetentionPercent ?? retentionPercentNumber);
+  const summaryRetentionWithheldAmount = shouldUseLiveClaimPreview
+    ? previewRetentionWithheld
+    : (snapshotRetentionWithheldAmount ?? 0);
+  const summaryRetentionReleasedAmount = shouldUseLiveClaimPreview
+    ? retentionReleasedAmountNumber
+    : (snapshotRetentionReleasedAmount ?? retentionReleasedAmountNumber);
+  const summaryRetentionHeldToDate = shouldUseLiveClaimPreview
+    ? previewRetentionHeldToDate
+    : (snapshotRetentionHeldToDate ?? 0);
+  const summaryRetentionReleasedToDate = shouldUseLiveClaimPreview
+    ? previewRetentionReleasedToDate
+    : (snapshotRetentionReleasedToDate ?? 0);
+  const summaryRetentionBalance = shouldUseLiveClaimPreview
+    ? previewRetentionBalance
+    : (snapshotRetentionBalance ?? 0);
+  const summaryNetClaimExclGst = shouldUseLiveClaimPreview
+    ? previewNet
+    : (snapshotNetClaimExclGst ?? summaryGrossCurrentClaim);
+  const summaryGstAmount = shouldUseLiveClaimPreview
+    ? previewGst
+    : (snapshotGstAmount ?? 0);
+  const summaryTotalPayable = shouldUseLiveClaimPreview
+    ? previewTotal
+    : (snapshotTotalPayable ?? summaryGrossCurrentClaim);
+  const summaryBalanceOutstanding = Math.max(0, summaryValueEarnedToDate - paidToDateTotal);
+  const displayedPercentComplete = summaryPercentComplete.toFixed(2);
+
+  const handleRetentionDialogOpenChange = (nextOpen: boolean) => {
+    if (isRetentionLocked && nextOpen) {
+      return;
+    }
+
+    if (nextOpen) {
+      setIsRetentionCustomMode(hasCustomRetentionPercent);
+      if (retentionMethod === "sliding_scale") {
+        const sourceBands = retentionScaleBands.length > 0
+          ? retentionScaleBands
+          : [createDefaultRetentionScaleBand(0, retentionPercentNumber)];
+        setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(sourceBands));
+      }
+    } else if (retentionMethod === "sliding_scale") {
+      setRetentionScaleBands(convertRetentionScaleBandDraftRowsToCanonical(retentionScaleBandDraftRows));
+    }
+
+    setIsRetentionSelectorOpen(nextOpen);
+  };
+
+  const handleSelectRetentionPreset = (value: (typeof RETENTION_PRESET_OPTIONS)[number]) => {
+    setRetentionPercent(String(value));
+    setRetentionMethod("flat");
+    setIsRetentionCustomMode(false);
+    setIsRetentionSelectorOpen(false);
+  };
+
+  const handleSelectRetentionMethod = (value: RetentionMethod) => {
+    setRetentionMethod(value);
+    setIsRetentionCustomMode(value === "flat" ? hasCustomRetentionPercent : false);
+    if (value === "sliding_scale" && retentionScaleBands.length === 0) {
+      setRetentionScaleBandDraftRows(
+        deriveRetentionScaleBandDraftRows([createDefaultRetentionScaleBand(0, retentionPercentNumber)]),
+      );
+    }
+  };
+
+  const handleAddRetentionScaleTier = () => {
+    setRetentionScaleBandDraftRows((current) => {
+      if (current.length === 0) {
+        return deriveRetentionScaleBandDraftRows([createDefaultRetentionScaleBand(0, retentionPercentNumber)]);
+      }
+
+      const next = [...current];
+      const lastIndex = next.length - 1;
+      const currentLast = next[lastIndex];
+      next[lastIndex] = {
+        ...currentLast,
+        amount: currentLast.amount || "100000",
+        is_remaining: false,
+      };
+      next.push({
+        id: crypto.randomUUID(),
+        amount: "",
+        rate_percent: currentLast.rate_percent,
+        is_remaining: true,
+      });
+      return next;
+    });
+  };
+
+  const handleUpdateRetentionScaleBand = (
+    index: number,
+    field: "up_to" | "rate_percent",
+    rawValue: string,
+  ) => {
+    setRetentionScaleBands((current) =>
+      current.map((band, bandIndex) => {
+        if (bandIndex !== index) {
+          return band;
+        }
+
+        if (field === "rate_percent") {
+          return {
+            ...band,
+            rate_percent: rawValue,
+          };
+        }
+
+        const previousUpperBound = index > 0 ? numberOrZero(current[index - 1].up_to) : 0;
+        const nextUpperBound = index < current.length - 1 && current[index + 1]?.up_to != null
+          ? numberOrZero(current[index + 1].up_to)
+          : null;
+        const normalizedUpTo = Math.max(previousUpperBound, numberOrZero(rawValue));
+        const clampedUpTo = nextUpperBound == null
+          ? normalizedUpTo
+          : Math.min(normalizedUpTo, nextUpperBound);
+
+        return {
+          ...band,
+          up_to: clampedUpTo,
+        };
+      }),
+    );
+  };
+
+  const handleToggleFinalRetentionScaleOpenEnded = () => {
+    setRetentionScaleBandDraftRows((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+
+      const next = [...current];
+      const lastIndex = next.length - 1;
+      const lastBand = next[lastIndex];
+      next[lastIndex] = {
+        ...lastBand,
+        amount: lastBand.is_remaining ? (lastBand.amount || "100000") : "",
+        is_remaining: !lastBand.is_remaining,
+      };
+
+      return next;
+    });
+  };
+
+  const handleRemoveRetentionScaleBand = (index: number) => {
+    setRetentionScaleBandDraftRows((current) => {
+      const next = current.filter((_, bandIndex) => bandIndex !== index);
+      if (next.length === 0) {
+        return [];
+      }
+      return next.map((band, bandIndex) => (
+        bandIndex === next.length - 1 && band.is_remaining
+          ? { ...band, is_remaining: true, amount: "" }
+          : band
+      ));
+    });
+  };
+
+  const handleUpdateRetentionScaleBandDraft = (
+    index: number,
+    field: "amount" | "rate_percent",
+    rawValue: string,
+  ) => {
+    setRetentionScaleBandDraftRows((current) =>
+      current.map((band, bandIndex) => (
+        bandIndex === index
+          ? { ...band, [field]: rawValue }
+          : band
+      )),
+    );
+  };
+
+  const handleCommitRetentionScaleBandDrafts = () => {
+    setRetentionScaleBands(convertRetentionScaleBandDraftRowsToCanonical(retentionScaleBandDraftRows));
+  };
 
   const updateClaimLinePercent = (lineId: string, nextValue: string) => {
     if (isSubmittedLocked) {
@@ -961,6 +1407,15 @@ export default function ProjectClaimDetailPage() {
       const normalizedSourceKeys = new Set(normalizedLineItems.map((item) => getClaimLineSourceKey(item)));
       const missingRows = liveSourceRows.filter((row) => !normalizedSourceKeys.has(getClaimLineSourceKey(row)));
       const rowsForSave = [...normalizedLineItems, ...missingRows].sort((left, right) => left.sortOrder - right.sortOrder);
+      const retentionScaleBandsForSave = retentionMethod === "sliding_scale"
+        ? retentionScaleBands.map((band, index) => ({
+            id: band.id ?? `tier-${index + 1}`,
+            up_to: index === retentionScaleBands.length - 1 && band.up_to == null
+              ? null
+              : Number(Math.max(0, numberOrZero(band.up_to)).toFixed(2)),
+            rate_percent: Number(Math.max(0, Math.min(100, numberOrZero(band.rate_percent))).toFixed(3)),
+          }))
+        : null;
 
       setClaimLineItems(rowsForSave);
 
@@ -979,6 +1434,10 @@ export default function ProjectClaimDetailPage() {
         p_period_end: periodEnd || null,
         p_percent_complete: Number(parsedPercentComplete.toFixed(3)),
         p_paid_amount: Number(Math.max(0, paidAmountNumber).toFixed(2)),
+        p_retention_method: retentionMethod,
+        p_retention_scale_bands: retentionScaleBandsForSave,
+        p_retention_percent: Number(retentionPercentNumber.toFixed(3)),
+        p_retention_released_amount: Number(retentionReleasedAmountNumber.toFixed(2)),
         p_notes: notes,
         p_line_items: rowsForSave.map((item) => ({
           source_kind: item.sourceKind,
@@ -997,9 +1456,39 @@ export default function ProjectClaimDetailPage() {
         setPaidAmount(String(savedRow.paid_amount ?? paidAmountNumber));
         setBaseQuoteValue(Number(savedRow.linked_quote_value ?? 0));
         setPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
+        setRetentionPercent(String(savedRow.retention_percent ?? retentionPercentNumber));
+        setRetentionReleasedAmount(String(savedRow.retention_released_amount ?? retentionReleasedAmountNumber));
+        setSnapshotClaimAmount(Number(savedRow.claim_amount ?? 0));
+        setSnapshotLinkedQuoteValue(Number(savedRow.linked_quote_value ?? 0));
+        setSnapshotLinkedApprovedVariations(Number(savedRow.linked_approved_variations ?? 0));
+        setSnapshotPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
+        setSnapshotRevisedContractValue(Number(savedRow.revised_contract_value ?? 0));
+        setSnapshotPercentComplete(Number(savedRow.percent_complete ?? 0));
+        setSnapshotRetentionMethod(retentionMethod);
+        setSnapshotRetentionScaleBands(normalizeRetentionScaleBandsForCompare(retentionScaleBands));
+        setSnapshotRetentionPercent(Number(savedRow.retention_percent ?? 0));
+        setSnapshotRetentionWithheldAmount(Number(savedRow.retention_withheld_amount ?? 0));
+        setSnapshotRetentionReleasedAmount(Number(savedRow.retention_released_amount ?? 0));
+        setSnapshotRetentionHeldToDate(Number(savedRow.retention_held_to_date ?? 0));
+        setSnapshotRetentionReleasedToDate(Number(savedRow.retention_released_to_date ?? 0));
+        setSnapshotRetentionBalance(Number(savedRow.retention_balance ?? 0));
+        setSnapshotNetClaimExclGst(Number(savedRow.net_claim_excl_gst ?? 0));
+        setSnapshotGstAmount(Number(savedRow.gst_amount ?? 0));
+        setSnapshotTotalPayable(Number(savedRow.total_payable ?? 0));
+        setPaidToDateTotal((current) => {
+          const currentPaidAmount = numberOrZero(paidAmount);
+          const savedPaidAmount = Number(savedRow.paid_amount ?? currentPaidAmount);
+          return Math.max(0, current - currentPaidAmount + savedPaidAmount);
+        });
+        setPreviousRetentionHeldTotal(Math.max(
+          0,
+          Number(savedRow.retention_held_to_date ?? 0) - Number(savedRow.retention_withheld_amount ?? 0),
+        ));
+        setPreviousRetentionReleasedTotal(Math.max(
+          0,
+          Number(savedRow.retention_released_to_date ?? 0) - Number(savedRow.retention_released_amount ?? 0),
+        ));
       }
-      await loadClaimLineItems(organizationId, claimId);
-      await refreshContractSummary(organizationId, projectDbId, claimId);
 
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveClaimError) {
@@ -1084,9 +1573,12 @@ export default function ProjectClaimDetailPage() {
         ].join("")
       : `<tr><td colspan="4" style="text-align:center;color:#64748b;">No claimable line items.</td></tr>`;
 
-    const subtotal = currentClaimAmount;
-    const gst = currentClaimGst;
-    const total = currentClaimTotalInclGst;
+    const grossCurrentClaim = summaryGrossCurrentClaim;
+    const retentionWithheld = summaryRetentionWithheldAmount;
+    const retentionReleased = summaryRetentionReleasedAmount;
+    const netClaim = summaryNetClaimExclGst;
+    const gst = summaryGstAmount;
+    const total = summaryTotalPayable;
     const sanitizedBrandPrimaryColor = organizationBrandPrimaryColor.trim();
     const pdfPrimaryColor = /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(sanitizedBrandPrimaryColor)
       ? sanitizedBrandPrimaryColor
@@ -1454,20 +1946,25 @@ export default function ProjectClaimDetailPage() {
         <div>
           <section class="claim-summary">
             <div class="bar">Claim Summary</div>
-            <div class="summary-row"><span class="k">Original Contract</span><span class="v">${toMoney(baseQuoteValue)}</span></div>
-            <div class="summary-row"><span class="k">Approved Variations</span><span class="v">${toMoney(approvedVariationsValue)}</span></div>
-            <div class="summary-row no-divider"><span class="k">Revised Contract Value</span><span class="v">${toMoney(revisedContractValue)}</span></div>
+            <div class="summary-row"><span class="k">Original Contract</span><span class="v">${toMoney(summaryOriginalContract)}</span></div>
+            <div class="summary-row"><span class="k">Approved Variations</span><span class="v">${toMoney(summaryApprovedVariations)}</span></div>
+            <div class="summary-row no-divider"><span class="k">Revised Contract Value</span><span class="v">${toMoney(summaryRevisedContractValue)}</span></div>
 
             <div class="summary-divider"></div>
             <p class="summary-block-title">This Claim</p>
-            <div class="summary-row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(valueEarnedToDate)}</span></div>
-            <div class="summary-row no-divider"><span class="k">Less Previous Claims</span><span class="v">-${toMoney(previousClaimsTotal)}</span></div>
+            <div class="summary-row"><span class="k">Value Earned to Date</span><span class="v">${toMoney(summaryValueEarnedToDate)}</span></div>
+            <div class="summary-row no-divider"><span class="k">Less Previous Claims</span><span class="v">-${toMoney(summaryPreviousClaimsTotal)}</span></div>
             <div class="summary-divider"></div>
 
           </section>
 
           <section class="totals-inline">
-            <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotal)}</span></div>
+            <div class="row" style="border-bottom: none;"><span class="k">Gross Current Claim (excl. GST)</span><span class="v">${toMoney(grossCurrentClaim)}</span></div>
+            <div class="summary-divider"></div>
+            <div class="row" style="border-bottom: none;"><span class="k">Less Retention (This Claim)</span><span class="v">-${toMoney(retentionWithheld)}</span></div>
+            <div class="row" style="border-bottom: none;"><span class="k">Retention Held to Date</span><span class="v">${toMoney(summaryRetentionHeldToDate)}</span></div>
+            <div class="summary-divider"></div>
+            <div class="row"><span class="k">Net Current Claim (excl. GST)</span><span class="v">${toMoney(netClaim)}</span></div>
             <div class="row"><span class="k">GST (${(claimGstRate * 100).toFixed(0)}%)</span><span class="v">${toMoney(gst)}</span></div>
             <div class="row total-row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(total)}</span></div>
           </section>
@@ -1793,12 +2290,12 @@ export default function ProjectClaimDetailPage() {
                         <div className="space-y-1">
                           <p className={styles.quoteCardTitle}>This Claim</p>
                           <p className={styles.quoteBodyLabel}>Current claim amount</p>
-                          <p className={styles.quoteBodyValue}>{toMoney(currentClaimAmount)}</p>
+                          <p className={styles.quoteBodyValue}>{toMoney(summaryGrossCurrentClaim)}</p>
                         </div>
                         <div className="space-y-1">
                           <p className={styles.quoteCardTitle}>Balance Outstanding</p>
                           <p className={styles.quoteBodyLabel}>Based on earned less paid to date</p>
-                          <p className={styles.quoteBodyValue}>{toMoney(balance)}</p>
+                          <p className={styles.quoteBodyValue}>{toMoney(summaryBalanceOutstanding)}</p>
                         </div>
                       </div>
                     </div>
@@ -1813,48 +2310,290 @@ export default function ProjectClaimDetailPage() {
               <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
                 <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Claim Summary</h2>
                 <div className="space-y-5">
-                  <section className="space-y-2">
-                    <p className={styles.quoteCardTitle}>Contract Position</p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Original Contract</span><span className={styles.quoteBodyValue}>{toMoney(baseQuoteValue)}</span></p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Approved Variations</span><span className={styles.quoteBodyValue}>{toMoney(approvedVariationsValue)}</span></p>
-                    <div className="h-px bg-[#E7ECF3]" />
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Revised Contract Value</span><span className={styles.quoteBodyValue}>{toMoney(revisedContractValue)}</span></p>
-                  </section>
-
-                  <div className="h-px bg-[#E7ECF3]" />
-
-                  <section className="space-y-2">
-                    <p className={styles.quoteCardTitle}>Previous Claims</p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Total Previously Claimed</span><span className={styles.quoteBodyValue}>{toMoney(previousClaimsTotal)}</span></p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Paid to Date</span><span className={styles.quoteBodyValue}>{toMoney(paidToDateTotal)}</span></p>
-                  </section>
-
-                  <div className="h-px bg-[#E7ECF3]" />
-
-                  <section className="space-y-2">
-                    <p className={styles.quoteCardTitle}>This Claim</p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Value Earned to Date</span><span className={styles.quoteBodyValue}>{toMoney(valueEarnedToDate)}</span></p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Less Previous Claims</span><span className={styles.quoteBodyValue}>-{toMoney(previousClaimsTotal)}</span></p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>This Claim % of Contract</span><span className={styles.quoteBodyValue}>{thisClaimPercent.toFixed(2)}%</span></p>
-                    <p className="flex items-center justify-between"><span className={styles.quoteBodyLabel}>Earned to Date %</span><span className={styles.quoteBodyValue}>{parsedPercentComplete.toFixed(2)}%</span></p>
-                  </section>
-
                   <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
                     <div className={`${interMedium.className} space-y-3 text-sm`}>
-                      <p className="flex items-center justify-between"><span className="text-[#64748B]">Previous % Complete</span><span className="font-medium text-[#1d2433]">{previousPercentComplete.toFixed(2)}%</span></p>
-                      <p className="flex items-center justify-between"><span className="text-[#64748B]">Balance Outstanding</span><span className="font-medium text-[#1d2433]">{toMoney(balance)}</span></p>
+                      <p className={styles.quoteCardTitle}>Contract Position</p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Contract Amount</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryOriginalContract)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Approved Variations</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryApprovedVariations)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Revised Contract Value</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRevisedContractValue)}</span>
+                      </p>
                       <div className="h-px bg-[#E7ECF3]" />
+
+                      <p className={styles.quoteCardTitle}>Claim Position</p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Gross Claim To Date</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryValueEarnedToDate)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Less Previous Claims</span>
+                        <span className="font-medium text-[#1d2433]">-{toMoney(summaryPreviousClaimsTotal)}</span>
+                      </p>
                       <p className="flex items-center justify-between pt-1">
-                        <span className="text-[15px] font-semibold text-[#1d2433]">Current Claim (excl. GST)</span>
-                        <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(currentClaimAmount)}</span>
+                        <span className="text-[#64748B]">Gross Current Claim</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryGrossCurrentClaim)}</span>
+                      </p>
+                      <div className="h-px bg-[#E7ECF3]" />
+
+                      <p className={styles.quoteCardTitle}>Retention</p>
+                      <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                          <label className={styles.quoteBodyLabel}>Retention %</label>
+                          <Dialog open={isRetentionSelectorOpen} onOpenChange={handleRetentionDialogOpenChange}>
+                            <DialogTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isRetentionLocked}
+                                className="relative flex h-10 w-full items-center rounded-[6px] border border-[#D9E3EE] bg-white px-3 pr-8 text-left text-[14px] font-medium text-[#10283B] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-[#94A3B8]"
+                              >
+                                <span className="truncate">{retentionSelectorDisplay}</span>
+                                {retentionMethod === "flat" ? (
+                                  <span className={`${interMedium.className} pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>%</span>
+                                ) : null}
+                                <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8] transition-transform ${isRetentionSelectorOpen ? "rotate-180" : ""}`} />
+                              </button>
+                            </DialogTrigger>
+                            <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+                              <DialogHeader className="px-7 pb-6 pt-7">
+                                <DialogTitle className={`${ibmPlexSans.className} m-0 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
+                                  Retention
+                                </DialogTitle>
+                                <p className={`${interMedium.className} text-[13px] text-[#6B7A90]`}>
+                                  Configure retention method and bands
+                                </p>
+                              </DialogHeader>
+                              <div className="space-y-3.5 px-7 pb-4">
+                                <div className="flex items-center gap-6 border-b-2 border-[#E2E8F1]">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectRetentionMethod("flat")}
+                                    className={`-mb-[2px] inline-flex items-center py-3 text-[15px] font-medium transition-colors ${
+                                      retentionMethod === "flat"
+                                        ? "border-b-[2px] border-[#F15A29] text-[#F15A29]"
+                                        : "text-[#4B5D79] hover:text-[#4B5D79]"
+                                    }`}
+                                  >
+                                    Flat %
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectRetentionMethod("sliding_scale")}
+                                    className={`-mb-[2px] inline-flex items-center py-3 text-[15px] font-medium transition-colors ${
+                                      retentionMethod === "sliding_scale"
+                                        ? "border-b-[2px] border-[#F15A29] text-[#F15A29]"
+                                        : "text-[#4B5D79] hover:text-[#4B5D79]"
+                                    }`}
+                                  >
+                                    Sliding Scale
+                                  </button>
+                                </div>
+                                {retentionMethod === "flat" ? (
+                                  <>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {RETENTION_PRESET_OPTIONS.map((option) => {
+                                        const isSelected = Math.abs(retentionPercentNumber - option) < 0.001 && !hasCustomRetentionPercent;
+                                        return (
+                                          <button
+                                            key={option}
+                                            type="button"
+                                            onClick={() => handleSelectRetentionPreset(option)}
+                                            className={`${retentionChoiceButtonClass} ${
+                                              isSelected
+                                                ? "border-[#F15A29] bg-[#FFF3EE] text-[#10283B]"
+                                                : "border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50"
+                                            }`}
+                                          >
+                                            {option}%
+                                          </button>
+                                        );
+                                      })}
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsRetentionCustomMode(true)}
+                                        className={`${retentionChoiceButtonClass} ${
+                                          isRetentionCustomMode || hasCustomRetentionPercent
+                                            ? "border-[#F15A29] bg-[#FFF3EE] text-[#10283B]"
+                                            : "border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50"
+                                        }`}
+                                      >
+                                        Custom
+                                      </button>
+                                    </div>
+                                    {isRetentionCustomMode || hasCustomRetentionPercent ? (
+                                      <div className="space-y-2.5">
+                                        <label className={retentionLabelClass}>Custom retention %</label>
+                                        <div className="relative">
+                                          <Input
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            step="0.1"
+                                            value={retentionPercent}
+                                            onChange={(event) => setRetentionPercent(event.target.value)}
+                                            className={`${retentionInputClass} pr-9`}
+                                          />
+                                          <span className={`${interMedium.className} pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>%</span>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <div className="space-y-3.5">
+                                    <div className="space-y-3.5">
+                                      {retentionScaleBandDraftRows.map((band, index) => {
+                                        const isFinalTier = index === retentionScaleBandDraftRows.length - 1;
+                                        const isOpenEndedFinalTier = isFinalTier && band.is_remaining;
+                                        const previousUpperBound = retentionScaleBandDraftRows
+                                          .slice(0, index)
+                                          .reduce((sum, row) => sum + Math.max(0, numberOrZero(row.amount)), 0);
+                                        const bandAmount = isOpenEndedFinalTier ? null : Math.max(0, numberOrZero(band.amount));
+                                        const rowLabel = isOpenEndedFinalTier
+                                          ? "Remaining amount"
+                                          : index === 0
+                                            ? "First"
+                                            : "Next";
+                                        const amountLabel = isOpenEndedFinalTier ? "Remaining amount" : `${rowLabel} amount`;
+
+                                        return (
+                                          <div
+                                            key={band.id ?? `retention-tier-${index}`}
+                                            className="space-y-3.5 border-t border-[#E8EDF5] pt-3.5 first:border-t-0 first:pt-0"
+                                          >
+                                            <div className="flex items-start justify-between gap-3">
+                                              <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#1d2433]`}>
+                                                {isOpenEndedFinalTier
+                                                  ? `Remaining amount at ${numberOrZero(band.rate_percent)}%`
+                                                  : `${rowLabel} ${toMoney(numberOrZero(bandAmount))} at ${numberOrZero(band.rate_percent)}%`}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveRetentionScaleBand(index)}
+                                                disabled={retentionScaleBandDraftRows.length === 1}
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[#D9E3EE] bg-white text-[#64748B] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                                aria-label={`Remove band ${index + 1}`}
+                                                >
+                                                  <Trash2 className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                            <div className="grid gap-3 sm:grid-cols-2">
+                                              <div className="space-y-2">
+                                                <label className={retentionLabelClass}>{amountLabel}</label>
+                                                {isOpenEndedFinalTier ? (
+                                                  <p className={`${interMedium.className} text-[12px] text-[#6B7A90]`}>
+                                                    Remaining amount above {toMoney(previousUpperBound)}
+                                                  </p>
+                                                ) : (
+                                                  <Input
+                                                    type="number"
+                                                    min={0}
+                                                    step="1000"
+                                                    value={band.amount}
+                                                    onChange={(event) => handleUpdateRetentionScaleBandDraft(index, "amount", event.target.value)}
+                                                    onBlur={handleCommitRetentionScaleBandDrafts}
+                                                    className={retentionInputClass}
+                                                  />
+                                                )}
+                                              </div>
+                                              <div className="space-y-2">
+                                                <label className={retentionLabelClass}>Rate</label>
+                                                <div className="relative">
+                                                  <Input
+                                                    type="number"
+                                                    min={0}
+                                                    max={100}
+                                                    step="0.1"
+                                                    value={band.rate_percent}
+                                                    onChange={(event) => handleUpdateRetentionScaleBandDraft(index, "rate_percent", event.target.value)}
+                                                    onBlur={handleCommitRetentionScaleBandDrafts}
+                                                    className={`${retentionInputClass} pr-9`}
+                                                  />
+                                                  <span className={`${interMedium.className} pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>%</span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div>
+                                              {isFinalTier ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={handleToggleFinalRetentionScaleOpenEnded}
+                                                  className={`inline-flex rounded-[8px] border px-3 py-2 text-[12px] font-medium transition ${
+                                                    isOpenEndedFinalTier
+                                                      ? "border-[#F15A29] bg-[#FFF3EE] text-[#10283B]"
+                                                      : "border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50"
+                                                  }`}
+                                                >
+                                                  {isOpenEndedFinalTier ? "Using remaining amount" : "Use remaining amount"}
+                                                </button>
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleAddRetentionScaleTier}
+                                      className={`${retentionChoiceButtonClass} items-center border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50`}
+                                    >
+                                      <Plus className="mr-2 h-3.5 w-3.5" />
+                                      Add Band
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                        <div className="grid gap-2">
+                          <label className={styles.quoteBodyLabel}>Retention Released</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={retentionReleasedAmount}
+                            onChange={(event) => setRetentionReleasedAmount(event.target.value)}
+                            disabled={isRetentionLocked}
+                            className="h-10 rounded-[6px]"
+                          />
+                        </div>
+                      </div>
+                      <div className="h-px bg-[#E7ECF3]" />
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Less Retention (This Claim)</span>
+                        <span className="font-medium text-[#1d2433]">-{toMoney(summaryRetentionWithheldAmount)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">GST (15%)</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(currentClaimGst)}</span>
+                        <span className="text-[#64748B]">Retention Held to Date</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRetentionHeldToDate)}</span>
                       </p>
                       <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Retention Released to Date</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRetentionReleasedToDate)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Current Retention Balance</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRetentionBalance)}</span>
+                      </p>
+                      <div className="h-px bg-[#E7ECF3]" />
+                      <p className={styles.quoteCardTitle}>Payment Breakdown</p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">Net Current Claim (excl. GST)</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryNetClaimExclGst)}</span>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-[#64748B]">GST ({(claimGstRate * 100).toFixed(0)}%)</span>
+                        <span className="font-medium text-[#1d2433]">{toMoney(summaryGstAmount)}</span>
+                      </p>
+                      <p className="flex items-center justify-between pt-1">
                         <span className="text-[15px] font-semibold text-[#1d2433]">Total Payable (incl. GST)</span>
-                        <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(currentClaimTotalInclGst)}</span>
+                        <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(summaryTotalPayable)}</span>
                       </p>
                     </div>
                   </div>

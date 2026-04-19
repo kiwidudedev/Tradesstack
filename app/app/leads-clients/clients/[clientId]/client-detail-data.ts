@@ -94,6 +94,25 @@ export type DrawingSetRow = {
   download_url?: string | null;
 };
 
+export type ClientNoteRow = {
+  id: string;
+  client_id: string;
+  author_name: string;
+  body: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type ClientNoteEntry = {
+  id: string;
+  title: string;
+  body: string;
+  at: string;
+  href: string;
+  authorName: string;
+  sortOrder: number;
+};
+
 type UntypedResult<T> = {
   data: T[] | null;
   error: { message: string } | null;
@@ -231,7 +250,7 @@ export async function getClientDetailData(clientId: string) {
     };
   };
 
-  const [projectQuotesResult, opportunityQuotesRawResult, claimsRawResult, variationsRawResult, filesRawResult] = await Promise.all([
+  const [projectQuotesResult, opportunityQuotesRawResult, claimsRawResult, variationsRawResult, filesRawResult, clientNotesResult] = await Promise.all([
     supabase
       .from("project_quotes")
       .select("id, project_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
@@ -241,6 +260,14 @@ export async function getClientDetailData(clientId: string) {
     untypedSupabase.from("project_claims").select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, notes, updated_at").eq("organization_id", member.organization_id),
     untypedSupabase.from("project_variations").select("id, project_id, variation_number, variation_title, status, total_variation_price, approved_at, notes, created_at, updated_at").eq("organization_id", member.organization_id),
     untypedSupabase.from("project_drawing_sets").select("id, project_id, file_name, storage_path, file_size_bytes, created_at").eq("organization_id", member.organization_id),
+    supabase
+      .from("client_notes")
+      .select("id, client_id, author_name, body, sort_order, created_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: false })
+      .returns<ClientNoteRow[]>(),
   ]);
 
   const projectQuotes = (projectQuotesResult.error ? [] : (projectQuotesResult.data ?? [])).filter((quote) => projectIdSet.has(quote.project_id));
@@ -248,6 +275,7 @@ export async function getClientDetailData(clientId: string) {
   const claims = ((claimsRawResult.error ? [] : (claimsRawResult.data ?? [])) as ClaimRow[]).filter((claim) => projectIdSet.has(claim.project_id));
   const variations = ((variationsRawResult.error ? [] : (variationsRawResult.data ?? [])) as VariationRow[]).filter((variation) => projectIdSet.has(variation.project_id));
   const drawingSets = ((filesRawResult.error ? [] : (filesRawResult.data ?? [])) as DrawingSetRow[]).filter((file) => projectIdSet.has(file.project_id));
+  const clientNotes = clientNotesResult.error ? [] : (clientNotesResult.data ?? []);
   const drawingSetsWithDownloads = await Promise.all(
     drawingSets.map(async (file) => {
       const signed = await supabase.storage.from(PROJECT_DRAWING_SETS_BUCKET).createSignedUrl(file.storage_path, 60 * 60);
@@ -321,16 +349,15 @@ export async function getClientDetailData(clientId: string) {
   if (avgDaysToPay !== null && avgDaysToPay > 45) riskFlags.push({ tone: "orange", label: "Slow payment behavior", detail: `${Math.round(avgDaysToPay)} days average to pay` });
   if (riskFlags.length === 0) riskFlags.push({ tone: "green", label: "Healthy profile", detail: "No immediate risk indicators found" });
 
-  const noteEntries = opportunities
-    .filter((opportunity) => (opportunity.notes ?? "").trim().length > 0)
-    .map((opportunity) => ({
-      id: opportunity.id,
-      title: opportunity.name,
-      body: (opportunity.notes ?? "").trim(),
-      at: opportunity.updated_at,
-      href: `/app/leads-clients/opportunities/${opportunity.slug}`,
-    }))
-    .sort((left, right) => right.at.localeCompare(left.at));
+  const noteEntries: ClientNoteEntry[] = clientNotes.map((note) => ({
+    id: note.id,
+    title: note.author_name.trim() || "Team member",
+    body: note.body.trim(),
+    at: note.created_at,
+    href: `/app/leads-clients/clients/${client.id}/notes`,
+    authorName: note.author_name.trim() || "Team member",
+    sortOrder: note.sort_order,
+  }));
 
   const timeline: TimelineEvent[] = [{ id: `client-created-${client.id}`, at: client.created_at, title: "Client profile created", detail: client.company_name?.trim() || client.name, href: null }];
 

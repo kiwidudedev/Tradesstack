@@ -14,7 +14,6 @@ export const mainDashboardNav = [
 export const projectDashboardNav = [
   { label: "Dashboard", segment: "dashboard", icon: "LayoutGrid" },
   { label: "Financial", segment: "preconstruction", icon: "FolderKanban" },
-  { label: "Trade Pack Builder", segment: "drawing-intelligence", icon: "BrainCircuit" },
   { label: "Specification Review", segment: "spec-finishes-review", icon: "FileText" },
   { label: "Scope Builder", segment: "scope-builder", icon: "ClipboardCheck" },
   { label: "Change Detection", segment: "change-detection", icon: "RefreshCw" },

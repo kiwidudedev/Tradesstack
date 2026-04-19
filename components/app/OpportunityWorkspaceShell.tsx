@@ -49,7 +49,7 @@ export function OpportunityWorkspaceShell({
       active: activeTab === "build-scope",
     },
     {
-      label: "Start Pricing",
+      label: "Quotation",
       href: `/app/leads-clients/opportunities/${opportunityId}/quote`,
       icon: FileText,
       active: activeTab === "start-pricing",

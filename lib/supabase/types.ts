@@ -255,6 +255,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      client_notes: {
+        Row: {
+          id: string;
+          organization_id: string;
+          client_id: string;
+          created_by: string;
+          author_name: string;
+          body: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          client_id: string;
+          created_by: string;
+          author_name?: string;
+          body: string;
+          sort_order: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          client_id?: string;
+          created_by?: string;
+          author_name?: string;
+          body?: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       organization_opportunities: {
         Row: {
           id: string;
@@ -558,6 +594,7 @@ export interface Database {
           total_quote_price: number;
           validity_period: string;
           payment_terms: string;
+          retention_percent_default: number;
           lead_time: string;
           terms_inclusions: string;
           terms_exclusions: string;
@@ -598,6 +635,7 @@ export interface Database {
           total_quote_price?: number;
           validity_period?: string;
           payment_terms?: string;
+          retention_percent_default?: number;
           lead_time?: string;
           terms_inclusions?: string;
           terms_exclusions?: string;
@@ -638,6 +676,7 @@ export interface Database {
           total_quote_price?: number;
           validity_period?: string;
           payment_terms?: string;
+          retention_percent_default?: number;
           lead_time?: string;
           terms_inclusions?: string;
           terms_exclusions?: string;
@@ -1257,6 +1296,13 @@ export interface Database {
           p_permission_key: string;
         };
         Returns: boolean;
+      };
+      reorder_client_notes: {
+        Args: {
+          p_client_id: string;
+          p_ordered_ids: string[];
+        };
+        Returns: undefined;
       };
       get_organization_member_emails: {
         Args: {

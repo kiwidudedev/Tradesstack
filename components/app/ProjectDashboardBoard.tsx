@@ -246,7 +246,7 @@ export function ProjectDashboardBoard() {
           index === 0
             ? `${metrics.tasksDueToday} due today, ${metrics.overdueTasks} overdue.`
             : `${metrics.pendingVariations} pending variations and ${metrics.openIssues} open issues in play.`,
-        href: `${projectBase}/drawing-intelligence`,
+        href: `${projectBase}/dashboard`,
       })),
     [aiInsights, metrics.openIssues, metrics.overdueTasks, metrics.pendingVariations, metrics.tasksDueToday, projectBase]
   );
@@ -1074,7 +1074,7 @@ export function ProjectDashboardBoard() {
               {(focusItems.length > 0 ? focusItems : aiInsights.map((insight, index) => ({
                 id: `insight-${index}`,
                 title: insight,
-                href: `${projectBase}/drawing-intelligence`,
+                href: `${projectBase}/dashboard`,
               }))).map((item, index, items) => (
                 <Link
                   key={item.id}

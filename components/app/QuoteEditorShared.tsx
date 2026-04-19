@@ -689,8 +689,6 @@ export function QuoteEditorLayout({
   const markupLabel = STANDARD_QUOTE_PRICING_LABELS.markup;
   const contingencyLabel = STANDARD_QUOTE_PRICING_LABELS.contingency;
   const subtotalExcludingGstLabel = STANDARD_QUOTE_PRICING_LABELS.subtotalExcludingGst;
-  const totalIncludingMarginLabel = STANDARD_QUOTE_PRICING_LABELS.totalIncludingMargin;
-  const totalQuotePriceLabel = STANDARD_QUOTE_PRICING_LABELS.totalQuotePrice;
   const preGstPrimaryTotal = Math.max(0, pricingSummary.grandTotal - pricingSummary.gst);
   const currentStatusLabel = STATUS_OPTIONS.find((status) => status.value === quoteStatus)?.label ?? quoteStatus;
   const headerTitle = quoteNumber.trim() || quoteTitle.trim() || heroTitle;
@@ -1273,42 +1271,33 @@ export function QuoteEditorLayout({
                       </div>
                     </div>
 
-                    <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
-                      <div className="space-y-2 text-sm">
-                        <p className="flex items-center justify-between">
-                          <span className={styles.quoteBodyLabel}>Subtotal</span>
-                          <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.baseSubtotal)}</span>
+                    <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4 sm:px-6 sm:py-5">
+                      <div className="space-y-3 text-sm">
+                        <p className="flex items-center justify-between gap-4">
+                          <span className={styles.quoteBodyLabel}>Discount</span>
+                          <span className={styles.quoteBodyValue}>-{toMoney(pricingSummary.discount)}</span>
                         </p>
-                        {includeMarginInExport ? (
-                          <p className="flex items-center justify-between">
-                            <span className={styles.quoteBodyLabel}>{markupLabel}</span>
-                            <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.margin)}</span>
-                          </p>
-                        ) : null}
-                        {includeContingencyInExport && pricingSummary.contingency > 0 ? (
-                          <p className="flex items-center justify-between">
-                            <span className={styles.quoteBodyLabel}>{contingencyLabel}</span>
-                            <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.contingency)}</span>
-                          </p>
-                        ) : null}
-                        {includeDiscountInExport && pricingSummary.discount > 0 ? (
-                          <p className="flex items-center justify-between">
-                            <span className={styles.quoteBodyLabel}>Discount</span>
-                            <span className={styles.quoteBodyValue}>-{toMoney(pricingSummary.discount)}</span>
-                          </p>
-                        ) : null}
-                        <p className="flex items-center justify-between">
+                        <p className="flex items-center justify-between gap-4">
+                          <span className={styles.quoteBodyLabel}>{contingencyLabel}</span>
+                          <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.contingency)}</span>
+                        </p>
+                        <p className="flex items-center justify-between gap-4">
+                          <span className={styles.quoteBodyLabel}>{markupLabel}</span>
+                          <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.margin)}</span>
+                        </p>
+                        <div className="h-px bg-[#E7ECF3]" />
+                        <p className="flex items-center justify-between gap-4">
+                          <span className={styles.quoteBodyLabel}>{subtotalExcludingGstLabel}</span>
+                          <span className={styles.quoteBodyValue}>{toMoney(preGstPrimaryTotal)}</span>
+                        </p>
+                        <p className="flex items-center justify-between gap-4">
                           <span className={styles.quoteBodyLabel}>Total GST {Number(gstPercent.trim() || "15").toFixed(2)}%</span>
                           <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.gst)}</span>
                         </p>
-                        <div className="my-5 h-px bg-[#D7E1EC]" />
-                        <p className="flex items-center justify-between">
-                          <span className="text-[15px] font-medium text-[#1d2433]">{subtotalExcludingGstLabel}</span>
-                          <span className="text-[18px] font-semibold text-[#0F172A]">{toMoney(preGstPrimaryTotal)}</span>
-                        </p>
-                        <p className="flex items-center justify-between">
-                          <span className={styles.quoteBodyLabel}>{totalQuotePriceLabel}</span>
-                          <span className={styles.quoteBodyValue}>{toMoney(pricingSummary.grandTotal)}</span>
+                        <div className="h-px bg-[#E7ECF3]" />
+                        <p className="flex items-center justify-between gap-4 pt-1">
+                          <span className="text-[15px] font-semibold text-[#1d2433]">Total (incl. GST)</span>
+                          <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
                         </p>
                       </div>
                     </div>

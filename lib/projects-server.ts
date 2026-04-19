@@ -344,7 +344,7 @@ export async function getRecentActivityForCurrentUser(limit = 6): Promise<Recent
       return {
         id: `drawing-set-${drawingSet.id}`,
         label: `${isGeneratedPack ? "Trade pack generated" : "Plans uploaded"} - ${project.name}`,
-        href: `/app/projects/${project.slug}/drawing-intelligence`,
+        href: `/app/projects/${project.slug}/dashboard`,
         occurredAt: drawingSet.uploaded_at,
       } satisfies RecentActivityItem;
     })

@@ -543,78 +543,378 @@
   gap: 1rem;
 }
 
-.noteComposerInput {
-  min-height: 210px;
-  width: 100%;
-  resize: vertical;
-  border: 1.3px solid #bfd0e3;
-  border-radius: 1.1rem;
-  background: #ffffff;
-  padding: 1.25rem;
-  color: #10283b;
-  font-size: 16px;
-  line-height: 1.5;
+.notesBoardSection {
+  display: grid;
+  gap: 1rem;
+  max-width: 1120px;
+}
+
+.notesBoardHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.notesBoardTitle {
+  margin: 0;
+}
+
+.notesBoardAddButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  border-radius: 0.72rem;
+  background: #f15a29;
+  padding: 0.65rem 1rem;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 10px 24px rgba(241, 90, 41, 0.2), 0 2px 6px rgba(15, 23, 42, 0.08);
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease, background-color 160ms ease;
+}
+
+.notesBoardAddButton:hover {
+  background: #db4d1f;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(241, 90, 41, 0.24), 0 6px 14px rgba(15, 23, 42, 0.09);
+}
+
+.notesBoardAddButton:active {
+  transform: translateY(1px);
+  box-shadow: 0 6px 14px rgba(241, 90, 41, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.notesBoardAddButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: 0 6px 14px rgba(241, 90, 41, 0.14);
+}
+
+.notesBoardAddButton:focus-visible {
   outline: none;
+  box-shadow:
+    0 0 0 3px rgba(255, 90, 31, 0.18),
+    0 12px 28px rgba(255, 90, 31, 0.24),
+    0 4px 10px rgba(15, 23, 42, 0.08);
 }
 
-.noteComposerInput::placeholder {
-  color: #8a8a8a;
+.notesBoardEmptyCard {
+  padding: 1.3rem 1.5rem;
 }
 
-.noteComposerButton {
+.noteComposerStatusError,
+.noteComposerStatusSuccess {
+  margin: 0;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.noteComposerStatusError {
+  border: 1px solid #f1c5c5;
+  background: #fff1f1;
+  color: #8f2d2d;
+}
+
+.noteComposerStatusSuccess {
+  border: 1px solid #b8e2c8;
+  background: #edfdf3;
+  color: #027a48;
+}
+
+.notesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.noteBoardCard {
+  height: 100%;
+}
+
+.noteBoardCardDragging {
+  z-index: 20;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14), 0 6px 18px rgba(15, 23, 42, 0.12) !important;
+}
+
+.noteBoardCardInteractive {
+  cursor: text;
+}
+
+.noteBoardCardInteractive:focus-visible {
+  outline: none;
+  border-color: #f15a29 !important;
+  box-shadow: 0 0 0 3px rgba(241, 90, 41, 0.12);
+}
+
+.noteBoardCardEditing {
+  border-color: #d7e1ec !important;
+}
+
+.noteBoardCardBody {
+  display: flex;
+  height: 100%;
+  min-height: 260px;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.15rem 1.15rem 1.05rem !important;
+  position: relative;
+  padding-bottom: 4.2rem !important;
+}
+
+.noteBoardCardBody > * {
+  position: relative;
+  z-index: 1;
+}
+
+.noteBoardCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  position: absolute;
+  right: 1.15rem;
+  bottom: 1.05rem;
+  z-index: 1;
+}
+
+.noteBoardCardHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.noteBoardCardAuthor {
+  margin: 0;
+}
+
+.noteBoardCardStamp {
+  margin: 0;
+}
+
+.noteBoardEditButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: fit-content;
-  border: 0;
-  border-radius: 1rem;
-  background: linear-gradient(135deg, #ff5a1f 0%, #ff4c14 100%);
-  padding: 0.9rem 1.35rem;
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 600;
-  opacity: 0.88;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 1px solid #e2e8f1;
+  border-radius: 0.7rem;
+  background: #f8fafc;
+  color: #64748b;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.noteBoardDragHandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 1px solid #e2e8f1;
+  border-radius: 0.7rem;
+  background: #f8fafc;
+  color: #8b9ab0;
+  cursor: grab;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.noteBoardDragHandle:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #55657d;
+}
+
+.noteBoardDragHandle:active {
+  cursor: grabbing;
+}
+
+.noteBoardDragHandle:disabled {
   cursor: not-allowed;
+  opacity: 0.45;
 }
 
-.noteComposerHint {
+.noteBoardEditButton:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.noteBoardTextarea {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.85rem;
+  outline: none;
+  box-shadow: none;
+  transition: color 160ms ease, opacity 160ms ease;
+}
+
+.noteBoardTextarea::placeholder {
+  color: #8a94a6;
+}
+
+.noteBoardTextarea:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.noteBoardCardText {
   margin: 0;
-  color: #6a7a89;
-  font-size: 13px;
+  flex: 1;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.85rem;
+  white-space: pre-wrap;
 }
 
-.notesFeed {
-  display: grid;
+.noteBoardContentSurface {
+  flex: 1;
+  min-height: 0;
 }
 
-.notesFeedItem {
-  display: grid;
-  gap: 0.8rem;
-  border-bottom: 1px solid var(--dash-border);
-  padding: 1rem 0;
-  text-decoration: none;
+.noteBoardCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  position: absolute;
+  left: 1.15rem;
+  right: 6.85rem;
+  bottom: 1.05rem;
+  border-top: 0;
+  padding-top: 0;
+  justify-content: flex-start;
 }
 
-.notesFeedItem:first-child {
-  padding-top: 0.2rem;
+.noteBoardCardEditing .noteBoardCardFooter {
+  right: 1.15rem;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: nowrap;
+  gap: 1rem;
 }
 
-.notesFeedItem:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+.noteBoardCardFooterMeta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  color: #6b7280;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.18rem;
 }
 
-.notesFeedBody {
-  margin: 0;
-  color: #1f2a44;
-  font-size: 17px;
-  line-height: 1.55;
+.noteBoardCardFooterMeta > * {
+  white-space: nowrap;
 }
 
-.notesFeedMeta {
-  margin: 0;
-  color: #6b7f9e;
+.noteBoardCardEditing .noteBoardCardFooterMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.noteBoardCardActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  flex-shrink: 0;
+}
+
+.noteBoardPrimaryButton,
+.noteBoardSecondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.45rem;
+  border-radius: 0.72rem;
+  padding: 0.58rem 0.95rem;
   font-size: 14px;
+  font-weight: 600;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.noteBoardPrimaryButton {
+  border: 0;
+  background: #f15a29;
+  color: #ffffff;
+}
+
+.noteBoardPrimaryButton:hover {
+  background: #db4d1f;
+}
+
+.noteBoardSecondaryButton {
+  border: 1px solid #d7e1ec;
+  background: #f8f9fc;
+  color: #4b5d79;
+}
+
+.noteBoardSecondaryButton:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.noteBoardPrimaryButton:disabled,
+.noteBoardSecondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.noteBoardCardFooterMeta .noteBoardCardStamp::before {
+  content: none;
+}
+
+.noteItemMetaLabel {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 0.38rem 0.62rem;
+  color: #4b5d79;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.noteBoardDeleteLink {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.noteBoardDeleteLink:hover {
+  color: #912018;
+}
+
+.noteBoardDeleteLink:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .quoteTableCard {
@@ -844,7 +1144,8 @@
   .quickStatsGrid,
   .overviewGrid,
   .overviewActivityGrid,
-  .notesFilesSection {
+  .notesFilesSection,
+  .notesGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -852,6 +1153,11 @@
 @media (max-width: 900px) {
   .heroIdentityRow,
   .heroTopline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .notesBoardHeaderRow {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -865,6 +1171,7 @@
   .overviewGrid,
   .overviewActivityGrid,
   .notesFilesSection,
+  .notesGrid,
   .clientInfoGrid,
   .metricList {
     grid-template-columns: 1fr;

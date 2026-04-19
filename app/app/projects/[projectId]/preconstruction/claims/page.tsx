@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Clock, DollarSign, MoreHorizontal, Pencil, Plus, Trash2, TrendingUp } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, DollarSign, Landmark, MoreHorizontal, Pencil, Plus, Trash2, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -27,6 +27,15 @@ interface ClaimRow {
   percent_complete: number | null;
   claim_amount: number | null;
   paid_amount: number | null;
+  retention_percent: number | null;
+  retention_withheld_amount: number | null;
+  retention_released_amount: number | null;
+  retention_held_to_date: number | null;
+  retention_released_to_date: number | null;
+  retention_balance: number | null;
+  net_claim_excl_gst: number | null;
+  gst_amount: number | null;
+  total_payable: number | null;
   linked_quote_value: number | null;
   linked_approved_variations: number | null;
   revised_contract_value: number | null;
@@ -203,7 +212,7 @@ export default function ProjectClaimsRegisterPage() {
         const claimsTable = (supabase as any).from("project_claims");
 
         const { data: claimsRaw, error: claimsError } = await claimsTable
-          .select("id, claim_number, claim_title, claim_type, status, claim_date, period_start, period_end, due_date, percent_complete, claim_amount, paid_amount, linked_quote_value, linked_approved_variations, revised_contract_value, previous_claims_total, updated_at")
+          .select("id, claim_number, claim_title, claim_type, status, claim_date, period_start, period_end, due_date, percent_complete, claim_amount, paid_amount, retention_percent, retention_withheld_amount, retention_released_amount, retention_held_to_date, retention_released_to_date, retention_balance, net_claim_excl_gst, gst_amount, total_payable, linked_quote_value, linked_approved_variations, revised_contract_value, previous_claims_total, updated_at")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
           .order("claim_date", { ascending: false, nullsFirst: false })
@@ -298,6 +307,7 @@ export default function ProjectClaimsRegisterPage() {
     const baseQuoteValue = pickBaseQuoteContractValue(quotes);
     const revisedContractValue = baseQuoteValue + approvedVariationsValue;
     const activeClaims = claims.filter((claim) => claim.status !== "Cancelled");
+    const latestNonCancelledClaim = activeClaims[0] ?? null;
     const approvedToDate = activeClaims
       .filter((claim) => claim.status !== "Draft")
       .reduce((sum, claim) => sum + Number(claim.claim_amount ?? 0), 0);
@@ -332,6 +342,7 @@ export default function ProjectClaimsRegisterPage() {
       paidValue,
       dueValue,
       overdueValue,
+      latestRetentionBalance: Number(latestNonCancelledClaim?.retention_balance ?? 0),
       paidClaimsCount,
       dueClaimsCount,
       overdueClaimsCount,
@@ -350,10 +361,34 @@ export default function ProjectClaimsRegisterPage() {
 
   const updateClaimStatus = useCallback(async (claimId: string, newStatus: ClaimStatus) => {
     if (!supabase || !organizationId) return;
+    setError(null);
+    const previousClaims = claims;
     setClaims((prev) => prev.map((c) => c.id === claimId ? { ...c, status: newStatus } : c));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("project_claims").update({ status: newStatus }).eq("id", claimId).eq("organization_id", organizationId);
-  }, [organizationId, supabase]);
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: statusError } = await (supabase as any).rpc("update_project_claim_status", {
+        p_organization_id: organizationId,
+        p_project_id: projectId,
+        p_claim_id: claimId,
+        p_status: newStatus,
+      });
+
+      if (statusError) {
+        throw new Error(statusError.message);
+      }
+
+      const refreshedClaim = Array.isArray(data) ? (data[0] as ClaimRow | undefined) : undefined;
+      if (!refreshedClaim?.id) {
+        throw new Error("Claim status was updated but no refreshed claim row was returned.");
+      }
+
+      setClaims((prev) => prev.map((claim) => claim.id === refreshedClaim.id ? refreshedClaim : claim));
+    } catch (statusUpdateError) {
+      setClaims(previousClaims);
+      setError(statusUpdateError instanceof Error ? statusUpdateError.message : "Unable to update claim status.");
+    }
+  }, [claims, organizationId, projectId, supabase]);
 
   return (
     <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
@@ -389,46 +424,81 @@ export default function ProjectClaimsRegisterPage() {
           <div className="space-y-6">
 
             {/* Stat cards */}
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-indigo-50">
+                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-indigo-50">
                     <DollarSign className="h-5 w-5 text-indigo-500" />
                   </span>
                   <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Project Total</p>
                 </div>
-                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.contractValue)}</p>
+                <p
+                  title={toMoney(contractSummary.contractValue)}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                >
+                  {toMoney(contractSummary.contractValue)}
+                </p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>incl. approved variations</p>
               </div>
-              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-amber-50">
+                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-amber-50">
                     <Clock className="h-5 w-5 text-amber-500" />
                   </span>
                   <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Submitted</p>
                 </div>
-                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.dueValue)}</p>
+                <p
+                  title={toMoney(contractSummary.dueValue)}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                >
+                  {toMoney(contractSummary.dueValue)}
+                </p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-amber-600`}>{contractSummary.dueClaimsCount} claim{contractSummary.dueClaimsCount !== 1 ? "s" : ""} awaiting payment</p>
               </div>
-              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-emerald-50">
+                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-emerald-50">
                     <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                   </span>
                   <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Paid</p>
                 </div>
-                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.paidValue)}</p>
+                <p
+                  title={toMoney(contractSummary.paidValue)}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                >
+                  {toMoney(contractSummary.paidValue)}
+                </p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-emerald-600`}>{contractSummary.paidClaimsCount} claim{contractSummary.paidClaimsCount !== 1 ? "s" : ""} received</p>
               </div>
-              <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-rose-50">
+                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-rose-50">
                     <TrendingUp className="h-5 w-5 text-rose-500" />
                   </span>
                   <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Outstanding</p>
                 </div>
-                <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{toMoney(contractSummary.outstanding)}</p>
+                <p
+                  title={toMoney(contractSummary.outstanding)}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                >
+                  {toMoney(contractSummary.outstanding)}
+                </p>
                 <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>{contractSummary.overdueClaimsCount > 0 ? `${contractSummary.overdueClaimsCount} overdue` : "no overdue claims"}</p>
+              </div>
+              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-sky-50">
+                    <Landmark className="h-5 w-5 text-sky-500" />
+                  </span>
+                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Retention</p>
+                </div>
+                <p
+                  title={toMoney(contractSummary.latestRetentionBalance)}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                >
+                  {toMoney(contractSummary.latestRetentionBalance)}
+                </p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-sky-600`}>currently held on this project</p>
               </div>
             </div>
 
@@ -446,7 +516,7 @@ export default function ProjectClaimsRegisterPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC]">
+              <div className="overflow-x-auto rounded-[18px] border border-[#D7E1EC]">
                 <table className="min-w-full border-collapse">
                   <thead>
                     <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
@@ -454,7 +524,11 @@ export default function ProjectClaimsRegisterPage() {
                       <th className="w-[200px] px-4 py-2.5 text-left">Title</th>
                       <th className="w-[110px] px-4 py-2.5 text-left">Date</th>
                       <th className="w-[140px] px-4 py-2.5 text-left">Status</th>
-                      <th className="w-[110px] px-4 py-2.5 text-left">Total</th>
+                      <th className="w-[120px] px-4 py-2.5 text-left">Gross</th>
+                      <th className="w-[140px] px-4 py-2.5 text-left">Retention Withheld</th>
+                      <th className="w-[150px] px-4 py-2.5 text-left">Held to Date</th>
+                      <th className="w-[160px] px-4 py-2.5 text-left">Released to Date</th>
+                      <th className="w-[140px] px-4 py-2.5 text-left">Retention Balance</th>
                       <th className="w-[52px] px-3 py-2.5" />
                     </tr>
                   </thead>
@@ -502,6 +576,18 @@ export default function ProjectClaimsRegisterPage() {
                           </td>
                           <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
                             {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                            {toMoney(Number(claim.retention_withheld_amount ?? 0))}
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                            {toMoney(Number(claim.retention_held_to_date ?? 0))}
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                            {toMoney(Number(claim.retention_released_to_date ?? 0))}
+                          </td>
+                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                            {toMoney(Number(claim.retention_balance ?? 0))}
                           </td>
                           <td className="px-2 py-3">
                             <div className="flex items-center justify-center">

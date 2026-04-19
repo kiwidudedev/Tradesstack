@@ -13,7 +13,6 @@ const SECTION_MAP: { segment: string; label: string }[] = [
   { segment: "job-management/todos", label: "Tasks" },
   { segment: "job-management/time-sheets", label: "Timesheets" },
   { segment: "job-management/quality-assurance", label: "Health & Safety" },
-  { segment: "drawing-intelligence", label: "Files" },
   { segment: "ai-chatbot", label: "AI Assistant" },
   { segment: "dashboard", label: "Overview" },
 ];
