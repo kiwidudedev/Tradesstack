@@ -5,11 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, FileDown, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import { canManageCommercialData } from "@/lib/role-permissions";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
@@ -29,6 +30,8 @@ interface RetentionScaleBandDraftRow {
   rate_percent: string;
   is_remaining: boolean;
 }
+
+type RetentionNormalizationStatus = "compatible" | "safe_normalized" | "lossy";
 
 interface ClaimRow {
   id: string;
@@ -204,6 +207,25 @@ function calculateSlidingScaleRequiredRetentionToDate(
   return roundMoney(requiredRetentionToDate);
 }
 
+function compareClaimChronology(
+  left: { id: string; claim_date?: string | null; created_at?: string | null },
+  right: { id: string; claim_date?: string | null; created_at?: string | null },
+) {
+  const leftClaimDate = left.claim_date ?? "9999-12-31";
+  const rightClaimDate = right.claim_date ?? "9999-12-31";
+  if (leftClaimDate !== rightClaimDate) {
+    return leftClaimDate.localeCompare(rightClaimDate);
+  }
+
+  const leftCreatedAt = left.created_at ?? "9999-12-31T23:59:59.999Z";
+  const rightCreatedAt = right.created_at ?? "9999-12-31T23:59:59.999Z";
+  if (leftCreatedAt !== rightCreatedAt) {
+    return leftCreatedAt.localeCompare(rightCreatedAt);
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
 function normalizeRetentionScaleBandsForCompare(bands: RetentionScaleBand[]) {
   return bands.map((band) => ({
     up_to: band.up_to == null ? null : Number(Math.max(0, numberOrZero(band.up_to)).toFixed(2)),
@@ -216,61 +238,153 @@ function toDraftNumericString(value: number, maximumFractionDigits = 3) {
   return rounded.toString();
 }
 
-function deriveRetentionScaleBandDraftRows(bands: RetentionScaleBand[]): RetentionScaleBandDraftRow[] {
-  let previousUpperBound = 0;
-
-  return bands.map((band, index) => {
-    const isFinalBand = index === bands.length - 1;
-    const isRemainingBand = isFinalBand && band.up_to == null;
-    const resolvedUpperBound = band.up_to == null ? null : Math.max(0, numberOrZero(band.up_to));
-    const amount = isRemainingBand || resolvedUpperBound == null
-      ? ""
-      : toDraftNumericString(Math.max(0, resolvedUpperBound - previousUpperBound), 2);
-
-    if (resolvedUpperBound != null) {
-      previousUpperBound = resolvedUpperBound;
-    }
-
-    return {
-      id: band.id ?? `tier-${index + 1}`,
-      amount,
-      rate_percent: toDraftNumericString(Math.max(0, Math.min(100, numberOrZero(band.rate_percent)))),
-      is_remaining: isRemainingBand,
-    };
-  });
-}
-
-function convertRetentionScaleBandDraftRowsToCanonical(rows: RetentionScaleBandDraftRow[]): RetentionScaleBand[] {
-  let cumulativeUpperBound = 0;
-
-  return rows.map((row, index) => {
-    const isFinalRow = index === rows.length - 1;
-    const isRemainingRow = isFinalRow && row.is_remaining;
-    const amount = Math.max(0, numberOrZero(row.amount));
-    const nextUpTo = isRemainingRow ? null : cumulativeUpperBound + amount;
-
-    if (nextUpTo != null) {
-      cumulativeUpperBound = nextUpTo;
-    }
-
-    return {
-      id: row.id,
-      up_to: nextUpTo == null ? null : Number(nextUpTo.toFixed(2)),
-      rate_percent: row.rate_percent,
-    };
-  });
-}
-
-function createRetentionScaleBand(upTo: number | null, ratePercent: number): RetentionScaleBand {
+function createFixedRetentionScaleBandDraftRow(
+  id: string,
+  amount: string,
+  ratePercent: number,
+  isRemaining: boolean,
+): RetentionScaleBandDraftRow {
   return {
-    id: crypto.randomUUID(),
-    up_to: upTo,
-    rate_percent: ratePercent,
+    id,
+    amount,
+    rate_percent: toDraftNumericString(Math.max(0, Math.min(100, ratePercent))),
+    is_remaining: isRemaining,
   };
 }
 
-function createDefaultRetentionScaleBand(previousUpperBound: number, ratePercent: number): RetentionScaleBand {
-  return createRetentionScaleBand(previousUpperBound + 100000, ratePercent);
+function assessRetentionScaleBandNormalizationRisk(bands: RetentionScaleBand[]): RetentionNormalizationStatus {
+  if (bands.length === 0) {
+    return "safe_normalized";
+  }
+
+  if (bands.length >= 4) {
+    return "lossy";
+  }
+
+  if (bands.length === 1) {
+    return bands[0]?.up_to == null ? "safe_normalized" : "lossy";
+  }
+
+  if (bands.length === 2) {
+    return bands[1]?.up_to == null ? "safe_normalized" : "lossy";
+  }
+
+  return bands[2]?.up_to == null ? "compatible" : "lossy";
+}
+
+function normalizeRetentionScaleBandsToFixedThree(
+  bands: RetentionScaleBand[],
+  fallbackRatePercent = 0,
+): RetentionScaleBand[] {
+  const normalizedBands = bands.map((band, index) => ({
+    id: band.id ?? `tier-${index + 1}`,
+    up_to: band.up_to == null ? null : Number(Math.max(0, numberOrZero(band.up_to)).toFixed(2)),
+    rate_percent: Number(Math.max(0, Math.min(100, numberOrZero(band.rate_percent))).toFixed(3)),
+  }));
+  const safeFallbackRate = Number(Math.max(0, Math.min(100, numberOrZero(fallbackRatePercent))).toFixed(3));
+  const fallbackIdPrefix = normalizedBands.length > 0 ? "legacy-tier" : "fixed-tier";
+  const firstBand = normalizedBands[0] ?? null;
+  const secondBand = normalizedBands[1] ?? null;
+  const thirdBand = normalizedBands[2] ?? null;
+  const lastBand = normalizedBands[normalizedBands.length - 1] ?? null;
+
+  const firstUpTo = firstBand?.up_to == null ? 0 : firstBand.up_to;
+  const secondUpTo = secondBand?.up_to == null
+    ? firstUpTo
+    : Math.max(firstUpTo, secondBand.up_to);
+  const firstAmount = Number(Math.max(0, firstUpTo).toFixed(2));
+  const secondAmount = Number(Math.max(0, secondUpTo - firstUpTo).toFixed(2));
+
+  const firstRate = firstBand == null
+    ? safeFallbackRate
+    : Number(Math.max(0, Math.min(100, numberOrZero(firstBand.rate_percent))).toFixed(3));
+  const secondRate = secondBand == null
+    ? firstRate
+    : Number(Math.max(0, Math.min(100, numberOrZero(secondBand.rate_percent))).toFixed(3));
+  const remainingRateSource = thirdBand ?? lastBand ?? secondBand ?? firstBand;
+  const remainingRate = remainingRateSource == null
+    ? safeFallbackRate
+    : Number(Math.max(0, Math.min(100, numberOrZero(remainingRateSource.rate_percent))).toFixed(3));
+
+  return [
+    {
+      id: firstBand?.id ?? `${fallbackIdPrefix}-1`,
+      up_to: Number(firstAmount.toFixed(2)),
+      rate_percent: firstRate,
+    },
+    {
+      id: secondBand?.id ?? `${fallbackIdPrefix}-2`,
+      up_to: Number((firstAmount + secondAmount).toFixed(2)),
+      rate_percent: secondRate,
+    },
+    {
+      id: thirdBand?.id ?? `${fallbackIdPrefix}-3`,
+      up_to: null,
+      rate_percent: remainingRate,
+    },
+  ];
+}
+
+function deriveRetentionScaleBandDraftRows(
+  bands: RetentionScaleBand[],
+  fallbackRatePercent = 0,
+): RetentionScaleBandDraftRow[] {
+  const normalizedBands = normalizeRetentionScaleBandsToFixedThree(bands, fallbackRatePercent);
+  const firstBandUpperBound = normalizedBands[0]?.up_to == null ? 0 : Math.max(0, numberOrZero(normalizedBands[0].up_to));
+  const secondBandUpperBound = normalizedBands[1]?.up_to == null ? firstBandUpperBound : Math.max(firstBandUpperBound, numberOrZero(normalizedBands[1].up_to));
+  const firstAmount = Number(Math.max(0, firstBandUpperBound).toFixed(2));
+  const nextAmount = Number(Math.max(0, secondBandUpperBound - firstBandUpperBound).toFixed(2));
+
+  return [
+    createFixedRetentionScaleBandDraftRow(
+      normalizedBands[0]?.id ?? "fixed-tier-1",
+      firstAmount > 0 ? toDraftNumericString(firstAmount, 2) : "",
+      numberOrZero(normalizedBands[0]?.rate_percent),
+      false,
+    ),
+    createFixedRetentionScaleBandDraftRow(
+      normalizedBands[1]?.id ?? "fixed-tier-2",
+      nextAmount > 0 ? toDraftNumericString(nextAmount, 2) : "",
+      numberOrZero(normalizedBands[1]?.rate_percent),
+      false,
+    ),
+    createFixedRetentionScaleBandDraftRow(
+      normalizedBands[2]?.id ?? "fixed-tier-3",
+      "",
+      numberOrZero(normalizedBands[2]?.rate_percent),
+      true,
+    ),
+  ];
+}
+
+function convertRetentionScaleBandDraftRowsToCanonical(rows: RetentionScaleBandDraftRow[]): RetentionScaleBand[] {
+  const [firstRow, secondRow, thirdRow] = [
+    rows[0] ?? createFixedRetentionScaleBandDraftRow("fixed-tier-1", "", 0, false),
+    rows[1] ?? createFixedRetentionScaleBandDraftRow("fixed-tier-2", "", 0, false),
+    rows[2] ?? createFixedRetentionScaleBandDraftRow("fixed-tier-3", "", 0, true),
+  ];
+  const firstAmount = Math.max(0, numberOrZero(firstRow.amount));
+  const nextAmount = Math.max(0, numberOrZero(secondRow.amount));
+  const firstUpTo = Number(firstAmount.toFixed(2));
+  const secondUpTo = Number((firstAmount + nextAmount).toFixed(2));
+
+  return [
+    {
+      id: firstRow.id,
+      up_to: firstUpTo,
+      rate_percent: firstRow.rate_percent,
+    },
+    {
+      id: secondRow.id,
+      up_to: secondUpTo,
+      rate_percent: secondRow.rate_percent,
+    },
+    {
+      id: thirdRow.id,
+      up_to: null,
+      rate_percent: thirdRow.rate_percent,
+    },
+  ];
 }
 
 function calculateVariationPreGstTotal(row: Record<string, unknown>) {
@@ -326,9 +440,9 @@ function applyCanonicalClaimLineIdentity(row: ClaimLineItem, canonical: ClaimLin
 }
 
 const RETENTION_PRESET_OPTIONS = [0, 2.5, 5, 10] as const;
-const retentionInputClass = "font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]";
-const retentionLabelClass = "font-[family-name:var(--font-ibm-plex-sans)] mb-1 block text-[13px] font-semibold text-[#1d2433]";
-const retentionChoiceButtonClass = "inline-flex h-[2.75rem] rounded-[0.6rem] border px-3.5 text-left text-[13px] font-medium transition";
+const retentionInputClass = "font-[family-name:var(--font-ibm-plex-sans)] h-10 w-full rounded-[10px] border border-[#D7E1EC] bg-[#FBFEFE] px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]";
+const retentionLabelClass = "font-[family-name:var(--font-ibm-plex-sans)] mb-1.5 block text-[14px] font-medium text-[#4B5D79]";
+const retentionChoiceButtonClass = "inline-flex h-10 items-center justify-center rounded-[10px] border px-4 text-left text-[14px] font-medium transition";
 
 function normalizeClaimRowsAgainstLiveSource(rows: ClaimLineItem[], liveSourceRows: ClaimLineItem[]) {
   const liveRowsByKey = new Map(liveSourceRows.map((row) => [getClaimLineSourceKey(row), row]));
@@ -488,6 +602,7 @@ export default function ProjectClaimDetailPage() {
   const { session } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
+  const canManageClaim = canManageCommercialData(session?.role);
 
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [organizationName, setOrganizationName] = useState("");
@@ -508,6 +623,7 @@ export default function ProjectClaimDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCreatingClaim, setIsCreatingClaim] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -557,6 +673,7 @@ export default function ProjectClaimDetailPage() {
   const [snapshotNetClaimExclGst, setSnapshotNetClaimExclGst] = useState<number | null>(null);
   const [snapshotGstAmount, setSnapshotGstAmount] = useState<number | null>(null);
   const [snapshotTotalPayable, setSnapshotTotalPayable] = useState<number | null>(null);
+  const [retentionNormalizationStatus, setRetentionNormalizationStatus] = useState<RetentionNormalizationStatus>("compatible");
   const hasAutoCreatedOnNewRoute = useRef(false);
 
   const supabase = useMemo(() => {
@@ -580,9 +697,18 @@ export default function ProjectClaimDetailPage() {
     setPeriodEnd(claim.period_end ?? "");
     setPaidAmount(String(claim.paid_amount ?? 0));
     setRetentionMethod(claim.retention_method === "sliding_scale" ? "sliding_scale" : "flat");
-    const hydratedRetentionScaleBands = Array.isArray(claim.retention_scale_bands) ? claim.retention_scale_bands : [];
+    const savedRetentionScaleBands = Array.isArray(claim.retention_scale_bands) ? claim.retention_scale_bands : [];
+    setRetentionNormalizationStatus(
+      claim.retention_method === "sliding_scale"
+        ? assessRetentionScaleBandNormalizationRisk(savedRetentionScaleBands)
+        : "compatible",
+    );
+    const hydratedRetentionScaleBands = normalizeRetentionScaleBandsToFixedThree(
+      savedRetentionScaleBands,
+      Number(claim.retention_percent ?? 0),
+    );
     setRetentionScaleBands(hydratedRetentionScaleBands);
-    setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(hydratedRetentionScaleBands));
+    setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(hydratedRetentionScaleBands, Number(claim.retention_percent ?? 0)));
     setRetentionPercent(String(claim.retention_percent ?? 0));
     setRetentionReleasedAmount(String(claim.retention_released_amount ?? 0));
     setSnapshotClaimAmount(Number(claim.claim_amount ?? 0));
@@ -593,7 +719,7 @@ export default function ProjectClaimDetailPage() {
     setSnapshotPercentComplete(Number(claim.percent_complete ?? 0));
     setSnapshotRetentionMethod(claim.retention_method === "sliding_scale" ? "sliding_scale" : "flat");
     setSnapshotRetentionScaleBands(
-      normalizeRetentionScaleBandsForCompare(Array.isArray(claim.retention_scale_bands) ? claim.retention_scale_bands : []),
+      normalizeRetentionScaleBandsForCompare(hydratedRetentionScaleBands),
     );
     setSnapshotRetentionPercent(Number(claim.retention_percent ?? 0));
     setSnapshotRetentionWithheldAmount(Number(claim.retention_withheld_amount ?? 0));
@@ -778,7 +904,7 @@ export default function ProjectClaimDetailPage() {
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
       claimsTable
-        .select("id, claim_amount, paid_amount, retention_withheld_amount, retention_released_amount, status")
+        .select("id, claim_amount, paid_amount, retention_withheld_amount, retention_released_amount, status, claim_date, created_at")
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", resolvedProjectId),
     ]);
@@ -804,18 +930,28 @@ export default function ProjectClaimDetailPage() {
       retention_withheld_amount: number | null;
       retention_released_amount: number | null;
       status: ClaimStatus;
+      claim_date: string | null;
+      created_at: string;
     }>;
-    const previousTotal = claimRows
-      .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
+    const existingClaimRow = existingClaimId == null
+      ? null
+      : (claimRows.find((row) => row.id === existingClaimId) ?? null);
+    const previousClaimRows = claimRows
+      .filter((row) => row.status !== "Cancelled")
+      .filter((row) => {
+        if (!existingClaimRow) {
+          return row.id !== existingClaimId;
+        }
+        return compareClaimChronology(row, existingClaimRow) < 0;
+      });
+    const previousTotal = previousClaimRows
       .reduce((sum, row) => sum + Number(row.claim_amount ?? 0), 0);
     const paidToDate = claimRows
       .filter((row) => row.status !== "Cancelled")
       .reduce((sum, row) => sum + Number(row.paid_amount ?? 0), 0);
-    const previousRetentionHeld = claimRows
-      .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
+    const previousRetentionHeld = previousClaimRows
       .reduce((sum, row) => sum + Number(row.retention_withheld_amount ?? 0), 0);
-    const previousRetentionReleased = claimRows
-      .filter((row) => row.id !== existingClaimId && row.status !== "Cancelled")
+    const previousRetentionReleased = previousClaimRows
       .reduce((sum, row) => sum + Number(row.retention_released_amount ?? 0), 0);
 
     setBaseQuoteValue(quoteValue);
@@ -1143,10 +1279,9 @@ export default function ProjectClaimDetailPage() {
     if (nextOpen) {
       setIsRetentionCustomMode(hasCustomRetentionPercent);
       if (retentionMethod === "sliding_scale") {
-        const sourceBands = retentionScaleBands.length > 0
-          ? retentionScaleBands
-          : [createDefaultRetentionScaleBand(0, retentionPercentNumber)];
-        setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(sourceBands));
+        const sourceBands = normalizeRetentionScaleBandsToFixedThree(retentionScaleBands, retentionPercentNumber);
+        setRetentionScaleBands(sourceBands);
+        setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(sourceBands, retentionPercentNumber));
       }
     } else if (retentionMethod === "sliding_scale") {
       setRetentionScaleBands(convertRetentionScaleBandDraftRowsToCanonical(retentionScaleBandDraftRows));
@@ -1165,103 +1300,11 @@ export default function ProjectClaimDetailPage() {
   const handleSelectRetentionMethod = (value: RetentionMethod) => {
     setRetentionMethod(value);
     setIsRetentionCustomMode(value === "flat" ? hasCustomRetentionPercent : false);
-    if (value === "sliding_scale" && retentionScaleBands.length === 0) {
-      setRetentionScaleBandDraftRows(
-        deriveRetentionScaleBandDraftRows([createDefaultRetentionScaleBand(0, retentionPercentNumber)]),
-      );
+    if (value === "sliding_scale") {
+      const sourceBands = normalizeRetentionScaleBandsToFixedThree(retentionScaleBands, retentionPercentNumber);
+      setRetentionScaleBands(sourceBands);
+      setRetentionScaleBandDraftRows(deriveRetentionScaleBandDraftRows(sourceBands, retentionPercentNumber));
     }
-  };
-
-  const handleAddRetentionScaleTier = () => {
-    setRetentionScaleBandDraftRows((current) => {
-      if (current.length === 0) {
-        return deriveRetentionScaleBandDraftRows([createDefaultRetentionScaleBand(0, retentionPercentNumber)]);
-      }
-
-      const next = [...current];
-      const lastIndex = next.length - 1;
-      const currentLast = next[lastIndex];
-      next[lastIndex] = {
-        ...currentLast,
-        amount: currentLast.amount || "100000",
-        is_remaining: false,
-      };
-      next.push({
-        id: crypto.randomUUID(),
-        amount: "",
-        rate_percent: currentLast.rate_percent,
-        is_remaining: true,
-      });
-      return next;
-    });
-  };
-
-  const handleUpdateRetentionScaleBand = (
-    index: number,
-    field: "up_to" | "rate_percent",
-    rawValue: string,
-  ) => {
-    setRetentionScaleBands((current) =>
-      current.map((band, bandIndex) => {
-        if (bandIndex !== index) {
-          return band;
-        }
-
-        if (field === "rate_percent") {
-          return {
-            ...band,
-            rate_percent: rawValue,
-          };
-        }
-
-        const previousUpperBound = index > 0 ? numberOrZero(current[index - 1].up_to) : 0;
-        const nextUpperBound = index < current.length - 1 && current[index + 1]?.up_to != null
-          ? numberOrZero(current[index + 1].up_to)
-          : null;
-        const normalizedUpTo = Math.max(previousUpperBound, numberOrZero(rawValue));
-        const clampedUpTo = nextUpperBound == null
-          ? normalizedUpTo
-          : Math.min(normalizedUpTo, nextUpperBound);
-
-        return {
-          ...band,
-          up_to: clampedUpTo,
-        };
-      }),
-    );
-  };
-
-  const handleToggleFinalRetentionScaleOpenEnded = () => {
-    setRetentionScaleBandDraftRows((current) => {
-      if (current.length === 0) {
-        return current;
-      }
-
-      const next = [...current];
-      const lastIndex = next.length - 1;
-      const lastBand = next[lastIndex];
-      next[lastIndex] = {
-        ...lastBand,
-        amount: lastBand.is_remaining ? (lastBand.amount || "100000") : "",
-        is_remaining: !lastBand.is_remaining,
-      };
-
-      return next;
-    });
-  };
-
-  const handleRemoveRetentionScaleBand = (index: number) => {
-    setRetentionScaleBandDraftRows((current) => {
-      const next = current.filter((_, bandIndex) => bandIndex !== index);
-      if (next.length === 0) {
-        return [];
-      }
-      return next.map((band, bandIndex) => (
-        bandIndex === next.length - 1 && band.is_remaining
-          ? { ...band, is_remaining: true, amount: "" }
-          : band
-      ));
-    });
   };
 
   const handleUpdateRetentionScaleBandDraft = (
@@ -1279,7 +1322,12 @@ export default function ProjectClaimDetailPage() {
   };
 
   const handleCommitRetentionScaleBandDrafts = () => {
-    setRetentionScaleBands(convertRetentionScaleBandDraftRowsToCanonical(retentionScaleBandDraftRows));
+    const normalizedDraftRows = deriveRetentionScaleBandDraftRows(
+      convertRetentionScaleBandDraftRowsToCanonical(retentionScaleBandDraftRows),
+      retentionPercentNumber,
+    );
+    setRetentionScaleBandDraftRows(normalizedDraftRows);
+    setRetentionScaleBands(convertRetentionScaleBandDraftRowsToCanonical(normalizedDraftRows));
   };
 
   const updateClaimLinePercent = (lineId: string, nextValue: string) => {
@@ -1475,6 +1523,7 @@ export default function ProjectClaimDetailPage() {
         setSnapshotNetClaimExclGst(Number(savedRow.net_claim_excl_gst ?? 0));
         setSnapshotGstAmount(Number(savedRow.gst_amount ?? 0));
         setSnapshotTotalPayable(Number(savedRow.total_payable ?? 0));
+        setRetentionNormalizationStatus("compatible");
         setPaidToDateTotal((current) => {
           const currentPaidAmount = numberOrZero(paidAmount);
           const savedPaidAmount = Number(savedRow.paid_amount ?? currentPaidAmount);
@@ -1499,11 +1548,12 @@ export default function ProjectClaimDetailPage() {
   };
 
   const deleteClaim = async () => {
-    if (!claimId || !supabase || !organizationId) {
+    if (!claimId || !supabase || !organizationId || !projectDbId) {
       return;
     }
-    const confirmed = typeof window === "undefined" ? true : window.confirm(`Delete claim ${claimNumber}? This cannot be undone.`);
-    if (!confirmed) {
+
+    if (!canManageClaim) {
+      setError("You do not have permission to delete claims.");
       return;
     }
 
@@ -1511,14 +1561,15 @@ export default function ProjectClaimDetailPage() {
     setError(null);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const claimsTable = (supabase as any).from("project_claims");
-      const { error: deleteError } = await claimsTable
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("id", claimId);
+      const { error: deleteError } = await (supabase as any).rpc("delete_project_claim_safe", {
+        p_organization_id: organizationId,
+        p_project_id: projectDbId,
+        p_claim_id: claimId,
+      });
       if (deleteError) {
         throw new Error(deleteError.message);
       }
+      setIsDeleteDialogOpen(false);
       router.replace(`/app/projects/${routeProjectSlug}/preconstruction/claims`);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Unable to delete claim.");
@@ -2168,13 +2219,13 @@ export default function ProjectClaimDetailPage() {
                 <FileDown className="mr-2 h-4 w-4 text-[#64748B]" />
                 Export PDF
               </DropdownMenuItem>
-              {claimId ? (
+              {claimId && canManageClaim ? (
                 <>
                   <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
                   <DropdownMenuItem
                     onSelect={(event) => {
                       event.preventDefault();
-                      void deleteClaim();
+                      setIsDeleteDialogOpen(true);
                     }}
                     disabled={isDeleting}
                     className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]`}
@@ -2192,6 +2243,46 @@ export default function ProjectClaimDetailPage() {
       {error ? (
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
       ) : null}
+      {!canManageClaim && session ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          You can review this claim, but only owner, admin, QS, and project manager roles can edit or delete it.
+        </p>
+      ) : null}
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="w-[calc(100vw-24px)] max-w-[520px] rounded-[16px] border border-[#E8EDF5] bg-[#FBFEFE] p-0 shadow-[0_10px_28px_rgba(15,23,42,0.08)] sm:w-full">
+          <DialogHeader className="border-b border-[#E8EDF5] px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
+            <DialogTitle className={`${ibmPlexSans.className} text-[24px] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+              Delete payment claim {claimNumber || "this claim"}?
+            </DialogTitle>
+            <DialogDescription className={`${interMedium.className} pt-2 text-[14px] leading-6 text-[#4B5D79]`}>
+              This will permanently delete this payment claim and its line items. Claims after it will be recalculated. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="px-5 py-4 sm:px-6">
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isDeleting}
+                className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-5`}
+              >
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              onClick={() => {
+                void deleteClaim();
+              }}
+              disabled={isDeleting}
+              className={`${styles.quoteButtonLabel} h-10 rounded-full bg-[#B42318] px-5 !text-white hover:bg-[#B42318]`}
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_input]:text-[#1D1D1D] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_select]:text-[#1D1D1D] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE] [&_textarea]:text-[#1D1D1D]">
         <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
@@ -2360,24 +2451,42 @@ export default function ProjectClaimDetailPage() {
                                 <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8] transition-transform ${isRetentionSelectorOpen ? "rotate-180" : ""}`} />
                               </button>
                             </DialogTrigger>
-                            <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
-                              <DialogHeader className="px-7 pb-6 pt-7">
-                                <DialogTitle className={`${ibmPlexSans.className} m-0 text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
-                                  Retention
-                                </DialogTitle>
-                                <p className={`${interMedium.className} text-[13px] text-[#6B7A90]`}>
-                                  Configure retention method and bands
-                                </p>
+                            <DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-[760px] overflow-y-auto rounded-[16px] border border-[#E8EDF5] bg-[#FBFEFE] p-0 shadow-[0_10px_28px_rgba(15,23,42,0.08)] sm:w-full">
+                              <DialogHeader className="border-b border-[#E8EDF5] px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="space-y-1.5">
+                                    <DialogTitle className={`${ibmPlexSans.className} m-0 text-[24px] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+                                      Retention
+                                    </DialogTitle>
+                                    <p className={styles.quoteBodyLabel}>
+                                      Configure retention method and bands
+                                    </p>
+                                  </div>
+                                  <DialogClose asChild>
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#D7E1EC] bg-[#F8F9FC] text-[#64748B] transition hover:bg-white hover:text-[#1d2433]"
+                                      aria-label="Close retention dialog"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </DialogClose>
+                                </div>
                               </DialogHeader>
-                              <div className="space-y-3.5 px-7 pb-4">
-                                <div className="flex items-center gap-6 border-b-2 border-[#E2E8F1]">
+                              <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
+                                {retentionNormalizationStatus === "lossy" ? (
+                                  <p className={`${interMedium.className} rounded-[12px] border border-amber-300/70 bg-amber-50 px-3.5 py-3 text-[13px] leading-5 text-amber-900`}>
+                                    This claim used an older retention band structure and has been converted into the new fixed 3-band editor. Retention above previous caps may now behave differently, so please review the three band values before saving.
+                                  </p>
+                                ) : null}
+                                <div className="inline-flex w-full rounded-[12px] border border-[#D7E1EC] bg-[#F8F9FC] p-1 sm:w-auto">
                                   <button
                                     type="button"
                                     onClick={() => handleSelectRetentionMethod("flat")}
-                                    className={`-mb-[2px] inline-flex items-center py-3 text-[15px] font-medium transition-colors ${
+                                    className={`inline-flex flex-1 items-center justify-center rounded-[10px] px-4 py-2.5 text-[14px] font-medium transition-colors sm:flex-none ${
                                       retentionMethod === "flat"
-                                        ? "border-b-[2px] border-[#F15A29] text-[#F15A29]"
-                                        : "text-[#4B5D79] hover:text-[#4B5D79]"
+                                        ? "bg-white text-[#F15A29] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                                        : "text-[#4B5D79] hover:text-[#22324A]"
                                     }`}
                                   >
                                     Flat %
@@ -2385,10 +2494,10 @@ export default function ProjectClaimDetailPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleSelectRetentionMethod("sliding_scale")}
-                                    className={`-mb-[2px] inline-flex items-center py-3 text-[15px] font-medium transition-colors ${
+                                    className={`inline-flex flex-1 items-center justify-center rounded-[10px] px-4 py-2.5 text-[14px] font-medium transition-colors sm:flex-none ${
                                       retentionMethod === "sliding_scale"
-                                        ? "border-b-[2px] border-[#F15A29] text-[#F15A29]"
-                                        : "text-[#4B5D79] hover:text-[#4B5D79]"
+                                        ? "bg-white text-[#F15A29] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                                        : "text-[#4B5D79] hover:text-[#22324A]"
                                     }`}
                                   >
                                     Sliding Scale
@@ -2396,7 +2505,7 @@ export default function ProjectClaimDetailPage() {
                                 </div>
                                 {retentionMethod === "flat" ? (
                                   <>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-2 gap-3">
                                       {RETENTION_PRESET_OPTIONS.map((option) => {
                                         const isSelected = Math.abs(retentionPercentNumber - option) < 0.001 && !hasCustomRetentionPercent;
                                         return (
@@ -2427,7 +2536,7 @@ export default function ProjectClaimDetailPage() {
                                       </button>
                                     </div>
                                     {isRetentionCustomMode || hasCustomRetentionPercent ? (
-                                      <div className="space-y-2.5">
+                                      <div className="space-y-3">
                                         <label className={retentionLabelClass}>Custom retention %</label>
                                         <div className="relative">
                                           <Input
@@ -2445,50 +2554,41 @@ export default function ProjectClaimDetailPage() {
                                     ) : null}
                                   </>
                                 ) : (
-                                  <div className="space-y-3.5">
-                                    <div className="space-y-3.5">
+                                  <div className="space-y-4">
+                                    <div className="space-y-4">
                                       {retentionScaleBandDraftRows.map((band, index) => {
-                                        const isFinalTier = index === retentionScaleBandDraftRows.length - 1;
-                                        const isOpenEndedFinalTier = isFinalTier && band.is_remaining;
                                         const previousUpperBound = retentionScaleBandDraftRows
                                           .slice(0, index)
                                           .reduce((sum, row) => sum + Math.max(0, numberOrZero(row.amount)), 0);
-                                        const bandAmount = isOpenEndedFinalTier ? null : Math.max(0, numberOrZero(band.amount));
-                                        const rowLabel = isOpenEndedFinalTier
-                                          ? "Remaining amount"
-                                          : index === 0
-                                            ? "First"
-                                            : "Next";
-                                        const amountLabel = isOpenEndedFinalTier ? "Remaining amount" : `${rowLabel} amount`;
+                                        const isRemainingTier = index === 2;
+                                        const bandAmount = Math.max(0, numberOrZero(band.amount));
+                                        const rowLabel = index === 0 ? "First" : index === 1 ? "Next" : "Remaining";
+                                        const amountLabel = `${rowLabel} amount`;
 
                                         return (
                                           <div
                                             key={band.id ?? `retention-tier-${index}`}
-                                            className="space-y-3.5 border-t border-[#E8EDF5] pt-3.5 first:border-t-0 first:pt-0"
+                                            className="rounded-[14px] border border-[#E8EDF5] bg-white px-4 py-4 sm:px-5"
                                           >
-                                            <div className="flex items-start justify-between gap-3">
-                                              <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#1d2433]`}>
-                                                {isOpenEndedFinalTier
-                                                  ? `Remaining amount at ${numberOrZero(band.rate_percent)}%`
-                                                  : `${rowLabel} ${toMoney(numberOrZero(bandAmount))} at ${numberOrZero(band.rate_percent)}%`}
-                                              </p>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleRemoveRetentionScaleBand(index)}
-                                                disabled={retentionScaleBandDraftRows.length === 1}
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[#D9E3EE] bg-white text-[#64748B] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                                aria-label={`Remove band ${index + 1}`}
-                                                >
-                                                  <Trash2 className="h-3.5 w-3.5" />
-                                                </button>
+                                            <div className="flex items-start justify-between gap-3 border-b border-[#EEF2F7] pb-3">
+                                              <div className="space-y-1">
+                                                <p className={styles.quoteCardTitle}>{rowLabel}</p>
+                                                <p className={`${interMedium.className} text-[13px] text-[#6B7A90]`}>
+                                                  {isRemainingTier
+                                                    ? `Remaining amount at ${numberOrZero(band.rate_percent)}%`
+                                                    : `${rowLabel} ${toMoney(numberOrZero(bandAmount))} at ${numberOrZero(band.rate_percent)}%`}
+                                                </p>
+                                              </div>
                                             </div>
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                              <div className="space-y-2">
+                                            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                              <div className="space-y-2.5">
                                                 <label className={retentionLabelClass}>{amountLabel}</label>
-                                                {isOpenEndedFinalTier ? (
-                                                  <p className={`${interMedium.className} text-[12px] text-[#6B7A90]`}>
-                                                    Remaining amount above {toMoney(previousUpperBound)}
-                                                  </p>
+                                                {isRemainingTier ? (
+                                                  <div className="flex h-10 items-center rounded-[10px] border border-[#D7E1EC] bg-[#FBFEFE] px-3.5">
+                                                    <p className={`${interMedium.className} text-[13px] text-[#6B7A90]`}>
+                                                      Remaining amount above {toMoney(previousUpperBound)}
+                                                    </p>
+                                                  </div>
                                                 ) : (
                                                   <Input
                                                     type="number"
@@ -2501,7 +2601,7 @@ export default function ProjectClaimDetailPage() {
                                                   />
                                                 )}
                                               </div>
-                                              <div className="space-y-2">
+                                              <div className="space-y-2.5">
                                                 <label className={retentionLabelClass}>Rate</label>
                                                 <div className="relative">
                                                   <Input
@@ -2518,35 +2618,30 @@ export default function ProjectClaimDetailPage() {
                                                 </div>
                                               </div>
                                             </div>
-                                            <div>
-                                              {isFinalTier ? (
-                                                <button
-                                                  type="button"
-                                                  onClick={handleToggleFinalRetentionScaleOpenEnded}
-                                                  className={`inline-flex rounded-[8px] border px-3 py-2 text-[12px] font-medium transition ${
-                                                    isOpenEndedFinalTier
-                                                      ? "border-[#F15A29] bg-[#FFF3EE] text-[#10283B]"
-                                                      : "border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50"
-                                                  }`}
-                                                >
-                                                  {isOpenEndedFinalTier ? "Using remaining amount" : "Use remaining amount"}
-                                                </button>
-                                              ) : null}
-                                            </div>
                                           </div>
                                         );
                                       })}
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={handleAddRetentionScaleTier}
-                                      className={`${retentionChoiceButtonClass} items-center border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50`}
-                                    >
-                                      <Plus className="mr-2 h-3.5 w-3.5" />
-                                      Add Band
-                                    </button>
                                   </div>
                                 )}
+                                <div className="flex flex-col-reverse gap-3 border-t border-[#E8EDF5] pt-5 sm:flex-row sm:items-center sm:justify-end">
+                                  <DialogClose asChild>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-5`}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </DialogClose>
+                                  <Button
+                                    type="button"
+                                    onClick={() => setIsRetentionSelectorOpen(false)}
+                                    className={`${styles.quoteButtonLabel} h-10 rounded-full bg-[#0B2739] px-6 !text-white hover:bg-[#0B2739]`}
+                                  >
+                                    Done
+                                  </Button>
+                                </div>
                               </div>
                             </DialogContent>
                           </Dialog>

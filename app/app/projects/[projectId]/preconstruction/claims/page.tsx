@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Clock, DollarSign, Landmark, MoreHorizontal, Pencil, Plus, Trash2, TrendingUp } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, DollarSign, Landmark, MoreHorizontal, Pencil, Plus, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -136,6 +136,19 @@ function pickBaseQuoteContractValue(quotes: QuoteRow[]) {
   }
 
   return quotes[0] ? calculateQuotePreGstTotal(quotes[0]) : 0;
+}
+
+function calculateProjectRetentionBalance(claims: ClaimRow[]) {
+  const activeClaims = claims.filter((claim) => claim.status !== "Cancelled");
+  const totalRetentionHeld = activeClaims.reduce(
+    (sum, claim) => sum + Number(claim.retention_withheld_amount ?? 0),
+    0,
+  );
+  const totalRetentionReleased = activeClaims.reduce(
+    (sum, claim) => sum + Number(claim.retention_released_amount ?? 0),
+    0,
+  );
+  return Math.max(0, totalRetentionHeld - totalRetentionReleased);
 }
 
 export default function ProjectClaimsRegisterPage() {
@@ -307,13 +320,24 @@ export default function ProjectClaimsRegisterPage() {
     const baseQuoteValue = pickBaseQuoteContractValue(quotes);
     const revisedContractValue = baseQuoteValue + approvedVariationsValue;
     const activeClaims = claims.filter((claim) => claim.status !== "Cancelled");
-    const latestNonCancelledClaim = activeClaims[0] ?? null;
+    const outstandingClaims = activeClaims.filter(
+      (claim) =>
+        claim.status === "Submitted" ||
+        claim.status === "Unpaid" ||
+        claim.status === "Overdue",
+    );
     const approvedToDate = activeClaims
       .filter((claim) => claim.status !== "Draft")
       .reduce((sum, claim) => sum + Number(claim.claim_amount ?? 0), 0);
     const claimedToDate = activeClaims.reduce((sum, claim) => sum + Number(claim.claim_amount ?? 0), 0);
     const receivedToDate = activeClaims.reduce((sum, claim) => sum + Number(claim.paid_amount ?? 0), 0);
-    const outstanding = Math.max(0, claimedToDate - receivedToDate);
+    const outstanding = Math.max(
+      0,
+      outstandingClaims.reduce(
+        (sum, claim) => sum + Math.max(0, Number(claim.claim_amount ?? 0) - Number(claim.paid_amount ?? 0)),
+        0,
+      ),
+    );
     const remainingToClaim = Math.max(0, revisedContractValue - claimedToDate);
     const paidValue = activeClaims
       .filter((claim) => claim.status === "Paid")
@@ -327,6 +351,7 @@ export default function ProjectClaimsRegisterPage() {
     const paidClaimsCount = activeClaims.filter((claim) => claim.status === "Paid").length;
     const dueClaimsCount = activeClaims.filter((claim) => claim.status === "Submitted" || claim.status === "Unpaid").length;
     const overdueClaimsCount = activeClaims.filter((claim) => claim.status === "Overdue").length;
+    const unpaidClaimsCount = outstandingClaims.length;
     const draftCount = claims.filter((claim) => claim.status === "Draft").length;
     const submittedCount = claims.filter((claim) => claim.status === "Submitted" || claim.status === "Unpaid").length;
     const paidCount = claims.filter((claim) => claim.status === "Paid").length;
@@ -342,10 +367,11 @@ export default function ProjectClaimsRegisterPage() {
       paidValue,
       dueValue,
       overdueValue,
-      latestRetentionBalance: Number(latestNonCancelledClaim?.retention_balance ?? 0),
+      latestRetentionBalance: calculateProjectRetentionBalance(activeClaims),
       paidClaimsCount,
       dueClaimsCount,
       overdueClaimsCount,
+      unpaidClaimsCount,
       remainingToClaim,
       baseQuoteValue,
       approvedVariationsValue,
@@ -357,7 +383,44 @@ export default function ProjectClaimsRegisterPage() {
     };
   }, [approvedVariationsValue, claims, quotes]);
 
+  const displayedClaims = claims;
+
+  const claimsTableTotals = useMemo(() => {
+    const retentionWithheldTotal = displayedClaims.reduce(
+      (sum, claim) => sum + Number(claim.retention_withheld_amount ?? 0),
+      0,
+    );
+    const retentionReleasedTotal = displayedClaims.reduce(
+      (sum, claim) => sum + Number(claim.retention_released_amount ?? 0),
+      0,
+    );
+    const grossTotal = displayedClaims.reduce((sum, claim) => {
+      const claimAmount = Number(claim.claim_amount ?? 0);
+      const paidAmount = Number(claim.paid_amount ?? 0);
+      const balance = Math.max(0, claimAmount - paidAmount);
+      return sum + (balance > 0 ? balance : claimAmount || paidAmount);
+    }, 0);
+
+    return {
+      retentionWithheldTotal,
+      retentionReleasedTotal,
+      retentionBalanceTotal: Math.max(0, retentionWithheldTotal - retentionReleasedTotal),
+      grossTotal,
+    };
+  }, [displayedClaims]);
+
   const ALL_CLAIM_STATUSES: ClaimStatus[] = ["Draft", "Submitted", "Unpaid", "Paid", "Overdue", "Cancelled"];
+  const headerRowClassName = `${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`;
+  const headerTextCellClassName = "px-4 py-2.5 text-left";
+  const headerMoneyCellClassName = "px-4 py-2.5 text-right";
+  const bodyPrimaryTextCellClassName = `${interMedium.className} px-4 py-3 text-[13px] font-normal text-[#1d2433] align-middle`;
+  const bodySecondaryTextCellClassName = `${interMedium.className} px-4 py-3 text-[13px] text-[#475569] align-middle`;
+  const bodyMoneyCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-normal text-[#1d2433] align-middle [font-variant-numeric:tabular-nums]`;
+  const footerBlankCellClassName = "px-4 py-3 align-middle";
+  const footerLabelCellClassName = `${interMedium.className} px-4 py-3 text-[13px] font-semibold tracking-[-0.01em] text-[#334155] align-middle`;
+  const footerMoneyCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-semibold text-[#334155] align-middle [font-variant-numeric:tabular-nums]`;
+  const footerMoneyEmphasisCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-semibold text-[#0F172A] align-middle [font-variant-numeric:tabular-nums]`;
+  const footerMoneyStrongCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-semibold text-[#0F172A] align-middle [font-variant-numeric:tabular-nums]`;
 
   const updateClaimStatus = useCallback(async (claimId: string, newStatus: ClaimStatus) => {
     if (!supabase || !organizationId) return;
@@ -434,7 +497,7 @@ export default function ProjectClaimsRegisterPage() {
                 </div>
                 <p
                   title={toMoney(contractSummary.contractValue)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
                 >
                   {toMoney(contractSummary.contractValue)}
                 </p>
@@ -449,7 +512,7 @@ export default function ProjectClaimsRegisterPage() {
                 </div>
                 <p
                   title={toMoney(contractSummary.dueValue)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
                 >
                   {toMoney(contractSummary.dueValue)}
                 </p>
@@ -464,7 +527,7 @@ export default function ProjectClaimsRegisterPage() {
                 </div>
                 <p
                   title={toMoney(contractSummary.paidValue)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
                 >
                   {toMoney(contractSummary.paidValue)}
                 </p>
@@ -479,11 +542,14 @@ export default function ProjectClaimsRegisterPage() {
                 </div>
                 <p
                   title={toMoney(contractSummary.outstanding)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
                 >
                   {toMoney(contractSummary.outstanding)}
                 </p>
-                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>{contractSummary.overdueClaimsCount > 0 ? `${contractSummary.overdueClaimsCount} overdue` : "no overdue claims"}</p>
+                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>
+                  {contractSummary.unpaidClaimsCount} claim{contractSummary.unpaidClaimsCount !== 1 ? "s" : ""} unpaid
+                  {contractSummary.overdueClaimsCount > 0 ? ` • ${contractSummary.overdueClaimsCount} overdue` : ""}
+                </p>
               </div>
               <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center gap-3">
@@ -494,7 +560,7 @@ export default function ProjectClaimsRegisterPage() {
                 </div>
                 <p
                   title={toMoney(contractSummary.latestRetentionBalance)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.3rem,2.2vw,2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}
+                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
                 >
                   {toMoney(contractSummary.latestRetentionBalance)}
                 </p>
@@ -519,40 +585,39 @@ export default function ProjectClaimsRegisterPage() {
               <div className="overflow-x-auto rounded-[18px] border border-[#D7E1EC]">
                 <table className="min-w-full border-collapse">
                   <thead>
-                    <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
-                      <th className="w-[130px] px-4 py-2.5 text-left">Claim #</th>
-                      <th className="w-[200px] px-4 py-2.5 text-left">Title</th>
-                      <th className="w-[110px] px-4 py-2.5 text-left">Date</th>
-                      <th className="w-[140px] px-4 py-2.5 text-left">Status</th>
-                      <th className="w-[120px] px-4 py-2.5 text-left">Gross</th>
-                      <th className="w-[140px] px-4 py-2.5 text-left">Retention Withheld</th>
-                      <th className="w-[150px] px-4 py-2.5 text-left">Held to Date</th>
-                      <th className="w-[160px] px-4 py-2.5 text-left">Released to Date</th>
-                      <th className="w-[140px] px-4 py-2.5 text-left">Retention Balance</th>
-                      <th className="w-[52px] px-3 py-2.5" />
+                    <tr className={headerRowClassName}>
+                      <th className={`w-[130px] ${headerTextCellClassName}`}>Claim #</th>
+                      <th className={`w-[240px] ${headerTextCellClassName}`}>Title</th>
+                      <th className={`w-[110px] ${headerTextCellClassName}`}>Date</th>
+                      <th className={`w-[140px] ${headerTextCellClassName}`}>Status</th>
+                      <th className={`w-[170px] whitespace-nowrap ${headerMoneyCellClassName}`}>Retention Withheld</th>
+                      <th className={`w-[160px] ${headerMoneyCellClassName}`}>Released to Date</th>
+                      <th className={`w-[180px] whitespace-nowrap ${headerMoneyCellClassName}`}>Retention Balance</th>
+                      <th className={`w-[120px] ${headerMoneyCellClassName}`}>Gross</th>
+                      <th className="w-[52px] px-2 py-2.5 text-center" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
-                    {claims.map((claim) => {
+                    {displayedClaims.map((claim) => {
                       const claimAmount = Number(claim.claim_amount ?? 0);
                       const paidAmount = Number(claim.paid_amount ?? 0);
                       const balance = Math.max(0, claimAmount - paidAmount);
 
                       return (
                         <tr key={claim.id} className="transition-colors">
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                          <td className={`w-[130px] ${bodyPrimaryTextCellClassName} font-semibold`}>
                             {claim.claim_number}
                           </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-medium text-[#1d2433]`}>
+                          <td className={`w-[240px] ${bodyPrimaryTextCellClassName}`}>
                             {claim.claim_title || "Untitled claim"}
                           </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
+                          <td className={`w-[110px] ${bodySecondaryTextCellClassName}`}>
                             {toDayMonthYearLabel(claim.claim_date)}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="w-[140px] px-4 py-3 align-middle text-left">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <button className={`inline-flex cursor-pointer items-center gap-1 rounded-[8px] border px-2.5 py-0.5 text-[12px] font-semibold transition-opacity hover:opacity-80 ${statusClassName(claim.status)}`}>
+                                <button className={`inline-flex cursor-pointer items-center gap-1 rounded-[8px] border px-2.5 py-0.5 text-[12px] font-medium transition-opacity hover:opacity-80 ${statusClassName(claim.status)}`}>
                                   {claim.status}
                                   <ChevronDown className="h-3 w-3 opacity-60" />
                                 </button>
@@ -574,22 +639,19 @@ export default function ProjectClaimsRegisterPage() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
-                            {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
-                          </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                          <td className={`w-[170px] ${bodyMoneyCellClassName}`}>
                             {toMoney(Number(claim.retention_withheld_amount ?? 0))}
                           </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
-                            {toMoney(Number(claim.retention_held_to_date ?? 0))}
-                          </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                          <td className={`w-[160px] ${bodyMoneyCellClassName}`}>
                             {toMoney(Number(claim.retention_released_to_date ?? 0))}
                           </td>
-                          <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                          <td className={`w-[180px] ${bodyMoneyCellClassName}`}>
                             {toMoney(Number(claim.retention_balance ?? 0))}
                           </td>
-                          <td className="px-2 py-3">
+                          <td className={`w-[120px] ${bodyMoneyCellClassName}`}>
+                            {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
+                          </td>
+                          <td className="w-[52px] px-2 py-3 align-middle">
                             <div className="flex items-center justify-center">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -614,14 +676,6 @@ export default function ProjectClaimsRegisterPage() {
                                     <Pencil className="mr-2 h-3.5 w-3.5 text-[#64748B]" />
                                     Edit
                                   </DropdownMenuItem>
-                                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
-                                  <DropdownMenuItem
-                                    onSelect={() => {}}
-                                    className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-rose-600 focus:bg-rose-50`}
-                                  >
-                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    Delete
-                                  </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
@@ -630,17 +684,32 @@ export default function ProjectClaimsRegisterPage() {
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-[#CBD5E1] bg-[#F6F8FB]">
+                      <td className={`w-[130px] ${footerBlankCellClassName}`} />
+                      <td className={`w-[240px] ${footerBlankCellClassName}`} />
+                      <td className={`w-[110px] ${footerBlankCellClassName}`} />
+                      <td className={`w-[140px] ${footerLabelCellClassName}`}>
+                        Totals
+                      </td>
+                      <td className={`w-[170px] ${footerMoneyCellClassName}`}>
+                        {toMoney(claimsTableTotals.retentionWithheldTotal)}
+                      </td>
+                      <td className={`w-[160px] ${footerMoneyCellClassName}`}>
+                        {toMoney(claimsTableTotals.retentionReleasedTotal)}
+                      </td>
+                      <td className={`w-[180px] ${footerMoneyEmphasisCellClassName}`}>
+                        {toMoney(claimsTableTotals.retentionBalanceTotal)}
+                      </td>
+                      <td className={`w-[120px] ${footerMoneyStrongCellClassName}`}>
+                        {toMoney(claimsTableTotals.grossTotal)}
+                      </td>
+                      <td className="w-[52px] px-2 py-3 align-middle" />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
-
-            {/* Total */}
-            <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
-              <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
-                <span>Total Claimed</span>
-                <span>{toMoney(contractSummary.claimedToDate)}</span>
-              </p>
-            </div>
 
           </div>
         )}

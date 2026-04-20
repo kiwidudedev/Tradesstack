@@ -1,6 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef } from "react";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,8 +54,17 @@ export const STATUS_OPTIONS: Array<{ value: QuoteStatus; label: string }> = [
 ];
 
 export const LINE_ITEM_SECTIONS: LineItemSection[] = ["Item", "Materials", "Labour", "Plant", "Subcontractors", "Preliminaries"];
-const MAIN_LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 120px 72px 72px 104px 104px";
+const MAIN_LINE_GRID_TEMPLATE = "minmax(156px, 1.25fr) 112px 76px 72px 124px 140px";
 const OPTIONAL_LINE_GRID_TEMPLATE = MAIN_LINE_GRID_TEMPLATE;
+const ROW_CELL_PADDING_CLASS = "px-2 py-1";
+const DESCRIPTION_CELL_PADDING_CLASS = "px-3 py-1";
+const ROW_DIVIDER_CLASS = "self-stretch border-l border-[#EEF2F7]";
+const ROW_FIELD_SHELL_CLASS = "flex h-full w-full items-center";
+const DESCRIPTION_FIELD_SHELL_CLASS = "flex min-h-[34px] w-full items-center";
+const COMPACT_FIELD_CLASS = "h-[34px] w-full appearance-none !border-0 !bg-transparent px-1.5 text-[13px] leading-[1.1] text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none";
+const COMPACT_NUMERIC_FIELD_CLASS = `${COMPACT_FIELD_CLASS} text-right tabular-nums [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`;
+const COMPACT_VALUE_FIELD_CLASS = `${interMedium.className} flex h-[34px] w-full items-center justify-end px-1.5 text-right text-[13px] leading-[1.1] text-[#1d2433] tabular-nums`;
+const SECTION_FIELD_CLASS = `${interMedium.className} h-[34px] w-full !border-0 !bg-transparent pl-0 pr-5 text-left text-sm leading-[1.15] text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`;
 
 export function numberOrZero(value: string) {
   const parsed = Number(value);
@@ -442,83 +450,36 @@ function DescriptionInputWithPreview({
   onChange: (value: string) => void;
   placeholder?: string;
 }) {
-  const hasContent = value.trim().length > 0;
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [previewPosition, setPreviewPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  const updatePreviewPosition = useCallback(() => {
-    const inputElement = inputRef.current;
-    if (!inputElement) {
-      return;
-    }
-    const rect = inputElement.getBoundingClientRect();
-    setPreviewPosition({
-      top: rect.bottom + 8,
-      left: rect.left,
-      width: Math.min(560, Math.max(rect.width, 280)),
-    });
-  }, []);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (!isPreviewOpen) {
+    const textarea = textareaRef.current;
+    if (!textarea) {
       return;
     }
 
-    const handleReposition = () => updatePreviewPosition();
-    window.addEventListener("resize", handleReposition);
-    window.addEventListener("scroll", handleReposition, true);
+    const minHeight = 16;
+    const maxHeight = 112;
 
-    return () => {
-      window.removeEventListener("resize", handleReposition);
-      window.removeEventListener("scroll", handleReposition, true);
-    };
-  }, [isPreviewOpen, updatePreviewPosition]);
-
-  const openPreview = useCallback(() => {
-    if (!hasContent) {
-      return;
-    }
-    updatePreviewPosition();
-    setIsPreviewOpen(true);
-  }, [hasContent, updatePreviewPosition]);
-
-  const closePreview = useCallback(() => {
-    setIsPreviewOpen(false);
-  }, []);
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [value]);
 
   return (
-    <div className="relative">
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onMouseEnter={openPreview}
-        onMouseLeave={closePreview}
-        onFocus={openPreview}
-        onBlur={closePreview}
-        placeholder={placeholder}
-        title={value.trim() || placeholder || ""}
-        className="h-9 min-w-[200px] !border-0 !bg-transparent px-3 !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none"
-      />
-      {hasContent && isPreviewOpen && previewPosition && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="pointer-events-none fixed z-[300] rounded-[12px] border border-[#D7E1EC] bg-[#FBFEFE] p-3.5 shadow-[0_14px_28px_rgba(15,23,42,0.14)]"
-              style={{
-                top: previewPosition.top,
-                left: previewPosition.left,
-                width: previewPosition.width,
-              }}
-            >
-              <p className={`${interMedium.className} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#7F8FA7]`}>
-                Full Description
-              </p>
-              <p className={`${interMedium.className} mt-1 text-sm font-medium leading-relaxed text-[#1F2E45]`}>{value}</p>
-            </div>,
-            document.body,
-          )
-        : null}
+    <div className="relative w-full">
+      <div className={DESCRIPTION_FIELD_SHELL_CLASS}>
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          title={value.trim() || placeholder || ""}
+          rows={1}
+          className={`${interMedium.className} min-h-0 max-h-28 min-w-[200px] w-full resize-none border-0 bg-transparent px-2.5 py-0 text-sm leading-[1.15] text-[#1d2433] shadow-none outline-none focus:border-0 focus:bg-transparent focus:shadow-none focus:outline-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:shadow-none focus-visible:outline-none`}
+        />
+      </div>
     </div>
   );
 }
@@ -910,7 +871,7 @@ export function QuoteEditorLayout({
                   <div className="hidden md:block">
                     <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
                       <div className="overflow-x-auto">
-                        <div className="min-w-[764px]">
+                        <div className="min-w-[820px]">
                           <div
                             className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
                             style={{ gridTemplateColumns: `${MAIN_LINE_GRID_TEMPLATE} 44px` }}
@@ -925,15 +886,16 @@ export function QuoteEditorLayout({
                           </div>
                           <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                             {mainLineItems.map((item) => (
-                              <div key={item.id} className="grid items-center gap-0 px-0 py-0" style={{ gridTemplateColumns: `${MAIN_LINE_GRID_TEMPLATE} 44px` }}>
-                                <div className="px-3 py-1.5">
+                              <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${MAIN_LINE_GRID_TEMPLATE} 44px` }}>
+                                <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
                                   <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={ROW_FIELD_SHELL_CLASS}>
                                   <select
                                     value={item.section}
                                     onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                                    className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}
+                                    className={SECTION_FIELD_CLASS}
                                   >
                                     {LINE_ITEM_SECTIONS.map((section) => (
                                       <option key={section} value={section}>
@@ -941,31 +903,38 @@ export function QuoteEditorLayout({
                                       </option>
                                     ))}
                                   </select>
+                                  </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
-                                  <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent px-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={ROW_FIELD_SHELL_CLASS}>
+                                    <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className={COMPACT_NUMERIC_FIELD_CLASS} />
+                                  </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
-                                  <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-9 w-full !border-0 !bg-transparent px-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={ROW_FIELD_SHELL_CLASS}>
+                                    <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className={COMPACT_FIELD_CLASS} />
+                                  </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
                                   <div className="relative w-full">
-                                    <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                                    <span className={`${interMedium.className} pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-[12px] leading-none text-[#64748B]`}>$</span>
                                     <Input
                                       type="number"
                                       value={item.rate === 0 ? "" : item.rate}
                                       onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                                      className="h-9 w-full !border-0 !bg-transparent pl-6 pr-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none"
+                                      className={`${COMPACT_NUMERIC_FIELD_CLASS} pl-4 pr-1.5`}
                                     />
                                   </div>
-                                </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
-                                  <div className="flex items-center justify-end">
-                                    <div className={`${interMedium.className} text-right text-sm text-[#1d2433]`}>{toMoney(lineItemTotal(item))}</div>
                                   </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-0 py-1.5">
-                                  <div className="flex items-center justify-center">
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
+                                    <div className={`${COMPACT_VALUE_FIELD_CLASS} whitespace-nowrap`}>{toMoney(lineItemTotal(item))}</div>
+                                  </div>
+                                </div>
+                                <div className="self-stretch border-l border-[#EEF2F7] px-0 py-1">
+                                  <div className="flex h-full items-center justify-center">
                                     <Button
                                       type="button"
                                       variant="ghost"
@@ -1047,7 +1016,7 @@ export function QuoteEditorLayout({
                   <div className="hidden md:block">
                     <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
                       <div className="overflow-x-auto">
-                        <div className="min-w-[764px]">
+                        <div className="min-w-[820px]">
                           <div
                             className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
                             style={{ gridTemplateColumns: `${OPTIONAL_LINE_GRID_TEMPLATE} 44px` }}
@@ -1062,15 +1031,16 @@ export function QuoteEditorLayout({
                           </div>
                           <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
                             {optionalLineItems.map((item) => (
-                              <div key={item.id} className="grid items-center gap-0 px-0 py-0" style={{ gridTemplateColumns: `${OPTIONAL_LINE_GRID_TEMPLATE} 44px` }}>
-                                <div className="px-3 py-1.5">
+                              <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${OPTIONAL_LINE_GRID_TEMPLATE} 44px` }}>
+                                <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
                                   <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={ROW_FIELD_SHELL_CLASS}>
                                   <select
                                     value={item.section}
                                     onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
-                                    className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}
+                                    className={SECTION_FIELD_CLASS}
                                   >
                                     {LINE_ITEM_SECTIONS.map((section) => (
                                       <option key={section} value={section}>
@@ -1078,31 +1048,38 @@ export function QuoteEditorLayout({
                                       </option>
                                     ))}
                                   </select>
+                                  </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
-                                  <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent px-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={ROW_FIELD_SHELL_CLASS}>
+                                    <Input type="number" value={item.quantity} onChange={(event) => updateLineItem(item.id, "quantity", numberOrZero(event.target.value))} className={COMPACT_NUMERIC_FIELD_CLASS} />
+                                  </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
-                                  <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-9 w-full !border-0 !bg-transparent px-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={ROW_FIELD_SHELL_CLASS}>
+                                    <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className={COMPACT_FIELD_CLASS} />
+                                  </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
                                   <div className="relative w-full">
-                                    <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                                    <span className={`${interMedium.className} pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-[12px] leading-none text-[#64748B]`}>$</span>
                                     <Input
                                       type="number"
                                       value={item.rate === 0 ? "" : item.rate}
                                       onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
-                                      className="h-9 w-full !border-0 !bg-transparent pl-6 pr-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none"
+                                      className={`${COMPACT_NUMERIC_FIELD_CLASS} pl-4 pr-1.5`}
                                     />
                                   </div>
-                                </div>
-                                <div className="border-l border-[#EEF2F7] px-3 py-1.5">
-                                  <div className="flex items-center justify-end">
-                                    <div className={`${interMedium.className} text-right text-sm text-[#1d2433]`}>{toMoney(lineItemTotal(item))}</div>
                                   </div>
                                 </div>
-                                <div className="border-l border-[#EEF2F7] px-0 py-1.5">
-                                  <div className="flex items-center justify-center">
+                                <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
+                                  <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
+                                    <div className={`${COMPACT_VALUE_FIELD_CLASS} whitespace-nowrap`}>{toMoney(lineItemTotal(item))}</div>
+                                  </div>
+                                </div>
+                                <div className="self-stretch border-l border-[#EEF2F7] px-0 py-1">
+                                  <div className="flex h-full items-center justify-center">
                                     <Button
                                       type="button"
                                       variant="ghost"
