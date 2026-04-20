@@ -363,6 +363,7 @@ export interface Database {
           organization_id: string;
           created_by: string;
           client_id: string | null;
+          source_opportunity_id: string | null;
           name: string;
           slug: string;
           project_code: string;
@@ -377,6 +378,7 @@ export interface Database {
           organization_id: string;
           created_by: string;
           client_id?: string | null;
+          source_opportunity_id?: string | null;
           name: string;
           slug: string;
           project_code?: string;
@@ -391,6 +393,7 @@ export interface Database {
           organization_id?: string;
           created_by?: string;
           client_id?: string | null;
+          source_opportunity_id?: string | null;
           name?: string;
           slug?: string;
           project_code?: string;

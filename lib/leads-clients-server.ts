@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createOrganizationProjectForCurrentUser } from "@/lib/project-creation-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { toProjectSlug, resolveUniqueProjectSlug } from "@/lib/projects";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -677,42 +678,14 @@ export async function convertOpportunityToProjectForCurrentUser(opportunitySlug:
     }
   }
 
-  const baseProjectSlug = toProjectSlug(opportunity.name);
-  const existingProjectSlugsResult = await supabase
-    .from("organization_projects")
-    .select("slug")
-    .eq("organization_id", member.organization_id)
-    .like("slug", `${baseProjectSlug}%`);
-
-  if (existingProjectSlugsResult.error) {
-    throw new Error(existingProjectSlugsResult.error.message);
-  }
-
-  const projectSlug = resolveUniqueProjectSlug(
-    baseProjectSlug,
-    (existingProjectSlugsResult.data ?? []).map((row) => row.slug)
-  );
-
-  const projectInsertResult = await supabase
-    .from("organization_projects")
-    .insert({
-      organization_id: member.organization_id,
-      created_by: member.user_id,
-      client_id: opportunity.client_id,
-      name: opportunity.name,
-      slug: projectSlug,
-      stage: "Pricing",
-      location: opportunity.location || "Unspecified",
-      cover_image_url: null,
-    })
-    .select("id, slug")
-    .single();
-
-  if (projectInsertResult.error) {
-    throw new Error(projectInsertResult.error.message);
-  }
-
-  const createdProject = projectInsertResult.data;
+  const createdProject = await createOrganizationProjectForCurrentUser({
+    name: opportunity.name,
+    clientId: opportunity.client_id,
+    stage: "Pricing",
+    location: opportunity.location || "Unspecified",
+    coverImageUrl: null,
+    sourceOpportunityId: opportunity.id,
+  });
 
   if (opportunity.workspace_project_id && opportunity.workspace_project_id !== createdProject.id) {
     await cloneWorkspaceDataToProject({

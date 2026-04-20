@@ -9,10 +9,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { PROJECT_STAGE_OPTIONS } from "@/lib/projects";
 import type { ProjectStage } from "@/lib/projects";
-import {
-  resolveUniqueTradePackWorkspaceSlug,
-  toTradePackWorkspaceSlug,
-} from "@/lib/trade-pack-workspaces";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
@@ -209,94 +205,55 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
       }
 
       const shouldCreateNewClient = selectedClientId === NEW_CLIENT_OPTION || clients.length === 0;
-      let resolvedClientId: string | null = null;
-
-      if (shouldCreateNewClient) {
-        const trimmedContactName = clientContactName.trim();
-        const trimmedCompanyName = clientCompanyName.trim();
-        if (!trimmedContactName) {
-          setError("Contact name is required.");
-          return;
-        }
-        if (!trimmedCompanyName) {
-          setError("Company name is required.");
-          return;
-        }
-
-        const normalizeOptional = (value: string) => {
-          const trimmed = value.trim();
-          return trimmed ? trimmed : null;
-        };
-
-        const { data: createdClient, error: createClientError } = await supabase
-          .from("organization_clients")
-          .insert({
-            organization_id: resolvedOrganizationId,
-            created_by: session.id,
-            name: trimmedContactName,
-            company_name: trimmedCompanyName,
-            email: normalizeOptional(clientEmail),
-            phone: normalizeOptional(clientPhone),
-          })
-          .select("id")
-          .single();
-
-        if (createClientError) {
-          setError(createClientError.message);
-          return;
-        }
-
-        resolvedClientId = createdClient.id;
-      } else {
-        if (!selectedClientId) {
-          setError("Please select a client.");
-          return;
-        }
-        resolvedClientId = selectedClientId;
-      }
-
-      const baseSlug = toTradePackWorkspaceSlug(trimmedName);
-      const { data: existingProjectRows, error: existingProjectsError } = await supabase
-        .from("organization_projects")
-        .select("slug")
-        .eq("organization_id", resolvedOrganizationId)
-        .like("slug", `${baseSlug}%`);
-
-      if (existingProjectsError) {
-        setError(existingProjectsError.message);
+      if (!shouldCreateNewClient && !selectedClientId) {
+        setError("Please select a client.");
         return;
       }
 
-      const slug = resolveUniqueTradePackWorkspaceSlug(
-        baseSlug,
-        (existingProjectRows ?? []).map((project) => project.slug)
-      );
+      if (shouldCreateNewClient && !clientContactName.trim()) {
+        setError("Contact name is required.");
+        return;
+      }
 
-      const projectId = crypto.randomUUID();
+      if (shouldCreateNewClient && !clientCompanyName.trim()) {
+        setError("Company name is required.");
+        return;
+      }
 
-      const { data, error: createProjectError } = await supabase
-        .from("organization_projects")
-        .insert({
-          id: projectId,
-          organization_id: resolvedOrganizationId,
-          created_by: session.id,
-          client_id: resolvedClientId,
+      const response = await fetch("/api/projects/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           name: trimmedName,
-          slug,
           stage,
-          location: location.trim() || "Unspecified",
-          cover_image_url: null,
-        })
-        .select("slug")
-        .single();
+          location,
+          clientId: shouldCreateNewClient ? null : selectedClientId,
+          newClient: shouldCreateNewClient
+            ? {
+                contactName: clientContactName,
+                companyName: clientCompanyName,
+                email: clientEmail,
+                phone: clientPhone,
+              }
+            : null,
+        }),
+      });
 
-      if (createProjectError) {
-        setError(toProjectCreationErrorMessage(createProjectError.message));
+      const payload = (await response.json().catch(() => null)) as { error?: string; projectSlug?: string } | null;
+      if (!response.ok) {
+        setError(toProjectCreationErrorMessage(payload?.error ?? "Unable to create project."));
+        return;
+      }
+
+      if (!payload?.projectSlug) {
+        setError("Project creation succeeded but no project slug was returned.");
         return;
       }
 
       handleOpenChange(false);
-      router.push(`/app/projects/${data.slug}/dashboard`);
+      router.push(`/app/projects/${payload.projectSlug}/dashboard`);
       router.refresh();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create project.");

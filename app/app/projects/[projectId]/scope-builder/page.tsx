@@ -1,9 +1,7 @@
 import { notFound } from "next/navigation";
 import { ScopeBuilderWorkbench } from "@/components/app/ScopeBuilderWorkbench";
-import {
-  getTradePackWorkspaceBySlugForCurrentUser,
-  getTradePackWorkspaceDrawingSetsForCurrentUser,
-} from "@/lib/trade-pack-workspaces-server";
+import { getProjectDrawingSetsForCurrentUser } from "@/lib/projects-server";
+import { getProjectWorkContextForCurrentUser } from "@/lib/project-work-context-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { TRADE_PACK_TRADES } from "@/lib/trade-pack-builder";
 import {
@@ -219,14 +217,18 @@ export default async function ProjectScopeBuilderPage({
   }>;
 }) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const project = await getTradePackWorkspaceBySlugForCurrentUser(projectId);
+  const context = await getProjectWorkContextForCurrentUser({ projectId });
 
-  if (!project) {
+  if (!context) {
     notFound();
   }
 
-  const drawingSets = await getTradePackWorkspaceDrawingSetsForCurrentUser(project.id);
-  const generatedTradePacks = drawingSets
+  const readProjectId = context.effectiveReadProjectId;
+  const writeProjectId = context.effectiveFeatureProjectId;
+  const shouldExposeGeneratedTradePacks = readProjectId === writeProjectId;
+
+  const drawingSets = await getProjectDrawingSetsForCurrentUser(readProjectId);
+  const generatedTradePacks = (shouldExposeGeneratedTradePacks ? drawingSets : [])
     .filter((drawingSet) => isGeneratedTradePackDrawingSet(drawingSet))
     .map((drawingSet) => ({
       id: drawingSet.id,
@@ -244,8 +246,8 @@ export default async function ProjectScopeBuilderPage({
   const { data: scopeRuns, error: scopeRunsError } = await supabase
     .from("scope_runs")
     .select("id, trade_pack_id, result_json, created_at")
-    .eq("organization_id", project.organization_id)
-    .eq("project_id", project.id)
+    .eq("organization_id", context.organizationId)
+    .eq("project_id", readProjectId)
     .eq("status", "complete")
     .order("created_at", { ascending: false })
     .limit(160);
@@ -272,7 +274,7 @@ export default async function ProjectScopeBuilderPage({
 
       runs.push({
         id: run.id,
-        tradePackId: run.trade_pack_id,
+        tradePackId: shouldExposeGeneratedTradePacks ? run.trade_pack_id : null,
         tradeId: inferredTradeId,
         tradeLabel: linkedTradePack?.tradeLabel ?? parsedResult.tradeLabel,
         fileName: linkedTradePack?.fileName ?? `Trade Pack ${run.trade_pack_id.slice(0, 8)}`,
@@ -291,13 +293,13 @@ export default async function ProjectScopeBuilderPage({
 
   return (
     <ScopeBuilderWorkbench
-      projectId={project.id}
-      organizationId={project.organization_id}
-      projectDashboardHref={`/app/projects/${project.slug}/dashboard`}
+      projectId={writeProjectId}
+      organizationId={context.organizationId}
+      projectDashboardHref={`/app/projects/${context.projectSlug}/dashboard`}
       initialTradeId={readSearchParam(query.tradeId)}
       initialStoragePath={readSearchParam(query.storagePath)}
       initialFileName={readSearchParam(query.fileName)}
-      initialDrawingSetId={readSearchParam(query.drawingSetId)}
+      initialDrawingSetId={shouldExposeGeneratedTradePacks ? readSearchParam(query.drawingSetId) : undefined}
       initialGeneratedTradePacks={generatedTradePacks}
       initialStoredRuns={initialStoredRuns}
     />
