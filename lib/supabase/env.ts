@@ -3,6 +3,11 @@ interface SupabaseEnv {
   anonKey: string;
 }
 
+interface SupabaseServiceRoleEnv {
+  url: string;
+  serviceRoleKey: string;
+}
+
 export function getSupabaseEnv(): SupabaseEnv {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -14,4 +19,17 @@ export function getSupabaseEnv(): SupabaseEnv {
   }
 
   return { url, anonKey };
+}
+
+export function getSupabaseServiceRoleEnv(): SupabaseServiceRoleEnv {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    throw new Error(
+      "Missing Supabase service role environment variables. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return { url, serviceRoleKey };
 }

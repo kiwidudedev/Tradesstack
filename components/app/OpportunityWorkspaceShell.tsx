@@ -1,5 +1,9 @@
+"use client";
+
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, FolderOpen, LayoutGrid } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { ArrowLeft, FileText, FolderOpen, LayoutGrid, Ruler } from "lucide-react";
 import { ibmPlexSans } from "@/lib/fonts";
 import {
   leadsButtonLabelStyle,
@@ -11,8 +15,59 @@ import {
   leadsShellTitleStyle,
   leadsTabLabelStyle,
 } from "@/components/app/LeadsPagePrimitives";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { buildTakeoffHref } from "@/lib/takeoff/navigation";
 
-type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "start-pricing";
+type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "start-pricing" | "takeoff";
+
+interface StoredMeasureContext {
+  drawingSetId: string;
+  pageId: string | null;
+  calibrationStatus: "saved" | "replaced" | "error" | null;
+  measurementStatus: "created" | "archived" | "deleted" | "restored" | "error" | null;
+}
+
+function getMeasureContextStorageKey(opportunityId: string) {
+  return `tradesstack-measure-context:${opportunityId}`;
+}
+
+function readStoredMeasureContext(opportunityId: string): StoredMeasureContext | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getMeasureContextStorageKey(opportunityId));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredMeasureContext>;
+    if (!parsed || typeof parsed.drawingSetId !== "string" || parsed.drawingSetId.trim().length === 0) {
+      window.localStorage.removeItem(getMeasureContextStorageKey(opportunityId));
+      return null;
+    }
+
+    return {
+      drawingSetId: parsed.drawingSetId,
+      pageId: typeof parsed.pageId === "string" && parsed.pageId.trim().length > 0 ? parsed.pageId : null,
+      calibrationStatus:
+        parsed.calibrationStatus === "saved" || parsed.calibrationStatus === "replaced" || parsed.calibrationStatus === "error"
+          ? parsed.calibrationStatus
+          : null,
+      measurementStatus:
+        parsed.measurementStatus === "created" ||
+        parsed.measurementStatus === "archived" ||
+        parsed.measurementStatus === "deleted" ||
+        parsed.measurementStatus === "restored" ||
+        parsed.measurementStatus === "error"
+          ? parsed.measurementStatus
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function OpportunityWorkspaceShell({
   title,
@@ -29,6 +84,55 @@ export function OpportunityWorkspaceShell({
   titleClassName?: string;
   contentClassName?: string;
 }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const takeoffBasePath = `/app/leads-clients/opportunities/${opportunityId}/takeoff`;
+  const isTakeoffActive = pathname.startsWith(takeoffBasePath);
+  const isMeasureActive = pathname.startsWith(`${takeoffBasePath}/measure`);
+  const isQuantitiesActive = pathname.startsWith(`${takeoffBasePath}/quantities`);
+  const currentMeasureContext = useMemo<StoredMeasureContext | null>(() => {
+    if (!isMeasureActive) {
+      return null;
+    }
+
+    const drawingSetId = searchParams.get("drawingSetId");
+    if (!drawingSetId) {
+      return null;
+    }
+
+    return {
+      drawingSetId,
+      pageId: searchParams.get("pageId"),
+      calibrationStatus: searchParams.get("calibrationStatus") as "saved" | "replaced" | "error" | null,
+      measurementStatus: searchParams.get("measurementStatus") as "created" | "archived" | "deleted" | "restored" | "error" | null,
+    };
+  }, [isMeasureActive, searchParams]);
+
+  useEffect(() => {
+    if (!currentMeasureContext) {
+      return;
+    }
+
+    const storageKey = getMeasureContextStorageKey(opportunityId);
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(currentMeasureContext));
+    } catch {
+      // Keep Measure navigation functional even if localStorage is unavailable.
+    }
+  }, [currentMeasureContext, opportunityId]);
+
+  const storedMeasureContext = readStoredMeasureContext(opportunityId);
+  const measureNavContext = currentMeasureContext ?? storedMeasureContext;
+  const quantitiesQuery = isTakeoffActive
+    ? {
+        drawingSetId: searchParams.get("drawingSetId"),
+        pageId: searchParams.get("pageId"),
+        calibrationStatus: searchParams.get("calibrationStatus") as "saved" | "replaced" | "error" | null,
+        measurementStatus: searchParams.get("measurementStatus") as "created" | "archived" | "deleted" | "restored" | "error" | null,
+      }
+    : {};
+  const measureHref = buildTakeoffHref(opportunityId, "measure", measureNavContext ?? {});
+  const quantitiesHref = buildTakeoffHref(opportunityId, "quantities", quantitiesQuery);
   const navItems = [
     {
       label: "Overview",
@@ -116,6 +220,61 @@ export function OpportunityWorkspaceShell({
                     </Link>
                   );
                 })}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className={`${leadsShellTabClassName} cursor-pointer ${
+                        isTakeoffActive
+                          ? "border-b-2 text-[#F15A29]"
+                          : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
+                      }`}
+                      style={
+                        isTakeoffActive
+                          ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
+                          : undefined
+                      }
+                    >
+                      <Ruler
+                        strokeWidth={2.2}
+                        className={`h-4 w-4 shrink-0 ${isTakeoffActive ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
+                      />
+                      <span
+                        className="whitespace-nowrap"
+                        style={isTakeoffActive ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
+                      >
+                        Takeoff
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    side="bottom"
+                    sideOffset={8}
+                    className="!z-[200] min-w-[220px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                  >
+                    <DropdownMenuItem
+                      asChild
+                      className={`h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium focus:bg-[#F8FAFC] ${
+                        isMeasureActive ? "bg-[#F8FAFC] text-[#F15A29]" : "text-[#1d2433]"
+                      }`}
+                    >
+                      <Link href={measureHref} prefetch>
+                        Measure
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      asChild
+                      className={`h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium focus:bg-[#F8FAFC] ${
+                        isQuantitiesActive ? "bg-[#F8FAFC] text-[#F15A29]" : "text-[#1d2433]"
+                      }`}
+                    >
+                      <Link href={quantitiesHref} prefetch>
+                        Quantities
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </nav>
           </div>

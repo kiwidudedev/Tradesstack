@@ -3,7 +3,11 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
-export function AppPageSurface({ children }: { children: React.ReactNode }) {
+export function AppPageSurface({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -37,8 +41,6 @@ export function AppPageSurface({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   return (
-    <div ref={rootRef} className="app-page-surface min-h-full">
-      {children}
-    </div>
+    <div ref={rootRef} className="app-page-surface min-h-full">{children}</div>
   );
 }

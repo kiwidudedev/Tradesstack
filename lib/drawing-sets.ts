@@ -34,6 +34,16 @@ export function toDrawingSetStoragePath(params: {
   return `${params.organizationId}/${params.projectId}/${crypto.randomUUID()}-${objectName}`;
 }
 
+export function toTakeoffPagePreviewStoragePath(params: {
+  organizationId: string;
+  projectId: string;
+  drawingSetId: string;
+  pageNumber: number;
+}): string {
+  const pageNumberSegment = String(params.pageNumber).padStart(4, "0");
+  return `${params.organizationId}/${params.projectId}/takeoff-page-previews/${params.drawingSetId}/page-${pageNumberSegment}.png`;
+}
+
 export function formatFileSize(sizeBytes: number): string {
   if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
     return "Unknown size";

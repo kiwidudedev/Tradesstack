@@ -7,7 +7,7 @@ import type { Database } from "@/lib/supabase/types";
 
 const memberSelect = "id, organization_id, user_id, role, display_name, avatar_path, created_at, updated_at";
 const projectSelect =
-  "id, organization_id, created_by, client_id, name, slug, project_code, stage, location, cover_image_url, created_at, updated_at";
+  "id, organization_id, created_by, client_id, source_opportunity_id, name, slug, project_code, stage, location, cover_image_url, created_at, updated_at";
 const projectDrawingSetSelect =
   "id, organization_id, project_id, uploaded_by, file_name, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
 const projectTradePackPageIndexSelect = "id, trade_label, include_in_pack, is_support_sheet, created_at, run_id";
