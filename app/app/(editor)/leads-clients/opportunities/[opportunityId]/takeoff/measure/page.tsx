@@ -48,6 +48,7 @@ export default async function OpportunityTakeoffMeasurePage({
       ) : viewerData ? (
         <TakeoffMeasureWorkspace
           opportunityId={opportunityId}
+          title={headerTitle}
           drawingSetId={activeDrawingSetId}
           initialViewerData={viewerData}
           saveCalibrationAction={actions.saveCalibrationAction}
@@ -55,6 +56,14 @@ export default async function OpportunityTakeoffMeasurePage({
           createLineMeasurementAction={actions.createLineMeasurementAction}
           createAreaMeasurementAction={actions.createAreaMeasurementAction}
           createCountMeasurementAction={actions.createCountMeasurementAction}
+          appendAreaShapeMeasurementAction={actions.appendAreaShapeMeasurementAction}
+          deleteAreaShapeMeasurementAction={actions.deleteAreaShapeMeasurementAction}
+          appendCountItemMeasurementAction={actions.appendCountItemMeasurementAction}
+          deleteCountItemMeasurementAction={actions.deleteCountItemMeasurementAction}
+          appendLinePathMeasurementAction={actions.appendLinePathMeasurementAction}
+          deleteLinePathMeasurementAction={actions.deleteLinePathMeasurementAction}
+          updateAreaShapeGeometryAction={actions.updateAreaShapeGeometryAction}
+          updateLinePathGeometryAction={actions.updateLinePathGeometryAction}
           updateMeasurementDetailsAction={actions.updateMeasurementDetailsAction}
           updateMeasurementGeometryAction={actions.updateMeasurementGeometryAction}
           updateMeasurementStatusAction={actions.updateMeasurementStatusAction}

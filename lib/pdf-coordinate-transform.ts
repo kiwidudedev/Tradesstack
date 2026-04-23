@@ -790,6 +790,24 @@ export function getPolygonHit(params: {
   }
 
   let minimumDistance = Number.POSITIVE_INFINITY;
+  let isInsidePolygon = false;
+
+  for (
+    let index = 0, previousIndex = params.polygon.length - 1;
+    index < params.polygon.length;
+    previousIndex = index, index += 1
+  ) {
+    const current = params.polygon[index];
+    const previous = params.polygon[previousIndex];
+    const intersects =
+      current.y > params.point.y !== previous.y > params.point.y &&
+      params.point.x <
+        ((previous.x - current.x) * (params.point.y - current.y)) / ((previous.y - current.y) || Number.EPSILON) + current.x;
+
+    if (intersects) {
+      isInsidePolygon = !isInsidePolygon;
+    }
+  }
 
   for (let index = 0; index < params.polygon.length; index += 1) {
     minimumDistance = Math.min(
@@ -800,6 +818,13 @@ export function getPolygonHit(params: {
         segmentEnd: params.polygon[(index + 1) % params.polygon.length],
       })
     );
+  }
+
+  if (isInsidePolygon) {
+    return {
+      hit: true,
+      distance: 0,
+    };
   }
 
   return {

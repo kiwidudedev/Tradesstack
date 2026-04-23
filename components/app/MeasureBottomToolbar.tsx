@@ -28,7 +28,7 @@ const toolbarItems: ToolbarItem[] = [
   { mode: "select", label: "Select", icon: MousePointer },
   { mode: "calibrate", label: "Calibrate", icon: PencilRuler },
   { mode: "distance", label: "Distance", icon: Ruler },
-  { mode: "polyline", label: "Polyline", icon: Spline },
+  { mode: "polyline", label: "Linear", icon: Spline },
   { mode: "area", label: "Area", icon: SquareDashedMousePointer },
   { mode: "count", label: "Count", icon: Hash },
 ];

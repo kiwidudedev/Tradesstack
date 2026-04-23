@@ -1,5 +1,7 @@
 "use client";
 
+import { flushSync } from "react-dom";
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -10,6 +12,14 @@ import {
   type SyntheticEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  ChevronRight,
+  CircleDot,
+  Hash,
+} from "lucide-react";
 import {
   clamp,
   clampDocumentPointToBounds,
@@ -42,15 +52,69 @@ import {
   type ViewportOrigin,
 } from "@/lib/pdf-coordinate-transform";
 import type { TakeoffActionResult } from "@/lib/takeoff/actions";
-import { leadsPanelClassName } from "@/components/app/LeadsPagePrimitives";
 import { MeasureBottomToolbar } from "@/components/app/MeasureBottomToolbar";
-import { Button } from "@/components/ui/button";
+import {
+  ConfigurableTool,
+  MeasureToolSetupState,
+  MeasurementColorSelector,
+  TakeoffMeasureToolDialog,
+  measurementColorOptions,
+} from "@/components/app/TakeoffMeasureToolDialog";
+import {
+  inputClassName,
+  labelClassName,
+  primaryButtonClassName,
+  secondaryButtonClassName,
+} from "@/components/app/TradesstackDialogPrimitives";
+import { Input } from "@/components/ui/input";
+import { ibmPlexSans } from "@/lib/fonts";
 
 interface TakeoffMeasurementPoint {
   id: string;
   point_order: number;
   x: number;
   y: number;
+}
+
+interface TakeoffAreaShapePoint {
+  id: string;
+  area_shape_id: string;
+  point_order: number;
+  x: number;
+  y: number;
+}
+
+interface TakeoffAreaShape {
+  id: string;
+  measurement_id: string;
+  shape_order: number;
+  measured_area_base: number;
+  measured_perimeter_base?: number;
+  page_bbox_min_x: number | null;
+  page_bbox_min_y: number | null;
+  page_bbox_max_x: number | null;
+  page_bbox_max_y: number | null;
+  points: TakeoffAreaShapePoint[];
+}
+
+interface TakeoffLinePathPoint {
+  id: string;
+  line_path_id: string;
+  point_order: number;
+  x: number;
+  y: number;
+}
+
+interface TakeoffLinePath {
+  id: string;
+  measurement_id: string;
+  path_order: number;
+  measured_length_base: number;
+  page_bbox_min_x: number | null;
+  page_bbox_min_y: number | null;
+  page_bbox_max_x: number | null;
+  page_bbox_max_y: number | null;
+  points: TakeoffLinePathPoint[];
 }
 
 interface TakeoffMeasurement {
@@ -63,8 +127,11 @@ interface TakeoffMeasurement {
   display_value: number | null;
   display_unit: string | null;
   count_value: number | null;
+  measured_perimeter_base?: number | null;
   metadata?: Record<string, unknown> | null;
   points: TakeoffMeasurementPoint[];
+  area_shapes: TakeoffAreaShape[];
+  line_paths: TakeoffLinePath[];
 }
 
 interface TakeoffMeasurementReadiness {
@@ -78,6 +145,7 @@ interface TakeoffMeasurementReadiness {
 
 interface TakeoffCalibration {
   id: string;
+  base_unit: string;
   name: string;
   display_unit: string;
   reference_length_input: number;
@@ -89,6 +157,7 @@ interface TakeoffCalibration {
 
 interface TakeoffPdfViewerProps {
   pdfUrl: string | null;
+  title: string;
   initialZoom?: number;
   resetZoom?: number;
   viewportOrigin?: ViewportOrigin;
@@ -108,21 +177,26 @@ interface TakeoffPdfViewerProps {
   activeCalibration: TakeoffCalibration | null;
   drawingSetId: string;
   pageId: string;
+  exitHref: string;
   saveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration>>;
   setActiveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration | null>>;
   createLineMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createAreaMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createCountMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  appendAreaShapeMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  deleteAreaShapeMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  appendCountItemMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  deleteCountItemMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  appendLinePathMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  deleteLinePathMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  updateAreaShapeGeometryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  updateLinePathGeometryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   updateMeasurementDetailsAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   updateMeasurementGeometryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   updateMeasurementStatusAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  onMeasurementCommitted?: (pageId: string, measurement: TakeoffMeasurement) => void;
+  onCalibrationCommitted?: (pageId: string, calibration: TakeoffCalibration | null) => void;
   onPageChange: (pageId: string) => void;
-  onPageDataChange?: (data: {
-    pageId: string;
-    measurements: TakeoffMeasurement[];
-    measurementReadiness: TakeoffMeasurementReadiness;
-    activeCalibration: TakeoffCalibration | null;
-  }) => void;
 }
 
 interface PdfJsRenderTask {
@@ -153,12 +227,18 @@ interface PdfJsModule {
 
 type ToolMode = "select" | "calibrate" | "distance" | "polyline" | "area" | "count";
 type SelectionState = { type: "calibration" } | { type: "measurement"; measurementId: string } | null;
+type MeasurementChildKind = "count-item" | "area-shape" | "line-path";
+type MeasurementChildSelection = {
+  measurementId: string;
+  childId: string;
+  kind: MeasurementChildKind;
+};
 type DraftTool = "calibrate" | "distance" | "polyline" | "area" | "count" | null;
 type HitTarget =
   | { type: "calibration-point"; pointIndex: 0 | 1 }
   | { type: "calibration-segment" }
-  | { type: "measurement-point"; measurementId: string; pointIndex: number }
-  | { type: "measurement-segment"; measurementId: string };
+  | { type: "measurement-point"; measurementId: string; pointIndex: number; childId?: string; childKind?: MeasurementChildKind }
+  | { type: "measurement-segment"; measurementId: string; childId?: string; childKind?: MeasurementChildKind };
 interface DraftGeometryState {
   tool: DraftTool;
   points: Point2D[];
@@ -169,6 +249,22 @@ interface HoverState {
   documentPoint: Point2D | null;
   hitTarget: HitTarget | null;
   snapCandidate: SnapCandidate | null;
+}
+
+interface SummaryContextMenuState {
+  measurementId: string;
+  measurementKind: "line" | "area" | "count";
+  measurementName: string;
+  measurementColor: string;
+  x: number;
+  y: number;
+}
+interface SummaryMeasurementEditState {
+  measurementId: string;
+  x: number;
+  y: number;
+  name: string;
+  colorHex: string;
 }
 interface HistoryCommand {
   id: string;
@@ -182,6 +278,15 @@ interface SaveFeedbackState {
   retryLabel?: string;
   retry?: (() => void) | null;
 }
+interface PendingCountAppendItem {
+  id: string;
+  point: { x: number; y: number };
+}
+interface PendingPolylineAppendPath {
+  id: string;
+  points: Array<{ x: number; y: number }>;
+  measuredLength: number;
+}
 type InteractionState =
   | { kind: "idle" }
   | { kind: "pending-click"; pointerId: number; startX: number; startY: number; hitTarget: HitTarget | null }
@@ -192,21 +297,71 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 6;
 const ZOOM_SETTLE_MS = 360;
 const HIT_TOLERANCE_PX = 16;
+const SELECTION_HIT_TOLERANCE_PX = 28;
 const SNAP_TOLERANCE_PX = 18;
 const SNAP_STICKINESS_MULTIPLIER = 1.45;
 const DEFAULT_DISTANCE_COLOR = "#F15A29";
 const DEFAULT_AREA_COLOR = "#0F766E";
 const DEFAULT_COUNT_COLOR = "#2563EB";
 const HISTORY_LIMIT = 60;
+const DEFAULT_CALIBRATION_NAME = "Scale calibration";
+
+const INITIAL_TOOL_SETUP: MeasureToolSetupState = {
+  calibrate: {
+    name: DEFAULT_CALIBRATION_NAME,
+    referenceLengthInput: "",
+    displayUnit: "mm",
+    unitSystem: "metric",
+  },
+  distance: {
+    name: "Distance",
+    description: "",
+    colorHex: DEFAULT_DISTANCE_COLOR,
+    countValue: 1,
+  },
+  polyline: {
+    name: "Linear",
+    description: "",
+    colorHex: DEFAULT_DISTANCE_COLOR,
+    countValue: 1,
+  },
+  area: {
+    name: "Area",
+    description: "",
+    colorHex: DEFAULT_AREA_COLOR,
+    countValue: 1,
+  },
+  count: {
+    name: "Count",
+    description: "",
+    colorHex: DEFAULT_COUNT_COLOR,
+    countValue: 1,
+  },
+};
 
 interface DisplayMeasurement {
   id: string;
+  renderKey: string;
   name: string;
   description: string;
   measurementKind: "line" | "area" | "count";
   color: string;
   documentPoints: Point2D[];
+  countPointIds: string[];
   path: string;
+  measuredPerimeterBase: number | null;
+  areaShapes: Array<{
+    id: string;
+    documentPoints: Point2D[];
+    path: string;
+    area: number;
+  }>;
+  linePaths: Array<{
+    id: string;
+    documentPoints: Point2D[];
+    path: string;
+    length: number;
+  }>;
   displayValue: number | null;
   displayUnit: string | null;
   label: string;
@@ -214,6 +369,7 @@ interface DisplayMeasurement {
   isPolyline: boolean;
   countValue: number | null;
   tag: string | null;
+  canEditGeometry: boolean;
 }
 
 function formatMeasurementValue(value: number | null, unit: string | null, fallback: string) {
@@ -225,8 +381,163 @@ function formatMeasurementValue(value: number | null, unit: string | null, fallb
   return unit ? `${rounded} ${unit}` : rounded;
 }
 
+function convertBaseLengthToDisplayValue(params: {
+  baseUnit: string;
+  displayUnit: string;
+  value: number;
+}): number | null {
+  if (params.baseUnit === "mm") {
+    if (params.displayUnit === "mm") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "cm") {
+      return params.value / 10;
+    }
+
+    if (params.displayUnit === "m") {
+      return params.value / 1000;
+    }
+  }
+
+  if (params.baseUnit === "in") {
+    if (params.displayUnit === "in") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "ft") {
+      return params.value / 12;
+    }
+  }
+
+  return null;
+}
+
+function convertDisplayLengthToBaseValue(params: {
+  baseUnit: string;
+  displayUnit: string;
+  value: number;
+}): number | null {
+  if (params.baseUnit === "mm") {
+    if (params.displayUnit === "mm") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "cm") {
+      return params.value * 10;
+    }
+
+    if (params.displayUnit === "m") {
+      return params.value * 1000;
+    }
+  }
+
+  if (params.baseUnit === "in") {
+    if (params.displayUnit === "in") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "ft") {
+      return params.value * 12;
+    }
+  }
+
+  return null;
+}
+
+function hexToRgba(hexColor: string, alpha: number): string {
+  const normalized = hexColor.trim();
+  const match = normalized.match(/^#([0-9a-fA-F]{6})$/);
+  if (!match) {
+    return hexColor;
+  }
+
+  const hex = match[1];
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+
+function getPolygonPerimeter(points: Point2D[]): number {
+  if (points.length < 2) {
+    return 0;
+  }
+
+  let perimeter = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const currentPoint = points[index];
+    const nextPoint = points[(index + 1) % points.length];
+    if (!currentPoint || !nextPoint) {
+      continue;
+    }
+
+    perimeter += Math.hypot(nextPoint.x - currentPoint.x, nextPoint.y - currentPoint.y);
+  }
+
+  return perimeter;
+}
+
+function getMeasuredPerimeterBaseFromDocumentPoints(
+  points: Point2D[],
+  calibrationScale: ReturnType<typeof getCalibrationScale> | null,
+  activeCalibration: TakeoffCalibration | null
+): number | null {
+  if (!calibrationScale || !activeCalibration) {
+    return null;
+  }
+
+  const displayValue = convertDocumentDistanceToRealWorld(getPolygonPerimeter(points), calibrationScale);
+  if (displayValue === null) {
+    return null;
+  }
+
+  return convertDisplayLengthToBaseValue({
+    baseUnit: activeCalibration.base_unit,
+    displayUnit: activeCalibration.display_unit,
+    value: displayValue,
+  });
+}
+
+function getTakeoffSummaryDescription(measurement: DisplayMeasurement) {
+  const trimmedName = measurement.name.trim();
+  if (trimmedName) {
+    return trimmedName;
+  }
+
+  if (measurement.measurementKind === "area") {
+    return "Area";
+  }
+
+  if (measurement.measurementKind === "count") {
+    return "Count";
+  }
+
+  return measurement.isPolyline ? "Polyline" : "Distance";
+}
+
 function formatZoomLabel(zoom: number) {
   return `${Math.round(zoom * 100)}%`;
+}
+
+function getCountLabelPosition(points: Point2D[]): Point2D | null {
+  if (points.length === 0) {
+    return null;
+  }
+
+  const totals = points.reduce(
+    (current, point) => ({
+      x: current.x + point.x,
+      y: current.y + point.y,
+    }),
+    { x: 0, y: 0 }
+  );
+
+  return {
+    x: totals.x / points.length,
+    y: totals.y / points.length,
+  };
 }
 
 function pointsAreEqual(left: Point2D, right: Point2D, tolerance = 0.01) {
@@ -277,7 +588,7 @@ function formatDraftToolLabel(tool: DraftTool) {
   return "Draft";
 }
 
-function getMeasurementFallbackLabel(measurementKind: "line" | "area", isPolyline: boolean) {
+function getMeasurementFallbackLabel(measurementKind: "line" | "area" | "count", isPolyline: boolean) {
   if (measurementKind === "area") {
     return "Area";
   }
@@ -293,7 +604,105 @@ function cloneMeasurement(measurement: TakeoffMeasurement): TakeoffMeasurement {
   return {
     ...measurement,
     points: measurement.points.map((point) => ({ ...point })),
+    area_shapes: measurement.area_shapes.map((shape) => ({
+      ...shape,
+      points: shape.points.map((point) => ({ ...point })),
+    })),
+    line_paths: measurement.line_paths.map((path) => ({
+      ...path,
+      points: path.points.map((point) => ({ ...point })),
+    })),
   };
+}
+
+function getMeasurementGeometryOverrideKey(measurementId: string, child?: { kind: MeasurementChildKind; childId: string }) {
+  if (!child) {
+    return measurementId;
+  }
+
+  return `${measurementId}:${child.kind}:${child.childId}`;
+}
+
+function getAreaShapePointCount(measurement: Pick<TakeoffMeasurement, "area_shapes">) {
+  return measurement.area_shapes.reduce((total, shape) => total + shape.points.length, 0);
+}
+
+function getLinePathPointCount(measurement: Pick<TakeoffMeasurement, "line_paths">) {
+  return measurement.line_paths.reduce((total, path) => total + path.points.length, 0);
+}
+
+function mergeMeasurementPreservingRicherGeometry(
+  localMeasurement: TakeoffMeasurement,
+  incomingMeasurement: TakeoffMeasurement
+): TakeoffMeasurement {
+  if (localMeasurement.status === "deleted" && incomingMeasurement.status !== "deleted") {
+    return cloneMeasurement(localMeasurement);
+  }
+
+  if (
+    localMeasurement.measurement_kind !== incomingMeasurement.measurement_kind ||
+    incomingMeasurement.status === "deleted"
+  ) {
+    return cloneMeasurement(incomingMeasurement);
+  }
+
+  const nextMeasurement = cloneMeasurement(incomingMeasurement);
+
+  if (incomingMeasurement.measurement_kind === "area") {
+    const localShapeCount = localMeasurement.area_shapes.length;
+    const incomingShapeCount = incomingMeasurement.area_shapes.length;
+    const shouldPreserveLocalShapes =
+      localShapeCount > incomingShapeCount ||
+      (localShapeCount > 0 &&
+        incomingShapeCount > 0 &&
+        getAreaShapePointCount(localMeasurement) > getAreaShapePointCount(incomingMeasurement)) ||
+      (localShapeCount > 0 && incomingShapeCount === 0);
+
+    if (shouldPreserveLocalShapes) {
+      return cloneMeasurement(localMeasurement);
+    }
+
+    return nextMeasurement;
+  }
+
+  if (incomingMeasurement.measurement_kind === "line") {
+    const localPathCount = localMeasurement.line_paths.length;
+    const incomingPathCount = incomingMeasurement.line_paths.length;
+    const shouldPreserveLocalPaths =
+      localPathCount > incomingPathCount ||
+      (localPathCount > 0 &&
+        incomingPathCount > 0 &&
+        getLinePathPointCount(localMeasurement) > getLinePathPointCount(incomingMeasurement)) ||
+      (localPathCount > 0 && incomingPathCount === 0);
+
+    if (shouldPreserveLocalPaths) {
+      return cloneMeasurement(localMeasurement);
+    }
+  }
+
+  if (incomingMeasurement.measurement_kind === "count" && localMeasurement.points.length > incomingMeasurement.points.length) {
+    return cloneMeasurement(localMeasurement);
+  }
+
+  return nextMeasurement;
+}
+
+function mergeMeasurementsPreservingRicherGeometry(
+  currentLocalMeasurements: TakeoffMeasurement[],
+  incomingMeasurements: TakeoffMeasurement[]
+) {
+  const localMeasurementsById = new Map(
+    currentLocalMeasurements.map((measurement) => [measurement.id, measurement] as const)
+  );
+
+  return incomingMeasurements.map((incomingMeasurement) => {
+    const localMeasurement = localMeasurementsById.get(incomingMeasurement.id);
+    if (!localMeasurement) {
+      return cloneMeasurement(incomingMeasurement);
+    }
+
+    return mergeMeasurementPreservingRicherGeometry(localMeasurement, incomingMeasurement);
+  });
 }
 
 function getPdfSourceKey(pdfUrl: string | null): string | null {
@@ -319,6 +728,92 @@ function getMeasurementTag(measurement: Pick<TakeoffMeasurement, "metadata">) {
   return typeof rawValue === "string" && rawValue.trim().length > 0 ? rawValue.trim() : null;
 }
 
+function getCountItemValue(measurement: Pick<TakeoffMeasurement, "metadata" | "count_value" | "display_value" | "points">) {
+  const rawValue =
+    measurement.metadata && typeof measurement.metadata === "object"
+      ? (measurement.metadata as Record<string, unknown>).countItemValue
+      : null;
+  if (typeof rawValue === "number" && Number.isFinite(rawValue) && rawValue > 0) {
+    return rawValue;
+  }
+
+  const totalValue = Number(measurement.count_value ?? measurement.display_value ?? 1);
+  if (!Number.isFinite(totalValue) || totalValue <= 0) {
+    return 1;
+  }
+
+  const pointCount = Math.max(measurement.points.length, 1);
+  const derivedValue = totalValue / pointCount;
+  return Number.isFinite(derivedValue) && derivedValue > 0 ? derivedValue : 1;
+}
+
+function applyPendingCountAppendItems(
+  measurement: TakeoffMeasurement,
+  pendingItems: PendingCountAppendItem[]
+): TakeoffMeasurement {
+  if (pendingItems.length === 0) {
+    return measurement;
+  }
+
+  const nextMeasurement = cloneMeasurement(measurement);
+  const countItemValue = getCountItemValue(nextMeasurement);
+  pendingItems.forEach((item) => {
+    const currentTotal = nextMeasurement.count_value ?? nextMeasurement.display_value ?? 0;
+    const nextPointOrder = nextMeasurement.points.length;
+    nextMeasurement.display_value = currentTotal + countItemValue;
+    nextMeasurement.display_unit = "count";
+    nextMeasurement.count_value = currentTotal + countItemValue;
+    nextMeasurement.metadata = {
+      ...(nextMeasurement.metadata && typeof nextMeasurement.metadata === "object" ? nextMeasurement.metadata : {}),
+      countItemValue,
+    };
+    nextMeasurement.points.push({
+      id: `${nextMeasurement.id}:${nextPointOrder}`,
+      point_order: nextPointOrder,
+      x: item.point.x,
+      y: item.point.y,
+    });
+  });
+
+  return nextMeasurement;
+}
+
+function applyPendingPolylineAppendPaths(
+  measurement: TakeoffMeasurement,
+  pendingPaths: PendingPolylineAppendPath[],
+  calibrationScale: ReturnType<typeof getCalibrationScale> | null
+): TakeoffMeasurement {
+  if (pendingPaths.length === 0) {
+    return measurement;
+  }
+
+  const nextMeasurement = cloneMeasurement(measurement);
+  pendingPaths.forEach((pendingPath) => {
+    const nextPathOrder = nextMeasurement.line_paths.length;
+    nextMeasurement.display_value = (nextMeasurement.display_value ?? 0) + pendingPath.measuredLength;
+    nextMeasurement.display_unit = calibrationScale?.displayUnit ?? nextMeasurement.display_unit;
+    nextMeasurement.line_paths.push({
+      id: `${nextMeasurement.id}:path:${nextPathOrder}`,
+      measurement_id: nextMeasurement.id,
+      path_order: nextPathOrder,
+      measured_length_base: 0,
+      page_bbox_min_x: null,
+      page_bbox_min_y: null,
+      page_bbox_max_x: null,
+      page_bbox_max_y: null,
+      points: pendingPath.points.map((point, index) => ({
+        id: `${nextMeasurement.id}:path:${nextPathOrder}:${index}`,
+        line_path_id: `${nextMeasurement.id}:path:${nextPathOrder}`,
+        point_order: index,
+        x: point.x,
+        y: point.y,
+      })),
+    });
+  });
+
+  return nextMeasurement;
+}
+
 function serializeNormalizedPoints(points: Array<{ x: number; y: number }>) {
   return points.map((point) => `${point.x}, ${point.y}`).join("\n");
 }
@@ -330,13 +825,20 @@ function inferUnitSystem(displayUnit: string): "metric" | "imperial" {
 function MeasureEditorSidebar({
   children,
   footer,
+  isCollapsed,
 }: {
   children: React.ReactNode;
   footer: React.ReactNode;
+  isCollapsed: boolean;
 }) {
   return (
-    <aside className={`flex h-full w-[340px] shrink-0 flex-col overflow-hidden ${leadsPanelClassName} rounded-[18px]`}>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+    <aside
+      id="takeoff-measure-sidebar"
+      className={`flex h-full shrink-0 flex-col overflow-hidden transition-[width] duration-150 ${
+        isCollapsed ? "w-0 border-0 rounded-none shadow-none" : "w-[340px]"
+      }`}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {children}
       </div>
       {footer}
@@ -345,46 +847,203 @@ function MeasureEditorSidebar({
 }
 
 function MeasureSidebarFooter({
+  backHref,
   onCancel,
-  onSave,
-  saveDisabled,
-  saveLabel,
 }: {
+  backHref: string;
   onCancel: () => void;
-  onSave: () => void;
-  saveDisabled: boolean;
-  saveLabel: string;
 }) {
   return (
     <div className="mt-auto border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 py-4">
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          className="h-10 flex-1 rounded-[10px] border-[#CBD5E1] bg-[#FBFEFE] text-[#475569] hover:bg-[#F8FAFC]"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          variant="orange"
-          onClick={onSave}
-          disabled={saveDisabled}
-          className="h-10 flex-1 rounded-[10px] bg-[#F15A29] text-white hover:bg-[#d94f22]"
-        >
-          {saveLabel}
-        </Button>
-      </div>
+      <Link
+        href={backHref}
+        onClick={onCancel}
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        <span>Back to Quantities</span>
+      </Link>
     </div>
   );
 }
 
-function MeasureCanvasViewport({ children }: { children: React.ReactNode }) {
+function MeasureCanvasViewport({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <div className="min-w-0 flex-1 overflow-hidden rounded-[18px] border border-[#E2E8F1] bg-[#EEF3F8] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+    <div className="relative min-w-0 flex-1 overflow-hidden rounded-[18px] border border-[#E2E8F1] bg-[#EEF3F8] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
       {children}
     </div>
+  );
+}
+
+function MeasureSidebarHeader({
+  pageLabel,
+  pageNumber,
+  calibrationState,
+}: {
+  pageLabel: string;
+  pageNumber: number;
+  calibrationState: {
+    label: string;
+    toneClassName: string;
+    helperText: string;
+  };
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#E2E8F1] bg-[#FBFEFE] px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">Measurement summary</p>
+          <p className="mt-1 truncate text-[16px] font-semibold tracking-[-0.02em] text-[#0F172A]">{pageLabel}</p>
+          <p className="mt-1 text-[12px] text-[#64748B]">Page {pageNumber}</p>
+        </div>
+        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${calibrationState.toneClassName}`}>
+          <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.2} />
+          {calibrationState.label}
+        </span>
+      </div>
+      <p className="mt-3 text-[12px] leading-[1.6] text-[#64748B]">{calibrationState.helperText}</p>
+    </section>
+  );
+}
+
+function MeasureMeasurementSummaryCard({
+  totalMeasurements,
+  totalCountValue,
+  hasCounts,
+}: {
+  totalMeasurements: number;
+  totalCountValue: number;
+  hasCounts: boolean;
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#E2E8F1] bg-[#F8FAFC] px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">Completed measurements</p>
+          <p className="mt-1 text-[13px] text-[#475569]">A quick summary of saved takeoff items on this page.</p>
+        </div>
+        <span className="inline-flex items-center rounded-full border border-[#E2E8F1] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#475569]">
+          {totalMeasurements} total
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="rounded-[12px] border border-[#E2E8F1] bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8A94A6]">Measurements</p>
+          <p className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-[#0F172A]">{totalMeasurements}</p>
+        </div>
+        <div className="rounded-[12px] border border-[#E2E8F1] bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8A94A6]">Count total</p>
+          <p className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-[#0F172A]">{hasCounts ? totalCountValue : "—"}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MeasureMeasurementRow({
+  measurement,
+  isSelected,
+  isHovered,
+  onClick,
+}: {
+  measurement: DisplayMeasurement;
+  isSelected: boolean;
+  isHovered: boolean;
+  onClick: () => void;
+}) {
+  const typeLabel =
+    measurement.measurementKind === "count"
+      ? "Count"
+      : measurement.measurementKind === "area"
+        ? "Area"
+        : measurement.isPolyline
+          ? "Polyline"
+          : "Distance";
+  const TypeIcon = measurement.measurementKind === "count" ? Hash : measurement.measurementKind === "area" ? CircleDot : ChevronRight;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-3 rounded-[10px] border px-3 py-3 text-left transition-colors ${
+        isSelected
+          ? "border-[#F4B59E] bg-[#FFF4EE] shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+          : isHovered
+            ? "border-[#FBD0BA] bg-[#FFF8F4]"
+            : "border-[#E2E8F1] bg-white hover:bg-[#F8FAFC]"
+      }`}
+    >
+      <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[#E2E8F1] bg-[#F8FAFC]" style={{ color: measurement.color }}>
+        <TypeIcon className="h-4 w-4" strokeWidth={2.2} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-semibold text-[#0F172A]">{measurement.name}</span>
+            <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#64748B]">
+              <span className="inline-flex items-center rounded-full border border-[#E2E8F1] bg-[#F8FAFC] px-2 py-0.5 font-medium text-[#475569]">
+                {typeLabel}
+              </span>
+              {measurement.tag ? <span>{measurement.tag}</span> : null}
+              {isSelected ? (
+                <span className="inline-flex items-center rounded-full border border-[#F4B59E] bg-[#FFF1E8] px-2 py-0.5 font-medium text-[#C2410C]">
+                  Selected
+                </span>
+              ) : null}
+            </span>
+          </span>
+          <span className="shrink-0 text-right text-[12px] font-semibold text-[#1E293B]">{measurement.label}</span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function MeasureMeasurementGroupCard({
+  title,
+  itemCount,
+  totals,
+  children,
+}: {
+  title: string;
+  itemCount: number;
+  totals: string[];
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#E2E8F1] bg-[#F8FAFC] p-3">
+      <div className="rounded-[12px] border border-[#E2E8F1] bg-[#FBFEFE] px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px] font-semibold text-[#0F172A]">{title}</p>
+          <span className="inline-flex items-center rounded-full border border-[#E2E8F1] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-semibold text-[#475569]">
+            {itemCount} {itemCount === 1 ? "item" : "items"}
+          </span>
+        </div>
+        {totals.length > 0 ? <p className="mt-1 text-[12px] text-[#64748B]">{totals.join(" • ")}</p> : null}
+      </div>
+      <div className="mt-3 space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function MeasureSidebarInspector({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#E2E8F1] bg-[#F8FAFC] p-3">
+      <div className="rounded-[12px] border border-[#E2E8F1] bg-[#FBFEFE] px-3 py-3">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">Inspector</p>
+        <p className="mt-1 text-[13px] text-[#475569]">Tools, edits, and live measurement controls.</p>
+      </div>
+      <div className="mt-3 space-y-3">{children}</div>
+    </section>
   );
 }
 
@@ -400,6 +1059,7 @@ async function loadPdfJsModule(): Promise<PdfJsModule> {
 
 export function TakeoffPdfViewer({
   pdfUrl,
+  title,
   initialZoom = 1,
   resetZoom = 1,
   viewportOrigin = "center",
@@ -413,14 +1073,25 @@ export function TakeoffPdfViewer({
   activeCalibration,
   drawingSetId,
   pageId,
+  exitHref,
   saveCalibrationAction,
   setActiveCalibrationAction,
   createLineMeasurementAction,
   createAreaMeasurementAction,
   createCountMeasurementAction,
+  appendAreaShapeMeasurementAction,
+  deleteAreaShapeMeasurementAction,
+  appendCountItemMeasurementAction,
+  deleteCountItemMeasurementAction,
+  appendLinePathMeasurementAction,
+  deleteLinePathMeasurementAction,
+  updateAreaShapeGeometryAction,
+  updateLinePathGeometryAction,
   updateMeasurementDetailsAction,
   updateMeasurementGeometryAction,
   updateMeasurementStatusAction,
+  onMeasurementCommitted,
+  onCalibrationCommitted,
   pageIndex,
   totalPages,
   previousPageId,
@@ -428,29 +1099,33 @@ export function TakeoffPdfViewer({
   isPageLoading,
   pageLoadError,
   onPageChange,
-  onPageDataChange,
 }: TakeoffPdfViewerProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<PdfJsRenderTask | null>(null);
   const loadingTaskRef = useRef<PdfJsLoadingTask | null>(null);
   const documentRef = useRef<PdfJsDocumentProxy | null>(null);
+  const pageProxyCacheRef = useRef(new Map<number, PdfJsPageProxy>());
+  const inFlightPageProxyRequestsRef = useRef(new Map<number, Promise<PdfJsPageProxy>>());
   const loadedPdfSourceRef = useRef<string | null>(getPdfSourceKey(pdfUrl));
   const loadedDrawingSetIdRef = useRef<string | null>(drawingSetId);
   const settleTimeoutRef = useRef<number | null>(null);
   const transientZoomRef = useRef(1);
   const pendingCommittedZoomRef = useRef<number | null>(null);
   const isZoomGestureActiveRef = useRef(false);
+  const finishMeasurementDraftRef = useRef<((tool: Exclude<DraftTool, "calibrate" | null>, points: Point2D[]) => void) | null>(null);
+  const appendSaveTargetMeasurementIdRef = useRef<string | null>(null);
   const latestRenderRequestRef = useRef(0);
   const renderedBitmapRef = useRef<{
     pageId: string;
-    rotationDegrees: RotationDegrees;
+    rotationDegrees: number;
     canvasWidth: number;
     canvasHeight: number;
     zoom: number;
     devicePixelRatio: number;
   } | null>(null);
   const defaultPanRef = useRef<Point2D>({ x: 0, y: 0 });
+  const pendingViewportInitializationRef = useRef(true);
   const interactionRef = useRef<InteractionState>({ kind: "idle" });
   const activeSnapCandidateRef = useRef<SnapCandidate | null>(null);
 
@@ -469,9 +1144,18 @@ export function TakeoffPdfViewer({
   const [isSpacePanActive, setIsSpacePanActive] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [isPageBitmapReady, setIsPageBitmapReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>("select");
+  const [activeSetupTool, setActiveSetupTool] = useState<ConfigurableTool | null>(null);
+  const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
   const [selection, setSelection] = useState<SelectionState>(null);
+  const [selectedChild, setSelectedChild] = useState<MeasurementChildSelection | null>(null);
+  const [summaryContextMenu, setSummaryContextMenu] = useState<SummaryContextMenuState | null>(null);
+  const [summaryMeasurementEdit, setSummaryMeasurementEdit] = useState<SummaryMeasurementEditState | null>(null);
+  const [isSummaryMeasurementEditSaving, setIsSummaryMeasurementEditSaving] = useState(false);
+  const [measurementsShowingPerimeter, setMeasurementsShowingPerimeter] = useState<Set<string>>(() => new Set());
+  const [appendMeasurementId, setAppendMeasurementId] = useState<string | null>(null);
   const [hoverState, setHoverState] = useState<HoverState>({
     rawDocumentPoint: null,
     documentPoint: null,
@@ -479,6 +1163,11 @@ export function TakeoffPdfViewer({
     snapCandidate: null,
   });
   const [draftGeometry, setDraftGeometry] = useState<DraftGeometryState>({
+    tool: null,
+    points: [],
+    hasChanges: false,
+  });
+  const draftGeometryRef = useRef<DraftGeometryState>({
     tool: null,
     points: [],
     hasChanges: false,
@@ -493,6 +1182,7 @@ export function TakeoffPdfViewer({
   const [measurementNameInput, setMeasurementNameInput] = useState("");
   const [measurementTagInput, setMeasurementTagInput] = useState("");
   const [measurementNoteInput, setMeasurementNoteInput] = useState("");
+  const [toolSetup, setToolSetup] = useState<MeasureToolSetupState>(INITIAL_TOOL_SETUP);
   const [filterType, setFilterType] = useState<"all" | "distance" | "area" | "count">("all");
   const [filterTag, setFilterTag] = useState<string>("all");
   const [groupBy, setGroupBy] = useState<"tag" | "type">("tag");
@@ -502,27 +1192,124 @@ export function TakeoffPdfViewer({
     message: "",
     retry: null,
   });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [undoStack, setUndoStack] = useState<HistoryCommand[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryCommand[]>([]);
   const localMeasurementsRef = useRef(localMeasurements);
   const localActiveCalibrationRef = useRef(localActiveCalibration);
+  const measurementsWithAreaShapesRef = useRef<Set<string>>(new Set());
+  const measurementsWithLinePathsRef = useRef<Set<string>>(new Set());
+  const polylineAppendQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingPolylineAppendPathsRef = useRef<Record<string, PendingPolylineAppendPath[]>>({});
+  const countAppendQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingCountAppendItemsRef = useRef<Record<string, PendingCountAppendItem[]>>({});
+  const measurementRenderKeysRef = useRef<Record<string, string>>({});
   const saveFeedbackTimeoutRef = useRef<number | null>(null);
+  const previousNavigationContextRef = useRef<{ drawingSetId: string; pageId: string } | null>(null);
+  const getMeasurementRenderKey = useCallback((measurementId: string) => {
+    const existingKey = measurementRenderKeysRef.current[measurementId];
+    if (existingKey) {
+      return existingKey;
+    }
+
+    const nextKey = crypto.randomUUID();
+    measurementRenderKeysRef.current[measurementId] = nextKey;
+    return nextKey;
+  }, []);
 
   useEffect(() => {
-    setLocalMeasurements(measurements);
+    setLocalMeasurements((currentMeasurements) =>
+      mergeMeasurementsPreservingRicherGeometry(currentMeasurements, measurements)
+    );
   }, [measurements]);
 
   useEffect(() => {
-    setLocalActiveCalibration(activeCalibration);
-  }, [activeCalibration]);
+    setLocalActiveCalibration(activeCalibration ?? null);
+  }, [activeCalibration, pageId]);
+
+  useEffect(() => {
+    if (!summaryContextMenu) {
+      return;
+    }
+
+    const handleClose = () => {
+      setSummaryContextMenu(null);
+    };
+
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+    };
+  }, [summaryContextMenu]);
+
+  useEffect(() => {
+    if (!summaryMeasurementEdit) {
+      setIsSummaryMeasurementEditSaving(false);
+      return;
+    }
+
+    const handleClose = () => {
+      if (isSummaryMeasurementEditSaving) {
+        return;
+      }
+      setSummaryMeasurementEdit(null);
+    };
+
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+    };
+  }, [isSummaryMeasurementEditSaving, summaryMeasurementEdit]);
 
   useEffect(() => {
     localMeasurementsRef.current = localMeasurements;
   }, [localMeasurements]);
 
   useEffect(() => {
+    draftGeometryRef.current = draftGeometry;
+  }, [draftGeometry]);
+
+  useEffect(() => {
+    measurementsWithAreaShapesRef.current = new Set();
+    measurementsWithLinePathsRef.current = new Set();
+  }, [pageId]);
+
+  useEffect(() => {
+    localMeasurements.forEach((measurement) => {
+      if (measurement.measurement_kind === "area" && measurement.area_shapes.length > 0) {
+        measurementsWithAreaShapesRef.current.add(measurement.id);
+      }
+      if (measurement.measurement_kind === "line" && measurement.line_paths.length > 0) {
+        measurementsWithLinePathsRef.current.add(measurement.id);
+      }
+    });
+  }, [localMeasurements]);
+
+  useEffect(() => {
     localActiveCalibrationRef.current = localActiveCalibration;
   }, [localActiveCalibration]);
+
+  useEffect(() => {
+    setToolSetup((current) => ({
+      ...current,
+      calibrate: localActiveCalibration
+        ? {
+            name: localActiveCalibration.name || DEFAULT_CALIBRATION_NAME,
+            referenceLengthInput: String(localActiveCalibration.reference_length_input),
+            displayUnit: localActiveCalibration.display_unit,
+            unitSystem: inferUnitSystem(localActiveCalibration.display_unit),
+          }
+        : {
+            ...INITIAL_TOOL_SETUP.calibrate,
+          },
+    }));
+  }, [localActiveCalibration, pageId]);
 
   useEffect(() => {
     pendingCommittedZoomRef.current = pendingCommittedZoom;
@@ -554,16 +1341,21 @@ export function TakeoffPdfViewer({
     [committedZoom, intrinsicPageSize, pan, rotationDegrees, transientZoom, viewportOrigin, viewportSize]
   );
   const targetRenderZoom = pendingCommittedZoom ?? committedZoom;
+  const hasValidViewportSize = viewportSize.width > 0 && viewportSize.height > 0;
 
   useEffect(() => {
+    if (!hasValidViewportSize) {
+      return;
+    }
+
     defaultPanRef.current = {
       x: transform.metrics.defaultPanX,
       y: transform.metrics.defaultPanY,
     };
-  }, [transform.metrics.defaultPanX, transform.metrics.defaultPanY]);
+  }, [hasValidViewportSize, transform.metrics.defaultPanX, transform.metrics.defaultPanY]);
 
   useEffect(() => {
-    if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+    if (!hasValidViewportSize) {
       return;
     }
 
@@ -576,6 +1368,7 @@ export function TakeoffPdfViewer({
   }, [
     committedZoom,
     transientZoom,
+    hasValidViewportSize,
     transform.pan.x,
     transform.pan.y,
     viewportSize.height,
@@ -583,11 +1376,30 @@ export function TakeoffPdfViewer({
   ]);
 
   useEffect(() => {
-    if (!localActiveCalibration) {
+    if (!hasValidViewportSize || !pendingViewportInitializationRef.current) {
       return;
     }
 
+    pendingViewportInitializationRef.current = false;
+    setPan((currentPan) => (pointsAreEqual(currentPan, defaultPanRef.current) ? currentPan : defaultPanRef.current));
+  }, [hasValidViewportSize]);
+
+  useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
+      if (!localActiveCalibration) {
+        setDraftGeometry((currentDraft) =>
+          currentDraft.tool === "calibrate"
+            ? { tool: "calibrate", points: [], hasChanges: false }
+            : currentDraft
+        );
+        setCalibrationName("");
+        setCalibrationLengthInput("");
+        setCalibrationDisplayUnit("mm");
+        setCalibrationUnitSystem("metric");
+        setSelection((currentSelection) => (currentSelection?.type === "calibration" ? null : currentSelection));
+        return;
+      }
+
       const savedCalibrationPoints = [
         transform.normalizedPointToDocumentPoint({ x: localActiveCalibration.point_a_x, y: localActiveCalibration.point_a_y }),
         transform.normalizedPointToDocumentPoint({ x: localActiveCalibration.point_b_x, y: localActiveCalibration.point_b_y }),
@@ -607,7 +1419,7 @@ export function TakeoffPdfViewer({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [localActiveCalibration, transform]);
+  }, [localActiveCalibration, pageId, transform]);
 
   const savedMeasurements = useMemo<DisplayMeasurement[]>(
     () =>
@@ -615,26 +1427,131 @@ export function TakeoffPdfViewer({
         .filter(
           (measurement) =>
             measurement.status !== "deleted" &&
-            (measurement.measurement_kind === "line" ||
+          (measurement.measurement_kind === "line" ||
               measurement.measurement_kind === "area" ||
               measurement.measurement_kind === "count")
         )
         .map((measurement) => {
-          const documentPoints =
-            measurementPointOverrides[measurement.id] ??
+          const baseDocumentPoints =
+            measurementPointOverrides[getMeasurementGeometryOverrideKey(measurement.id)] ??
             measurement.points.map((point) => transform.normalizedPointToDocumentPoint(point));
-          const isPolyline = measurement.measurement_kind === "line" && documentPoints.length > 2;
+          const hasKnownAreaShapes = measurementsWithAreaShapesRef.current.has(measurement.id);
+          const hasKnownLinePaths = measurementsWithLinePathsRef.current.has(measurement.id);
+          const areaShapes =
+            measurement.measurement_kind === "area"
+              ? (measurement.area_shapes.length > 0 ? measurement.area_shapes : !hasKnownAreaShapes && measurement.points.length > 0
+                  ? [{
+                      id: `${measurement.id}:shape-0`,
+                      measurement_id: measurement.id,
+                      shape_order: 0,
+                      measured_area_base: measurement.display_value ?? 0,
+                      measured_perimeter_base: measurement.measured_perimeter_base ?? 0,
+                      page_bbox_min_x: null,
+                      page_bbox_min_y: null,
+                      page_bbox_max_x: null,
+                      page_bbox_max_y: null,
+                      points: measurement.points.map((point) => ({
+                        id: `${measurement.id}:${point.point_order}`,
+                        area_shape_id: `${measurement.id}:shape-0`,
+                        point_order: point.point_order,
+                        x: point.x,
+                        y: point.y,
+                      })),
+                    }]
+                  : [])
+                  .map((shape, index) => {
+                    const overrideKey = getMeasurementGeometryOverrideKey(measurement.id, {
+                      kind: "area-shape",
+                      childId: shape.id,
+                    });
+                    const documentPoints =
+                      measurementPointOverrides[overrideKey]
+                        ? measurementPointOverrides[overrideKey]
+                        : shape.points.map((point) => transform.normalizedPointToDocumentPoint(point));
+
+                    return {
+                      id: shape.id,
+                      documentPoints,
+                      path: documentPointsToPath(documentPoints),
+                      area: getPolygonArea(documentPoints),
+                    };
+                  })
+              : [];
+          const linePaths =
+            measurement.measurement_kind === "line"
+              ? (measurement.line_paths.length > 0 ? measurement.line_paths : !hasKnownLinePaths && measurement.points.length > 2
+                  ? [{
+                      id: `${measurement.id}:path-0`,
+                      measurement_id: measurement.id,
+                      path_order: 0,
+                      measured_length_base: measurement.display_value ?? 0,
+                      page_bbox_min_x: null,
+                      page_bbox_min_y: null,
+                      page_bbox_max_x: null,
+                      page_bbox_max_y: null,
+                      points: measurement.points.map((point) => ({
+                        id: `${measurement.id}:${point.point_order}`,
+                        line_path_id: `${measurement.id}:path-0`,
+                        point_order: point.point_order,
+                        x: point.x,
+                        y: point.y,
+                      })),
+                    }]
+                  : [])
+                  .map((path, index) => {
+                    const overrideKey = getMeasurementGeometryOverrideKey(measurement.id, {
+                      kind: "line-path",
+                      childId: path.id,
+                    });
+                    const documentPoints =
+                      measurementPointOverrides[overrideKey]
+                        ? measurementPointOverrides[overrideKey]
+                        : path.points.map((point) => transform.normalizedPointToDocumentPoint(point));
+
+                    return {
+                      id: path.id,
+                      documentPoints,
+                      path: documentPointsToPath(documentPoints),
+                      length: getPolylineLength(documentPoints),
+                    };
+                  })
+              : [];
+          const documentPoints =
+            measurement.measurement_kind === "area"
+              ? areaShapes[0]?.documentPoints ?? baseDocumentPoints
+              : measurement.measurement_kind === "line"
+                ? linePaths[0]?.documentPoints ?? baseDocumentPoints
+              : baseDocumentPoints;
+          const isPolyline = measurement.measurement_kind === "line" && (linePaths.length > 0 || documentPoints.length > 2);
           const firstPoint = documentPoints[0] ?? null;
+          const labelShape =
+            measurement.measurement_kind === "area"
+              ? areaShapes.reduce<typeof areaShapes[number] | null>(
+                  (largestShape, shape) => (!largestShape || shape.area > largestShape.area ? shape : largestShape),
+                  null
+                )
+              : null;
+          const labelPath =
+            measurement.measurement_kind === "line" && linePaths.length > 0
+              ? linePaths.reduce<typeof linePaths[number] | null>(
+                  (longestPath, path) => (!longestPath || path.length > longestPath.length ? path : longestPath),
+                  null
+                )
+              : null;
           const labelAnchor =
             measurement.measurement_kind === "count"
-              ? firstPoint
+              ? getCountLabelPosition(documentPoints)
               : measurement.measurement_kind === "area"
-              ? getPolygonLabelPosition(documentPoints)
-              : getPolylineLabelPosition(documentPoints, isPolyline ? 18 : 14);
+              ? labelShape
+                ? getPolygonLabelPosition(labelShape.documentPoints)
+                : null
+              : getPolylineLabelPosition(labelPath?.documentPoints ?? documentPoints, isPolyline ? 18 : 14);
           const fallbackLabel = getMeasurementFallbackLabel(measurement.measurement_kind, isPolyline);
 
           return {
             id: measurement.id,
+            renderKey:
+              measurement.measurement_kind === "count" ? getMeasurementRenderKey(measurement.id) : measurement.id,
             name: measurement.name,
             description: measurement.description,
             measurementKind: measurement.measurement_kind,
@@ -646,7 +1563,11 @@ export function TakeoffPdfViewer({
                   ? DEFAULT_COUNT_COLOR
                   : DEFAULT_DISTANCE_COLOR),
             documentPoints,
+            countPointIds: measurement.points.map((point) => point.id),
             path: documentPointsToPath(documentPoints),
+            measuredPerimeterBase: measurement.measured_perimeter_base ?? null,
+            areaShapes,
+            linePaths,
             displayValue: measurement.display_value,
             displayUnit: measurement.display_unit,
             label: formatMeasurementValue(measurement.display_value, measurement.display_unit, fallbackLabel),
@@ -654,9 +1575,15 @@ export function TakeoffPdfViewer({
             isPolyline,
             countValue: measurement.count_value,
             tag: getMeasurementTag(measurement),
+            canEditGeometry:
+              measurement.measurement_kind === "area"
+                ? areaShapes.length > 0
+                : measurement.measurement_kind === "line"
+                  ? linePaths.length > 0 || !isPolyline
+                : true,
           };
         }),
-    [localMeasurements, measurementPointOverrides, transform]
+    [getMeasurementRenderKey, localMeasurements, measurementPointOverrides, transform]
   );
 
   useEffect(() => {
@@ -676,6 +1603,32 @@ export function TakeoffPdfViewer({
     setMeasurementTagInput(getMeasurementTag(selectedMeasurement) ?? "");
     setMeasurementNoteInput(selectedMeasurement.description ?? "");
   }, [localMeasurements, selection]);
+
+  useEffect(() => {
+    if (!summaryMeasurementEdit) {
+      return;
+    }
+
+    const measurement = localMeasurements.find((currentMeasurement) => currentMeasurement.id === summaryMeasurementEdit.measurementId);
+    if (!measurement || measurement.status === "deleted") {
+      setSummaryMeasurementEdit(null);
+    }
+  }, [localMeasurements, summaryMeasurementEdit]);
+
+  useEffect(() => {
+    if (selection?.type !== "measurement") {
+      setSelectedChild(null);
+      return;
+    }
+
+    setSelectedChild((currentChild) => {
+      if (!currentChild || currentChild.measurementId === selection.measurementId) {
+        return currentChild;
+      }
+
+      return null;
+    });
+  }, [selection]);
 
   const savedCalibrationPoints = useMemo(
     () =>
@@ -742,12 +1695,13 @@ export function TakeoffPdfViewer({
     const realWorld = convertDocumentDistanceToRealWorld(length, calibrationScale);
 
     return {
+      color: toolSetup.distance.colorHex || DEFAULT_DISTANCE_COLOR,
       points: previewPoints,
       path: documentPointsToPath(previewPoints),
       labelAnchor: getPolylineLabelPosition(previewPoints, 16),
       label: formatMeasurementValue(realWorld, calibrationScale?.displayUnit ?? null, "Distance"),
     };
-  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints]);
+  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints, toolSetup.distance.colorHex]);
 
   const polylineDraftPreview = useMemo(() => {
     if (draftGeometry.tool !== "polyline" || measurementDraftPoints.length === 0) {
@@ -760,10 +1714,11 @@ export function TakeoffPdfViewer({
 
     if (previewPoints.length < 2) {
       return {
+        color: toolSetup.polyline.colorHex || DEFAULT_DISTANCE_COLOR,
         points: previewPoints,
         path: documentPointsToPath(previewPoints),
         labelAnchor: null,
-        label: "Polyline",
+        label: "Linear",
       };
     }
 
@@ -771,12 +1726,13 @@ export function TakeoffPdfViewer({
     const realWorld = convertDocumentDistanceToRealWorld(length, calibrationScale);
 
     return {
+      color: toolSetup.polyline.colorHex || DEFAULT_DISTANCE_COLOR,
       points: previewPoints,
       path: documentPointsToPath(previewPoints),
       labelAnchor: getPolylineLabelPosition(previewPoints, 18),
       label: formatMeasurementValue(realWorld, calibrationScale?.displayUnit ?? null, "Polyline"),
     };
-  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints]);
+  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints, toolSetup.polyline.colorHex]);
 
   const areaDraftPreview = useMemo(() => {
     if (draftGeometry.tool !== "area" || measurementDraftPoints.length === 0) {
@@ -792,13 +1748,14 @@ export function TakeoffPdfViewer({
       : null;
 
     return {
+      color: toolSetup.area.colorHex || DEFAULT_AREA_COLOR,
       points: previewPoints,
       path: documentPointsToPath(previewPoints),
       labelAnchor: canMeasureArea ? getPolygonLabelPosition(previewPoints) : null,
       label: formatMeasurementValue(realWorldArea, calibrationScale ? `${calibrationScale.displayUnit}²` : null, "Area"),
       canFinish: measurementDraftPoints.length >= 3,
     };
-  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints]);
+  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints, toolSetup.area.colorHex]);
 
   const countDraftPreview = useMemo(() => {
     if (toolMode !== "count" || !hoverState.documentPoint) {
@@ -806,11 +1763,12 @@ export function TakeoffPdfViewer({
     }
 
     return {
+      color: toolSetup.count.colorHex || DEFAULT_COUNT_COLOR,
       point: hoverState.documentPoint,
       labelAnchor: hoverState.documentPoint,
       label: "Count",
     };
-  }, [hoverState.documentPoint, toolMode]);
+  }, [hoverState.documentPoint, toolMode, toolSetup.count.colorHex]);
 
   const countMeasurements = useMemo(
     () => savedMeasurements.filter((measurement) => measurement.measurementKind === "count"),
@@ -900,6 +1858,73 @@ export function TakeoffPdfViewer({
         : null,
     [localMeasurements, selection]
   );
+  const summaryMeasurementEditTarget = useMemo(
+    () =>
+      summaryMeasurementEdit
+        ? localMeasurements.find((measurement) => measurement.id === summaryMeasurementEdit.measurementId) ?? null
+        : null,
+    [localMeasurements, summaryMeasurementEdit]
+  );
+  const selectedMeasurementChild = useMemo(
+    () =>
+      selectedChild && selection?.type === "measurement" && selection.measurementId === selectedChild.measurementId
+        ? selectedChild
+        : null,
+    [selectedChild, selection]
+  );
+  const appendMeasurement = useMemo(
+    () => (appendMeasurementId ? savedMeasurements.find((measurement) => measurement.id === appendMeasurementId) ?? null : null),
+    [appendMeasurementId, savedMeasurements]
+  );
+  const activeAppendMeasurementId = useMemo(
+    () =>
+      appendMeasurementId &&
+      appendMeasurement &&
+      (toolMode === "area" || toolMode === "polyline" || toolMode === "count")
+        ? appendMeasurementId
+        : null,
+    [appendMeasurement, appendMeasurementId, toolMode]
+  );
+  const getAreaPerimeterLabel = useCallback(
+    (measurement: DisplayMeasurement) => {
+      if (
+        measurement.measurementKind !== "area" ||
+        measurement.measuredPerimeterBase === null ||
+        !localActiveCalibration
+      ) {
+        return null;
+      }
+
+      const displayValue = convertBaseLengthToDisplayValue({
+        baseUnit: localActiveCalibration.base_unit,
+        displayUnit: localActiveCalibration.display_unit,
+        value: measurement.measuredPerimeterBase,
+      });
+
+      if (displayValue === null) {
+        return null;
+      }
+
+      return formatMeasurementValue(displayValue, localActiveCalibration.display_unit, "Perimeter");
+    },
+    [localActiveCalibration]
+  );
+  const handleSummaryMeasurementContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, measurement: DisplayMeasurement) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setSummaryMeasurementEdit(null);
+      setSummaryContextMenu({
+        measurementId: measurement.id,
+        measurementKind: measurement.measurementKind,
+        measurementName: measurement.name,
+        measurementColor: measurement.color,
+        x: event.clientX,
+        y: event.clientY,
+      });
+    },
+    []
+  );
 
   const hasUnsavedMeasurementDetailChanges = useMemo(() => {
     if (!selectedMeasurement) {
@@ -912,6 +1937,25 @@ export function TakeoffPdfViewer({
       measurementTagInput.trim() !== (getMeasurementTag(selectedMeasurement) ?? "")
     );
   }, [measurementNameInput, measurementNoteInput, measurementTagInput, selectedMeasurement]);
+  const hasSummaryMeasurementEditChanges = useMemo(() => {
+    if (!summaryMeasurementEdit || !summaryMeasurementEditTarget) {
+      return false;
+    }
+
+    const currentColorHex =
+      summaryMeasurementEditTarget.color_hex?.trim() ||
+      (summaryMeasurementEditTarget.measurement_kind === "area"
+        ? DEFAULT_AREA_COLOR
+        : summaryMeasurementEditTarget.measurement_kind === "count"
+          ? DEFAULT_COUNT_COLOR
+          : DEFAULT_DISTANCE_COLOR);
+
+    return (
+      summaryMeasurementEdit.name.trim().length > 0 &&
+      (summaryMeasurementEdit.name.trim() !== summaryMeasurementEditTarget.name ||
+        summaryMeasurementEdit.colorHex.trim() !== currentColorHex)
+    );
+  }, [summaryMeasurementEdit, summaryMeasurementEditTarget]);
 
   const totalCountValue = useMemo(
     () => countMeasurements.reduce((total, measurement) => total + Number(measurement.countValue ?? measurement.displayValue ?? 0), 0),
@@ -957,22 +2001,13 @@ export function TakeoffPdfViewer({
     [localActiveCalibration, measurementReadiness]
   );
 
-  useEffect(() => {
-    onPageDataChange?.({
-      pageId,
-      measurements: localMeasurements,
-      measurementReadiness: effectiveMeasurementReadiness,
-      activeCalibration: localActiveCalibration,
-    });
-  }, [
-    effectiveMeasurementReadiness,
-    localActiveCalibration,
-    localMeasurements,
-    onPageDataChange,
-    pageId,
-  ]);
-
   const isSaving = saveFeedback.kind === "saving";
+
+  useEffect(() => {
+    if (appendMeasurementId && activeAppendMeasurementId === null) {
+      setAppendMeasurementId(null);
+    }
+  }, [activeAppendMeasurementId, appendMeasurementId]);
 
   const clearSaveFeedback = useCallback(() => {
     if (saveFeedbackTimeoutRef.current !== null) {
@@ -1029,6 +2064,8 @@ export function TakeoffPdfViewer({
       successMessage: string;
       retry?: (() => void) | null;
       retryLabel?: string;
+      showSavingMessage?: boolean;
+      showSuccessMessage?: boolean;
       run: () => Promise<T>;
     }) => {
       if (saveFeedbackTimeoutRef.current !== null) {
@@ -1037,15 +2074,31 @@ export function TakeoffPdfViewer({
       }
 
       setActionError(null);
-      setSaveFeedback({
-        kind: "saving",
-        message: params.savingMessage,
-        retry: null,
-      });
+      if (params.showSavingMessage !== false) {
+        setSaveFeedback({
+          kind: "saving",
+          message: params.savingMessage,
+          retry: null,
+        });
+      } else {
+        setSaveFeedback({
+          kind: "idle",
+          message: "",
+          retry: null,
+        });
+      }
 
       try {
         const result = await params.run();
-        markSaveSuccess(params.successMessage);
+        if (params.showSuccessMessage !== false) {
+          markSaveSuccess(params.successMessage);
+        } else {
+          setSaveFeedback({
+            kind: "idle",
+            message: "",
+            retry: null,
+          });
+        }
         return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to save takeoff changes.";
@@ -1056,12 +2109,43 @@ export function TakeoffPdfViewer({
     [markSaveError, markSaveSuccess]
   );
 
+  const getOrLoadPdfPage = useCallback((targetPageNumber: number) => {
+    const cachedPage = pageProxyCacheRef.current.get(targetPageNumber);
+    if (cachedPage) {
+      return Promise.resolve(cachedPage);
+    }
+
+    const inFlightRequest = inFlightPageProxyRequestsRef.current.get(targetPageNumber);
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const pdfDocument = documentRef.current;
+    if (!pdfDocument) {
+      return Promise.reject(new Error("PDF document is not ready."));
+    }
+
+    const request = pdfDocument
+      .getPage(targetPageNumber)
+      .then((resolvedPage) => {
+        pageProxyCacheRef.current.set(targetPageNumber, resolvedPage);
+        return resolvedPage;
+      })
+      .finally(() => {
+        inFlightPageProxyRequestsRef.current.delete(targetPageNumber);
+      });
+
+    inFlightPageProxyRequestsRef.current.set(targetPageNumber, request);
+    return request;
+  }, []);
+
   const pushHistoryCommand = useCallback((command: HistoryCommand) => {
     setUndoStack((current) => [...current, command].slice(-HISTORY_LIMIT));
     setRedoStack([]);
   }, []);
 
   const upsertLocalMeasurement = useCallback((nextMeasurement: TakeoffMeasurement) => {
+    getMeasurementRenderKey(nextMeasurement.id);
     setLocalMeasurements((currentMeasurements) => {
       const existingIndex = currentMeasurements.findIndex((measurement) => measurement.id === nextMeasurement.id);
       if (existingIndex < 0) {
@@ -1073,19 +2157,79 @@ export function TakeoffPdfViewer({
       return updatedMeasurements;
     });
     setMeasurementPointOverrides((currentOverrides) => {
-      const nextOverrides = { ...currentOverrides };
-      delete nextOverrides[nextMeasurement.id];
+      const nextOverrides: Record<string, Point2D[]> = {};
+      Object.entries(currentOverrides).forEach(([key, value]) => {
+        if (key === nextMeasurement.id || key.startsWith(`${nextMeasurement.id}:`)) {
+          return;
+        }
+        nextOverrides[key] = value;
+      });
       return nextOverrides;
     });
+  }, [getMeasurementRenderKey]);
+
+  const removeLocalMeasurement = useCallback((measurementId: string) => {
+    delete measurementRenderKeysRef.current[measurementId];
+    setLocalMeasurements((currentMeasurements) =>
+      currentMeasurements.filter((measurement) => measurement.id !== measurementId)
+    );
+    setMeasurementPointOverrides((currentOverrides) => {
+      const nextOverrides: Record<string, Point2D[]> = {};
+      let didChange = false;
+      Object.entries(currentOverrides).forEach(([key, value]) => {
+        if (key === measurementId || key.startsWith(`${measurementId}:`)) {
+          didChange = true;
+          return;
+        }
+        nextOverrides[key] = value;
+      });
+      return didChange ? nextOverrides : currentOverrides;
+    });
   }, []);
+
+  const replaceLocalMeasurementId = useCallback((previousId: string, nextMeasurement: TakeoffMeasurement) => {
+    const preservedRenderKey = measurementRenderKeysRef.current[previousId] ?? getMeasurementRenderKey(previousId);
+    measurementRenderKeysRef.current[nextMeasurement.id] = preservedRenderKey;
+    delete measurementRenderKeysRef.current[previousId];
+    setLocalMeasurements((currentMeasurements) => {
+      const existingIndex = currentMeasurements.findIndex((measurement) => measurement.id === previousId);
+      if (existingIndex < 0) {
+        return [...currentMeasurements, nextMeasurement];
+      }
+
+      const nextMeasurements = [...currentMeasurements];
+      nextMeasurements[existingIndex] = nextMeasurement;
+      return nextMeasurements;
+    });
+    setMeasurementPointOverrides((currentOverrides) => {
+      const nextOverrides: Record<string, Point2D[]> = {};
+      Object.entries(currentOverrides).forEach(([key, value]) => {
+        if (
+          key === previousId ||
+          key.startsWith(`${previousId}:`) ||
+          key === nextMeasurement.id ||
+          key.startsWith(`${nextMeasurement.id}:`)
+        ) {
+          return;
+        }
+        nextOverrides[key] = value;
+      });
+      return nextOverrides;
+    });
+  }, [getMeasurementRenderKey]);
 
   const replaceMeasurementStatusLocally = useCallback((nextMeasurement: TakeoffMeasurement) => {
     upsertLocalMeasurement(nextMeasurement);
 
     if (nextMeasurement.status === "deleted" && selection?.type === "measurement" && selection.measurementId === nextMeasurement.id) {
       setSelection(null);
+      setSelectedChild(null);
     }
-  }, [selection, upsertLocalMeasurement]);
+    if (nextMeasurement.status === "deleted" && appendMeasurementId === nextMeasurement.id) {
+      appendSaveTargetMeasurementIdRef.current = null;
+      setAppendMeasurementId(null);
+    }
+  }, [appendMeasurementId, selection, upsertLocalMeasurement]);
 
   const getCurrentMeasurementById = useCallback((measurementId: string) => {
     return localMeasurementsRef.current.find((measurement) => measurement.id === measurementId) ?? null;
@@ -1225,6 +2369,7 @@ export function TakeoffPdfViewer({
       }
 
       setLoadState("loading");
+      setIsPageBitmapReady(false);
       setError(null);
       setPageProxy(null);
 
@@ -1246,6 +2391,8 @@ export function TakeoffPdfViewer({
         }
 
         documentRef.current = pdfDocument;
+        pageProxyCacheRef.current.clear();
+        inFlightPageProxyRequestsRef.current.clear();
         loadedPdfSourceRef.current = nextPdfSource;
         loadedDrawingSetIdRef.current = drawingSetId;
         setLoadState("ready");
@@ -1275,10 +2422,11 @@ export function TakeoffPdfViewer({
 
     async function loadPage() {
       setError(null);
+      setIsPageBitmapReady(false);
       setPageProxy(null);
 
       try {
-        const resolvedPage = await pdfDocument.getPage(pageNumber);
+        const resolvedPage = await getOrLoadPdfPage(pageNumber);
         if (cancelled) {
           resolvedPage.cleanup?.();
           return;
@@ -1309,9 +2457,30 @@ export function TakeoffPdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [loadState, pageNumber, rotationDegrees]);
+  }, [getOrLoadPdfPage, loadState, pageNumber, rotationDegrees]);
 
   useEffect(() => {
+    if (loadState !== "ready" || !documentRef.current) {
+      return;
+    }
+
+    const pageNumbersToPrime = [
+      previousPageId ? pageNumber - 1 : null,
+      nextPageId ? pageNumber + 1 : null,
+    ].filter((value): value is number => value !== null && value >= 1);
+
+    pageNumbersToPrime.forEach((targetPageNumber) => {
+      void getOrLoadPdfPage(targetPageNumber).catch(() => {
+        // Ignore background priming failures. The active page load path handles errors visibly.
+      });
+    });
+  }, [getOrLoadPdfPage, loadState, nextPageId, pageNumber, previousPageId]);
+
+  useEffect(() => {
+    const previousNavigationContext = previousNavigationContextRef.current;
+    const isInitialRender = previousNavigationContext === null;
+    const isSameDrawingSet = previousNavigationContext?.drawingSetId === drawingSetId;
+
     if (settleTimeoutRef.current !== null) {
       window.clearTimeout(settleTimeoutRef.current);
     }
@@ -1319,27 +2488,41 @@ export function TakeoffPdfViewer({
     pendingCommittedZoomRef.current = null;
     isZoomGestureActiveRef.current = false;
     renderedBitmapRef.current = null;
+    setIsPageBitmapReady(false);
     setPendingCommittedZoom(null);
-    setCommittedZoom(resetZoom);
     setTransientZoom(1);
     transientZoomRef.current = 1;
-    setPan(defaultPanRef.current);
     setDraftGeometry({ tool: null, points: [], hasChanges: false });
     setHoverState({ rawDocumentPoint: null, documentPoint: null, hitTarget: null, snapCandidate: null });
     activeSnapCandidateRef.current = null;
     setMeasurementPointOverrides({});
+    appendSaveTargetMeasurementIdRef.current = null;
+    setAppendMeasurementId(null);
     setSelection(null);
-    setToolMode("select");
     setActionError(null);
     clearSaveFeedback();
     setUndoStack([]);
     setRedoStack([]);
-  }, [clearSaveFeedback, pageId, resetZoom]);
+
+    if (isInitialRender || !isSameDrawingSet) {
+      pendingViewportInitializationRef.current = true;
+      setCommittedZoom(resetZoom);
+      if (hasValidViewportSize) {
+        setPan(defaultPanRef.current);
+        pendingViewportInitializationRef.current = false;
+      }
+      setToolMode("select");
+      setActiveSetupTool(null);
+      setIsToolDialogOpen(false);
+    }
+
+    previousNavigationContextRef.current = { drawingSetId, pageId };
+  }, [clearSaveFeedback, drawingSetId, hasValidViewportSize, pageId, resetZoom]);
 
   useEffect(() => {
     const page = pageProxy;
     const visibleCanvas = canvasRef.current;
-    if (!page || !visibleCanvas || loadState !== "ready") {
+    if (!page || !visibleCanvas || loadState !== "ready" || !hasValidViewportSize) {
       return;
     }
 
@@ -1378,11 +2561,14 @@ export function TakeoffPdfViewer({
         !isZoomGestureActiveRef.current
       ) {
         pendingCommittedZoomRef.current = null;
-        setPendingCommittedZoom(null);
-        setCommittedZoom(targetRenderZoom);
         transientZoomRef.current = 1;
-        setTransientZoom(1);
+        flushSync(() => {
+          setPendingCommittedZoom(null);
+          setCommittedZoom(targetRenderZoom);
+          setTransientZoom(1);
+        });
       }
+      setIsPageBitmapReady(true);
       return;
     }
 
@@ -1443,13 +2629,16 @@ export function TakeoffPdfViewer({
             zoom: targetRenderZoom,
             devicePixelRatio,
           };
+          setIsPageBitmapReady(true);
 
           if (shouldPromotePendingZoom) {
             pendingCommittedZoomRef.current = null;
-            setPendingCommittedZoom(null);
-            setCommittedZoom(targetRenderZoom);
             transientZoomRef.current = 1;
-            setTransientZoom(1);
+            flushSync(() => {
+              setPendingCommittedZoom(null);
+              setCommittedZoom(targetRenderZoom);
+              setTransientZoom(1);
+            });
           }
 
           setIsRendering(false);
@@ -1482,6 +2671,7 @@ export function TakeoffPdfViewer({
     pageProxy,
     pendingCommittedZoom,
     rotationDegrees,
+    hasValidViewportSize,
     transform.metrics.fitScale,
     targetRenderZoom,
   ]);
@@ -1541,6 +2731,8 @@ export function TakeoffPdfViewer({
     editingMeasurementId?: string;
     editingPointIndex?: number;
     editingCalibrationPointIndex?: number;
+    editingChildId?: string;
+    editingChildKind?: MeasurementChildKind;
   }): { point: Point2D; candidate: SnapCandidate | null } {
     const viewportSnapTolerance = getZoomAdjustedViewportTolerance({
       baseTolerance: SNAP_TOLERANCE_PX,
@@ -1553,10 +2745,19 @@ export function TakeoffPdfViewer({
       viewportDistanceToDocumentDistance: transform.viewportDistanceToDocumentDistance,
     });
     const stickyTolerance = tolerance * SNAP_STICKINESS_MULTIPLIER;
+    const editingMeasurement =
+      params.editingMeasurementId
+        ? savedMeasurements.find((measurement) => measurement.id === params.editingMeasurementId) ?? null
+        : null;
+    const shouldDisableMeasurementVertexSnap =
+      draftGeometry.tool === "polyline" ||
+      draftGeometry.tool === "area" ||
+      params.editingChildKind === "area-shape" ||
+      params.editingChildKind === "line-path" ||
+      (editingMeasurement?.measurementKind === "line" && editingMeasurement.isPolyline) ||
+      editingMeasurement?.measurementKind === "area";
 
     const vertexTargets: Point2D[] = [];
-    const edgeCandidates: Array<SnapCandidate | null> = [];
-
     if (draftGeometry.tool === "polyline" || draftGeometry.tool === "area") {
       const draftPoints = draftGeometry.points;
       const draftClosureCandidate =
@@ -1577,30 +2778,10 @@ export function TakeoffPdfViewer({
 
         return index !== params.editingPointIndex;
       });
-      vertexTargets.push(...draftVertexTargets);
-
-      if (draftPoints.length >= 2) {
-        edgeCandidates.push(
-          getNearestSegmentSnapCandidate({
-            point: params.rawDocumentPoint,
-            polyline: draftPoints,
-            tolerance,
-            closed: draftGeometry.tool === "area" && draftPoints.length >= 3,
-            priority: draftGeometry.tool === "area" ? 50 : 55,
-          })
-        );
-      }
 
       const bestDraftCandidate = getStableSnapCandidate({
         candidates: [
-        draftClosureCandidate,
-        getNearestVertexSnapCandidate({
-          point: params.rawDocumentPoint,
-          targets: draftVertexTargets,
-          tolerance,
-          priority: 10,
-        }),
-        ...edgeCandidates,
+          draftClosureCandidate,
         ],
         currentCandidate: params.mode === "edit" ? activeSnapCandidateRef.current : null,
         currentCandidateTolerance: stickyTolerance,
@@ -1624,31 +2805,54 @@ export function TakeoffPdfViewer({
       });
     }
 
-    savedMeasurements.forEach((measurement) => {
-      measurement.documentPoints.forEach((point, index) => {
-        if (
-          params.mode === "edit" &&
-          params.editingMeasurementId === measurement.id &&
-          params.editingPointIndex === index
-        ) {
-          return;
-        }
+    if (!shouldDisableMeasurementVertexSnap) {
+      savedMeasurements.forEach((measurement) => {
+        measurement.documentPoints.forEach((point, index) => {
+          if (
+            params.mode === "edit" &&
+            params.editingMeasurementId === measurement.id &&
+            params.editingPointIndex === index &&
+            !params.editingChildId
+          ) {
+            return;
+          }
 
-        vertexTargets.push(point);
+          vertexTargets.push(point);
+        });
+
+        measurement.areaShapes.forEach((shape) => {
+          shape.documentPoints.forEach((point, index) => {
+            if (
+              params.mode === "edit" &&
+              params.editingMeasurementId === measurement.id &&
+              params.editingChildId === shape.id &&
+              params.editingChildKind === "area-shape" &&
+              params.editingPointIndex === index
+            ) {
+              return;
+            }
+
+            vertexTargets.push(point);
+          });
+        });
+
+        measurement.linePaths.forEach((path) => {
+          path.documentPoints.forEach((point, index) => {
+            if (
+              params.mode === "edit" &&
+              params.editingMeasurementId === measurement.id &&
+              params.editingChildId === path.id &&
+              params.editingChildKind === "line-path" &&
+              params.editingPointIndex === index
+            ) {
+              return;
+            }
+
+            vertexTargets.push(point);
+          });
+        });
       });
-
-      if (measurement.documentPoints.length >= 2) {
-        edgeCandidates.push(
-          getNearestSegmentSnapCandidate({
-            point: params.rawDocumentPoint,
-            polyline: measurement.documentPoints,
-            tolerance,
-            closed: measurement.measurementKind === "area",
-            priority: measurement.measurementKind === "area" ? 35 : 45,
-          })
-        );
-      }
-    });
+    }
 
     const bestCandidate = getStableSnapCandidate({
       candidates: [
@@ -1658,7 +2862,6 @@ export function TakeoffPdfViewer({
           tolerance,
           priority: 20,
         }),
-        ...edgeCandidates,
       ],
       currentCandidate: params.mode === "edit" ? activeSnapCandidateRef.current : null,
       currentCandidateTolerance: stickyTolerance,
@@ -1671,7 +2874,7 @@ export function TakeoffPdfViewer({
   }
 
   function getHitTarget(documentPoint: Point2D): HitTarget | null {
-    const tolerance = transform.viewportDistanceToDocumentDistance(HIT_TOLERANCE_PX);
+    const tolerance = transform.viewportDistanceToDocumentDistance(SELECTION_HIT_TOLERANCE_PX);
     const candidates: Array<{ target: HitTarget; distance: number }> = [];
 
     if (calibrationPointsForDisplay.length >= 2) {
@@ -1703,36 +2906,123 @@ export function TakeoffPdfViewer({
     }
 
     savedMeasurements.forEach((measurement) => {
-      const nearestPointHit = getNearestPointHit({
-        point: documentPoint,
-        targets: measurement.documentPoints,
-        tolerance,
-      });
-      if (nearestPointHit.hit && nearestPointHit.index >= 0) {
-        candidates.push({
-          target: { type: "measurement-point", measurementId: measurement.id, pointIndex: nearestPointHit.index },
-          distance: nearestPointHit.distance,
+      if (measurement.measurementKind === "area") {
+        measurement.areaShapes.forEach((shape) => {
+          const nearestPointHit = getNearestPointHit({
+            point: documentPoint,
+            targets: shape.documentPoints,
+            tolerance,
+          });
+          if (nearestPointHit.hit && nearestPointHit.index >= 0) {
+            candidates.push({
+              target: {
+                type: "measurement-point",
+                measurementId: measurement.id,
+                pointIndex: nearestPointHit.index,
+                childId: shape.id,
+                childKind: "area-shape",
+              },
+              distance: nearestPointHit.distance,
+            });
+          }
+
+          const segmentHit = getPolygonHit({
+            point: documentPoint,
+            polygon: shape.documentPoints,
+            tolerance,
+          });
+          if (segmentHit.hit) {
+            candidates.push({
+              target: { type: "measurement-segment", measurementId: measurement.id, childId: shape.id, childKind: "area-shape" },
+              distance: segmentHit.distance,
+            });
+          }
         });
+        return;
       }
 
-      const segmentHit =
-        measurement.measurementKind === "area"
-          ? getPolygonHit({
-              point: documentPoint,
-              polygon: measurement.documentPoints,
-              tolerance,
-            })
-          : getPolylineHit({
-              point: documentPoint,
-              polyline: measurement.documentPoints,
-              tolerance,
-            });
-      if (segmentHit.hit) {
-        candidates.push({
-          target: { type: "measurement-segment", measurementId: measurement.id },
-          distance: segmentHit.distance,
+      if (measurement.measurementKind === "count") {
+        const nearestPointHit = getNearestPointHit({
+          point: documentPoint,
+          targets: measurement.documentPoints,
+          tolerance,
         });
+        if (nearestPointHit.hit && nearestPointHit.index >= 0) {
+          candidates.push({
+            target: {
+              type: "measurement-point",
+              measurementId: measurement.id,
+              pointIndex: nearestPointHit.index,
+              childId: measurement.countPointIds[nearestPointHit.index] ?? `${measurement.id}:count:${nearestPointHit.index}`,
+              childKind: "count-item",
+            },
+            distance: nearestPointHit.distance,
+          });
+        }
+        return;
       }
+
+      if (measurement.linePaths.length === 0 && measurement.canEditGeometry) {
+        const nearestPointHit = getNearestPointHit({
+          point: documentPoint,
+          targets: measurement.documentPoints,
+          tolerance,
+        });
+        if (nearestPointHit.hit && nearestPointHit.index >= 0) {
+          candidates.push({
+            target: { type: "measurement-point", measurementId: measurement.id, pointIndex: nearestPointHit.index },
+            distance: nearestPointHit.distance,
+          });
+        }
+      }
+
+      const segmentTargets =
+        measurement.linePaths.length > 0
+          ? measurement.linePaths.map((path) => ({
+              childId: path.id,
+              childKind: "line-path" as const,
+              polyline: path.documentPoints,
+            }))
+          : [
+              {
+                childId: undefined,
+                childKind: undefined,
+                polyline: measurement.documentPoints,
+              },
+            ];
+      segmentTargets.forEach(({ childId, childKind, polyline }) => {
+        if (childId && childKind) {
+          const nearestPointHit = getNearestPointHit({
+            point: documentPoint,
+            targets: polyline,
+            tolerance,
+          });
+          if (nearestPointHit.hit && nearestPointHit.index >= 0) {
+            candidates.push({
+              target: {
+                type: "measurement-point",
+                measurementId: measurement.id,
+                pointIndex: nearestPointHit.index,
+                childId,
+                childKind,
+              },
+              distance: nearestPointHit.distance,
+            });
+          }
+        }
+
+        const segmentHit = getPolylineHit({
+          point: documentPoint,
+          polyline,
+          tolerance,
+        });
+        if (segmentHit.hit) {
+          candidates.push({
+            target: { type: "measurement-segment", measurementId: measurement.id, childId, childKind },
+            distance: segmentHit.distance,
+          });
+        }
+      });
     });
 
     candidates.sort((left, right) => left.distance - right.distance);
@@ -1827,7 +3117,27 @@ export function TakeoffPdfViewer({
     setPan(defaultPanRef.current);
   }
 
+  const openToolSetupDialog = useCallback((tool: ConfigurableTool) => {
+    if (tool === "polyline") {
+      setToolSetup((current) =>
+        current.polyline.name === "Polyline"
+          ? {
+              ...current,
+              polyline: {
+                ...current.polyline,
+                name: "Linear",
+              },
+            }
+          : current
+      );
+    }
+    setActiveSetupTool(tool);
+    setIsToolDialogOpen(true);
+  }, []);
+
   const beginToolMode = useCallback((nextTool: ToolMode) => {
+    appendSaveTargetMeasurementIdRef.current = null;
+    setAppendMeasurementId(null);
     setToolMode(nextTool);
 
     if (nextTool === "select") {
@@ -1852,6 +3162,149 @@ export function TakeoffPdfViewer({
       hasChanges: false,
     });
   }, [savedCalibrationPoints]);
+
+  const isMeasurementAppendSupported = useCallback((measurement: DisplayMeasurement) => {
+    if (measurement.measurementKind === "area") {
+      return true;
+    }
+
+    if (measurement.measurementKind === "count") {
+      return true;
+    }
+
+    return measurement.measurementKind === "line" && measurement.isPolyline;
+  }, []);
+
+  const startAppendMeasurement = useCallback((measurementId: string) => {
+    const measurement = savedMeasurements.find((item) => item.id === measurementId);
+    if (!measurement || !isMeasurementAppendSupported(measurement)) {
+      return;
+    }
+
+    const nextTool =
+      measurement.measurementKind === "area"
+        ? "area"
+        : measurement.measurementKind === "count"
+          ? "count"
+          : "polyline";
+    appendSaveTargetMeasurementIdRef.current = measurement.id;
+    setAppendMeasurementId(measurement.id);
+    setSelection({ type: "measurement", measurementId: measurement.id });
+    setSelectedChild(null);
+    setToolMode(nextTool);
+    setMeasurementPointOverrides({});
+    setDraftGeometry({
+      tool: nextTool,
+      points: [],
+      hasChanges: false,
+    });
+    setActionError(null);
+    clearSaveFeedback();
+  }, [clearSaveFeedback, isMeasurementAppendSupported, savedMeasurements]);
+
+  const handleSummaryMeasurementClick = useCallback((measurementId: string) => {
+    const measurement = savedMeasurements.find((item) => item.id === measurementId);
+    if (!measurement) {
+      return;
+    }
+
+    if (measurement.measurementKind === "count") {
+      const isAlreadyAppending = appendMeasurementId === measurementId && toolMode === "count";
+
+      if (isAlreadyAppending) {
+        return;
+      }
+
+      startAppendMeasurement(measurementId);
+      return;
+    }
+
+    if (isMeasurementAppendSupported(measurement)) {
+      startAppendMeasurement(measurementId);
+      return;
+    }
+
+    appendSaveTargetMeasurementIdRef.current = null;
+    setAppendMeasurementId(null);
+    setSelection({ type: "measurement", measurementId });
+    setSelectedChild(null);
+    setToolMode("select");
+    setMeasurementPointOverrides({});
+    setDraftGeometry({ tool: null, points: [], hasChanges: false });
+    setActionError(null);
+    clearSaveFeedback();
+  }, [appendMeasurementId, clearSaveFeedback, isMeasurementAppendSupported, savedMeasurements, selection, startAppendMeasurement, toolMode]);
+
+  const handleToolSetupConfirm = useCallback((values: MeasureToolSetupState[ConfigurableTool]) => {
+    if (!activeSetupTool) {
+      return;
+    }
+
+    if (activeSetupTool === "calibrate") {
+      const calibrateValues = values as MeasureToolSetupState["calibrate"];
+      setToolSetup((current) => ({
+        ...current,
+        calibrate: calibrateValues,
+      }));
+      setCalibrationName(calibrateValues.name || DEFAULT_CALIBRATION_NAME);
+      setCalibrationLengthInput(calibrateValues.referenceLengthInput);
+      setCalibrationDisplayUnit(calibrateValues.displayUnit);
+      setCalibrationUnitSystem(calibrateValues.unitSystem);
+    } else if (activeSetupTool === "distance") {
+      setToolSetup((current) => ({
+        ...current,
+        distance: values as MeasureToolSetupState["distance"],
+      }));
+    } else if (activeSetupTool === "polyline") {
+      setToolSetup((current) => ({
+        ...current,
+        polyline: values as MeasureToolSetupState["polyline"],
+      }));
+    } else if (activeSetupTool === "area") {
+      setToolSetup((current) => ({
+        ...current,
+        area: values as MeasureToolSetupState["area"],
+      }));
+    } else {
+      setToolSetup((current) => ({
+        ...current,
+        count: values as MeasureToolSetupState["count"],
+      }));
+    }
+
+    beginToolMode(activeSetupTool);
+    setIsToolDialogOpen(false);
+    setActiveSetupTool(null);
+  }, [activeSetupTool, beginToolMode]);
+
+  const handleToolDialogOpenChange = useCallback((nextOpen: boolean) => {
+    setIsToolDialogOpen(nextOpen);
+    if (!nextOpen) {
+      setActiveSetupTool(null);
+    }
+  }, []);
+
+  const handleToolbarToolSelect = useCallback((tool: ToolMode) => {
+    if (tool === "calibrate" && localActiveCalibration) {
+      return;
+    }
+
+    if (tool === "select") {
+      beginToolMode(tool);
+      return;
+    }
+
+    if (
+      tool === "count" &&
+      selection?.type === "measurement" &&
+      selectedMeasurement?.measurement_kind === "count"
+    ) {
+      startAppendMeasurement(selection.measurementId);
+      return;
+    }
+
+    openToolSetupDialog(tool);
+  }, [beginToolMode, localActiveCalibration, openToolSetupDialog, selectedMeasurement, selection, startAppendMeasurement]);
 
   const clearMeasurementDraft = useCallback(() => {
     activeSnapCandidateRef.current = null;
@@ -1896,7 +3349,10 @@ export function TakeoffPdfViewer({
 
   const clearSelection = useCallback(() => {
     activeSnapCandidateRef.current = null;
+    appendSaveTargetMeasurementIdRef.current = null;
+    setAppendMeasurementId(null);
     setSelection(null);
+    setSelectedChild(null);
     setMeasurementPointOverrides({});
     if (toolMode === "select") {
       setDraftGeometry({ tool: null, points: [], hasChanges: false });
@@ -1913,6 +3369,118 @@ export function TakeoffPdfViewer({
       return;
     }
 
+    if (
+      selectedMeasurementChild &&
+      selectedMeasurementChild.measurementId === selection.measurementId &&
+      (
+        selectedMeasurementChild.kind === "count-item" ||
+        selectedMeasurementChild.kind === "area-shape" ||
+        selectedMeasurementChild.kind === "line-path"
+      )
+    ) {
+      const previousSnapshot = cloneMeasurement(measurement);
+      const nextMeasurement =
+        selectedMeasurementChild.kind === "count-item"
+          ? {
+              ...previousSnapshot,
+              points: previousSnapshot.points.filter((point) => point.id !== selectedMeasurementChild.childId),
+              count_value: Math.max(
+                0,
+                Number(previousSnapshot.count_value ?? previousSnapshot.display_value ?? 0) - getCountItemValue(previousSnapshot)
+              ),
+              display_value: Math.max(
+                0,
+                Number(previousSnapshot.display_value ?? previousSnapshot.count_value ?? 0) - getCountItemValue(previousSnapshot)
+              ),
+              display_unit: "count",
+            }
+          : selectedMeasurementChild.kind === "area-shape"
+          ? (() => {
+              const remainingShapes = previousSnapshot.area_shapes.filter(
+                (shape) => shape.id !== selectedMeasurementChild.childId
+              );
+              return {
+                ...previousSnapshot,
+                measured_perimeter_base: remainingShapes.reduce(
+                  (total, shape) => total + Number(shape.measured_perimeter_base ?? 0),
+                  0
+                ),
+                area_shapes: remainingShapes,
+              };
+            })()
+          : {
+              ...previousSnapshot,
+              line_paths: previousSnapshot.line_paths.filter((path) => path.id !== selectedMeasurementChild.childId),
+            };
+
+      if (
+        (selectedMeasurementChild.kind === "count-item" && nextMeasurement.points.length === 0) ||
+        (selectedMeasurementChild.kind === "area-shape" && nextMeasurement.area_shapes.length === 0) ||
+        (selectedMeasurementChild.kind === "line-path" && nextMeasurement.line_paths.length === 0)
+      ) {
+        replaceMeasurementStatusLocally({
+          ...previousSnapshot,
+          status: "deleted",
+        });
+      } else {
+        upsertLocalMeasurement(nextMeasurement);
+      }
+
+      setSelectedChild(null);
+
+      const runDeleteChild = async () => {
+        const formData = new FormData();
+        formData.set("drawingSetId", drawingSetId);
+        formData.set("pageId", pageId);
+        formData.set("measurementId", selection.measurementId);
+        formData.set("childId", selectedMeasurementChild.childId);
+        const result =
+          selectedMeasurementChild.kind === "count-item"
+            ? await deleteCountItemMeasurementAction(formData)
+            : selectedMeasurementChild.kind === "area-shape"
+            ? await deleteAreaShapeMeasurementAction(formData)
+            : await deleteLinePathMeasurementAction(formData);
+        if (!result.ok || !result.data) {
+          throw new Error(result.error ?? "Unable to delete measurement child.");
+        }
+        onMeasurementCommitted?.(pageId, result.data);
+        return result.data;
+      };
+
+      void runMutation({
+        savingMessage: "Deleting selected part...",
+        successMessage: "Selected part deleted.",
+        showSavingMessage: false,
+        showSuccessMessage: false,
+        run: async () => {
+          try {
+            const deletedMeasurement = await runDeleteChild();
+            if (deletedMeasurement.status !== "deleted") {
+              upsertLocalMeasurement(deletedMeasurement);
+              setSelection({ type: "measurement", measurementId: deletedMeasurement.id });
+            } else {
+              setSelection(null);
+            }
+            return deletedMeasurement;
+          } catch (error) {
+            upsertLocalMeasurement(previousSnapshot);
+            setSelection({ type: "measurement", measurementId: previousSnapshot.id });
+            setSelectedChild(selectedMeasurementChild);
+            throw error;
+          }
+        },
+      });
+      return;
+    }
+
+    const previousSnapshot = cloneMeasurement(measurement);
+    replaceMeasurementStatusLocally({
+      ...previousSnapshot,
+      status: "deleted",
+    });
+    setSelection(null);
+    setSelectedChild(null);
+
     const runDelete = async () => {
       const formData = new FormData();
       formData.set("drawingSetId", drawingSetId);
@@ -1923,49 +3491,66 @@ export function TakeoffPdfViewer({
       if (!result.ok || !result.data) {
         throw new Error(result.error ?? "Unable to delete measurement.");
       }
-
-      replaceMeasurementStatusLocally(result.data);
-      setSelection(null);
+      onMeasurementCommitted?.(pageId, result.data);
       return result.data;
     };
 
     void runMutation({
       savingMessage: "Deleting measurement...",
       successMessage: "Measurement deleted.",
+      showSavingMessage: false,
+      showSuccessMessage: false,
       run: async () => {
-        const deletedMeasurement = await runDelete();
-        pushHistoryCommand({
-          id: `delete:${deletedMeasurement.id}:${Date.now()}`,
-          label: `Delete ${measurement.measurement_kind}`,
-          undo: async () => {
-            const formData = new FormData();
-            formData.set("drawingSetId", drawingSetId);
-            formData.set("pageId", pageId);
-            formData.set("measurementId", deletedMeasurement.id);
-            formData.set("action", "restore");
-            const restoreResult = await updateMeasurementStatusAction(formData);
-            if (!restoreResult.ok || !restoreResult.data) {
-              throw new Error(restoreResult.error ?? "Unable to restore measurement.");
-            }
+        try {
+          const deletedMeasurement = await runDelete();
+          pushHistoryCommand({
+            id: `delete:${deletedMeasurement.id}:${Date.now()}`,
+            label: `Delete ${measurement.measurement_kind}`,
+            undo: async () => {
+              const formData = new FormData();
+              formData.set("drawingSetId", drawingSetId);
+              formData.set("pageId", pageId);
+              formData.set("measurementId", deletedMeasurement.id);
+              formData.set("action", "restore");
+              const restoreResult = await updateMeasurementStatusAction(formData);
+              if (!restoreResult.ok || !restoreResult.data) {
+                throw new Error(restoreResult.error ?? "Unable to restore measurement.");
+              }
 
-            replaceMeasurementStatusLocally(restoreResult.data);
-          },
-          redo: async () => {
-            await runDelete();
-          },
-        });
+              replaceMeasurementStatusLocally(restoreResult.data);
+              onMeasurementCommitted?.(pageId, restoreResult.data);
+            },
+            redo: async () => {
+              replaceMeasurementStatusLocally({
+                ...previousSnapshot,
+                status: "deleted",
+              });
+              await runDelete();
+            },
+          });
 
-        return deletedMeasurement;
+          return deletedMeasurement;
+        } catch (error) {
+          upsertLocalMeasurement(previousSnapshot);
+          setSelection({ type: "measurement", measurementId: previousSnapshot.id });
+          throw error;
+        }
       },
     });
   }, [
     drawingSetId,
     getCurrentMeasurementById,
+    onMeasurementCommitted,
     pageId,
     pushHistoryCommand,
     replaceMeasurementStatusLocally,
     runMutation,
     selection,
+    selectedMeasurementChild,
+    deleteCountItemMeasurementAction,
+    deleteAreaShapeMeasurementAction,
+    deleteLinePathMeasurementAction,
+    upsertLocalMeasurement,
     updateMeasurementStatusAction,
   ]);
 
@@ -2008,6 +3593,15 @@ export function TakeoffPdfViewer({
     activeSnapCandidateRef.current = null;
     setIsDragging(false);
 
+    if (appendMeasurementId) {
+      appendSaveTargetMeasurementIdRef.current = null;
+      setAppendMeasurementId(null);
+      setToolMode("select");
+      setDraftGeometry({ tool: null, points: [], hasChanges: false });
+      setMeasurementPointOverrides({});
+      return;
+    }
+
     if (hasUnsavedMeasurementDraft) {
       clearMeasurementDraft();
       return;
@@ -2035,6 +3629,7 @@ export function TakeoffPdfViewer({
     revertCalibrationDraft,
     selection,
     toolMode,
+    appendMeasurementId,
   ]);
 
   useEffect(() => {
@@ -2049,6 +3644,13 @@ export function TakeoffPdfViewer({
 
     function onKeyDown(event: KeyboardEvent) {
       const typingTarget = isTypingTarget(event.target);
+
+      if (isToolDialogOpen) {
+        if (event.code === "Space" && !typingTarget) {
+          event.preventDefault();
+        }
+        return;
+      }
 
       if (event.key === "Escape") {
         event.preventDefault();
@@ -2091,7 +3693,9 @@ export function TakeoffPdfViewer({
 
       if (event.key.toLowerCase() === "c") {
         event.preventDefault();
-        beginToolMode("calibrate");
+        if (!localActiveCalibration) {
+          beginToolMode("calibrate");
+        }
         return;
       }
 
@@ -2125,6 +3729,20 @@ export function TakeoffPdfViewer({
         return;
       }
 
+      if (event.key === "Enter") {
+        if (draftGeometry.tool === "polyline" && draftGeometry.points.length >= 2) {
+          event.preventDefault();
+          finishMeasurementDraftRef.current?.("polyline", draftGeometry.points);
+          return;
+        }
+
+        if (draftGeometry.tool === "area" && draftGeometry.points.length >= 3) {
+          event.preventDefault();
+          finishMeasurementDraftRef.current?.("area", draftGeometry.points);
+          return;
+        }
+      }
+
       if ((event.key === "Backspace" || event.key === "Delete") && (hasUnsavedMeasurementDraft || hasUnsavedCalibrationChanges)) {
         event.preventDefault();
         removeLastDraftPoint();
@@ -2132,6 +3750,10 @@ export function TakeoffPdfViewer({
     }
 
     function onKeyUp(event: KeyboardEvent) {
+      if (isToolDialogOpen) {
+        return;
+      }
+
       if (event.code === "Space" && !isTypingTarget(event.target)) {
         setIsSpacePanActive(false);
       }
@@ -2155,6 +3777,8 @@ export function TakeoffPdfViewer({
     deleteSelectedMeasurement,
     hasUnsavedCalibrationChanges,
     hasUnsavedMeasurementDraft,
+    isToolDialogOpen,
+    localActiveCalibration,
     removeLastDraftPoint,
     runRedo,
     runUndo,
@@ -2163,27 +3787,48 @@ export function TakeoffPdfViewer({
 
   function submitCalibration(points: Point2D[]) {
     const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
+    const calibrationSetup = toolSetup.calibrate;
+    const resolvedCalibrationName = calibrationName.trim() || calibrationSetup.name || DEFAULT_CALIBRATION_NAME;
+    const resolvedCalibrationLength = calibrationLengthInput || calibrationSetup.referenceLengthInput || "0";
+    const resolvedCalibrationDisplayUnit = calibrationDisplayUnit || calibrationSetup.displayUnit;
+    const resolvedCalibrationUnitSystem = calibrationUnitSystem || calibrationSetup.unitSystem;
+    const successMessage = `Scale set to ${resolvedCalibrationLength} ${resolvedCalibrationDisplayUnit}`;
+    const parsedReferenceLength = Number(resolvedCalibrationLength);
     const formData = new FormData();
     formData.set("drawingSetId", drawingSetId);
     formData.set("pageId", pageId);
-    formData.set("name", calibrationName.trim() || "Scale calibration");
-    formData.set("unitSystem", calibrationUnitSystem);
-    formData.set("displayUnit", calibrationDisplayUnit);
-    formData.set("referenceLengthInput", calibrationLengthInput || "0");
+    formData.set("name", resolvedCalibrationName);
+    formData.set("unitSystem", resolvedCalibrationUnitSystem);
+    formData.set("displayUnit", resolvedCalibrationDisplayUnit);
+    formData.set("referenceLengthInput", resolvedCalibrationLength);
     formData.set("pointAX", String(normalizedPoints[0]?.x ?? -1));
     formData.set("pointAY", String(normalizedPoints[0]?.y ?? -1));
     formData.set("pointBX", String(normalizedPoints[1]?.x ?? -1));
     formData.set("pointBY", String(normalizedPoints[1]?.y ?? -1));
     formData.set("notes", "");
     const previousCalibration = localActiveCalibrationRef.current ? { ...localActiveCalibrationRef.current } : null;
+    const optimisticCalibration: TakeoffCalibration = {
+      id: previousCalibration?.id ?? `optimistic-calibration-${crypto.randomUUID()}`,
+      base_unit: resolvedCalibrationUnitSystem === "imperial" ? "in" : "mm",
+      name: resolvedCalibrationName,
+      display_unit: resolvedCalibrationDisplayUnit,
+      reference_length_input: Number.isFinite(parsedReferenceLength) ? parsedReferenceLength : 0,
+      point_a_x: normalizedPoints[0]?.x ?? 0,
+      point_a_y: normalizedPoints[0]?.y ?? 0,
+      point_b_x: normalizedPoints[1]?.x ?? 0,
+      point_b_y: normalizedPoints[1]?.y ?? 0,
+    };
 
-    void runMutation({
-      savingMessage: previousCalibration ? "Replacing calibration..." : "Saving calibration...",
-      successMessage: previousCalibration ? "Calibration replaced." : "Calibration saved.",
-      retry: () => {
-        submitCalibration(points);
-      },
-      run: async () => {
+    setActionError(null);
+    setLocalActiveCalibration(optimisticCalibration);
+    onCalibrationCommitted?.(pageId, optimisticCalibration);
+    setDraftGeometry({ tool: null, points: [], hasChanges: false });
+    setSelection(null);
+    setToolMode("select");
+    markSaveSuccess(successMessage);
+
+    void (async () => {
+      try {
         const result = await saveCalibrationAction(formData);
         if (!result.ok || !result.data) {
           throw new Error(result.error ?? "Unable to save calibration.");
@@ -2191,7 +3836,7 @@ export function TakeoffPdfViewer({
 
         const nextCalibration = result.data;
         setLocalActiveCalibration(nextCalibration);
-        setDraftGeometry({ tool: "calibrate", points, hasChanges: false });
+        onCalibrationCommitted?.(pageId, nextCalibration);
 
         pushHistoryCommand({
           id: `calibration:${nextCalibration.id}:${Date.now()}`,
@@ -2203,226 +3848,405 @@ export function TakeoffPdfViewer({
             await performSetActiveCalibration(nextCalibration.id);
           },
         });
-
-        return nextCalibration;
-      },
-    });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to save calibration.";
+        setLocalActiveCalibration(previousCalibration);
+        onCalibrationCommitted?.(pageId, previousCalibration);
+        markSaveError(message, () => {
+          submitCalibration(points);
+        });
+      }
+    })();
   }
 
   function submitDistance(points: Point2D[]) {
     const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
-    const formData = new FormData();
-    formData.set("drawingSetId", drawingSetId);
-    formData.set("pageId", pageId);
-    formData.set(
-      "name",
-      points.length > 2
-        ? `Polyline ${savedMeasurements.filter((measurement) => measurement.measurementKind === "line" && measurement.isPolyline).length + 1}`
-        : `Distance ${savedMeasurements.filter((measurement) => measurement.measurementKind === "line" && !measurement.isPolyline).length + 1}`
-    );
-    formData.set("description", "");
-    formData.set("groupId", "");
-    formData.set("colorHex", DEFAULT_DISTANCE_COLOR);
-    formData.set("points", serializeNormalizedPoints(normalizedPoints));
-
-    void runMutation({
-      savingMessage: points.length > 2 ? "Saving polyline..." : "Saving distance...",
-      successMessage: points.length > 2 ? "Polyline saved." : "Distance saved.",
-      retry: () => {
-        submitDistance(points);
-      },
-      run: async () => {
-        const result = await createLineMeasurementAction(formData);
-        if (!result.ok || !result.data) {
-          throw new Error(result.error ?? "Unable to create measurement.");
-        }
-
-        const nextMeasurement = cloneMeasurement(result.data);
-        upsertLocalMeasurement(nextMeasurement);
-        pushHistoryCommand({
-          id: `create:${nextMeasurement.id}:${Date.now()}`,
-          label: points.length > 2 ? "Create polyline" : "Create distance",
-          undo: async () => {
-            const statusFormData = new FormData();
-            statusFormData.set("drawingSetId", drawingSetId);
-            statusFormData.set("pageId", pageId);
-            statusFormData.set("measurementId", nextMeasurement.id);
-            statusFormData.set("action", "delete");
-            const deleteResult = await updateMeasurementStatusAction(statusFormData);
-            if (!deleteResult.ok || !deleteResult.data) {
-              throw new Error(deleteResult.error ?? "Unable to delete measurement.");
-            }
-
-            replaceMeasurementStatusLocally(deleteResult.data);
-          },
-          redo: async () => {
-            const statusFormData = new FormData();
-            statusFormData.set("drawingSetId", drawingSetId);
-            statusFormData.set("pageId", pageId);
-            statusFormData.set("measurementId", nextMeasurement.id);
-            statusFormData.set("action", "restore");
-            const restoreResult = await updateMeasurementStatusAction(statusFormData);
-            if (!restoreResult.ok || !restoreResult.data) {
-              throw new Error(restoreResult.error ?? "Unable to restore measurement.");
-            }
-
-            replaceMeasurementStatusLocally(restoreResult.data);
-          },
-        });
-
-        return nextMeasurement;
-      },
-    });
-  }
-
-  function submitArea(points: Point2D[]) {
-    const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
-    const formData = new FormData();
-    formData.set("drawingSetId", drawingSetId);
-    formData.set("pageId", pageId);
-    formData.set(
-      "name",
-      `Area ${savedMeasurements.filter((measurement) => measurement.measurementKind === "area").length + 1}`
-    );
-    formData.set("description", "");
-    formData.set("groupId", "");
-    formData.set("colorHex", DEFAULT_AREA_COLOR);
-    formData.set("points", serializeNormalizedPoints(normalizedPoints));
-
-    void runMutation({
-      savingMessage: "Saving area...",
-      successMessage: "Area saved.",
-      retry: () => {
-        submitArea(points);
-      },
-      run: async () => {
-        const result = await createAreaMeasurementAction(formData);
-        if (!result.ok || !result.data) {
-          throw new Error(result.error ?? "Unable to create area measurement.");
-        }
-
-        const nextMeasurement = cloneMeasurement(result.data);
-        upsertLocalMeasurement(nextMeasurement);
-        pushHistoryCommand({
-          id: `create:${nextMeasurement.id}:${Date.now()}`,
-          label: "Create area",
-          undo: async () => {
-            const statusFormData = new FormData();
-            statusFormData.set("drawingSetId", drawingSetId);
-            statusFormData.set("pageId", pageId);
-            statusFormData.set("measurementId", nextMeasurement.id);
-            statusFormData.set("action", "delete");
-            const deleteResult = await updateMeasurementStatusAction(statusFormData);
-            if (!deleteResult.ok || !deleteResult.data) {
-              throw new Error(deleteResult.error ?? "Unable to delete area.");
-            }
-
-            replaceMeasurementStatusLocally(deleteResult.data);
-          },
-          redo: async () => {
-            const statusFormData = new FormData();
-            statusFormData.set("drawingSetId", drawingSetId);
-            statusFormData.set("pageId", pageId);
-            statusFormData.set("measurementId", nextMeasurement.id);
-            statusFormData.set("action", "restore");
-            const restoreResult = await updateMeasurementStatusAction(statusFormData);
-            if (!restoreResult.ok || !restoreResult.data) {
-              throw new Error(restoreResult.error ?? "Unable to restore area.");
-            }
-
-            replaceMeasurementStatusLocally(restoreResult.data);
-          },
-        });
-
-        return nextMeasurement;
-      },
-    });
-  }
-
-  function submitCount(point: Point2D) {
-    const normalizedPoints = documentPointsToNormalizedPoints([point], documentPageSize);
-    const formData = new FormData();
-    formData.set("drawingSetId", drawingSetId);
-    formData.set("pageId", pageId);
-    formData.set("name", `Count ${countMeasurements.length + 1}`);
-    formData.set("description", "");
-    formData.set("groupId", "");
-    formData.set("colorHex", DEFAULT_COUNT_COLOR);
-    formData.set("countValue", "1");
-    formData.set("points", serializeNormalizedPoints(normalizedPoints));
-
-    void runMutation({
-      savingMessage: "Saving count...",
-      successMessage: "Count saved.",
-      retry: () => {
-        submitCount(point);
-      },
-      run: async () => {
-        const result = await createCountMeasurementAction(formData);
-        if (!result.ok || !result.data) {
-          throw new Error(result.error ?? "Unable to create count measurement.");
-        }
-
-        const nextMeasurement = cloneMeasurement(result.data);
-        upsertLocalMeasurement(nextMeasurement);
-        pushHistoryCommand({
-          id: `create:${nextMeasurement.id}:${Date.now()}`,
-          label: "Create count",
-          undo: async () => {
-            const statusFormData = new FormData();
-            statusFormData.set("drawingSetId", drawingSetId);
-            statusFormData.set("pageId", pageId);
-            statusFormData.set("measurementId", nextMeasurement.id);
-            statusFormData.set("action", "delete");
-            const deleteResult = await updateMeasurementStatusAction(statusFormData);
-            if (!deleteResult.ok || !deleteResult.data) {
-              throw new Error(deleteResult.error ?? "Unable to delete count.");
-            }
-
-            replaceMeasurementStatusLocally(deleteResult.data);
-          },
-          redo: async () => {
-            const statusFormData = new FormData();
-            statusFormData.set("drawingSetId", drawingSetId);
-            statusFormData.set("pageId", pageId);
-            statusFormData.set("measurementId", nextMeasurement.id);
-            statusFormData.set("action", "restore");
-            const restoreResult = await updateMeasurementStatusAction(statusFormData);
-            if (!restoreResult.ok || !restoreResult.data) {
-              throw new Error(restoreResult.error ?? "Unable to restore count.");
-            }
-
-            replaceMeasurementStatusLocally(restoreResult.data);
-          },
-        });
-
-        return nextMeasurement;
-      },
-    });
-  }
-
-  function submitMeasurementUpdate(measurementId: string, points: Point2D[]) {
-    const previousMeasurement = getCurrentMeasurementById(measurementId);
-    if (!previousMeasurement) {
-      return;
-    }
-
-    const previousSnapshot = cloneMeasurement(previousMeasurement);
-    const previousNormalizedPoints = previousMeasurement.points.map((point) => ({ x: point.x, y: point.y }));
-    const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
+    const tempMeasurementId = `temp-${crypto.randomUUID()}`;
+    const isPolyline = points.length > 2;
+    const measurementSetup = isPolyline ? toolSetup.polyline : toolSetup.distance;
+    const fallbackName = isPolyline
+      ? `Linear ${savedMeasurements.filter((measurement) => measurement.measurementKind === "line" && measurement.isPolyline).length + 1}`
+      : `Distance ${savedMeasurements.filter((measurement) => measurement.measurementKind === "line" && !measurement.isPolyline).length + 1}`;
+    const resolvedName = measurementSetup.name.trim() || fallbackName;
+    const resolvedDescription = measurementSetup.description.trim();
+    const resolvedColor = measurementSetup.colorHex || DEFAULT_DISTANCE_COLOR;
     const optimisticMeasurement: TakeoffMeasurement = {
-      ...previousSnapshot,
+      id: tempMeasurementId,
+      measurement_kind: "line",
+      status: "active",
+      name: resolvedName,
+      description: resolvedDescription,
+      color_hex: resolvedColor,
+      display_value: convertDocumentDistanceToRealWorld(getPolylineLength(points), calibrationScale),
+      display_unit: calibrationScale?.displayUnit ?? null,
+      count_value: null,
+      metadata: {},
       points: normalizedPoints.map((point, index) => ({
-        ...(previousSnapshot.points[index] ?? {
-          id: `${previousSnapshot.id}:${index}`,
-          point_order: index,
-          x: point.x,
-          y: point.y,
-        }),
+        id: `${tempMeasurementId}:${index}`,
         point_order: index,
         x: point.x,
         y: point.y,
       })),
+      area_shapes: [],
+      line_paths: isPolyline
+        ? [
+            {
+              id: `${tempMeasurementId}:path-0`,
+              measurement_id: tempMeasurementId,
+              path_order: 0,
+              measured_length_base: 0,
+              page_bbox_min_x: null,
+              page_bbox_min_y: null,
+              page_bbox_max_x: null,
+              page_bbox_max_y: null,
+              points: normalizedPoints.map((point, index) => ({
+                id: `${tempMeasurementId}:path-0:${index}`,
+                line_path_id: `${tempMeasurementId}:path-0`,
+                point_order: index,
+                x: point.x,
+                y: point.y,
+              })),
+            },
+          ]
+        : [],
+    };
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    formData.set("name", resolvedName);
+    formData.set("description", resolvedDescription);
+    formData.set("groupId", "");
+    formData.set("colorHex", resolvedColor);
+    formData.set("points", serializeNormalizedPoints(normalizedPoints));
+
+    upsertLocalMeasurement(optimisticMeasurement);
+
+    void runMutation({
+      savingMessage: points.length > 2 ? "Saving polyline..." : "Saving distance...",
+      successMessage: points.length > 2 ? "Polyline saved." : "Distance saved.",
+      showSavingMessage: false,
+      showSuccessMessage: false,
+      retry: () => {
+        submitDistance(points);
+      },
+      run: async () => {
+        try {
+          const result = await createLineMeasurementAction(formData);
+          if (!result.ok || !result.data) {
+            throw new Error(result.error ?? "Unable to create measurement.");
+          }
+
+          const nextMeasurement = cloneMeasurement(result.data);
+          replaceLocalMeasurementId(tempMeasurementId, nextMeasurement);
+          onMeasurementCommitted?.(pageId, nextMeasurement);
+          pushHistoryCommand({
+            id: `create:${nextMeasurement.id}:${Date.now()}`,
+            label: points.length > 2 ? "Create polyline" : "Create distance",
+            undo: async () => {
+              const statusFormData = new FormData();
+              statusFormData.set("drawingSetId", drawingSetId);
+              statusFormData.set("pageId", pageId);
+              statusFormData.set("measurementId", nextMeasurement.id);
+              statusFormData.set("action", "delete");
+              const deleteResult = await updateMeasurementStatusAction(statusFormData);
+              if (!deleteResult.ok || !deleteResult.data) {
+                throw new Error(deleteResult.error ?? "Unable to delete measurement.");
+              }
+
+              replaceMeasurementStatusLocally(deleteResult.data);
+              onMeasurementCommitted?.(pageId, deleteResult.data);
+            },
+            redo: async () => {
+              const statusFormData = new FormData();
+              statusFormData.set("drawingSetId", drawingSetId);
+              statusFormData.set("pageId", pageId);
+              statusFormData.set("measurementId", nextMeasurement.id);
+              statusFormData.set("action", "restore");
+              const restoreResult = await updateMeasurementStatusAction(statusFormData);
+              if (!restoreResult.ok || !restoreResult.data) {
+                throw new Error(restoreResult.error ?? "Unable to restore measurement.");
+              }
+
+              replaceMeasurementStatusLocally(restoreResult.data);
+              onMeasurementCommitted?.(pageId, restoreResult.data);
+            },
+          });
+
+          return nextMeasurement;
+        } catch (error) {
+          removeLocalMeasurement(tempMeasurementId);
+          throw error;
+        }
+      },
+    });
+  }
+
+  function submitAppendPolylinePath(measurementId: string, points: Point2D[]) {
+    const previousMeasurement = getCurrentMeasurementById(measurementId);
+    if (!previousMeasurement || previousMeasurement.measurement_kind !== "line") {
+      return;
+    }
+
+    const previousSnapshot = cloneMeasurement(previousMeasurement);
+    const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
+    const pendingPathId = crypto.randomUUID();
+    const measuredLength = convertDocumentDistanceToRealWorld(getPolylineLength(points), calibrationScale) ?? 0;
+    const tempPathId = `temp-line-path-${pendingPathId}`;
+    const optimisticMeasurement: TakeoffMeasurement = {
+      ...previousSnapshot,
+      display_value: (previousSnapshot.display_value ?? 0) + measuredLength,
+      display_unit: calibrationScale?.displayUnit ?? previousSnapshot.display_unit,
+      line_paths: [
+        ...previousSnapshot.line_paths,
+        {
+          id: tempPathId,
+          measurement_id: previousSnapshot.id,
+          path_order: previousSnapshot.line_paths.length,
+          measured_length_base: 0,
+          page_bbox_min_x: null,
+          page_bbox_min_y: null,
+          page_bbox_max_x: null,
+          page_bbox_max_y: null,
+          points: normalizedPoints.map((point, index) => ({
+            id: `${tempPathId}:${index}`,
+            line_path_id: tempPathId,
+            point_order: index,
+            x: point.x,
+            y: point.y,
+          })),
+        },
+      ],
+    };
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    formData.set("measurementId", measurementId);
+    formData.set("points", serializeNormalizedPoints(normalizedPoints));
+
+    const existingPendingPaths = pendingPolylineAppendPathsRef.current[measurementId] ?? [];
+    pendingPolylineAppendPathsRef.current[measurementId] = [
+      ...existingPendingPaths,
+      {
+        id: pendingPathId,
+        points: normalizedPoints,
+        measuredLength,
+      },
+    ];
+
+    upsertLocalMeasurement(optimisticMeasurement);
+
+    polylineAppendQueueRef.current = polylineAppendQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const currentPendingPaths = pendingPolylineAppendPathsRef.current[measurementId] ?? [];
+        if (!currentPendingPaths.some((path) => path.id === pendingPathId)) {
+          return;
+        }
+
+        const result = await runMutation({
+          savingMessage: "Adding polyline...",
+          successMessage: "Polyline added.",
+          showSavingMessage: false,
+          showSuccessMessage: false,
+          retry: () => {
+            submitAppendPolylinePath(measurementId, points);
+          },
+          run: async () => {
+            const appendResult = await appendLinePathMeasurementAction(formData);
+            if (!appendResult.ok || !appendResult.data) {
+              throw new Error(appendResult.error ?? "Unable to add polyline path.");
+            }
+
+            return cloneMeasurement(appendResult.data);
+          },
+        });
+
+        if (!result) {
+          delete pendingPolylineAppendPathsRef.current[measurementId];
+          upsertLocalMeasurement(previousSnapshot);
+          return;
+        }
+
+        const remainingPendingPaths = (pendingPolylineAppendPathsRef.current[measurementId] ?? []).filter((path) => path.id !== pendingPathId);
+        if (remainingPendingPaths.length > 0) {
+          pendingPolylineAppendPathsRef.current[measurementId] = remainingPendingPaths;
+        } else {
+          delete pendingPolylineAppendPathsRef.current[measurementId];
+        }
+
+        const mergedMeasurement = applyPendingPolylineAppendPaths(result, remainingPendingPaths, calibrationScale);
+        upsertLocalMeasurement(mergedMeasurement);
+        onMeasurementCommitted?.(pageId, result);
+      });
+  }
+
+  function submitArea(points: Point2D[]) {
+    const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
+    const tempMeasurementId = `temp-${crypto.randomUUID()}`;
+    const areaSetup = toolSetup.area;
+    const resolvedName = areaSetup.name.trim() || `Area ${savedMeasurements.filter((measurement) => measurement.measurementKind === "area").length + 1}`;
+    const resolvedDescription = areaSetup.description.trim();
+    const resolvedColor = areaSetup.colorHex || DEFAULT_AREA_COLOR;
+    const optimisticMeasuredPerimeterBase = getMeasuredPerimeterBaseFromDocumentPoints(
+      points,
+      calibrationScale,
+      localActiveCalibration
+    );
+    const optimisticMeasurement: TakeoffMeasurement = {
+      id: tempMeasurementId,
+      measurement_kind: "area",
+      status: "active",
+      name: resolvedName,
+      description: resolvedDescription,
+      color_hex: resolvedColor,
+      display_value: convertDocumentAreaToRealWorld(getPolygonArea(points), calibrationScale),
+      display_unit: calibrationScale ? `${calibrationScale.displayUnit}²` : null,
+      count_value: null,
+      measured_perimeter_base: optimisticMeasuredPerimeterBase,
+      metadata: {},
+      points: normalizedPoints.map((point, index) => ({
+        id: `${tempMeasurementId}:${index}`,
+        point_order: index,
+        x: point.x,
+        y: point.y,
+      })),
+      area_shapes: [
+        {
+          id: `${tempMeasurementId}:shape-0`,
+          measurement_id: tempMeasurementId,
+          shape_order: 0,
+          measured_area_base: 0,
+          measured_perimeter_base: optimisticMeasuredPerimeterBase ?? 0,
+          page_bbox_min_x: null,
+          page_bbox_min_y: null,
+          page_bbox_max_x: null,
+          page_bbox_max_y: null,
+          points: normalizedPoints.map((point, index) => ({
+            id: `${tempMeasurementId}:shape-0:${index}`,
+            area_shape_id: `${tempMeasurementId}:shape-0`,
+            point_order: index,
+            x: point.x,
+            y: point.y,
+          })),
+        },
+      ],
+      line_paths: [],
+    };
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    formData.set("name", resolvedName);
+    formData.set("description", resolvedDescription);
+    formData.set("groupId", "");
+    formData.set("colorHex", resolvedColor);
+    formData.set("points", serializeNormalizedPoints(normalizedPoints));
+
+    flushSync(() => {
+      upsertLocalMeasurement(optimisticMeasurement);
+    });
+
+    void runMutation({
+      savingMessage: "Saving area...",
+      successMessage: "Area saved.",
+      showSavingMessage: false,
+      showSuccessMessage: false,
+      retry: () => {
+        submitArea(points);
+      },
+      run: async () => {
+        try {
+          const result = await createAreaMeasurementAction(formData);
+          if (!result.ok || !result.data) {
+            throw new Error(result.error ?? "Unable to create area measurement.");
+          }
+
+          const nextMeasurement = cloneMeasurement(result.data);
+          replaceLocalMeasurementId(tempMeasurementId, nextMeasurement);
+          onMeasurementCommitted?.(pageId, nextMeasurement);
+          pushHistoryCommand({
+            id: `create:${nextMeasurement.id}:${Date.now()}`,
+            label: "Create area",
+            undo: async () => {
+              const statusFormData = new FormData();
+              statusFormData.set("drawingSetId", drawingSetId);
+              statusFormData.set("pageId", pageId);
+              statusFormData.set("measurementId", nextMeasurement.id);
+              statusFormData.set("action", "delete");
+              const deleteResult = await updateMeasurementStatusAction(statusFormData);
+              if (!deleteResult.ok || !deleteResult.data) {
+                throw new Error(deleteResult.error ?? "Unable to delete area.");
+              }
+
+              replaceMeasurementStatusLocally(deleteResult.data);
+              onMeasurementCommitted?.(pageId, deleteResult.data);
+            },
+            redo: async () => {
+              const statusFormData = new FormData();
+              statusFormData.set("drawingSetId", drawingSetId);
+              statusFormData.set("pageId", pageId);
+              statusFormData.set("measurementId", nextMeasurement.id);
+              statusFormData.set("action", "restore");
+              const restoreResult = await updateMeasurementStatusAction(statusFormData);
+              if (!restoreResult.ok || !restoreResult.data) {
+                throw new Error(restoreResult.error ?? "Unable to restore area.");
+              }
+
+              replaceMeasurementStatusLocally(restoreResult.data);
+              onMeasurementCommitted?.(pageId, restoreResult.data);
+            },
+          });
+
+          return nextMeasurement;
+        } catch (error) {
+          removeLocalMeasurement(tempMeasurementId);
+          throw error;
+        }
+      },
+    });
+  }
+
+  function submitAppendAreaShape(measurementId: string, points: Point2D[]) {
+    const previousMeasurement = getCurrentMeasurementById(measurementId);
+    if (!previousMeasurement || previousMeasurement.measurement_kind !== "area") {
+      return;
+    }
+
+    const previousSnapshot = cloneMeasurement(previousMeasurement);
+    const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
+    const tempShapeId = `temp-shape-${crypto.randomUUID()}`;
+    const optimisticAreaValue = convertDocumentAreaToRealWorld(getPolygonArea(points), calibrationScale) ?? 0;
+    const optimisticMeasuredPerimeterBase = getMeasuredPerimeterBaseFromDocumentPoints(
+      points,
+      calibrationScale,
+      localActiveCalibration
+    );
+    const optimisticMeasurement: TakeoffMeasurement = {
+      ...previousSnapshot,
+      display_value: (previousSnapshot.display_value ?? 0) + optimisticAreaValue,
+      display_unit: calibrationScale ? `${calibrationScale.displayUnit}²` : previousSnapshot.display_unit,
+      measured_perimeter_base:
+        (previousSnapshot.measured_perimeter_base ?? 0) + (optimisticMeasuredPerimeterBase ?? 0),
+      area_shapes: [
+        ...previousSnapshot.area_shapes,
+        {
+          id: tempShapeId,
+          measurement_id: previousSnapshot.id,
+          shape_order: previousSnapshot.area_shapes.length,
+          measured_area_base: 0,
+          measured_perimeter_base: optimisticMeasuredPerimeterBase ?? 0,
+          page_bbox_min_x: null,
+          page_bbox_min_y: null,
+          page_bbox_max_x: null,
+          page_bbox_max_y: null,
+          points: normalizedPoints.map((point, index) => ({
+            id: `${tempShapeId}:${index}`,
+            area_shape_id: tempShapeId,
+            point_order: index,
+            x: point.x,
+            y: point.y,
+          })),
+        },
+      ],
     };
     const formData = new FormData();
     formData.set("drawingSetId", drawingSetId);
@@ -2433,56 +4257,355 @@ export function TakeoffPdfViewer({
     upsertLocalMeasurement(optimisticMeasurement);
 
     void runMutation({
-      savingMessage: "Saving geometry update...",
-      successMessage: "Measurement updated.",
+      savingMessage: "Adding area...",
+      successMessage: "Area added.",
+      showSavingMessage: false,
+      showSuccessMessage: false,
       retry: () => {
-        submitMeasurementUpdate(measurementId, points);
+        submitAppendAreaShape(measurementId, points);
       },
       run: async () => {
         try {
-          const result = await updateMeasurementGeometryAction(formData);
+          const result = await appendAreaShapeMeasurementAction(formData);
+          if (!result.ok || !result.data) {
+            throw new Error(result.error ?? "Unable to add area shape.");
+          }
+
+          const nextMeasurement = cloneMeasurement(result.data);
+          upsertLocalMeasurement(nextMeasurement);
+          onMeasurementCommitted?.(pageId, nextMeasurement);
+          return nextMeasurement;
+        } catch (error) {
+          upsertLocalMeasurement(previousSnapshot);
+          throw error;
+        }
+      },
+    });
+  }
+
+  function submitCount(point: Point2D) {
+    const normalizedPoints = documentPointsToNormalizedPoints([point], documentPageSize);
+    const tempMeasurementId = `temp-${crypto.randomUUID()}`;
+    const countSetup = toolSetup.count;
+    const resolvedName = countSetup.name.trim() || `Count ${countMeasurements.length + 1}`;
+    const resolvedDescription = countSetup.description.trim();
+    const resolvedColor = countSetup.colorHex || DEFAULT_COUNT_COLOR;
+    const resolvedCountValue = countSetup.countValue || 1;
+    const optimisticMeasurement: TakeoffMeasurement = {
+      id: tempMeasurementId,
+      measurement_kind: "count",
+      status: "active",
+      name: resolvedName,
+      description: resolvedDescription,
+      color_hex: resolvedColor,
+      display_value: resolvedCountValue,
+      display_unit: "count",
+      count_value: resolvedCountValue,
+      metadata: {
+        countItemValue: resolvedCountValue,
+      },
+      points: normalizedPoints.map((nextPoint, index) => ({
+        id: `${tempMeasurementId}:${index}`,
+        point_order: index,
+        x: nextPoint.x,
+        y: nextPoint.y,
+      })),
+      area_shapes: [],
+      line_paths: [],
+    };
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    formData.set("name", resolvedName);
+    formData.set("description", resolvedDescription);
+    formData.set("groupId", "");
+    formData.set("colorHex", resolvedColor);
+    formData.set("countValue", String(resolvedCountValue));
+    formData.set("points", serializeNormalizedPoints(normalizedPoints));
+
+    flushSync(() => {
+      upsertLocalMeasurement(optimisticMeasurement);
+    });
+
+    void runMutation({
+      savingMessage: "Saving count...",
+      successMessage: "Count saved.",
+      showSavingMessage: false,
+      showSuccessMessage: false,
+      retry: () => {
+        submitCount(point);
+      },
+      run: async () => {
+        try {
+          const result = await createCountMeasurementAction(formData);
+          if (!result.ok || !result.data) {
+            throw new Error(result.error ?? "Unable to create count measurement.");
+          }
+
+          const nextMeasurement = cloneMeasurement(result.data);
+          replaceLocalMeasurementId(tempMeasurementId, nextMeasurement);
+          onMeasurementCommitted?.(pageId, nextMeasurement);
+          pushHistoryCommand({
+            id: `create:${nextMeasurement.id}:${Date.now()}`,
+            label: "Create count",
+            undo: async () => {
+              const statusFormData = new FormData();
+              statusFormData.set("drawingSetId", drawingSetId);
+              statusFormData.set("pageId", pageId);
+              statusFormData.set("measurementId", nextMeasurement.id);
+              statusFormData.set("action", "delete");
+              const deleteResult = await updateMeasurementStatusAction(statusFormData);
+              if (!deleteResult.ok || !deleteResult.data) {
+                throw new Error(deleteResult.error ?? "Unable to delete count.");
+              }
+
+              replaceMeasurementStatusLocally(deleteResult.data);
+              onMeasurementCommitted?.(pageId, deleteResult.data);
+            },
+            redo: async () => {
+              const statusFormData = new FormData();
+              statusFormData.set("drawingSetId", drawingSetId);
+              statusFormData.set("pageId", pageId);
+              statusFormData.set("measurementId", nextMeasurement.id);
+              statusFormData.set("action", "restore");
+              const restoreResult = await updateMeasurementStatusAction(statusFormData);
+              if (!restoreResult.ok || !restoreResult.data) {
+                throw new Error(restoreResult.error ?? "Unable to restore count.");
+              }
+
+              replaceMeasurementStatusLocally(restoreResult.data);
+              onMeasurementCommitted?.(pageId, restoreResult.data);
+            },
+          });
+
+          return nextMeasurement;
+        } catch (error) {
+          removeLocalMeasurement(tempMeasurementId);
+          throw error;
+        }
+      },
+    });
+  }
+
+  function submitAppendCountItem(measurementId: string, point: Point2D) {
+    const previousMeasurement = getCurrentMeasurementById(measurementId);
+    if (!previousMeasurement || previousMeasurement.measurement_kind !== "count") {
+      return;
+    }
+
+    const previousSnapshot = cloneMeasurement(previousMeasurement);
+    const normalizedPoint = documentPointsToNormalizedPoints([point], documentPageSize)[0]!;
+    const pendingItemId = crypto.randomUUID();
+    const countItemValue = getCountItemValue(previousSnapshot);
+    const nextPointOrder = previousSnapshot.points.length;
+    const optimisticMeasurement: TakeoffMeasurement = {
+      ...previousSnapshot,
+      display_value: (previousSnapshot.display_value ?? 0) + countItemValue,
+      display_unit: "count",
+      count_value: (previousSnapshot.count_value ?? previousSnapshot.display_value ?? 0) + countItemValue,
+      metadata: {
+        ...(previousSnapshot.metadata && typeof previousSnapshot.metadata === "object" ? previousSnapshot.metadata : {}),
+        countItemValue,
+      },
+      points: [
+        ...previousSnapshot.points,
+        {
+          id: `${previousSnapshot.id}:${nextPointOrder}`,
+          point_order: nextPointOrder,
+          x: normalizedPoint.x,
+          y: normalizedPoint.y,
+        },
+      ],
+    };
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    formData.set("measurementId", measurementId);
+    formData.set("points", serializeNormalizedPoints([normalizedPoint]));
+
+    const existingPendingItems = pendingCountAppendItemsRef.current[measurementId] ?? [];
+    pendingCountAppendItemsRef.current[measurementId] = [
+      ...existingPendingItems,
+      {
+        id: pendingItemId,
+        point: normalizedPoint,
+      },
+    ];
+
+    flushSync(() => {
+      upsertLocalMeasurement(optimisticMeasurement);
+    });
+
+    countAppendQueueRef.current = countAppendQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const currentPendingItems = pendingCountAppendItemsRef.current[measurementId] ?? [];
+        if (!currentPendingItems.some((item) => item.id === pendingItemId)) {
+          return;
+        }
+
+        const result = await runMutation({
+          savingMessage: "Adding count...",
+          successMessage: "Count added.",
+          showSavingMessage: false,
+          showSuccessMessage: false,
+          retry: () => {
+            submitAppendCountItem(measurementId, point);
+          },
+          run: async () => {
+            const appendResult = await appendCountItemMeasurementAction(formData);
+            if (!appendResult.ok || !appendResult.data) {
+              throw new Error(appendResult.error ?? "Unable to add count item.");
+            }
+
+            return cloneMeasurement(appendResult.data);
+          },
+        });
+
+        if (!result) {
+          delete pendingCountAppendItemsRef.current[measurementId];
+          upsertLocalMeasurement(previousSnapshot);
+          return;
+        }
+
+        const remainingPendingItems = (pendingCountAppendItemsRef.current[measurementId] ?? []).filter((item) => item.id !== pendingItemId);
+        if (remainingPendingItems.length > 0) {
+          pendingCountAppendItemsRef.current[measurementId] = remainingPendingItems;
+        } else {
+          delete pendingCountAppendItemsRef.current[measurementId];
+        }
+
+        const mergedMeasurement = applyPendingCountAppendItems(result, remainingPendingItems);
+        upsertLocalMeasurement(mergedMeasurement);
+        onMeasurementCommitted?.(pageId, result);
+      });
+  }
+
+  function submitMeasurementUpdate(params: {
+    measurementId: string;
+    childId?: string;
+    childKind?: MeasurementChildKind;
+    points: Point2D[];
+  }) {
+    const previousMeasurement = getCurrentMeasurementById(params.measurementId);
+    if (!previousMeasurement) {
+      return;
+    }
+
+    const previousSnapshot = cloneMeasurement(previousMeasurement);
+    const normalizedPoints = documentPointsToNormalizedPoints(params.points, documentPageSize);
+    const optimisticAreaShapes =
+      previousSnapshot.measurement_kind === "area" && previousSnapshot.area_shapes.length > 0
+        ? previousSnapshot.area_shapes.map((shape) => {
+            if (!(shape.id === params.childId || (!params.childId && previousSnapshot.area_shapes.length === 1))) {
+              return shape;
+            }
+
+            const nextShapePoints = normalizedPoints.map((point, index) => ({
+              ...(shape.points[index] ?? {
+                id: `${shape.id}:${index}`,
+                area_shape_id: shape.id,
+                point_order: index,
+                x: point.x,
+                y: point.y,
+              }),
+              point_order: index,
+              x: point.x,
+              y: point.y,
+            }));
+            const nextDocumentPoints = nextShapePoints.map((point) =>
+              transform.normalizedPointToDocumentPoint({ x: point.x, y: point.y })
+            );
+            const nextMeasuredPerimeterBase = getMeasuredPerimeterBaseFromDocumentPoints(
+              nextDocumentPoints,
+              calibrationScale,
+              localActiveCalibration
+            );
+
+            return {
+              ...shape,
+              measured_perimeter_base: nextMeasuredPerimeterBase ?? shape.measured_perimeter_base ?? 0,
+              points: nextShapePoints,
+            };
+          })
+        : previousSnapshot.area_shapes;
+    const optimisticMeasurement: TakeoffMeasurement = {
+      ...previousSnapshot,
+      points:
+        !params.childId
+          ? normalizedPoints.map((point, index) => ({
+              ...(previousSnapshot.points[index] ?? {
+                id: `${previousSnapshot.id}:${index}`,
+                point_order: index,
+                x: point.x,
+                y: point.y,
+              }),
+              point_order: index,
+              x: point.x,
+              y: point.y,
+            }))
+          : previousSnapshot.points,
+      measured_perimeter_base:
+        previousSnapshot.measurement_kind === "area"
+          ? optimisticAreaShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0)
+          : previousSnapshot.measured_perimeter_base,
+      area_shapes: optimisticAreaShapes,
+      line_paths:
+        previousSnapshot.measurement_kind === "line" && previousSnapshot.line_paths.length > 0
+          ? previousSnapshot.line_paths.map((path) =>
+              path.id === params.childId || (!params.childId && previousSnapshot.line_paths.length === 1)
+                ? {
+                    ...path,
+                    points: normalizedPoints.map((point, index) => ({
+                      ...(path.points[index] ?? {
+                        id: `${path.id}:${index}`,
+                        line_path_id: path.id,
+                        point_order: index,
+                        x: point.x,
+                        y: point.y,
+                      }),
+                      point_order: index,
+                      x: point.x,
+                      y: point.y,
+                    })),
+                  }
+                : path
+            )
+          : previousSnapshot.line_paths,
+    };
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    formData.set("measurementId", params.measurementId);
+    if (params.childId) {
+      formData.set("childId", params.childId);
+    }
+    formData.set("points", serializeNormalizedPoints(normalizedPoints));
+
+    upsertLocalMeasurement(optimisticMeasurement);
+
+    void runMutation({
+      savingMessage: "Saving geometry update...",
+      successMessage: "Measurement updated.",
+      showSavingMessage: false,
+      showSuccessMessage: false,
+      retry: () => {
+        submitMeasurementUpdate(params);
+      },
+      run: async () => {
+        try {
+          const result =
+            params.childKind === "area-shape"
+              ? await updateAreaShapeGeometryAction(formData)
+              : params.childKind === "line-path"
+                ? await updateLinePathGeometryAction(formData)
+                : await updateMeasurementGeometryAction(formData);
           if (!result.ok || !result.data) {
             throw new Error(result.error ?? "Unable to update measurement geometry.");
           }
 
           const nextMeasurement = cloneMeasurement(result.data);
           upsertLocalMeasurement(nextMeasurement);
-          pushHistoryCommand({
-            id: `update:${measurementId}:${Date.now()}`,
-            label: `Edit ${previousMeasurement.measurement_kind}`,
-            undo: async () => {
-              const undoFormData = new FormData();
-              undoFormData.set("drawingSetId", drawingSetId);
-              undoFormData.set("pageId", pageId);
-              undoFormData.set("measurementId", measurementId);
-              undoFormData.set(
-                "points",
-                serializeNormalizedPoints(previousNormalizedPoints)
-              );
-              const undoResult = await updateMeasurementGeometryAction(undoFormData);
-              if (!undoResult.ok || !undoResult.data) {
-                throw new Error(undoResult.error ?? "Unable to undo measurement update.");
-              }
-
-              upsertLocalMeasurement(undoResult.data);
-            },
-            redo: async () => {
-              const redoFormData = new FormData();
-              redoFormData.set("drawingSetId", drawingSetId);
-              redoFormData.set("pageId", pageId);
-              redoFormData.set("measurementId", measurementId);
-              redoFormData.set(
-                "points",
-                serializeNormalizedPoints(normalizedPoints)
-              );
-              const redoResult = await updateMeasurementGeometryAction(redoFormData);
-              if (!redoResult.ok || !redoResult.data) {
-                throw new Error(redoResult.error ?? "Unable to redo measurement update.");
-              }
-
-              upsertLocalMeasurement(redoResult.data);
-            },
-          });
 
           return nextMeasurement;
         } catch (error) {
@@ -2493,20 +4616,41 @@ export function TakeoffPdfViewer({
     });
   }
 
-  function submitMeasurementDetails(measurementId: string) {
+  function submitMeasurementDetails(
+    measurementId: string,
+    overrides?: {
+      name?: string;
+      description?: string;
+      tag?: string;
+      colorHex?: string;
+    },
+    options?: {
+      onSuccess?: () => void;
+      onSettled?: () => void;
+    }
+  ) {
     const previousMeasurement = getCurrentMeasurementById(measurementId);
     if (!previousMeasurement) {
       return;
     }
 
     const previousSnapshot = cloneMeasurement(previousMeasurement);
-    const nextName = measurementNameInput.trim() || previousMeasurement.name;
-    const nextDescription = measurementNoteInput.trim();
-    const nextTag = measurementTagInput.trim();
+    const nextName = (overrides?.name?.trim() ?? measurementNameInput.trim()) || previousMeasurement.name;
+    const nextDescription = overrides?.description?.trim() ?? measurementNoteInput.trim();
+    const nextTag = overrides?.tag?.trim() ?? measurementTagInput.trim();
+    const nextColorHex =
+      overrides?.colorHex?.trim() ||
+      previousSnapshot.color_hex ||
+      (previousSnapshot.measurement_kind === "area"
+        ? DEFAULT_AREA_COLOR
+        : previousSnapshot.measurement_kind === "count"
+          ? DEFAULT_COUNT_COLOR
+          : DEFAULT_DISTANCE_COLOR);
     const optimisticMeasurement: TakeoffMeasurement = {
       ...previousSnapshot,
       name: nextName || previousSnapshot.name,
       description: nextDescription,
+      color_hex: nextColorHex,
       metadata: {
         ...(previousSnapshot.metadata && typeof previousSnapshot.metadata === "object" ? previousSnapshot.metadata : {}),
         tag: nextTag || null,
@@ -2517,15 +4661,18 @@ export function TakeoffPdfViewer({
     formData.set("name", nextName);
     formData.set("description", nextDescription);
     formData.set("tag", nextTag);
+    formData.set("colorHex", nextColorHex);
 
     upsertLocalMeasurement(optimisticMeasurement);
 
-    void runMutation({
+    return runMutation({
       savingMessage: "Saving measurement details...",
       successMessage: "Measurement details saved.",
       retry: () => {
-        submitMeasurementDetails(measurementId);
+        void submitMeasurementDetails(measurementId, overrides, options);
       },
+      showSavingMessage: false,
+      showSuccessMessage: false,
       run: async () => {
         try {
           const result = await updateMeasurementDetailsAction(formData);
@@ -2535,6 +4682,7 @@ export function TakeoffPdfViewer({
 
           const nextMeasurement = cloneMeasurement(result.data);
           upsertLocalMeasurement(nextMeasurement);
+          onMeasurementCommitted?.(pageId, nextMeasurement);
           pushHistoryCommand({
             id: `details:${measurementId}:${Date.now()}`,
             label: "Update measurement details",
@@ -2544,12 +4692,14 @@ export function TakeoffPdfViewer({
               undoFormData.set("name", previousSnapshot.name);
               undoFormData.set("description", previousSnapshot.description ?? "");
               undoFormData.set("tag", getMeasurementTag(previousSnapshot) ?? "");
+              undoFormData.set("colorHex", previousSnapshot.color_hex ?? "");
               const undoResult = await updateMeasurementDetailsAction(undoFormData);
               if (!undoResult.ok || !undoResult.data) {
                 throw new Error(undoResult.error ?? "Unable to undo measurement details.");
               }
 
               upsertLocalMeasurement(undoResult.data);
+              onMeasurementCommitted?.(pageId, undoResult.data);
             },
             redo: async () => {
               const redoFormData = new FormData();
@@ -2557,12 +4707,14 @@ export function TakeoffPdfViewer({
               redoFormData.set("name", nextName);
               redoFormData.set("description", nextDescription);
               redoFormData.set("tag", nextTag);
+              redoFormData.set("colorHex", nextColorHex);
               const redoResult = await updateMeasurementDetailsAction(redoFormData);
               if (!redoResult.ok || !redoResult.data) {
                 throw new Error(redoResult.error ?? "Unable to redo measurement details.");
               }
 
               upsertLocalMeasurement(redoResult.data);
+              onMeasurementCommitted?.(pageId, redoResult.data);
             },
           });
 
@@ -2572,31 +4724,113 @@ export function TakeoffPdfViewer({
           throw error;
         }
       },
+    }).then((result) => {
+      if (result) {
+        options?.onSuccess?.();
+        return true;
+      }
+
+      return false;
+    }).finally(() => {
+      options?.onSettled?.();
     });
   }
 
+  function submitSummaryMeasurementEdit() {
+    if (!summaryMeasurementEdit || isSummaryMeasurementEditSaving) {
+      return;
+    }
+
+    setIsSummaryMeasurementEditSaving(true);
+    void submitMeasurementDetails(
+      summaryMeasurementEdit.measurementId,
+      {
+        name: summaryMeasurementEdit.name,
+        colorHex: summaryMeasurementEdit.colorHex,
+      },
+      {
+        onSuccess: () => {
+          setSummaryMeasurementEdit(null);
+        },
+        onSettled: () => {
+          setIsSummaryMeasurementEditSaving(false);
+        },
+      }
+    );
+  }
+
   function finishMeasurementDraft(tool: Exclude<DraftTool, "calibrate" | null>, points: Point2D[]) {
+    const appendTargetMeasurementId = appendSaveTargetMeasurementIdRef.current ?? activeAppendMeasurementId;
+
+    if (appendTargetMeasurementId && !draftGeometry.hasChanges) {
+      return;
+    }
+
     if (tool === "area") {
       if (points.length >= 3) {
-        submitArea(points);
+        if (appendTargetMeasurementId) {
+          submitAppendAreaShape(appendTargetMeasurementId, points);
+          appendSaveTargetMeasurementIdRef.current = null;
+          setAppendMeasurementId(null);
+          setSelection({ type: "measurement", measurementId: appendTargetMeasurementId });
+          setToolMode("select");
+        } else {
+          submitArea(points);
+        }
         setDraftGeometry({ tool: "area", points: [], hasChanges: false });
       }
       return;
     }
 
     if (points.length >= 2) {
-      submitDistance(points);
+      if (appendTargetMeasurementId) {
+        if (tool === "polyline") {
+          submitAppendPolylinePath(appendTargetMeasurementId, points);
+          setSelection({ type: "measurement", measurementId: appendTargetMeasurementId });
+          setDraftGeometry({ tool: "polyline", points: [], hasChanges: false });
+          return;
+        }
+
+        submitMeasurementUpdate({
+          measurementId: appendTargetMeasurementId,
+          points,
+        });
+        appendSaveTargetMeasurementIdRef.current = null;
+        setAppendMeasurementId(null);
+        setSelection({ type: "measurement", measurementId: appendTargetMeasurementId });
+        setToolMode("select");
+      } else {
+        submitDistance(points);
+      }
       setDraftGeometry({ tool, points: [], hasChanges: false });
     }
   }
 
+  finishMeasurementDraftRef.current = finishMeasurementDraft;
+
   function handleCanvasClick(documentPoint: Point2D) {
     if (toolMode === "calibrate") {
+      if (isSaving) {
+        return;
+      }
+
       setSelection({ type: "calibration" });
       const currentPoints = draftGeometry.tool === "calibrate" ? draftGeometry.points : calibrationPointsForDisplay;
+      const nextPoints = currentPoints.length >= 2 ? [documentPoint] : [...currentPoints, documentPoint];
+
+      if (nextPoints.length === 2) {
+        setDraftGeometry({
+          tool: "calibrate",
+          points: nextPoints,
+          hasChanges: true,
+        });
+        submitCalibration(nextPoints);
+        return;
+      }
+
       setDraftGeometry({
         tool: "calibrate",
-        points: currentPoints.length >= 2 ? [documentPoint] : [...currentPoints, documentPoint],
+        points: nextPoints,
         hasChanges: true,
       });
       return;
@@ -2628,7 +4862,9 @@ export function TakeoffPdfViewer({
         return;
       }
 
-      setSelection(null);
+      if (!appendMeasurementId) {
+        setSelection(null);
+      }
       const currentPoints = draftGeometry.tool === "polyline" ? draftGeometry.points : [];
       setDraftGeometry({
         tool: "polyline",
@@ -2643,7 +4879,9 @@ export function TakeoffPdfViewer({
         return;
       }
 
-      setSelection(null);
+      if (!appendMeasurementId) {
+        setSelection(null);
+      }
       const currentPoints = draftGeometry.tool === "area" ? draftGeometry.points : [];
       const closeTolerance = transform.viewportDistanceToDocumentDistance(HIT_TOLERANCE_PX * 1.2);
 
@@ -2673,6 +4911,12 @@ export function TakeoffPdfViewer({
         return;
       }
 
+      if (appendMeasurementId) {
+        submitAppendCountItem(appendMeasurementId, documentPoint);
+        setSelection({ type: "measurement", measurementId: appendMeasurementId });
+        return;
+      }
+
       setSelection(null);
       submitCount(documentPoint);
       return;
@@ -2682,13 +4926,15 @@ export function TakeoffPdfViewer({
   }
 
   function handleCanvasDoubleClick() {
-    if (draftGeometry.tool === "polyline" && draftGeometry.points.length >= 2) {
-      finishMeasurementDraft("polyline", draftGeometry.points);
+    const currentDraftGeometry = draftGeometryRef.current;
+
+    if (currentDraftGeometry.tool === "polyline" && currentDraftGeometry.points.length >= 2) {
+      finishMeasurementDraft("polyline", currentDraftGeometry.points);
       return;
     }
 
-    if (draftGeometry.tool === "area" && draftGeometry.points.length >= 3) {
-      finishMeasurementDraft("area", draftGeometry.points);
+    if (currentDraftGeometry.tool === "area" && currentDraftGeometry.points.length >= 3) {
+      finishMeasurementDraft("area", currentDraftGeometry.points);
     }
   }
 
@@ -2757,6 +5003,14 @@ export function TakeoffPdfViewer({
             editingMeasurementId:
               interaction.kind === "edit" && interaction.target.type === "measurement-point"
                 ? interaction.target.measurementId
+                : undefined,
+            editingChildId:
+              interaction.kind === "edit" && interaction.target.type === "measurement-point"
+                ? interaction.target.childId
+                : undefined,
+            editingChildKind:
+              interaction.kind === "edit" && interaction.target.type === "measurement-point"
+                ? interaction.target.childKind
                 : undefined,
             editingPointIndex:
               interaction.kind === "edit" && interaction.target.type === "measurement-point"
@@ -2847,6 +5101,8 @@ export function TakeoffPdfViewer({
       };
 
       if (interaction.target.type === "calibration-point") {
+        appendSaveTargetMeasurementIdRef.current = null;
+        setAppendMeasurementId(null);
         setSelection({ type: "calibration" });
         setDraftGeometry((currentDraft) => {
           const currentPoints = currentDraft.tool === "calibrate" ? currentDraft.points : calibrationPointsForDisplay;
@@ -2864,18 +5120,52 @@ export function TakeoffPdfViewer({
         return;
       }
 
-      const measurementId = interaction.target.measurementId;
+      const target = interaction.target;
+      if (target.type !== "measurement-point") {
+        return;
+      }
+
+      const measurementId = target.measurementId;
+      setAppendMeasurementId((current) => {
+        const nextValue = current === measurementId ? current : null;
+        appendSaveTargetMeasurementIdRef.current = nextValue;
+        return nextValue;
+      });
       setSelection({ type: "measurement", measurementId });
+      setSelectedChild(
+        target.childId && target.childKind
+          ? {
+              measurementId,
+              childId: target.childId,
+              kind: target.childKind,
+            }
+          : null
+      );
       setMeasurementPointOverrides((currentOverrides) => {
         const measurement = savedMeasurements.find((item) => item.id === measurementId);
         if (!measurement) {
           return currentOverrides;
         }
-        const nextPoints = [...(currentOverrides[measurement.id] ?? measurement.documentPoints)];
-        nextPoints[interaction.target.pointIndex] = resolvedPoint;
+        const overrideKey = getMeasurementGeometryOverrideKey(
+          measurementId,
+          target.childId && target.childKind
+            ? {
+                kind: target.childKind,
+                childId: target.childId,
+              }
+            : undefined
+        );
+        const sourcePoints =
+          target.childKind === "area-shape"
+            ? measurement.areaShapes.find((shape) => shape.id === target.childId)?.documentPoints ?? measurement.documentPoints
+            : target.childKind === "line-path"
+              ? measurement.linePaths.find((path) => path.id === target.childId)?.documentPoints ?? measurement.documentPoints
+              : measurement.documentPoints;
+        const nextPoints = [...(currentOverrides[overrideKey] ?? sourcePoints)];
+        nextPoints[target.pointIndex] = resolvedPoint;
         return {
           ...currentOverrides,
-          [measurement.id]: nextPoints,
+          [overrideKey]: nextPoints,
         };
       });
     }
@@ -2911,6 +5201,8 @@ export function TakeoffPdfViewer({
             }).point;
 
       if (interaction.hitTarget?.type === "calibration-point" || interaction.hitTarget?.type === "calibration-segment") {
+        appendSaveTargetMeasurementIdRef.current = null;
+        setAppendMeasurementId(null);
         setSelection({ type: "calibration" });
         if (toolMode === "calibrate") {
           setDraftGeometry((currentDraft) =>
@@ -2925,10 +5217,24 @@ export function TakeoffPdfViewer({
       }
 
       if (interaction.hitTarget?.type === "measurement-point" || interaction.hitTarget?.type === "measurement-segment") {
-      const measurementId = interaction.hitTarget.measurementId;
-      setSelection({ type: "measurement", measurementId });
-      setToolMode("select");
-      return;
+        const measurementId = interaction.hitTarget.measurementId;
+        setAppendMeasurementId((current) => {
+          const nextValue = current === measurementId ? current : null;
+          appendSaveTargetMeasurementIdRef.current = nextValue;
+          return nextValue;
+        });
+        setSelection({ type: "measurement", measurementId });
+        setSelectedChild(
+          interaction.hitTarget.childId && interaction.hitTarget.childKind
+            ? {
+                measurementId,
+                childId: interaction.hitTarget.childId,
+                kind: interaction.hitTarget.childKind,
+              }
+            : null
+        );
+        setToolMode("select");
+        return;
       }
 
       handleCanvasClick(resolvedDocumentPoint);
@@ -2937,15 +5243,50 @@ export function TakeoffPdfViewer({
 
     if (interaction.kind === "edit" && interaction.dirty) {
       if (interaction.target.type === "measurement-point") {
-        const points = measurementPointOverrides[interaction.target.measurementId];
+        const overrideKey = getMeasurementGeometryOverrideKey(
+          interaction.target.measurementId,
+          interaction.target.childId && interaction.target.childKind
+            ? {
+                kind: interaction.target.childKind,
+                childId: interaction.target.childId,
+              }
+            : undefined
+        );
+        const points = measurementPointOverrides[overrideKey];
         if (points && points.length >= 2) {
-          submitMeasurementUpdate(interaction.target.measurementId, points);
+          submitMeasurementUpdate({
+            measurementId: interaction.target.measurementId,
+            childId: interaction.target.childId,
+            childKind: interaction.target.childKind,
+            points,
+          });
         }
       }
     }
   }
 
+  const isSelectedMeasurementId = useCallback(
+    (measurementId: string) => selection?.type === "measurement" && selection.measurementId === measurementId,
+    [selection]
+  );
+  const isSelectedChildPart = useCallback(
+    (measurementId: string, kind: MeasurementChildKind, childId: string) =>
+      selectedMeasurementChild?.measurementId === measurementId &&
+      selectedMeasurementChild.kind === kind &&
+      selectedMeasurementChild.childId === childId,
+    [selectedMeasurementChild]
+  );
+  const isHoveredChildPart = useCallback(
+    (measurementId: string, kind: MeasurementChildKind, childId: string) =>
+      (hoverState.hitTarget?.type === "measurement-point" || hoverState.hitTarget?.type === "measurement-segment") &&
+      hoverState.hitTarget.measurementId === measurementId &&
+      hoverState.hitTarget.childKind === kind &&
+      hoverState.hitTarget.childId === childId,
+    [hoverState.hitTarget]
+  );
+
   const showUnavailableState = !pdfUrl || loadState === "error";
+  const isPdfVisualReady = loadState === "ready" && pageProxy !== null && isPageBitmapReady;
   const canvasCursor =
     isDragging
       ? "cursor-grabbing"
@@ -2959,22 +5300,28 @@ export function TakeoffPdfViewer({
       ? "Loading source PDF..."
       : isRendering
         ? "Rendering crisp page..."
-        : saveFeedback.kind !== "idle"
+      : saveFeedback.kind !== "idle"
           ? saveFeedback.message
           : "All changes synced";
   const helperMessage =
     toolMode === "calibrate"
-      ? "Place two known points on the drawing, then enter the real-world length in the inspector."
-      : selection?.type === "measurement"
-        ? "Drag anchors directly on the drawing to refine geometry. Use the inspector to rename, tag, or remove the selected item."
+      ? "Click two known points on the drawing to set the page scale."
+      : activeAppendMeasurementId
+        ? toolMode === "count"
+          ? "Adding to existing count — click to place"
+          : "Adding to existing measurement — press Enter to finish"
+        : selectedMeasurementChild && (selectedMeasurementChild.kind === "area-shape" || selectedMeasurementChild.kind === "line-path")
+          ? "Selected child part highlighted. Drag its vertices to edit or press Delete to remove only that part."
+        : selection?.type === "measurement"
+        ? "Select a child part on the markup to edit or delete it independently. Parent details stay on the summary item."
         : toolMode === "polyline"
-          ? "Click to add each segment point, then finish from the inspector or double-click on the drawing."
+          ? "Click points, then double-click or press Enter to finish"
           : toolMode === "area"
-            ? "Click to place polygon corners. Finish from the inspector or close near the first point."
+            ? "Click corners, then close the shape, double-click, or press Enter to finish"
             : toolMode === "distance"
-              ? "Click two points to place a calibrated distance. The drawing stays in document space while you measure."
+              ? "Click two points to save"
                 : toolMode === "count"
-                  ? "Click anywhere on the drawing to place a count marker. Reposition later by dragging it."
+                  ? "Click to place count"
                   : effectiveMeasurementReadiness.message;
   const sidebarSaveConfig = (() => {
     if (toolMode === "calibrate") {
@@ -2987,16 +5334,24 @@ export function TakeoffPdfViewer({
 
     if (toolMode === "polyline") {
       return {
-        label: "Save Polyline",
-        disabled: draftGeometry.tool !== "polyline" || draftGeometry.points.length < 2 || isSaving,
+        label: activeAppendMeasurementId ? "Save Added Polyline" : "Save Polyline",
+        disabled:
+          draftGeometry.tool !== "polyline" ||
+          draftGeometry.points.length < 2 ||
+          (activeAppendMeasurementId !== null && !draftGeometry.hasChanges) ||
+          isSaving,
         onSave: () => finishMeasurementDraft("polyline", draftGeometry.points),
       };
     }
 
     if (toolMode === "area") {
       return {
-        label: "Save Area",
-        disabled: draftGeometry.tool !== "area" || draftGeometry.points.length < 3 || isSaving,
+        label: activeAppendMeasurementId ? "Save Added Area" : "Save Area",
+        disabled:
+          draftGeometry.tool !== "area" ||
+          draftGeometry.points.length < 3 ||
+          (activeAppendMeasurementId !== null && !draftGeometry.hasChanges) ||
+          isSaving,
         onSave: () => finishMeasurementDraft("area", draftGeometry.points),
       };
     }
@@ -3015,357 +5370,253 @@ export function TakeoffPdfViewer({
       onSave: () => undefined,
     };
   })();
+  const calibrationStatusConfig = hasUnsavedCalibrationChanges
+    ? {
+        label: "Draft",
+        toneClassName: "border-[#FDBA74] bg-[#FFF7ED] text-[#C2410C]",
+        helperText: localActiveCalibration
+          ? `${localActiveCalibration.name} • ${localActiveCalibration.reference_length_input} ${localActiveCalibration.display_unit}`
+          : "Place two known points to set the page scale.",
+      }
+    : localActiveCalibration
+      ? {
+          label: "Calibrated",
+          toneClassName: "border-[#BBF7D0] bg-[#F0FDF4] text-[#15803D]",
+          helperText: `${localActiveCalibration.name} • ${localActiveCalibration.reference_length_input} ${localActiveCalibration.display_unit}`,
+        }
+      : {
+          label: "Unset",
+          toneClassName: "border-[#E2E8F1] bg-white text-[#64748B]",
+          helperText: "Place two known points to set the page scale.",
+        };
   return (
-    <div className="flex h-full min-h-0 w-full gap-4 bg-[#FBFEFE] p-4">
+    <>
+      <div className="flex h-full min-h-0 w-full bg-[#FBFEFE] p-4">
       <MeasureEditorSidebar
+        isCollapsed={isSidebarCollapsed}
         footer={
           <MeasureSidebarFooter
+            backHref={exitHref}
             onCancel={cancelCurrentInteraction}
-            onSave={sidebarSaveConfig.onSave}
-            saveDisabled={sidebarSaveConfig.disabled}
-            saveLabel={sidebarSaveConfig.label}
           />
         }
       >
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">Measure editor</p>
-            <p className="text-[15px] font-semibold text-[#1D2433]">{pageLabel}</p>
-            <p className="text-[13px] leading-[1.6] text-[#64748B]">{helperMessage}</p>
-          </div>
-
-          <div className="grid gap-2">
-            <div className="grid grid-cols-2 gap-2">
-              {(["select", "calibrate", "distance", "polyline", "area", "count"] as const).map((mode) => (
-                <Button
-                  key={mode}
-                  type="button"
-                  variant={toolMode === mode ? "orange" : "outline"}
-                  onClick={() => beginToolMode(mode)}
-                  className={`h-10 rounded-[10px] px-3 text-[12px] font-semibold uppercase tracking-[0.08em] ${
-                    toolMode === mode
-                      ? "bg-[#F15A29] text-white hover:bg-[#d94f22]"
-                      : "border-[#D7E0EA] bg-white text-[#475569] hover:bg-[#F8FAFC]"
-                  }`}
-                >
-                  {mode}
-                </Button>
-              ))}
-            </div>
-            <div className="rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569]">Workspace status</span>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#94A3B8]">{draftStatusLabel ?? "Synced"}</span>
-              </div>
-              <p className="mt-1 text-[12px] text-[#64748B]">{workspaceStatusLabel}</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelection({ type: "calibration" });
-              beginToolMode("calibrate");
-            }}
-            className={`w-full rounded-[14px] border px-3 py-3 text-left transition-colors ${
-              selection?.type === "calibration"
-                ? "border-[#F15A29] bg-[#FFF4EE]"
-                : hasUnsavedCalibrationChanges
-                  ? "border-[#FDBA74] bg-[#FFF7ED]"
-                  : "border-[#E2E8F0] bg-[#F8FAFC] hover:bg-white"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[13px] font-semibold text-[#1E293B]">Calibration</span>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]">
-                {hasUnsavedCalibrationChanges ? "Draft" : localActiveCalibration ? "Saved" : "Unset"}
-              </span>
-            </div>
-            <p className="mt-1 text-[12px] text-[#64748B]">
-              {localActiveCalibration
-                ? `${localActiveCalibration.name} • ${localActiveCalibration.reference_length_input} ${localActiveCalibration.display_unit}`
-                : "Place two known points to set the page scale."}
-            </p>
-          </button>
-
-          <div className="space-y-2 rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">Takeoff items</p>
-                <p className="mt-1 text-[13px] text-[#475569]">Canvas and list selection stay in sync.</p>
-              </div>
-              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-[#64748B]">{toolMode}</span>
+        <div className="min-h-full px-4 py-4">
+          <div className="space-y-5">
+            <div className="mb-6">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#334155]">
+                Takeoff
+              </p>
+              <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.02em] text-slate-900">Summary</h1>
             </div>
 
-            <div className="grid gap-2 rounded-[14px] border border-[#E2E8F0] bg-white p-3">
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={filterType}
-                  onChange={(event) => setFilterType(event.target.value as "all" | "distance" | "area" | "count")}
-                  className="h-9 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[12px] text-[#334155] outline-none"
-                >
-                  <option value="all">All types</option>
-                  <option value="distance">Distance / Polyline</option>
-                  <option value="area">Area</option>
-                  <option value="count">Count</option>
-                </select>
-                <select
-                  value={filterTag}
-                  onChange={(event) => setFilterTag(event.target.value)}
-                  className="h-9 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[12px] text-[#334155] outline-none"
-                >
-                  <option value="all">All tags</option>
-                  {availableTags.map((tag) => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={groupBy === "tag" ? "orange" : "outline"}
-                  onClick={() => setGroupBy("tag")}
-                  className={groupBy === "tag" ? "h-9 rounded-[10px] bg-[#F15A29] text-white hover:bg-[#d94f22]" : "h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[#475569] hover:bg-[#F8FAFC]"}
-                >
-                  Group by tag
-                </Button>
-                <Button
-                  type="button"
-                  variant={groupBy === "type" ? "orange" : "outline"}
-                  onClick={() => setGroupBy("type")}
-                  className={groupBy === "type" ? "h-9 rounded-[10px] bg-[#F15A29] text-white hover:bg-[#d94f22]" : "h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[#475569] hover:bg-[#F8FAFC]"}
-                >
-                  Group by type
-                </Button>
-              </div>
-            </div>
-
-            {savedMeasurements.length === 0 ? (
-              <div className="rounded-[14px] border border-dashed border-[#D7E0EA] bg-white px-3 py-3 text-[12px] text-[#64748B]">
-                No saved measurements yet. Choose `Distance`, `Polyline`, `Area`, or `Count` to start authoring on the drawing.
-              </div>
-            ) : filteredMeasurements.length === 0 ? (
-              <div className="rounded-[14px] border border-dashed border-[#D7E0EA] bg-white px-3 py-3 text-[12px] text-[#64748B]">
-                No measurements match the current filters.
-              </div>
-            ) : (
-              groupedMeasurements.map((group) => (
-                <div key={group.key} className="space-y-2">
-                  <div className="rounded-[12px] border border-[#E2E8F0] bg-white px-3 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569]">{group.key}</span>
-                      <span className="text-[11px] text-[#64748B]">{group.measurements.length} item{group.measurements.length === 1 ? "" : "s"}</span>
-                    </div>
-                    <p className="mt-1 text-[12px] text-[#64748B]">{group.totals.join(" • ")}</p>
-                  </div>
-                  {group.measurements.map((measurement) => {
-                    const isHovered =
-                      (hoverState.hitTarget?.type === "measurement-segment" && hoverState.hitTarget.measurementId === measurement.id) ||
-                      (hoverState.hitTarget?.type === "measurement-point" && hoverState.hitTarget.measurementId === measurement.id);
+            <section className="min-w-0 overflow-hidden rounded-[14px] border border-slate-200 bg-white">
+              {savedMeasurements.length > 0 ? (
+                <div className="divide-y divide-slate-100">
+                  {savedMeasurements.map((measurement) => {
+                    const isAppending = appendMeasurementId === measurement.id;
+                    const isSelected = selection?.type === "measurement" && selection.measurementId === measurement.id;
 
                     return (
-                      <button
-                        key={measurement.id}
-                        type="button"
-                        onClick={() => {
-                          setSelection({ type: "measurement", measurementId: measurement.id });
-                          setToolMode("select");
-                        }}
-                        className={`w-full rounded-[14px] border px-3 py-3 text-left transition-colors ${
-                          selection?.type === "measurement" && selection.measurementId === measurement.id
-                            ? "border-[#F15A29] bg-[#FFF4EE]"
-                            : isHovered
-                              ? "border-[#FDBA74] bg-[#FFF7ED]"
-                              : "border-[#E2E8F0] bg-white hover:bg-[#F8FAFC]"
-                        }`}
+                      <div
+                        key={measurement.renderKey}
+                        className={`${
+                          isAppending ? "bg-[#FFF7ED]" : isSelected ? "bg-[#F8FAFC]" : "bg-white"
+                        } transition-colors`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[13px] font-semibold text-[#1E293B]">{measurement.name}</span>
-                          <span className="text-[12px] font-semibold" style={{ color: measurement.color }}>
-                            {measurement.label}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[12px] text-[#64748B]">
-                          {measurement.tag ? `${measurement.tag} • ` : ""}
-                          {selection?.type === "measurement" && selection.measurementId === measurement.id
-                            ? "Selected on canvas"
-                            : measurement.measurementKind === "count"
-                              ? "Click to focus and reposition the count marker."
-                              : measurement.measurementKind === "area"
-                                ? "Click to focus and edit polygon vertices."
-                                : measurement.isPolyline
-                                  ? "Click to focus and edit polyline vertices."
-                                  : "Click to focus and edit endpoints."}
-                        </p>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSummaryMeasurementClick(measurement.id)}
+                          onContextMenu={(event) => handleSummaryMeasurementContextMenu(event, measurement)}
+                          className={`flex w-full items-center justify-between gap-4 px-5 py-[18px] text-left transition-colors ${
+                            isAppending
+                              ? "hover:bg-[#FFEDD5]"
+                              : isSelected
+                                ? "hover:bg-[#F1F5F9]"
+                                : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1 py-0.5">
+                            <div className="flex items-center gap-3">
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: measurement.color }}
+                                aria-label={`${getTakeoffSummaryDescription(measurement)} colour`}
+                                title={measurement.color}
+                              />
+                              <span className={`${ibmPlexSans.className} truncate text-sm font-medium text-slate-800`}>
+                                {getTakeoffSummaryDescription(measurement)}
+                              </span>
+                            </div>
+                            {isAppending ? (
+                              <p className="mt-1.5 pl-[20px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#C2410C]">
+                                Adding
+                              </p>
+                            ) : isSelected ? (
+                              <p className="mt-1.5 pl-[20px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]">
+                                {selectedMeasurementChild?.measurementId === measurement.id ? "Child Selected" : "Selected"}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="min-w-0 shrink-0 py-0.5 text-right">
+                            <p className={`${ibmPlexSans.className} text-sm font-semibold text-slate-900`}>
+                              {measurement.label}
+                            </p>
+                            {measurement.measurementKind === "area" && measurementsShowingPerimeter.has(measurement.id) ? (
+                              <p className="mt-1.5 text-[11px] font-semibold text-[#64748B]">
+                                {getAreaPerimeterLabel(measurement) ?? "Perimeter unavailable"}
+                              </p>
+                            ) : null}
+                          </div>
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
-              ))
-            )}
-
-            {countMeasurements.length > 0 ? (
-              <div className="rounded-[14px] border border-[#DBEAFE] bg-[#EFF6FF] px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#1D4ED8]">Count total</span>
-                  <span className="text-[14px] font-semibold text-[#1E3A8A]">{totalCountValue}</span>
+              ) : (
+                <div className="px-5 py-6 text-center text-sm font-medium text-[#4B5D79]">
+                  No takeoff items saved yet.
                 </div>
-                <p className="mt-1 text-[12px] text-[#475569]">All placed count markers on this sheet.</p>
-              </div>
-            ) : null}
+              )}
+            </section>
           </div>
-
-          <div className="space-y-3 rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-            <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">Measurement space</p>
-              <p className="mt-1 text-[13px] leading-[1.6] text-[#475569]">{effectiveMeasurementReadiness.message}</p>
+          {summaryContextMenu ? (
+            <div
+              className="fixed z-40 min-w-[11rem] rounded-xl border border-[#E2E8F0] bg-white py-1 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+              style={{ left: `${summaryContextMenu.x}px`, top: `${summaryContextMenu.y}px` }}
+              onPointerDown={stopViewerEventPropagation}
+              onClick={stopViewerEventPropagation}
+            >
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+                onClick={() => {
+                  setSummaryMeasurementEdit({
+                    measurementId: summaryContextMenu.measurementId,
+                    x: summaryContextMenu.x + 12,
+                    y: summaryContextMenu.y + 12,
+                    name: summaryContextMenu.measurementName,
+                    colorHex: summaryContextMenu.measurementColor,
+                  });
+                  setSummaryContextMenu(null);
+                }}
+              >
+                Edit
+              </button>
+              {summaryContextMenu.measurementKind === "area" ? (
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+                onClick={() => {
+                  setMeasurementsShowingPerimeter((current) => {
+                    const next = new Set(current);
+                    if (next.has(summaryContextMenu.measurementId)) {
+                      next.delete(summaryContextMenu.measurementId);
+                    } else {
+                      next.add(summaryContextMenu.measurementId);
+                    }
+                    return next;
+                  });
+                  setSummaryContextMenu(null);
+                }}
+              >
+                {measurementsShowingPerimeter.has(summaryContextMenu.measurementId) ? "Hide perimeter" : "Show perimeter"}
+              </button>
+              ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={runUndo} disabled={undoStack.length === 0 || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[#475569] hover:bg-[#F8FAFC]">
-                Undo
-              </Button>
-              <Button type="button" variant="outline" onClick={runRedo} disabled={redoStack.length === 0 || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[#475569] hover:bg-[#F8FAFC]">
-                Redo
-              </Button>
-              <span className="text-[12px] text-[#6B7C93]">{undoStack.length} undo • {redoStack.length} redo</span>
+          ) : null}
+          {summaryMeasurementEdit ? (
+            <div
+              className="fixed z-40 w-[22rem] max-w-[calc(100vw-2rem)] rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+              style={{ left: `${summaryMeasurementEdit.x}px`, top: `${summaryMeasurementEdit.y}px` }}
+              onPointerDown={stopViewerEventPropagation}
+              onClick={stopViewerEventPropagation}
+              onDoubleClick={stopViewerEventPropagation}
+              onWheel={stopViewerEventPropagation}
+            >
+              <div className="space-y-3.5 px-5 pb-4 pt-5">
+                <div>
+                  <p className="text-[14px] font-semibold text-[#0F172A]">Edit measurement</p>
+                  <p className="mt-1 text-[12px] text-[#64748B]">Update the saved name and colour for this takeoff item.</p>
+                </div>
+                <div>
+                  <label htmlFor="summary-measurement-name" className={labelClassName}>
+                    Name <span className="text-[#FF4C14]">*</span>
+                  </label>
+                  <Input
+                    id="summary-measurement-name"
+                    value={summaryMeasurementEdit.name}
+                    disabled={isSummaryMeasurementEditSaving}
+                    onChange={(event) =>
+                      setSummaryMeasurementEdit((current) =>
+                        current
+                          ? {
+                              ...current,
+                              name: event.target.value,
+                            }
+                          : current
+                      )
+                    }
+                    className={inputClassName}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelClassName}>Colour</label>
+                  <MeasurementColorSelector
+                    value={summaryMeasurementEdit.colorHex}
+                    disabled={isSummaryMeasurementEditSaving}
+                    onChange={(hex) => {
+                      setSummaryMeasurementEdit((current) =>
+                        current
+                          ? {
+                              ...current,
+                              colorHex: hex,
+                            }
+                          : current
+                      );
+                    }}
+                    options={measurementColorOptions}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 border-t border-[#E2E8F1] bg-white px-5 py-4">
+                <button
+                  type="button"
+                  disabled={isSummaryMeasurementEditSaving}
+                  onClick={() => setSummaryMeasurementEdit(null)}
+                  className={secondaryButtonClassName}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitSummaryMeasurementEdit}
+                  disabled={!hasSummaryMeasurementEditChanges || isSaving || isSummaryMeasurementEditSaving}
+                  className={primaryButtonClassName}
+                >
+                  {isSummaryMeasurementEditSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
             </div>
-            {actionError ? (
-              <div className="rounded-[12px] border border-[#FECACA] bg-[#FFF1F2] px-3 py-2 text-[12px] text-[#9F1239]">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>{actionError}</span>
-                  {saveFeedback.kind === "error" && saveFeedback.retry ? (
-                    <Button type="button" variant="outline" onClick={saveFeedback.retry} className="h-8 rounded-[8px] border-[#FDA4AF] bg-white px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#9F1239]">
-                      {saveFeedback.retryLabel ?? "Retry"}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {toolMode === "calibrate" ? (
-              <div className="grid gap-2">
-                <input value={calibrationName} onChange={(event) => setCalibrationName(event.target.value)} placeholder="Calibration name" className="h-10 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[13px] text-[#334155] outline-none" />
-                <div className="grid grid-cols-[1fr,110px,110px] gap-2">
-                  <input value={calibrationLengthInput} onChange={(event) => setCalibrationLengthInput(event.target.value)} inputMode="decimal" placeholder="Known length" className="h-10 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[13px] text-[#334155] outline-none" />
-                  <select
-                    value={calibrationDisplayUnit}
-                    onChange={(event) => {
-                      setCalibrationDisplayUnit(event.target.value);
-                      setCalibrationUnitSystem(inferUnitSystem(event.target.value));
-                    }}
-                    className="h-10 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[13px] text-[#334155] outline-none"
-                  >
-                    <option value="mm">mm</option>
-                    <option value="cm">cm</option>
-                    <option value="m">m</option>
-                    <option value="in">in</option>
-                    <option value="ft">ft</option>
-                  </select>
-                  <Button type="button" variant="orange" disabled={calibrationPointsForDisplay.length < 2 || isSaving} onClick={() => submitCalibration(calibrationPointsForDisplay)} className="h-10 rounded-[10px] bg-[#F15A29] text-[12px] font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#d94f22]">
-                    {localActiveCalibration ? "Replace" : "Save"}
-                  </Button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={revertCalibrationDraft} disabled={!hasUnsavedCalibrationChanges || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Revert
-                  </Button>
-                  <Button type="button" variant="outline" onClick={removeLastDraftPoint} disabled={calibrationPointsForDisplay.length === 0 || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Remove point
-                  </Button>
-                </div>
-                <p className="text-[12px] text-[#6B7C93]">Place two points, enter the known length, then save. Drag the anchors to refine the calibration. `Esc` reverts draft changes.</p>
-              </div>
-            ) : null}
-
-            {toolMode === "distance" ? (
-              <div className="grid gap-2">
-                <p className="text-[12px] text-[#6B7C93]">Click two points on the drawing to create a calibrated distance measurement. This draft state is already modeled as a point array so it can expand into polyline/area tools next.</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={removeLastDraftPoint} disabled={draftGeometry.tool !== "distance" || !hasUnsavedMeasurementDraft || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Remove point
-                  </Button>
-                  <Button type="button" variant="outline" onClick={clearMeasurementDraft} disabled={draftGeometry.tool !== "distance" || !hasUnsavedMeasurementDraft || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Clear draft
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {toolMode === "polyline" ? (
-              <div className="grid gap-2">
-                <p className="text-[12px] text-[#6B7C93]">Click to add each segment point. Double-click or press Finish to save the polyline. `Backspace` removes the last draft point.</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={removeLastDraftPoint} disabled={draftGeometry.tool !== "polyline" || !hasUnsavedMeasurementDraft || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Remove point
-                  </Button>
-                  <Button type="button" variant="outline" onClick={clearMeasurementDraft} disabled={draftGeometry.tool !== "polyline" || !hasUnsavedMeasurementDraft || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Clear draft
-                  </Button>
-                  <Button type="button" variant="orange" onClick={() => finishMeasurementDraft("polyline", draftGeometry.points)} disabled={draftGeometry.tool !== "polyline" || draftGeometry.points.length < 2 || isSaving} className="h-9 rounded-[10px] bg-[#F15A29] text-[12px] font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#d94f22]">
-                    Finish
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {toolMode === "area" ? (
-              <div className="grid gap-2">
-                <p className="text-[12px] text-[#6B7C93]">Click to place polygon corners. Finish explicitly or click back near the first anchor to close and save the area.</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={removeLastDraftPoint} disabled={draftGeometry.tool !== "area" || !hasUnsavedMeasurementDraft || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Remove point
-                  </Button>
-                  <Button type="button" variant="outline" onClick={clearMeasurementDraft} disabled={draftGeometry.tool !== "area" || !hasUnsavedMeasurementDraft || isSaving} className="h-9 rounded-[10px] border-[#D7E0EA] bg-white text-[12px] font-semibold uppercase tracking-[0.08em] text-[#475569] hover:bg-[#F8FAFC]">
-                    Clear draft
-                  </Button>
-                  <Button type="button" variant="orange" onClick={() => finishMeasurementDraft("area", draftGeometry.points)} disabled={draftGeometry.tool !== "area" || draftGeometry.points.length < 3 || isSaving} className="h-9 rounded-[10px] bg-[#0F766E] text-[12px] font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#0d6b63]">
-                    Finish
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {toolMode === "count" ? (
-              <div className="grid gap-2">
-                <p className="text-[12px] text-[#6B7C93]">Click anywhere on the drawing to place a count marker. Count markers are stored in document space and can be selected, repositioned, or deleted later.</p>
-              </div>
-            ) : null}
-
-            {selection?.type === "measurement" ? (
-              <div className="grid gap-2">
-                <p className="text-[12px] text-[#6B7C93]">Selected measurement. Drag any visible anchor or marker to update geometry live. Press `Delete` to remove it.</p>
-                <input value={measurementNameInput} onChange={(event) => setMeasurementNameInput(event.target.value)} placeholder="Measurement name" className="h-10 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[13px] text-[#334155] outline-none" />
-                <input value={measurementTagInput} onChange={(event) => setMeasurementTagInput(event.target.value)} placeholder="Tag / category" className="h-10 rounded-[10px] border border-[#D7E0EA] bg-white px-3 text-[13px] text-[#334155] outline-none" />
-                <textarea value={measurementNoteInput} onChange={(event) => setMeasurementNoteInput(event.target.value)} placeholder="Notes" rows={3} className="rounded-[10px] border border-[#D7E0EA] bg-white px-3 py-2 text-[13px] text-[#334155] outline-none" />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="orange"
-                    onClick={() => {
-                      if (selection?.type === "measurement") {
-                        submitMeasurementDetails(selection.measurementId);
-                      }
-                    }}
-                    disabled={!hasUnsavedMeasurementDetailChanges || isSaving || !selectedMeasurement}
-                    className="h-9 rounded-[10px] bg-[#F15A29] text-[12px] font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#d94f22]"
-                  >
-                    Save details
-                  </Button>
-                  <Button type="button" variant="outline" onClick={deleteSelectedMeasurement} disabled={isSaving} className="h-9 rounded-[10px] border-[#FECACA] bg-[#FFF1F2] text-[12px] font-semibold uppercase tracking-[0.08em] text-[#BE123C] hover:bg-[#FFE4E6]">
-                    Delete selected
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#94A3B8]">Shortcuts: `V` select, hold `Space` to pan, `C` calibrate, `D` distance, `P` polyline, `A` area, `N` count, `Esc` cancel/reset</p>
-          </div>
+          ) : null}
         </div>
       </MeasureEditorSidebar>
 
       <MeasureCanvasViewport>
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed((current) => !current)}
+          aria-controls="takeoff-measure-sidebar"
+          aria-expanded={!isSidebarCollapsed}
+          aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="absolute left-0 top-1/2 z-30 inline-flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#CBD5E1] bg-white/94 text-[#334155] shadow-[0_10px_28px_rgba(15,23,42,0.10)] backdrop-blur-sm transition-colors hover:bg-white"
+        >
+          <span className={`inline-flex translate-x-[5px] items-center justify-center ${isSidebarCollapsed ? "rotate-180" : ""}`}>
+            <ArrowLeft className="h-4 w-4 shrink-0 text-[#1E293B]" strokeWidth={2.2} />
+          </span>
+        </button>
         <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#EEF3F8]">
           <div className="relative flex-1 overflow-hidden">
             <div
@@ -3401,9 +5652,12 @@ export function TakeoffPdfViewer({
                 >
                   <canvas
                     ref={canvasRef}
-                    className="absolute inset-0 block h-full w-full select-none rounded-[6px] bg-white shadow-[0_16px_44px_rgba(15,23,42,0.16)]"
+                    className={`absolute inset-0 block h-full w-full select-none rounded-[6px] bg-white shadow-[0_16px_44px_rgba(15,23,42,0.16)] transition-opacity ${
+                      isPdfVisualReady ? "opacity-100" : "opacity-0"
+                    }`}
                   />
 
+                  {isPdfVisualReady ? (
                   <svg
                     className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
                     viewBox={`0 0 ${documentPageSize.width} ${documentPageSize.height}`}
@@ -3457,89 +5711,118 @@ export function TakeoffPdfViewer({
                     ) : null}
 
                     {savedMeasurements.map((measurement) => (
-                      <g key={measurement.id}>
+                      <g key={measurement.renderKey}>
                         {measurement.measurementKind === "count" ? (
-                          measurement.documentPoints[0] ? (
+                          measurement.documentPoints.length > 0 ? (
                             <>
-                              <circle
-                                cx={measurement.documentPoints[0].x}
-                                cy={measurement.documentPoints[0].y}
-                                r={
-                                  selection?.type === "measurement" && selection.measurementId === measurement.id
-                                    ? "10"
-                                    : hoverState.hitTarget?.type === "measurement-point" && hoverState.hitTarget.measurementId === measurement.id
-                                      ? "9"
-                                      : "8"
-                                }
-                                fill={selection?.type === "measurement" && selection.measurementId === measurement.id ? "#1D4ED8" : measurement.color}
-                                stroke="#ffffff"
-                                strokeWidth="2.5"
-                                vectorEffect="non-scaling-stroke"
-                              />
-                              <path
-                                d={`M ${measurement.documentPoints[0].x - 4} ${measurement.documentPoints[0].y} H ${measurement.documentPoints[0].x + 4} M ${measurement.documentPoints[0].x} ${measurement.documentPoints[0].y - 4} V ${measurement.documentPoints[0].y + 4}`}
-                                stroke="#ffffff"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                vectorEffect="non-scaling-stroke"
-                              />
+                              {measurement.documentPoints.map((point, index) => {
+                                const pointId = measurement.countPointIds[index] ?? `${measurement.id}:count:${index}`;
+
+                                return (
+                                  <circle
+                                    key={pointId}
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={
+                                      activeAppendMeasurementId === measurement.id
+                                        ? "11"
+                                        : selection?.type === "measurement" && selection.measurementId === measurement.id
+                                          ? "10"
+                                          : hoverState.hitTarget?.type === "measurement-point" &&
+                                              hoverState.hitTarget.measurementId === measurement.id &&
+                                              hoverState.hitTarget.pointIndex === index
+                                            ? "9"
+                                            : "8"
+                                    }
+                                    fill={
+                                      activeAppendMeasurementId === measurement.id
+                                        ? "#C2410C"
+                                        : selection?.type === "measurement" && selection.measurementId === measurement.id
+                                          ? "#1D4ED8"
+                                          : measurement.color
+                                    }
+                                    stroke="#ffffff"
+                                    strokeWidth="2.5"
+                                    vectorEffect="non-scaling-stroke"
+                                  />
+                                );
+                              })}
                             </>
                           ) : null
                         ) : measurement.measurementKind === "area" ? (
-                          <polygon
-                            points={measurement.path}
-                            fill={selection?.type === "measurement" && selection.measurementId === measurement.id ? "rgba(15,118,110,0.18)" : "rgba(15,118,110,0.12)"}
-                            stroke={
-                              selection?.type === "measurement" && selection.measurementId === measurement.id
-                                ? "#EA580C"
-                                : hoverState.hitTarget?.type === "measurement-segment" && hoverState.hitTarget.measurementId === measurement.id
-                                  ? "#FB923C"
-                                  : measurement.color
-                            }
-                            strokeWidth={selection?.type === "measurement" && selection.measurementId === measurement.id ? "3.25" : "2.75"}
-                            vectorEffect="non-scaling-stroke"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
+                          measurement.areaShapes.map((shape) => (
+                            <polygon
+                              key={shape.id}
+                              points={shape.path}
+                              fill={
+                                activeAppendMeasurementId === measurement.id
+                                  ? hexToRgba(measurement.color, 0.12)
+                                  : isSelectedChildPart(measurement.id, "area-shape", shape.id)
+                                    ? hexToRgba(measurement.color, 0.24)
+                                    : isSelectedMeasurementId(measurement.id)
+                                    ? hexToRgba(measurement.color, 0.18)
+                                    : hexToRgba(measurement.color, 0.12)
+                              }
+                              stroke={
+                                activeAppendMeasurementId === measurement.id
+                                  ? "#C2410C"
+                                  : isSelectedChildPart(measurement.id, "area-shape", shape.id)
+                                    ? "#C2410C"
+                                  : isSelectedMeasurementId(measurement.id)
+                                  ? "#EA580C"
+                                  : isHoveredChildPart(measurement.id, "area-shape", shape.id)
+                                    ? "#FB923C"
+                                    : measurement.color
+                              }
+                              strokeWidth={
+                                activeAppendMeasurementId === measurement.id
+                                  ? "3.25"
+                                  : isSelectedChildPart(measurement.id, "area-shape", shape.id)
+                                    ? "3.5"
+                                  : isSelectedMeasurementId(measurement.id)
+                                    ? "3.25"
+                                    : "2.75"
+                              }
+                              vectorEffect="non-scaling-stroke"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          ))
                         ) : (
-                          <polyline
-                            points={measurement.path}
-                            fill="none"
-                            stroke={
-                              selection?.type === "measurement" && selection.measurementId === measurement.id
-                                ? "#EA580C"
-                                : hoverState.hitTarget?.type === "measurement-segment" && hoverState.hitTarget.measurementId === measurement.id
-                                  ? "#FB923C"
-                                  : measurement.color
-                            }
-                            strokeWidth={selection?.type === "measurement" && selection.measurementId === measurement.id ? "3.25" : "2.75"}
-                            vectorEffect="non-scaling-stroke"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
+                          (measurement.linePaths.length > 0
+                            ? measurement.linePaths
+                            : [{ id: `${measurement.id}:line`, path: measurement.path, documentPoints: measurement.documentPoints }]).map((path) => (
+                            <polyline
+                              key={path.id}
+                              points={path.path}
+                              fill="none"
+                              stroke={
+                                activeAppendMeasurementId === measurement.id
+                                  ? "#C2410C"
+                                  : isSelectedChildPart(measurement.id, "line-path", path.id)
+                                    ? "#C2410C"
+                                  : isSelectedMeasurementId(measurement.id)
+                                  ? "#EA580C"
+                                  : isHoveredChildPart(measurement.id, "line-path", path.id)
+                                    ? "#FB923C"
+                                    : measurement.color
+                              }
+                              strokeWidth={
+                                activeAppendMeasurementId === measurement.id
+                                  ? "4"
+                                  : isSelectedChildPart(measurement.id, "line-path", path.id)
+                                    ? "3.75"
+                                  : isSelectedMeasurementId(measurement.id)
+                                    ? "3.25"
+                                    : "2.75"
+                              }
+                              strokeDasharray={activeAppendMeasurementId === measurement.id ? "10 6" : undefined}
+                              vectorEffect="non-scaling-stroke"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          ))
                         )}
-                        {measurement.measurementKind === "count"
-                          ? null
-                          : measurement.documentPoints.map((point, index) => (
-                              <circle
-                                key={`${measurement.id}-${index}`}
-                                cx={point.x}
-                                cy={point.y}
-                                r={
-                                  hoverState.hitTarget?.type === "measurement-point" &&
-                                  hoverState.hitTarget.measurementId === measurement.id &&
-                                  hoverState.hitTarget.pointIndex === index
-                                    ? "8"
-                                    : selection?.type === "measurement" && selection.measurementId === measurement.id
-                                      ? "7"
-                                      : "6"
-                                }
-                                fill={selection?.type === "measurement" && selection.measurementId === measurement.id ? "#EA580C" : measurement.color}
-                                stroke="#ffffff"
-                                strokeWidth="2"
-                                vectorEffect="non-scaling-stroke"
-                              />
-                            ))}
                       </g>
                     ))}
 
@@ -3548,15 +5831,12 @@ export function TakeoffPdfViewer({
                         <polyline
                           points={distanceDraftPreview.path}
                           fill="none"
-                          stroke="#F15A29"
+                          stroke={distanceDraftPreview.color}
                           strokeWidth="2.5"
                           strokeDasharray="8 6"
                           vectorEffect="non-scaling-stroke"
                           strokeLinecap="round"
                         />
-                        {distanceDraftPreview.points.map((point, index) => (
-                          <circle key={`draft-distance-${index}`} cx={point.x} cy={point.y} r="5.5" fill="#F15A29" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                        ))}
                       </g>
                     ) : null}
 
@@ -3565,25 +5845,13 @@ export function TakeoffPdfViewer({
                         <polyline
                           points={polylineDraftPreview.path}
                           fill="none"
-                          stroke="#F15A29"
+                          stroke={polylineDraftPreview.color}
                           strokeWidth="2.5"
                           strokeDasharray="8 6"
                           vectorEffect="non-scaling-stroke"
                           strokeLinecap="round"
                           strokeLinejoin="round"
                         />
-                        {polylineDraftPreview.points.map((point, index) => (
-                          <circle
-                            key={`draft-polyline-${index}`}
-                            cx={point.x}
-                            cy={point.y}
-                            r={index === polylineDraftPreview.points.length - 1 && hoverState.documentPoint ? "5" : "5.5"}
-                            fill="#F15A29"
-                            stroke="#ffffff"
-                            strokeWidth="2"
-                            vectorEffect="non-scaling-stroke"
-                          />
-                        ))}
                       </g>
                     ) : null}
 
@@ -3592,39 +5860,20 @@ export function TakeoffPdfViewer({
                         {areaDraftPreview.points.length >= 2 ? (
                           <polygon
                             points={areaDraftPreview.path}
-                            fill="rgba(15,118,110,0.12)"
-                            stroke="#0F766E"
+                            fill={hexToRgba(areaDraftPreview.color, 0.12)}
+                            stroke={areaDraftPreview.color}
                             strokeWidth="2.5"
                             strokeDasharray="8 6"
                             vectorEffect="non-scaling-stroke"
                             strokeLinejoin="round"
                           />
                         ) : null}
-                        {areaDraftPreview.points.map((point, index) => (
-                          <circle
-                            key={`draft-area-${index}`}
-                            cx={point.x}
-                            cy={point.y}
-                            r={index === 0 && areaDraftPreview.canFinish ? "7" : "5.5"}
-                            fill={index === 0 && areaDraftPreview.canFinish ? "#0F766E" : "#14B8A6"}
-                            stroke="#ffffff"
-                            strokeWidth="2"
-                            vectorEffect="non-scaling-stroke"
-                          />
-                        ))}
                       </g>
                     ) : null}
 
                     {countDraftPreview ? (
                       <g>
-                        <circle cx={countDraftPreview.point.x} cy={countDraftPreview.point.y} r="8" fill={DEFAULT_COUNT_COLOR} fillOpacity="0.88" stroke="#ffffff" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-                        <path
-                          d={`M ${countDraftPreview.point.x - 4} ${countDraftPreview.point.y} H ${countDraftPreview.point.x + 4} M ${countDraftPreview.point.x} ${countDraftPreview.point.y - 4} V ${countDraftPreview.point.y + 4}`}
-                          stroke="#ffffff"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          vectorEffect="non-scaling-stroke"
-                        />
+                        <circle cx={countDraftPreview.point.x} cy={countDraftPreview.point.y} r="8" fill={countDraftPreview.color} fillOpacity="0.88" stroke="#ffffff" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
                       </g>
                     ) : null}
 
@@ -3665,7 +5914,9 @@ export function TakeoffPdfViewer({
                       </g>
                     ) : null}
                   </svg>
+                  ) : null}
 
+                  {isPdfVisualReady ? (
                   <div className="pointer-events-none absolute inset-0">
                     {calibrationPointsForDisplay.length >= 2 ? (
                       (() => {
@@ -3696,23 +5947,26 @@ export function TakeoffPdfViewer({
                       }
 
                       const labelPoint = transform.documentPointToCommittedStagePoint(measurement.labelAnchor);
-                      const isSelected = selection?.type === "measurement" && selection.measurementId === measurement.id;
+                      const isAppendTarget = activeAppendMeasurementId === measurement.id;
+                      const isSelected = isAppendTarget || (selection?.type === "measurement" && selection.measurementId === measurement.id);
                       const isHovered =
                         (hoverState.hitTarget?.type === "measurement-segment" && hoverState.hitTarget.measurementId === measurement.id) ||
                         (hoverState.hitTarget?.type === "measurement-point" && hoverState.hitTarget.measurementId === measurement.id);
 
                       return (
                         <div
-                          key={`${measurement.id}-label`}
+                          key={`${measurement.renderKey}-label`}
                           className={`absolute max-w-[15rem] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-[0_8px_20px_rgba(15,23,42,0.12)] backdrop-blur-sm ${
-                            isSelected
+                            isAppendTarget
+                              ? "border-[#FDBA74] bg-[#FFF7ED]"
+                              : isSelected
                               ? "border-[#FED7AA] bg-[#FFF7ED]"
                               : isHovered
                                 ? "border-[#FDE68A] bg-[#FFFBEB]"
                                 : "border-white/85 bg-white/96"
                           }`}
                           style={{
-                            color: isSelected ? "#C2410C" : isHovered ? "#92400E" : "#334155",
+                            color: isAppendTarget ? "#C2410C" : isSelected ? "#C2410C" : isHovered ? "#92400E" : "#334155",
                             left: `${labelPoint.x}px`,
                             top: `${labelPoint.y + getMeasurementLabelTopOffset({
                               isSelected,
@@ -3721,7 +5975,7 @@ export function TakeoffPdfViewer({
                             })}px`,
                           }}
                         >
-                          {measurement.name} • {measurement.label}
+                          {isAppendTarget ? "Adding • " : ""}{measurement.name} • {measurement.label}
                         </div>
                       );
                     })}
@@ -3786,10 +6040,17 @@ export function TakeoffPdfViewer({
                           ? "Close shape"
                           : hoverState.snapCandidate.kind === "vertex"
                             ? "Snap vertex"
-                            : "Snap edge"}
+                          : "Snap edge"}
+                      </div>
+                    ) : null}
+
+                    {activeAppendMeasurementId ? (
+                      <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full border border-[#FDBA74] bg-[#FFF7ED]/96 px-3 py-1.5 text-[11px] font-semibold text-[#C2410C] shadow-[0_8px_20px_rgba(15,23,42,0.10)] backdrop-blur-sm">
+                        {helperMessage}
                       </div>
                     ) : null}
                   </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -3833,12 +6094,13 @@ export function TakeoffPdfViewer({
                 <MeasureBottomToolbar
                   activeTool={toolMode}
                   disabledTools={{
+                    calibrate: Boolean(localActiveCalibration),
                     distance: !effectiveMeasurementReadiness.canCreateLine,
                     polyline: !effectiveMeasurementReadiness.canCreateLine,
                     area: !effectiveMeasurementReadiness.canCreateArea,
                     count: !effectiveMeasurementReadiness.canCreateCount,
                   }}
-                  onSelectTool={beginToolMode}
+                  onSelectTool={handleToolbarToolSelect}
                 />
               </div>
 
@@ -3850,34 +6112,87 @@ export function TakeoffPdfViewer({
                 onDoubleClick={stopViewerEventPropagation}
                 onWheel={stopViewerEventPropagation}
               >
-                <button
-                  type="button"
-                  onClick={() => zoomByStep(-1)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D7E0EA] bg-white text-[18px] font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC]"
-                  aria-label="Zoom out"
-                >
-                  -
-                </button>
-                <button
-                  type="button"
-                  onClick={resetView}
-                  className="inline-flex h-9 items-center justify-center rounded-full border border-[#D7E0EA] bg-white px-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#334155] transition-colors hover:bg-[#F8FAFC]"
-                >
-                  Fit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => zoomByStep(1)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D7E0EA] bg-white text-[18px] font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC]"
-                  aria-label="Zoom in"
-                >
-                  +
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => zoomByStep(-1)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D7E0EA] bg-white text-[18px] font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+                    aria-label="Zoom out"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => zoomByStep(1)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D7E0EA] bg-white text-[18px] font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+                    aria-label="Zoom in"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="px-1">
+                  <div className="h-5 w-px rounded-full bg-[#E2E8F1]" aria-hidden="true" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previousPageId) {
+                        onPageChange(previousPageId);
+                      }
+                    }}
+                    disabled={!previousPageId}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-[#334155] transition-colors ${
+                      previousPageId
+                        ? "border-[#D7E0EA] bg-white hover:bg-[#F8FAFC]"
+                        : "border-[#E2E8F1] bg-white text-[#94A3B8]"
+                    }`}
+                    aria-label="Previous page"
+                  >
+                    <ArrowLeft className="h-4 w-4" strokeWidth={2.2} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (nextPageId) {
+                        onPageChange(nextPageId);
+                      }
+                    }}
+                    disabled={!nextPageId}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-[#334155] transition-colors ${
+                      nextPageId
+                        ? "border-[#D7E0EA] bg-white hover:bg-[#F8FAFC]"
+                        : "border-[#E2E8F1] bg-white text-[#94A3B8]"
+                    }`}
+                    aria-label="Next page"
+                  >
+                    <ArrowRight className="h-4 w-4" strokeWidth={2.2} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
+        <div
+          className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-4"
+          style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
+          onPointerDown={stopViewerEventPropagation}
+          onClick={stopViewerEventPropagation}
+          onDoubleClick={stopViewerEventPropagation}
+          onWheel={stopViewerEventPropagation}
+        >
+          <div className="pointer-events-auto w-full max-w-[400px]">
+            <TakeoffMeasureToolDialog
+              open={isToolDialogOpen}
+              tool={activeSetupTool}
+              initialValues={toolSetup}
+              onOpenChange={handleToolDialogOpenChange}
+              onConfirm={handleToolSetupConfirm}
+            />
+          </div>
+        </div>
       </MeasureCanvasViewport>
-    </div>
+      </div>
+    </>
   );
 }

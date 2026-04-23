@@ -189,37 +189,39 @@ export function OpportunityWorkspaceShell({
           <div className={leadsShellTabRowClassName} style={{ borderBottomColor: leadsPageSurfaceTheme.border }}>
             <nav className="overflow-x-auto">
               <div className="flex min-w-max items-center gap-8">
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.label}
-                      href={item.href}
-                      prefetch
-                      className={`${leadsShellTabClassName} ${
-                        item.active
-                          ? "border-b-2 text-[#F15A29]"
-                          : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
-                      }`}
-                      style={
-                        item.active
-                          ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
-                          : undefined
-                      }
-                    >
-                      <Icon
-                        strokeWidth={2.2}
-                        className={`h-4 w-4 shrink-0 ${item.active ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
-                      />
-                      <span
-                        className="whitespace-nowrap"
-                        style={item.active ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
+                {navItems
+                  .filter((item) => item.label !== "Quotation")
+                  .map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.label}
+                        href={item.href}
+                        prefetch
+                        className={`${leadsShellTabClassName} ${
+                          item.active
+                            ? "border-b-2 text-[#F15A29]"
+                            : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
+                        }`}
+                        style={
+                          item.active
+                            ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
+                            : undefined
+                        }
                       >
-                        {item.label}
-                      </span>
-                    </Link>
-                  );
-                })}
+                        <Icon
+                          strokeWidth={2.2}
+                          className={`h-4 w-4 shrink-0 ${item.active ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
+                        />
+                        <span
+                          className="whitespace-nowrap"
+                          style={item.active ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
+                        >
+                          {item.label}
+                        </span>
+                      </Link>
+                    );
+                  })}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -275,6 +277,39 @@ export function OpportunityWorkspaceShell({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                {navItems
+                  .filter((item) => item.label === "Quotation")
+                  .map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.label}
+                        href={item.href}
+                        prefetch
+                        className={`${leadsShellTabClassName} ${
+                          item.active
+                            ? "border-b-2 text-[#F15A29]"
+                            : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
+                        }`}
+                        style={
+                          item.active
+                            ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
+                            : undefined
+                        }
+                      >
+                        <Icon
+                          strokeWidth={2.2}
+                          className={`h-4 w-4 shrink-0 ${item.active ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
+                        />
+                        <span
+                          className="whitespace-nowrap"
+                          style={item.active ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
+                        >
+                          {item.label}
+                        </span>
+                      </Link>
+                    );
+                  })}
               </div>
             </nav>
           </div>

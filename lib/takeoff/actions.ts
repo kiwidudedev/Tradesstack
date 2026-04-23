@@ -1,9 +1,14 @@
 import {
+  appendAreaShapeToMeasurementForOpportunity,
+  appendCountItemToMeasurementForOpportunity,
+  appendLinePathToMeasurementForOpportunity,
   createAreaTakeoffMeasurementForOpportunityPage,
   createCountTakeoffMeasurementForOpportunityPage,
   createLineTakeoffMeasurementForOpportunityPage,
+  deleteTakeoffMeasurementChildForOpportunity,
   saveTakeoffCalibrationForOpportunityPage,
   setActiveTakeoffCalibrationForOpportunityPage,
+  updateTakeoffMeasurementChildGeometryForOpportunity,
   updateTakeoffMeasurementDetailsForOpportunity,
   updateTakeoffMeasurementGeometryForOpportunity,
   updateTakeoffMeasurementStatusForOpportunity,
@@ -259,6 +264,218 @@ export function createTakeoffPageActions(opportunityId: string) {
     }
   }
 
+  async function updateAreaShapeGeometryAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof updateTakeoffMeasurementChildGeometryForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+    const childId = String(formData.get("childId") ?? "").trim();
+
+    try {
+      const measurement = await updateTakeoffMeasurementChildGeometryForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        childId,
+        childKind: "area-shape",
+        points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 3),
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to update area child geometry.",
+      };
+    }
+  }
+
+  async function updateLinePathGeometryAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof updateTakeoffMeasurementChildGeometryForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+    const childId = String(formData.get("childId") ?? "").trim();
+
+    try {
+      const measurement = await updateTakeoffMeasurementChildGeometryForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        childId,
+        childKind: "line-path",
+        points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 2),
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to update polyline child geometry.",
+      };
+    }
+  }
+
+  async function appendAreaShapeMeasurementAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof appendAreaShapeToMeasurementForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+
+    try {
+      const measurement = await appendAreaShapeToMeasurementForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 3),
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to add area shape.",
+      };
+    }
+  }
+
+  async function deleteAreaShapeMeasurementAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof deleteTakeoffMeasurementChildForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+    const childId = String(formData.get("childId") ?? "").trim();
+
+    try {
+      const measurement = await deleteTakeoffMeasurementChildForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        childId,
+        childKind: "area-shape",
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to delete area child.",
+      };
+    }
+  }
+
+  async function appendCountItemMeasurementAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof appendCountItemToMeasurementForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+
+    try {
+      const measurement = await appendCountItemToMeasurementForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 1),
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to add count item.",
+      };
+    }
+  }
+
+  async function deleteCountItemMeasurementAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof deleteTakeoffMeasurementChildForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+    const childId = String(formData.get("childId") ?? "").trim();
+
+    try {
+      const measurement = await deleteTakeoffMeasurementChildForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        childId,
+        childKind: "count-item",
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to delete count child.",
+      };
+    }
+  }
+
+  async function appendLinePathMeasurementAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof appendLinePathToMeasurementForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+
+    try {
+      const measurement = await appendLinePathToMeasurementForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 2),
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to add polyline path.",
+      };
+    }
+  }
+
+  async function deleteLinePathMeasurementAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof deleteTakeoffMeasurementChildForOpportunity>>>> {
+    "use server";
+
+    const measurementId = String(formData.get("measurementId") ?? "").trim();
+    const childId = String(formData.get("childId") ?? "").trim();
+
+    try {
+      const measurement = await deleteTakeoffMeasurementChildForOpportunity({
+        opportunitySlug: opportunityId,
+        measurementId,
+        childId,
+        childKind: "line-path",
+      });
+      return {
+        ok: true,
+        data: measurement,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to delete polyline child.",
+      };
+    }
+  }
+
   async function updateMeasurementDetailsAction(
     formData: FormData
   ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof updateTakeoffMeasurementDetailsForOpportunity>>>> {
@@ -273,6 +490,7 @@ export function createTakeoffPageActions(opportunityId: string) {
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
         tag: String(formData.get("tag") ?? ""),
+        colorHex: formData.has("colorHex") ? String(formData.get("colorHex") ?? "") : undefined,
       });
       return {
         ok: true,
@@ -292,6 +510,14 @@ export function createTakeoffPageActions(opportunityId: string) {
     createLineMeasurementAction,
     createAreaMeasurementAction,
     createCountMeasurementAction,
+    appendAreaShapeMeasurementAction,
+    deleteAreaShapeMeasurementAction,
+    appendCountItemMeasurementAction,
+    deleteCountItemMeasurementAction,
+    appendLinePathMeasurementAction,
+    deleteLinePathMeasurementAction,
+    updateAreaShapeGeometryAction,
+    updateLinePathGeometryAction,
     updateMeasurementDetailsAction,
     updateMeasurementGeometryAction,
     updateMeasurementStatusAction,

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ibmPlexSans } from "@/lib/fonts";
+import { leadsCompactTitleClassName } from "@/components/app/LeadsPagePrimitives";
 import type { ClientRow } from "./client-detail-data";
 import { formatDate } from "./client-detail-data";
 import styles from "./client-detail.module.css";
@@ -69,7 +70,7 @@ export function ClientDetailHeader({
             <span className={styles.heroAvatar}>{clientInitials || "CL"}</span>
             <div className={styles.heroIdentityText}>
               <div className={styles.heroTopline}>
-                <h1 className={`${ibmPlexSans.className} truncate text-[1.7rem] font-bold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+                <h1 className={`${ibmPlexSans.className} ${leadsCompactTitleClassName}`}>
                   {displayName}
                 </h1>
                 <span className={isActive ? styles.statusPillActive : styles.statusPillInactive}>{isActive ? "Active" : "Inactive"}</span>

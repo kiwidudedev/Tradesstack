@@ -864,6 +864,7 @@ export interface Database {
           count_value: number | null;
           measured_length_base: number | null;
           measured_area_base: number | null;
+          measured_perimeter_base: number | null;
           display_value: number | null;
           display_unit: string | null;
           page_bbox_min_x: number | null;
@@ -902,6 +903,7 @@ export interface Database {
           count_value?: number | null;
           measured_length_base?: number | null;
           measured_area_base?: number | null;
+          measured_perimeter_base?: number | null;
           display_value?: number | null;
           display_unit?: string | null;
           page_bbox_min_x?: number | null;
@@ -940,6 +942,7 @@ export interface Database {
           count_value?: number | null;
           measured_length_base?: number | null;
           measured_area_base?: number | null;
+          measured_perimeter_base?: number | null;
           display_value?: number | null;
           display_unit?: string | null;
           page_bbox_min_x?: number | null;
@@ -984,6 +987,153 @@ export interface Database {
           id?: string;
           organization_id?: string;
           measurement_id?: string;
+          point_order?: number;
+          x?: number;
+          y?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      takeoff_measurement_area_shapes: {
+        Row: {
+          id: string;
+          organization_id: string;
+          measurement_id: string;
+          shape_order: number;
+          measured_area_base: number;
+          measured_perimeter_base: number;
+          page_bbox_min_x: number | null;
+          page_bbox_min_y: number | null;
+          page_bbox_max_x: number | null;
+          page_bbox_max_y: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          measurement_id: string;
+          shape_order?: number;
+          measured_area_base: number;
+          measured_perimeter_base: number;
+          page_bbox_min_x?: number | null;
+          page_bbox_min_y?: number | null;
+          page_bbox_max_x?: number | null;
+          page_bbox_max_y?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          measurement_id?: string;
+          shape_order?: number;
+          measured_area_base?: number;
+          measured_perimeter_base?: number;
+          page_bbox_min_x?: number | null;
+          page_bbox_min_y?: number | null;
+          page_bbox_max_x?: number | null;
+          page_bbox_max_y?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      takeoff_measurement_area_shape_points: {
+        Row: {
+          id: string;
+          organization_id: string;
+          area_shape_id: string;
+          point_order: number;
+          x: number;
+          y: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          area_shape_id: string;
+          point_order: number;
+          x: number;
+          y: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          area_shape_id?: string;
+          point_order?: number;
+          x?: number;
+          y?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      takeoff_measurement_line_paths: {
+        Row: {
+          id: string;
+          organization_id: string;
+          measurement_id: string;
+          path_order: number;
+          measured_length_base: number;
+          page_bbox_min_x: number | null;
+          page_bbox_min_y: number | null;
+          page_bbox_max_x: number | null;
+          page_bbox_max_y: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          measurement_id: string;
+          path_order?: number;
+          measured_length_base: number;
+          page_bbox_min_x?: number | null;
+          page_bbox_min_y?: number | null;
+          page_bbox_max_x?: number | null;
+          page_bbox_max_y?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          measurement_id?: string;
+          path_order?: number;
+          measured_length_base?: number;
+          page_bbox_min_x?: number | null;
+          page_bbox_min_y?: number | null;
+          page_bbox_max_x?: number | null;
+          page_bbox_max_y?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      takeoff_measurement_line_path_points: {
+        Row: {
+          id: string;
+          organization_id: string;
+          line_path_id: string;
+          point_order: number;
+          x: number;
+          y: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          line_path_id: string;
+          point_order: number;
+          x: number;
+          y: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          line_path_id?: string;
           point_order?: number;
           x?: number;
           y?: number;

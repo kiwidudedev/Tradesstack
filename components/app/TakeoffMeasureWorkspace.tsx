@@ -16,6 +16,47 @@ interface TakeoffMeasurementPoint {
   y: number;
 }
 
+interface TakeoffAreaShapePoint {
+  id: string;
+  area_shape_id: string;
+  point_order: number;
+  x: number;
+  y: number;
+}
+
+interface TakeoffAreaShape {
+  id: string;
+  measurement_id: string;
+  shape_order: number;
+  measured_area_base: number;
+  measured_perimeter_base?: number;
+  page_bbox_min_x: number | null;
+  page_bbox_min_y: number | null;
+  page_bbox_max_x: number | null;
+  page_bbox_max_y: number | null;
+  points: TakeoffAreaShapePoint[];
+}
+
+interface TakeoffLinePathPoint {
+  id: string;
+  line_path_id: string;
+  point_order: number;
+  x: number;
+  y: number;
+}
+
+interface TakeoffLinePath {
+  id: string;
+  measurement_id: string;
+  path_order: number;
+  measured_length_base: number;
+  page_bbox_min_x: number | null;
+  page_bbox_min_y: number | null;
+  page_bbox_max_x: number | null;
+  page_bbox_max_y: number | null;
+  points: TakeoffLinePathPoint[];
+}
+
 interface TakeoffMeasurement {
   id: string;
   measurement_kind: "line" | "area" | "count";
@@ -26,21 +67,16 @@ interface TakeoffMeasurement {
   display_value: number | null;
   display_unit: string | null;
   count_value: number | null;
+  measured_perimeter_base?: number | null;
   metadata?: Record<string, unknown> | null;
   points: TakeoffMeasurementPoint[];
-}
-
-interface TakeoffMeasurementReadiness {
-  pageId: string;
-  activeCalibrationId: string | null;
-  canCreateLine: boolean;
-  canCreateArea: boolean;
-  canCreateCount: boolean;
-  message: string;
+  area_shapes: TakeoffAreaShape[];
+  line_paths: TakeoffLinePath[];
 }
 
 interface TakeoffCalibration {
   id: string;
+  base_unit: string;
   name: string;
   display_unit: string;
   reference_length_input: number;
@@ -52,6 +88,7 @@ interface TakeoffCalibration {
 
 interface TakeoffMeasureWorkspaceProps {
   opportunityId: string;
+  title: string;
   drawingSetId: string;
   initialViewerData: TakeoffMeasureViewerData;
   saveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration>>;
@@ -59,6 +96,14 @@ interface TakeoffMeasureWorkspaceProps {
   createLineMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createAreaMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createCountMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  appendAreaShapeMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  deleteAreaShapeMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  appendCountItemMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  deleteCountItemMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  appendLinePathMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  deleteLinePathMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  updateAreaShapeGeometryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
+  updateLinePathGeometryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   updateMeasurementDetailsAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   updateMeasurementGeometryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   updateMeasurementStatusAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
@@ -68,81 +113,6 @@ interface MeasurePageResponse {
   ok: boolean;
   data?: TakeoffMeasurePageData;
   error?: string;
-}
-
-function areMeasurementListsEqual(left: TakeoffMeasurement[], right: TakeoffMeasurement[]) {
-  if (left === right) {
-    return true;
-  }
-
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((measurement, index) => {
-    const nextMeasurement = right[index];
-    if (!nextMeasurement) {
-      return false;
-    }
-
-    if (
-      measurement.id !== nextMeasurement.id ||
-      measurement.status !== nextMeasurement.status ||
-      measurement.name !== nextMeasurement.name ||
-      measurement.description !== nextMeasurement.description ||
-      measurement.color_hex !== nextMeasurement.color_hex ||
-      measurement.display_value !== nextMeasurement.display_value ||
-      measurement.display_unit !== nextMeasurement.display_unit ||
-      measurement.count_value !== nextMeasurement.count_value ||
-      JSON.stringify(measurement.metadata ?? null) !== JSON.stringify(nextMeasurement.metadata ?? null) ||
-      measurement.points.length !== nextMeasurement.points.length
-    ) {
-      return false;
-    }
-
-    return measurement.points.every((point, pointIndex) => {
-      const nextPoint = nextMeasurement.points[pointIndex];
-      return Boolean(
-        nextPoint &&
-        point.id === nextPoint.id &&
-        point.point_order === nextPoint.point_order &&
-        point.x === nextPoint.x &&
-        point.y === nextPoint.y
-      );
-    });
-  });
-}
-
-function isReadinessEqual(left: TakeoffMeasurementReadiness, right: TakeoffMeasurementReadiness) {
-  return (
-    left.pageId === right.pageId &&
-    left.activeCalibrationId === right.activeCalibrationId &&
-    left.canCreateLine === right.canCreateLine &&
-    left.canCreateArea === right.canCreateArea &&
-    left.canCreateCount === right.canCreateCount &&
-    left.message === right.message
-  );
-}
-
-function isCalibrationEqual(left: TakeoffCalibration | null, right: TakeoffCalibration | null) {
-  if (left === right) {
-    return true;
-  }
-
-  if (!left || !right) {
-    return false;
-  }
-
-  return (
-    left.id === right.id &&
-    left.name === right.name &&
-    left.display_unit === right.display_unit &&
-    left.reference_length_input === right.reference_length_input &&
-    left.point_a_x === right.point_a_x &&
-    left.point_a_y === right.point_a_y &&
-    left.point_b_x === right.point_b_x &&
-    left.point_b_y === right.point_b_y
-  );
 }
 
 function MeasureWorkspaceStatus(params: {
@@ -173,6 +143,7 @@ function MeasureWorkspaceStatus(params: {
 export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
   const {
     opportunityId,
+    title,
     drawingSetId,
     initialViewerData,
     saveCalibrationAction,
@@ -180,17 +151,28 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
     createLineMeasurementAction,
     createAreaMeasurementAction,
     createCountMeasurementAction,
+    appendAreaShapeMeasurementAction,
+    deleteAreaShapeMeasurementAction,
+    appendCountItemMeasurementAction,
+    deleteCountItemMeasurementAction,
+    appendLinePathMeasurementAction,
+    deleteLinePathMeasurementAction,
+    updateAreaShapeGeometryAction,
+    updateLinePathGeometryAction,
     updateMeasurementDetailsAction,
     updateMeasurementGeometryAction,
     updateMeasurementStatusAction,
   } = props;
 
   const pdfUrlRef = useRef(initialViewerData.pdfUrl);
+  const activeClientPageIdRef = useRef(initialViewerData.pageId);
   const serverPayloadRef = useRef<{
     drawingSetId: string;
     pageId: string;
   } | null>(null);
   const cacheRef = useRef(new Map<string, TakeoffMeasurePageData>());
+  const deletedMeasurementIdsRef = useRef<Record<string, Set<string>>>({});
+  const inFlightRequestsRef = useRef(new Map<string, Promise<TakeoffMeasurePageData>>());
   const requestIdRef = useRef(0);
   const [viewerData, setViewerData] = useState<TakeoffMeasureViewerData>(initialViewerData);
   const [isPageLoading, setIsPageLoading] = useState(false);
@@ -203,6 +185,25 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
         pageId: viewerData.pageId,
       }),
     [drawingSetId, opportunityId, viewerData.pageId]
+  );
+  const quantitiesHref = useMemo(
+    () =>
+      buildTakeoffHref(opportunityId, "quantities", {
+        drawingSetId,
+        pageId: viewerData.pageId,
+      }),
+    [drawingSetId, opportunityId, viewerData.pageId]
+  );
+  const filterDeletedMeasurements = useCallback(
+    (pageId: string, measurements: TakeoffMeasurePageData["measurements"]) => {
+      const deletedIds = deletedMeasurementIdsRef.current[pageId];
+      if (!deletedIds || deletedIds.size === 0) {
+        return measurements;
+      }
+
+      return measurements.filter((measurement) => !deletedIds.has(measurement.id));
+    },
+    []
   );
 
   const syncHistory = useCallback(
@@ -242,6 +243,37 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
     [drawingSetId, opportunityId]
   );
 
+  const getOrFetchPageData = useCallback(
+    (pageId: string) => {
+      const cached = cacheRef.current.get(pageId);
+      if (cached) {
+        return Promise.resolve(cached);
+      }
+
+      const inFlightRequest = inFlightRequestsRef.current.get(pageId);
+      if (inFlightRequest) {
+        return inFlightRequest;
+      }
+
+      const request = fetchPageData(pageId)
+        .then((pageData) => {
+          const filteredPageData = {
+            ...pageData,
+            measurements: filterDeletedMeasurements(pageId, pageData.measurements),
+          };
+          cacheRef.current.set(pageId, filteredPageData);
+          return filteredPageData;
+        })
+        .finally(() => {
+          inFlightRequestsRef.current.delete(pageId);
+        });
+
+      inFlightRequestsRef.current.set(pageId, request);
+      return request;
+    },
+    [fetchPageData]
+  );
+
   const primePage = useCallback(
     async (pageId: string | null) => {
       if (!pageId || cacheRef.current.has(pageId)) {
@@ -249,68 +281,134 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
       }
 
       try {
-        const data = await fetchPageData(pageId);
-        cacheRef.current.set(pageId, data);
+        await getOrFetchPageData(pageId);
       } catch {
         // Ignore background preload failures. Explicit navigation handles errors visibly.
       }
     },
-    [fetchPageData]
+    [getOrFetchPageData]
   );
 
   const applyPageData = useCallback((pageData: TakeoffMeasurePageData) => {
-    cacheRef.current.set(pageData.pageId, pageData);
-    setViewerData((current) => ({
+    activeClientPageIdRef.current = pageData.pageId;
+    const filteredPageData = {
       ...pageData,
+      measurements: filterDeletedMeasurements(pageData.pageId, pageData.measurements),
+    };
+    cacheRef.current.set(pageData.pageId, filteredPageData);
+    setViewerData((current) => ({
+      ...filteredPageData,
       pdfUrl: current.pdfUrl ?? pdfUrlRef.current,
     }));
-  }, []);
+  }, [filterDeletedMeasurements]);
 
-  const handlePageDataChange = useCallback((pageData: {
-    pageId: string;
-    measurements: TakeoffMeasurement[];
-    measurementReadiness: TakeoffMeasurementReadiness;
-    activeCalibration: TakeoffCalibration | null;
-  }) => {
-    setViewerData((current) => {
-      if (current.pageId !== pageData.pageId) {
-        return current;
+  const applyCalibrationReadiness = useCallback(
+    (
+      readiness: TakeoffMeasurePageData["measurementReadiness"],
+      calibration: TakeoffMeasurePageData["activeCalibration"]
+    ) => {
+      if (!calibration) {
+        return {
+          ...readiness,
+          activeCalibrationId: null,
+          canCreateLine: false,
+          canCreateArea: false,
+          canCreateCount: true,
+          message: "Set an active calibration before creating manual line or area measurements. Count measurements are ready now.",
+        };
       }
 
-      const nextPageData: TakeoffMeasurePageData = {
-        pageId: current.pageId,
-        pageNumber: current.pageNumber,
-        pageLabel: current.pageLabel,
-        pageWidthPts: current.pageWidthPts,
-        pageHeightPts: current.pageHeightPts,
-        rotationDegrees: current.rotationDegrees,
-        pageIndex: current.pageIndex,
-        totalPages: current.totalPages,
-        previousPageId: current.previousPageId,
-        nextPageId: current.nextPageId,
-        measurements: pageData.measurements,
-        measurementReadiness: pageData.measurementReadiness,
-        activeCalibration: pageData.activeCalibration,
+      return {
+        ...readiness,
+        activeCalibrationId: calibration.id,
+        canCreateLine: true,
+        canCreateArea: true,
+        canCreateCount: true,
+        message: "This page is ready for manual line, area, and count measurements.",
       };
+    },
+    []
+  );
 
-      cacheRef.current.set(pageData.pageId, nextPageData);
+  const patchCachedMeasurement = useCallback((pageId: string, measurement: TakeoffMeasureViewerData["measurements"][number]) => {
+    const deletedIds =
+      deletedMeasurementIdsRef.current[pageId] ??
+      (deletedMeasurementIdsRef.current[pageId] = new Set<string>());
+    if (measurement.status === "deleted") {
+      deletedIds.add(measurement.id);
+    } else {
+      deletedIds.delete(measurement.id);
+      if (deletedIds.size === 0) {
+        delete deletedMeasurementIdsRef.current[pageId];
+      }
+    }
 
-      if (
-        areMeasurementListsEqual(current.measurements, pageData.measurements) &&
-        isReadinessEqual(current.measurementReadiness, pageData.measurementReadiness) &&
-        isCalibrationEqual(current.activeCalibration, pageData.activeCalibration)
-      ) {
+    const cachedPage = cacheRef.current.get(pageId);
+    const patchMeasurements = (currentMeasurements: TakeoffMeasureViewerData["measurements"]) => {
+      const nextMeasurement = measurement as (typeof currentMeasurements)[number];
+      const existingIndex = currentMeasurements.findIndex((currentMeasurement) => currentMeasurement.id === measurement.id);
+
+      if (measurement.status === "deleted") {
+        if (existingIndex < 0) {
+          return currentMeasurements;
+        }
+
+        return currentMeasurements.filter((currentMeasurement) => currentMeasurement.id !== measurement.id);
+      }
+
+      if (existingIndex < 0) {
+        return [...currentMeasurements, nextMeasurement];
+      }
+
+      const nextMeasurements = [...currentMeasurements];
+      nextMeasurements[existingIndex] = nextMeasurement;
+      return nextMeasurements;
+    };
+
+    if (cachedPage) {
+      cacheRef.current.set(pageId, {
+        ...cachedPage,
+        measurements: patchMeasurements(cachedPage.measurements),
+      });
+    }
+
+    setViewerData((current) => {
+      if (current.pageId !== pageId) {
         return current;
       }
 
       return {
         ...current,
-        measurements: pageData.measurements,
-        measurementReadiness: pageData.measurementReadiness,
-        activeCalibration: pageData.activeCalibration,
+        measurements: patchMeasurements(current.measurements),
       };
     });
   }, []);
+
+  const patchCachedCalibration = useCallback(
+    (pageId: string, calibration: TakeoffMeasureViewerData["activeCalibration"]) => {
+      const cachedPage = cacheRef.current.get(pageId);
+      if (cachedPage) {
+        cacheRef.current.set(pageId, {
+          ...cachedPage,
+          activeCalibration: calibration,
+          measurementReadiness: applyCalibrationReadiness(cachedPage.measurementReadiness, calibration),
+        });
+      }
+
+      setViewerData((current) => {
+        if (current.pageId !== pageId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          activeCalibration: calibration,
+          measurementReadiness: applyCalibrationReadiness(current.measurementReadiness, calibration),
+        };
+      });
+    },
+    [applyCalibrationReadiness]
+  );
 
   const loadPage = useCallback(
     async (pageId: string, mode: "push" | "replace" | "none" = "push") => {
@@ -321,6 +419,7 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
         return;
       }
 
+      activeClientPageIdRef.current = pageId;
       const cached = cacheRef.current.get(pageId);
       if (cached) {
         applyPageData(cached);
@@ -339,7 +438,7 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
       setPageLoadError(null);
 
       try {
-        const pageData = await fetchPageData(pageId);
+        const pageData = await getOrFetchPageData(pageId);
         if (requestIdRef.current !== requestId) {
           return;
         }
@@ -362,7 +461,7 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
         }
       }
     },
-    [applyPageData, fetchPageData, primePage, syncHistory, viewerData.pageId]
+    [applyPageData, getOrFetchPageData, primePage, syncHistory, viewerData.pageId]
   );
 
   useEffect(() => {
@@ -377,7 +476,7 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
       totalPages: initialViewerData.totalPages,
       previousPageId: initialViewerData.previousPageId,
       nextPageId: initialViewerData.nextPageId,
-      measurements: initialViewerData.measurements,
+      measurements: filterDeletedMeasurements(initialViewerData.pageId, initialViewerData.measurements),
       measurementReadiness: initialViewerData.measurementReadiness,
       activeCalibration: initialViewerData.activeCalibration,
     };
@@ -386,10 +485,11 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
 
     setViewerData((current) => {
       const previousServerPayload = serverPayloadRef.current;
+      const isFirstServerApply = previousServerPayload === null;
       const isSameDrawingSet = previousServerPayload?.drawingSetId === drawingSetId;
-      const isSamePage = current.pageId === initialViewerData.pageId;
+      const isActiveClientPage = activeClientPageIdRef.current === initialViewerData.pageId;
       const preservedPdfUrl =
-        isSameDrawingSet && isSamePage
+        isSameDrawingSet && current.pageId === initialViewerData.pageId
           ? current.pdfUrl ?? pdfUrlRef.current ?? initialViewerData.pdfUrl
           : initialViewerData.pdfUrl ?? current.pdfUrl ?? pdfUrlRef.current;
 
@@ -399,22 +499,48 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
         pageId: initialViewerData.pageId,
       };
 
-      if (!isSameDrawingSet || !isSamePage) {
+      if (isFirstServerApply || !isSameDrawingSet) {
+        activeClientPageIdRef.current = initialViewerData.pageId;
         return {
           ...initialViewerData,
+          measurements: filterDeletedMeasurements(initialViewerData.pageId, initialViewerData.measurements),
+          pdfUrl: preservedPdfUrl,
+        };
+      }
+
+      if (!isActiveClientPage) {
+        return current;
+      }
+
+      activeClientPageIdRef.current = initialViewerData.pageId;
+
+      if (current.pageId !== initialViewerData.pageId) {
+        return {
+          ...initialViewerData,
+          measurements: filterDeletedMeasurements(initialViewerData.pageId, initialViewerData.measurements),
           pdfUrl: preservedPdfUrl,
         };
       }
 
       return {
         ...current,
-        measurements: initialViewerData.measurements,
+        pageId: initialViewerData.pageId,
+        pageNumber: initialViewerData.pageNumber,
+        pageLabel: initialViewerData.pageLabel,
+        pageWidthPts: initialViewerData.pageWidthPts,
+        pageHeightPts: initialViewerData.pageHeightPts,
+        rotationDegrees: initialViewerData.rotationDegrees,
+        pageIndex: initialViewerData.pageIndex,
+        totalPages: initialViewerData.totalPages,
+        previousPageId: initialViewerData.previousPageId,
+        nextPageId: initialViewerData.nextPageId,
+        measurements: filterDeletedMeasurements(initialViewerData.pageId, initialViewerData.measurements),
         measurementReadiness: initialViewerData.measurementReadiness,
         activeCalibration: initialViewerData.activeCalibration,
         pdfUrl: preservedPdfUrl,
       };
     });
-  }, [drawingSetId, initialViewerData]);
+  }, [drawingSetId, filterDeletedMeasurements, initialViewerData]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -464,11 +590,21 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
             activeCalibration={viewerData.activeCalibration}
             drawingSetId={drawingSetId}
             pageId={viewerData.pageId}
+            exitHref={quantitiesHref}
+            title={title}
             saveCalibrationAction={saveCalibrationAction}
             setActiveCalibrationAction={setActiveCalibrationAction}
             createLineMeasurementAction={createLineMeasurementAction}
             createAreaMeasurementAction={createAreaMeasurementAction}
             createCountMeasurementAction={createCountMeasurementAction}
+            appendAreaShapeMeasurementAction={appendAreaShapeMeasurementAction}
+            deleteAreaShapeMeasurementAction={deleteAreaShapeMeasurementAction}
+            appendCountItemMeasurementAction={appendCountItemMeasurementAction}
+            deleteCountItemMeasurementAction={deleteCountItemMeasurementAction}
+            appendLinePathMeasurementAction={appendLinePathMeasurementAction}
+            deleteLinePathMeasurementAction={deleteLinePathMeasurementAction}
+            updateAreaShapeGeometryAction={updateAreaShapeGeometryAction}
+            updateLinePathGeometryAction={updateLinePathGeometryAction}
             updateMeasurementDetailsAction={updateMeasurementDetailsAction}
             updateMeasurementGeometryAction={updateMeasurementGeometryAction}
             updateMeasurementStatusAction={updateMeasurementStatusAction}
@@ -478,10 +614,15 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
             nextPageId={viewerData.nextPageId}
             isPageLoading={isPageLoading}
             pageLoadError={pageLoadError}
+            onMeasurementCommitted={(pageId, measurement) => {
+              patchCachedMeasurement(pageId, measurement as TakeoffMeasureViewerData["measurements"][number]);
+            }}
+            onCalibrationCommitted={(pageId, calibration) => {
+              patchCachedCalibration(pageId, calibration as TakeoffMeasureViewerData["activeCalibration"]);
+            }}
             onPageChange={(pageId) => {
               void loadPage(pageId, "push");
             }}
-            onPageDataChange={handlePageDataChange}
           />
         </div>
       ) : (

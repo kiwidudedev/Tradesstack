@@ -19,9 +19,17 @@ const takeoffPageSelect =
 const takeoffCalibrationSelect =
   "id, organization_id, project_id, opportunity_id, page_id, name, scale_ratio, unit_system, base_unit, display_unit, reference_length_input, reference_length_base, point_a_x, point_a_y, point_b_x, point_b_y, is_active, superseded_by, notes, metadata, created_by, created_at, updated_at";
 const takeoffMeasurementSelect =
-  "id, organization_id, project_id, opportunity_id, drawing_set_id, page_id, calibration_id, group_id, measurement_kind, status, source, name, description, color_hex, quantity, count_value, measured_length_base, measured_area_base, display_value, display_unit, page_bbox_min_x, page_bbox_min_y, page_bbox_max_x, page_bbox_max_y, ai_confidence, ai_model, ai_run_id, external_ref, metadata, version, created_by, updated_by, archived_by, created_at, updated_at, archived_at";
+  "id, organization_id, project_id, opportunity_id, drawing_set_id, page_id, calibration_id, group_id, measurement_kind, status, source, name, description, color_hex, quantity, count_value, measured_length_base, measured_area_base, measured_perimeter_base, display_value, display_unit, page_bbox_min_x, page_bbox_min_y, page_bbox_max_x, page_bbox_max_y, ai_confidence, ai_model, ai_run_id, external_ref, metadata, version, created_by, updated_by, archived_by, created_at, updated_at, archived_at";
 const takeoffMeasurementPointSelect =
   "id, organization_id, measurement_id, point_order, x, y, created_at";
+const takeoffMeasurementAreaShapeSelect =
+  "id, organization_id, measurement_id, shape_order, measured_area_base, measured_perimeter_base, page_bbox_min_x, page_bbox_min_y, page_bbox_max_x, page_bbox_max_y, created_at, updated_at";
+const takeoffMeasurementAreaShapePointSelect =
+  "id, organization_id, area_shape_id, point_order, x, y, created_at";
+const takeoffMeasurementLinePathSelect =
+  "id, organization_id, measurement_id, path_order, measured_length_base, page_bbox_min_x, page_bbox_min_y, page_bbox_max_x, page_bbox_max_y, created_at, updated_at";
+const takeoffMeasurementLinePathPointSelect =
+  "id, organization_id, line_path_id, point_order, x, y, created_at";
 const takeoffMeasurementGroupSelect =
   "id, organization_id, project_id, opportunity_id, parent_group_id, name, code, color_hex, sort_order, status, trade_id, trade_label, metadata, created_by, created_at, updated_at";
 const projectDrawingSetSelect =
@@ -37,6 +45,10 @@ export type TakeoffPage = Database["public"]["Tables"]["takeoff_pages"]["Row"];
 export type TakeoffCalibration = Database["public"]["Tables"]["takeoff_calibrations"]["Row"];
 export type TakeoffMeasurement = Database["public"]["Tables"]["takeoff_measurements"]["Row"];
 export type TakeoffMeasurementPoint = Database["public"]["Tables"]["takeoff_measurement_points"]["Row"];
+export type TakeoffMeasurementAreaShape = Database["public"]["Tables"]["takeoff_measurement_area_shapes"]["Row"];
+export type TakeoffMeasurementAreaShapePoint = Database["public"]["Tables"]["takeoff_measurement_area_shape_points"]["Row"];
+export type TakeoffMeasurementLinePath = Database["public"]["Tables"]["takeoff_measurement_line_paths"]["Row"];
+export type TakeoffMeasurementLinePathPoint = Database["public"]["Tables"]["takeoff_measurement_line_path_points"]["Row"];
 export type TakeoffMeasurementGroup = Database["public"]["Tables"]["takeoff_measurement_groups"]["Row"];
 type OrganizationMember = Awaited<ReturnType<typeof getCurrentOrganizationMember>>;
 export type ProjectDrawingSet = Database["public"]["Tables"]["project_drawing_sets"]["Row"];
@@ -131,6 +143,12 @@ export interface ResolvedTakeoffOpportunityWorkspace {
 
 export interface TakeoffMeasurementWithPoints extends TakeoffMeasurement {
   points: TakeoffMeasurementPoint[];
+  area_shapes: Array<TakeoffMeasurementAreaShape & {
+    points: TakeoffMeasurementAreaShapePoint[];
+  }>;
+  line_paths: Array<TakeoffMeasurementLinePath & {
+    points: TakeoffMeasurementLinePathPoint[];
+  }>;
 }
 
 export interface TakeoffMeasurementReadiness {
@@ -165,12 +183,40 @@ export interface UpdateTakeoffMeasurementGeometryInput {
   points: TakeoffPointInput[];
 }
 
+export interface UpdateTakeoffMeasurementChildGeometryInput {
+  opportunitySlug: string;
+  measurementId: string;
+  childId: string;
+  childKind: "area-shape" | "line-path";
+  points: TakeoffPointInput[];
+}
+
+export interface AppendTakeoffAreaShapeInput {
+  opportunitySlug: string;
+  measurementId: string;
+  points: TakeoffPointInput[];
+}
+
+export interface AppendTakeoffLinePathInput {
+  opportunitySlug: string;
+  measurementId: string;
+  points: TakeoffPointInput[];
+}
+
+export interface DeleteTakeoffMeasurementChildInput {
+  opportunitySlug: string;
+  measurementId: string;
+  childId: string;
+  childKind: "count-item" | "area-shape" | "line-path";
+}
+
 export interface UpdateTakeoffMeasurementDetailsInput {
   opportunitySlug: string;
   measurementId: string;
   name?: string;
   description?: string;
   tag?: string | null;
+  colorHex?: string | null;
 }
 
 export interface SetActiveTakeoffCalibrationInput {
@@ -180,7 +226,7 @@ export interface SetActiveTakeoffCalibrationInput {
 }
 
 type TakeoffPerfTrace = {
-  step<T>(label: string, work: () => Promise<T>): Promise<T>;
+  step<T>(label: string, work: () => PromiseLike<T>): Promise<T>;
   flush(meta?: Record<string, unknown>): void;
 };
 
@@ -189,7 +235,7 @@ function createTakeoffPerfTrace(operation: string): TakeoffPerfTrace {
   const timings: Record<string, number> = {};
 
   return {
-    async step<T>(label: string, work: () => Promise<T>): Promise<T> {
+    async step<T>(label: string, work: () => PromiseLike<T>): Promise<T> {
       const stepStartedAt = Date.now();
       try {
         return await work();
@@ -355,6 +401,100 @@ function computeMeasurementBoundingBox(points: TakeoffPointInput[]): {
   );
 }
 
+function combineMeasurementBoundingBoxes(
+  boundsList: Array<{
+    minX: number | null;
+    minY: number | null;
+    maxX: number | null;
+    maxY: number | null;
+  }>
+) {
+  return boundsList.reduce(
+    (combined, bounds) => {
+      if (
+        bounds.minX === null ||
+        bounds.minY === null ||
+        bounds.maxX === null ||
+        bounds.maxY === null
+      ) {
+        return combined;
+      }
+
+      if (combined.minX === null) {
+        return { ...bounds };
+      }
+
+      return {
+        minX: Math.min(combined.minX, bounds.minX),
+        minY: Math.min(combined.minY!, bounds.minY),
+        maxX: Math.max(combined.maxX!, bounds.maxX),
+        maxY: Math.max(combined.maxY!, bounds.maxY),
+      };
+    },
+    {
+      minX: null as number | null,
+      minY: null as number | null,
+      maxX: null as number | null,
+      maxY: null as number | null,
+    }
+  );
+}
+
+async function replaceTakeoffMeasurementPoints(params: {
+  organizationId: string;
+  measurementId: string;
+  points: TakeoffPointInput[];
+  supabase: SupabaseClient<Database>;
+}) {
+  const deleteResult = await params.supabase
+    .from("takeoff_measurement_points")
+    .delete()
+    .eq("measurement_id", params.measurementId);
+
+  if (deleteResult.error) {
+    throw new Error(deleteResult.error.message);
+  }
+
+  if (params.points.length === 0) {
+    return;
+  }
+
+  const insertResult = await params.supabase.from("takeoff_measurement_points").insert(
+    params.points.map((point, index) => ({
+      organization_id: params.organizationId,
+      measurement_id: params.measurementId,
+      point_order: index,
+      x: point.x,
+      y: point.y,
+    }))
+  );
+
+  if (insertResult.error) {
+    throw new Error(insertResult.error.message);
+  }
+}
+
+async function hydrateTakeoffMeasurementWithChildren(params: {
+  measurement: TakeoffMeasurement;
+  supabase: SupabaseClient<Database>;
+}): Promise<TakeoffMeasurementWithPoints> {
+  const { measurement, supabase } = params;
+  const points = await getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase });
+  const areaShapes = measurement.measurement_kind === "area"
+    ? (await getTakeoffAreaShapesForMeasurements([measurement.id], { supabase }))[measurement.id] ?? []
+    : [];
+  const linePaths = measurement.measurement_kind === "line"
+    ? (await getTakeoffLinePathsForMeasurements([measurement.id], { supabase }))[measurement.id] ?? []
+    : [];
+
+  return {
+    ...measurement,
+    points,
+    area_shapes: areaShapes,
+    line_paths: linePaths,
+  };
+}
+
 function convertNormalizedPointToPagePoint(params: {
   page: TakeoffPage;
   point: TakeoffPointInput;
@@ -390,6 +530,21 @@ function computePolygonAreaPts(page: TakeoffPage, points: TakeoffPointInput[]): 
   }
 
   return Math.abs(areaAccumulator) / 2;
+}
+
+function computePolygonPerimeterPts(page: TakeoffPage, points: TakeoffPointInput[]): number {
+  let perimeter = 0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const current = convertNormalizedPointToPagePoint({ page, point: points[index] });
+    const next = convertNormalizedPointToPagePoint({
+      page,
+      point: points[(index + 1) % points.length],
+    });
+    perimeter += Math.hypot(next.xPts - current.xPts, next.yPts - current.yPts);
+  }
+
+  return perimeter;
 }
 
 function convertBaseLengthToDisplay(params: {
@@ -456,6 +611,54 @@ function convertBaseAreaToDisplay(params: {
   throw new Error("Unable to convert measured area to display units.");
 }
 
+function getCountItemValueFromMeasurement(params: {
+  measurement: Pick<TakeoffMeasurement, "metadata" | "count_value" | "display_value">;
+  pointCount: number;
+}): number {
+  const metadataValue =
+    params.measurement.metadata &&
+    typeof params.measurement.metadata === "object" &&
+    typeof (params.measurement.metadata as Record<string, unknown>).countItemValue === "number"
+      ? Number((params.measurement.metadata as Record<string, unknown>).countItemValue)
+      : null;
+  if (metadataValue !== null && Number.isFinite(metadataValue) && metadataValue > 0) {
+    return metadataValue;
+  }
+
+  const totalValue = Number(params.measurement.count_value ?? params.measurement.display_value ?? 1);
+  if (!Number.isFinite(totalValue) || totalValue <= 0) {
+    return 1;
+  }
+
+  const safePointCount = Math.max(params.pointCount, 1);
+  const derivedValue = totalValue / safePointCount;
+  return Number.isFinite(derivedValue) && derivedValue > 0 ? derivedValue : 1;
+}
+
+function getCountPointOrderFromChildId(params: {
+  measurementId: string;
+  childId: string;
+}): number | null {
+  const childId = params.childId.trim();
+  if (!childId) {
+    return null;
+  }
+
+  const countPrefix = `${params.measurementId}:count:`;
+  if (childId.startsWith(countPrefix)) {
+    const pointOrder = Number(childId.slice(countPrefix.length));
+    return Number.isInteger(pointOrder) && pointOrder >= 0 ? pointOrder : null;
+  }
+
+  const legacyPrefix = `${params.measurementId}:`;
+  if (childId.startsWith(legacyPrefix)) {
+    const pointOrder = Number(childId.slice(legacyPrefix.length));
+    return Number.isInteger(pointOrder) && pointOrder >= 0 ? pointOrder : null;
+  }
+
+  return null;
+}
+
 async function getTakeoffMeasurementPointsForMeasurement(
   measurementId: string,
   options?: { supabase?: SupabaseClient<Database> }
@@ -474,13 +677,163 @@ async function getTakeoffMeasurementPointsForMeasurement(
   return data ?? [];
 }
 
+async function getTakeoffAreaShapesForMeasurements(
+  measurementIds: string[],
+  options?: { supabase?: SupabaseClient<Database> }
+): Promise<Record<string, TakeoffMeasurementWithPoints["area_shapes"]>> {
+  if (measurementIds.length === 0) {
+    return {};
+  }
+
+  const supabase = options?.supabase ?? await createServerSupabaseClient();
+  const { data: shapeRows, error: shapeError } = await supabase
+    .from("takeoff_measurement_area_shapes")
+    .select(takeoffMeasurementAreaShapeSelect)
+    .in("measurement_id", measurementIds)
+    .order("shape_order", { ascending: true });
+
+  if (shapeError) {
+    console.error("Failed to load takeoff measurement area shapes", {
+      measurementIds,
+      message: shapeError.message,
+      code: shapeError.code,
+      details: shapeError.details,
+      hint: shapeError.hint,
+    });
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error(`Failed to load takeoff measurement area shapes: ${shapeError.message}`);
+    }
+    return {};
+  }
+
+  if (!shapeRows || shapeRows.length === 0) {
+    return {};
+  }
+
+  const areaShapeIds = shapeRows.map((shape) => shape.id);
+  const { data: pointRows, error: pointError } = await supabase
+    .from("takeoff_measurement_area_shape_points")
+    .select(takeoffMeasurementAreaShapePointSelect)
+    .in("area_shape_id", areaShapeIds)
+    .order("point_order", { ascending: true });
+
+  if (pointError) {
+    console.error("Failed to load takeoff measurement area shape points", {
+      measurementIds,
+      areaShapeIds,
+      message: pointError.message,
+      code: pointError.code,
+      details: pointError.details,
+      hint: pointError.hint,
+    });
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error(`Failed to load takeoff measurement area shape points: ${pointError.message}`);
+    }
+  }
+
+  const pointsByShapeId = new Map<string, TakeoffMeasurementAreaShapePoint[]>();
+  if (!pointError && pointRows) {
+    pointRows.forEach((point) => {
+      const existing = pointsByShapeId.get(point.area_shape_id) ?? [];
+      existing.push(point as TakeoffMeasurementAreaShapePoint);
+      pointsByShapeId.set(point.area_shape_id, existing);
+    });
+  }
+
+  return shapeRows.reduce<Record<string, TakeoffMeasurementWithPoints["area_shapes"]>>((accumulator, shape) => {
+    const measurementShapes = accumulator[shape.measurement_id] ?? [];
+    measurementShapes.push({
+      ...(shape as TakeoffMeasurementAreaShape),
+      points: pointsByShapeId.get(shape.id) ?? [],
+    });
+    accumulator[shape.measurement_id] = measurementShapes;
+    return accumulator;
+  }, {});
+}
+
+async function getTakeoffLinePathsForMeasurements(
+  measurementIds: string[],
+  options?: { supabase?: SupabaseClient<Database> }
+): Promise<Record<string, TakeoffMeasurementWithPoints["line_paths"]>> {
+  if (measurementIds.length === 0) {
+    return {};
+  }
+
+  const supabase = options?.supabase ?? await createServerSupabaseClient();
+  const { data: pathRows, error: pathError } = await supabase
+    .from("takeoff_measurement_line_paths")
+    .select(takeoffMeasurementLinePathSelect)
+    .in("measurement_id", measurementIds)
+    .order("path_order", { ascending: true });
+
+  if (pathError) {
+    console.error("Failed to load takeoff measurement line paths", {
+      measurementIds,
+      message: pathError.message,
+      code: pathError.code,
+      details: pathError.details,
+      hint: pathError.hint,
+    });
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error(`Failed to load takeoff measurement line paths: ${pathError.message}`);
+    }
+    return {};
+  }
+
+  if (!pathRows || pathRows.length === 0) {
+    return {};
+  }
+
+  const linePathIds = pathRows.map((path) => path.id);
+  const { data: pointRows, error: pointError } = await supabase
+    .from("takeoff_measurement_line_path_points")
+    .select(takeoffMeasurementLinePathPointSelect)
+    .in("line_path_id", linePathIds)
+    .order("point_order", { ascending: true });
+
+  if (pointError) {
+    console.error("Failed to load takeoff measurement line path points", {
+      measurementIds,
+      linePathIds,
+      message: pointError.message,
+      code: pointError.code,
+      details: pointError.details,
+      hint: pointError.hint,
+    });
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error(`Failed to load takeoff measurement line path points: ${pointError.message}`);
+    }
+  }
+
+  const pointsByPathId = new Map<string, TakeoffMeasurementLinePathPoint[]>();
+  if (!pointError && pointRows) {
+    pointRows.forEach((point) => {
+      const existing = pointsByPathId.get(point.line_path_id) ?? [];
+      existing.push(point as TakeoffMeasurementLinePathPoint);
+      pointsByPathId.set(point.line_path_id, existing);
+    });
+  }
+
+  return pathRows.reduce<Record<string, TakeoffMeasurementWithPoints["line_paths"]>>((accumulator, path) => {
+    const measurementPaths = accumulator[path.measurement_id] ?? [];
+    measurementPaths.push({
+      ...(path as TakeoffMeasurementLinePath),
+      points: pointsByPathId.get(path.id) ?? [],
+    });
+    accumulator[path.measurement_id] = measurementPaths;
+    return accumulator;
+  }, {});
+}
+
 async function writeTakeoffMeasurementEvent(params: {
   organizationId: string;
   projectId: string;
   opportunityId: string | null;
   measurement: TakeoffMeasurement;
   points: TakeoffMeasurementPoint[];
-  eventType: "created" | "archived" | "deleted" | "restored";
+  areaShapes?: TakeoffMeasurementWithPoints["area_shapes"];
+  linePaths?: TakeoffMeasurementWithPoints["line_paths"];
+  eventType: "created" | "updated" | "archived" | "deleted" | "restored";
   actorUserId: string;
   changeReason: string;
   diff: Record<string, unknown>;
@@ -490,6 +843,8 @@ async function writeTakeoffMeasurementEvent(params: {
   const snapshot = {
     measurement: params.measurement,
     points: params.points,
+    area_shapes: params.areaShapes ?? [],
+    line_paths: params.linePaths ?? [],
   };
 
   const { error } = await supabase.from("takeoff_measurement_events").insert({
@@ -1303,9 +1658,13 @@ export async function ensureTakeoffPagesForOpportunityDrawingSet(
           },
         };
       })
-      .filter((row): row is { id: string; page_width_pts: number; page_height_pts: number; metadata: Record<string, unknown> } => Boolean(row));
+      .filter((row) => row !== null);
 
     for (const row of geometryNormalizationRows) {
+      if (!row) {
+        continue;
+      }
+
       const geometryUpdateResult = await supabase
         .from("takeoff_pages")
         .update({
@@ -1351,7 +1710,7 @@ export async function ensureTakeoffPagesForOpportunityDrawingSet(
   const pdf = await PDFDocument.load(pdfBytes);
   const pdfPages = pdf.getPages();
 
-  const rows = pdfPages.map((page, index) => {
+  const rows: Database["public"]["Tables"]["takeoff_pages"]["Insert"][] = pdfPages.map((page, index) => {
     const pageSize = page.getSize();
     const geometry = getTakeoffPageDisplayDimensions({
       pageWidthPts: pageSize.width,
@@ -1389,10 +1748,10 @@ export async function ensureTakeoffPagesForOpportunityDrawingSet(
 
   const insertResult = await supabase
     .from("takeoff_pages")
-    .insert(rows, {
+    .insert(rows as never, {
       onConflict: "organization_id,drawing_set_id,page_number",
       ignoreDuplicates: true,
-    });
+    } as never);
   if (insertResult.error) {
     const fallbackPages = await getTakeoffPagesForOpportunitySlug(opportunitySlug, { drawingSetId });
     if (fallbackPages.length === 0) {
@@ -1831,6 +2190,19 @@ export async function getTakeoffMeasurementsForPage(
     return [];
   }
 
+  const areaShapesByMeasurementId = await getTakeoffAreaShapesForMeasurements(
+    (data ?? [])
+      .filter((row) => row.measurement_kind === "area")
+      .map((row) => row.id),
+    { supabase }
+  );
+  const linePathsByMeasurementId = await getTakeoffLinePathsForMeasurements(
+    (data ?? [])
+      .filter((row) => row.measurement_kind === "line")
+      .map((row) => row.id),
+    { supabase }
+  );
+
   return (data ?? []).map((row) => {
     const points = Array.isArray(row.takeoff_measurement_points)
       ? [...row.takeoff_measurement_points].sort((left, right) => left.point_order - right.point_order)
@@ -1839,6 +2211,8 @@ export async function getTakeoffMeasurementsForPage(
     return {
       ...(row as TakeoffMeasurement),
       points,
+      area_shapes: areaShapesByMeasurementId[row.id] ?? [],
+      line_paths: linePathsByMeasurementId[row.id] ?? [],
     };
   });
 }
@@ -1888,11 +2262,9 @@ export async function saveTakeoffCalibrationForOpportunityPage(
     });
     const name = input.name.trim() || `Calibration ${new Date().toLocaleDateString("en-NZ")}`;
     const notes = input.notes?.trim() ?? "";
-
-    const activeCalibration = await perf.step("activeCalibrationLookup", () =>
-      getActiveTakeoffCalibrationForPage(page.id, { supabase })
-    );
+    const newCalibrationId = crypto.randomUUID();
     const insertPayload = {
+      id: newCalibrationId,
       organization_id: resolved.organizationId,
       project_id: resolved.projectId,
       opportunity_id: resolved.opportunityId,
@@ -1908,67 +2280,50 @@ export async function saveTakeoffCalibrationForOpportunityPage(
       point_a_y: pointAY,
       point_b_x: pointBX,
       point_b_y: pointBY,
-      is_active: activeCalibration ? false : true,
+      is_active: true,
       superseded_by: null,
       notes,
       metadata: {},
       created_by: member.user_id,
     };
 
-    const insertResult = await perf.step("insertCalibration", () =>
-      supabase
-        .from("takeoff_calibrations")
-        .insert(insertPayload)
-        .select(takeoffCalibrationSelect)
-        .single()
+    const calibrationRpcClient = supabase as SupabaseClient<Database> & {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    };
+
+    const saveResult = await perf.step("saveCalibrationRpc", async () =>
+      calibrationRpcClient.rpc("save_takeoff_calibration_fast", {
+        arg_id: insertPayload.id,
+        arg_organization_id: insertPayload.organization_id,
+        arg_project_id: insertPayload.project_id,
+        arg_opportunity_id: insertPayload.opportunity_id,
+        arg_page_id: insertPayload.page_id,
+        arg_name: insertPayload.name,
+        arg_scale_ratio: insertPayload.scale_ratio,
+        arg_unit_system: insertPayload.unit_system,
+        arg_base_unit: insertPayload.base_unit,
+        arg_display_unit: insertPayload.display_unit,
+        arg_reference_length_input: insertPayload.reference_length_input,
+        arg_reference_length_base: insertPayload.reference_length_base,
+        arg_point_a_x: insertPayload.point_a_x,
+        arg_point_a_y: insertPayload.point_a_y,
+        arg_point_b_x: insertPayload.point_b_x,
+        arg_point_b_y: insertPayload.point_b_y,
+        arg_notes: insertPayload.notes,
+        arg_created_by: insertPayload.created_by,
+      })
     );
 
-    if (insertResult.error || !insertResult.data) {
-      throw new Error(insertResult.error?.message ?? "Unable to save the new calibration.");
+    const savedCalibration = Array.isArray(saveResult.data) ? saveResult.data[0] : saveResult.data;
+
+    if (saveResult.error || !savedCalibration) {
+      throw new Error(saveResult.error?.message ?? "Unable to save the new calibration.");
     }
 
-    const newCalibration = insertResult.data;
-
-    if (!activeCalibration) {
-      return newCalibration;
-    }
-
-    const deactivateResult = await perf.step("deactivatePreviousCalibration", () =>
-      supabase
-        .from("takeoff_calibrations")
-        .update({
-          is_active: false,
-          superseded_by: newCalibration.id,
-        })
-        .eq("id", activeCalibration.id)
-        .eq("page_id", page.id)
-    );
-
-    if (deactivateResult.error) {
-      throw new Error(deactivateResult.error.message);
-    }
-
-    const activateResult = await perf.step("activateNewCalibration", () =>
-      supabase
-        .from("takeoff_calibrations")
-        .update({ is_active: true })
-        .eq("id", newCalibration.id)
-        .select(takeoffCalibrationSelect)
-        .single()
-    );
-
-    if (activateResult.error || !activateResult.data) {
-      await supabase
-        .from("takeoff_calibrations")
-        .update({
-          is_active: true,
-          superseded_by: null,
-        })
-        .eq("id", activeCalibration.id);
-      throw new Error(activateResult.error?.message ?? "Unable to activate the new calibration.");
-    }
-
-    return activateResult.data;
+    return savedCalibration as TakeoffCalibration;
   } finally {
     perf.flush({
       opportunitySlug: input.opportunitySlug,
@@ -2011,7 +2366,7 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
           .eq("organization_id", resolved.organizationId)
           .eq("project_id", resolved.projectId)
           .eq("page_id", page.id)
-          .eq("id", input.calibrationId)
+          .eq("id", input.calibrationId as string)
           .maybeSingle()
       );
 
@@ -2121,6 +2476,7 @@ async function createTakeoffMeasurementForOpportunityPage(
     let points: TakeoffPointInput[] = [];
     let measuredLengthBase: number | null = null;
     let measuredAreaBase: number | null = null;
+    let measuredPerimeterBase: number | null = null;
     let displayValue: number | null = null;
     let displayUnit: string | null = null;
     let countValue: number | null = null;
@@ -2148,8 +2504,10 @@ async function createTakeoffMeasurementForOpportunityPage(
 
       points = normalizePoints(input.points, 3);
       const areaPts = computePolygonAreaPts(page, points);
+      const perimeterPts = computePolygonPerimeterPts(page, points);
       const scaleRatio = Number(activeCalibration.scale_ratio);
       measuredAreaBase = areaPts * scaleRatio * scaleRatio;
+      measuredPerimeterBase = perimeterPts * scaleRatio;
       displayValue = convertBaseAreaToDisplay({
         baseUnit: activeCalibration.base_unit,
         displayUnit: activeCalibration.display_unit,
@@ -2187,6 +2545,7 @@ async function createTakeoffMeasurementForOpportunityPage(
       count_value: countValue,
       measured_length_base: measuredLengthBase,
       measured_area_base: measuredAreaBase,
+      measured_perimeter_base: measuredPerimeterBase,
       display_value: displayValue,
       display_unit: displayUnit,
       page_bbox_min_x: bounds.minX,
@@ -2197,7 +2556,7 @@ async function createTakeoffMeasurementForOpportunityPage(
       ai_model: null,
       ai_run_id: null,
       external_ref: null,
-      metadata: {},
+      metadata: input.measurementKind === "count" ? { countItemValue: countValue ?? 1 } : {},
       version: 1,
       created_by: member.user_id,
       updated_by: null,
@@ -2245,6 +2604,125 @@ async function createTakeoffMeasurementForOpportunityPage(
       }
     }
 
+    let areaShapes: TakeoffMeasurementWithPoints["area_shapes"] = [];
+    let linePaths: TakeoffMeasurementWithPoints["line_paths"] = [];
+    if (input.measurementKind === "line" && points.length > 2) {
+      const lineBounds = computeMeasurementBoundingBox(points);
+      const linePathInsert = await perf.step("insertLinePath", () =>
+        supabase
+          .from("takeoff_measurement_line_paths")
+          .insert({
+            organization_id: resolved.organizationId,
+            measurement_id: measurement.id,
+            path_order: 0,
+            measured_length_base: measuredLengthBase ?? 0,
+            page_bbox_min_x: lineBounds.minX,
+            page_bbox_min_y: lineBounds.minY,
+            page_bbox_max_x: lineBounds.maxX,
+            page_bbox_max_y: lineBounds.maxY,
+          })
+          .select(takeoffMeasurementLinePathSelect)
+          .single()
+      );
+
+      if (linePathInsert.error || !linePathInsert.data) {
+        throw new Error(linePathInsert.error?.message ?? "Unable to create line path.");
+      }
+
+      const savedLinePathPoints: TakeoffMeasurementLinePathPoint[] = points.map((point, index) => ({
+        id: `${linePathInsert.data.id}:${index}`,
+        organization_id: resolved.organizationId,
+        line_path_id: linePathInsert.data.id,
+        point_order: index,
+        x: point.x,
+        y: point.y,
+        created_at: measurement.created_at,
+      }));
+
+      if (savedLinePathPoints.length > 0) {
+        const linePathPointInsert = await perf.step("insertLinePathPoints", () =>
+          supabase.from("takeoff_measurement_line_path_points").insert(
+            savedLinePathPoints.map((point) => ({
+              organization_id: point.organization_id,
+              line_path_id: point.line_path_id,
+              point_order: point.point_order,
+              x: point.x,
+              y: point.y,
+            }))
+          )
+        );
+        if (linePathPointInsert.error) {
+          throw new Error(linePathPointInsert.error.message);
+        }
+      }
+
+      linePaths = [
+        {
+          ...(linePathInsert.data as TakeoffMeasurementLinePath),
+          points: savedLinePathPoints,
+        },
+      ];
+    }
+
+    if (input.measurementKind === "area") {
+      const areaBounds = computeMeasurementBoundingBox(points);
+      const areaShapeInsert = await perf.step("insertAreaShape", () =>
+        supabase
+          .from("takeoff_measurement_area_shapes")
+          .insert({
+            organization_id: resolved.organizationId,
+            measurement_id: measurement.id,
+            shape_order: 0,
+            measured_area_base: measuredAreaBase ?? 0,
+            measured_perimeter_base: measuredPerimeterBase ?? 0,
+            page_bbox_min_x: areaBounds.minX,
+            page_bbox_min_y: areaBounds.minY,
+            page_bbox_max_x: areaBounds.maxX,
+            page_bbox_max_y: areaBounds.maxY,
+          })
+          .select(takeoffMeasurementAreaShapeSelect)
+          .single()
+      );
+
+      if (areaShapeInsert.error || !areaShapeInsert.data) {
+        throw new Error(areaShapeInsert.error?.message ?? "Unable to create area shape.");
+      }
+
+      const savedAreaShapePoints: TakeoffMeasurementAreaShapePoint[] = points.map((point, index) => ({
+        id: `${areaShapeInsert.data.id}:${index}`,
+        organization_id: resolved.organizationId,
+        area_shape_id: areaShapeInsert.data.id,
+        point_order: index,
+        x: point.x,
+        y: point.y,
+        created_at: measurement.created_at,
+      }));
+
+      if (savedAreaShapePoints.length > 0) {
+        const areaShapePointInsert = await perf.step("insertAreaShapePoints", () =>
+          supabase.from("takeoff_measurement_area_shape_points").insert(
+            savedAreaShapePoints.map((point) => ({
+              organization_id: point.organization_id,
+              area_shape_id: point.area_shape_id,
+              point_order: point.point_order,
+              x: point.x,
+              y: point.y,
+            }))
+          )
+        );
+        if (areaShapePointInsert.error) {
+          throw new Error(areaShapePointInsert.error.message);
+        }
+      }
+
+      areaShapes = [
+        {
+          ...(areaShapeInsert.data as TakeoffMeasurementAreaShape),
+          points: savedAreaShapePoints,
+        },
+      ];
+    }
+
     await perf.step("writeEvent", () =>
       writeTakeoffMeasurementEvent({
         organizationId: resolved.organizationId,
@@ -2252,6 +2730,8 @@ async function createTakeoffMeasurementForOpportunityPage(
         opportunityId: resolved.opportunityId,
         measurement,
         points: savedPoints,
+        areaShapes,
+        linePaths,
         eventType: "created",
         actorUserId: member.user_id,
         changeReason: `Manual ${input.measurementKind} measurement created`,
@@ -2266,6 +2746,8 @@ async function createTakeoffMeasurementForOpportunityPage(
     return {
       ...measurement,
       points: savedPoints,
+      area_shapes: areaShapes,
+      line_paths: linePaths,
     };
   } finally {
     perf.flush({
@@ -2301,6 +2783,522 @@ export async function createCountTakeoffMeasurementForOpportunityPage(
     ...input,
     measurementKind: "count",
   });
+}
+
+export async function appendAreaShapeToMeasurementForOpportunity(
+  input: AppendTakeoffAreaShapeInput
+): Promise<TakeoffMeasurementWithPoints> {
+  const perf = createTakeoffPerfTrace("appendAreaShapeToMeasurementForOpportunity");
+  try {
+    const { member, resolved, supabase } = await perf.step("context", () =>
+      createValidatedTakeoffMutationContext(input.opportunitySlug)
+    );
+    const { data: measurement, error: measurementError } = await perf.step("measurementLookup", () =>
+      supabase
+        .from("takeoff_measurements")
+        .select(takeoffMeasurementSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", input.measurementId)
+        .maybeSingle()
+    );
+
+    if (measurementError || !measurement) {
+      throw new Error("The selected measurement could not be found.");
+    }
+
+    if (measurement.measurement_kind !== "area") {
+      throw new Error("Only area measurements can accept additional area shapes.");
+    }
+
+    if (measurement.status === "deleted") {
+      throw new Error("Deleted measurements cannot be updated.");
+    }
+
+    const { data: page, error: pageError } = await perf.step("pageLookup", () =>
+      supabase
+        .from("takeoff_pages")
+        .select(takeoffPageSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", measurement.page_id)
+        .maybeSingle()
+    );
+
+    if (pageError || !page) {
+      throw new Error("The selected takeoff page could not be found.");
+    }
+
+    const activeCalibration = await perf.step("activeCalibrationLookup", () =>
+      getActiveTakeoffCalibrationForPage(page.id, { supabase })
+    );
+    if (!activeCalibration) {
+      throw new Error("Manual area measurements require an active calibration.");
+    }
+
+    const points = normalizePoints(input.points, 3);
+    const areaPts = computePolygonAreaPts(page, points);
+    const perimeterPts = computePolygonPerimeterPts(page, points);
+    const measuredAreaBase = areaPts * Number(activeCalibration.scale_ratio) * Number(activeCalibration.scale_ratio);
+    const measuredPerimeterBase = perimeterPts * Number(activeCalibration.scale_ratio);
+    const shapeBounds = computeMeasurementBoundingBox(points);
+    const existingAreaShapes = await perf.step("areaShapeLookup", () =>
+      getTakeoffAreaShapesForMeasurements([measurement.id], { supabase })
+    );
+    const measurementAreaShapes = existingAreaShapes[measurement.id] ?? [];
+    const nextShapeOrder = measurementAreaShapes.length;
+
+    const insertShapeResult = await perf.step("insertAreaShape", () =>
+      supabase
+        .from("takeoff_measurement_area_shapes")
+        .insert({
+          organization_id: resolved.organizationId,
+          measurement_id: measurement.id,
+          shape_order: nextShapeOrder,
+          measured_area_base: measuredAreaBase,
+          measured_perimeter_base: measuredPerimeterBase,
+          page_bbox_min_x: shapeBounds.minX,
+          page_bbox_min_y: shapeBounds.minY,
+          page_bbox_max_x: shapeBounds.maxX,
+          page_bbox_max_y: shapeBounds.maxY,
+        })
+        .select(takeoffMeasurementAreaShapeSelect)
+        .single()
+    );
+
+    if (insertShapeResult.error || !insertShapeResult.data) {
+      throw new Error(insertShapeResult.error?.message ?? "Unable to add area shape.");
+    }
+
+    const shapePointRows: Database["public"]["Tables"]["takeoff_measurement_area_shape_points"]["Insert"][] = points.map((point, index) => ({
+      organization_id: resolved.organizationId,
+      area_shape_id: insertShapeResult.data.id,
+      point_order: index,
+      x: point.x,
+      y: point.y,
+    }));
+
+    if (shapePointRows.length > 0) {
+      const insertShapePointsResult = await perf.step("insertAreaShapePoints", () =>
+        supabase.from("takeoff_measurement_area_shape_points").insert(shapePointRows)
+      );
+      if (insertShapePointsResult.error) {
+        throw new Error(insertShapePointsResult.error.message);
+      }
+    }
+
+    const nextAreaShapes = [
+      ...measurementAreaShapes,
+      {
+        ...(insertShapeResult.data as TakeoffMeasurementAreaShape),
+        points: points.map((point, index) => ({
+          id: `${insertShapeResult.data.id}:${index}`,
+          organization_id: resolved.organizationId,
+          area_shape_id: insertShapeResult.data.id,
+          point_order: index,
+          x: point.x,
+          y: point.y,
+          created_at: insertShapeResult.data.created_at,
+        })),
+      },
+    ];
+    const combinedBounds = combineMeasurementBoundingBoxes(
+      nextAreaShapes.map((shape) => ({
+        minX: shape.page_bbox_min_x,
+        minY: shape.page_bbox_min_y,
+        maxX: shape.page_bbox_max_x,
+        maxY: shape.page_bbox_max_y,
+      }))
+    );
+    const totalMeasuredAreaBase = nextAreaShapes.reduce((total, shape) => total + Number(shape.measured_area_base ?? 0), 0);
+    const totalMeasuredPerimeterBase = nextAreaShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0);
+    const displayValue = convertBaseAreaToDisplay({
+      baseUnit: activeCalibration.base_unit,
+      displayUnit: activeCalibration.display_unit,
+      value: totalMeasuredAreaBase,
+    });
+
+    const updateResult = await perf.step("updateMeasurement", () =>
+      supabase
+        .from("takeoff_measurements")
+        .update({
+          calibration_id: activeCalibration.id,
+          measured_area_base: totalMeasuredAreaBase,
+          measured_perimeter_base: totalMeasuredPerimeterBase,
+          display_value: displayValue,
+          display_unit: `${activeCalibration.display_unit}²`,
+          page_bbox_min_x: combinedBounds.minX,
+          page_bbox_min_y: combinedBounds.minY,
+          page_bbox_max_x: combinedBounds.maxX,
+          page_bbox_max_y: combinedBounds.maxY,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
+        .eq("id", measurement.id)
+        .select(takeoffMeasurementSelect)
+        .single()
+    );
+
+    if (updateResult.error || !updateResult.data) {
+      throw new Error(updateResult.error?.message ?? "Unable to update area totals.");
+    }
+
+    const parentPoints = await perf.step("parentPointsLookup", () =>
+      getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase })
+    );
+
+    await perf.step("writeEvent", () =>
+      writeTakeoffMeasurementEvent({
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        points: parentPoints,
+        areaShapes: nextAreaShapes,
+        eventType: "updated",
+        actorUserId: member.user_id,
+        changeReason: "Area shape added to existing measurement",
+        diff: {
+          measurement_kind: "area",
+          appended_shape_points: points,
+          previous_shape_count: measurementAreaShapes.length,
+          next_shape_count: nextAreaShapes.length,
+        },
+        supabase,
+      })
+    );
+
+    return {
+      ...updateResult.data,
+      points: parentPoints,
+      area_shapes: nextAreaShapes,
+      line_paths: [],
+    };
+  } finally {
+    perf.flush({
+      opportunitySlug: input.opportunitySlug,
+      measurementId: input.measurementId,
+    });
+  }
+}
+
+export async function appendLinePathToMeasurementForOpportunity(
+  input: AppendTakeoffLinePathInput
+): Promise<TakeoffMeasurementWithPoints> {
+  const perf = createTakeoffPerfTrace("appendLinePathToMeasurementForOpportunity");
+  try {
+    const { member, resolved, supabase } = await perf.step("context", () =>
+      createValidatedTakeoffMutationContext(input.opportunitySlug)
+    );
+    const { data: measurement, error: measurementError } = await perf.step("measurementLookup", () =>
+      supabase
+        .from("takeoff_measurements")
+        .select(takeoffMeasurementSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", input.measurementId)
+        .maybeSingle()
+    );
+
+    if (measurementError || !measurement) {
+      throw new Error("The selected measurement could not be found.");
+    }
+
+    if (measurement.measurement_kind !== "line") {
+      throw new Error("Only polyline measurements can accept additional paths.");
+    }
+
+    if (measurement.status === "deleted") {
+      throw new Error("Deleted measurements cannot be updated.");
+    }
+
+    const { data: page, error: pageError } = await perf.step("pageLookup", () =>
+      supabase
+        .from("takeoff_pages")
+        .select(takeoffPageSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", measurement.page_id)
+        .maybeSingle()
+    );
+
+    if (pageError || !page) {
+      throw new Error("The selected takeoff page could not be found.");
+    }
+
+    const activeCalibration = await perf.step("activeCalibrationLookup", () =>
+      getActiveTakeoffCalibrationForPage(page.id, { supabase })
+    );
+    if (!activeCalibration) {
+      throw new Error("Manual line measurements require an active calibration.");
+    }
+
+    const points = normalizePoints(input.points, 2);
+    const measuredLengthBase = computePolylineLengthPts(page, points) * Number(activeCalibration.scale_ratio);
+    const pathBounds = computeMeasurementBoundingBox(points);
+    const existingLinePaths = await perf.step("linePathLookup", () =>
+      getTakeoffLinePathsForMeasurements([measurement.id], { supabase })
+    );
+    const measurementLinePaths = existingLinePaths[measurement.id] ?? [];
+    const nextPathOrder = measurementLinePaths.length;
+
+    const insertPathResult = await perf.step("insertLinePath", () =>
+      supabase
+        .from("takeoff_measurement_line_paths")
+        .insert({
+          organization_id: resolved.organizationId,
+          measurement_id: measurement.id,
+          path_order: nextPathOrder,
+          measured_length_base: measuredLengthBase,
+          page_bbox_min_x: pathBounds.minX,
+          page_bbox_min_y: pathBounds.minY,
+          page_bbox_max_x: pathBounds.maxX,
+          page_bbox_max_y: pathBounds.maxY,
+        })
+        .select(takeoffMeasurementLinePathSelect)
+        .single()
+    );
+
+    if (insertPathResult.error || !insertPathResult.data) {
+      throw new Error(insertPathResult.error?.message ?? "Unable to add polyline path.");
+    }
+
+    const pathPointRows: Database["public"]["Tables"]["takeoff_measurement_line_path_points"]["Insert"][] = points.map((point, index) => ({
+      organization_id: resolved.organizationId,
+      line_path_id: insertPathResult.data.id,
+      point_order: index,
+      x: point.x,
+      y: point.y,
+    }));
+
+    if (pathPointRows.length > 0) {
+      const insertPathPointsResult = await perf.step("insertLinePathPoints", () =>
+        supabase.from("takeoff_measurement_line_path_points").insert(pathPointRows)
+      );
+      if (insertPathPointsResult.error) {
+        throw new Error(insertPathPointsResult.error.message);
+      }
+    }
+
+    const nextLinePaths = [
+      ...measurementLinePaths,
+      {
+        ...(insertPathResult.data as TakeoffMeasurementLinePath),
+        points: points.map((point, index) => ({
+          id: `${insertPathResult.data.id}:${index}`,
+          organization_id: resolved.organizationId,
+          line_path_id: insertPathResult.data.id,
+          point_order: index,
+          x: point.x,
+          y: point.y,
+          created_at: insertPathResult.data.created_at,
+        })),
+      },
+    ];
+    const combinedBounds = combineMeasurementBoundingBoxes(
+      nextLinePaths.map((path) => ({
+        minX: path.page_bbox_min_x,
+        minY: path.page_bbox_min_y,
+        maxX: path.page_bbox_max_x,
+        maxY: path.page_bbox_max_y,
+      }))
+    );
+    const totalMeasuredLengthBase = nextLinePaths.reduce((total, path) => total + Number(path.measured_length_base ?? 0), 0);
+    const displayValue = convertBaseLengthToDisplay({
+      baseUnit: activeCalibration.base_unit,
+      displayUnit: activeCalibration.display_unit,
+      value: totalMeasuredLengthBase,
+    });
+
+    const updateResult = await perf.step("updateMeasurement", () =>
+      supabase
+        .from("takeoff_measurements")
+        .update({
+          calibration_id: activeCalibration.id,
+          measured_length_base: totalMeasuredLengthBase,
+          display_value: displayValue,
+          display_unit: activeCalibration.display_unit,
+          page_bbox_min_x: combinedBounds.minX,
+          page_bbox_min_y: combinedBounds.minY,
+          page_bbox_max_x: combinedBounds.maxX,
+          page_bbox_max_y: combinedBounds.maxY,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
+        .eq("id", measurement.id)
+        .select(takeoffMeasurementSelect)
+        .single()
+    );
+
+    if (updateResult.error || !updateResult.data) {
+      throw new Error(updateResult.error?.message ?? "Unable to update polyline totals.");
+    }
+
+    const parentPoints = await perf.step("parentPointsLookup", () =>
+      getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase })
+    );
+
+    await perf.step("writeEvent", () =>
+      writeTakeoffMeasurementEvent({
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        points: parentPoints,
+        areaShapes: [],
+        linePaths: nextLinePaths,
+        eventType: "updated",
+        actorUserId: member.user_id,
+        changeReason: "Polyline path added to existing measurement",
+        diff: {
+          measurement_kind: "line",
+          appended_path_points: points,
+          previous_path_count: measurementLinePaths.length,
+          next_path_count: nextLinePaths.length,
+        },
+        supabase,
+      })
+    );
+
+    return {
+      ...updateResult.data,
+      points: parentPoints,
+      area_shapes: [],
+      line_paths: nextLinePaths,
+    };
+  } finally {
+    perf.flush({
+      opportunitySlug: input.opportunitySlug,
+      measurementId: input.measurementId,
+    });
+  }
+}
+
+export async function appendCountItemToMeasurementForOpportunity(
+  input: { opportunitySlug: string; measurementId: string; points: TakeoffPointInput[] }
+): Promise<TakeoffMeasurementWithPoints> {
+  const perf = createTakeoffPerfTrace("appendCountItemToMeasurementForOpportunity");
+  try {
+    const { member, resolved, supabase } = await perf.step("context", () =>
+      createValidatedTakeoffMutationContext(input.opportunitySlug)
+    );
+    const { data: measurement, error: measurementError } = await perf.step("measurementLookup", () =>
+      supabase
+        .from("takeoff_measurements")
+        .select(takeoffMeasurementSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", input.measurementId)
+        .maybeSingle()
+    );
+
+    if (measurementError || !measurement) {
+      throw new Error("The selected measurement could not be found.");
+    }
+
+    if (measurement.measurement_kind !== "count") {
+      throw new Error("Only count measurements can accept additional count items.");
+    }
+
+    if (measurement.status === "deleted") {
+      throw new Error("Deleted measurements cannot be updated.");
+    }
+
+    const existingPoints = await perf.step("existingPointsLookup", () =>
+      getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase })
+    );
+    const nextPoint = normalizePoints(input.points, 1)[0]!;
+    const countItemValue = getCountItemValueFromMeasurement({
+      measurement,
+      pointCount: existingPoints.length,
+    });
+    const nextCountValue = countItemValue * (existingPoints.length + 1);
+    const bounds = computeMeasurementBoundingBox([
+      ...existingPoints.map((point) => ({ x: point.x, y: point.y })),
+      nextPoint,
+    ]);
+
+    const insertPointResult = await perf.step("insertCountPoint", () =>
+      supabase
+        .from("takeoff_measurement_points")
+        .insert({
+          organization_id: resolved.organizationId,
+          measurement_id: measurement.id,
+          point_order: existingPoints.length,
+          x: nextPoint.x,
+          y: nextPoint.y,
+        })
+    );
+    if (insertPointResult.error) {
+      throw new Error(insertPointResult.error.message);
+    }
+
+    const nextMetadata = {
+      ...(measurement.metadata && typeof measurement.metadata === "object" ? measurement.metadata : {}),
+      countItemValue,
+    };
+    const updateResult = await perf.step("updateMeasurement", () =>
+      supabase
+        .from("takeoff_measurements")
+        .update({
+          count_value: nextCountValue,
+          display_value: nextCountValue,
+          display_unit: "count",
+          page_bbox_min_x: bounds.minX,
+          page_bbox_min_y: bounds.minY,
+          page_bbox_max_x: bounds.maxX,
+          page_bbox_max_y: bounds.maxY,
+          metadata: nextMetadata,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
+        .eq("id", measurement.id)
+        .select(takeoffMeasurementSelect)
+        .single()
+    );
+
+    if (updateResult.error || !updateResult.data) {
+      throw new Error(updateResult.error?.message ?? "Unable to update count total.");
+    }
+
+    const savedPoints = await perf.step("savedPointsLookup", () =>
+      getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase })
+    );
+
+    await perf.step("writeEvent", () =>
+      writeTakeoffMeasurementEvent({
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        points: savedPoints,
+        areaShapes: [],
+        eventType: "updated",
+        actorUserId: member.user_id,
+        changeReason: "Count item added to existing measurement",
+        diff: {
+          measurement_kind: "count",
+          appended_count_point: nextPoint,
+          previous_item_count: existingPoints.length,
+          next_item_count: savedPoints.length,
+          count_item_value: countItemValue,
+        },
+        supabase,
+      })
+    );
+
+    return {
+      ...updateResult.data,
+      points: savedPoints,
+      area_shapes: [],
+      line_paths: [],
+    };
+  } finally {
+    perf.flush({
+      opportunitySlug: input.opportunitySlug,
+      measurementId: input.measurementId,
+    });
+  }
 }
 
 export async function updateTakeoffMeasurementGeometryForOpportunity(
@@ -2361,10 +3359,27 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
     const previousPoints = await perf.step("previousPointsLookup", () =>
       getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase })
     );
+    const previousAreaShapes = measurement.measurement_kind === "area"
+      ? (await perf.step("previousAreaShapesLookup", () =>
+          getTakeoffAreaShapesForMeasurements([measurement.id], { supabase })
+        ))[measurement.id] ?? []
+      : [];
+    const previousLinePaths = measurement.measurement_kind === "line"
+      ? (await perf.step("previousLinePathsLookup", () =>
+          getTakeoffLinePathsForMeasurements([measurement.id], { supabase })
+        ))[measurement.id] ?? []
+      : [];
+    if (measurement.measurement_kind === "area" && previousAreaShapes.length > 1) {
+      throw new Error("Area quantities with multiple saved shapes cannot be edited as a single polygon.");
+    }
+    if (measurement.measurement_kind === "line" && previousLinePaths.length > 1) {
+      throw new Error("Polyline measurements with multiple saved paths cannot be edited as a single path.");
+    }
     const minimumPoints = measurement.measurement_kind === "count" ? 1 : measurement.measurement_kind === "area" ? 3 : 2;
     const points = normalizePoints(input.points, minimumPoints);
     let measuredLengthBase: number | null = null;
     let measuredAreaBase: number | null = null;
+    let measuredPerimeterBase: number | null = null;
     let displayValue: number | null = null;
     let displayUnit: string | null = null;
     let calibrationId: string | null = null;
@@ -2376,7 +3391,9 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
       displayUnit = "count";
     } else if (measurement.measurement_kind === "area") {
       const areaPts = computePolygonAreaPts(page, points);
+      const perimeterPts = computePolygonPerimeterPts(page, points);
       measuredAreaBase = areaPts * Number(activeCalibration!.scale_ratio) * Number(activeCalibration!.scale_ratio);
+      measuredPerimeterBase = perimeterPts * Number(activeCalibration!.scale_ratio);
       displayValue = convertBaseAreaToDisplay({
         baseUnit: activeCalibration!.base_unit,
         displayUnit: activeCalibration!.display_unit,
@@ -2402,6 +3419,7 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
       calibration_id: calibrationId,
       measured_length_base: measuredLengthBase,
       measured_area_base: measuredAreaBase,
+      measured_perimeter_base: measuredPerimeterBase,
       display_value: displayValue,
       display_unit: displayUnit,
       count_value: countValue,
@@ -2454,6 +3472,143 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
       }
     }
 
+    let nextAreaShapes = previousAreaShapes;
+    let nextLinePaths = previousLinePaths;
+    if (measurement.measurement_kind === "area") {
+      const areaShapeBounds = computeMeasurementBoundingBox(points);
+      const matchingShape = previousAreaShapes[0] ?? null;
+
+      if (matchingShape) {
+        const updateAreaShapeResult = await perf.step("updateAreaShape", () =>
+          supabase
+            .from("takeoff_measurement_area_shapes")
+            .update({
+              measured_area_base: measuredAreaBase ?? 0,
+              measured_perimeter_base: measuredPerimeterBase ?? 0,
+              page_bbox_min_x: areaShapeBounds.minX,
+              page_bbox_min_y: areaShapeBounds.minY,
+              page_bbox_max_x: areaShapeBounds.maxX,
+              page_bbox_max_y: areaShapeBounds.maxY,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", matchingShape.id)
+            .select(takeoffMeasurementAreaShapeSelect)
+            .single()
+        );
+        if (updateAreaShapeResult.error || !updateAreaShapeResult.data) {
+          throw new Error(updateAreaShapeResult.error?.message ?? "Unable to update area shape.");
+        }
+
+        const deleteAreaShapePointsResult = await perf.step("deleteAreaShapePoints", () =>
+          supabase
+            .from("takeoff_measurement_area_shape_points")
+            .delete()
+            .eq("area_shape_id", matchingShape.id)
+        );
+        if (deleteAreaShapePointsResult.error) {
+          throw new Error(deleteAreaShapePointsResult.error.message);
+        }
+
+        if (pointRows.length > 0) {
+          const insertAreaShapePointsResult = await perf.step("insertAreaShapePoints", () =>
+            supabase.from("takeoff_measurement_area_shape_points").insert(
+              points.map((point, index) => ({
+                organization_id: resolved.organizationId,
+                area_shape_id: matchingShape.id,
+                point_order: index,
+                x: point.x,
+                y: point.y,
+              }))
+            )
+          );
+          if (insertAreaShapePointsResult.error) {
+            throw new Error(insertAreaShapePointsResult.error.message);
+          }
+        }
+
+        nextAreaShapes = [
+          {
+            ...(updateAreaShapeResult.data as TakeoffMeasurementAreaShape),
+            points: points.map((point, index) => ({
+              id: matchingShape.points[index]?.id ?? `${matchingShape.id}:${index}`,
+              organization_id: resolved.organizationId,
+              area_shape_id: matchingShape.id,
+              point_order: index,
+              x: point.x,
+              y: point.y,
+              created_at: matchingShape.points[index]?.created_at ?? updateAreaShapeResult.data.created_at,
+            })),
+          },
+        ];
+      }
+    } else if (measurement.measurement_kind === "line" && previousLinePaths.length > 0) {
+      const linePathBounds = computeMeasurementBoundingBox(points);
+      const matchingPath = previousLinePaths[0] ?? null;
+
+      if (matchingPath) {
+        const updateLinePathResult = await perf.step("updateLinePath", () =>
+          supabase
+            .from("takeoff_measurement_line_paths")
+            .update({
+              measured_length_base: measuredLengthBase ?? 0,
+              page_bbox_min_x: linePathBounds.minX,
+              page_bbox_min_y: linePathBounds.minY,
+              page_bbox_max_x: linePathBounds.maxX,
+              page_bbox_max_y: linePathBounds.maxY,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", matchingPath.id)
+            .select(takeoffMeasurementLinePathSelect)
+            .single()
+        );
+        if (updateLinePathResult.error || !updateLinePathResult.data) {
+          throw new Error(updateLinePathResult.error?.message ?? "Unable to update polyline path.");
+        }
+
+        const deleteLinePathPointsResult = await perf.step("deleteLinePathPoints", () =>
+          supabase
+            .from("takeoff_measurement_line_path_points")
+            .delete()
+            .eq("line_path_id", matchingPath.id)
+        );
+        if (deleteLinePathPointsResult.error) {
+          throw new Error(deleteLinePathPointsResult.error.message);
+        }
+
+        if (pointRows.length > 0) {
+          const insertLinePathPointsResult = await perf.step("insertLinePathPoints", () =>
+            supabase.from("takeoff_measurement_line_path_points").insert(
+              points.map((point, index) => ({
+                organization_id: resolved.organizationId,
+                line_path_id: matchingPath.id,
+                point_order: index,
+                x: point.x,
+                y: point.y,
+              }))
+            )
+          );
+          if (insertLinePathPointsResult.error) {
+            throw new Error(insertLinePathPointsResult.error.message);
+          }
+        }
+
+        nextLinePaths = [
+          {
+            ...(updateLinePathResult.data as TakeoffMeasurementLinePath),
+            points: points.map((point, index) => ({
+              id: matchingPath.points[index]?.id ?? `${matchingPath.id}:${index}`,
+              organization_id: resolved.organizationId,
+              line_path_id: matchingPath.id,
+              point_order: index,
+              x: point.x,
+              y: point.y,
+              created_at: matchingPath.points[index]?.created_at ?? updateLinePathResult.data.created_at,
+            })),
+          },
+        ];
+      }
+    }
+
     const savedPoints: TakeoffMeasurementPoint[] = points.map((point, index) => ({
       id: previousPoints[index]?.id ?? `${measurement.id}:${index}`,
       organization_id: resolved.organizationId,
@@ -2471,7 +3626,9 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
         opportunityId: resolved.opportunityId,
         measurement: updateResult.data,
         points: savedPoints,
-        eventType: "created",
+        areaShapes: nextAreaShapes,
+        linePaths: nextLinePaths,
+        eventType: "updated",
         actorUserId: member.user_id,
         changeReason: `${measurement.measurement_kind === "area" ? "Area" : measurement.measurement_kind === "count" ? "Count" : "Line"} measurement geometry updated`,
         diff: {
@@ -2487,11 +3644,1022 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
     return {
       ...updateResult.data,
       points: savedPoints,
+      area_shapes: nextAreaShapes,
+      line_paths: nextLinePaths,
     };
   } finally {
     perf.flush({
       opportunitySlug: input.opportunitySlug,
       measurementId: input.measurementId,
+    });
+  }
+}
+
+export async function updateTakeoffMeasurementChildGeometryForOpportunity(
+  input: UpdateTakeoffMeasurementChildGeometryInput
+): Promise<TakeoffMeasurementWithPoints> {
+  const perf = createTakeoffPerfTrace("updateTakeoffMeasurementChildGeometryForOpportunity");
+  try {
+    const { member, resolved, supabase } = await perf.step("context", () =>
+      createValidatedTakeoffMutationContext(input.opportunitySlug)
+    );
+    const { data: measurement, error: measurementError } = await perf.step("measurementLookup", () =>
+      supabase
+        .from("takeoff_measurements")
+        .select(takeoffMeasurementSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", input.measurementId)
+        .maybeSingle()
+    );
+
+    if (measurementError || !measurement) {
+      throw new Error("The selected measurement could not be found.");
+    }
+
+    if (measurement.status === "deleted") {
+      throw new Error("Deleted measurements cannot be edited.");
+    }
+
+    if (
+      (input.childKind === "area-shape" && measurement.measurement_kind !== "area") ||
+      (input.childKind === "line-path" && measurement.measurement_kind !== "line")
+    ) {
+      throw new Error("The selected child does not match the measurement type.");
+    }
+
+    const { data: page, error: pageError } = await perf.step("pageLookup", () =>
+      supabase
+        .from("takeoff_pages")
+        .select(takeoffPageSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", measurement.page_id)
+        .maybeSingle()
+    );
+
+    if (pageError || !page) {
+      throw new Error("The selected takeoff page could not be found.");
+    }
+
+    const activeCalibration = await perf.step("activeCalibrationLookup", () =>
+      getActiveTakeoffCalibrationForPage(page.id, { supabase })
+    );
+    if (!activeCalibration) {
+      throw new Error(
+        input.childKind === "area-shape"
+          ? "Manual area measurements require an active calibration."
+          : "Manual line measurements require an active calibration."
+      );
+    }
+
+    const normalizedPoints = normalizePoints(input.points, input.childKind === "area-shape" ? 3 : 2);
+    const previousSnapshot = await perf.step("previousSnapshot", () =>
+      hydrateTakeoffMeasurementWithChildren({
+        measurement,
+        supabase,
+      })
+    );
+
+    if (input.childKind === "area-shape") {
+      const existingShapes = previousSnapshot.area_shapes;
+      const targetShape = existingShapes.find((shape) => shape.id === input.childId);
+      if (!targetShape) {
+        throw new Error("The selected area child could not be found.");
+      }
+
+      const nextMeasuredAreaBase =
+        computePolygonAreaPts(page, normalizedPoints) *
+        Number(activeCalibration.scale_ratio) *
+        Number(activeCalibration.scale_ratio);
+      const nextMeasuredPerimeterBase =
+        computePolygonPerimeterPts(page, normalizedPoints) *
+        Number(activeCalibration.scale_ratio);
+      const nextBounds = computeMeasurementBoundingBox(normalizedPoints);
+
+      const updateShapeResult = await perf.step("updateAreaShape", () =>
+        supabase
+          .from("takeoff_measurement_area_shapes")
+          .update({
+            measured_area_base: nextMeasuredAreaBase,
+            measured_perimeter_base: nextMeasuredPerimeterBase,
+            page_bbox_min_x: nextBounds.minX,
+            page_bbox_min_y: nextBounds.minY,
+            page_bbox_max_x: nextBounds.maxX,
+            page_bbox_max_y: nextBounds.maxY,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetShape.id)
+          .select(takeoffMeasurementAreaShapeSelect)
+          .single()
+      );
+
+      if (updateShapeResult.error || !updateShapeResult.data) {
+        throw new Error(updateShapeResult.error?.message ?? "Unable to update area shape.");
+      }
+
+      const deleteShapePointsResult = await perf.step("deleteAreaShapePoints", () =>
+        supabase
+          .from("takeoff_measurement_area_shape_points")
+          .delete()
+          .eq("area_shape_id", targetShape.id)
+      );
+
+      if (deleteShapePointsResult.error) {
+        throw new Error(deleteShapePointsResult.error.message);
+      }
+
+      const insertShapePointsResult = await perf.step("insertAreaShapePoints", () =>
+        supabase.from("takeoff_measurement_area_shape_points").insert(
+          normalizedPoints.map((point, index) => ({
+            organization_id: resolved.organizationId,
+            area_shape_id: targetShape.id,
+            point_order: index,
+            x: point.x,
+            y: point.y,
+          }))
+        )
+      );
+
+      if (insertShapePointsResult.error) {
+        throw new Error(insertShapePointsResult.error.message);
+      }
+
+      const nextShapes = existingShapes.map((shape) =>
+        shape.id === targetShape.id
+          ? {
+              ...(updateShapeResult.data as TakeoffMeasurementAreaShape),
+              points: normalizedPoints.map((point, index) => ({
+                id: targetShape.points[index]?.id ?? `${targetShape.id}:${index}`,
+                organization_id: resolved.organizationId,
+                area_shape_id: targetShape.id,
+                point_order: index,
+                x: point.x,
+                y: point.y,
+                created_at: targetShape.points[index]?.created_at ?? updateShapeResult.data.created_at,
+              })),
+            }
+          : shape
+      );
+      const combinedBounds = combineMeasurementBoundingBoxes(
+        nextShapes.map((shape) => ({
+          minX: shape.page_bbox_min_x,
+          minY: shape.page_bbox_min_y,
+          maxX: shape.page_bbox_max_x,
+          maxY: shape.page_bbox_max_y,
+        }))
+      );
+      const totalMeasuredAreaBase = nextShapes.reduce((total, shape) => total + Number(shape.measured_area_base ?? 0), 0);
+      const totalMeasuredPerimeterBase = nextShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0);
+      const displayValue = convertBaseAreaToDisplay({
+        baseUnit: activeCalibration.base_unit,
+        displayUnit: activeCalibration.display_unit,
+        value: totalMeasuredAreaBase,
+      });
+      const nextParentPoints = nextShapes[0]?.points.map((point) => ({ x: point.x, y: point.y })) ?? [];
+
+      const updateMeasurementResult = await perf.step("updateMeasurement", () =>
+        supabase
+          .from("takeoff_measurements")
+          .update({
+            calibration_id: activeCalibration.id,
+            measured_area_base: totalMeasuredAreaBase,
+            measured_perimeter_base: totalMeasuredPerimeterBase,
+            display_value: displayValue,
+            display_unit: `${activeCalibration.display_unit}²`,
+            page_bbox_min_x: combinedBounds.minX,
+            page_bbox_min_y: combinedBounds.minY,
+            page_bbox_max_x: combinedBounds.maxX,
+            page_bbox_max_y: combinedBounds.maxY,
+            version: measurement.version + 1,
+            updated_by: member.user_id,
+          })
+          .eq("id", measurement.id)
+          .select(takeoffMeasurementSelect)
+          .single()
+      );
+
+      if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+        throw new Error(updateMeasurementResult.error?.message ?? "Unable to update area totals.");
+      }
+
+      await perf.step("replaceParentPoints", () =>
+        replaceTakeoffMeasurementPoints({
+          organizationId: resolved.organizationId,
+          measurementId: measurement.id,
+          points: nextParentPoints,
+          supabase,
+        })
+      );
+
+      const nextMeasurement = await perf.step("hydrateNextMeasurement", () =>
+        hydrateTakeoffMeasurementWithChildren({
+          measurement: updateMeasurementResult.data,
+          supabase,
+        })
+      );
+
+      await perf.step("writeEvent", () =>
+        writeTakeoffMeasurementEvent({
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          points: nextMeasurement.points,
+          areaShapes: nextMeasurement.area_shapes,
+          linePaths: [],
+          eventType: "updated",
+          actorUserId: member.user_id,
+          changeReason: "Area child geometry updated",
+          diff: {
+            measurement_kind: "area",
+            child_kind: "area-shape",
+            child_id: input.childId,
+            previous_points: targetShape.points.map((point) => ({ x: point.x, y: point.y })),
+            next_points: normalizedPoints,
+          },
+          supabase,
+        })
+      );
+
+      return nextMeasurement;
+    }
+
+    const existingPaths = previousSnapshot.line_paths;
+    const targetPath = existingPaths.find((path) => path.id === input.childId);
+    if (!targetPath) {
+      throw new Error("The selected polyline child could not be found.");
+    }
+
+    const nextMeasuredLengthBase = computePolylineLengthPts(page, normalizedPoints) * Number(activeCalibration.scale_ratio);
+    const nextBounds = computeMeasurementBoundingBox(normalizedPoints);
+
+    const updatePathResult = await perf.step("updateLinePath", () =>
+      supabase
+        .from("takeoff_measurement_line_paths")
+        .update({
+          measured_length_base: nextMeasuredLengthBase,
+          page_bbox_min_x: nextBounds.minX,
+          page_bbox_min_y: nextBounds.minY,
+          page_bbox_max_x: nextBounds.maxX,
+          page_bbox_max_y: nextBounds.maxY,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetPath.id)
+        .select(takeoffMeasurementLinePathSelect)
+        .single()
+    );
+
+    if (updatePathResult.error || !updatePathResult.data) {
+      throw new Error(updatePathResult.error?.message ?? "Unable to update polyline path.");
+    }
+
+    const deletePathPointsResult = await perf.step("deleteLinePathPoints", () =>
+      supabase
+        .from("takeoff_measurement_line_path_points")
+        .delete()
+        .eq("line_path_id", targetPath.id)
+    );
+
+    if (deletePathPointsResult.error) {
+      throw new Error(deletePathPointsResult.error.message);
+    }
+
+    const insertPathPointsResult = await perf.step("insertLinePathPoints", () =>
+      supabase.from("takeoff_measurement_line_path_points").insert(
+        normalizedPoints.map((point, index) => ({
+          organization_id: resolved.organizationId,
+          line_path_id: targetPath.id,
+          point_order: index,
+          x: point.x,
+          y: point.y,
+        }))
+      )
+    );
+
+    if (insertPathPointsResult.error) {
+      throw new Error(insertPathPointsResult.error.message);
+    }
+
+    const nextPaths = existingPaths.map((path) =>
+      path.id === targetPath.id
+        ? {
+            ...(updatePathResult.data as TakeoffMeasurementLinePath),
+            points: normalizedPoints.map((point, index) => ({
+              id: targetPath.points[index]?.id ?? `${targetPath.id}:${index}`,
+              organization_id: resolved.organizationId,
+              line_path_id: targetPath.id,
+              point_order: index,
+              x: point.x,
+              y: point.y,
+              created_at: targetPath.points[index]?.created_at ?? updatePathResult.data.created_at,
+            })),
+          }
+        : path
+    );
+    const combinedBounds = combineMeasurementBoundingBoxes(
+      nextPaths.map((path) => ({
+        minX: path.page_bbox_min_x,
+        minY: path.page_bbox_min_y,
+        maxX: path.page_bbox_max_x,
+        maxY: path.page_bbox_max_y,
+      }))
+    );
+    const totalMeasuredLengthBase = nextPaths.reduce((total, path) => total + Number(path.measured_length_base ?? 0), 0);
+    const displayValue = convertBaseLengthToDisplay({
+      baseUnit: activeCalibration.base_unit,
+      displayUnit: activeCalibration.display_unit,
+      value: totalMeasuredLengthBase,
+    });
+    const nextParentPoints = nextPaths[0]?.points.map((point) => ({ x: point.x, y: point.y })) ?? [];
+
+    const updateMeasurementResult = await perf.step("updateMeasurement", () =>
+      supabase
+        .from("takeoff_measurements")
+        .update({
+          calibration_id: activeCalibration.id,
+          measured_length_base: totalMeasuredLengthBase,
+          display_value: displayValue,
+          display_unit: activeCalibration.display_unit,
+          page_bbox_min_x: combinedBounds.minX,
+          page_bbox_min_y: combinedBounds.minY,
+          page_bbox_max_x: combinedBounds.maxX,
+          page_bbox_max_y: combinedBounds.maxY,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
+        .eq("id", measurement.id)
+        .select(takeoffMeasurementSelect)
+        .single()
+    );
+
+    if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+      throw new Error(updateMeasurementResult.error?.message ?? "Unable to update polyline totals.");
+    }
+
+    await perf.step("replaceParentPoints", () =>
+      replaceTakeoffMeasurementPoints({
+        organizationId: resolved.organizationId,
+        measurementId: measurement.id,
+        points: nextParentPoints,
+        supabase,
+      })
+    );
+
+    const nextMeasurement = await perf.step("hydrateNextMeasurement", () =>
+      hydrateTakeoffMeasurementWithChildren({
+        measurement: updateMeasurementResult.data,
+        supabase,
+      })
+    );
+
+    await perf.step("writeEvent", () =>
+      writeTakeoffMeasurementEvent({
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateMeasurementResult.data,
+        points: nextMeasurement.points,
+        areaShapes: [],
+        linePaths: nextMeasurement.line_paths,
+        eventType: "updated",
+        actorUserId: member.user_id,
+        changeReason: "Polyline child geometry updated",
+        diff: {
+          measurement_kind: "line",
+          child_kind: "line-path",
+          child_id: input.childId,
+          previous_points: targetPath.points.map((point) => ({ x: point.x, y: point.y })),
+          next_points: normalizedPoints,
+        },
+        supabase,
+      })
+    );
+
+    return nextMeasurement;
+  } finally {
+    perf.flush({
+      opportunitySlug: input.opportunitySlug,
+      measurementId: input.measurementId,
+      childId: input.childId,
+      childKind: input.childKind,
+    });
+  }
+}
+
+export async function deleteTakeoffMeasurementChildForOpportunity(
+  input: DeleteTakeoffMeasurementChildInput
+): Promise<TakeoffMeasurementWithPoints> {
+  const perf = createTakeoffPerfTrace("deleteTakeoffMeasurementChildForOpportunity");
+  try {
+    const { member, resolved, supabase } = await perf.step("context", () =>
+      createValidatedTakeoffMutationContext(input.opportunitySlug)
+    );
+    const { data: measurement, error: measurementError } = await perf.step("measurementLookup", () =>
+      supabase
+        .from("takeoff_measurements")
+        .select(takeoffMeasurementSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", input.measurementId)
+        .maybeSingle()
+    );
+
+    if (measurementError || !measurement) {
+      throw new Error("The selected measurement could not be found.");
+    }
+
+    if (measurement.status === "deleted") {
+      throw new Error("Deleted measurements cannot be updated.");
+    }
+
+    const previousSnapshot = await perf.step("previousSnapshot", () =>
+      hydrateTakeoffMeasurementWithChildren({
+        measurement,
+        supabase,
+      })
+    );
+
+    if (input.childKind === "count-item") {
+      if (measurement.measurement_kind !== "count") {
+        throw new Error("The selected child does not match the measurement type.");
+      }
+
+      const existingPoints = previousSnapshot.points;
+      const targetPoint =
+        existingPoints.find((point) => point.id === input.childId) ??
+        (() => {
+          const fallbackPointOrder = getCountPointOrderFromChildId({
+            measurementId: measurement.id,
+            childId: input.childId,
+          });
+
+          if (fallbackPointOrder === null) {
+            return null;
+          }
+
+          return existingPoints.find((point) => point.point_order === fallbackPointOrder) ?? null;
+        })();
+      if (!targetPoint) {
+        throw new Error("The selected count child could not be found.");
+      }
+
+      if (existingPoints.length === 1) {
+        const updateMeasurementResult = await perf.step("deleteParentMeasurement", () =>
+          supabase
+            .from("takeoff_measurements")
+            .update({
+              status: "deleted",
+              version: measurement.version + 1,
+              updated_by: member.user_id,
+              archived_by: member.user_id,
+              archived_at: new Date().toISOString(),
+            })
+            .eq("id", measurement.id)
+            .select(takeoffMeasurementSelect)
+            .single()
+        );
+
+        if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+          throw new Error(updateMeasurementResult.error?.message ?? "Unable to delete measurement.");
+        }
+
+        await perf.step("writeEvent", () =>
+          writeTakeoffMeasurementEvent({
+            organizationId: resolved.organizationId,
+            projectId: resolved.projectId,
+            opportunityId: resolved.opportunityId,
+            measurement: updateMeasurementResult.data,
+            points: [],
+            areaShapes: [],
+            linePaths: [],
+            eventType: "deleted",
+            actorUserId: member.user_id,
+            changeReason: "Last count child deleted, measurement removed",
+            diff: {
+              measurement_kind: "count",
+              child_kind: "count-item",
+              child_id: input.childId,
+              deleted_last_child: true,
+            },
+            supabase,
+          })
+        );
+
+        return {
+          ...updateMeasurementResult.data,
+          points: [],
+          area_shapes: [],
+          line_paths: [],
+        };
+      }
+
+      const deletePointResult = await perf.step("deleteCountPoint", () =>
+        supabase
+          .from("takeoff_measurement_points")
+          .delete()
+          .eq("id", input.childId)
+      );
+
+      if (deletePointResult.error) {
+        throw new Error(deletePointResult.error.message);
+      }
+
+      const remainingPoints = existingPoints.filter((point) => point.id !== input.childId);
+
+      await perf.step("reorderCountPoints", async () => {
+        for (const [index, point] of remainingPoints.entries()) {
+          if (point.point_order === index) {
+            continue;
+          }
+
+          const reorderResult = await supabase
+            .from("takeoff_measurement_points")
+            .update({
+              point_order: index,
+            })
+            .eq("id", point.id);
+
+          if (reorderResult.error) {
+            throw new Error(reorderResult.error.message);
+          }
+        }
+      });
+
+      const countItemValue = getCountItemValueFromMeasurement({
+        measurement,
+        pointCount: existingPoints.length,
+      });
+      const nextCountValue = countItemValue * remainingPoints.length;
+      const nextBounds = computeMeasurementBoundingBox(
+        remainingPoints.map((point) => ({ x: point.x, y: point.y }))
+      );
+      const nextMetadata = {
+        ...(measurement.metadata && typeof measurement.metadata === "object" ? measurement.metadata : {}),
+        countItemValue,
+      };
+
+      const updateMeasurementResult = await perf.step("updateMeasurement", () =>
+        supabase
+          .from("takeoff_measurements")
+          .update({
+            count_value: nextCountValue,
+            display_value: nextCountValue,
+            display_unit: "count",
+            page_bbox_min_x: nextBounds.minX,
+            page_bbox_min_y: nextBounds.minY,
+            page_bbox_max_x: nextBounds.maxX,
+            page_bbox_max_y: nextBounds.maxY,
+            metadata: nextMetadata,
+            version: measurement.version + 1,
+            updated_by: member.user_id,
+          })
+          .eq("id", measurement.id)
+          .select(takeoffMeasurementSelect)
+          .single()
+      );
+
+      if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+        throw new Error(updateMeasurementResult.error?.message ?? "Unable to update count total.");
+      }
+
+      const nextMeasurement = await perf.step("hydrateNextMeasurement", () =>
+        hydrateTakeoffMeasurementWithChildren({
+          measurement: updateMeasurementResult.data,
+          supabase,
+        })
+      );
+
+      await perf.step("writeEvent", () =>
+        writeTakeoffMeasurementEvent({
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          points: nextMeasurement.points,
+          areaShapes: [],
+          linePaths: [],
+          eventType: "updated",
+          actorUserId: member.user_id,
+          changeReason: "Count child deleted",
+          diff: {
+            measurement_kind: "count",
+            child_kind: "count-item",
+            child_id: input.childId,
+            previous_child_count: existingPoints.length,
+            next_child_count: nextMeasurement.points.length,
+            count_item_value: countItemValue,
+          },
+          supabase,
+        })
+      );
+
+      return nextMeasurement;
+    }
+
+    if (input.childKind === "area-shape") {
+      if (measurement.measurement_kind !== "area") {
+        throw new Error("The selected child does not match the measurement type.");
+      }
+
+      const existingShapes = previousSnapshot.area_shapes;
+      const targetShape = existingShapes.find((shape) => shape.id === input.childId);
+      if (!targetShape) {
+        throw new Error("The selected area child could not be found.");
+      }
+
+      if (existingShapes.length === 1) {
+        const updateMeasurementResult = await perf.step("deleteParentMeasurement", () =>
+          supabase
+            .from("takeoff_measurements")
+            .update({
+              status: "deleted",
+              version: measurement.version + 1,
+              updated_by: member.user_id,
+              archived_by: member.user_id,
+              archived_at: new Date().toISOString(),
+            })
+            .eq("id", measurement.id)
+            .select(takeoffMeasurementSelect)
+            .single()
+        );
+
+        if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+          throw new Error(updateMeasurementResult.error?.message ?? "Unable to delete measurement.");
+        }
+
+        await perf.step("writeEvent", () =>
+          writeTakeoffMeasurementEvent({
+            organizationId: resolved.organizationId,
+            projectId: resolved.projectId,
+            opportunityId: resolved.opportunityId,
+            measurement: updateMeasurementResult.data,
+            points: [],
+            areaShapes: [],
+            linePaths: [],
+            eventType: "deleted",
+            actorUserId: member.user_id,
+            changeReason: "Last area child deleted, measurement removed",
+            diff: {
+              measurement_kind: "area",
+              child_kind: "area-shape",
+              child_id: input.childId,
+              deleted_last_child: true,
+            },
+            supabase,
+          })
+        );
+
+        return {
+          ...updateMeasurementResult.data,
+          points: [],
+          area_shapes: [],
+          line_paths: [],
+        };
+      }
+
+      const deleteShapeResult = await perf.step("deleteAreaShape", () =>
+        supabase
+          .from("takeoff_measurement_area_shapes")
+          .delete()
+          .eq("id", input.childId)
+      );
+
+      if (deleteShapeResult.error) {
+        throw new Error(deleteShapeResult.error.message);
+      }
+
+      const remainingShapes = existingShapes
+        .filter((shape) => shape.id !== input.childId)
+        .sort((left, right) => left.shape_order - right.shape_order);
+
+      for (const [index, shape] of remainingShapes.entries()) {
+        if (shape.shape_order === index) {
+          continue;
+        }
+
+        const reorderResult = await perf.step(`reorderAreaShape:${shape.id}`, () =>
+          supabase
+            .from("takeoff_measurement_area_shapes")
+            .update({
+              shape_order: index,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", shape.id)
+        );
+
+        if (reorderResult.error) {
+          throw new Error(reorderResult.error.message);
+        }
+      }
+
+      const combinedBounds = combineMeasurementBoundingBoxes(
+        remainingShapes.map((shape) => ({
+          minX: shape.page_bbox_min_x,
+          minY: shape.page_bbox_min_y,
+          maxX: shape.page_bbox_max_x,
+          maxY: shape.page_bbox_max_y,
+        }))
+      );
+      const totalMeasuredAreaBase = remainingShapes.reduce((total, shape) => total + Number(shape.measured_area_base ?? 0), 0);
+      const totalMeasuredPerimeterBase = remainingShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0);
+      const { data: page, error: pageError } = await perf.step("pageLookup", () =>
+        supabase
+          .from("takeoff_pages")
+          .select(takeoffPageSelect)
+          .eq("organization_id", resolved.organizationId)
+          .eq("project_id", resolved.projectId)
+          .eq("id", measurement.page_id)
+          .maybeSingle()
+      );
+
+      if (pageError || !page) {
+        throw new Error("The selected takeoff page could not be found.");
+      }
+
+      const activeCalibration = await perf.step("activeCalibrationLookup", () =>
+        getActiveTakeoffCalibrationForPage(page.id, { supabase })
+      );
+      if (!activeCalibration) {
+        throw new Error("Manual area measurements require an active calibration.");
+      }
+
+      const displayValue = convertBaseAreaToDisplay({
+        baseUnit: activeCalibration.base_unit,
+        displayUnit: activeCalibration.display_unit,
+        value: totalMeasuredAreaBase,
+      });
+      const nextParentPoints = remainingShapes[0]?.points.map((point) => ({ x: point.x, y: point.y })) ?? [];
+
+      const updateMeasurementResult = await perf.step("updateMeasurement", () =>
+        supabase
+          .from("takeoff_measurements")
+          .update({
+            calibration_id: activeCalibration.id,
+            measured_area_base: totalMeasuredAreaBase,
+            measured_perimeter_base: totalMeasuredPerimeterBase,
+            display_value: displayValue,
+            display_unit: `${activeCalibration.display_unit}²`,
+            page_bbox_min_x: combinedBounds.minX,
+            page_bbox_min_y: combinedBounds.minY,
+            page_bbox_max_x: combinedBounds.maxX,
+            page_bbox_max_y: combinedBounds.maxY,
+            version: measurement.version + 1,
+            updated_by: member.user_id,
+          })
+          .eq("id", measurement.id)
+          .select(takeoffMeasurementSelect)
+          .single()
+      );
+
+      if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+        throw new Error(updateMeasurementResult.error?.message ?? "Unable to update area totals.");
+      }
+
+      await perf.step("replaceParentPoints", () =>
+        replaceTakeoffMeasurementPoints({
+          organizationId: resolved.organizationId,
+          measurementId: measurement.id,
+          points: nextParentPoints,
+          supabase,
+        })
+      );
+
+      const nextMeasurement = await perf.step("hydrateNextMeasurement", () =>
+        hydrateTakeoffMeasurementWithChildren({
+          measurement: updateMeasurementResult.data,
+          supabase,
+        })
+      );
+
+      await perf.step("writeEvent", () =>
+        writeTakeoffMeasurementEvent({
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          points: nextMeasurement.points,
+          areaShapes: nextMeasurement.area_shapes,
+          linePaths: [],
+          eventType: "updated",
+          actorUserId: member.user_id,
+          changeReason: "Area child deleted",
+          diff: {
+            measurement_kind: "area",
+            child_kind: "area-shape",
+            child_id: input.childId,
+            previous_child_count: existingShapes.length,
+            next_child_count: nextMeasurement.area_shapes.length,
+          },
+          supabase,
+        })
+      );
+
+      return nextMeasurement;
+    }
+
+    if (measurement.measurement_kind !== "line") {
+      throw new Error("The selected child does not match the measurement type.");
+    }
+
+    const existingPaths = previousSnapshot.line_paths;
+    const targetPath = existingPaths.find((path) => path.id === input.childId);
+    if (!targetPath) {
+      throw new Error("The selected polyline child could not be found.");
+    }
+
+    if (existingPaths.length === 1) {
+      const updateMeasurementResult = await perf.step("deleteParentMeasurement", () =>
+        supabase
+          .from("takeoff_measurements")
+          .update({
+            status: "deleted",
+            version: measurement.version + 1,
+            updated_by: member.user_id,
+            archived_by: member.user_id,
+            archived_at: new Date().toISOString(),
+          })
+          .eq("id", measurement.id)
+          .select(takeoffMeasurementSelect)
+          .single()
+      );
+
+      if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+        throw new Error(updateMeasurementResult.error?.message ?? "Unable to delete measurement.");
+      }
+
+      await perf.step("writeEvent", () =>
+        writeTakeoffMeasurementEvent({
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          points: [],
+          areaShapes: [],
+          linePaths: [],
+          eventType: "deleted",
+          actorUserId: member.user_id,
+          changeReason: "Last polyline child deleted, measurement removed",
+          diff: {
+            measurement_kind: "line",
+            child_kind: "line-path",
+            child_id: input.childId,
+            deleted_last_child: true,
+          },
+          supabase,
+        })
+      );
+
+      return {
+        ...updateMeasurementResult.data,
+        points: [],
+        area_shapes: [],
+        line_paths: [],
+      };
+    }
+
+    const deletePathResult = await perf.step("deleteLinePath", () =>
+      supabase
+        .from("takeoff_measurement_line_paths")
+        .delete()
+        .eq("id", input.childId)
+    );
+
+    if (deletePathResult.error) {
+      throw new Error(deletePathResult.error.message);
+    }
+
+    const remainingPaths = existingPaths
+      .filter((path) => path.id !== input.childId)
+      .sort((left, right) => left.path_order - right.path_order);
+
+    for (const [index, path] of remainingPaths.entries()) {
+      if (path.path_order === index) {
+        continue;
+      }
+
+      const reorderResult = await perf.step(`reorderLinePath:${path.id}`, () =>
+        supabase
+          .from("takeoff_measurement_line_paths")
+          .update({
+            path_order: index,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", path.id)
+      );
+
+      if (reorderResult.error) {
+        throw new Error(reorderResult.error.message);
+      }
+    }
+
+    const combinedBounds = combineMeasurementBoundingBoxes(
+      remainingPaths.map((path) => ({
+        minX: path.page_bbox_min_x,
+        minY: path.page_bbox_min_y,
+        maxX: path.page_bbox_max_x,
+        maxY: path.page_bbox_max_y,
+      }))
+    );
+    const totalMeasuredLengthBase = remainingPaths.reduce((total, path) => total + Number(path.measured_length_base ?? 0), 0);
+    const { data: page, error: pageError } = await perf.step("pageLookup", () =>
+      supabase
+        .from("takeoff_pages")
+        .select(takeoffPageSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("id", measurement.page_id)
+        .maybeSingle()
+    );
+
+    if (pageError || !page) {
+      throw new Error("The selected takeoff page could not be found.");
+    }
+
+    const activeCalibration = await perf.step("activeCalibrationLookup", () =>
+      getActiveTakeoffCalibrationForPage(page.id, { supabase })
+    );
+    if (!activeCalibration) {
+      throw new Error("Manual line measurements require an active calibration.");
+    }
+
+    const displayValue = convertBaseLengthToDisplay({
+      baseUnit: activeCalibration.base_unit,
+      displayUnit: activeCalibration.display_unit,
+      value: totalMeasuredLengthBase,
+    });
+    const nextParentPoints = remainingPaths[0]?.points.map((point) => ({ x: point.x, y: point.y })) ?? [];
+
+    const updateMeasurementResult = await perf.step("updateMeasurement", () =>
+      supabase
+        .from("takeoff_measurements")
+        .update({
+          calibration_id: activeCalibration.id,
+          measured_length_base: totalMeasuredLengthBase,
+          display_value: displayValue,
+          display_unit: activeCalibration.display_unit,
+          page_bbox_min_x: combinedBounds.minX,
+          page_bbox_min_y: combinedBounds.minY,
+          page_bbox_max_x: combinedBounds.maxX,
+          page_bbox_max_y: combinedBounds.maxY,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
+        .eq("id", measurement.id)
+        .select(takeoffMeasurementSelect)
+        .single()
+    );
+
+    if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+      throw new Error(updateMeasurementResult.error?.message ?? "Unable to update polyline totals.");
+    }
+
+    await perf.step("replaceParentPoints", () =>
+      replaceTakeoffMeasurementPoints({
+        organizationId: resolved.organizationId,
+        measurementId: measurement.id,
+        points: nextParentPoints,
+        supabase,
+      })
+    );
+
+    const nextMeasurement = await perf.step("hydrateNextMeasurement", () =>
+      hydrateTakeoffMeasurementWithChildren({
+        measurement: updateMeasurementResult.data,
+        supabase,
+      })
+    );
+
+    await perf.step("writeEvent", () =>
+      writeTakeoffMeasurementEvent({
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateMeasurementResult.data,
+        points: nextMeasurement.points,
+        areaShapes: [],
+        linePaths: nextMeasurement.line_paths,
+        eventType: "updated",
+        actorUserId: member.user_id,
+        changeReason: "Polyline child deleted",
+        diff: {
+          measurement_kind: "line",
+          child_kind: "line-path",
+          child_id: input.childId,
+          previous_child_count: existingPaths.length,
+          next_child_count: nextMeasurement.line_paths.length,
+        },
+        supabase,
+      })
+    );
+
+    return nextMeasurement;
+  } finally {
+    perf.flush({
+      opportunitySlug: input.opportunitySlug,
+      measurementId: input.measurementId,
+      childId: input.childId,
+      childKind: input.childKind,
     });
   }
 }
@@ -2525,6 +4693,10 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
     const nextName = (input.name ?? measurement.name).trim();
     const nextDescription = (input.description ?? measurement.description ?? "").trim();
     const nextTag = (input.tag ?? "").trim();
+    const nextColorHex =
+      input.colorHex === undefined
+        ? measurement.color_hex
+        : normalizeOptionalColor(input.colorHex);
     const nextMetadata = {
       ...(measurement.metadata && typeof measurement.metadata === "object" ? measurement.metadata : {}),
       tag: nextTag || null,
@@ -2533,6 +4705,7 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
     const updatePayload: Database["public"]["Tables"]["takeoff_measurements"]["Update"] = {
       name: nextName || measurement.name,
       description: nextDescription,
+      color_hex: nextColorHex,
       metadata: nextMetadata,
       version: measurement.version + 1,
       updated_by: member.user_id,
@@ -2554,6 +4727,16 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
     const points = await perf.step("pointsLookup", () =>
       getTakeoffMeasurementPointsForMeasurement(measurement.id, { supabase })
     );
+    const areaShapes = updateResult.data.measurement_kind === "area"
+      ? (await perf.step("areaShapesLookup", () =>
+          getTakeoffAreaShapesForMeasurements([measurement.id], { supabase })
+        ))[measurement.id] ?? []
+      : [];
+    const linePaths = updateResult.data.measurement_kind === "line"
+      ? (await perf.step("linePathsLookup", () =>
+          getTakeoffLinePathsForMeasurements([measurement.id], { supabase })
+        ))[measurement.id] ?? []
+      : [];
 
     await perf.step("writeEvent", () =>
       writeTakeoffMeasurementEvent({
@@ -2562,6 +4745,8 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
         opportunityId: resolved.opportunityId,
         measurement: updateResult.data,
         points,
+        areaShapes,
+        linePaths,
         eventType: "updated",
         actorUserId: member.user_id,
         changeReason: "Measurement details updated",
@@ -2570,6 +4755,8 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
           next_name: updateResult.data.name,
           previous_description: measurement.description,
           next_description: updateResult.data.description,
+          previous_color_hex: measurement.color_hex,
+          next_color_hex: updateResult.data.color_hex,
           previous_tag: typeof measurement.metadata === "object" && measurement.metadata ? (measurement.metadata as Record<string, unknown>).tag ?? null : null,
           next_tag: nextTag || null,
         },
@@ -2580,6 +4767,8 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
     return {
       ...updateResult.data,
       points,
+      area_shapes: areaShapes,
+      line_paths: linePaths,
     };
   } finally {
     perf.flush({
@@ -2641,14 +4830,55 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
     }
 
     const updatedMeasurement = updateResult.data;
-    const points = await perf.step("pointsLookup", () =>
-      getTakeoffMeasurementPointsForMeasurement(updatedMeasurement.id, { supabase })
-    );
     const eventType = params.action === "archive"
       ? "archived"
       : params.action === "delete"
         ? "deleted"
         : "restored";
+
+    if (params.action === "delete") {
+      void writeTakeoffMeasurementEvent({
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updatedMeasurement,
+        points: [],
+        eventType,
+        actorUserId: member.user_id,
+        changeReason: `Measurement ${params.action}d`,
+        diff: {
+          previous_status: measurement.status,
+          next_status: updatedMeasurement.status,
+        },
+        supabase,
+      }).catch((error) => {
+        console.error("Failed to record takeoff measurement delete event", {
+          measurementId: updatedMeasurement.id,
+          error,
+        });
+      });
+
+      return {
+        ...updatedMeasurement,
+        points: [],
+        area_shapes: [],
+        line_paths: [],
+      };
+    }
+
+    const points = await perf.step("pointsLookup", () =>
+      getTakeoffMeasurementPointsForMeasurement(updatedMeasurement.id, { supabase })
+    );
+    const areaShapes = updatedMeasurement.measurement_kind === "area"
+      ? (await perf.step("areaShapesLookup", () =>
+          getTakeoffAreaShapesForMeasurements([updatedMeasurement.id], { supabase })
+        ))[updatedMeasurement.id] ?? []
+      : [];
+    const linePaths = updatedMeasurement.measurement_kind === "line"
+      ? (await perf.step("linePathsLookup", () =>
+          getTakeoffLinePathsForMeasurements([updatedMeasurement.id], { supabase })
+        ))[updatedMeasurement.id] ?? []
+      : [];
 
     await perf.step("writeEvent", () =>
       writeTakeoffMeasurementEvent({
@@ -2657,6 +4887,8 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
         opportunityId: resolved.opportunityId,
         measurement: updatedMeasurement,
         points,
+        areaShapes,
+        linePaths,
         eventType,
         actorUserId: member.user_id,
         changeReason: `Measurement ${params.action}d`,
@@ -2671,6 +4903,8 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
     return {
       ...updatedMeasurement,
       points,
+      area_shapes: areaShapes,
+      line_paths: linePaths,
     };
   } finally {
     perf.flush({

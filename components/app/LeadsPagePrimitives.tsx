@@ -34,6 +34,9 @@ export const leadsShellTitleStyle: React.CSSProperties = {
   color: leadsPageSurfaceTheme.text,
 };
 
+export const leadsCompactTitleClassName =
+  "truncate text-[1.7rem] font-bold leading-none tracking-[-0.03em] text-[#1d1d1d]";
+
 export const leadsSectionTitleStyle: React.CSSProperties = {
   fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif",
   fontSize: "1.4rem",
