@@ -1,27 +1,29 @@
 import type { TakeoffCalibration, TakeoffMeasurementWithPoints } from "@/lib/takeoff-server";
 import { formatAreaPerimeterDisplay, formatCountValue, formatQuantityValue } from "@/lib/takeoff/measurement-display";
 
-export interface QuantityRow {
+export interface QuantityTableRow {
   id: string;
   measurementId: string;
-  status: "active" | "archived";
+  drawingSetId: string;
+  pageId: string;
+  pageLabel: string;
+  pageNumber: number;
   name: string;
-  description: string;
+  description: string | null;
   colorHex: string | null;
-  measurementKind: "line" | "area" | "count";
-  typeLabel: "Distance" | "Linear" | "Area" | "Count";
-  itemCount: number;
-  unit: string;
-  totalValue: number | null;
-  totalDisplay: string;
-  secondaryDisplay: string | null;
-  groupKey: "all";
-  sortKey: string;
+  typeLabel: "Area" | "Linear" | "Count";
+  unitLabel: "m²" | "m" | "count";
+  quantityValue: number | null;
+  quantityDisplay: string;
+  secondaryQuantityValue: number | null;
+  secondaryUnitLabel: string | null;
+  secondaryQuantityDisplay: string;
+  status: "active" | "archived";
+  viewHref: string;
 }
 
 function getMeasurementFallbackLabel(params: {
   measurementKind: "line" | "area" | "count";
-  isPolyline: boolean;
 }) {
   if (params.measurementKind === "area") {
     return "Area";
@@ -31,17 +33,20 @@ function getMeasurementFallbackLabel(params: {
     return "Count";
   }
 
-  return params.isPolyline ? "Linear" : "Distance";
+  return "Linear";
 }
 
 export function mapTakeoffToQuantityRows(
   measurements: TakeoffMeasurementWithPoints[],
   activeCalibration: TakeoffCalibration | null,
-  options?: {
-    pageLabel?: string | null;
-    includePageLabelInDescription?: boolean;
+  options: {
+    drawingSetId: string;
+    opportunityId: string;
+    pageId: string;
+    pageLabel: string;
+    pageNumber: number;
   }
-): QuantityRow[] {
+): QuantityTableRow[] {
   return measurements
     .filter(
       (measurement): measurement is TakeoffMeasurementWithPoints & { status: "active" | "archived" } =>
@@ -49,67 +54,76 @@ export function mapTakeoffToQuantityRows(
         measurement.measurement_kind === "area" ||
         measurement.measurement_kind === "count"
     )
-    .map((measurement, index) => {
-      const isPolyline =
-        measurement.measurement_kind === "line" &&
-        (measurement.line_paths.length > 0 || measurement.points.length > 2);
+    .map((measurement) => {
       const typeLabel =
         measurement.measurement_kind === "count"
           ? "Count"
           : measurement.measurement_kind === "area"
             ? "Area"
-            : isPolyline
-              ? "Linear"
-              : "Distance";
-      const itemCount =
+            : "Linear";
+      const unitLabel =
         measurement.measurement_kind === "count"
-          ? measurement.points.length
+          ? "count"
           : measurement.measurement_kind === "area"
-            ? measurement.area_shapes.length || 1
-            : isPolyline
-              ? measurement.line_paths.length || 1
-              : 1;
-      const unit = measurement.measurement_kind === "count" ? "count" : measurement.display_unit?.trim() || "—";
-      const totalValue =
+            ? "m²"
+            : "m";
+      const quantityValue =
         measurement.measurement_kind === "count"
           ? (measurement.count_value ?? measurement.display_value ?? null)
           : measurement.display_value;
-      const totalDisplay =
+      const quantityDisplay =
         measurement.measurement_kind === "count"
-          ? formatCountValue(totalValue)
-          : formatQuantityValue(totalValue, measurement.display_unit?.trim() || null);
-      const secondaryDisplay =
+          ? formatCountValue(quantityValue)
+          : formatQuantityValue(measurement.display_value, measurement.display_unit?.trim() || null);
+      const secondaryQuantityDisplay =
         measurement.measurement_kind === "area"
           ? formatAreaPerimeterDisplay({
               measuredPerimeterBase: measurement.measured_perimeter_base,
               activeCalibration,
-            })
+            }) ?? "—"
+          : "—";
+      const secondaryQuantityValue =
+        measurement.measurement_kind === "area" && activeCalibration && measurement.measured_perimeter_base !== null
+          ? (
+              activeCalibration.base_unit === "mm" && activeCalibration.display_unit === "m"
+                ? measurement.measured_perimeter_base / 1000
+                : activeCalibration.base_unit === "mm" && activeCalibration.display_unit === "cm"
+                  ? measurement.measured_perimeter_base / 10
+                  : activeCalibration.base_unit === "mm" && activeCalibration.display_unit === "mm"
+                    ? measurement.measured_perimeter_base
+                    : activeCalibration.base_unit === "in" && activeCalibration.display_unit === "ft"
+                      ? measurement.measured_perimeter_base / 12
+                      : activeCalibration.base_unit === "in" && activeCalibration.display_unit === "in"
+                        ? measurement.measured_perimeter_base
+                        : null
+            )
+          : null;
+      const secondaryUnitLabel =
+        measurement.measurement_kind === "area"
+          ? activeCalibration?.display_unit ?? null
           : null;
 
       return {
         id: measurement.id,
         measurementId: measurement.id,
-        status: measurement.status === "archived" ? "archived" : "active",
+        drawingSetId: options.drawingSetId,
+        pageId: options.pageId,
+        pageLabel: options.pageLabel,
+        pageNumber: options.pageNumber,
         name: measurement.name.trim() || getMeasurementFallbackLabel({
           measurementKind: measurement.measurement_kind,
-          isPolyline,
         }),
-        description: [
-          options?.includePageLabelInDescription && options?.pageLabel ? options.pageLabel.trim() : "",
-          measurement.description.trim(),
-        ]
-          .filter((value) => value.length > 0)
-          .join(" • "),
+        description: measurement.description.trim() || null,
         colorHex: measurement.color_hex?.trim() || null,
-        measurementKind: measurement.measurement_kind,
         typeLabel,
-        itemCount,
-        unit,
-        totalValue,
-        totalDisplay,
-        secondaryDisplay,
-        groupKey: "all",
-        sortKey: String(index).padStart(6, "0"),
+        unitLabel,
+        quantityValue,
+        quantityDisplay,
+        secondaryQuantityValue,
+        secondaryUnitLabel,
+        secondaryQuantityDisplay,
+        status: measurement.status === "archived" ? "archived" : "active",
+        viewHref: `/app/leads-clients/opportunities/${options.opportunityId}/takeoff/measure?drawingSetId=${encodeURIComponent(options.drawingSetId)}&pageId=${encodeURIComponent(options.pageId)}&measurementId=${encodeURIComponent(measurement.id)}`,
       };
     });
 }

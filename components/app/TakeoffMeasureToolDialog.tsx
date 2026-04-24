@@ -211,7 +211,19 @@ function TakeoffMeasureToolDialogForm({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onConfirm(formValues as MeasureToolSetupState[ConfigurableTool]);
+    if (tool === "calibrate") {
+      onConfirm(formValues as MeasureToolSetupState[ConfigurableTool]);
+      return;
+    }
+
+    onConfirm({
+      ...(formValues as
+        | MeasureToolSetupState["distance"]
+        | MeasureToolSetupState["polyline"]
+        | MeasureToolSetupState["area"]
+        | MeasureToolSetupState["count"]),
+      description: configuredToolValues?.description.trim() ?? "",
+    } as MeasureToolSetupState[ConfigurableTool]);
   };
 
   const handleUnitChange = (nextUnit: string) => {
@@ -302,6 +314,25 @@ function TakeoffMeasureToolDialogForm({
                   }
                   className={inputClassName}
                   required
+                />
+              </div>
+              <div>
+                <label htmlFor="measure-tool-description" className={labelClassName}>
+                  Description
+                </label>
+                <textarea
+                  id="measure-tool-description"
+                  rows={2}
+                  value={configuredToolValues?.description ?? ""}
+                  onChange={(event) =>
+                    setFormValues((current) =>
+                      current && "description" in current
+                        ? { ...current, description: event.target.value }
+                        : current
+                    )
+                  }
+                  placeholder="Add description"
+                  className={`${inputClassName} h-auto min-h-[4.75rem] resize-none py-2.5 leading-[1.5]`}
                 />
               </div>
               <div>

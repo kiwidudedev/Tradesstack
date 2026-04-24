@@ -1,94 +1,141 @@
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
-import styles from "@/components/app/trade-pack-builder.module.css";
-import type { QuantityRow } from "@/lib/takeoff/quantities-adapter";
+import { ibmPlexSans } from "@/lib/fonts";
+import { Card, CardContent } from "@/components/ui/card";
+import type { QuantityTableRow } from "@/lib/takeoff/quantities-adapter";
 
-const TABLE_GRID_TEMPLATE = "minmax(220px, 1.6fr) 180px";
-const ROW_CELL_PADDING_CLASS = "px-2 py-1";
-const DESCRIPTION_CELL_PADDING_CLASS = "px-3 py-1";
-const ROW_DIVIDER_CLASS = "self-stretch border-l border-[#EEF2F7]";
-const ROW_FIELD_SHELL_CLASS = "flex h-full w-full items-center";
-const VALUE_CLASS = `${interMedium.className} flex h-[34px] w-full items-center px-1.5 text-[13px] leading-[1.1] text-[#1d2433]`;
-const NUMERIC_VALUE_CLASS = `${VALUE_CLASS} justify-end text-right tabular-nums`;
+export interface QuantityTableGroup {
+  key: string;
+  label: string;
+  rows: QuantityTableRow[];
+  totalsLabel: string;
+  totals: {
+    areaQuantityTotal: number | null;
+    areaSecondaryTotal: number | null;
+    areaSecondaryUnit: string | null;
+    linearQuantityTotal: number | null;
+    countQuantityTotal: number | null;
+  };
+}
+
+function renderQuantityRow(row: QuantityTableRow) {
+  const isArchived = row.status === "archived";
+  const secondaryDisplayValue = row.secondaryQuantityDisplay.startsWith("Perimeter ")
+    ? row.secondaryQuantityDisplay.replace(/^Perimeter\s+/, "")
+    : row.secondaryQuantityDisplay;
+
+  return (
+    <tr
+      key={row.id}
+      className={`group border-b border-[#E2E8F1] last:border-0 transition-colors hover:bg-[#F8FBFB] ${
+        isArchived ? "bg-[#FCFDFE]" : ""
+      }`}
+    >
+      <td className="px-6 py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {row.colorHex ? (
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: row.colorHex }}
+                aria-hidden="true"
+              />
+            ) : null}
+            <span className={`${ibmPlexSans.className} truncate text-[15px] font-semibold text-[#10283B]`}>
+              {row.name}
+            </span>
+            {isArchived ? (
+              <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[13px] font-semibold text-[#64748B]`}>
+                Archived
+              </span>
+            ) : null}
+          </div>
+          {row.description ? (
+            <p className={`${ibmPlexSans.className} mt-1 text-[13px] text-[#6A7A89]`}>{row.description}</p>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-6 py-4">
+        <p className={`${ibmPlexSans.className} text-right text-[15px] font-semibold tabular-nums text-[#10283B]`}>
+          {row.quantityDisplay}
+        </p>
+      </td>
+      <td className="px-6 py-4">
+        <p
+          className={`${ibmPlexSans.className} text-right tabular-nums ${
+            secondaryDisplayValue === "—"
+              ? "text-[13px] font-normal text-[#B0BEC8]"
+              : "text-[15px] font-medium text-[#6A7A89]"
+          }`}
+        >
+          {secondaryDisplayValue}
+        </p>
+      </td>
+    </tr>
+  );
+}
 
 export function TakeoffQuantitiesTable({
   rows,
+  groups,
   emptyMessage = "No takeoff items saved yet.",
 }: {
-  rows: QuantityRow[];
+  rows: QuantityTableRow[];
+  groups?: QuantityTableGroup[] | null;
   emptyMessage?: string;
 }) {
-  return (
-    <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
-      <div className="overflow-x-auto">
-        <div className="min-w-[820px]">
-          <div
-            className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
-            style={{ gridTemplateColumns: TABLE_GRID_TEMPLATE }}
-          >
-            <span className="px-3 py-2.5 font-semibold">Description</span>
-            <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Quantity</span>
-          </div>
-          <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
-            {rows.map((row) => {
-              const isArchived = row.status === "archived";
+  const shouldRenderGroups = Boolean(groups && groups.length > 0);
 
-              return (
-                <div
-                  key={row.id}
-                  className={`grid items-stretch gap-0 px-0 py-0 transition-colors hover:bg-slate-50/80 ${
-                    isArchived ? "bg-[#FCFDFE] opacity-70" : ""
-                  }`}
-                  style={{ gridTemplateColumns: TABLE_GRID_TEMPLATE }}
-                >
-                  <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
-                    <div className="flex min-h-[34px] w-full items-center">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          {row.colorHex ? (
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: row.colorHex }}
-                              aria-hidden="true"
-                            />
-                          ) : null}
-                          <span className={`${ibmPlexSans.className} truncate text-sm font-medium text-[#1d2433]`}>
-                            {row.name}
-                          </span>
-                          {isArchived ? (
-                            <span className={`${styles.quoteTabLabel} inline-flex items-center rounded-full border border-[#D7E1EC] bg-[#F8FAFC] px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-[#64748B]`}>
-                              Archived
-                            </span>
-                          ) : null}
-                        </div>
-                        {row.description ? (
-                          <p className={`${styles.quoteBodyLabel} mt-1 truncate pl-[10px] text-[13px] text-[#6B7280]`}>
-                            {row.description}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
-                    <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
-                      <div className="min-w-0">
-                        <div className={`${NUMERIC_VALUE_CLASS} whitespace-nowrap`}>{row.totalDisplay}</div>
-                        {row.secondaryDisplay ? (
-                          <p className={`${styles.quoteBodyLabel} mt-1 px-1.5 text-right text-[11px] text-[#64748B]`}>
-                            {row.secondaryDisplay}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {rows.length === 0 ? (
-              <div className={`${interMedium.className} px-3 py-5 text-center text-sm text-[#73839a]`}>{emptyMessage}</div>
-            ) : null}
+  return (
+    <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
+      <CardContent className="p-0">
+        {rows.length === 0 ? (
+          <div className="px-6 pb-6 pt-6">
+            <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
+              <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>{emptyMessage}</p>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse">
+              <colgroup>
+                <col className="w-[48%]" />
+                <col className="w-[26%]" />
+                <col className="w-[26%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
+                  {["Description", "Quantity", "Secondary"].map((heading) => (
+                    <th
+                      key={heading}
+                      className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C] ${
+                        heading === "Quantity" || heading === "Secondary" ? "text-right" : ""
+                      }`}
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shouldRenderGroups
+                  ? groups!.flatMap((group) => [
+                      <tr key={`${group.key}-header`} className="border-b border-[#E2E8F1] bg-[#FCFDFE]">
+                        <td colSpan={3} className="px-6 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>{group.label}</p>
+                            {group.totalsLabel ? (
+                              <p className={`${ibmPlexSans.className} text-[13px] text-[#6A7A89]`}>{group.totalsLabel}</p>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>,
+                      ...group.rows.map((row) => renderQuantityRow(row)),
+                    ])
+                  : rows.map((row) => renderQuantityRow(row))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

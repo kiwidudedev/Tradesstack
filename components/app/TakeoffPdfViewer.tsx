@@ -19,6 +19,8 @@ import {
   ChevronRight,
   CircleDot,
   Hash,
+  Lightbulb,
+  Settings2,
 } from "lucide-react";
 import {
   clamp,
@@ -67,6 +69,17 @@ import {
   secondaryButtonClassName,
 } from "@/components/app/TradesstackDialogPrimitives";
 import { Input } from "@/components/ui/input";
+import { downloadTakeoffPdf } from "@/lib/exports/takeoff-pdf-download";
+import {
+  buildTakeoffPdfExportFileName,
+  exportTakeoffPageToPdf,
+} from "@/lib/exports/takeoff-pdf-export";
+import type {
+  ExportTakeoffCalibration,
+  ExportTakeoffLegendRow,
+  ExportTakeoffMeasurement,
+  ExportTakeoffRotation,
+} from "@/lib/exports/takeoff-pdf-export-types";
 import { ibmPlexSans } from "@/lib/fonts";
 
 interface TakeoffMeasurementPoint {
@@ -255,7 +268,9 @@ interface SummaryContextMenuState {
   measurementId: string;
   measurementKind: "line" | "area" | "count";
   measurementName: string;
+  measurementDescription: string;
   measurementColor: string;
+  isHiddenFromExportLegend: boolean;
   x: number;
   y: number;
 }
@@ -264,6 +279,7 @@ interface SummaryMeasurementEditState {
   x: number;
   y: number;
   name: string;
+  description: string;
   colorHex: string;
 }
 interface HistoryCommand {
@@ -600,6 +616,22 @@ function getMeasurementFallbackLabel(measurementKind: "line" | "area" | "count",
   return isPolyline ? "Polyline" : "Distance";
 }
 
+function buildExportLegendRows(params: {
+  measurements: DisplayMeasurement[];
+}): ExportTakeoffLegendRow[] {
+  return params.measurements
+    .map((measurement) => ({
+      id: measurement.id,
+      colorHex: measurement.color,
+      name: measurement.name.trim() || "Measurement",
+      totalQuantity:
+        measurement.measurementKind === "count"
+          ? Number(measurement.countValue ?? measurement.displayValue ?? 0)
+          : Number(measurement.displayValue ?? 0),
+      unit: measurement.measurementKind === "count" ? measurement.displayUnit ?? "count" : measurement.displayUnit,
+    }));
+}
+
 function cloneMeasurement(measurement: TakeoffMeasurement): TakeoffMeasurement {
   return {
     ...measurement,
@@ -613,6 +645,19 @@ function cloneMeasurement(measurement: TakeoffMeasurement): TakeoffMeasurement {
       points: path.points.map((point) => ({ ...point })),
     })),
   };
+}
+
+function isMeasurementIncludedInPdfExport(
+  measurement: Pick<TakeoffMeasurement, "id" | "status" | "measurement_kind">,
+  hiddenMeasurementIds: Set<string>
+) {
+  return (
+    measurement.status !== "deleted" &&
+    (measurement.measurement_kind === "line" ||
+      measurement.measurement_kind === "area" ||
+      measurement.measurement_kind === "count") &&
+    !hiddenMeasurementIds.has(measurement.id)
+  );
 }
 
 function getMeasurementGeometryOverrideKey(measurementId: string, child?: { kind: MeasurementChildKind; childId: string }) {
@@ -1128,6 +1173,8 @@ export function TakeoffPdfViewer({
   const pendingViewportInitializationRef = useRef(true);
   const interactionRef = useRef<InteractionState>({ kind: "idle" });
   const activeSnapCandidateRef = useRef<SnapCandidate | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsCardRef = useRef<HTMLDivElement | null>(null);
 
   const [viewportSize, setViewportSize] = useState<Size2D>({ width: 0, height: 0 });
   const [devicePixelRatio, setDevicePixelRatio] = useState(1);
@@ -1149,12 +1196,14 @@ export function TakeoffPdfViewer({
   const [toolMode, setToolMode] = useState<ToolMode>("select");
   const [activeSetupTool, setActiveSetupTool] = useState<ConfigurableTool | null>(null);
   const [isToolDialogOpen, setIsToolDialogOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selection, setSelection] = useState<SelectionState>(null);
   const [selectedChild, setSelectedChild] = useState<MeasurementChildSelection | null>(null);
   const [summaryContextMenu, setSummaryContextMenu] = useState<SummaryContextMenuState | null>(null);
   const [summaryMeasurementEdit, setSummaryMeasurementEdit] = useState<SummaryMeasurementEditState | null>(null);
   const [isSummaryMeasurementEditSaving, setIsSummaryMeasurementEditSaving] = useState(false);
   const [measurementsShowingPerimeter, setMeasurementsShowingPerimeter] = useState<Set<string>>(() => new Set());
+  const [hiddenFromExportLegendMeasurementIds, setHiddenFromExportLegendMeasurementIds] = useState<Set<string>>(() => new Set());
   const [appendMeasurementId, setAppendMeasurementId] = useState<string | null>(null);
   const [hoverState, setHoverState] = useState<HoverState>({
     rawDocumentPoint: null,
@@ -1192,6 +1241,7 @@ export function TakeoffPdfViewer({
     message: "",
     retry: null,
   });
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [undoStack, setUndoStack] = useState<HistoryCommand[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryCommand[]>([]);
@@ -1268,7 +1318,51 @@ export function TakeoffPdfViewer({
   }, [isSummaryMeasurementEditSaving, summaryMeasurementEdit]);
 
   useEffect(() => {
+    if (!isSettingsOpen) {
+      return;
+    }
+
+    const handleClose = (event: PointerEvent) => {
+      const target = event.target;
+
+      if (
+        (settingsButtonRef.current && target instanceof Node && settingsButtonRef.current.contains(target)) ||
+        (settingsCardRef.current && target instanceof Node && settingsCardRef.current.contains(target))
+      ) {
+        return;
+      }
+
+      setIsSettingsOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handleClose);
+
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+    };
+  }, [isSettingsOpen]);
+
+  useEffect(() => {
     localMeasurementsRef.current = localMeasurements;
+  }, [localMeasurements]);
+
+  useEffect(() => {
+    setHiddenFromExportLegendMeasurementIds((current) => {
+      const activeMeasurementIds = new Set(
+        localMeasurements
+          .filter((measurement) => measurement.status !== "deleted")
+          .map((measurement) => measurement.id)
+      );
+      const next = new Set<string>();
+
+      current.forEach((measurementId) => {
+        if (activeMeasurementIds.has(measurementId)) {
+          next.add(measurementId);
+        }
+      });
+
+      return next.size === current.size ? current : next;
+    });
   }, [localMeasurements]);
 
   useEffect(() => {
@@ -1585,7 +1679,6 @@ export function TakeoffPdfViewer({
         }),
     [getMeasurementRenderKey, localMeasurements, measurementPointOverrides, transform]
   );
-
   useEffect(() => {
     if (selection?.type !== "measurement") {
       setMeasurementNameInput("");
@@ -1774,6 +1867,95 @@ export function TakeoffPdfViewer({
     () => savedMeasurements.filter((measurement) => measurement.measurementKind === "count"),
     [savedMeasurements]
   );
+  const pdfExportMeasurements = useMemo(
+    () =>
+      localMeasurements.filter((measurement) =>
+        isMeasurementIncludedInPdfExport(measurement, hiddenFromExportLegendMeasurementIds)
+      ),
+    [hiddenFromExportLegendMeasurementIds, localMeasurements]
+  );
+  const exportMeasurements = useMemo<ExportTakeoffMeasurement[]>(
+    () =>
+      pdfExportMeasurements
+        .map((measurement) => {
+          const displayMeasurement = savedMeasurements.find(
+            (savedMeasurement) => savedMeasurement.id === measurement.id
+          );
+          const isPolyline =
+            measurement.measurement_kind === "line" &&
+            (measurement.line_paths.length > 0 || measurement.points.length > 2);
+          const fallbackLabel = getMeasurementFallbackLabel(
+            measurement.measurement_kind,
+            isPolyline
+          );
+
+          return {
+            id: measurement.id,
+            kind: measurement.measurement_kind,
+            colorHex:
+              measurement.color_hex?.trim() ||
+              (measurement.measurement_kind === "area"
+                ? DEFAULT_AREA_COLOR
+                : measurement.measurement_kind === "count"
+                  ? DEFAULT_COUNT_COLOR
+                  : DEFAULT_DISTANCE_COLOR),
+            name: measurement.name,
+            description: measurement.description,
+            label:
+              displayMeasurement?.label ??
+              formatMeasurementValue(
+                measurement.display_value,
+                measurement.display_unit,
+                fallbackLabel
+              ),
+            points: measurement.points.map((point) => ({
+              x: point.x,
+              y: point.y,
+            })),
+            areaShapes: measurement.area_shapes.map((shape) => ({
+              id: shape.id,
+              points: shape.points.map((point) => ({
+                x: point.x,
+                y: point.y,
+              })),
+            })),
+            linePaths: measurement.line_paths.map((path) => ({
+              id: path.id,
+              points: path.points.map((point) => ({
+                x: point.x,
+                y: point.y,
+              })),
+            })),
+          };
+        }),
+    [pdfExportMeasurements, savedMeasurements]
+  );
+  const exportCalibration = useMemo<ExportTakeoffCalibration | null>(
+    () =>
+      localActiveCalibration
+        ? {
+            name: localActiveCalibration.name,
+            displayUnit: localActiveCalibration.display_unit,
+            referenceLengthInput: localActiveCalibration.reference_length_input,
+            pointA: {
+              x: localActiveCalibration.point_a_x,
+              y: localActiveCalibration.point_a_y,
+            },
+            pointB: {
+              x: localActiveCalibration.point_b_x,
+              y: localActiveCalibration.point_b_y,
+            },
+          }
+        : null,
+    [localActiveCalibration]
+  );
+  const exportRotation = useMemo<ExportTakeoffRotation>(
+    () =>
+      rotationDegrees === 90 || rotationDegrees === 180 || rotationDegrees === 270
+        ? rotationDegrees
+        : 0,
+    [rotationDegrees]
+  );
 
   const availableTags = useMemo(
     () =>
@@ -1918,14 +2100,15 @@ export function TakeoffPdfViewer({
         measurementId: measurement.id,
         measurementKind: measurement.measurementKind,
         measurementName: measurement.name,
+        measurementDescription: measurement.description,
         measurementColor: measurement.color,
+        isHiddenFromExportLegend: hiddenFromExportLegendMeasurementIds.has(measurement.id),
         x: event.clientX,
         y: event.clientY,
       });
     },
-    []
+    [hiddenFromExportLegendMeasurementIds]
   );
-
   const hasUnsavedMeasurementDetailChanges = useMemo(() => {
     if (!selectedMeasurement) {
       return false;
@@ -1953,13 +2136,26 @@ export function TakeoffPdfViewer({
     return (
       summaryMeasurementEdit.name.trim().length > 0 &&
       (summaryMeasurementEdit.name.trim() !== summaryMeasurementEditTarget.name ||
+        summaryMeasurementEdit.description.trim() !== (summaryMeasurementEditTarget.description ?? "") ||
         summaryMeasurementEdit.colorHex.trim() !== currentColorHex)
     );
   }, [summaryMeasurementEdit, summaryMeasurementEditTarget]);
 
-  const totalCountValue = useMemo(
-    () => countMeasurements.reduce((total, measurement) => total + Number(measurement.countValue ?? measurement.displayValue ?? 0), 0),
-    [countMeasurements]
+  const exportLegendRows = useMemo<ExportTakeoffLegendRow[]>(
+    () =>
+      buildExportLegendRows({
+        measurements: savedMeasurements.filter((measurement) =>
+          isMeasurementIncludedInPdfExport(
+            {
+              id: measurement.id,
+              status: "active",
+              measurement_kind: measurement.measurementKind,
+            },
+            hiddenFromExportLegendMeasurementIds
+          )
+        ),
+      }),
+    [hiddenFromExportLegendMeasurementIds, savedMeasurements]
   );
   const filteredTotals = useMemo(() => {
     const totals = filteredMeasurements.reduce<Record<string, number>>((accumulator, measurement) => {
@@ -2021,6 +2217,50 @@ export function TakeoffPdfViewer({
       retry: null,
     });
   }, []);
+  const handleExportPdf = useCallback(async () => {
+    if (!pdfUrl || isExportingPdf) {
+      return;
+    }
+
+    setIsExportingPdf(true);
+
+    try {
+      const pdfBytes = await exportTakeoffPageToPdf({
+        pdfUrl,
+        pageNumber,
+        pageWidth: pageWidthPts,
+        pageHeight: pageHeightPts,
+        rotation: exportRotation,
+        measurements: exportMeasurements,
+        legendRows: exportLegendRows,
+        calibration: exportCalibration,
+        projectName: title,
+        pageName: pageLabel,
+      });
+      const fileName = buildTakeoffPdfExportFileName({
+        projectName: title,
+        pageName: pageLabel,
+      });
+      downloadTakeoffPdf(pdfBytes, fileName);
+    } catch (error) {
+      console.error("Unable to export takeoff PDF.", error);
+      window.alert(error instanceof Error ? error.message : "Unable to export PDF.");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }, [
+    exportCalibration,
+    exportLegendRows,
+    exportMeasurements,
+    exportRotation,
+    isExportingPdf,
+    pageHeightPts,
+    pageLabel,
+    pageNumber,
+    pageWidthPts,
+    pdfUrl,
+    title,
+  ]);
 
   const markSaveSuccess = useCallback((message: string) => {
     if (saveFeedbackTimeoutRef.current !== null) {
@@ -3645,6 +3885,12 @@ export function TakeoffPdfViewer({
     function onKeyDown(event: KeyboardEvent) {
       const typingTarget = isTypingTarget(event.target);
 
+      if (event.key === "Escape" && isSettingsOpen) {
+        event.preventDefault();
+        setIsSettingsOpen(false);
+        return;
+      }
+
       if (isToolDialogOpen) {
         if (event.code === "Space" && !typingTarget) {
           event.preventDefault();
@@ -3778,6 +4024,7 @@ export function TakeoffPdfViewer({
     hasUnsavedCalibrationChanges,
     hasUnsavedMeasurementDraft,
     isToolDialogOpen,
+    isSettingsOpen,
     localActiveCalibration,
     removeLastDraftPoint,
     runRedo,
@@ -4741,17 +4988,16 @@ export function TakeoffPdfViewer({
       return;
     }
 
-    setIsSummaryMeasurementEditSaving(true);
+    const pendingEdit = summaryMeasurementEdit;
+    setSummaryMeasurementEdit(null);
     void submitMeasurementDetails(
-      summaryMeasurementEdit.measurementId,
+      pendingEdit.measurementId,
       {
-        name: summaryMeasurementEdit.name,
-        colorHex: summaryMeasurementEdit.colorHex,
+        name: pendingEdit.name,
+        description: pendingEdit.description,
+        colorHex: pendingEdit.colorHex,
       },
       {
-        onSuccess: () => {
-          setSummaryMeasurementEdit(null);
-        },
         onSettled: () => {
           setIsSummaryMeasurementEditSaving(false);
         },
@@ -5497,12 +5743,40 @@ export function TakeoffPdfViewer({
                     x: summaryContextMenu.x + 12,
                     y: summaryContextMenu.y + 12,
                     name: summaryContextMenu.measurementName,
+                    description: summaryContextMenu.measurementDescription,
                     colorHex: summaryContextMenu.measurementColor,
                   });
                   setSummaryContextMenu(null);
                 }}
               >
                 Edit
+              </button>
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+                onClick={() => {
+                  setHiddenFromExportLegendMeasurementIds((current) => {
+                    const next = new Set(current);
+                    if (summaryContextMenu.isHiddenFromExportLegend) {
+                      next.delete(summaryContextMenu.measurementId);
+                    } else {
+                      next.add(summaryContextMenu.measurementId);
+                    }
+                    return next;
+                  });
+                  setSummaryContextMenu(null);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <Lightbulb
+                    className={`h-4 w-4 ${
+                      summaryContextMenu.isHiddenFromExportLegend ? "text-[#94A3B8]" : "text-[#F59E0B]"
+                    }`}
+                  />
+                  <span>
+                    {summaryContextMenu.isHiddenFromExportLegend ? "Show in PDF export" : "Hide from PDF export"}
+                  </span>
+                </span>
               </button>
               {summaryContextMenu.measurementKind === "area" ? (
               <button
@@ -5538,7 +5812,7 @@ export function TakeoffPdfViewer({
               <div className="space-y-3.5 px-5 pb-4 pt-5">
                 <div>
                   <p className="text-[14px] font-semibold text-[#0F172A]">Edit measurement</p>
-                  <p className="mt-1 text-[12px] text-[#64748B]">Update the saved name and colour for this takeoff item.</p>
+                  <p className="mt-1 text-[12px] text-[#64748B]">Update the saved name, description and colour for this takeoff item.</p>
                 </div>
                 <div>
                   <label htmlFor="summary-measurement-name" className={labelClassName}>
@@ -5560,6 +5834,29 @@ export function TakeoffPdfViewer({
                     }
                     className={inputClassName}
                     required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="summary-measurement-description" className={labelClassName}>
+                    Description
+                  </label>
+                  <textarea
+                    id="summary-measurement-description"
+                    rows={2}
+                    value={summaryMeasurementEdit.description}
+                    disabled={isSummaryMeasurementEditSaving}
+                    onChange={(event) =>
+                      setSummaryMeasurementEdit((current) =>
+                        current
+                          ? {
+                              ...current,
+                              description: event.target.value,
+                            }
+                          : current
+                      )
+                    }
+                    placeholder="Add description"
+                    className={`${inputClassName} h-auto min-h-[4.75rem] resize-none py-2.5 leading-[1.5]`}
                   />
                 </div>
                 <div>
@@ -6105,14 +6402,62 @@ export function TakeoffPdfViewer({
               </div>
 
               <div
-                className="absolute right-5 z-20 flex items-center gap-2 rounded-full border border-white/75 bg-white/92 px-2 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm"
-                style={{ bottom: "calc(20px + env(safe-area-inset-bottom, 0px))" }}
+                className="absolute right-5 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-2 rounded-[28px] border border-white/75 bg-white/92 px-2 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm"
                 onPointerDown={stopViewerEventPropagation}
                 onClick={stopViewerEventPropagation}
                 onDoubleClick={stopViewerEventPropagation}
                 onWheel={stopViewerEventPropagation}
               >
-                <div className="flex items-center gap-2">
+                <div className="relative flex items-center">
+                  {isSettingsOpen ? (
+                    <div
+                      ref={settingsCardRef}
+                      className="absolute right-[calc(100%+12px)] top-0 z-30 w-[220px] rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+                      onPointerDown={stopViewerEventPropagation}
+                      onClick={stopViewerEventPropagation}
+                      onDoubleClick={stopViewerEventPropagation}
+                      onWheel={stopViewerEventPropagation}
+                    >
+                      <div className="space-y-3 px-5 pb-4 pt-5">
+                        <div>
+                          <p className="text-[14px] font-semibold text-[#0F172A]">Settings</p>
+                          <p className="mt-1 text-[12px] text-[#64748B]">Quick actions for this takeoff page.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleExportPdf}
+                          disabled={!pdfUrl || isExportingPdf}
+                          className={`inline-flex h-10 w-full items-center justify-center rounded-full border px-3 text-[12px] font-semibold transition-colors ${
+                            !pdfUrl || isExportingPdf
+                              ? "border-[#E2E8F1] bg-white text-[#94A3B8]"
+                              : "border-[#D7E0EA] bg-white text-[#334155] hover:bg-[#F8FAFC]"
+                          }`}
+                        >
+                          {isExportingPdf ? "Exporting..." : "Export PDF"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <button
+                    ref={settingsButtonRef}
+                    type="button"
+                    onClick={() => setIsSettingsOpen((current) => !current)}
+                    aria-label="Open settings"
+                    aria-expanded={isSettingsOpen}
+                    aria-haspopup="dialog"
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-[#334155] transition-colors ${
+                      isSettingsOpen
+                        ? "border-[#D7E0EA] bg-[#F8FAFC]"
+                        : "border-[#D7E0EA] bg-white hover:bg-[#F8FAFC]"
+                    }`}
+                  >
+                    <Settings2 className="h-4 w-4" strokeWidth={2.2} />
+                  </button>
+                </div>
+                <div className="py-1">
+                  <div className="h-px w-5 rounded-full bg-[#E2E8F1]" aria-hidden="true" />
+                </div>
+                <div className="flex flex-col items-center gap-2">
                   <button
                     type="button"
                     onClick={() => zoomByStep(-1)}
@@ -6130,10 +6475,10 @@ export function TakeoffPdfViewer({
                     +
                   </button>
                 </div>
-                <div className="px-1">
-                  <div className="h-5 w-px rounded-full bg-[#E2E8F1]" aria-hidden="true" />
+                <div className="py-1">
+                  <div className="h-px w-5 rounded-full bg-[#E2E8F1]" aria-hidden="true" />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
