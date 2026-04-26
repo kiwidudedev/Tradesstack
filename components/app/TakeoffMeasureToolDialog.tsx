@@ -258,7 +258,7 @@ function TakeoffMeasureToolDialogForm({
                   id="measure-calibration-length"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="0.0001"
                   value={calibrationValues?.referenceLengthInput ?? ""}
                   onChange={(event) =>
                     setFormValues((current) =>

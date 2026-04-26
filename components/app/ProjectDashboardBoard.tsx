@@ -340,14 +340,14 @@ export function ProjectDashboardBoard() {
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .neq("status", "Complete")
+          .neq("status", "Done")
           .neq("status", "Archived")
           .lt("due_at", nowIso),
         todosTable
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .neq("status", "Complete")
+          .neq("status", "Done")
           .neq("status", "Archived")
           .is("due_at", null)
           .lt("due_date", today),
@@ -355,7 +355,7 @@ export function ProjectDashboardBoard() {
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .neq("status", "Complete")
+          .neq("status", "Done")
           .neq("status", "Archived")
           .gte("due_at", startOfDay.toISOString())
           .lt("due_at", endOfDay.toISOString()),
@@ -363,7 +363,7 @@ export function ProjectDashboardBoard() {
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .neq("status", "Complete")
+          .neq("status", "Done")
           .neq("status", "Archived")
           .is("due_at", null)
           .eq("due_date", today),
@@ -371,7 +371,7 @@ export function ProjectDashboardBoard() {
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .in("status", ["Open", "In Progress"]),
+          .in("status", ["Open", "In Progress", "Blocked", "Requires Attention"]),
         inspectionItemsTable
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
@@ -501,7 +501,7 @@ export function ProjectDashboardBoard() {
           .select("id, title, status, updated_at")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .neq("status", "Complete")
+          .neq("status", "Done")
           .neq("status", "Archived")
           .order("updated_at", { ascending: false })
           .limit(6),

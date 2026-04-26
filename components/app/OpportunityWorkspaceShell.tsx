@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowLeft, FileText, FolderOpen, LayoutGrid, Ruler } from "lucide-react";
@@ -27,48 +27,6 @@ interface StoredMeasureContext {
   measurementStatus: "created" | "archived" | "deleted" | "restored" | "error" | null;
 }
 
-function getMeasureContextStorageKey(opportunityId: string) {
-  return `tradesstack-measure-context:${opportunityId}`;
-}
-
-function readStoredMeasureContext(opportunityId: string): StoredMeasureContext | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(getMeasureContextStorageKey(opportunityId));
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<StoredMeasureContext>;
-    if (!parsed || typeof parsed.drawingSetId !== "string" || parsed.drawingSetId.trim().length === 0) {
-      window.localStorage.removeItem(getMeasureContextStorageKey(opportunityId));
-      return null;
-    }
-
-    return {
-      drawingSetId: parsed.drawingSetId,
-      pageId: typeof parsed.pageId === "string" && parsed.pageId.trim().length > 0 ? parsed.pageId : null,
-      calibrationStatus:
-        parsed.calibrationStatus === "saved" || parsed.calibrationStatus === "replaced" || parsed.calibrationStatus === "error"
-          ? parsed.calibrationStatus
-          : null,
-      measurementStatus:
-        parsed.measurementStatus === "created" ||
-        parsed.measurementStatus === "archived" ||
-        parsed.measurementStatus === "deleted" ||
-        parsed.measurementStatus === "restored" ||
-        parsed.measurementStatus === "error"
-          ? parsed.measurementStatus
-          : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function OpportunityWorkspaceShell({
   title,
   opportunityId,
@@ -90,11 +48,7 @@ export function OpportunityWorkspaceShell({
   const isTakeoffActive = pathname.startsWith(takeoffBasePath);
   const isMeasureActive = pathname.startsWith(`${takeoffBasePath}/measure`);
   const isQuantitiesActive = pathname.startsWith(`${takeoffBasePath}/quantities`);
-  const currentMeasureContext = useMemo<StoredMeasureContext | null>(() => {
-    if (!isMeasureActive) {
-      return null;
-    }
-
+  const currentUrlContext = useMemo<StoredMeasureContext | null>(() => {
     const drawingSetId = searchParams.get("drawingSetId");
     if (!drawingSetId) {
       return null;
@@ -106,23 +60,15 @@ export function OpportunityWorkspaceShell({
       calibrationStatus: searchParams.get("calibrationStatus") as "saved" | "replaced" | "error" | null,
       measurementStatus: searchParams.get("measurementStatus") as "created" | "archived" | "deleted" | "restored" | "error" | null,
     };
-  }, [isMeasureActive, searchParams]);
-
-  useEffect(() => {
-    if (!currentMeasureContext) {
-      return;
+  }, [searchParams]);
+  const currentMeasureContext = useMemo<StoredMeasureContext | null>(() => {
+    if (!isMeasureActive) {
+      return null;
     }
 
-    const storageKey = getMeasureContextStorageKey(opportunityId);
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(currentMeasureContext));
-    } catch {
-      // Keep Measure navigation functional even if localStorage is unavailable.
-    }
-  }, [currentMeasureContext, opportunityId]);
-
-  const storedMeasureContext = readStoredMeasureContext(opportunityId);
-  const measureNavContext = currentMeasureContext ?? storedMeasureContext;
+    return currentUrlContext;
+  }, [currentUrlContext, isMeasureActive]);
+  const measureNavContext = currentUrlContext ?? currentMeasureContext;
   const quantitiesQuery = isTakeoffActive
     ? {
         drawingSetId: searchParams.get("drawingSetId"),
@@ -131,7 +77,9 @@ export function OpportunityWorkspaceShell({
         measurementStatus: searchParams.get("measurementStatus") as "created" | "archived" | "deleted" | "restored" | "error" | null,
       }
     : {};
-  const measureHref = buildTakeoffHref(opportunityId, "measure", measureNavContext ?? {});
+  const measureHref = measureNavContext?.drawingSetId
+    ? buildTakeoffHref(opportunityId, "measure", measureNavContext)
+    : `/app/leads-clients/opportunities/${opportunityId}/takeoff`;
   const quantitiesHref = buildTakeoffHref(opportunityId, "quantities", quantitiesQuery);
   const navItems = [
     {

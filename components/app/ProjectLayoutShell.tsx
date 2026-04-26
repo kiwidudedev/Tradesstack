@@ -12,7 +12,7 @@ const SECTION_MAP: { segment: string; label: string }[] = [
   { segment: "preconstruction/claims", label: "Payment Claim" },
   { segment: "job-management/todos", label: "Tasks" },
   { segment: "job-management/time-sheets", label: "Timesheets" },
-  { segment: "job-management/quality-assurance", label: "Health & Safety" },
+  { segment: "job-management/quality-assurance", label: "QA" },
   { segment: "ai-chatbot", label: "AI Assistant" },
   { segment: "dashboard", label: "Overview" },
 ];

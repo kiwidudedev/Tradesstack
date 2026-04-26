@@ -241,6 +241,7 @@ interface PdfJsModule {
 type ToolMode = "select" | "calibrate" | "distance" | "polyline" | "area" | "count";
 type SelectionState = { type: "calibration" } | { type: "measurement"; measurementId: string } | null;
 type MeasurementChildKind = "count-item" | "area-shape" | "line-path";
+type AreaShapeRole = "include" | "deduction";
 type MeasurementChildSelection = {
   measurementId: string;
   childId: string;
@@ -271,6 +272,7 @@ interface SummaryContextMenuState {
   measurementDescription: string;
   measurementColor: string;
   isHiddenFromExportLegend: boolean;
+  canAddDeduction: boolean;
   x: number;
   y: number;
 }
@@ -368,6 +370,7 @@ interface DisplayMeasurement {
   measuredPerimeterBase: number | null;
   areaShapes: Array<{
     id: string;
+    role: AreaShapeRole;
     documentPoints: Point2D[];
     path: string;
     area: number;
@@ -423,6 +426,70 @@ function convertBaseLengthToDisplayValue(params: {
 
     if (params.displayUnit === "ft") {
       return params.value / 12;
+    }
+  }
+
+  return null;
+}
+
+function convertBaseAreaToDisplayValue(params: {
+  baseUnit: string;
+  displayUnit: string;
+  value: number;
+}): number | null {
+  if (params.baseUnit === "mm") {
+    if (params.displayUnit === "mm") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "cm") {
+      return params.value / 100;
+    }
+
+    if (params.displayUnit === "m") {
+      return params.value / 1_000_000;
+    }
+  }
+
+  if (params.baseUnit === "in") {
+    if (params.displayUnit === "in") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "ft") {
+      return params.value / 144;
+    }
+  }
+
+  return null;
+}
+
+function convertDisplayAreaToBaseValue(params: {
+  baseUnit: string;
+  displayUnit: string;
+  value: number;
+}): number | null {
+  if (params.baseUnit === "mm") {
+    if (params.displayUnit === "mm") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "cm") {
+      return params.value * 100;
+    }
+
+    if (params.displayUnit === "m") {
+      return params.value * 1_000_000;
+    }
+  }
+
+  if (params.baseUnit === "in") {
+    if (params.displayUnit === "in") {
+      return params.value;
+    }
+
+    if (params.displayUnit === "ft") {
+      return params.value * 144;
     }
   }
 
@@ -632,6 +699,139 @@ function buildExportLegendRows(params: {
     }));
 }
 
+function getMeasurementMetadataObject(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {};
+  }
+
+  return { ...metadata };
+}
+
+function getAreaShapeRolesFromMeasurement(measurement: Pick<TakeoffMeasurement, "metadata">): Record<string, AreaShapeRole> {
+  const metadataObject = getMeasurementMetadataObject(measurement.metadata);
+  const rawRoles = metadataObject.areaShapeRoles;
+  if (!rawRoles || typeof rawRoles !== "object" || Array.isArray(rawRoles)) {
+    return {};
+  }
+
+  return Object.entries(rawRoles).reduce<Record<string, AreaShapeRole>>((accumulator, [shapeId, role]) => {
+    accumulator[shapeId] = role === "deduction" ? "deduction" : "include";
+    return accumulator;
+  }, {});
+}
+
+function buildCleanAreaShapeRoles(params: {
+  measurement: Pick<TakeoffMeasurement, "metadata">;
+  areaShapes: Array<Pick<TakeoffAreaShape, "id">>;
+  overrides?: Record<string, AreaShapeRole>;
+}): Record<string, AreaShapeRole> {
+  const existingRoles = getAreaShapeRolesFromMeasurement(params.measurement);
+  return params.areaShapes.reduce<Record<string, AreaShapeRole>>((accumulator, shape) => {
+    accumulator[shape.id] = params.overrides?.[shape.id] ?? existingRoles[shape.id] ?? "include";
+    return accumulator;
+  }, {});
+}
+
+function buildAreaMeasurementMetadata(params: {
+  measurement: Pick<TakeoffMeasurement, "metadata">;
+  areaShapes: Array<Pick<TakeoffAreaShape, "id">>;
+  overrides?: Record<string, AreaShapeRole>;
+}): Record<string, unknown> {
+  return {
+    ...getMeasurementMetadataObject(params.measurement.metadata),
+    areaShapeRoles: buildCleanAreaShapeRoles(params),
+  };
+}
+
+function computeSignedAreaTotals(params: {
+  measurement: Pick<TakeoffMeasurement, "metadata">;
+  areaShapes: Array<Pick<TakeoffAreaShape, "id" | "measured_area_base" | "measured_perimeter_base">>;
+}) {
+  const roles = getAreaShapeRolesFromMeasurement(params.measurement);
+  return params.areaShapes.reduce(
+    (accumulator, shape) => {
+      const role = roles[shape.id] ?? "include";
+      const measuredAreaValue = Number(shape.measured_area_base ?? 0);
+      const measuredPerimeterBase = Number(shape.measured_perimeter_base ?? 0);
+      accumulator.measuredAreaValue += role === "deduction" ? -measuredAreaValue : measuredAreaValue;
+      accumulator.measuredPerimeterBase += measuredPerimeterBase;
+      return accumulator;
+    },
+    {
+      measuredAreaValue: 0,
+      measuredPerimeterBase: 0,
+    }
+  );
+}
+
+function hasIncludedAreaShape(params: {
+  measurement: Pick<TakeoffMeasurement, "metadata">;
+  areaShapes: Array<Pick<TakeoffAreaShape, "id">>;
+}) {
+  const roles = getAreaShapeRolesFromMeasurement(params.measurement);
+  return params.areaShapes.some((shape) => (roles[shape.id] ?? "include") === "include");
+}
+
+function normalizeAreaMeasurementRoles(measurement: TakeoffMeasurement): TakeoffMeasurement {
+  if (measurement.measurement_kind !== "area") {
+    return measurement;
+  }
+
+  return {
+    ...measurement,
+    metadata: buildAreaMeasurementMetadata({
+      measurement,
+      areaShapes: measurement.area_shapes,
+    }),
+  };
+}
+
+function buildClosedPolygonSvgPath(points: Point2D[]): string {
+  if (points.length === 0) {
+    return "";
+  }
+
+  const [firstPoint, ...remainingPoints] = points;
+  if (!firstPoint) {
+    return "";
+  }
+
+  const segments = [`M ${firstPoint.x} ${firstPoint.y}`];
+  remainingPoints.forEach((point) => {
+    segments.push(`L ${point.x} ${point.y}`);
+  });
+  segments.push("Z");
+
+  return segments.join(" ");
+}
+
+function buildAreaCutoutSvgPath(
+  areaShapes: Array<{
+    documentPoints: Point2D[];
+  }>
+) {
+  return areaShapes
+    .map((shape) => buildClosedPolygonSvgPath(shape.documentPoints))
+    .filter((path) => path.length > 0)
+    .join(" ");
+}
+
+function getViewerAreaShapeFillColor(params: {
+  measurementColor: string;
+  isAppendTarget: boolean;
+  isSelectedMeasurement: boolean;
+}) {
+  if (params.isAppendTarget) {
+    return hexToRgba(params.measurementColor, 0.12);
+  }
+
+  if (params.isSelectedMeasurement) {
+    return hexToRgba(params.measurementColor, 0.18);
+  }
+
+  return hexToRgba(params.measurementColor, 0.12);
+}
+
 function cloneMeasurement(measurement: TakeoffMeasurement): TakeoffMeasurement {
   return {
     ...measurement,
@@ -694,6 +894,7 @@ function mergeMeasurementPreservingRicherGeometry(
   const nextMeasurement = cloneMeasurement(incomingMeasurement);
 
   if (incomingMeasurement.measurement_kind === "area") {
+    const incomingAreaRoleOverrides = getAreaShapeRolesFromMeasurement(incomingMeasurement);
     const localShapeCount = localMeasurement.area_shapes.length;
     const incomingShapeCount = incomingMeasurement.area_shapes.length;
     const shouldPreserveLocalShapes =
@@ -704,10 +905,17 @@ function mergeMeasurementPreservingRicherGeometry(
       (localShapeCount > 0 && incomingShapeCount === 0);
 
     if (shouldPreserveLocalShapes) {
-      return cloneMeasurement(localMeasurement);
+      return normalizeAreaMeasurementRoles(cloneMeasurement(localMeasurement));
     }
 
-    return nextMeasurement;
+    return {
+      ...nextMeasurement,
+      metadata: buildAreaMeasurementMetadata({
+        measurement: localMeasurement,
+        areaShapes: nextMeasurement.area_shapes,
+        overrides: incomingAreaRoleOverrides,
+      }),
+    };
   }
 
   if (incomingMeasurement.measurement_kind === "line") {
@@ -1203,8 +1411,10 @@ export function TakeoffPdfViewer({
   const [summaryMeasurementEdit, setSummaryMeasurementEdit] = useState<SummaryMeasurementEditState | null>(null);
   const [isSummaryMeasurementEditSaving, setIsSummaryMeasurementEditSaving] = useState(false);
   const [measurementsShowingPerimeter, setMeasurementsShowingPerimeter] = useState<Set<string>>(() => new Set());
+  // Legacy name, but this now drives both PDF export visibility and live canvas visibility.
   const [hiddenFromExportLegendMeasurementIds, setHiddenFromExportLegendMeasurementIds] = useState<Set<string>>(() => new Set());
   const [appendMeasurementId, setAppendMeasurementId] = useState<string | null>(null);
+  const [appendAreaMode, setAppendAreaMode] = useState<AreaShapeRole>("include");
   const [hoverState, setHoverState] = useState<HoverState>({
     rawDocumentPoint: null,
     documentPoint: null,
@@ -1563,8 +1773,11 @@ export function TakeoffPdfViewer({
                         ? measurementPointOverrides[overrideKey]
                         : shape.points.map((point) => transform.normalizedPointToDocumentPoint(point));
 
+                    const role = getAreaShapeRolesFromMeasurement(measurement)[shape.id] ?? "include";
+
                     return {
                       id: shape.id,
+                      role,
                       documentPoints,
                       path: documentPointsToPath(documentPoints),
                       area: getPolygonArea(documentPoints),
@@ -1620,7 +1833,9 @@ export function TakeoffPdfViewer({
           const firstPoint = documentPoints[0] ?? null;
           const labelShape =
             measurement.measurement_kind === "area"
-              ? areaShapes.reduce<typeof areaShapes[number] | null>(
+              ? areaShapes
+                  .filter((shape) => shape.role === "include")
+                  .reduce<typeof areaShapes[number] | null>(
                   (largestShape, shape) => (!largestShape || shape.area > largestShape.area ? shape : largestShape),
                   null
                 )
@@ -1679,6 +1894,104 @@ export function TakeoffPdfViewer({
         }),
     [getMeasurementRenderKey, localMeasurements, measurementPointOverrides, transform]
   );
+  const canvasVisibleMeasurements = useMemo(
+    () =>
+      savedMeasurements.filter(
+        (measurement) => !hiddenFromExportLegendMeasurementIds.has(measurement.id)
+      ),
+    [hiddenFromExportLegendMeasurementIds, savedMeasurements]
+  );
+  useEffect(() => {
+    if (hiddenFromExportLegendMeasurementIds.size === 0) {
+      return;
+    }
+
+    const hiddenSelectionMeasurementId =
+      selection?.type === "measurement" &&
+      hiddenFromExportLegendMeasurementIds.has(selection.measurementId)
+        ? selection.measurementId
+        : null;
+    const hiddenAppendMeasurementId =
+      appendMeasurementId && hiddenFromExportLegendMeasurementIds.has(appendMeasurementId)
+        ? appendMeasurementId
+        : null;
+
+    if (hiddenSelectionMeasurementId) {
+      setSelection(null);
+    }
+
+    if (
+      selectedChild &&
+      hiddenFromExportLegendMeasurementIds.has(selectedChild.measurementId)
+    ) {
+      setSelectedChild(null);
+    }
+
+    if (hiddenAppendMeasurementId) {
+      appendSaveTargetMeasurementIdRef.current = null;
+      setAppendMeasurementId(null);
+      setAppendAreaMode("include");
+      setToolMode("select");
+      setDraftGeometry({ tool: null, points: [], hasChanges: false });
+    }
+
+    if (hiddenSelectionMeasurementId || hiddenAppendMeasurementId) {
+      setMeasurementPointOverrides((currentOverrides) => {
+        const nextOverrides = Object.fromEntries(
+          Object.entries(currentOverrides).filter(([overrideKey]) => {
+            if (hiddenSelectionMeasurementId) {
+              return (
+                overrideKey !== hiddenSelectionMeasurementId &&
+                !overrideKey.startsWith(`${hiddenSelectionMeasurementId}:`)
+              );
+            }
+
+            if (hiddenAppendMeasurementId) {
+              return (
+                overrideKey !== hiddenAppendMeasurementId &&
+                !overrideKey.startsWith(`${hiddenAppendMeasurementId}:`)
+              );
+            }
+
+            return true;
+          })
+        );
+
+        return Object.keys(nextOverrides).length === Object.keys(currentOverrides).length
+          ? currentOverrides
+          : nextOverrides;
+      });
+    }
+
+    if (
+      interactionRef.current.kind === "edit" &&
+      hiddenFromExportLegendMeasurementIds.has(interactionRef.current.target.measurementId)
+    ) {
+      interactionRef.current = { kind: "idle" };
+      setIsDragging(false);
+    }
+
+    setHoverState((currentHoverState) => {
+      if (
+        currentHoverState.hitTarget &&
+        "measurementId" in currentHoverState.hitTarget &&
+        hiddenFromExportLegendMeasurementIds.has(currentHoverState.hitTarget.measurementId)
+      ) {
+        return {
+          ...currentHoverState,
+          hitTarget: null,
+          snapCandidate: null,
+        };
+      }
+
+      return currentHoverState;
+    });
+  }, [
+    appendMeasurementId,
+    hiddenFromExportLegendMeasurementIds,
+    selectedChild,
+    selection,
+  ]);
   useEffect(() => {
     if (selection?.type !== "measurement") {
       setMeasurementNameInput("");
@@ -1841,14 +2154,19 @@ export function TakeoffPdfViewer({
       : null;
 
     return {
+      role: appendAreaMode,
       color: toolSetup.area.colorHex || DEFAULT_AREA_COLOR,
       points: previewPoints,
       path: documentPointsToPath(previewPoints),
       labelAnchor: canMeasureArea ? getPolygonLabelPosition(previewPoints) : null,
-      label: formatMeasurementValue(realWorldArea, calibrationScale ? `${calibrationScale.displayUnit}²` : null, "Area"),
+      label: formatMeasurementValue(
+        realWorldArea,
+        calibrationScale ? `${calibrationScale.displayUnit}²` : null,
+        appendAreaMode === "deduction" ? "Deduction" : "Area"
+      ),
       canFinish: measurementDraftPoints.length >= 3,
     };
-  }, [calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints, toolSetup.area.colorHex]);
+  }, [appendAreaMode, calibrationScale, draftGeometry.tool, hoverState.documentPoint, measurementDraftPoints, toolSetup.area.colorHex]);
 
   const countDraftPreview = useMemo(() => {
     if (toolMode !== "count" || !hoverState.documentPoint) {
@@ -1914,6 +2232,7 @@ export function TakeoffPdfViewer({
             })),
             areaShapes: measurement.area_shapes.map((shape) => ({
               id: shape.id,
+              role: getAreaShapeRolesFromMeasurement(measurement)[shape.id] ?? "include",
               points: shape.points.map((point) => ({
                 x: point.x,
                 y: point.y,
@@ -2091,10 +2410,8 @@ export function TakeoffPdfViewer({
     },
     [localActiveCalibration]
   );
-  const handleSummaryMeasurementContextMenu = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>, measurement: DisplayMeasurement) => {
-      event.preventDefault();
-      event.stopPropagation();
+  const openSummaryContextMenu = useCallback(
+    (measurement: DisplayMeasurement, x: number, y: number) => {
       setSummaryMeasurementEdit(null);
       setSummaryContextMenu({
         measurementId: measurement.id,
@@ -2103,12 +2420,58 @@ export function TakeoffPdfViewer({
         measurementDescription: measurement.description,
         measurementColor: measurement.color,
         isHiddenFromExportLegend: hiddenFromExportLegendMeasurementIds.has(measurement.id),
-        x: event.clientX,
-        y: event.clientY,
+        canAddDeduction: measurement.measurementKind === "area",
+        x,
+        y,
       });
     },
     [hiddenFromExportLegendMeasurementIds]
   );
+  const handleSummaryMeasurementContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, measurement: DisplayMeasurement) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openSummaryContextMenu(measurement, event.clientX, event.clientY);
+    },
+    [openSummaryContextMenu]
+  );
+  const handleCanvasContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (toolMode !== "select") {
+      return;
+    }
+
+    const rawDocumentPoint = getDocumentPointFromClientCoordinates(event.clientX, event.clientY);
+    if (!rawDocumentPoint) {
+      return;
+    }
+
+    const hitTarget = getHitTarget(rawDocumentPoint);
+    if (
+      hitTarget?.type !== "measurement-point" &&
+      hitTarget?.type !== "measurement-segment"
+    ) {
+      return;
+    }
+
+    const measurement = savedMeasurements.find((item) => item.id === hitTarget.measurementId);
+    if (!measurement) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setSelection({ type: "measurement", measurementId: measurement.id });
+    setSelectedChild(
+      hitTarget.childId && hitTarget.childKind
+        ? {
+            measurementId: measurement.id,
+            childId: hitTarget.childId,
+            kind: hitTarget.childKind,
+          }
+        : null
+    );
+    openSummaryContextMenu(measurement, event.clientX, event.clientY);
+  }, [getDocumentPointFromClientCoordinates, getHitTarget, openSummaryContextMenu, savedMeasurements, toolMode]);
   const hasUnsavedMeasurementDetailChanges = useMemo(() => {
     if (!selectedMeasurement) {
       return false;
@@ -2202,6 +2565,7 @@ export function TakeoffPdfViewer({
   useEffect(() => {
     if (appendMeasurementId && activeAppendMeasurementId === null) {
       setAppendMeasurementId(null);
+      setAppendAreaMode("include");
     }
   }, [activeAppendMeasurementId, appendMeasurementId]);
 
@@ -2468,6 +2832,7 @@ export function TakeoffPdfViewer({
     if (nextMeasurement.status === "deleted" && appendMeasurementId === nextMeasurement.id) {
       appendSaveTargetMeasurementIdRef.current = null;
       setAppendMeasurementId(null);
+      setAppendAreaMode("include");
     }
   }, [appendMeasurementId, selection, upsertLocalMeasurement]);
 
@@ -2738,6 +3103,7 @@ export function TakeoffPdfViewer({
     setMeasurementPointOverrides({});
     appendSaveTargetMeasurementIdRef.current = null;
     setAppendMeasurementId(null);
+    setAppendAreaMode("include");
     setSelection(null);
     setActionError(null);
     clearSaveFeedback();
@@ -3046,7 +3412,7 @@ export function TakeoffPdfViewer({
     }
 
     if (!shouldDisableMeasurementVertexSnap) {
-      savedMeasurements.forEach((measurement) => {
+      canvasVisibleMeasurements.forEach((measurement) => {
         measurement.documentPoints.forEach((point, index) => {
           if (
             params.mode === "edit" &&
@@ -3145,7 +3511,7 @@ export function TakeoffPdfViewer({
       }
     }
 
-    savedMeasurements.forEach((measurement) => {
+    canvasVisibleMeasurements.forEach((measurement) => {
       if (measurement.measurementKind === "area") {
         measurement.areaShapes.forEach((shape) => {
           const nearestPointHit = getNearestPointHit({
@@ -3378,6 +3744,7 @@ export function TakeoffPdfViewer({
   const beginToolMode = useCallback((nextTool: ToolMode) => {
     appendSaveTargetMeasurementIdRef.current = null;
     setAppendMeasurementId(null);
+    setAppendAreaMode("include");
     setToolMode(nextTool);
 
     if (nextTool === "select") {
@@ -3415,7 +3782,7 @@ export function TakeoffPdfViewer({
     return measurement.measurementKind === "line" && measurement.isPolyline;
   }, []);
 
-  const startAppendMeasurement = useCallback((measurementId: string) => {
+  const startAppendMeasurement = useCallback((measurementId: string, options?: { areaMode?: AreaShapeRole }) => {
     const measurement = savedMeasurements.find((item) => item.id === measurementId);
     if (!measurement || !isMeasurementAppendSupported(measurement)) {
       return;
@@ -3429,6 +3796,7 @@ export function TakeoffPdfViewer({
           : "polyline";
     appendSaveTargetMeasurementIdRef.current = measurement.id;
     setAppendMeasurementId(measurement.id);
+    setAppendAreaMode(measurement.measurementKind === "area" ? options?.areaMode ?? "include" : "include");
     setSelection({ type: "measurement", measurementId: measurement.id });
     setSelectedChild(null);
     setToolMode(nextTool);
@@ -3440,7 +3808,12 @@ export function TakeoffPdfViewer({
     });
     setActionError(null);
     clearSaveFeedback();
+    setSummaryContextMenu(null);
   }, [clearSaveFeedback, isMeasurementAppendSupported, savedMeasurements]);
+  const handleAddDeduction = useCallback((measurementId: string) => {
+    startAppendMeasurement(measurementId, { areaMode: "deduction" });
+    setSummaryContextMenu(null);
+  }, [startAppendMeasurement]);
 
   const handleSummaryMeasurementClick = useCallback((measurementId: string) => {
     const measurement = savedMeasurements.find((item) => item.id === measurementId);
@@ -3466,6 +3839,7 @@ export function TakeoffPdfViewer({
 
     appendSaveTargetMeasurementIdRef.current = null;
     setAppendMeasurementId(null);
+    setAppendAreaMode("include");
     setSelection({ type: "measurement", measurementId });
     setSelectedChild(null);
     setToolMode("select");
@@ -3591,6 +3965,7 @@ export function TakeoffPdfViewer({
     activeSnapCandidateRef.current = null;
     appendSaveTargetMeasurementIdRef.current = null;
     setAppendMeasurementId(null);
+    setAppendAreaMode("include");
     setSelection(null);
     setSelectedChild(null);
     setMeasurementPointOverrides({});
@@ -3639,12 +4014,50 @@ export function TakeoffPdfViewer({
               const remainingShapes = previousSnapshot.area_shapes.filter(
                 (shape) => shape.id !== selectedMeasurementChild.childId
               );
+              const nextMetadata = buildAreaMeasurementMetadata({
+                measurement: previousSnapshot,
+                areaShapes: remainingShapes,
+              });
+              const shouldDeleteMeasurement =
+                remainingShapes.length === 0 ||
+                !hasIncludedAreaShape({
+                  measurement: {
+                    ...previousSnapshot,
+                    metadata: nextMetadata,
+                  },
+                  areaShapes: remainingShapes,
+                });
+
+              if (shouldDeleteMeasurement) {
+                return {
+                  ...previousSnapshot,
+                  status: "deleted" as const,
+                };
+              }
+
+              const optimisticDisplayAreaShapes = remainingShapes.map((shape) => ({
+                ...shape,
+                measured_area_base:
+                  localActiveCalibration
+                    ? (convertBaseAreaToDisplayValue({
+                        baseUnit: localActiveCalibration.base_unit,
+                        displayUnit: localActiveCalibration.display_unit,
+                        value: Number(shape.measured_area_base ?? 0),
+                      }) ?? 0)
+                    : Number(shape.measured_area_base ?? 0),
+              }));
+              const optimisticTotals = computeSignedAreaTotals({
+                measurement: {
+                  ...previousSnapshot,
+                  metadata: nextMetadata,
+                },
+                areaShapes: optimisticDisplayAreaShapes,
+              });
               return {
                 ...previousSnapshot,
-                measured_perimeter_base: remainingShapes.reduce(
-                  (total, shape) => total + Number(shape.measured_perimeter_base ?? 0),
-                  0
-                ),
+                display_value: optimisticTotals.measuredAreaValue,
+                measured_perimeter_base: optimisticTotals.measuredPerimeterBase,
+                metadata: nextMetadata,
                 area_shapes: remainingShapes,
               };
             })()
@@ -3655,7 +4068,7 @@ export function TakeoffPdfViewer({
 
       if (
         (selectedMeasurementChild.kind === "count-item" && nextMeasurement.points.length === 0) ||
-        (selectedMeasurementChild.kind === "area-shape" && nextMeasurement.area_shapes.length === 0) ||
+        (selectedMeasurementChild.kind === "area-shape" && nextMeasurement.status === "deleted") ||
         (selectedMeasurementChild.kind === "line-path" && nextMeasurement.line_paths.length === 0)
       ) {
         replaceMeasurementStatusLocally({
@@ -3780,6 +4193,7 @@ export function TakeoffPdfViewer({
   }, [
     drawingSetId,
     getCurrentMeasurementById,
+    localActiveCalibration,
     onMeasurementCommitted,
     pageId,
     pushHistoryCommand,
@@ -3836,6 +4250,7 @@ export function TakeoffPdfViewer({
     if (appendMeasurementId) {
       appendSaveTargetMeasurementIdRef.current = null;
       setAppendMeasurementId(null);
+      setAppendAreaMode("include");
       setToolMode("select");
       setDraftGeometry({ tool: null, points: [], hasChanges: false });
       setMeasurementPointOverrides({});
@@ -4452,7 +4867,7 @@ export function TakeoffPdfViewer({
     });
   }
 
-  function submitAppendAreaShape(measurementId: string, points: Point2D[]) {
+  function submitAppendAreaShape(measurementId: string, points: Point2D[], role: AreaShapeRole) {
     const previousMeasurement = getCurrentMeasurementById(measurementId);
     if (!previousMeasurement || previousMeasurement.measurement_kind !== "area") {
       return;
@@ -4467,49 +4882,78 @@ export function TakeoffPdfViewer({
       calibrationScale,
       localActiveCalibration
     );
+    const nextAreaShapes = [
+      ...previousSnapshot.area_shapes,
+      {
+        id: tempShapeId,
+        measurement_id: previousSnapshot.id,
+        shape_order: previousSnapshot.area_shapes.length,
+        measured_area_base: optimisticAreaValue,
+        measured_perimeter_base: optimisticMeasuredPerimeterBase ?? 0,
+        page_bbox_min_x: null,
+        page_bbox_min_y: null,
+        page_bbox_max_x: null,
+        page_bbox_max_y: null,
+        points: normalizedPoints.map((point, index) => ({
+          id: `${tempShapeId}:${index}`,
+          area_shape_id: tempShapeId,
+          point_order: index,
+          x: point.x,
+          y: point.y,
+        })),
+      },
+    ];
+    const nextMetadata = buildAreaMeasurementMetadata({
+      measurement: previousSnapshot,
+      areaShapes: nextAreaShapes,
+      overrides: {
+        [tempShapeId]: role,
+      },
+    });
+    const optimisticDisplayAreaShapes = nextAreaShapes.map((shape) => ({
+      ...shape,
+      measured_area_base:
+        shape.id === tempShapeId
+          ? optimisticAreaValue
+          : localActiveCalibration
+            ? (convertBaseAreaToDisplayValue({
+                baseUnit: localActiveCalibration.base_unit,
+                displayUnit: localActiveCalibration.display_unit,
+                value: Number(shape.measured_area_base ?? 0),
+              }) ?? 0)
+            : Number(shape.measured_area_base ?? 0),
+    }));
+    const optimisticTotals = computeSignedAreaTotals({
+      measurement: {
+        ...previousSnapshot,
+        metadata: nextMetadata,
+      },
+      areaShapes: optimisticDisplayAreaShapes,
+    });
     const optimisticMeasurement: TakeoffMeasurement = {
       ...previousSnapshot,
-      display_value: (previousSnapshot.display_value ?? 0) + optimisticAreaValue,
+      display_value: optimisticTotals.measuredAreaValue,
       display_unit: calibrationScale ? `${calibrationScale.displayUnit}²` : previousSnapshot.display_unit,
-      measured_perimeter_base:
-        (previousSnapshot.measured_perimeter_base ?? 0) + (optimisticMeasuredPerimeterBase ?? 0),
-      area_shapes: [
-        ...previousSnapshot.area_shapes,
-        {
-          id: tempShapeId,
-          measurement_id: previousSnapshot.id,
-          shape_order: previousSnapshot.area_shapes.length,
-          measured_area_base: 0,
-          measured_perimeter_base: optimisticMeasuredPerimeterBase ?? 0,
-          page_bbox_min_x: null,
-          page_bbox_min_y: null,
-          page_bbox_max_x: null,
-          page_bbox_max_y: null,
-          points: normalizedPoints.map((point, index) => ({
-            id: `${tempShapeId}:${index}`,
-            area_shape_id: tempShapeId,
-            point_order: index,
-            x: point.x,
-            y: point.y,
-          })),
-        },
-      ],
+      measured_perimeter_base: optimisticTotals.measuredPerimeterBase,
+      metadata: nextMetadata,
+      area_shapes: nextAreaShapes,
     };
     const formData = new FormData();
     formData.set("drawingSetId", drawingSetId);
     formData.set("pageId", pageId);
     formData.set("measurementId", measurementId);
     formData.set("points", serializeNormalizedPoints(normalizedPoints));
+    formData.set("role", role);
 
     upsertLocalMeasurement(optimisticMeasurement);
 
     void runMutation({
       savingMessage: "Adding area...",
-      successMessage: "Area added.",
+      successMessage: role === "deduction" ? "Deduction added." : "Area added.",
       showSavingMessage: false,
       showSuccessMessage: false,
       retry: () => {
-        submitAppendAreaShape(measurementId, points);
+        submitAppendAreaShape(measurementId, points, role);
       },
       run: async () => {
         try {
@@ -4768,14 +5212,56 @@ export function TakeoffPdfViewer({
               calibrationScale,
               localActiveCalibration
             );
+            const nextDisplayAreaValue =
+              convertDocumentAreaToRealWorld(getPolygonArea(nextDocumentPoints), calibrationScale) ?? 0;
+            const nextMeasuredAreaBase =
+              localActiveCalibration
+                ? (convertDisplayAreaToBaseValue({
+                    baseUnit: localActiveCalibration.base_unit,
+                    displayUnit: localActiveCalibration.display_unit,
+                    value: nextDisplayAreaValue,
+                  }) ?? Number(shape.measured_area_base ?? 0))
+                : Number(shape.measured_area_base ?? 0);
 
             return {
               ...shape,
+              measured_area_base: nextMeasuredAreaBase,
               measured_perimeter_base: nextMeasuredPerimeterBase ?? shape.measured_perimeter_base ?? 0,
               points: nextShapePoints,
             };
           })
         : previousSnapshot.area_shapes;
+    const nextAreaMetadata =
+      previousSnapshot.measurement_kind === "area"
+        ? buildAreaMeasurementMetadata({
+            measurement: previousSnapshot,
+            areaShapes: optimisticAreaShapes,
+          })
+        : previousSnapshot.metadata;
+    const optimisticDisplayAreaShapes =
+      previousSnapshot.measurement_kind === "area"
+        ? optimisticAreaShapes.map((shape) => ({
+            ...shape,
+            measured_area_base:
+              localActiveCalibration
+                ? (convertBaseAreaToDisplayValue({
+                    baseUnit: localActiveCalibration.base_unit,
+                    displayUnit: localActiveCalibration.display_unit,
+                    value: Number(shape.measured_area_base ?? 0),
+                  }) ?? 0)
+                : Number(shape.measured_area_base ?? 0),
+          }))
+        : [];
+    const optimisticAreaTotals =
+      previousSnapshot.measurement_kind === "area"
+        ? computeSignedAreaTotals({
+            measurement: {
+              ...previousSnapshot,
+              metadata: nextAreaMetadata,
+            },
+            areaShapes: optimisticDisplayAreaShapes,
+          })
+        : null;
     const optimisticMeasurement: TakeoffMeasurement = {
       ...previousSnapshot,
       points:
@@ -4792,10 +5278,15 @@ export function TakeoffPdfViewer({
               y: point.y,
             }))
           : previousSnapshot.points,
+      display_value:
+        previousSnapshot.measurement_kind === "area"
+          ? optimisticAreaTotals?.measuredAreaValue ?? previousSnapshot.display_value
+          : previousSnapshot.display_value,
       measured_perimeter_base:
         previousSnapshot.measurement_kind === "area"
-          ? optimisticAreaShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0)
+          ? optimisticAreaTotals?.measuredPerimeterBase ?? previousSnapshot.measured_perimeter_base
           : previousSnapshot.measured_perimeter_base,
+      metadata: nextAreaMetadata,
       area_shapes: optimisticAreaShapes,
       line_paths:
         previousSnapshot.measurement_kind === "line" && previousSnapshot.line_paths.length > 0
@@ -5013,15 +5504,38 @@ export function TakeoffPdfViewer({
     }
 
     if (tool === "area") {
-      if (points.length >= 3) {
+      const resolvedAreaPoints = (() => {
+        const committedPoints = points;
+        const hoverPoint = hoverState.documentPoint;
+        const lastCommittedPoint = committedPoints[committedPoints.length - 1] ?? null;
+
+        if (!hoverPoint || !lastCommittedPoint || committedPoints.length < 2) {
+          return committedPoints;
+        }
+
+        const hoverDistanceFromLastCommitted = Math.hypot(
+          hoverPoint.x - lastCommittedPoint.x,
+          hoverPoint.y - lastCommittedPoint.y
+        );
+
+        if (hoverDistanceFromLastCommitted <= 0.001) {
+          return committedPoints;
+        }
+
+        const nextPoints = [...committedPoints, hoverPoint];
+        return nextPoints.length >= 3 ? nextPoints : committedPoints;
+      })();
+
+      if (resolvedAreaPoints.length >= 3) {
         if (appendTargetMeasurementId) {
-          submitAppendAreaShape(appendTargetMeasurementId, points);
+          submitAppendAreaShape(appendTargetMeasurementId, resolvedAreaPoints, appendAreaMode);
           appendSaveTargetMeasurementIdRef.current = null;
           setAppendMeasurementId(null);
+          setAppendAreaMode("include");
           setSelection({ type: "measurement", measurementId: appendTargetMeasurementId });
           setToolMode("select");
         } else {
-          submitArea(points);
+          submitArea(resolvedAreaPoints);
         }
         setDraftGeometry({ tool: "area", points: [], hasChanges: false });
       }
@@ -5043,6 +5557,7 @@ export function TakeoffPdfViewer({
         });
         appendSaveTargetMeasurementIdRef.current = null;
         setAppendMeasurementId(null);
+        setAppendAreaMode("include");
         setSelection({ type: "measurement", measurementId: appendTargetMeasurementId });
         setToolMode("select");
       } else {
@@ -5164,6 +5679,11 @@ export function TakeoffPdfViewer({
       }
 
       setSelection(null);
+      setHoverState((current) => ({
+        ...current,
+        documentPoint: null,
+        hitTarget: null,
+      }));
       submitCount(documentPoint);
       return;
     }
@@ -5536,6 +6056,8 @@ export function TakeoffPdfViewer({
   const canvasCursor =
     isDragging
       ? "cursor-grabbing"
+      : toolMode === "area" && activeAppendMeasurementId !== null && appendAreaMode === "deduction"
+        ? "cursor-cell"
       : toolMode === "select" || isSpacePanActive
         ? "cursor-grab"
         : "cursor-crosshair";
@@ -5555,7 +6077,9 @@ export function TakeoffPdfViewer({
       : activeAppendMeasurementId
         ? toolMode === "count"
           ? "Adding to existing count — click to place"
-          : "Adding to existing measurement — press Enter to finish"
+          : toolMode === "area" && appendAreaMode === "deduction"
+            ? "Adding deduction to existing measurement — press Enter to finish"
+            : "Adding to existing measurement — press Enter to finish"
         : selectedMeasurementChild && (selectedMeasurementChild.kind === "area-shape" || selectedMeasurementChild.kind === "line-path")
           ? "Selected child part highlighted. Drag its vertices to edit or press Delete to remove only that part."
         : selection?.type === "measurement"
@@ -5592,7 +6116,7 @@ export function TakeoffPdfViewer({
 
     if (toolMode === "area") {
       return {
-        label: activeAppendMeasurementId ? "Save Added Area" : "Save Area",
+        label: activeAppendMeasurementId ? (appendAreaMode === "deduction" ? "Save Deduction" : "Save Added Area") : "Save Area",
         disabled:
           draftGeometry.tool !== "area" ||
           draftGeometry.points.length < 3 ||
@@ -5778,6 +6302,15 @@ export function TakeoffPdfViewer({
                   </span>
                 </span>
               </button>
+              {summaryContextMenu.canAddDeduction ? (
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+                  onClick={() => handleAddDeduction(summaryContextMenu.measurementId)}
+                >
+                  Add deduction
+                </button>
+              ) : null}
               {summaryContextMenu.measurementKind === "area" ? (
               <button
                 type="button"
@@ -5924,6 +6457,7 @@ export function TakeoffPdfViewer({
               onWheel={onWheel}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
+              onContextMenu={handleCanvasContextMenu}
               onDoubleClick={handleCanvasDoubleClick}
               onPointerLeave={clearHoverState}
               onPointerUp={stopPointerInteraction}
@@ -6007,7 +6541,7 @@ export function TakeoffPdfViewer({
                       />
                     ) : null}
 
-                    {savedMeasurements.map((measurement) => (
+                    {canvasVisibleMeasurements.map((measurement) => (
                       <g key={measurement.renderKey}>
                         {measurement.measurementKind === "count" ? (
                           measurement.documentPoints.length > 0 ? (
@@ -6047,44 +6581,90 @@ export function TakeoffPdfViewer({
                             </>
                           ) : null
                         ) : measurement.measurementKind === "area" ? (
-                          measurement.areaShapes.map((shape) => (
-                            <polygon
-                              key={shape.id}
-                              points={shape.path}
-                              fill={
-                                activeAppendMeasurementId === measurement.id
-                                  ? hexToRgba(measurement.color, 0.12)
-                                  : isSelectedChildPart(measurement.id, "area-shape", shape.id)
-                                    ? hexToRgba(measurement.color, 0.24)
-                                    : isSelectedMeasurementId(measurement.id)
-                                    ? hexToRgba(measurement.color, 0.18)
-                                    : hexToRgba(measurement.color, 0.12)
-                              }
-                              stroke={
-                                activeAppendMeasurementId === measurement.id
-                                  ? "#C2410C"
-                                  : isSelectedChildPart(measurement.id, "area-shape", shape.id)
-                                    ? "#C2410C"
-                                  : isSelectedMeasurementId(measurement.id)
-                                  ? "#EA580C"
-                                  : isHoveredChildPart(measurement.id, "area-shape", shape.id)
-                                    ? "#FB923C"
-                                    : measurement.color
-                              }
-                              strokeWidth={
-                                activeAppendMeasurementId === measurement.id
-                                  ? "3.25"
-                                  : isSelectedChildPart(measurement.id, "area-shape", shape.id)
-                                    ? "3.5"
-                                  : isSelectedMeasurementId(measurement.id)
-                                    ? "3.25"
-                                    : "2.75"
-                              }
-                              vectorEffect="non-scaling-stroke"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          ))
+                          <>
+                            {(() => {
+                              const includeShapes = measurement.areaShapes.filter((shape) => shape.role === "include");
+                              const shouldPreviewDeductionCutout =
+                                activeAppendMeasurementId === measurement.id &&
+                                areaDraftPreview?.role === "deduction" &&
+                                areaDraftPreview.points.length >= 3;
+                              const cutoutShapes = includeShapes.length > 0 ? measurement.areaShapes : includeShapes;
+                              const effectiveCutoutShapes = shouldPreviewDeductionCutout
+                                ? [
+                                    ...cutoutShapes,
+                                    {
+                                      documentPoints: areaDraftPreview.points,
+                                    },
+                                  ]
+                                : cutoutShapes;
+                              const cutoutPath = buildAreaCutoutSvgPath(effectiveCutoutShapes);
+
+                              return cutoutPath ? (
+                                <path
+                                  d={cutoutPath}
+                                  fill={getViewerAreaShapeFillColor({
+                                    measurementColor: measurement.color,
+                                    isAppendTarget: activeAppendMeasurementId === measurement.id,
+                                    isSelectedMeasurement: isSelectedMeasurementId(measurement.id),
+                                  })}
+                                  fillRule="evenodd"
+                                  vectorEffect="non-scaling-stroke"
+                                />
+                              ) : null;
+                            })()}
+                            {measurement.areaShapes
+                              .filter((shape) => shape.role === "include")
+                              .map((shape) => (
+                                <polygon
+                                  key={shape.id}
+                                  points={shape.path}
+                                  fill="none"
+                                  stroke={
+                                    activeAppendMeasurementId === measurement.id
+                                      ? "#C2410C"
+                                      : isSelectedChildPart(measurement.id, "area-shape", shape.id)
+                                        ? "#C2410C"
+                                      : isSelectedMeasurementId(measurement.id)
+                                        ? "#EA580C"
+                                      : isHoveredChildPart(measurement.id, "area-shape", shape.id)
+                                        ? "#FB923C"
+                                        : measurement.color
+                                  }
+                                  strokeWidth={
+                                    activeAppendMeasurementId === measurement.id
+                                      ? "3.25"
+                                      : isSelectedChildPart(measurement.id, "area-shape", shape.id)
+                                        ? "3.5"
+                                      : isSelectedMeasurementId(measurement.id)
+                                        ? "3.25"
+                                        : "2.75"
+                                  }
+                                  vectorEffect="non-scaling-stroke"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              ))}
+                            {measurement.areaShapes
+                              .filter((shape) => shape.role === "deduction")
+                              .map((shape) => {
+                                const isHoveredDeduction = isHoveredChildPart(measurement.id, "area-shape", shape.id);
+                                const isSelectedDeduction = isSelectedChildPart(measurement.id, "area-shape", shape.id);
+
+                                return (
+                                  <polygon
+                                    key={shape.id}
+                                    points={shape.path}
+                                    fill="none"
+                                    stroke={measurement.color}
+                                    strokeOpacity={isSelectedDeduction ? "1" : "0.75"}
+                                    strokeWidth={isSelectedDeduction ? "2.5" : isHoveredDeduction ? "2" : "1.5"}
+                                    vectorEffect="non-scaling-stroke"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                );
+                              })}
+                          </>
                         ) : (
                           (measurement.linePaths.length > 0
                             ? measurement.linePaths
@@ -6157,10 +6737,14 @@ export function TakeoffPdfViewer({
                         {areaDraftPreview.points.length >= 2 ? (
                           <polygon
                             points={areaDraftPreview.path}
-                            fill={hexToRgba(areaDraftPreview.color, 0.12)}
-                            stroke={areaDraftPreview.color}
+                            fill={
+                              areaDraftPreview.role === "deduction"
+                                ? hexToRgba(areaDraftPreview.color, 0.05)
+                                : hexToRgba(areaDraftPreview.color, 0.12)
+                            }
+                            stroke={areaDraftPreview.role === "deduction" ? "#9A3412" : areaDraftPreview.color}
                             strokeWidth="2.5"
-                            strokeDasharray="8 6"
+                            strokeDasharray={areaDraftPreview.role === "deduction" ? "4 4" : "8 6"}
                             vectorEffect="non-scaling-stroke"
                             strokeLinejoin="round"
                           />
@@ -6238,7 +6822,7 @@ export function TakeoffPdfViewer({
                       })()
                     ) : null}
 
-                    {savedMeasurements.map((measurement) => {
+                    {canvasVisibleMeasurements.map((measurement) => {
                       if (!measurement.labelAnchor) {
                         return null;
                       }
@@ -6246,9 +6830,21 @@ export function TakeoffPdfViewer({
                       const labelPoint = transform.documentPointToCommittedStagePoint(measurement.labelAnchor);
                       const isAppendTarget = activeAppendMeasurementId === measurement.id;
                       const isSelected = isAppendTarget || (selection?.type === "measurement" && selection.measurementId === measurement.id);
+                      const isSelectedChild = selectedMeasurementChild?.measurementId === measurement.id;
+                      const hoveredHitTarget = hoverState.hitTarget;
                       const isHovered =
-                        (hoverState.hitTarget?.type === "measurement-segment" && hoverState.hitTarget.measurementId === measurement.id) ||
-                        (hoverState.hitTarget?.type === "measurement-point" && hoverState.hitTarget.measurementId === measurement.id);
+                        hoveredHitTarget !== null &&
+                        "measurementId" in hoveredHitTarget &&
+                        hoveredHitTarget.measurementId === measurement.id;
+                      const isEditing =
+                        interactionRef.current.kind === "edit" &&
+                        interactionRef.current.target.type === "measurement-point" &&
+                        interactionRef.current.target.measurementId === measurement.id;
+                      const shouldShowLabel = isAppendTarget || isSelected || isSelectedChild || isHovered || isEditing;
+
+                      if (!shouldShowLabel) {
+                        return null;
+                      }
 
                       return (
                         <div

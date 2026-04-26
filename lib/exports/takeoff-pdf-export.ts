@@ -156,11 +156,14 @@ function hexToPdfColor(hexColor: string) {
 
 function getExportAreaShapes(measurement: ExportTakeoffMeasurement): ExportTakeoffAreaShape[] {
   if (measurement.areaShapes.length > 0) {
-    return measurement.areaShapes;
+    return measurement.areaShapes.map((shape) => ({
+      ...shape,
+      role: shape.role === "deduction" ? "deduction" : "include",
+    }));
   }
 
   if (measurement.kind === "area" && measurement.points.length >= 3) {
-    return [{ id: `${measurement.id}:shape-0`, points: measurement.points }];
+    return [{ id: `${measurement.id}:shape-0`, role: "include", points: measurement.points }];
   }
 
   return [];
@@ -362,6 +365,21 @@ function getCountLabelAnchor(points: Point2D[]): Point2D | null {
   };
 }
 
+function addClosedPolygonPathToCanvas(
+  context: CanvasRenderingContext2D,
+  points: Point2D[]
+) {
+  if (points.length < 3) {
+    return;
+  }
+
+  context.moveTo(points[0]!.x, points[0]!.y);
+  for (let index = 1; index < points.length; index += 1) {
+    context.lineTo(points[index]!.x, points[index]!.y);
+  }
+  context.closePath();
+}
+
 function drawLabel(params: {
   context: CanvasRenderingContext2D;
   font: string;
@@ -411,8 +429,23 @@ function drawAreaMeasurement(params: {
   const { context, measurement, canvasWidth, canvasHeight, scale } = params;
   const colorHex = getMeasurementColor(measurement);
   const areaShapes = getExportAreaShapes(measurement);
+  const includeShapes = areaShapes.filter((shape) => shape.role === "include");
   let largestArea = 0;
   let labelAnchor: Point2D | null = null;
+
+  if (includeShapes.length > 0) {
+    context.save();
+    context.beginPath();
+    areaShapes.forEach((shape) => {
+      const points = shape.points.map((point) =>
+        normalizedToCanvasPoint(point, canvasWidth, canvasHeight)
+      );
+      addClosedPolygonPathToCanvas(context, points);
+    });
+    context.fillStyle = hexToRgba(colorHex, AREA_FILL_ALPHA);
+    context.fill("evenodd");
+    context.restore();
+  }
 
   areaShapes.forEach((shape) => {
     const points = shape.points.map((point) =>
@@ -422,19 +455,17 @@ function drawAreaMeasurement(params: {
       return;
     }
 
+    if (shape.role !== "include") {
+      return;
+    }
+
     context.save();
     context.beginPath();
-    context.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length; index += 1) {
-      context.lineTo(points[index].x, points[index].y);
-    }
-    context.closePath();
-    context.fillStyle = hexToRgba(colorHex, AREA_FILL_ALPHA);
+    addClosedPolygonPathToCanvas(context, points);
     context.strokeStyle = colorHex;
     context.lineWidth = Math.max(AREA_STROKE_WIDTH * scale, 1.5);
     context.lineJoin = "round";
     context.lineCap = "round";
-    context.fill();
     context.stroke();
     context.restore();
 

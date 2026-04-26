@@ -7,6 +7,7 @@ export interface ExportTakeoffPoint {
 
 export interface ExportTakeoffAreaShape {
   id: string;
+  role?: "include" | "deduction";
   points: ExportTakeoffPoint[];
 }
 

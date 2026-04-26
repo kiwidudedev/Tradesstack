@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 type TodoStatus = "To Do" | "In Progress" | "Need Review" | "Done";
 type TodoPriority = "Low" | "Medium" | "High";
-type TodoSourceType = "qa_issue" | "inspection_fail" | null;
+type TodoSourceType = "quality_issue" | "quality_inspection_item" | null;
 type GroupByMode = "All" | "Status" | "Assignee" | "Trade";
 
 interface TodoRow {
@@ -107,8 +107,14 @@ function normalizePriority(value: unknown): TodoPriority {
 }
 
 function normalizeSourceType(value: unknown): TodoSourceType {
-  if (value === "qa_issue" || value === "inspection_fail") {
+  if (value === "quality_issue" || value === "quality_inspection_item") {
     return value;
+  }
+  if (value === "qa_issue") {
+    return "quality_issue";
+  }
+  if (value === "inspection_fail") {
+    return "quality_inspection_item";
   }
   return null;
 }

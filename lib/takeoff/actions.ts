@@ -326,12 +326,14 @@ export function createTakeoffPageActions(opportunityId: string) {
     "use server";
 
     const measurementId = String(formData.get("measurementId") ?? "").trim();
+    const role = String(formData.get("role") ?? "").trim();
 
     try {
       const measurement = await appendAreaShapeToMeasurementForOpportunity({
         opportunitySlug: opportunityId,
         measurementId,
         points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 3),
+        role: role === "deduction" ? "deduction" : "include",
       });
       return {
         ok: true,

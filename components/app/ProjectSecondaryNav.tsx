@@ -27,7 +27,7 @@ const PROJECT_TOP_NAV_ITEMS = [
   { label: "Purchase Orders", segment: "preconstruction/purchase-orders", icon: FileSpreadsheet },
   { label: "Payment Claim", segment: "preconstruction/claims", icon: DollarSign },
   { label: "Timesheets", segment: "job-management/time-sheets", icon: TimerReset },
-  { label: "Health & Safety", segment: "job-management/quality-assurance", icon: ShieldCheck },
+  { label: "QA", segment: "job-management/quality-assurance", icon: ShieldCheck },
   { label: "AI Assistant", segment: "ai-chatbot", icon: Bot },
 ] as const;
 

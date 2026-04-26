@@ -195,6 +195,7 @@ export interface AppendTakeoffAreaShapeInput {
   opportunitySlug: string;
   measurementId: string;
   points: TakeoffPointInput[];
+  role?: AreaShapeRole;
 }
 
 export interface AppendTakeoffLinePathInput {
@@ -633,6 +634,91 @@ function getCountItemValueFromMeasurement(params: {
   const safePointCount = Math.max(params.pointCount, 1);
   const derivedValue = totalValue / safePointCount;
   return Number.isFinite(derivedValue) && derivedValue > 0 ? derivedValue : 1;
+}
+
+type AreaShapeRole = "include" | "deduction";
+
+function getMeasurementMetadataObject(
+  metadata: TakeoffMeasurement["metadata"] | null | undefined
+): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {};
+  }
+
+  return { ...metadata };
+}
+
+function getAreaShapeRolesFromMetadata(
+  metadata: TakeoffMeasurement["metadata"] | null | undefined
+): Record<string, AreaShapeRole> {
+  const metadataObject = getMeasurementMetadataObject(metadata);
+  const rawRoles = metadataObject.areaShapeRoles;
+  if (!rawRoles || typeof rawRoles !== "object" || Array.isArray(rawRoles)) {
+    return {};
+  }
+
+  return Object.entries(rawRoles).reduce<Record<string, AreaShapeRole>>((accumulator, [shapeId, role]) => {
+    accumulator[shapeId] = role === "deduction" ? "deduction" : "include";
+    return accumulator;
+  }, {});
+}
+
+function getAreaShapeRole(
+  metadata: TakeoffMeasurement["metadata"] | null | undefined,
+  shapeId: string
+): AreaShapeRole {
+  return getAreaShapeRolesFromMetadata(metadata)[shapeId] ?? "include";
+}
+
+function buildCleanAreaShapeRoles(params: {
+  metadata: TakeoffMeasurement["metadata"] | null | undefined;
+  areaShapes: Array<Pick<TakeoffMeasurementAreaShape, "id">>;
+  overrides?: Record<string, AreaShapeRole>;
+}): Record<string, AreaShapeRole> {
+  const existingRoles = getAreaShapeRolesFromMetadata(params.metadata);
+  return params.areaShapes.reduce<Record<string, AreaShapeRole>>((accumulator, shape) => {
+    accumulator[shape.id] = params.overrides?.[shape.id] ?? existingRoles[shape.id] ?? "include";
+    return accumulator;
+  }, {});
+}
+
+function buildAreaMeasurementMetadata(params: {
+  metadata: TakeoffMeasurement["metadata"] | null | undefined;
+  areaShapes: Array<Pick<TakeoffMeasurementAreaShape, "id">>;
+  overrides?: Record<string, AreaShapeRole>;
+}): Record<string, unknown> {
+  const metadataObject = getMeasurementMetadataObject(params.metadata);
+  return {
+    ...metadataObject,
+    areaShapeRoles: buildCleanAreaShapeRoles(params),
+  };
+}
+
+function computeSignedAreaTotals(params: {
+  metadata: TakeoffMeasurement["metadata"] | null | undefined;
+  areaShapes: Array<Pick<TakeoffMeasurementAreaShape, "id" | "measured_area_base" | "measured_perimeter_base">>;
+}) {
+  return params.areaShapes.reduce(
+    (accumulator, shape) => {
+      const role = getAreaShapeRole(params.metadata, shape.id);
+      const measuredAreaBase = Number(shape.measured_area_base ?? 0);
+      const measuredPerimeterBase = Number(shape.measured_perimeter_base ?? 0);
+      accumulator.measuredAreaBase += role === "deduction" ? -measuredAreaBase : measuredAreaBase;
+      accumulator.measuredPerimeterBase += measuredPerimeterBase;
+      return accumulator;
+    },
+    {
+      measuredAreaBase: 0,
+      measuredPerimeterBase: 0,
+    }
+  );
+}
+
+function hasIncludedAreaShape(params: {
+  metadata: TakeoffMeasurement["metadata"] | null | undefined;
+  areaShapes: Array<Pick<TakeoffMeasurementAreaShape, "id">>;
+}) {
+  return params.areaShapes.some((shape) => getAreaShapeRole(params.metadata, shape.id) === "include");
 }
 
 function getCountPointOrderFromChildId(params: {
@@ -2217,6 +2303,42 @@ export async function getTakeoffMeasurementsForPage(
   });
 }
 
+export async function getLatestActiveAreaMeasurementForOpportunitySlug(
+  opportunitySlug: string,
+  options?: {
+    resolvedWorkspace?: ResolvedTakeoffOpportunityWorkspace;
+    supabase?: SupabaseClient<Database>;
+  }
+): Promise<Pick<TakeoffMeasurement, "id" | "drawing_set_id" | "page_id"> | null> {
+  const resolved =
+    options?.resolvedWorkspace ??
+    await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug, {
+      supabase: options?.supabase,
+    });
+  if (!resolved) {
+    return null;
+  }
+
+  const supabase = options?.supabase ?? await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("takeoff_measurements")
+    .select("id, drawing_set_id, page_id")
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("measurement_kind", "area")
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  return data ?? null;
+}
+
 export async function saveTakeoffCalibrationForOpportunityPage(
   input: SaveTakeoffCalibrationInput
 ): Promise<TakeoffCalibration> {
@@ -2606,6 +2728,7 @@ async function createTakeoffMeasurementForOpportunityPage(
 
     let areaShapes: TakeoffMeasurementWithPoints["area_shapes"] = [];
     let linePaths: TakeoffMeasurementWithPoints["line_paths"] = [];
+    let nextMeasurement = measurement;
     if (input.measurementKind === "line" && points.length > 2) {
       const lineBounds = computeMeasurementBoundingBox(points);
       const linePathInsert = await perf.step("insertLinePath", () =>
@@ -2721,6 +2844,26 @@ async function createTakeoffMeasurementForOpportunityPage(
           points: savedAreaShapePoints,
         },
       ];
+
+      const metadataUpdateResult = await perf.step("updateAreaMeasurementMetadata", () =>
+        supabase
+          .from("takeoff_measurements")
+          .update({
+            metadata: buildAreaMeasurementMetadata({
+              metadata: measurement.metadata,
+              areaShapes,
+            }),
+          })
+          .eq("id", measurement.id)
+          .select(takeoffMeasurementSelect)
+          .single()
+      );
+
+      if (metadataUpdateResult.error || !metadataUpdateResult.data) {
+        throw new Error(metadataUpdateResult.error?.message ?? "Unable to finalize area measurement metadata.");
+      }
+
+      nextMeasurement = metadataUpdateResult.data;
     }
 
     await perf.step("writeEvent", () =>
@@ -2728,7 +2871,7 @@ async function createTakeoffMeasurementForOpportunityPage(
         organizationId: resolved.organizationId,
         projectId: resolved.projectId,
         opportunityId: resolved.opportunityId,
-        measurement,
+        measurement: nextMeasurement,
         points: savedPoints,
         areaShapes,
         linePaths,
@@ -2744,7 +2887,7 @@ async function createTakeoffMeasurementForOpportunityPage(
     );
 
     return {
-      ...measurement,
+      ...nextMeasurement,
       points: savedPoints,
       area_shapes: areaShapes,
       line_paths: linePaths,
@@ -2910,12 +3053,21 @@ export async function appendAreaShapeToMeasurementForOpportunity(
         maxY: shape.page_bbox_max_y,
       }))
     );
-    const totalMeasuredAreaBase = nextAreaShapes.reduce((total, shape) => total + Number(shape.measured_area_base ?? 0), 0);
-    const totalMeasuredPerimeterBase = nextAreaShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0);
+    const nextMetadata = buildAreaMeasurementMetadata({
+      metadata: measurement.metadata,
+      areaShapes: nextAreaShapes,
+      overrides: {
+        [insertShapeResult.data.id]: input.role === "deduction" ? "deduction" : "include",
+      },
+    });
+    const totals = computeSignedAreaTotals({
+      metadata: nextMetadata,
+      areaShapes: nextAreaShapes,
+    });
     const displayValue = convertBaseAreaToDisplay({
       baseUnit: activeCalibration.base_unit,
       displayUnit: activeCalibration.display_unit,
-      value: totalMeasuredAreaBase,
+      value: totals.measuredAreaBase,
     });
 
     const updateResult = await perf.step("updateMeasurement", () =>
@@ -2923,14 +3075,15 @@ export async function appendAreaShapeToMeasurementForOpportunity(
         .from("takeoff_measurements")
         .update({
           calibration_id: activeCalibration.id,
-          measured_area_base: totalMeasuredAreaBase,
-          measured_perimeter_base: totalMeasuredPerimeterBase,
+          measured_area_base: totals.measuredAreaBase,
+          measured_perimeter_base: totals.measuredPerimeterBase,
           display_value: displayValue,
           display_unit: `${activeCalibration.display_unit}²`,
           page_bbox_min_x: combinedBounds.minX,
           page_bbox_min_y: combinedBounds.minY,
           page_bbox_max_x: combinedBounds.maxX,
           page_bbox_max_y: combinedBounds.maxY,
+          metadata: nextMetadata,
           version: measurement.version + 1,
           updated_by: member.user_id,
         })
@@ -2957,9 +3110,10 @@ export async function appendAreaShapeToMeasurementForOpportunity(
         areaShapes: nextAreaShapes,
         eventType: "updated",
         actorUserId: member.user_id,
-        changeReason: "Area shape added to existing measurement",
+        changeReason: input.role === "deduction" ? "Deduction shape added to existing measurement" : "Area shape added to existing measurement",
         diff: {
           measurement_kind: "area",
+          appended_shape_role: input.role === "deduction" ? "deduction" : "include",
           appended_shape_points: points,
           previous_shape_count: measurementAreaShapes.length,
           next_shape_count: nextAreaShapes.length,
@@ -3609,6 +3763,27 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
       }
     }
 
+    if (measurement.measurement_kind === "area") {
+      const nextMetadata = buildAreaMeasurementMetadata({
+        metadata: measurement.metadata,
+        areaShapes: nextAreaShapes,
+      });
+      const totals = computeSignedAreaTotals({
+        metadata: nextMetadata,
+        areaShapes: nextAreaShapes,
+      });
+
+      updatePayload.measured_area_base = totals.measuredAreaBase;
+      updatePayload.measured_perimeter_base = totals.measuredPerimeterBase;
+      updatePayload.display_value = convertBaseAreaToDisplay({
+        baseUnit: activeCalibration!.base_unit,
+        displayUnit: activeCalibration!.display_unit,
+        value: totals.measuredAreaBase,
+      });
+      updatePayload.display_unit = `${activeCalibration!.display_unit}²`;
+      updatePayload.metadata = nextMetadata;
+    }
+
     const savedPoints: TakeoffMeasurementPoint[] = points.map((point, index) => ({
       id: previousPoints[index]?.id ?? `${measurement.id}:${index}`,
       organization_id: resolved.organizationId,
@@ -3809,31 +3984,38 @@ export async function updateTakeoffMeasurementChildGeometryForOpportunity(
           maxY: shape.page_bbox_max_y,
         }))
       );
-      const totalMeasuredAreaBase = nextShapes.reduce((total, shape) => total + Number(shape.measured_area_base ?? 0), 0);
-      const totalMeasuredPerimeterBase = nextShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0);
+      const nextMetadata = buildAreaMeasurementMetadata({
+        metadata: measurement.metadata,
+        areaShapes: nextShapes,
+      });
+      const totals = computeSignedAreaTotals({
+        metadata: nextMetadata,
+        areaShapes: nextShapes,
+      });
       const displayValue = convertBaseAreaToDisplay({
         baseUnit: activeCalibration.base_unit,
         displayUnit: activeCalibration.display_unit,
-        value: totalMeasuredAreaBase,
+        value: totals.measuredAreaBase,
       });
       const nextParentPoints = nextShapes[0]?.points.map((point) => ({ x: point.x, y: point.y })) ?? [];
 
       const updateMeasurementResult = await perf.step("updateMeasurement", () =>
         supabase
           .from("takeoff_measurements")
-          .update({
-            calibration_id: activeCalibration.id,
-            measured_area_base: totalMeasuredAreaBase,
-            measured_perimeter_base: totalMeasuredPerimeterBase,
-            display_value: displayValue,
-            display_unit: `${activeCalibration.display_unit}²`,
-            page_bbox_min_x: combinedBounds.minX,
-            page_bbox_min_y: combinedBounds.minY,
-            page_bbox_max_x: combinedBounds.maxX,
-            page_bbox_max_y: combinedBounds.maxY,
-            version: measurement.version + 1,
-            updated_by: member.user_id,
-          })
+        .update({
+          calibration_id: activeCalibration.id,
+          measured_area_base: totals.measuredAreaBase,
+          measured_perimeter_base: totals.measuredPerimeterBase,
+          display_value: displayValue,
+          display_unit: `${activeCalibration.display_unit}²`,
+          page_bbox_min_x: combinedBounds.minX,
+          page_bbox_min_y: combinedBounds.minY,
+          page_bbox_max_x: combinedBounds.maxX,
+          page_bbox_max_y: combinedBounds.maxY,
+          metadata: nextMetadata,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
           .eq("id", measurement.id)
           .select(takeoffMeasurementSelect)
           .single()
@@ -4361,8 +4543,71 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
           maxY: shape.page_bbox_max_y,
         }))
       );
-      const totalMeasuredAreaBase = remainingShapes.reduce((total, shape) => total + Number(shape.measured_area_base ?? 0), 0);
-      const totalMeasuredPerimeterBase = remainingShapes.reduce((total, shape) => total + Number(shape.measured_perimeter_base ?? 0), 0);
+      const nextMetadata = buildAreaMeasurementMetadata({
+        metadata: measurement.metadata,
+        areaShapes: remainingShapes,
+      });
+      const shouldDeleteMeasurement =
+        remainingShapes.length === 0 ||
+        !hasIncludedAreaShape({
+          metadata: nextMetadata,
+          areaShapes: remainingShapes,
+        });
+
+      if (shouldDeleteMeasurement) {
+        const updateMeasurementResult = await perf.step("deleteParentMeasurementWithoutIncludeShape", () =>
+          supabase
+            .from("takeoff_measurements")
+            .update({
+              status: "deleted",
+              version: measurement.version + 1,
+              updated_by: member.user_id,
+              archived_by: member.user_id,
+              archived_at: new Date().toISOString(),
+            })
+            .eq("id", measurement.id)
+            .select(takeoffMeasurementSelect)
+            .single()
+        );
+
+        if (updateMeasurementResult.error || !updateMeasurementResult.data) {
+          throw new Error(updateMeasurementResult.error?.message ?? "Unable to delete measurement.");
+        }
+
+        await perf.step("writeDeleteEvent", () =>
+          writeTakeoffMeasurementEvent({
+            organizationId: resolved.organizationId,
+            projectId: resolved.projectId,
+            opportunityId: resolved.opportunityId,
+            measurement: updateMeasurementResult.data,
+            points: [],
+            areaShapes: [],
+            linePaths: [],
+            eventType: "deleted",
+            actorUserId: member.user_id,
+            changeReason: "Area child deleted, no include shapes remain",
+            diff: {
+              measurement_kind: "area",
+              child_kind: "area-shape",
+              child_id: input.childId,
+              deleted_last_include_shape: true,
+            },
+            supabase,
+          })
+        );
+
+        return {
+          ...updateMeasurementResult.data,
+          points: [],
+          area_shapes: [],
+          line_paths: [],
+        };
+      }
+
+      const totals = computeSignedAreaTotals({
+        metadata: nextMetadata,
+        areaShapes: remainingShapes,
+      });
       const { data: page, error: pageError } = await perf.step("pageLookup", () =>
         supabase
           .from("takeoff_pages")
@@ -4387,26 +4632,27 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
       const displayValue = convertBaseAreaToDisplay({
         baseUnit: activeCalibration.base_unit,
         displayUnit: activeCalibration.display_unit,
-        value: totalMeasuredAreaBase,
+        value: totals.measuredAreaBase,
       });
       const nextParentPoints = remainingShapes[0]?.points.map((point) => ({ x: point.x, y: point.y })) ?? [];
 
       const updateMeasurementResult = await perf.step("updateMeasurement", () =>
         supabase
           .from("takeoff_measurements")
-          .update({
-            calibration_id: activeCalibration.id,
-            measured_area_base: totalMeasuredAreaBase,
-            measured_perimeter_base: totalMeasuredPerimeterBase,
-            display_value: displayValue,
-            display_unit: `${activeCalibration.display_unit}²`,
-            page_bbox_min_x: combinedBounds.minX,
-            page_bbox_min_y: combinedBounds.minY,
-            page_bbox_max_x: combinedBounds.maxX,
-            page_bbox_max_y: combinedBounds.maxY,
-            version: measurement.version + 1,
-            updated_by: member.user_id,
-          })
+        .update({
+          calibration_id: activeCalibration.id,
+          measured_area_base: totals.measuredAreaBase,
+          measured_perimeter_base: totals.measuredPerimeterBase,
+          display_value: displayValue,
+          display_unit: `${activeCalibration.display_unit}²`,
+          page_bbox_min_x: combinedBounds.minX,
+          page_bbox_min_y: combinedBounds.minY,
+          page_bbox_max_x: combinedBounds.maxX,
+          page_bbox_max_y: combinedBounds.maxY,
+          metadata: nextMetadata,
+          version: measurement.version + 1,
+          updated_by: member.user_id,
+        })
           .eq("id", measurement.id)
           .select(takeoffMeasurementSelect)
           .single()
