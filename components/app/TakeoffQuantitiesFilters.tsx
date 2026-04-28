@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, use, useEffect, useMemo, useState } from "react";
 import { ArrowUpDown, FileText, LayoutGrid, Ruler, Search } from "lucide-react";
 import styles from "@/components/app/trade-pack-builder.module.css";
 import { Button } from "@/components/ui/button";
@@ -38,13 +38,44 @@ function formatGroupTotals(group: QuantityTableGroup["totals"]): string {
   return segments.join(" • ");
 }
 
+function HydrationRowsBridge({
+  hydrationResult,
+  onResolved,
+}: {
+  hydrationResult: Promise<{
+    rows: QuantityTableRow[];
+    error: string | null;
+  }>;
+  onResolved: (result: { rows: QuantityTableRow[]; error: string | null }) => void;
+}) {
+  const result = use(hydrationResult);
+
+  useEffect(() => {
+    onResolved(result);
+  }, [onResolved, result]);
+
+  return null;
+}
+
 export function TakeoffQuantitiesFilters({
   rows,
   exportContext,
+  currentPageOnly = false,
+  isHydratingAllPages = false,
+  isFullDatasetLoaded = true,
+  hydrationResult = null,
 }: {
   rows: QuantityTableRow[];
   exportContext: QuantitiesExcelExportContext;
+  currentPageOnly?: boolean;
+  isHydratingAllPages?: boolean;
+  isFullDatasetLoaded?: boolean;
+  hydrationResult?: Promise<{
+    rows: QuantityTableRow[];
+    error: string | null;
+  }> | null;
 }) {
+  const [allRows, setAllRows] = useState(rows);
   const [search, setSearch] = useState("");
   const [pageFilter, setPageFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -52,11 +83,26 @@ export function TakeoffQuantitiesFilters({
   const [groupBy, setGroupBy] = useState<GroupOption>("none");
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [, setCurrentPageOnlyState] = useState(currentPageOnly);
+  const [, setIsHydratingAllPagesState] = useState(isHydratingAllPages);
+  const [isFullDatasetLoadedState, setIsFullDatasetLoadedState] = useState(isFullDatasetLoaded);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAllRows(rows);
+  }, [rows]);
+
+  useEffect(() => {
+    setCurrentPageOnlyState(currentPageOnly);
+    setIsHydratingAllPagesState(isHydratingAllPages);
+    setIsFullDatasetLoadedState(isFullDatasetLoaded);
+    setHydrationError(null);
+  }, [currentPageOnly, isFullDatasetLoaded, isHydratingAllPages, rows]);
 
   const pageOptions = useMemo<PageOption[]>(() => {
     const seen = new Map<string, PageOption>();
 
-    for (const row of rows) {
+    for (const row of allRows) {
       if (!seen.has(row.pageId)) {
         seen.set(row.pageId, {
           id: row.pageId,
@@ -67,12 +113,12 @@ export function TakeoffQuantitiesFilters({
     }
 
     return Array.from(seen.values()).sort((left, right) => left.pageNumber - right.pageNumber);
-  }, [rows]);
+  }, [allRows]);
 
   const filteredRows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
-    const nextRows = rows
+    const nextRows = allRows
       .map((row, index) => ({ row, index }))
       .filter(({ row }) => {
         if (normalizedSearch) {
@@ -130,10 +176,10 @@ export function TakeoffQuantitiesFilters({
       }
 
       return left.index - right.index;
-    });
+      });
 
     return nextRows.map(({ row }) => row);
-  }, [pageFilter, rows, search, sortBy, typeFilter]);
+  }, [allRows, pageFilter, search, sortBy, typeFilter]);
 
   const groupedRows = useMemo<QuantityTableGroup[] | null>(() => {
     if (groupBy === "none") {
@@ -231,7 +277,7 @@ export function TakeoffQuantitiesFilters({
   }, [pageFilter, pageOptions]);
 
   async function handleExportExcel() {
-    if (isExporting) {
+    if (isExporting || !isFullDatasetLoadedState) {
       return;
     }
 
@@ -256,6 +302,27 @@ export function TakeoffQuantitiesFilters({
 
   return (
     <div className="space-y-4">
+      {hydrationResult && currentPageOnly ? (
+        <Suspense fallback={null}>
+          <HydrationRowsBridge
+            hydrationResult={hydrationResult}
+            onResolved={(result) => {
+              if (result.error) {
+                setIsHydratingAllPagesState(false);
+                setHydrationError(result.error);
+                return;
+              }
+
+              setAllRows(result.rows);
+              setCurrentPageOnlyState(false);
+              setIsHydratingAllPagesState(false);
+              setIsFullDatasetLoadedState(true);
+              setHydrationError(null);
+            }}
+          />
+        </Suspense>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[280px] flex-1">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
@@ -330,7 +397,7 @@ export function TakeoffQuantitiesFilters({
           <Button
             type="button"
             onClick={() => void handleExportExcel()}
-            disabled={isExporting || filteredRows.length === 0}
+            disabled={isExporting || filteredRows.length === 0 || !isFullDatasetLoadedState}
             className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
           >
             {isExporting ? "Exporting..." : "Export Excel"}
@@ -344,7 +411,16 @@ export function TakeoffQuantitiesFilters({
         </p>
       ) : null}
 
-      <TakeoffQuantitiesTable rows={filteredRows} groups={groupedRows} />
+      {hydrationError ? (
+        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          {hydrationError}
+        </p>
+      ) : null}
+
+      <TakeoffQuantitiesTable
+        rows={filteredRows}
+        groups={groupedRows}
+      />
     </div>
   );
 }

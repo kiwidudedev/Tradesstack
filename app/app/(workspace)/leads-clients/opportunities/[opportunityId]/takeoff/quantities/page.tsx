@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { TakeoffQuantitiesFilters } from "@/components/app/TakeoffQuantitiesFilters";
-import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
 import type { QuantitiesExcelExportContext } from "@/lib/exports/quantities-excel";
 import { mapTakeoffToQuantityRows } from "@/lib/takeoff/quantities-adapter";
+import { readSearchParam } from "@/lib/takeoff/navigation";
 import {
   getActiveTakeoffCalibrationForPage,
   getTakeoffDrawingSetsForOpportunitySlug,
@@ -13,6 +13,48 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { TakeoffPageSearchParams } from "../takeoff-page-data";
 import { getTakeoffPageShellData } from "../takeoff-page-data";
 
+async function loadAllQuantitiesRows(params: {
+  opportunityId: string;
+  drawingSetId: string;
+  workspace: Awaited<ReturnType<typeof getTakeoffPageShellData>>["workspace"];
+}) {
+  const pages = await getTakeoffPagesForOpportunitySlug(params.opportunityId, {
+    drawingSetId: params.drawingSetId,
+    resolvedWorkspace: params.workspace,
+  });
+
+  if (pages.length === 0) {
+    return {
+      pages,
+      rows: null as ReturnType<typeof mapTakeoffToQuantityRows> | null,
+      loadErrorMessage: "The selected takeoff drawing set could not be loaded for Quantities.",
+    };
+  }
+
+  const pageRows = await Promise.all(
+    pages.map(async (page) => {
+      const [measurements, activeCalibration] = await Promise.all([
+        getTakeoffMeasurementsForPage(page.id),
+        getActiveTakeoffCalibrationForPage(page.id),
+      ]);
+
+      return mapTakeoffToQuantityRows(measurements, activeCalibration, {
+        drawingSetId: params.drawingSetId,
+        opportunityId: params.opportunityId,
+        pageId: page.id,
+        pageLabel: page.page_label?.trim() || `Page ${page.page_number}`,
+        pageNumber: page.page_number,
+      });
+    })
+  );
+
+  return {
+    pages,
+    rows: pageRows.flat(),
+    loadErrorMessage: null,
+  };
+}
+
 export default async function OpportunityTakeoffQuantitiesPage({
   params,
   searchParams,
@@ -22,6 +64,7 @@ export default async function OpportunityTakeoffQuantitiesPage({
 }) {
   const [{ opportunityId }, query] = await Promise.all([params, searchParams]);
   const { headerTitle, workspace, selectedDrawingSetId } = await getTakeoffPageShellData(opportunityId, query);
+  const selectedPageId = readSearchParam(query.pageId);
   const fallbackDrawingSets = selectedDrawingSetId ? [] : await getTakeoffDrawingSetsForOpportunitySlug(opportunityId);
   const resolvedDrawingSetId = selectedDrawingSetId ?? fallbackDrawingSets[0]?.id ?? null;
   const availableDrawingSets = selectedDrawingSetId ? await getTakeoffDrawingSetsForOpportunitySlug(opportunityId) : fallbackDrawingSets;
@@ -61,36 +104,97 @@ export default async function OpportunityTakeoffQuantitiesPage({
   } else {
     let rows: ReturnType<typeof mapTakeoffToQuantityRows> | null = null;
     let loadErrorMessage: string | null = null;
+    let currentPageOnly = false;
+    let isHydratingAllPages = false;
+    let isFullDatasetLoaded = true;
+    let hydrationResult:
+      | Promise<{
+          rows: ReturnType<typeof mapTakeoffToQuantityRows>;
+          error: string | null;
+        }>
+      | null = null;
 
     try {
-      const pages = await getTakeoffPagesForOpportunitySlug(opportunityId, {
-        drawingSetId: resolvedDrawingSetId,
-        resolvedWorkspace: workspace,
-      });
+      if (selectedPageId) {
+        const pages = await getTakeoffPagesForOpportunitySlug(opportunityId, {
+          drawingSetId: resolvedDrawingSetId,
+          resolvedWorkspace: workspace,
+        });
+        const currentPage =
+          pages.find((page) => page.id === selectedPageId) ??
+          null;
 
-      if (pages.length === 0) {
-        loadErrorMessage = "The selected takeoff drawing set could not be loaded for Quantities.";
-      } else {
-        const pageRows = await Promise.all(
-          pages.map(async (page) => {
-            const [measurements, activeCalibration] = await Promise.all([
-              getTakeoffMeasurementsForPage(page.id),
-              getActiveTakeoffCalibrationForPage(page.id),
-            ]);
+        if (currentPage) {
+          const [measurements, activeCalibration] = await Promise.all([
+            getTakeoffMeasurementsForPage(currentPage.id),
+            getActiveTakeoffCalibrationForPage(currentPage.id),
+          ]);
 
-            return mapTakeoffToQuantityRows(measurements, activeCalibration, {
-              drawingSetId: resolvedDrawingSetId,
-              opportunityId,
-              pageId: page.id,
-              pageLabel: page.page_label?.trim() || `Page ${page.page_number}`,
-              pageNumber: page.page_number,
-            });
+          rows = mapTakeoffToQuantityRows(measurements, activeCalibration, {
+            drawingSetId: resolvedDrawingSetId,
+            opportunityId,
+            pageId: currentPage.id,
+            pageLabel: currentPage.page_label?.trim() || `Page ${currentPage.page_number}`,
+            pageNumber: currentPage.page_number,
+          });
+          currentPageOnly = true;
+          isHydratingAllPages = true;
+          isFullDatasetLoaded = false;
+          hydrationResult = loadAllQuantitiesRows({
+            opportunityId,
+            drawingSetId: resolvedDrawingSetId,
+            workspace,
           })
-        );
-        rows = pageRows.flat();
+            .then((fullDataset) => ({
+              rows: fullDataset.rows ?? [],
+              error: fullDataset.loadErrorMessage,
+            }))
+            .catch((hydrationError) => ({
+              rows: [],
+              error: hydrationError instanceof Error
+                ? hydrationError.message
+                : "Unable to load the remaining quantity rows.",
+            }));
+        } else {
+          const fullDataset = await loadAllQuantitiesRows({
+            opportunityId,
+            drawingSetId: resolvedDrawingSetId,
+            workspace,
+          });
+          rows = fullDataset.rows;
+          loadErrorMessage = fullDataset.loadErrorMessage;
+        }
+      } else {
+        const fullDataset = await loadAllQuantitiesRows({
+          opportunityId,
+          drawingSetId: resolvedDrawingSetId,
+          workspace,
+        });
+        rows = fullDataset.rows;
+        loadErrorMessage = fullDataset.loadErrorMessage;
       }
     } catch (error) {
-      loadErrorMessage = error instanceof Error ? error.message : "The Quantities page could not be loaded right now.";
+      if (selectedPageId) {
+        try {
+          const fullDataset = await loadAllQuantitiesRows({
+            opportunityId,
+            drawingSetId: resolvedDrawingSetId,
+            workspace,
+          });
+          rows = fullDataset.rows;
+          loadErrorMessage = fullDataset.loadErrorMessage;
+          currentPageOnly = false;
+          isHydratingAllPages = false;
+          isFullDatasetLoaded = true;
+          hydrationResult = null;
+        } catch (fallbackError) {
+          loadErrorMessage = fallbackError instanceof Error
+            ? fallbackError.message
+            : "The Quantities page could not be loaded right now.";
+        }
+      } else {
+        loadErrorMessage = error instanceof Error ? error.message : "The Quantities page could not be loaded right now.";
+      }
     }
 
     if (loadErrorMessage) {
@@ -102,15 +206,18 @@ export default async function OpportunityTakeoffQuantitiesPage({
     } else {
       content = (
         <div className="min-w-0 flex-1">
-          <TakeoffQuantitiesFilters rows={rows ?? []} exportContext={exportContext} />
+          <TakeoffQuantitiesFilters
+            rows={rows ?? []}
+            exportContext={exportContext}
+            currentPageOnly={currentPageOnly}
+            isHydratingAllPages={isHydratingAllPages}
+            isFullDatasetLoaded={isFullDatasetLoaded}
+            hydrationResult={hydrationResult}
+          />
         </div>
       );
     }
   }
 
-  return (
-    <OpportunityWorkspaceShell title={headerTitle} opportunityId={opportunityId} activeTab="takeoff">
-      {content}
-    </OpportunityWorkspaceShell>
-  );
+  return content;
 }

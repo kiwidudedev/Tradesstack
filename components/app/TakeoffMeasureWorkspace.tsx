@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CloudUpload, Loader2 } from "lucide-react";
 import { TakeoffPdfViewer } from "@/components/app/TakeoffPdfViewer";
 import type {
   TakeoffMeasurePageData,
@@ -8,6 +9,7 @@ import type {
 } from "@/app/app/(workspace)/leads-clients/opportunities/[opportunityId]/takeoff/takeoff-page-data";
 import type { TakeoffActionResult } from "@/lib/takeoff/actions";
 import { buildTakeoffHref } from "@/lib/takeoff/navigation";
+import { useTakeoffSourceDrawingUpload } from "@/components/app/useTakeoffSourceDrawingUpload";
 
 interface TakeoffMeasurementPoint {
   id: string;
@@ -90,7 +92,10 @@ interface TakeoffMeasureWorkspaceProps {
   opportunityId: string;
   title: string;
   drawingSetId: string;
-  initialViewerData: TakeoffMeasureViewerData;
+  initialViewerData: TakeoffMeasureViewerData | null;
+  organizationId: string;
+  projectId: string;
+  isEmptyDrawingState?: boolean;
   saveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration>>;
   setActiveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration | null>>;
   createLineMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
@@ -140,7 +145,108 @@ function MeasureWorkspaceStatus(params: {
   );
 }
 
+function EmptyTakeoffMeasureWorkspace(props: {
+  opportunityId: string;
+  organizationId: string;
+  projectId: string;
+}) {
+  const {
+    inputRef,
+    isUploading,
+    status,
+    error,
+    onChooseFile,
+    onFileChange,
+  } = useTakeoffSourceDrawingUpload({
+    opportunityId: props.opportunityId,
+    organizationId: props.organizationId,
+    projectId: props.projectId,
+  });
+
+  return (
+    <div className="relative flex h-full min-h-0 min-w-0 flex-1 bg-[#FBFEFE]">
+      <input
+        ref={inputRef}
+        id="takeoffMeasureSidebarUploadInput"
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={onFileChange}
+        disabled={isUploading}
+      />
+      <aside className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-r border-[#DDE5EE] bg-white">
+        <div className="border-b border-[#E2E8F1] px-6 py-6">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#334155]">Takeoff</p>
+          <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.02em] text-slate-900">Summary</h1>
+        </div>
+        <div className="flex flex-1 items-center justify-center px-6 py-10">
+          <div className="max-w-[220px] text-center">
+            <p className="text-sm font-medium text-[#1E293B]">No drawings uploaded yet.</p>
+            <p className="mt-2 text-sm leading-[1.7] text-[#6B7C93]">
+              Upload a PDF drawing set to open the live Measure canvas and begin takeoff.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <div className="relative flex h-full min-h-0 min-w-0 flex-1 bg-[#EEF3F8]">
+        <div className="relative flex-1 overflow-hidden bg-[linear-gradient(180deg,#F6F8FB_0%,#E8EEF5_100%)]">
+          <div className="absolute inset-0 flex items-center justify-center px-6">
+            <div className="max-w-xl rounded-[18px] border border-white/80 bg-white/92 px-6 py-5 text-center shadow-[0_18px_44px_rgba(15,23,42,0.10)] backdrop-blur-sm">
+              <p className="text-[18px] font-semibold text-[#1d2433]">Upload plans to start measuring</p>
+              <p className="mt-2 text-[14px] leading-[1.7] text-[#6B7C93]">
+                Add your PDF drawing set to begin takeoff, calibration, and quantity tracking inside the Measure workspace.
+              </p>
+              {status ? (
+                <p className="mt-4 text-sm text-[#6B7C93]">{status}</p>
+              ) : null}
+              {error ? (
+                <p className="mt-3 text-sm text-[#9A3412]">{error}</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="absolute right-5 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-2 rounded-[28px] border border-white/75 bg-white/92 px-2 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={onChooseFile}
+              disabled={isUploading}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-[#D7E0EA] bg-white px-3 text-[#334155] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Upload drawing"
+              title="Upload Drawing"
+            >
+              {isUploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.2} />
+              ) : (
+                <CloudUpload className="h-4 w-4" strokeWidth={2.2} />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
+  if (props.isEmptyDrawingState || !props.initialViewerData) {
+    return (
+      <EmptyTakeoffMeasureWorkspace
+        opportunityId={props.opportunityId}
+        organizationId={props.organizationId}
+        projectId={props.projectId}
+      />
+    );
+  }
+
+  return <TakeoffMeasureWorkspaceWithViewer {...props} initialViewerData={props.initialViewerData} />;
+}
+
+function TakeoffMeasureWorkspaceWithViewer(
+  props: TakeoffMeasureWorkspaceProps & {
+    initialViewerData: TakeoffMeasureViewerData;
+  }
+) {
   const {
     opportunityId,
     title,
@@ -271,7 +377,7 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
       inFlightRequestsRef.current.set(pageId, request);
       return request;
     },
-    [fetchPageData]
+    [fetchPageData, filterDeletedMeasurements]
   );
 
   const primePage = useCallback(
@@ -465,6 +571,33 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
   );
 
   useEffect(() => {
+    const previousServerPayload = serverPayloadRef.current;
+    const hasSameServerPayload =
+      previousServerPayload?.drawingSetId === drawingSetId &&
+      previousServerPayload?.pageId === initialViewerData.pageId;
+    const hasSameViewerSnapshot =
+      viewerData.pageId === initialViewerData.pageId &&
+      viewerData.pageNumber === initialViewerData.pageNumber &&
+      viewerData.pageLabel === initialViewerData.pageLabel &&
+      viewerData.pageWidthPts === initialViewerData.pageWidthPts &&
+      viewerData.pageHeightPts === initialViewerData.pageHeightPts &&
+      viewerData.rotationDegrees === initialViewerData.rotationDegrees &&
+      viewerData.pageIndex === initialViewerData.pageIndex &&
+      viewerData.totalPages === initialViewerData.totalPages &&
+      viewerData.previousPageId === initialViewerData.previousPageId &&
+      viewerData.nextPageId === initialViewerData.nextPageId &&
+      viewerData.activeCalibration?.id === initialViewerData.activeCalibration?.id &&
+      viewerData.measurementReadiness.activeCalibrationId === initialViewerData.measurementReadiness.activeCalibrationId &&
+      viewerData.measurementReadiness.canCreateLine === initialViewerData.measurementReadiness.canCreateLine &&
+      viewerData.measurementReadiness.canCreateArea === initialViewerData.measurementReadiness.canCreateArea &&
+      viewerData.measurementReadiness.canCreateCount === initialViewerData.measurementReadiness.canCreateCount &&
+      viewerData.measurementReadiness.message === initialViewerData.measurementReadiness.message &&
+      viewerData.measurements === initialViewerData.measurements;
+
+    if (hasSameServerPayload && hasSameViewerSnapshot) {
+      return;
+    }
+
     const nextPageData: TakeoffMeasurePageData = {
       pageId: initialViewerData.pageId,
       pageNumber: initialViewerData.pageNumber,
@@ -540,17 +673,25 @@ export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
         pdfUrl: preservedPdfUrl,
       };
     });
-  }, [drawingSetId, filterDeletedMeasurements, initialViewerData]);
+  }, [drawingSetId, filterDeletedMeasurements, initialViewerData, viewerData]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    if (window.location.pathname + window.location.search !== currentHref) {
-      window.history.replaceState({ pageId: viewerData.pageId }, "", currentHref);
+    const url = new URL(window.location.href);
+    const currentDrawingSetId = url.searchParams.get("drawingSetId") ?? "";
+    const currentPageId = url.searchParams.get("pageId") ?? "";
+    const intendedDrawingSetId = drawingSetId;
+    const intendedPageId = viewerData.pageId;
+
+    if (currentDrawingSetId === intendedDrawingSetId && currentPageId === intendedPageId) {
+      return;
     }
-  }, [currentHref, viewerData.pageId]);
+
+    window.history.replaceState({ pageId: viewerData.pageId }, "", currentHref);
+  }, [currentHref, drawingSetId, viewerData.pageId]);
 
   useEffect(() => {
     void primePage(viewerData.previousPageId);

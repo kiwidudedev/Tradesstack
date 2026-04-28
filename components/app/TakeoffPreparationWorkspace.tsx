@@ -89,15 +89,6 @@ export function TakeoffPreparationWorkspace({
           // Keep polling quietly.
         }
       }, 1500);
-    } else {
-      statusInterval = window.setInterval(() => {
-        if (cancelled || refreshTriggeredRef.current) {
-          return;
-        }
-
-        refreshTriggeredRef.current = true;
-        router.refresh();
-      }, 4000);
     }
 
     return () => {

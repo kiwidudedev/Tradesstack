@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Search, TrendingUp, DollarSign, CheckCircle2, Clock } from "lucide-react";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
-import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import { OpportunitiesTable } from "./OpportunitiesTable";
@@ -66,58 +65,68 @@ export default async function LeadsClientsOpportunitiesPage({
   const params = (await searchParams) ?? {};
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const tab = typeof params.tab === "string" ? params.tab : "active";
-
-  const [, allRows] = await Promise.all([
-    getCurrentOrganizationMember(),
-    getLiveOpportunitiesForCurrentUser(),
-  ]);
-
-  // Stats
-  const submittedQuoteRows = allRows.filter(
-    (r) =>
-      r.valueNZD > 0 &&
-      (r.stage === "Quoted" || r.stage === "Won" || SUBMITTED_QUOTE_STATUSES.includes(r.latestQuoteStatus ?? "Draft"))
-  );
-  const pipelineRows = allRows.filter((r) => r.group === "pipeline");
-  const wonRows = allRows.filter((r) => r.stage === "Won");
-  const lostRows = allRows.filter((r) => r.stage === "Lost");
-  const submittedQuoteValue = submittedQuoteRows.reduce((sum, r) => sum + r.valueNZD, 0);
-
-  const winRate =
-    wonRows.length + lostRows.length > 0
-      ? Math.round((wonRows.length / (wonRows.length + lostRows.length)) * 100)
-      : 0;
+  const searchQuery = q.toLowerCase();
 
   const now = new Date();
-  const quotesThisMonth = allRows.filter((r) => {
-    if (!r.quotedDateIso) return false;
-    const d = new Date(r.quotedDateIso);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).length;
+  const allRows = await getLiveOpportunitiesForCurrentUser();
+  const activeRows: LiveOpportunityRow[] = [];
+  const sentRows: LiveOpportunityRow[] = [];
+  const wonRowsByQuote: LiveOpportunityRow[] = [];
+  const closedRows: LiveOpportunityRow[] = [];
+  let submittedQuoteCount = 0;
+  let submittedQuoteValue = 0;
+  let wonCount = 0;
+  let lostCount = 0;
+  let quotesThisMonth = 0;
+  let dueThisWeek = 0;
 
-  const dueThisWeek = pipelineRows.filter((r) => {
-    const days = getDaysUntilIso(r.dueDateIso);
-    return days !== null && days >= 0 && days <= 7;
-  }).length;
+  for (const row of allRows) {
+    const latestQuoteStatus = row.latestQuoteStatus ?? "Draft";
+    const submittedQuote = row.stage === "Quoted" || SUBMITTED_QUOTE_STATUSES.includes(latestQuoteStatus);
 
-  // Tab filtering
-  const isSubmittedQuote = (row: LiveOpportunityRow) =>
-    row.stage === "Quoted" || SUBMITTED_QUOTE_STATUSES.includes(row.latestQuoteStatus ?? "Draft");
+    if (row.valueNZD > 0 && (row.stage === "Quoted" || row.stage === "Won" || SUBMITTED_QUOTE_STATUSES.includes(latestQuoteStatus))) {
+      submittedQuoteCount += 1;
+      submittedQuoteValue += row.valueNZD;
+    }
 
-  const activeRows: LiveOpportunityRow[] = allRows.filter(
-    (r) => r.stage !== "Lost" && r.stage !== "Won" && !isSubmittedQuote(r) && Boolean(r.dueDateIso)
-  );
-  const sentRows: LiveOpportunityRow[] = allRows.filter(
-    (r) => r.latestQuoteStatus === "Sent" || r.latestQuoteStatus === "Viewed"
-  );
-  const wonRowsByQuote: LiveOpportunityRow[] = allRows.filter(
-    (r) => r.latestQuoteStatus === "Accepted" || r.stage === "Won" || Boolean(r.convertedProjectId)
-  );
-  const closedRows: LiveOpportunityRow[] = allRows.filter(
-    (r) =>
-      r.latestQuoteStatus === "Rejected" ||
-      r.latestQuoteStatus === "Expired"
-  );
+    if (row.stage === "Won") {
+      wonCount += 1;
+    } else if (row.stage === "Lost") {
+      lostCount += 1;
+    }
+
+    if (row.quotedDateIso) {
+      const quotedDate = new Date(row.quotedDateIso);
+      if (quotedDate.getMonth() === now.getMonth() && quotedDate.getFullYear() === now.getFullYear()) {
+        quotesThisMonth += 1;
+      }
+    }
+
+    if (row.group === "pipeline") {
+      const days = getDaysUntilIso(row.dueDateIso);
+      if (days !== null && days >= 0 && days <= 7) {
+        dueThisWeek += 1;
+      }
+    }
+
+    if (row.stage !== "Lost" && row.stage !== "Won" && !submittedQuote && row.dueDateIso) {
+      activeRows.push(row);
+    }
+    if (latestQuoteStatus === "Sent" || latestQuoteStatus === "Viewed") {
+      sentRows.push(row);
+    }
+    if (latestQuoteStatus === "Accepted" || row.stage === "Won" || Boolean(row.convertedProjectId)) {
+      wonRowsByQuote.push(row);
+    }
+    if (latestQuoteStatus === "Rejected" || latestQuoteStatus === "Expired") {
+      closedRows.push(row);
+    }
+  }
+
+  const winRate =
+    wonCount + lostCount > 0
+      ? Math.round((wonCount / (wonCount + lostCount)) * 100)
+      : 0;
 
   const tabRows =
     tab === "past"
@@ -131,7 +140,7 @@ export default async function LeadsClientsOpportunitiesPage({
   const searchedRows = q
     ? tabRows.filter((r) => {
         const haystack = `${r.name} ${r.location} ${r.clientName} ${r.ownerName}`.toLowerCase();
-        return haystack.includes(q.toLowerCase());
+        return haystack.includes(searchQuery);
       })
     : tabRows;
 
@@ -162,7 +171,7 @@ export default async function LeadsClientsOpportunitiesPage({
         <StatCard
           label="Submitted Quote Value"
           value={formatCurrencyCompactNZD(submittedQuoteValue)}
-          sub={`${submittedQuoteRows.length} submitted quotes`}
+          sub={`${submittedQuoteCount} submitted quotes`}
           icon={<DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />}
           iconBg="bg-[#0E172B]"
           iconColor="text-[#0E172B]"

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
+import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
 import { useAuth } from "@/hooks/use-auth";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
@@ -83,6 +83,7 @@ export default function PreconstructionQuotePage() {
   const params = useParams<{ opportunityId: string }>();
   const router = useRouter();
   const routeOpportunitySlug = params?.opportunityId;
+  const sharedOpportunity = useOpportunityWorkspaceData();
   const { session, isLoading: isAuthLoading } = useAuth();
   const userId = session?.id ?? null;
   const sessionOrganizationId = session?.organizationId ?? null;
@@ -90,7 +91,7 @@ export default function PreconstructionQuotePage() {
 
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [dbOpportunityId, setDbOpportunityId] = useState<string | null>(null);
+  const [dbOpportunityId, setDbOpportunityId] = useState<string | null>(sharedOpportunity.opportunityId);
   const [opportunityCode, setOpportunityCode] = useState<string | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -102,7 +103,7 @@ export default function PreconstructionQuotePage() {
   const [quoteTitle, setQuoteTitle] = useState("");
   const [quoteNumber, setQuoteNumber] = useState("");
   const [quoteCreatedAt, setQuoteCreatedAt] = useState<string | null>(null);
-  const [clientName, setClientName] = useState("");
+  const [clientName, setClientName] = useState(sharedOpportunity.clientName === "Unassigned" ? "" : sharedOpportunity.clientName);
   const [companyName, setCompanyName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
   const [email, setEmail] = useState("");
@@ -111,7 +112,7 @@ export default function PreconstructionQuotePage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
   const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
-  const [projectName, setProjectName] = useState("");
+  const [projectName, setProjectName] = useState(sharedOpportunity.name);
   const [quoteDate, setQuoteDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
 
@@ -261,6 +262,9 @@ export default function PreconstructionQuotePage() {
     const load = async () => {
       setIsLoadingQuote(true);
       setError(null);
+      setOrganizationName("");
+      setOrganizationLogoUrl(null);
+      setOrganizationBrandPrimaryColor("");
 
       try {
         let resolvedOrganizationId = sessionOrganizationId;
@@ -282,66 +286,83 @@ export default function PreconstructionQuotePage() {
           throw new Error("Could not resolve your organization.");
         }
 
-        const { data: organizationRow } = await supabase
-          .from("organizations")
-          .select("name, logo_path, brand_primary_color")
-          .eq("id", resolvedOrganizationId)
-          .maybeSingle();
-        if (!cancelled) {
+        const loadBranding = async () => {
+          const { data: organizationRow } = await supabase
+            .from("organizations")
+            .select("name, logo_path, brand_primary_color")
+            .eq("id", resolvedOrganizationId)
+            .maybeSingle();
+
+          if (cancelled) {
+            return;
+          }
+
           setOrganizationName(organizationRow?.name ?? "");
           setOrganizationBrandPrimaryColor((organizationRow?.brand_primary_color ?? "").trim());
           if (organizationRow?.logo_path) {
             const { data: logoUrlData } = supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path);
-            setOrganizationLogoUrl(logoUrlData.publicUrl);
+            if (!cancelled) {
+              setOrganizationLogoUrl(logoUrlData.publicUrl);
+            }
           } else {
             setOrganizationLogoUrl(null);
           }
+        };
+
+        const shouldLoadScopeItems = Boolean(sharedOpportunity.workspaceProjectId);
+        if (shouldLoadScopeItems) {
+          setIsLoadingScopeItems(true);
         }
 
-        let opportunityRow:
-          | {
-              id: string;
-              client_id: string | null;
-              name: string;
-              location: string;
-              workspace_project_id: string | null;
-              opportunity_code: string | null;
-              slug?: string | null;
-            }
-          | null = null;
-
-        const withCodeResult = await supabase
-          .from("organization_opportunities")
-          .select("id, client_id, name, opportunity_code, workspace_project_id, location")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("slug", routeOpportunitySlug)
-          .maybeSingle();
-
-        if (!withCodeResult.error && withCodeResult.data) {
-          opportunityRow = {
-            ...withCodeResult.data,
-            opportunity_code: withCodeResult.data.opportunity_code ?? null,
-          };
-        } else {
-          const fallbackResult = await supabase
+        const [
+          opportunityDetailResult,
+          clientResult,
+          quoteResult,
+          scopeRunsResult,
+          tradePacksResult,
+        ] = await Promise.all([
+          supabase
             .from("organization_opportunities")
-            .select("id, client_id, name, slug, workspace_project_id, location")
+            .select("opportunity_code, location")
             .eq("organization_id", resolvedOrganizationId)
             .eq("slug", routeOpportunitySlug)
-            .maybeSingle();
+            .maybeSingle(),
+          sharedOpportunity.clientId
+            ? supabase
+                .from("organization_clients")
+                .select("name, company_name, email, phone")
+                .eq("organization_id", resolvedOrganizationId)
+                .eq("id", sharedOpportunity.clientId)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+          supabase
+            .from("opportunity_quotes")
+            .select("*")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("opportunity_id", sharedOpportunity.opportunityId)
+            .order("updated_at", { ascending: false })
+            .limit(20),
+          shouldLoadScopeItems
+            ? supabase
+                .from("scope_runs")
+                .select("id, trade_pack_id, result_json, created_at")
+                .eq("organization_id", resolvedOrganizationId)
+                .eq("project_id", sharedOpportunity.workspaceProjectId)
+                .eq("status", "complete")
+                .order("created_at", { ascending: false })
+                .limit(120)
+            : Promise.resolve({ data: [], error: null }),
+          shouldLoadScopeItems
+            ? supabase
+                .from("trade_packs")
+                .select("id, trade_label")
+                .eq("organization_id", resolvedOrganizationId)
+                .eq("project_id", sharedOpportunity.workspaceProjectId)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
 
-          if (fallbackResult.error || !fallbackResult.data) {
-            throw new Error(withCodeResult.error?.message ?? fallbackResult.error?.message ?? "Opportunity not found.");
-          }
-
-          opportunityRow = {
-            ...fallbackResult.data,
-            opportunity_code: null,
-          };
-        }
-
-        if (!opportunityRow) {
-          throw new Error("Opportunity not found.");
+        if (opportunityDetailResult.error || !opportunityDetailResult.data) {
+          throw new Error(opportunityDetailResult.error?.message ?? "Opportunity not found.");
         }
 
         if (cancelled) {
@@ -349,51 +370,33 @@ export default function PreconstructionQuotePage() {
         }
 
         setOrganizationId(resolvedOrganizationId);
-        const resolvedOpportunityCode = opportunityRow.opportunity_code ?? deriveOpportunityCodeFromSlug(routeOpportunitySlug);
+        const resolvedOpportunityCode =
+          opportunityDetailResult.data.opportunity_code ?? deriveOpportunityCodeFromSlug(routeOpportunitySlug);
 
-        setDbOpportunityId(opportunityRow.id);
+        setDbOpportunityId(sharedOpportunity.opportunityId);
         setOpportunityCode(resolvedOpportunityCode);
-        setProjectName((current) => current || opportunityRow.name);
-        setSiteAddress((current) => current || opportunityRow.location || "");
+        setProjectName((current) => current || sharedOpportunity.name);
+        setSiteAddress((current) => current || opportunityDetailResult.data.location || "");
         setQuoteNumber((current) => current || `Q-${resolvedOpportunityCode}-1`);
 
-        if (opportunityRow.workspace_project_id) {
-          setIsLoadingScopeItems(true);
-          const [scopeRunsResult, tradePacksResult] = await Promise.all([
-            supabase
-              .from("scope_runs")
-              .select("id, trade_pack_id, result_json, created_at")
-              .eq("organization_id", resolvedOrganizationId)
-              .eq("project_id", opportunityRow.workspace_project_id)
-              .eq("status", "complete")
-              .order("created_at", { ascending: false })
-              .limit(120),
-            supabase
-              .from("trade_packs")
-              .select("id, trade_label")
-              .eq("organization_id", resolvedOrganizationId)
-              .eq("project_id", opportunityRow.workspace_project_id),
-          ]);
-
-          if (!cancelled) {
-            if (!scopeRunsResult.error) {
-              const tradeLabelByTradePackId = new Map((tradePacksResult.data ?? []).map((row) => [row.id, row.trade_label]));
-              const normalizedItems = toScopeCostCategoryItems({
-                runs: (scopeRunsResult.data ?? []) as Array<{
-                  id: string;
-                  trade_pack_id: string;
-                  result_json: Record<string, unknown>;
-                  created_at: string;
-                }>,
-                tradeLabelByTradePackId,
-              });
-              setScopeCostItems(normalizedItems);
-            } else {
-              setScopeCostItems([]);
-            }
-            setIsLoadingScopeItems(false);
+        if (shouldLoadScopeItems) {
+          if (!scopeRunsResult.error) {
+            const tradeLabelByTradePackId = new Map((tradePacksResult.data ?? []).map((row) => [row.id, row.trade_label]));
+            const normalizedItems = toScopeCostCategoryItems({
+              runs: (scopeRunsResult.data ?? []) as Array<{
+                id: string;
+                trade_pack_id: string;
+                result_json: Record<string, unknown>;
+                created_at: string;
+              }>,
+              tradeLabelByTradePackId,
+            });
+            setScopeCostItems(normalizedItems);
+          } else {
+            setScopeCostItems([]);
           }
-        } else if (!cancelled) {
+          setIsLoadingScopeItems(false);
+        } else {
           setScopeCostItems([]);
           setIsLoadingScopeItems(false);
         }
@@ -404,37 +407,22 @@ export default function PreconstructionQuotePage() {
         let linkedEmail = "";
         let linkedPhone = "";
 
-        if (opportunityRow.client_id) {
-          const { data: clientRow } = await supabase
-            .from("organization_clients")
-            .select("name, company_name, email, phone")
-            .eq("organization_id", resolvedOrganizationId)
-            .eq("id", opportunityRow.client_id)
-            .maybeSingle();
-          if (clientRow) {
-            linkedClientName = clientRow.name || "";
-            linkedCompanyName = clientRow.company_name || "";
-            linkedContactPerson = clientRow.name || "";
-            linkedEmail = clientRow.email || "";
-            linkedPhone = clientRow.phone || "";
+        const clientRow = clientResult.data;
+        if (clientRow) {
+          linkedClientName = clientRow.name || "";
+          linkedCompanyName = clientRow.company_name || "";
+          linkedContactPerson = clientRow.name || "";
+          linkedEmail = clientRow.email || "";
+          linkedPhone = clientRow.phone || "";
 
-            if (!cancelled) {
-              setClientName((current) => current || linkedClientName);
-              setCompanyName((current) => current || linkedCompanyName);
-              setContactPerson((current) => current || linkedContactPerson);
-              setEmail((current) => current || linkedEmail);
-              setPhone((current) => current || linkedPhone);
-            }
-          }
+          setClientName((current) => current || linkedClientName);
+          setCompanyName((current) => current || linkedCompanyName);
+          setContactPerson((current) => current || linkedContactPerson);
+          setEmail((current) => current || linkedEmail);
+          setPhone((current) => current || linkedPhone);
         }
 
-        const { data: quoteRows, error: quoteError } = await supabase
-          .from("opportunity_quotes")
-          .select("*")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("opportunity_id", opportunityRow.id)
-          .order("updated_at", { ascending: false })
-          .limit(20);
+        const { data: quoteRows, error: quoteError } = quoteResult;
         if (quoteError) {
           throw new Error(quoteError.message);
         }
@@ -448,6 +436,7 @@ export default function PreconstructionQuotePage() {
             setQuoteCreatedAt(new Date().toISOString());
           }
           setQuoteDate(new Date().toISOString().slice(0, 10));
+          void loadBranding();
           return;
         }
 
@@ -461,8 +450,8 @@ export default function PreconstructionQuotePage() {
         setContactPerson(linkedContactPerson || selectedQuote.contact_person || "");
         setEmail(linkedEmail || selectedQuote.client_email || "");
         setPhone(linkedPhone || selectedQuote.client_phone || "");
-        setSiteAddress(opportunityRow.location || selectedQuote.site_address || "");
-        setProjectName(selectedQuote.project_name || opportunityRow.name);
+        setSiteAddress(opportunityDetailResult.data.location || selectedQuote.site_address || "");
+        setProjectName(selectedQuote.project_name || sharedOpportunity.name);
         setQuoteDate(selectedQuote.quote_date ?? "");
         setExpiryDate(selectedQuote.expiry_date ?? "");
         setIsEditing(false);
@@ -504,6 +493,7 @@ export default function PreconstructionQuotePage() {
           }));
           setLineItems(nextItems.length > 0 ? nextItems : [makeDefaultLineItem()]);
         }
+        void loadBranding();
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : "Unable to load quote.");
@@ -517,10 +507,23 @@ export default function PreconstructionQuotePage() {
     };
 
     void load();
+
     return () => {
       cancelled = true;
     };
-  }, [isAuthLoading, normalizeAllowedStatus, resolveNextQuoteNumber, routeOpportunitySlug, sessionOrganizationId, supabase, userId]);
+  }, [
+    isAuthLoading,
+    normalizeAllowedStatus,
+    resolveNextQuoteNumber,
+    routeOpportunitySlug,
+    sessionOrganizationId,
+    sharedOpportunity.clientId,
+    sharedOpportunity.name,
+    sharedOpportunity.opportunityId,
+    sharedOpportunity.workspaceProjectId,
+    supabase,
+    userId,
+  ]);
 
   const addLineItem = (isOptional = false) => {
     setLineItems((current) => [...current, makeDefaultLineItem(isOptional)]);
@@ -823,88 +826,86 @@ export default function PreconstructionQuotePage() {
   ]);
 
   return (
-    <OpportunityWorkspaceShell title={projectName || "Opportunity"} opportunityId={routeOpportunitySlug ?? ""} activeTab="start-pricing">
-      <div className="px-5">
-        <QuoteEditorLayout
-          heroTitle="Quote"
-          createdAt={quoteCreatedAt}
-          error={error}
-          saveMessage={saveMessage}
-          shouldShowEditor={shouldShowEditor}
-          isLoadingQuote={isLoadingQuote}
-          isHydratingExistingQuote={isHydratingExistingQuote}
-          canManageQuote={canManageQuote}
-          canDeleteQuote={false}
-          isSaving={isSaving}
-          isDeleting={false}
-          quoteId={quoteId}
-          quoteStatus={quoteStatus}
-          setQuoteStatus={setQuoteStatus}
-          quoteTitle={quoteTitle}
-          setQuoteTitle={setQuoteTitle}
-          clientName={clientName}
-          siteAddress={siteAddress}
-          projectName={projectName}
-          setProjectName={setProjectName}
-          quoteDate={quoteDate}
-          setQuoteDate={setQuoteDate}
-          expiryDate={expiryDate}
-          setExpiryDate={setExpiryDate}
-          quoteNumber={quoteNumber}
-          onSave={saveQuote}
-          onEdit={() => setIsEditing(true)}
-          onExport={exportQuotePdf}
-          lineItems={lineItems}
-          mainLineItems={mainLineItems}
-          optionalLineItems={optionalLineItems}
-          addLineItem={addLineItem}
-          updateLineItem={updateLineItem}
-          removeLineItem={removeLineItem}
-          isQuoteDetailsOpen={isQuoteDetailsOpen}
-          setIsQuoteDetailsOpen={setIsQuoteDetailsOpen}
-          isLineItemsOpen={isLineItemsOpen}
-          setIsLineItemsOpen={setIsLineItemsOpen}
-          isTermsOpen={isTermsOpen}
-          setIsTermsOpen={setIsTermsOpen}
-          isScopeImportOpen={isScopeImportOpen}
-          setIsScopeImportOpen={setIsScopeImportOpen}
-          isLoadingScopeItems={isLoadingScopeItems}
-          availableScopeCostItems={availableScopeCostItems}
-          selectedScopeCostItemIds={selectedScopeCostItemIds}
-          toggleScopeCostItem={toggleScopeCostItem}
-          importSelectedScopeItems={importSelectedScopeItems}
-          sectionSubtotals={sectionSubtotals}
-          validityPeriod={validityPeriod}
-          setValidityPeriod={setValidityPeriod}
-          paymentTerms={paymentTerms}
-          setPaymentTerms={setPaymentTerms}
-          leadTime={leadTime}
-          setLeadTime={setLeadTime}
-          termsInclusions={termsInclusions}
-          setTermsInclusions={setTermsInclusions}
-          termsExclusions={termsExclusions}
-          setTermsExclusions={setTermsExclusions}
-          clarifications={clarifications}
-          setClarifications={setClarifications}
-          assumptions={assumptions}
-          setAssumptions={setAssumptions}
-          marginPercent={marginPercent}
-          setMarginPercent={setMarginPercent}
-          discountAmount={discountAmount}
-          setDiscountAmount={setDiscountAmount}
-          contingencyAmount={contingencyAmount}
-          setContingencyAmount={setContingencyAmount}
-          gstPercent={gstPercent}
-          setGstPercent={setGstPercent}
-          includeMarginInExport={includeMarginInExport}
-          setIncludeMarginInExport={setIncludeMarginInExport}
-          includeDiscountInExport={includeDiscountInExport}
-          setIncludeDiscountInExport={setIncludeDiscountInExport}
-          includeContingencyInExport={includeContingencyInExport}
-          setIncludeContingencyInExport={setIncludeContingencyInExport}
-          pricingSummary={pricingSummary as PricingSummary}
-        />
-      </div>
-    </OpportunityWorkspaceShell>
+    <div className="px-5">
+      <QuoteEditorLayout
+        heroTitle="Quote"
+        createdAt={quoteCreatedAt}
+        error={error}
+        saveMessage={saveMessage}
+        shouldShowEditor={shouldShowEditor}
+        isLoadingQuote={isLoadingQuote}
+        isHydratingExistingQuote={isHydratingExistingQuote}
+        canManageQuote={canManageQuote}
+        canDeleteQuote={false}
+        isSaving={isSaving}
+        isDeleting={false}
+        quoteId={quoteId}
+        quoteStatus={quoteStatus}
+        setQuoteStatus={setQuoteStatus}
+        quoteTitle={quoteTitle}
+        setQuoteTitle={setQuoteTitle}
+        clientName={clientName}
+        siteAddress={siteAddress}
+        projectName={projectName}
+        setProjectName={setProjectName}
+        quoteDate={quoteDate}
+        setQuoteDate={setQuoteDate}
+        expiryDate={expiryDate}
+        setExpiryDate={setExpiryDate}
+        quoteNumber={quoteNumber}
+        onSave={saveQuote}
+        onEdit={() => setIsEditing(true)}
+        onExport={exportQuotePdf}
+        lineItems={lineItems}
+        mainLineItems={mainLineItems}
+        optionalLineItems={optionalLineItems}
+        addLineItem={addLineItem}
+        updateLineItem={updateLineItem}
+        removeLineItem={removeLineItem}
+        isQuoteDetailsOpen={isQuoteDetailsOpen}
+        setIsQuoteDetailsOpen={setIsQuoteDetailsOpen}
+        isLineItemsOpen={isLineItemsOpen}
+        setIsLineItemsOpen={setIsLineItemsOpen}
+        isTermsOpen={isTermsOpen}
+        setIsTermsOpen={setIsTermsOpen}
+        isScopeImportOpen={isScopeImportOpen}
+        setIsScopeImportOpen={setIsScopeImportOpen}
+        isLoadingScopeItems={isLoadingScopeItems}
+        availableScopeCostItems={availableScopeCostItems}
+        selectedScopeCostItemIds={selectedScopeCostItemIds}
+        toggleScopeCostItem={toggleScopeCostItem}
+        importSelectedScopeItems={importSelectedScopeItems}
+        sectionSubtotals={sectionSubtotals}
+        validityPeriod={validityPeriod}
+        setValidityPeriod={setValidityPeriod}
+        paymentTerms={paymentTerms}
+        setPaymentTerms={setPaymentTerms}
+        leadTime={leadTime}
+        setLeadTime={setLeadTime}
+        termsInclusions={termsInclusions}
+        setTermsInclusions={setTermsInclusions}
+        termsExclusions={termsExclusions}
+        setTermsExclusions={setTermsExclusions}
+        clarifications={clarifications}
+        setClarifications={setClarifications}
+        assumptions={assumptions}
+        setAssumptions={setAssumptions}
+        marginPercent={marginPercent}
+        setMarginPercent={setMarginPercent}
+        discountAmount={discountAmount}
+        setDiscountAmount={setDiscountAmount}
+        contingencyAmount={contingencyAmount}
+        setContingencyAmount={setContingencyAmount}
+        gstPercent={gstPercent}
+        setGstPercent={setGstPercent}
+        includeMarginInExport={includeMarginInExport}
+        setIncludeMarginInExport={setIncludeMarginInExport}
+        includeDiscountInExport={includeDiscountInExport}
+        setIncludeDiscountInExport={setIncludeDiscountInExport}
+        includeContingencyInExport={includeContingencyInExport}
+        setIncludeContingencyInExport={setIncludeContingencyInExport}
+        pricingSummary={pricingSummary as PricingSummary}
+      />
+    </div>
   );
 }

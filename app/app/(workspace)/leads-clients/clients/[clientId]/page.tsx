@@ -3,7 +3,7 @@ import { AlertTriangle, BriefcaseBusiness, CheckCircle2, Clock3, TrendingUp, XCi
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interBold, interMedium, ibmPlexSans } from "@/lib/fonts";
 import { ClientDetailHeader } from "./ClientDetailHeader";
-import { formatDate, formatDateTime, getClientDetailData, toMoney, toPercent } from "./client-detail-data";
+import { formatDate, formatDateTime, getClientOverviewData, toMoney, toPercent } from "./client-detail-data";
 import styles from "./client-detail.module.css";
 
 export default async function ClientOverviewPage({
@@ -12,7 +12,7 @@ export default async function ClientOverviewPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
-  const data = await getClientDetailData(clientId);
+  const data = await getClientOverviewData(clientId);
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.scope} space-y-6 pb-8`}>

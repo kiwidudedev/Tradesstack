@@ -2,12 +2,12 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { interMedium, ibmPlexSans } from "@/lib/fonts";
 import { ClientDetailHeader } from "../ClientDetailHeader";
-import { formatDate, getClientDetailData, getQuoteStatusTone, quoteHref, toMoney, toNumeric } from "../client-detail-data";
+import { formatDate, getClientQuotesTabData, getQuoteStatusTone, quoteHref, toMoney, toNumeric } from "../client-detail-data";
 import styles from "../client-detail.module.css";
 
 export default async function ClientQuotesPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const data = await getClientDetailData(clientId);
+  const data = await getClientQuotesTabData(clientId);
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.scope} space-y-6 pb-8`}>

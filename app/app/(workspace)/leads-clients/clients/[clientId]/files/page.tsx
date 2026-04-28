@@ -3,7 +3,7 @@ import { FileDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { interMedium, ibmPlexSans } from "@/lib/fonts";
 import { ClientDetailHeader } from "../ClientDetailHeader";
-import { formatDate, getClientDetailData } from "../client-detail-data";
+import { formatDate, getClientFilesTabData } from "../client-detail-data";
 import styles from "../client-detail.module.css";
 
 function formatFileSize(value: number | null): string {
@@ -21,7 +21,7 @@ function formatFileSize(value: number | null): string {
 
 export default async function ClientFilesPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
-  const data = await getClientDetailData(clientId);
+  const data = await getClientFilesTabData(clientId);
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.scope} space-y-6 pb-8`}>

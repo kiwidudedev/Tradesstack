@@ -73,7 +73,7 @@ interface ScopeBuilderStoredRun {
   fileName: string;
   generatedAt: string;
   model: string | null;
-  result: ScopeBuilderResult;
+  result: ScopeBuilderResult | null;
 }
 
 interface ScopeBuilderWorkbenchProps {
@@ -106,6 +106,160 @@ function toDateTimeLabel(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsed);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toStructuredItemFromString(value: string): ScopeStructuredItem | null {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const delimiters = [" — ", " – ", " - ", ": ", "; "];
+  for (const delimiter of delimiters) {
+    const index = normalized.indexOf(delimiter);
+    if (index > 1 && index < 80) {
+      const title = normalized.slice(0, index).trim();
+      const description = normalized.slice(index + delimiter.length).trim();
+      if (title && description) {
+        return { title, description };
+      }
+    }
+  }
+
+  return {
+    title: normalized,
+    description: "Not specified in drawings",
+  };
+}
+
+function toStructuredItemArray(value: unknown): ScopeStructuredItem[] {
+  if (typeof value === "string") {
+    const parsed = toStructuredItemFromString(value);
+    return parsed ? [parsed] : [];
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized: ScopeStructuredItem[] = [];
+  for (const entry of value) {
+    if (isRecord(entry)) {
+      const title = typeof entry.title === "string" ? entry.title.trim() : "";
+      const description = typeof entry.description === "string" ? entry.description.trim() : "";
+      if (title && description) {
+        normalized.push({ title, description });
+        continue;
+      }
+
+      const item = typeof entry.item === "string" ? entry.item.trim() : "";
+      const unit = typeof entry.unit === "string" ? entry.unit.trim() : "";
+      if (item && unit) {
+        normalized.push({ title: item, description: unit });
+      }
+      continue;
+    }
+
+    if (typeof entry === "string") {
+      const parsed = toStructuredItemFromString(entry);
+      if (parsed) {
+        normalized.push(parsed);
+      }
+    }
+  }
+
+  return normalized;
+}
+
+function toScopeBuilderResult(value: unknown): ScopeBuilderResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const summary = toStructuredItemArray(value.summary);
+  const tradeLabel = typeof value.tradeLabel === "string" ? value.tradeLabel.trim() : "";
+  const generalRequirements = toStructuredItemArray(value.generalRequirements);
+  const coordinationInterfaces = toStructuredItemArray(value.coordinationInterfaces);
+  const assumptions = toStructuredItemArray(value.assumptions);
+  const exclusions = toStructuredItemArray(value.exclusions);
+  const risksClarificationsRequired = toStructuredItemArray(
+    isRecord(value) && "risksClarificationsRequired" in value ? value.risksClarificationsRequired : value.risksClarifications
+  );
+
+  const pricingRaw = value.pricingStructure;
+  if (!isRecord(pricingRaw)) {
+    return null;
+  }
+
+  const costBreakdownCategories = toStructuredItemArray(pricingRaw.costBreakdownCategories);
+  const measurementUnits = toStructuredItemArray(pricingRaw.measurementUnits);
+  const keyCostDrivers = toStructuredItemArray(pricingRaw.keyCostDrivers);
+  const marginSensitiveItems = toStructuredItemArray(
+    isRecord(pricingRaw) && "marginSensitiveItems" in pricingRaw
+      ? pricingRaw.marginSensitiveItems
+      : pricingRaw.marginImpactItems
+  );
+
+  const valid =
+    summary.length > 0 &&
+    tradeLabel.length > 0 &&
+    generalRequirements.length > 0 &&
+    coordinationInterfaces.length > 0 &&
+    assumptions.length > 0 &&
+    exclusions.length > 0 &&
+    risksClarificationsRequired.length > 0 &&
+    costBreakdownCategories.length > 0 &&
+    measurementUnits.length > 0 &&
+    keyCostDrivers.length > 0 &&
+    marginSensitiveItems.length > 0;
+
+  if (!valid) {
+    return null;
+  }
+
+  return {
+    tradeLabel,
+    summary,
+    generalRequirements,
+    coordinationInterfaces,
+    assumptions,
+    exclusions,
+    risksClarificationsRequired,
+    pricingStructure: {
+      costBreakdownCategories,
+      measurementUnits,
+      keyCostDrivers,
+      marginSensitiveItems,
+    },
+  };
+}
+
+function mergeStoredRuns(existingRuns: ScopeBuilderStoredRun[], incomingRuns: ScopeBuilderStoredRun[]): ScopeBuilderStoredRun[] {
+  const mergedById = new Map<string, ScopeBuilderStoredRun>();
+
+  for (const run of existingRuns) {
+    mergedById.set(run.id, run);
+  }
+
+  for (const run of incomingRuns) {
+    const current = mergedById.get(run.id);
+    if (!current) {
+      mergedById.set(run.id, run);
+      continue;
+    }
+
+    mergedById.set(run.id, {
+      ...run,
+      result: current.result ?? run.result,
+      model: current.model ?? run.model,
+    });
+  }
+
+  return Array.from(mergedById.values()).sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
 }
 
 function toMarkdown(result: ScopeBuilderResult, meta: { tradeLabel: string; fileName: string; generatedAt: string }): string {
@@ -168,6 +322,9 @@ export function ScopeBuilderWorkbench({
   );
   const [selectedStoredTradeId, setSelectedStoredTradeId] = useState<string>("");
   const [runResult, setRunResult] = useState<ScopeBuilderApiResponse | null>(null);
+  const [isLoadingStoredRuns, setIsLoadingStoredRuns] = useState(initialStoredRuns.length === 0);
+  const [storedRunsError, setStoredRunsError] = useState<string | null>(null);
+  const [loadingStoredTradeId, setLoadingStoredTradeId] = useState<string | null>(null);
   const supabase = useMemo(() => {
     try {
       return createBrowserSupabaseClient();
@@ -207,6 +364,10 @@ export function ScopeBuilderWorkbench({
     }
     return counts;
   }, [generatedTradePacks]);
+  const generatedTradePacksById = useMemo(
+    () => new Map(generatedTradePacks.map((tradePack) => [tradePack.id, tradePack])),
+    [generatedTradePacks]
+  );
 
   const loadTradePackFromStorage = useCallback(
     async (params: {
@@ -289,6 +450,85 @@ export function ScopeBuilderWorkbench({
     loadedStoragePath,
     loadTradePackFromStorage,
   ]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setIsLoadingStoredRuns(false);
+      setStoredRunsError("Stored scope history is unavailable right now.");
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingStoredRuns(true);
+    setStoredRunsError(null);
+
+    const loadStoredRuns = async () => {
+      try {
+        const { data, error: loadError } = await supabase
+          .from("scope_runs")
+          .select("id, trade_pack_id, created_at, trade_label:result_json->>tradeLabel")
+          .eq("organization_id", organizationId)
+          .eq("project_id", projectId)
+          .eq("status", "complete")
+          .order("created_at", { ascending: false })
+          .limit(160);
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (loadError) {
+          throw loadError;
+        }
+
+        const nextRuns: ScopeBuilderStoredRun[] = [];
+        for (const row of data ?? []) {
+          const tradePackId = typeof row.trade_pack_id === "string" ? row.trade_pack_id : null;
+          const linkedTradePack = tradePackId ? generatedTradePacksById.get(tradePackId) ?? null : null;
+          const parsedTradeLabel =
+            typeof row.trade_label === "string" && row.trade_label.trim().length > 0 ? row.trade_label.trim() : "";
+          const tradeLabel = linkedTradePack?.tradeLabel ?? parsedTradeLabel;
+          const inferredTradeId =
+            linkedTradePack?.tradeId ??
+            TRADE_PACK_TRADES.find(
+              (trade) => trade.label.toLowerCase().trim() === tradeLabel.toLowerCase().trim()
+            )?.id ??
+            "";
+
+          if (!tradeLabel || !inferredTradeId || typeof row.id !== "string" || typeof row.created_at !== "string") {
+            continue;
+          }
+
+          nextRuns.push({
+            id: row.id,
+            tradePackId,
+            tradeId: inferredTradeId,
+            tradeLabel,
+            fileName: linkedTradePack?.fileName ?? `Trade Pack ${tradePackId?.slice(0, 8) ?? row.id.slice(0, 8)}`,
+            generatedAt: row.created_at,
+            model: null,
+            result: null,
+          });
+        }
+
+        setStoredRuns((current) => mergeStoredRuns(current, nextRuns));
+      } catch {
+        if (!isCancelled) {
+          setStoredRunsError("Stored scope history could not be loaded.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingStoredRuns(false);
+        }
+      }
+    };
+
+    void loadStoredRuns();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [generatedTradePacksById, organizationId, projectId, supabase]);
 
   const selectPdfFile = useCallback((file: File | null) => {
     setError(null);
@@ -496,30 +736,91 @@ export function ScopeBuilderWorkbench({
       return;
     }
 
-    const canonicalTradeId = toCanonicalTradeId(storedRun.tradeId);
-    if (canonicalTradeId) {
-      setSelectedTradeId(canonicalTradeId);
+    const applyStoredRun = (run: ScopeBuilderStoredRun) => {
+      if (!run.result) {
+        return;
+      }
+
+      const canonicalTradeId = toCanonicalTradeId(run.tradeId);
+      if (canonicalTradeId) {
+        setSelectedTradeId(canonicalTradeId);
+      }
+
+      setSelectedGeneratedTradePackId(run.tradePackId);
+      setIsStepTwoVisible(true);
+      setRunResult({
+        tradeId: run.tradeId,
+        tradeLabel: run.tradeLabel,
+        model: run.model || "cached",
+        fileName: run.fileName,
+        generatedAt: run.generatedAt,
+        result: run.result,
+        cache: {
+          hit: true,
+          stored: true,
+          tradePackId: run.tradePackId,
+          runId: run.id,
+          reason: "Loaded from stored results.",
+        },
+      });
+      setError(null);
+      setStatus(`Stored result loaded • ${toDateTimeLabel(run.generatedAt)}`);
+    };
+
+    if (storedRun.result) {
+      applyStoredRun(storedRun);
+      return;
     }
 
-    setSelectedGeneratedTradePackId(storedRun.tradePackId);
-    setIsStepTwoVisible(true);
-    setRunResult({
-      tradeId: storedRun.tradeId,
-      tradeLabel: storedRun.tradeLabel,
-      model: storedRun.model || "cached",
-      fileName: storedRun.fileName,
-      generatedAt: storedRun.generatedAt,
-      result: storedRun.result,
-      cache: {
-        hit: true,
-        stored: true,
-        tradePackId: storedRun.tradePackId,
-        runId: storedRun.id,
-        reason: "Loaded from stored results.",
-      },
-    });
+    if (!supabase) {
+      setError("Stored scope history is unavailable right now.");
+      return;
+    }
+
+    setLoadingStoredTradeId(tradeId);
     setError(null);
-    setStatus(`Stored result loaded • ${toDateTimeLabel(storedRun.generatedAt)}`);
+    setStatus(`Loading stored scope for ${storedRun.tradeLabel}...`);
+
+    void (async () => {
+      try {
+        const { data, error: loadError } = await supabase
+          .from("scope_runs")
+          .select("id, result_json")
+          .eq("organization_id", organizationId)
+          .eq("project_id", projectId)
+          .eq("id", storedRun.id)
+          .eq("status", "complete")
+          .maybeSingle();
+
+        if (loadError || !data) {
+          throw loadError ?? new Error("Stored scope run not found.");
+        }
+
+        const parsedResult = toScopeBuilderResult(data.result_json);
+        if (!parsedResult) {
+          throw new Error("Stored scope output is no longer readable.");
+        }
+
+        const hydratedRun: ScopeBuilderStoredRun = {
+          ...storedRun,
+          result: parsedResult,
+        };
+
+        setStoredRuns((current) =>
+          current.map((run) => (run.id === hydratedRun.id ? hydratedRun : run))
+        );
+        applyStoredRun(hydratedRun);
+      } catch (loadStoredRunError) {
+        setError(
+          loadStoredRunError instanceof Error
+            ? loadStoredRunError.message
+            : "Unable to load the selected stored scope."
+        );
+        setStatus(null);
+      } finally {
+        setLoadingStoredTradeId(null);
+      }
+    })();
   };
 
   const getTradePackSelectLabel = (tradePack: ScopeBuilderGeneratedTradePack): string => {
@@ -533,6 +834,15 @@ export function ScopeBuilderWorkbench({
 
   const isProjectScopePage = Boolean(projectDashboardHref);
   const canContinueToStepTwo = Boolean(selectedPdfFile) && !isLoadingLinkedPdf;
+  const storedRunsSelectDisabled =
+    isGenerating || isLoadingLinkedPdf || isLoadingStoredRuns || loadingStoredTradeId !== null || storedTradeOptions.length === 0;
+  const storedRunsPlaceholderLabel = isLoadingStoredRuns
+    ? "Loading stored scopes..."
+    : storedTradeOptions.length > 0
+      ? "Select stored trade..."
+      : storedRunsError
+        ? "Stored scopes unavailable"
+        : "No stored scopes yet";
 
   const revealStepTwo = () => {
     if (!selectedPdfFile) {
@@ -709,9 +1019,9 @@ export function ScopeBuilderWorkbench({
                 className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
                 value={selectedStoredTradeId}
                 onChange={(event) => onSelectStoredTrade(event.target.value)}
-                disabled={isGenerating || isLoadingLinkedPdf || storedTradeOptions.length === 0}
+                disabled={storedRunsSelectDisabled}
               >
-                <option value="">Select stored trade...</option>
+                <option value="">{storedRunsPlaceholderLabel}</option>
                 {storedTradeOptions.map((run) => (
                   <option key={run.tradeId} value={run.tradeId}>
                     {run.tradeLabel}
@@ -719,6 +1029,7 @@ export function ScopeBuilderWorkbench({
                 ))}
               </select>
             </div>
+            {loadingStoredTradeId ? <Loader2 className="h-4 w-4 animate-spin text-[#7A7F87]" /> : null}
             <Button
               variant="outline"
               className={`${ibmPlexSans.className} ${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
@@ -738,6 +1049,9 @@ export function ScopeBuilderWorkbench({
               Download
             </Button>
           </div>
+          {storedRunsError ? (
+            <p className="mt-3 text-[13px] text-[#7A7F87]">{storedRunsError}</p>
+          ) : null}
           </div>
         </div>
         {error ? (

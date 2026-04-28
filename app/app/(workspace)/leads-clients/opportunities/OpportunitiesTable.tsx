@@ -4,6 +4,18 @@ import Link from "next/link";
 import { CalendarDays, User } from "lucide-react";
 import type { LiveOpportunityRow } from "@/lib/leads-clients-server";
 
+const currencyFormatter = new Intl.NumberFormat("en-NZ", {
+  style: "currency",
+  currency: "NZD",
+  maximumFractionDigits: 0,
+});
+
+const dateFormatter = new Intl.DateTimeFormat("en-NZ", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
 function getDaysUntilIso(isoDate: string | null): number | null {
   if (!isoDate) return null;
   const due = new Date(isoDate);
@@ -15,18 +27,14 @@ function getDaysUntilIso(isoDate: string | null): number | null {
 }
 
 function formatCurrencyNZD(value: number) {
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return currencyFormatter.format(value);
 }
 
 function formatDate(isoDate: string | null): string {
   if (!isoDate) return "—";
   const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short", year: "numeric" }).format(date);
+  return dateFormatter.format(date);
 }
 
 function getDaysLeftBadge(isoDate: string | null) {

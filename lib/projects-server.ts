@@ -163,6 +163,31 @@ export async function getOrganizationProjectBySlugForCurrentUser(
   return data ?? null;
 }
 
+export async function getOrganizationProjectByIdForCurrentUser(
+  projectId: string
+): Promise<OrganizationProject | null> {
+  const member = await getCurrentOrganizationMember();
+
+  if (!member) {
+    return null;
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("organization_projects")
+    .select(projectSelect)
+    .eq("organization_id", member.organization_id)
+    .eq("id", projectId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  return data ?? null;
+}
+
 export async function getProjectDrawingSetsForCurrentUser(projectId: string): Promise<ProjectDrawingSet[]> {
   const member = await getCurrentOrganizationMember();
 

@@ -128,6 +128,12 @@ export type TimelineEvent = {
 
 export type RiskTone = "green" | "orange" | "red";
 
+type ClientDetailDataOptions = {
+  includeDrawingSets?: boolean;
+};
+
+type HeaderOpportunityRow = Pick<OpportunityRow, "id" | "stage">;
+
 export function toMoney(value: number): string {
   return new Intl.NumberFormat("en-NZ", {
     style: "currency",
@@ -206,7 +212,7 @@ export function getQuoteStatusTone(status: string): "blue" | "green" | "yellow" 
   return "slate";
 }
 
-export async function getClientDetailData(clientId: string) {
+async function getClientBaseData(clientId: string) {
   const member = await getCurrentOrganizationMember();
   if (!member) redirect("/app/leads-clients/clients");
 
@@ -236,30 +242,577 @@ export async function getClientDetailData(clientId: string) {
 
   if (clientResult.error || !clientResult.data) notFound();
 
+  return {
+    member,
+    supabase,
+    client: clientResult.data,
+    projects: projectsResult.error ? [] : (projectsResult.data ?? []),
+    opportunities: opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []),
+  };
+}
+
+export async function getClientNotesTabData(clientId: string) {
+  const { member, client, projects, opportunities, supabase } = await getClientBaseData(clientId);
+  const clientNotesResult = await supabase
+    .from("client_notes")
+    .select("id, client_id, author_name, body, sort_order, created_at")
+    .eq("organization_id", member.organization_id)
+    .eq("client_id", clientId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false })
+    .returns<ClientNoteRow[]>();
+
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+  const clientNotes = clientNotesResult.error ? [] : (clientNotesResult.data ?? []);
+  const noteEntries: ClientNoteEntry[] = clientNotes.map((note) => ({
+    id: note.id,
+    title: note.author_name.trim() || "Team member",
+    body: note.body.trim(),
+    at: note.created_at,
+    href: `/app/leads-clients/clients/${client.id}/notes`,
+    authorName: note.author_name.trim() || "Team member",
+    sortOrder: note.sort_order,
+  }));
+
+  return {
+    client,
+    jobsInProgress,
+    activeOpportunities,
+    noteEntries,
+  };
+}
+
+export async function getClientJobsTabData(clientId: string) {
+  const { client, projects, opportunities } = await getClientBaseData(clientId);
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+
+  return {
+    client,
+    projects,
+    jobsInProgress,
+    activeOpportunities,
+  };
+}
+
+export async function getClientInvoicesTabData(clientId: string) {
+  const member = await getCurrentOrganizationMember();
+  if (!member) redirect("/app/leads-clients/clients");
+
+  const supabase = await createServerSupabaseClient();
+  const [clientResult, projectsResult, opportunitiesResult] = await Promise.all([
+    supabase
+      .from("organization_clients")
+      .select("id, name, company_name, email, phone, tags, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("id", clientId)
+      .maybeSingle<ClientRow>(),
+    supabase
+      .from("organization_projects")
+      .select("id, slug, name, stage, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false })
+      .returns<ProjectRow[]>(),
+    supabase
+      .from("organization_opportunities")
+      .select("id, stage")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .returns<HeaderOpportunityRow[]>(),
+  ]);
+
+  if (clientResult.error || !clientResult.data) notFound();
+
   const client = clientResult.data;
   const projects = projectsResult.error ? [] : (projectsResult.data ?? []);
   const opportunities = opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []);
-  const projectIdSet = new Set(projects.map((project) => project.id));
-  const opportunityIdSet = new Set(opportunities.map((opportunity) => opportunity.id));
+  const projectIds = projects.map((project) => project.id);
+
+  const claimsResult =
+    projectIds.length > 0
+      ? await (supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: string) => {
+                in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
+              };
+            };
+          };
+        })
+          .from("project_claims")
+          .select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, notes, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : { data: [] as Record<string, unknown>[], error: null };
+
+  const claims = (claimsResult.error ? [] : (claimsResult.data ?? [])) as ClaimRow[];
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const recentClaims = [...claims].sort((left, right) => (right.due_date || right.updated_at).localeCompare(left.due_date || left.updated_at));
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+
+  return {
+    client,
+    projectById,
+    recentClaims,
+    jobsInProgress,
+    activeOpportunities,
+  };
+}
+
+export async function getClientQuotesTabData(clientId: string) {
+  const { member, client, projects, opportunities, supabase } = await getClientBaseData(clientId);
+  const projectIds = projects.map((project) => project.id);
+  const opportunityIds = opportunities.map((opportunity) => opportunity.id);
+
+  const [projectQuotesResult, opportunityQuotesResult] = await Promise.all([
+    projectIds.length > 0
+      ? supabase
+          .from("project_quotes")
+          .select("id, project_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+          .returns<ProjectQuoteRow[]>()
+      : Promise.resolve({ data: [] as ProjectQuoteRow[], error: null }),
+    opportunityIds.length > 0
+      ? await (supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: string) => {
+                in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
+              };
+            };
+          };
+        })
+          .from("opportunity_quotes")
+          .select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("opportunity_id", opportunityIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+  ]);
+
+  const projectQuotes = projectQuotesResult.error ? [] : (projectQuotesResult.data ?? []);
+  const opportunityQuotes = (opportunityQuotesResult.error ? [] : (opportunityQuotesResult.data ?? [])) as OpportunityQuoteRow[];
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
+  const recentQuotes = [...projectQuotes, ...opportunityQuotes].sort((left, right) => (right.updated_at || right.created_at).localeCompare(left.updated_at || left.created_at));
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+
+  return {
+    client,
+    projectById,
+    opportunityById,
+    recentQuotes,
+    jobsInProgress,
+    activeOpportunities,
+  };
+}
+
+export async function getClientFilesTabData(clientId: string) {
+  const member = await getCurrentOrganizationMember();
+  if (!member) redirect("/app/leads-clients/clients");
+
+  const supabase = await createServerSupabaseClient();
+  const [clientResult, projectsResult, opportunitiesResult] = await Promise.all([
+    supabase
+      .from("organization_clients")
+      .select("id, name, company_name, email, phone, tags, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("id", clientId)
+      .maybeSingle<ClientRow>(),
+    supabase
+      .from("organization_projects")
+      .select("id, slug, name, stage, created_at, updated_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false })
+      .returns<ProjectRow[]>(),
+    supabase
+      .from("organization_opportunities")
+      .select("id, stage")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .returns<HeaderOpportunityRow[]>(),
+  ]);
+
+  if (clientResult.error || !clientResult.data) notFound();
+
+  const client = clientResult.data;
+  const projects = projectsResult.error ? [] : (projectsResult.data ?? []);
+  const opportunities = opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []);
+  const projectIds = projects.map((project) => project.id);
+
+  const filesResult =
+    projectIds.length > 0
+      ? await (supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: string) => {
+                in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
+              };
+            };
+          };
+        })
+          .from("project_drawing_sets")
+          .select("id, project_id, file_name, storage_path, file_size_bytes, created_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : { data: [] as Record<string, unknown>[], error: null };
+
+  const drawingSets = (filesResult.error ? [] : (filesResult.data ?? [])) as DrawingSetRow[];
+  const drawingSetsWithDownloads = await Promise.all(
+    drawingSets.map(async (file) => {
+      const signed = await supabase.storage.from(PROJECT_DRAWING_SETS_BUCKET).createSignedUrl(file.storage_path, 60 * 60);
+      return {
+        ...file,
+        download_url: signed.error ? null : signed.data.signedUrl,
+      };
+    })
+  );
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+
+  return {
+    client,
+    drawingSets: drawingSetsWithDownloads,
+    jobsInProgress,
+    activeOpportunities,
+  };
+}
+
+export async function getClientTimelineTabData(clientId: string) {
+  const { member, client, projects, opportunities, supabase } = await getClientBaseData(clientId);
+  const projectIds = projects.map((project) => project.id);
+  const opportunityIds = opportunities.map((opportunity) => opportunity.id);
 
   const untypedSupabase = supabase as unknown as {
     from: (table: string) => {
       select: (columns: string) => {
-        eq: (column: string, value: string) => Promise<UntypedResult<Record<string, unknown>>>;
+        eq: (column: string, value: string) => {
+          in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
+        };
+      };
+    };
+  };
+
+  const [opportunityQuotesResult, claimsResult, variationsResult, clientNotesResult] = await Promise.all([
+    opportunityIds.length > 0
+      ? untypedSupabase
+          .from("opportunity_quotes")
+          .select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("opportunity_id", opportunityIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectIds.length > 0
+      ? untypedSupabase
+          .from("project_claims")
+          .select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, notes, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectIds.length > 0
+      ? untypedSupabase
+          .from("project_variations")
+          .select("id, project_id, variation_number, variation_title, status, total_variation_price, approved_at, notes, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    supabase
+      .from("client_notes")
+      .select("id, client_id, author_name, body, sort_order, created_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: false })
+      .returns<ClientNoteRow[]>(),
+  ]);
+
+  const opportunityQuotes = (opportunityQuotesResult.error ? [] : (opportunityQuotesResult.data ?? [])) as OpportunityQuoteRow[];
+  const claims = (claimsResult.error ? [] : (claimsResult.data ?? [])) as ClaimRow[];
+  const variations = (variationsResult.error ? [] : (variationsResult.data ?? [])) as VariationRow[];
+  const clientNotes = clientNotesResult.error ? [] : (clientNotesResult.data ?? []);
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
+  const noteEntries: ClientNoteEntry[] = clientNotes.map((note) => ({
+    id: note.id,
+    title: note.author_name.trim() || "Team member",
+    body: note.body.trim(),
+    at: note.created_at,
+    href: `/app/leads-clients/clients/${client.id}/notes`,
+    authorName: note.author_name.trim() || "Team member",
+    sortOrder: note.sort_order,
+  }));
+
+  const timeline: TimelineEvent[] = [{ id: `client-created-${client.id}`, at: client.created_at, title: "Client profile created", detail: client.company_name?.trim() || client.name, href: null }];
+
+  for (const project of projects) timeline.push({ id: `project-${project.id}`, at: project.created_at, title: "Job created", detail: project.name, href: `/app/projects/${project.slug}/dashboard` });
+  for (const opportunity of opportunities) timeline.push({ id: `opportunity-${opportunity.id}`, at: opportunity.updated_at, title: "Opportunity updated", detail: `${opportunity.name} · ${opportunity.stage}`, href: `/app/leads-clients/opportunities/${opportunity.slug}` });
+  for (const quote of opportunityQuotes) {
+    const linkedOpportunity = opportunityById.get(quote.opportunity_id);
+    timeline.push({ id: `opportunity-quote-${quote.id}`, at: quote.updated_at || quote.created_at, title: quote.status === "Sent" || quote.status === "Viewed" ? "Quote sent" : "Quote issued", detail: `${quote.quote_number} · ${quote.quote_title}`, href: linkedOpportunity ? `/app/leads-clients/opportunities/${linkedOpportunity.slug}/quote` : null });
+  }
+  for (const claim of claims) {
+    const linkedProject = projectById.get(claim.project_id);
+    timeline.push({ id: `claim-issued-${claim.id}`, at: claim.claim_date || claim.updated_at, title: "Invoice / claim issued", detail: `${claim.claim_number} · ${claim.claim_title}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/claims/${claim.id}` : null });
+    if (toNumeric(claim.paid_amount) > 0) timeline.push({ id: `claim-paid-${claim.id}`, at: claim.updated_at, title: "Payment received", detail: `${claim.claim_number} · ${toMoney(toNumeric(claim.paid_amount))}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/claims/${claim.id}` : null });
+  }
+  for (const variation of variations) {
+    if (!variation.approved_at) continue;
+    const linkedProject = projectById.get(variation.project_id);
+    timeline.push({ id: `variation-approved-${variation.id}`, at: variation.approved_at, title: "Variation approved", detail: `${variation.variation_number} · ${variation.variation_title}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/variations/${variation.id}` : null });
+  }
+  for (const note of noteEntries) timeline.push({ id: `note-${note.id}`, at: note.at, title: "Note added", detail: note.title, href: note.href });
+
+  const timelineRows = timeline.sort((left, right) => right.at.localeCompare(left.at));
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+
+  return {
+    client,
+    timelineRows,
+    jobsInProgress,
+    activeOpportunities,
+  };
+}
+
+export async function getClientOverviewData(clientId: string) {
+  const { member, client, projects, opportunities, supabase } = await getClientBaseData(clientId);
+  const projectIds = projects.map((project) => project.id);
+  const opportunityIds = opportunities.map((opportunity) => opportunity.id);
+
+  const untypedSupabase = supabase as unknown as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => {
+          in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
+        };
+      };
+    };
+  };
+
+  const [projectQuotesResult, opportunityQuotesResult, claimsResult, variationsResult, clientNotesResult] = await Promise.all([
+    projectIds.length > 0
+      ? supabase
+          .from("project_quotes")
+          .select("project_id, status, total_quote_price")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+          .returns<Array<Pick<ProjectQuoteRow, "project_id" | "status" | "total_quote_price">>>()
+      : Promise.resolve({ data: [] as Array<Pick<ProjectQuoteRow, "project_id" | "status" | "total_quote_price">>, error: null }),
+    opportunityIds.length > 0
+      ? untypedSupabase
+          .from("opportunity_quotes")
+          .select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("opportunity_id", opportunityIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectIds.length > 0
+      ? untypedSupabase
+          .from("project_claims")
+          .select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectIds.length > 0
+      ? untypedSupabase
+          .from("project_variations")
+          .select("id, project_id, status, approved_at, variation_number, variation_title")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    supabase
+      .from("client_notes")
+      .select("id, author_name, created_at")
+      .eq("organization_id", member.organization_id)
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .returns<Array<Pick<ClientNoteRow, "id" | "author_name" | "created_at">>>(),
+  ]);
+
+  const projectQuotes = projectQuotesResult.error ? [] : (projectQuotesResult.data ?? []);
+  const opportunityQuotes = (opportunityQuotesResult.error ? [] : (opportunityQuotesResult.data ?? [])) as OpportunityQuoteRow[];
+  const claims = (claimsResult.error ? [] : (claimsResult.data ?? [])) as ClaimRow[];
+  const variations = (variationsResult.error ? [] : (variationsResult.data ?? [])) as Array<
+    Pick<VariationRow, "id" | "project_id" | "status" | "approved_at" | "variation_number" | "variation_title">
+  >;
+  const clientNotes = clientNotesResult.error ? [] : (clientNotesResult.data ?? []);
+
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
+
+  const totalRevenue = claims.reduce((sum, claim) => sum + toNumeric(claim.paid_amount), 0);
+  const totalClaimed = claims.reduce((sum, claim) => sum + toNumeric(claim.claim_amount), 0);
+  const outstanding = Math.max(0, totalClaimed - totalRevenue);
+  const latestJobDate = projects.reduce<string | null>((latest, project) => (!latest || project.updated_at > latest ? project.updated_at : latest), null);
+  const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
+
+  const paidClaims = claims.filter((claim) => {
+    const paidAmount = toNumeric(claim.paid_amount);
+    const claimAmount = toNumeric(claim.claim_amount);
+    const status = (claim.status ?? "").toLowerCase();
+    return status === "paid" || paidAmount >= claimAmount;
+  });
+
+  const daySamples = paidClaims.map((claim) => dayDiff(claim.claim_date, claim.updated_at)).filter((value): value is number => value !== null);
+  const avgDaysToPay = daySamples.length > 0 ? daySamples.reduce((sum, value) => sum + value, 0) / daySamples.length : null;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const overdueClaims = claims.filter((claim) => {
+    const dueDate = claim.due_date;
+    const claimAmount = toNumeric(claim.claim_amount);
+    const paidAmount = toNumeric(claim.paid_amount);
+    const balance = Math.max(0, claimAmount - paidAmount);
+    const status = (claim.status ?? "").toLowerCase();
+    return status === "overdue" || Boolean(dueDate && dueDate < todayIso && balance > 0);
+  });
+  const overdueAmount = overdueClaims.reduce((sum, claim) => sum + Math.max(0, toNumeric(claim.claim_amount) - toNumeric(claim.paid_amount)), 0);
+  const paymentReliability = claims.length > 0 ? (paidClaims.length / claims.length) * 100 : null;
+  const repeatJobs = Math.max(0, projects.length - 1);
+  const repeatJobsPercent = projects.length > 0 ? (repeatJobs / projects.length) * 100 : 0;
+  const openQuotesValue = [...projectQuotes, ...opportunityQuotes]
+    .filter((quote) => isOpenQuote(quote.status))
+    .reduce((sum, quote) => sum + toNumeric(quote.total_quote_price), 0);
+  const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
+  const activeOpportunitiesValue = activeOpportunities.reduce((sum, opportunity) => sum + toNumeric(opportunity.estimated_value), 0);
+  const forecastRevenue = openQuotesValue + activeOpportunitiesValue;
+
+  const now = new Date();
+  const last90Start = new Date(now);
+  last90Start.setDate(last90Start.getDate() - 90);
+  const previous90Start = new Date(last90Start);
+  previous90Start.setDate(previous90Start.getDate() - 90);
+
+  let revenueLast90 = 0;
+  let revenuePrevious90 = 0;
+  for (const claim of claims) {
+    const paidAmount = toNumeric(claim.paid_amount);
+    if (paidAmount <= 0 || !claim.updated_at) continue;
+    const paidAt = toDate(claim.updated_at);
+    if (!paidAt) continue;
+    if (paidAt >= last90Start) revenueLast90 += paidAmount;
+    else if (paidAt >= previous90Start && paidAt < last90Start) revenuePrevious90 += paidAmount;
+  }
+
+  const spendDeclinePercent = revenuePrevious90 > 0 ? ((revenuePrevious90 - revenueLast90) / revenuePrevious90) * 100 : revenueLast90 === 0 ? 0 : -100;
+  const rejectedVariationCount = variations.filter((variation) => variation.status === "Rejected").length;
+
+  const riskFlags: Array<{ tone: RiskTone; label: string; detail: string }> = [];
+  if (overdueAmount > 0) riskFlags.push({ tone: "red", label: "Overdue invoices", detail: `${overdueClaims.length} overdue, ${toMoney(overdueAmount)} outstanding` });
+  if (rejectedVariationCount > 0) riskFlags.push({ tone: "orange", label: "Dispute signal", detail: `${rejectedVariationCount} rejected variation${rejectedVariationCount === 1 ? "" : "s"}` });
+  if (spendDeclinePercent >= 25 && revenuePrevious90 > 0) riskFlags.push({ tone: spendDeclinePercent >= 50 ? "red" : "orange", label: "Declining spend", detail: `${toPercent(spendDeclinePercent)} down vs prior 90 days` });
+  if (avgDaysToPay !== null && avgDaysToPay > 45) riskFlags.push({ tone: "orange", label: "Slow payment behavior", detail: `${Math.round(avgDaysToPay)} days average to pay` });
+  if (riskFlags.length === 0) riskFlags.push({ tone: "green", label: "Healthy profile", detail: "No immediate risk indicators found" });
+
+  const noteTimelineEntries = clientNotes.map((note) => ({
+    id: `note-${note.id}`,
+    at: note.created_at,
+    title: "Note added",
+    detail: note.author_name.trim() || "Team member",
+    href: `/app/leads-clients/clients/${client.id}/notes` as string | null,
+  }));
+
+  const timeline: TimelineEvent[] = [{ id: `client-created-${client.id}`, at: client.created_at, title: "Client profile created", detail: client.company_name?.trim() || client.name, href: null }];
+
+  for (const project of projects) timeline.push({ id: `project-${project.id}`, at: project.created_at, title: "Job created", detail: project.name, href: `/app/projects/${project.slug}/dashboard` });
+  for (const opportunity of opportunities) timeline.push({ id: `opportunity-${opportunity.id}`, at: opportunity.updated_at, title: "Opportunity updated", detail: `${opportunity.name} · ${opportunity.stage}`, href: `/app/leads-clients/opportunities/${opportunity.slug}` });
+  for (const quote of opportunityQuotes) {
+    const linkedOpportunity = opportunityById.get(quote.opportunity_id);
+    timeline.push({ id: `opportunity-quote-${quote.id}`, at: quote.updated_at || quote.created_at, title: quote.status === "Sent" || quote.status === "Viewed" ? "Quote sent" : "Quote issued", detail: `${quote.quote_number} · ${quote.quote_title}`, href: linkedOpportunity ? `/app/leads-clients/opportunities/${linkedOpportunity.slug}/quote` : null });
+  }
+  for (const claim of claims) {
+    const linkedProject = projectById.get(claim.project_id);
+    timeline.push({ id: `claim-issued-${claim.id}`, at: claim.claim_date || claim.updated_at, title: "Invoice / claim issued", detail: `${claim.claim_number} · ${claim.claim_title}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/claims/${claim.id}` : null });
+    if (toNumeric(claim.paid_amount) > 0) timeline.push({ id: `claim-paid-${claim.id}`, at: claim.updated_at, title: "Payment received", detail: `${claim.claim_number} · ${toMoney(toNumeric(claim.paid_amount))}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/claims/${claim.id}` : null });
+  }
+  for (const variation of variations) {
+    if (!variation.approved_at) continue;
+    const linkedProject = projectById.get(variation.project_id);
+    timeline.push({ id: `variation-approved-${variation.id}`, at: variation.approved_at, title: "Variation approved", detail: `${variation.variation_number} · ${variation.variation_title}`, href: linkedProject ? `/app/projects/${linkedProject.slug}/preconstruction/variations/${variation.id}` : null });
+  }
+  timeline.push(...noteTimelineEntries);
+
+  const timelineRows = timeline.sort((left, right) => right.at.localeCompare(left.at)).slice(0, 4);
+  const closedOpportunities = opportunities.filter((opportunity) => opportunity.stage === "Won" || opportunity.stage === "Lost");
+  const wonOpportunities = opportunities.filter((opportunity) => opportunity.stage === "Won");
+  const conversionRate = closedOpportunities.length > 0 ? (wonOpportunities.length / closedOpportunities.length) * 100 : null;
+
+  return {
+    client,
+    projects,
+    totalRevenue,
+    outstanding,
+    latestJobDate,
+    jobsInProgress,
+    avgDaysToPay,
+    paymentReliability,
+    repeatJobsPercent,
+    openQuotesValue,
+    forecastRevenue,
+    riskFlags,
+    timelineRows,
+    activeOpportunities,
+    conversionRate,
+  };
+}
+
+export async function getClientDetailData(clientId: string, options?: ClientDetailDataOptions) {
+  const { member, supabase, client, projects, opportunities } = await getClientBaseData(clientId);
+  const includeDrawingSets = options?.includeDrawingSets ?? false;
+  const projectIds = projects.map((project) => project.id);
+  const opportunityIds = opportunities.map((opportunity) => opportunity.id);
+  const projectIdSet = new Set(projectIds);
+  const opportunityIdSet = new Set(opportunityIds);
+
+  const untypedSupabase = supabase as unknown as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => {
+          in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
+        };
       };
     };
   };
 
   const [projectQuotesResult, opportunityQuotesRawResult, claimsRawResult, variationsRawResult, filesRawResult, clientNotesResult] = await Promise.all([
-    supabase
-      .from("project_quotes")
-      .select("id, project_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
-      .eq("organization_id", member.organization_id)
-      .returns<ProjectQuoteRow[]>(),
-    untypedSupabase.from("opportunity_quotes").select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at").eq("organization_id", member.organization_id),
-    untypedSupabase.from("project_claims").select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, notes, updated_at").eq("organization_id", member.organization_id),
-    untypedSupabase.from("project_variations").select("id, project_id, variation_number, variation_title, status, total_variation_price, approved_at, notes, created_at, updated_at").eq("organization_id", member.organization_id),
-    untypedSupabase.from("project_drawing_sets").select("id, project_id, file_name, storage_path, file_size_bytes, created_at").eq("organization_id", member.organization_id),
+    projectIds.length > 0
+      ? supabase
+          .from("project_quotes")
+          .select("id, project_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+          .returns<ProjectQuoteRow[]>()
+      : Promise.resolve({ data: [] as ProjectQuoteRow[], error: null }),
+    opportunityIds.length > 0
+      ? untypedSupabase
+          .from("opportunity_quotes")
+          .select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("opportunity_id", opportunityIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectIds.length > 0
+      ? untypedSupabase
+          .from("project_claims")
+          .select("id, project_id, claim_number, claim_title, status, claim_date, due_date, claim_amount, paid_amount, notes, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectIds.length > 0
+      ? untypedSupabase
+          .from("project_variations")
+          .select("id, project_id, variation_number, variation_title, status, total_variation_price, approved_at, notes, created_at, updated_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    includeDrawingSets && projectIds.length > 0
+      ? untypedSupabase
+          .from("project_drawing_sets")
+          .select("id, project_id, file_name, storage_path, file_size_bytes, created_at")
+          .eq("organization_id", member.organization_id)
+          .in("project_id", projectIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
     supabase
       .from("client_notes")
       .select("id, client_id, author_name, body, sort_order, created_at")
@@ -276,15 +829,17 @@ export async function getClientDetailData(clientId: string) {
   const variations = ((variationsRawResult.error ? [] : (variationsRawResult.data ?? [])) as VariationRow[]).filter((variation) => projectIdSet.has(variation.project_id));
   const drawingSets = ((filesRawResult.error ? [] : (filesRawResult.data ?? [])) as DrawingSetRow[]).filter((file) => projectIdSet.has(file.project_id));
   const clientNotes = clientNotesResult.error ? [] : (clientNotesResult.data ?? []);
-  const drawingSetsWithDownloads = await Promise.all(
-    drawingSets.map(async (file) => {
-      const signed = await supabase.storage.from(PROJECT_DRAWING_SETS_BUCKET).createSignedUrl(file.storage_path, 60 * 60);
-      return {
-        ...file,
-        download_url: signed.error ? null : signed.data.signedUrl,
-      };
-    })
-  );
+  const drawingSetsWithDownloads = includeDrawingSets
+    ? await Promise.all(
+        drawingSets.map(async (file) => {
+          const signed = await supabase.storage.from(PROJECT_DRAWING_SETS_BUCKET).createSignedUrl(file.storage_path, 60 * 60);
+          return {
+            ...file,
+            download_url: signed.error ? null : signed.data.signedUrl,
+          };
+        })
+      )
+    : [];
 
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));

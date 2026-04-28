@@ -9,8 +9,6 @@ import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { AddClientDialog } from "./AddClientDialog";
 import { CopyableClientContact } from "./CopyableClientContact";
-
-const CLIENT_TAGS = ["Good Client", "High Value", "Difficult", "Slow Payer"] as const;
 const TOP_CLIENT_PERIOD_OPTIONS = [
   { key: "30d", label: "30D" },
   { key: "90d", label: "90D" },
@@ -22,29 +20,13 @@ type TopClientPeriodKey = (typeof TOP_CLIENT_PERIOD_OPTIONS)[number]["key"];
 type ClaimFinanceRow = {
   project_id: string | null;
   status: string | null;
-  claim_date: string | null;
   due_date: string | null;
   claim_amount: number | null;
   paid_amount: number | null;
-  updated_at: string | null;
 };
 
 function getClientDisplayName(client: { company_name: string | null; name: string }): string {
   return client.company_name?.trim() || "Unknown Company";
-}
-
-function getDaysSinceIso(value: string | null): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-  if (Number.isNaN(time)) {
-    return null;
-  }
-
-  const dayMs = 1000 * 60 * 60 * 24;
-  return Math.floor((Date.now() - time) / dayMs);
 }
 
 function getTopClientPeriodCutoff(period: TopClientPeriodKey, now: Date): Date | null {
@@ -86,11 +68,6 @@ function clampRating(value: number): number {
     return 5;
   }
   return value;
-}
-
-function normalizeClientTags(value: string[] | null): string[] {
-  const supported = new Set(CLIENT_TAGS);
-  return (value ?? []).filter((tag): tag is (typeof CLIENT_TAGS)[number] => supported.has(tag as (typeof CLIENT_TAGS)[number]));
 }
 
 type LeadsClientsClientsPageProps = {
@@ -194,34 +171,33 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   }
 
   const supabase = await createServerSupabaseClient();
-  const [clientsResult, projectsResult, opportunitiesResult] = await Promise.all([
+  const [clientsResult, projectsResult, opportunitiesResult, claimsResult] = await Promise.all([
     supabase
       .from("organization_clients")
-      .select("id, name, company_name, email, phone, tags, created_at, updated_at")
+      .select("id, name, company_name, email, phone")
       .eq("organization_id", member.organization_id)
       .order("created_at", { ascending: false }),
     supabase
       .from("organization_projects")
-      .select("id, client_id, updated_at")
+      .select("id, client_id")
       .eq("organization_id", member.organization_id)
       .order("updated_at", { ascending: false }),
     supabase
       .from("organization_opportunities")
-      .select("id, client_id, stage, estimated_value, created_at, updated_at")
+      .select("client_id, stage, estimated_value, updated_at")
       .eq("organization_id", member.organization_id)
       .order("updated_at", { ascending: false }),
-  ]);
-
-  const claimsResult = await (supabase as unknown as {
-    from: (table: string) => {
-      select: (columns: string) => {
-        eq: (column: string, value: string) => Promise<{ data: ClaimFinanceRow[] | null; error: { message: string } | null }>;
+    (supabase as unknown as {
+      from: (table: string) => {
+        select: (columns: string) => {
+          eq: (column: string, value: string) => Promise<{ data: ClaimFinanceRow[] | null; error: { message: string } | null }>;
+        };
       };
-    };
-  })
-    .from("project_claims")
-    .select("project_id, status, claim_date, due_date, claim_amount, paid_amount, updated_at")
-    .eq("organization_id", member.organization_id);
+    })
+      .from("project_claims")
+      .select("project_id, status, due_date, claim_amount, paid_amount")
+      .eq("organization_id", member.organization_id),
+  ]);
 
   if (clientsResult.error || projectsResult.error || opportunitiesResult.error) {
     return (
@@ -241,22 +217,11 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   const claims = claimsResult.error ? [] : (claimsResult.data ?? []);
 
   const projectCountByClientId = new Map<string, number>();
-  const projectCountInSelectedPeriodByClientId = new Map<string, number>();
-  const latestProjectActivityByClientId = new Map<string, string>();
   for (const project of projects) {
     if (!project.client_id) {
       continue;
     }
     projectCountByClientId.set(project.client_id, (projectCountByClientId.get(project.client_id) ?? 0) + 1);
-    if (isOnOrAfterCutoff(project.updated_at, topClientPeriodCutoff)) {
-      projectCountInSelectedPeriodByClientId.set(
-        project.client_id,
-        (projectCountInSelectedPeriodByClientId.get(project.client_id) ?? 0) + 1
-      );
-    }
-    if (!latestProjectActivityByClientId.has(project.client_id)) {
-      latestProjectActivityByClientId.set(project.client_id, project.updated_at);
-    }
   }
 
   const activeLeadCountByClientId = new Map<string, number>();
@@ -264,16 +229,10 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   const totalLeadCountInTopClientPeriodByClientId = new Map<string, number>();
   const wonLeadCountInTopClientPeriodByClientId = new Map<string, number>();
   const wonValueInTopClientPeriodByClientId = new Map<string, number>();
-  const decisionDaysSamplesInTopPeriodByClientId = new Map<string, number[]>();
   const wonValueByClientId = new Map<string, number>();
-  const latestLeadActivityByClientId = new Map<string, string>();
   for (const opportunity of opportunities) {
     if (!opportunity.client_id) {
       continue;
-    }
-
-    if (!latestLeadActivityByClientId.has(opportunity.client_id)) {
-      latestLeadActivityByClientId.set(opportunity.client_id, opportunity.updated_at);
     }
 
     if (isOnOrAfterCutoff(opportunity.updated_at, topClientPeriodCutoff)) {
@@ -302,18 +261,6 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
         );
       }
     }
-
-    const isDecided = opportunity.stage === "Won" || opportunity.stage === "Lost";
-    if (isDecided && isOnOrAfterCutoff(opportunity.updated_at, topClientPeriodCutoff)) {
-      const createdAt = new Date(opportunity.created_at).getTime();
-      const decidedAt = new Date(opportunity.updated_at).getTime();
-      if (!Number.isNaN(createdAt) && !Number.isNaN(decidedAt) && decidedAt >= createdAt) {
-        const decisionDays = (decidedAt - createdAt) / (1000 * 60 * 60 * 24);
-        const current = decisionDaysSamplesInTopPeriodByClientId.get(opportunity.client_id) ?? [];
-        current.push(decisionDays);
-        decisionDaysSamplesInTopPeriodByClientId.set(opportunity.client_id, current);
-      }
-    }
   }
 
   const rowsWithRawScore = clients.map((client) => {
@@ -321,11 +268,6 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
     const activeLeads = activeLeadCountByClientId.get(client.id) ?? 0;
     const wonProjects = wonLeadCountByClientId.get(client.id) ?? 0;
     const rawScore = projectsCount * 2 + activeLeads * 3 + wonProjects * 2;
-    const lastActivityIso =
-      latestLeadActivityByClientId.get(client.id) ??
-      latestProjectActivityByClientId.get(client.id) ??
-      client.updated_at ??
-      client.created_at;
 
     return {
       ...client,
@@ -333,8 +275,6 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
       projectsCount,
       wonProjects,
       rawScore,
-      tags: normalizeClientTags(client.tags),
-      lastActivityIso,
     };
   });
 
@@ -365,15 +305,8 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
     projectClientByProjectId.set(project.id, project.client_id);
   }
 
-  const paidRevenueByClientId = new Map<string, number>();
-  const paidRevenueLast12MonthsByClientId = new Map<string, number>();
   const overdueClientIds = new Set<string>();
-  const slowPayingClientIds = new Set<string>();
-  const overdueCountByClientId = new Map<string, number>();
-  const payDaysSamplesByClientId = new Map<string, number[]>();
   const todayIso = new Date().toISOString().slice(0, 10);
-  const last12MonthsCutoff = new Date();
-  last12MonthsCutoff.setFullYear(last12MonthsCutoff.getFullYear() - 1);
 
   for (const claim of claims) {
     const projectId = claim.project_id;
@@ -389,40 +322,11 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
     const claimAmount = Number(claim.claim_amount ?? 0);
     const paidAmount = Number(claim.paid_amount ?? 0);
     const balance = Math.max(0, claimAmount - paidAmount);
-    const claimAgeDays = getDaysSinceIso(claim.claim_date);
-
-    paidRevenueByClientId.set(clientId, (paidRevenueByClientId.get(clientId) ?? 0) + paidAmount);
-    if (paidAmount > 0 && claim.updated_at) {
-      const paidAt = new Date(claim.updated_at);
-      if (!Number.isNaN(paidAt.getTime()) && paidAt >= last12MonthsCutoff) {
-        paidRevenueLast12MonthsByClientId.set(
-          clientId,
-          (paidRevenueLast12MonthsByClientId.get(clientId) ?? 0) + paidAmount
-        );
-      }
-    }
     const dueDate = claim.due_date;
     const isOverdueByStatus = (claim.status ?? "").toLowerCase() === "overdue";
     const isOverdueByDate = Boolean(dueDate && dueDate < todayIso && balance > 0);
     if (isOverdueByStatus || isOverdueByDate) {
       overdueClientIds.add(clientId);
-      overdueCountByClientId.set(clientId, (overdueCountByClientId.get(clientId) ?? 0) + 1);
-    }
-
-    if (balance > 0 && claimAgeDays !== null && claimAgeDays > 30) {
-      slowPayingClientIds.add(clientId);
-    }
-
-    const isPaid = (claim.status ?? "").toLowerCase() === "paid" || paidAmount >= claimAmount;
-    if (isPaid && claim.claim_date && claim.updated_at) {
-      const invoiceTime = new Date(claim.claim_date).getTime();
-      const paidTime = new Date(claim.updated_at).getTime();
-      if (!Number.isNaN(invoiceTime) && !Number.isNaN(paidTime) && paidTime >= invoiceTime) {
-        const daysToPay = (paidTime - invoiceTime) / (1000 * 60 * 60 * 24);
-        const current = payDaysSamplesByClientId.get(clientId) ?? [];
-        current.push(daysToPay);
-        payDaysSamplesByClientId.set(clientId, current);
-      }
     }
   }
 

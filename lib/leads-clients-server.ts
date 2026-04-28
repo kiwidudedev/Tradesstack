@@ -13,6 +13,10 @@ type ClientRow = Pick<Database["public"]["Tables"]["organization_clients"]["Row"
 type MemberRow = Pick<Database["public"]["Tables"]["organization_members"]["Row"], "user_id" | "display_name">;
 type OpportunityQuoteRow = Database["public"]["Tables"]["opportunity_quotes"]["Row"];
 type OpportunityQuoteLineItemRow = Database["public"]["Tables"]["opportunity_quote_line_items"]["Row"];
+type OpportunityQuoteSummaryRow = Pick<
+  OpportunityQuoteRow,
+  "id" | "opportunity_id" | "status" | "total_quote_price" | "updated_at" | "created_at"
+>;
 
 export type OpportunityGroup = "pipeline" | "priced" | "won";
 
@@ -427,29 +431,66 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
   }
 
   const supabase = await createServerSupabaseClient();
-  const [opportunitiesResult, clientsResult, membersResult, projectsResult, quotesResult] = await Promise.all([
-    supabase
-      .from("organization_opportunities")
-      .select("id, slug, opportunity_code, name, location, stage, client_id, owner_user_id, due_date, quoted_at, estimated_value, workspace_project_id, converted_project_id, created_by, created_at")
-      .eq("organization_id", member.organization_id)
-      .order("created_at", { ascending: false }),
-    supabase.from("organization_clients").select("id, name, company_name").eq("organization_id", member.organization_id),
-    supabase.from("organization_members").select("user_id, display_name").eq("organization_id", member.organization_id),
-    supabase.from("organization_projects").select("id, slug").eq("organization_id", member.organization_id),
-    supabase
-      .from("opportunity_quotes")
-      .select("opportunity_id, status, total_quote_price, updated_at, created_at")
-      .eq("organization_id", member.organization_id)
-      .order("updated_at", { ascending: false }),
+  const opportunitiesResult = await supabase
+    .from("organization_opportunities")
+    .select("id, slug, opportunity_code, name, location, stage, client_id, owner_user_id, due_date, quoted_at, estimated_value, workspace_project_id, converted_project_id, created_by, created_at, opportunity_quotes(id, opportunity_id, status, total_quote_price, updated_at, created_at)")
+    .eq("organization_id", member.organization_id)
+    .order("created_at", { ascending: false })
+    .order("updated_at", { ascending: false, referencedTable: "opportunity_quotes" })
+    .limit(1, { referencedTable: "opportunity_quotes" });
+
+  const opportunities = (opportunitiesResult.error ? [] : (opportunitiesResult.data ?? [])) as Array<
+    OpportunityRow & { opportunity_quotes?: OpportunityQuoteSummaryRow[] | null }
+  >;
+
+  const clientIds = Array.from(
+    new Set(
+      opportunities
+        .map((opportunity) => opportunity.client_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const memberIds = Array.from(
+    new Set(
+      opportunities
+        .map((opportunity) => opportunity.owner_user_id ?? opportunity.created_by)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const workspaceProjectIds = Array.from(
+    new Set(
+      opportunities
+        .map((opportunity) => opportunity.workspace_project_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const [clientsResult, membersResult, projectsResult] = await Promise.all([
+    clientIds.length > 0
+      ? supabase
+          .from("organization_clients")
+          .select("id, name, company_name")
+          .eq("organization_id", member.organization_id)
+          .in("id", clientIds)
+      : Promise.resolve({ data: [], error: null }),
+    memberIds.length > 0
+      ? supabase
+          .from("organization_members")
+          .select("user_id, display_name")
+          .eq("organization_id", member.organization_id)
+          .in("user_id", memberIds)
+      : Promise.resolve({ data: [], error: null }),
+    workspaceProjectIds.length > 0
+      ? supabase
+          .from("organization_projects")
+          .select("id, slug")
+          .eq("organization_id", member.organization_id)
+          .in("id", workspaceProjectIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const opportunities = (opportunitiesResult.error ? [] : (opportunitiesResult.data ?? [])) as OpportunityRow[];
   const clients = (clientsResult.error ? [] : (clientsResult.data ?? [])) as ClientRow[];
   const members = (membersResult.error ? [] : (membersResult.data ?? [])) as MemberRow[];
-  const quotes = (quotesResult.error ? [] : (quotesResult.data ?? [])) as Pick<
-    OpportunityQuoteRow,
-    "opportunity_id" | "status" | "updated_at" | "created_at" | "total_quote_price"
-  >[];
   const workspaceSlugByProjectId = new Map(
     (projectsResult.error ? [] : (projectsResult.data ?? [])).map((project) => [project.id, project.slug])
   );
@@ -460,10 +501,6 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
   const ownerNameByUserId = new Map(members.map((memberRow) => [memberRow.user_id, memberRow.display_name]));
   const wonCountByClientId = new Map<string, number>();
   const lostCountByClientId = new Map<string, number>();
-  const latestQuoteByOpportunityId = new Map<
-    string,
-    { status: QuoteStatus; updatedIso: string | null; totalNZD: number | null }
-  >();
 
   for (const opportunity of opportunities) {
     if (!opportunity.client_id) {
@@ -479,20 +516,16 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
     }
   }
 
-  for (const quote of quotes) {
-    if (latestQuoteByOpportunityId.has(quote.opportunity_id)) {
-      continue;
-    }
-    latestQuoteByOpportunityId.set(quote.opportunity_id, {
-      status: quote.status as QuoteStatus,
-      updatedIso: normalizeIsoDate(quote.updated_at ?? quote.created_at),
-      totalNZD: typeof quote.total_quote_price === "number" ? quote.total_quote_price : null,
-    });
-  }
-
   return opportunities.map((opportunity) => {
     const ownerUserId = opportunity.owner_user_id ?? opportunity.created_by;
-    const latestQuote = latestQuoteByOpportunityId.get(opportunity.id);
+    const latestQuoteRow = opportunity.opportunity_quotes?.[0] ?? null;
+    const latestQuote = latestQuoteRow
+      ? {
+          status: latestQuoteRow.status as QuoteStatus,
+          updatedIso: normalizeIsoDate(latestQuoteRow.updated_at ?? latestQuoteRow.created_at),
+          totalNZD: typeof latestQuoteRow.total_quote_price === "number" ? latestQuoteRow.total_quote_price : null,
+        }
+      : null;
     const estimatedValue = Number(opportunity.estimated_value ?? 0);
     const quoteValue = latestQuote?.totalNZD ?? null;
     const resolvedValueNZD = quoteValue !== null && quoteValue > 0 ? quoteValue : estimatedValue;

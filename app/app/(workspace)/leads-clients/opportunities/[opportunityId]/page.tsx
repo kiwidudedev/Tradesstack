@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Calendar, DollarSign, FileText, FolderOpen, LayoutGrid, Pencil, TrendingUp } from "lucide-react";
+import { Calendar, DollarSign, LayoutGrid, Pencil, TrendingUp } from "lucide-react";
 import {
   LeadsPageContent,
   LeadsPanel,
@@ -12,25 +12,10 @@ import {
   leadsPanelClassName,
   leadsSectionTitleStyle,
 } from "@/components/app/LeadsPagePrimitives";
-import { OpportunityWorkspaceShell } from "@/components/app/OpportunityWorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ibmPlexSans } from "@/lib/fonts";
+import { getOpportunityWorkspaceData } from "@/lib/opportunity-workspace-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
-
-const workspaceTabs = ["Summary", "Trade Packs", "Scopes", "Pricing & Submission"] as const;
-function tabHref(opportunityId: string, tab: (typeof workspaceTabs)[number]) {
-  if (tab === "Trade Packs") {
-    return `/app/leads-clients/opportunities/${opportunityId}/drawing-intelligence`;
-  }
-  if (tab === "Scopes") {
-    return `/app/leads-clients/opportunities/${opportunityId}/scope-builder`;
-  }
-  if (tab === "Pricing & Submission") {
-    return `/app/leads-clients/opportunities/${opportunityId}/quote`;
-  }
-  return `/app/leads-clients/opportunities/${opportunityId}`;
-}
 
 function formatDateTime(isoDate: string | null | undefined): string {
   if (!isoDate) {
@@ -192,13 +177,6 @@ function formatTaskTableDate(isoDate: string | null | undefined): string {
   });
 }
 
-function getTaskProgressLabel(status: string | null | undefined): string {
-  if (!status) {
-    return "To Do";
-  }
-  return status;
-}
-
 function getPriorityPillClasses(priority: string | null | undefined): string {
   if (priority === "High") {
     return "bg-[#FFE3E3] text-[#C2410C]";
@@ -250,12 +228,17 @@ export default async function OpportunityWorkspacePage({
     redirect("/app/leads-clients/opportunities");
   }
 
+  const sharedOpportunity = await getOpportunityWorkspaceData(opportunityId);
+  if (!sharedOpportunity) {
+    notFound();
+  }
+
   const supabase = await createServerSupabaseClient();
   const opportunityResult = await supabase
     .from("organization_opportunities")
-    .select("id, slug, name, location, stage, client_id, owner_user_id, created_by, created_at, due_date, notes, workspace_project_id")
-    .eq("organization_id", member.organization_id)
-    .eq("slug", opportunityId)
+    .select("location, stage, created_at, due_date, notes")
+    .eq("organization_id", sharedOpportunity.organizationId)
+    .eq("id", sharedOpportunity.opportunityId)
     .maybeSingle();
 
   if (opportunityResult.error) {
@@ -266,49 +249,22 @@ export default async function OpportunityWorkspacePage({
     notFound();
   }
 
-  const opportunity = opportunityResult.data;
-
-  const [clientResult, ownerResult, latestQuoteResult] = await Promise.all([
-    opportunity.client_id
-      ? supabase
-          .from("organization_clients")
-          .select("company_name")
-          .eq("organization_id", member.organization_id)
-          .eq("id", opportunity.client_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    supabase
-      .from("organization_members")
-      .select("display_name")
-      .eq("organization_id", member.organization_id)
-      .eq("user_id", opportunity.owner_user_id ?? opportunity.created_by)
-      .maybeSingle(),
-    supabase
-      .from("opportunity_quotes")
-      .select("total_quote_price, status, quote_date, updated_at")
-      .eq("organization_id", member.organization_id)
-      .eq("opportunity_id", opportunity.id)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
   const activeOpportunity = {
-    opportunityId: opportunity.id,
-    slug: opportunity.slug,
-    name: opportunity.name,
-    location: opportunity.location,
-    stage: opportunity.stage,
-    clientId: opportunity.client_id,
-    clientName: clientResult.data?.company_name?.trim() || "Unassigned",
-    ownerName: ownerResult.data?.display_name || "Unassigned",
-    createdAt: opportunity.created_at,
-    dueDate: opportunity.due_date,
-    notes: opportunity.notes ?? "",
-    workspaceProjectId: opportunity.workspace_project_id,
+    opportunityId: sharedOpportunity.opportunityId,
+    slug: sharedOpportunity.slug,
+    name: sharedOpportunity.name,
+    location: opportunityResult.data.location,
+    stage: opportunityResult.data.stage,
+    clientId: sharedOpportunity.clientId,
+    clientName: sharedOpportunity.clientName,
+    ownerName: sharedOpportunity.ownerName,
+    createdAt: opportunityResult.data.created_at,
+    dueDate: opportunityResult.data.due_date,
+    notes: opportunityResult.data.notes ?? "",
+    workspaceProjectId: sharedOpportunity.workspaceProjectId,
   };
 
-  const [clientOpportunityCountResult, clientWonCountResult, leadTasksResult] = await Promise.all([
+  const [clientOpportunityCountResult, clientWonCountResult, leadTasksResult, assigneesResult] = await Promise.all([
     activeOpportunity.clientId
       ? supabase
           .from("organization_opportunities")
@@ -334,29 +290,28 @@ export default async function OpportunityWorkspacePage({
           .eq("status", "To Do")
           .order("created_at", { ascending: false })
       : Promise.resolve({ data: [] }),
+    supabase
+      .from("organization_members")
+      .select("user_id, display_name")
+      .eq("organization_id", member.organization_id)
+      .order("display_name", { ascending: true }),
   ]);
-
-  const assigneesResult = await supabase
-    .from("organization_members")
-    .select("user_id, display_name")
-    .eq("organization_id", member.organization_id)
-    .order("display_name", { ascending: true });
 
   const clientOpportunityCount = clientOpportunityCountResult.count ?? 0;
   const clientWonCount = clientWonCountResult.count ?? 0;
   const clientConversionRate =
     clientOpportunityCount > 0 ? Math.round((clientWonCount / clientOpportunityCount) * 100) : 0;
-  const latestQuoteTotal =
-    typeof latestQuoteResult.data?.total_quote_price === "number" ? latestQuoteResult.data.total_quote_price : null;
-  const latestQuoteStatus = latestQuoteResult.data?.status ?? null;
+  const latestQuoteTotal = sharedOpportunity.latestQuoteSummary?.totalQuotePrice ?? null;
+  const latestQuoteStatus = sharedOpportunity.latestQuoteSummary?.status ?? null;
   const leadDateCard = getLeadDateCardState({
     dueDate: activeOpportunity.dueDate,
     latestQuoteStatus,
-    submittedAt: latestQuoteResult.data?.quote_date ?? latestQuoteResult.data?.updated_at ?? null,
+    submittedAt:
+      sharedOpportunity.latestQuoteSummary?.quoteDate ??
+      sharedOpportunity.latestQuoteSummary?.updatedAt ??
+      null,
   });
 
-  const generateTradePackHref = `/app/leads-clients/opportunities/${opportunityId}/drawing-intelligence`;
-  const buildScopeHref = `/app/leads-clients/opportunities/${opportunityId}/scope-builder`;
   const assigneeNameById = new Map((assigneesResult.data ?? []).map((person) => [person.user_id, person.display_name || "Team Member"]));
   const organizationAssignees = (assigneesResult.data ?? []).map((person) => ({
     userId: person.user_id,
@@ -557,8 +512,7 @@ export default async function OpportunityWorkspacePage({
   }
 
   return (
-    <OpportunityWorkspaceShell title={activeOpportunity.name} opportunityId={opportunityId} activeTab="overview">
-      <LeadsPageContent>
+    <LeadsPageContent>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5`}>
               <div className="flex items-center gap-4">
@@ -1083,7 +1037,6 @@ export default async function OpportunityWorkspacePage({
               </form>
             </div>
           </div>
-      </LeadsPageContent>
-    </OpportunityWorkspaceShell>
+    </LeadsPageContent>
   );
 }

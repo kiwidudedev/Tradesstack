@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getOpportunityWorkspaceData } from "@/lib/opportunity-workspace-server";
 import { readSearchParam } from "@/lib/takeoff/navigation";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import {
@@ -48,7 +49,10 @@ export async function getTakeoffPageShellData(
   opportunityId: string,
   searchParams?: TakeoffPageSearchParams
 ) {
-  const member = await getCurrentOrganizationMember();
+  const [member, sharedOpportunity] = await Promise.all([
+    getCurrentOrganizationMember(),
+    getOpportunityWorkspaceData(opportunityId),
+  ]);
   const supabase = await createServerSupabaseClient();
   const workspace = await resolveTakeoffWorkspaceForOpportunitySlug(opportunityId, {
     supabase,
@@ -59,23 +63,8 @@ export async function getTakeoffPageShellData(
     notFound();
   }
 
-  const opportunityResult = await (
-    member
-      ? supabase
-          .from("organization_opportunities")
-          .select("name")
-          .eq("organization_id", member.organization_id)
-          .eq("slug", opportunityId)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null })
-  );
-
-  if (opportunityResult.error) {
-    throw new Error(opportunityResult.error.message);
-  }
-
   return {
-    headerTitle: opportunityResult.data?.name?.trim() || workspace.projectName,
+    headerTitle: sharedOpportunity?.name?.trim() || workspace.projectName,
     workspace,
     selectedDrawingSetId: readSearchParam(searchParams?.drawingSetId),
   };

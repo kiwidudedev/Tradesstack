@@ -1,7 +1,7 @@
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { ibmPlexSans } from "@/lib/fonts";
 import { ClientDetailHeader } from "../ClientDetailHeader";
-import { getClientDetailData } from "../client-detail-data";
+import { getClientNotesTabData } from "../client-detail-data";
 import styles from "../client-detail.module.css";
 import { NotesBoard } from "./NotesBoard";
 
@@ -11,7 +11,7 @@ export default async function ClientNotesPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
-  const data = await getClientDetailData(clientId);
+  const data = await getClientNotesTabData(clientId);
   const member = await getCurrentOrganizationMember();
 
   return (
