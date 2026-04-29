@@ -1,12 +1,13 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AlertCircle, Calendar, CheckCircle2, Clock3, FileText, Flag, ListTodo, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TodosSectionSkeleton } from "@/components/app/ProjectRouteSkeletons";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -315,7 +316,6 @@ export function ProjectTodosBoard() {
   const [context, setContext] = useState<ProjectContext | null>(null);
   const [todos, setTodos] = useState<TodoRow[]>([]);
   const [stats, setStats] = useState<TaskStats>(EMPTY_TASK_STATS);
-  const [attachmentCountsByTodoId, setAttachmentCountsByTodoId] = useState<Record<string, number>>({});
   const [selectedTaskAttachments, setSelectedTaskAttachments] = useState<TodoAttachment[]>([]);
   const [organizationUsers, setOrganizationUsers] = useState<OrganizationUserOption[]>([]);
   const [issueOptions, setIssueOptions] = useState<LinkedIssueOption[]>([]);
@@ -455,48 +455,14 @@ export function ProjectTodosBoard() {
     }
   };
 
-  const loadAttachmentCountsForTasks = async (taskIds: string[], activeContext?: ProjectContext | null) => {
-    const taskContext = activeContext ?? context;
-    if (!supabase || !taskContext) {
-      setAttachmentCountsByTodoId({});
-      return;
-    }
-    if (taskIds.length === 0) {
-      setAttachmentCountsByTodoId({});
-      return;
-    }
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attachmentTable = (supabase as any).from("project_job_todo_attachments");
-      const { data, error: attachmentError } = await attachmentTable
-        .select("todo_id")
-        .eq("organization_id", taskContext.organizationId)
-        .eq("project_id", taskContext.projectId)
-        .in("todo_id", taskIds)
-        .limit(5000);
-      if (attachmentError) {
-        throw new Error(attachmentError.message);
-      }
-      const counts: Record<string, number> = {};
-      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-        const todoId = typeof row.todo_id === "string" ? row.todo_id : "";
-        if (!todoId) {
-          continue;
-        }
-        counts[todoId] = (counts[todoId] ?? 0) + 1;
-      }
-      setAttachmentCountsByTodoId(counts);
-    } catch {
-      setAttachmentCountsByTodoId({});
-    }
-  };
-
   const loadData = async (options?: { showLoading?: boolean }) => {
     if (!supabase || !routeProjectSlug || !session?.id || isLoadingRef.current) {
       return;
     }
 
     const showLoading = options?.showLoading ?? true;
+    const timingLabel = `[projects][todos] load:${routeProjectSlug}`;
+    console.time(timingLabel);
     isLoadingRef.current = true;
     if (showLoading) {
       setIsLoading(true);
@@ -534,11 +500,8 @@ export function ProjectTodosBoard() {
       const inspectionsTable = (supabase as any).from("project_quality_inspections");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const inspectionItemsTable = (supabase as any).from("project_quality_inspection_items");
-      const now = new Date();
-      const nowIso = now.toISOString();
-      const today = nowIso.slice(0, 10);
 
-      const [todosResult, usersResult, issuesResult, inspectionsResult, inspectionItemsResult, todoCountResult, inProgressCountResult, completeCountResult, overdueByDueAtResult, overdueByDueDateResult] = await Promise.all([
+      const [todosResult, usersResult, issuesResult, inspectionsResult, inspectionItemsResult, statsSummaryResult] = await Promise.all([
         todosTable
           .select(
             "id, title, description, due_date, due_at, is_completed, assigned_user_id, source_type, linked_issue_id, linked_inspection_id, linked_inspection_item_id, trade, priority, status, created_at, updated_at"
@@ -572,33 +535,10 @@ export function ProjectTodosBoard() {
           .eq("project_id", projectRow.id)
           .limit(1500),
         todosTable
-          .select("id", { head: true, count: "exact" })
+          .select("status, due_date, due_at")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
-          .eq("status", "To Do"),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .eq("status", "In Progress"),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .in("status", ["Done", "Complete", "Archived"]),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .in("status", ["To Do", "In Progress"])
-          .lt("due_at", nowIso),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .in("status", ["To Do", "In Progress"])
-          .is("due_at", null)
-          .lt("due_date", today),
+          .in("status", ["To Do", "In Progress", "Done", "Complete", "Archived"]),
       ]);
 
       if (
@@ -607,11 +547,7 @@ export function ProjectTodosBoard() {
         issuesResult.error ||
         inspectionsResult.error ||
         inspectionItemsResult.error ||
-        todoCountResult.error ||
-        inProgressCountResult.error ||
-        completeCountResult.error ||
-        overdueByDueAtResult.error ||
-        overdueByDueDateResult.error
+        statsSummaryResult.error
       ) {
         throw new Error(
           todosResult.error?.message ??
@@ -619,11 +555,7 @@ export function ProjectTodosBoard() {
             issuesResult.error?.message ??
             inspectionsResult.error?.message ??
             inspectionItemsResult.error?.message ??
-            todoCountResult.error?.message ??
-            inProgressCountResult.error?.message ??
-            completeCountResult.error?.message ??
-            overdueByDueAtResult.error?.message ??
-            overdueByDueDateResult.error?.message ??
+            statsSummaryResult.error?.message ??
             "Unable to load tasks."
         );
       }
@@ -673,29 +605,46 @@ export function ProjectTodosBoard() {
           inspectionId: String(row.inspection_id ?? ""),
           label: String(row.label ?? ""),
         }));
+      const statsRows = (statsSummaryResult.data ?? []) as Array<Record<string, unknown>>;
+      const nextStats = statsRows.reduce<TaskStats>((summary, row) => {
+        const status = normalizeStatus(row.status);
+        const dueAt = typeof row.due_at === "string" ? row.due_at : null;
+        const dueDate = typeof row.due_date === "string" ? row.due_date : null;
+
+        if (status === "To Do") {
+          summary.todoCount += 1;
+        } else if (status === "In Progress") {
+          summary.inProgressCount += 1;
+        } else if (status === "Done") {
+          summary.completeCount += 1;
+        }
+
+        if ((status === "To Do" || status === "In Progress") && isOverdue(dueDate, dueAt, status)) {
+          summary.overdueCount += 1;
+        }
+
+        return summary;
+      }, { ...EMPTY_TASK_STATS });
 
       const nextContext = { organizationId: resolvedOrganizationId, projectId: projectRow.id };
 
       setContext(nextContext);
       setTodos(normalizedTodos);
-      setStats({
-        todoCount: todoCountResult.count ?? 0,
-        inProgressCount: inProgressCountResult.count ?? 0,
-        completeCount: completeCountResult.count ?? 0,
-        overdueCount: (overdueByDueAtResult.count ?? 0) + (overdueByDueDateResult.count ?? 0),
-      });
+      setStats(nextStats);
       setOrganizationUsers(normalizedUsers);
       setIssueOptions(normalizedIssues);
       setInspectionOptions(normalizedInspections);
       setInspectionItemOptions(normalizedInspectionItems);
       setSelectedTaskId((current) => current ?? normalizedTodos[0]?.id ?? null);
-      void loadAttachmentCountsForTasks(
-        normalizedTodos.map((todo) => todo.id),
-        nextContext
-      );
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load tasks.");
     } finally {
+      const approximateQueryCount = (session.organizationId ? 0 : 1) + 1 + 6;
+      console.info("[projects][todos] query-count", {
+        projectSlug: routeProjectSlug,
+        approximateQueries: approximateQueryCount,
+      });
+      console.timeEnd(timingLabel);
       if (showLoading) {
         setIsLoading(false);
       }
@@ -1224,7 +1173,8 @@ export function ProjectTodosBoard() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <Suspense fallback={<TodosSectionSkeleton />}>
+          <div className="space-y-4">
             {error ? (
               <div className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2">
                 <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
@@ -1407,7 +1357,8 @@ export function ProjectTodosBoard() {
             ) : (
               <p className={`${interMedium.className} text-sm text-[#64748B]`}>Loading tasks...</p>
             )}
-        </div>
+          </div>
+        </Suspense>
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

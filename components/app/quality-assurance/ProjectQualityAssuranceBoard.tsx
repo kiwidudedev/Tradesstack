@@ -1,10 +1,11 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { QualitySectionSkeleton } from "@/components/app/ProjectRouteSkeletons";
 import {
   INSPECTION_TEMPLATES,
   PHOTO_CATEGORIES,
@@ -452,6 +453,8 @@ export function ProjectQualityAssuranceBoard() {
       return;
     }
     const showLoading = options?.showLoading ?? true;
+    const timingLabel = `[projects][qa] load:${routeProjectSlug}`;
+    console.time(timingLabel);
     isLoadingRef.current = true;
     if (showLoading) {
       setIsLoading(true);
@@ -473,6 +476,12 @@ export function ProjectQualityAssuranceBoard() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load Quality Assurance.");
     } finally {
+      const approximateQueryCount = (session.organizationId ? 0 : 1) + 1 + 5;
+      console.info("[projects][qa] query-count", {
+        projectSlug: routeProjectSlug,
+        approximateQueries: approximateQueryCount,
+      });
+      console.timeEnd(timingLabel);
       if (showLoading) {
         setIsLoading(false);
       }
@@ -491,14 +500,21 @@ export function ProjectQualityAssuranceBoard() {
       return;
     }
     const resolvedContext = contextRef.current ?? (await resolveContext());
+    const timingLabel = `[projects][qa][photos] load:${routeProjectSlug}`;
+    console.time(timingLabel);
     setIsPhotosLoading(true);
 
     try {
       setPhotos(await listQualityPhotos(supabase, resolvedContext));
       setHasLoadedPhotos(true);
+      console.info("[projects][qa][photos] query-count", {
+        projectSlug: routeProjectSlug,
+        approximateQueries: 1,
+      });
     } catch (photoLoadError) {
       setError(photoLoadError instanceof Error ? photoLoadError.message : "Unable to load photo log.");
     } finally {
+      console.timeEnd(timingLabel);
       setIsPhotosLoading(false);
     }
   };
@@ -1809,34 +1825,35 @@ export function ProjectQualityAssuranceBoard() {
         <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
       ) : null}
 
-      {/* Stat cards */}
-      <QualityKpiCards issueStats={issueStats} />
+      <Suspense fallback={<QualitySectionSkeleton />}>
+        {/* Stat cards */}
+        <QualityKpiCards issueStats={issueStats} />
 
-      {/* Tab bar + content */}
-      <div className="px-0 py-0">
-        <div className="space-y-5">
-          <QualityTabs
-            activeTab={activeTab}
-            onChange={setActiveTab}
-            onCreateIssue={() => setIsCreateIssueSheetOpen(true)}
-            onCreateInspection={() => setIsCreateInspectionSheetOpen(true)}
-            onCreatePhoto={() => setIsCreatePhotoOpen(true)}
-            onCreateSignoff={() => setIsCreateSignoffSheetOpen(true)}
-          />
-        <div className="pb-6">
-          {isLoading ? (
-            <div className="space-y-2">
-              <div className="h-4 w-48 animate-pulse rounded bg-[#E2E8F0]" />
-              <div className="h-4 w-64 animate-pulse rounded bg-[#E2E8F0]" />
-            </div>
-          ) : null}
+        {/* Tab bar + content */}
+        <div className="px-0 py-0">
+          <div className="space-y-5">
+            <QualityTabs
+              activeTab={activeTab}
+              onChange={setActiveTab}
+              onCreateIssue={() => setIsCreateIssueSheetOpen(true)}
+              onCreateInspection={() => setIsCreateInspectionSheetOpen(true)}
+              onCreatePhoto={() => setIsCreatePhotoOpen(true)}
+              onCreateSignoff={() => setIsCreateSignoffSheetOpen(true)}
+            />
+          <div className="pb-6">
+            {isLoading ? (
+              <div className="space-y-2">
+                <div className="h-4 w-48 animate-pulse rounded bg-[#E2E8F0]" />
+                <div className="h-4 w-64 animate-pulse rounded bg-[#E2E8F0]" />
+              </div>
+            ) : null}
 
-          {!isLoading && activeTab === "Overview" ? (
-            <QualityOverviewTab issueStats={issueStats} issues={issues} inspections={inspections} todoLinks={todoLinks} />
-          ) : null}
+            {!isLoading && activeTab === "Overview" ? (
+              <QualityOverviewTab issueStats={issueStats} issues={issues} inspections={inspections} todoLinks={todoLinks} />
+            ) : null}
 
-          {!isLoading && activeTab === "Issues" ? (
-            <QualityIssuesTab
+            {!isLoading && activeTab === "Issues" ? (
+              <QualityIssuesTab
               issueSearch={issueSearch}
               setIssueSearch={setIssueSearch}
               issueStatusFilter={issueStatusFilter}
@@ -1871,11 +1888,11 @@ export function ProjectQualityAssuranceBoard() {
               onStatusChange={(issueId, status) => {
                 void setIssueStatus(issueId, status);
               }}
-            />
-          ) : null}
+              />
+            ) : null}
 
-          {!isLoading && activeTab === "Inspections" ? (
-            <QualityInspectionsTab
+            {!isLoading && activeTab === "Inspections" ? (
+              <QualityInspectionsTab
               inspectionSearch={inspectionSearch}
               setInspectionSearch={setInspectionSearch}
               inspectionStatusFilter={inspectionStatusFilter}
@@ -1904,11 +1921,11 @@ export function ProjectQualityAssuranceBoard() {
                 setSelectedInspectionId(inspectionId);
                 setIsInspectionSheetOpen(true);
               }}
-            />
-          ) : null}
+              />
+            ) : null}
 
-          {!isLoading && activeTab === "Photo Log" ? (
-            <QualityPhotoLogTab
+            {!isLoading && activeTab === "Photo Log" ? (
+              <QualityPhotoLogTab
               photoSearch={photoSearch}
               setPhotoSearch={setPhotoSearch}
               photoCategoryFilter={photoCategoryFilter}
@@ -1948,11 +1965,11 @@ export function ProjectQualityAssuranceBoard() {
                 setPhotoViewMode("grid");
               }}
               onOpenPhoto={openPhotoDetail}
-            />
-          ) : null}
+              />
+            ) : null}
 
-          {!isLoading && activeTab === "Sign-Offs" ? (
-            <QualitySignOffsTab
+            {!isLoading && activeTab === "Sign-Offs" ? (
+              <QualitySignOffsTab
               signoffSearch={signoffSearch}
               setSignoffSearch={setSignoffSearch}
               signoffStatusFilter={signoffStatusFilter}
@@ -1980,11 +1997,12 @@ export function ProjectQualityAssuranceBoard() {
                 setSelectedSignoffId(signoffId);
                 setIsSignoffSheetOpen(true);
               }}
-            />
-          ) : null}
+              />
+            ) : null}
+          </div>
+          </div>
         </div>
-        </div>
-      </div>
+      </Suspense>
 
       <CreateQualitySignoffSheet
         open={isCreateSignoffSheetOpen}

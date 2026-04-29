@@ -198,6 +198,7 @@ export function ProjectTimeSheetsBoard() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isLoadingRef = useRef(false);
+  const contextRef = useRef<ProjectContext | null>(null);
 
   const supabase = useMemo(() => {
     try {
@@ -243,6 +244,8 @@ export function ProjectTimeSheetsBoard() {
     }
 
     const showLoading = options?.showLoading ?? true;
+    const timingLabel = `[projects][time-sheets] load:${routeProjectSlug}`;
+    console.time(timingLabel);
     isLoadingRef.current = true;
     if (showLoading) {
       setIsLoading(true);
@@ -250,7 +253,9 @@ export function ProjectTimeSheetsBoard() {
     setError(null);
 
     try {
-      let resolvedOrganizationId = session.organizationId;
+      let activeContext = contextRef.current;
+      let resolvedOrganizationId = activeContext?.organizationId ?? session.organizationId ?? null;
+
       if (!resolvedOrganizationId) {
         const { data: ensuredOrganizationId } = await supabase.rpc("ensure_organization_membership");
         resolvedOrganizationId = ensuredOrganizationId ?? null;
@@ -260,26 +265,36 @@ export function ProjectTimeSheetsBoard() {
         throw new Error("Could not resolve your organization.");
       }
 
-      const [{ data: projectRow, error: projectError }, { data: memberRow, error: memberError }] = await Promise.all([
-        supabase
-          .from("organization_projects")
-          .select("id, name")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("slug", routeProjectSlug)
-          .maybeSingle(),
-        supabase
-          .from("organization_members")
-          .select("id")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("user_id", session.id)
-          .maybeSingle(),
-      ]);
+      if (!activeContext) {
+        const [{ data: projectRow, error: projectError }, { data: memberRow, error: memberError }] = await Promise.all([
+          supabase
+            .from("organization_projects")
+            .select("id, name")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("slug", routeProjectSlug)
+            .maybeSingle(),
+          supabase
+            .from("organization_members")
+            .select("id")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("user_id", session.id)
+            .maybeSingle(),
+        ]);
 
-      if (projectError || !projectRow) {
-        throw new Error(projectError?.message ?? "Project not found.");
-      }
-      if (memberError) {
-        throw new Error(memberError.message);
+        if (projectError || !projectRow) {
+          throw new Error(projectError?.message ?? "Project not found.");
+        }
+        if (memberError) {
+          throw new Error(memberError.message);
+        }
+
+        activeContext = {
+          organizationId: resolvedOrganizationId,
+          projectId: String(projectRow.id),
+          projectName: projectRow.name || "Project",
+          memberId: typeof memberRow?.id === "string" ? memberRow.id : null,
+        };
+        contextRef.current = activeContext;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -292,18 +307,18 @@ export function ProjectTimeSheetsBoard() {
       const sinceIso = since.toISOString();
 
       const purchaseOrdersPromise = isWorkerRole
-        ? memberRow?.id
+        ? activeContext.memberId
           ? supabase.rpc("list_worker_assigned_purchase_orders", {
-              p_organization_id: resolvedOrganizationId,
-              p_project_id: projectRow.id,
-              p_organization_member_id: memberRow.id,
+              p_organization_id: activeContext.organizationId,
+              p_project_id: activeContext.projectId,
+              p_organization_member_id: activeContext.memberId,
             })
           : Promise.resolve({ data: [], error: null })
         : supabase
             .from("project_purchase_orders")
             .select("id, purchase_order_number, purchase_order_title, status")
-            .eq("organization_id", resolvedOrganizationId)
-            .eq("project_id", projectRow.id)
+            .eq("organization_id", activeContext.organizationId)
+            .eq("project_id", activeContext.projectId)
             .order("created_at", { ascending: false });
 
       const [entriesResult, eventsResult, purchaseOrdersResult] = await Promise.all([
@@ -311,15 +326,15 @@ export function ProjectTimeSheetsBoard() {
           .select(
             "id, worker_user_id, worker_name, company_name, trade_name, purchase_order_id, purchase_order_number, purchase_order_title, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, clock_out_latitude, clock_out_longitude, clock_out_accuracy_meters, warning_8h5_at, auto_clocked_out, auto_clocked_out_at, total_hours, notes"
           )
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
+          .eq("organization_id", activeContext.organizationId)
+          .eq("project_id", activeContext.projectId)
           .gte("clock_in_at", sinceIso)
           .order("clock_in_at", { ascending: false })
           .limit(MAX_ENTRY_ROWS),
         eventsTable
           .select("id, event_type, message, created_at")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
+          .eq("organization_id", activeContext.organizationId)
+          .eq("project_id", activeContext.projectId)
           .gte("created_at", sinceIso)
           .order("created_at", { ascending: false })
           .limit(MAX_EVENT_ROWS),
@@ -358,18 +373,18 @@ export function ProjectTimeSheetsBoard() {
         status: typeof purchaseOrder.status === "string" ? purchaseOrder.status : "Draft",
       }));
 
-      setContext({
-        organizationId: resolvedOrganizationId,
-        projectId: projectRow.id,
-        projectName: projectRow.name || "Project",
-        memberId: memberRow?.id ?? null,
-      });
+      setContext(activeContext);
       setEntries(normalizedEntries);
       setEvents((eventsResult.data ?? []) as TimeEventRow[]);
       setPurchaseOrders(normalizedPurchaseOrders.filter((purchaseOrder) => purchaseOrder.id));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load time sheets.");
     } finally {
+      console.info("[projects][time-sheets] query-count", {
+        projectSlug: routeProjectSlug,
+        approximateQueries: (session.organizationId ? 0 : 1) + (contextRef.current ? 0 : 2) + 3,
+      });
+      console.timeEnd(timingLabel);
       if (showLoading) {
         setIsLoading(false);
       }
@@ -378,6 +393,11 @@ export function ProjectTimeSheetsBoard() {
   };
 
   useEffect(() => {
+    contextRef.current = null;
+    setContext(null);
+    setEntries([]);
+    setEvents([]);
+    setPurchaseOrders([]);
     void loadData({ showLoading: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
@@ -404,9 +424,20 @@ export function ProjectTimeSheetsBoard() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      void loadData({ showLoading: false });
+      if (document.visibilityState === "visible") {
+        void loadData({ showLoading: false });
+      }
     }, 60_000);
-    return () => window.clearInterval(intervalId);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadData({ showLoading: false });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 

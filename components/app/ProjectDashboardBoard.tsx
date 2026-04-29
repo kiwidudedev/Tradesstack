@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, Suspense } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -13,8 +13,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardActivitySkeleton, DashboardSectionSkeleton } from "@/components/app/ProjectRouteSkeletons";
 import { useAuth } from "@/hooks/use-auth";
 import { interMedium } from "@/lib/fonts";
+import {
+  normalizeDashboardAggregateResult,
+  type DashboardAggregateResult,
+} from "@/lib/project-dashboard-aggregate";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 interface ProjectContext {
@@ -143,6 +148,80 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
+function buildDashboardInsights(nextMetrics: DashboardMetrics, nextFinancials: FinancialSummary) {
+  const nextInsights: string[] = [];
+
+  if (nextMetrics.failedInspections > 0) {
+    nextInsights.push(`${nextMetrics.failedInspections} inspection failures can auto-create follow-up tasks.`);
+  }
+  if (nextMetrics.overdueTasks >= 2) {
+    nextInsights.push(`Task completion is slipping with ${nextMetrics.overdueTasks} overdue items.`);
+  }
+  if (nextMetrics.awaitingVariationApproval > 0 && nextFinancials.poOutstandingCount === 0) {
+    nextInsights.push("Variation risk detected: pending approvals are not yet reflected in purchase orders.");
+  }
+  if (nextFinancials.claimsUnpaidAmount > 0) {
+    nextInsights.push(`Cashflow pressure: ${formatMoney(nextFinancials.claimsUnpaidAmount)} remains unpaid.`);
+  }
+  if (nextMetrics.pendingSignoffs > 0 && nextMetrics.openIssues > 0) {
+    nextInsights.push("Sign-off risk: open QA issues may block approvals.");
+  }
+  if (nextInsights.length === 0) {
+    nextInsights.push("No major risks detected right now. Keep momentum on inspections and claims.");
+  }
+
+  return nextInsights;
+}
+
+function buildDashboardActivity(result: DashboardAggregateResult, projectBase: string): ActivityItem[] {
+  const taskFeed: ActivityItem[] = result.feeds.tasks.map((row) => ({
+    id: `task-${row.id}`,
+    label: "Task updated",
+    detail: `${String(row.title ?? "Task")} (${String(row.status ?? "")})`,
+    at: typeof row.updated_at === "string" ? row.updated_at : "",
+    href: `${projectBase}/job-management/todos`,
+  }));
+  const issueFeed: ActivityItem[] = result.feeds.issues.map((row) => ({
+    id: `issue-${row.id}`,
+    label: "Issue updated",
+    detail: `${String(row.title ?? "Issue")} (${String(row.status ?? "")})`,
+    at: typeof row.updated_at === "string" ? row.updated_at : "",
+    href: `${projectBase}/job-management/quality-assurance`,
+  }));
+  const variationFeed: ActivityItem[] = result.feeds.variations.map((row) => ({
+    id: `variation-${row.id}`,
+    label: "Variation updated",
+    detail: `${String(row.variation_number ?? "Variation")} (${String(row.status ?? "")})`,
+    at: typeof row.updated_at === "string" ? row.updated_at : "",
+    href: `${projectBase}/preconstruction/variations`,
+  }));
+  const claimFeed: ActivityItem[] = result.feeds.claims.map((row) => ({
+    id: `claim-${row.id}`,
+    label: "Claim updated",
+    detail: `${String(row.claim_number ?? "Claim")} (${String(row.status ?? "")})`,
+    at: typeof row.updated_at === "string" ? row.updated_at : "",
+    href: `${projectBase}/preconstruction/claims`,
+  }));
+  const timeFeed: ActivityItem[] = result.feeds.time_events.map((row) => ({
+    id: `time-${row.id}`,
+    label: "Time sheet event",
+    detail: String(row.message ?? String(row.event_type ?? "Time update")),
+    at: typeof row.created_at === "string" ? row.created_at : "",
+    href: `${projectBase}/job-management/time-sheets`,
+  }));
+  const signoffFeed: ActivityItem[] = result.feeds.signoffs.map((row) => ({
+    id: `signoff-${row.id}`,
+    label: "Sign-off updated",
+    detail: `${String(row.title ?? "Sign-off")} (${String(row.status ?? "")})`,
+    at: typeof row.updated_at === "string" ? row.updated_at : "",
+    href: `${projectBase}/job-management/quality-assurance`,
+  }));
+
+  return [...taskFeed, ...issueFeed, ...variationFeed, ...claimFeed, ...timeFeed, ...signoffFeed]
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 12);
+}
+
 export function ProjectDashboardBoard() {
   const params = useParams<{ projectId: string }>();
   const routeProjectSlug = params?.projectId ?? "";
@@ -258,6 +337,8 @@ export function ProjectDashboardBoard() {
       return;
     }
 
+    const timingLabel = `[projects][dashboard] load:${routeProjectSlug}`;
+    console.time(timingLabel);
     isLoadingRef.current = true;
     setError(null);
 
@@ -270,6 +351,100 @@ export function ProjectDashboardBoard() {
       if (!resolvedOrganizationId) {
         throw new Error("Could not resolve your organization.");
       }
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const today = now.toISOString().slice(0, 10);
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const startOfDayIso = startOfDay.toISOString();
+      const endOfDayIso = endOfDay.toISOString();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+      const aggregateRpcArgs = {
+        p_organization_id: resolvedOrganizationId,
+        p_project_slug: routeProjectSlug,
+        p_now: nowIso,
+        p_today: today,
+        p_start_of_day: startOfDayIso,
+        p_end_of_day: endOfDayIso,
+        p_month_start: monthStart,
+        p_month_end: monthEnd,
+      };
+
+      const applyAggregateResult = (result: DashboardAggregateResult) => {
+        const nextContext: ProjectContext = {
+          organizationId: resolvedOrganizationId,
+          projectId: result.project.projectId,
+          projectName: result.project.projectName,
+          stage: result.project.stage,
+          location: result.project.location,
+          createdAt: result.project.createdAt,
+          clientName: result.project.clientName,
+        };
+        const nextMetrics: DashboardMetrics = {
+          overdueTasks: result.metrics.overdueTasks,
+          awaitingVariationApproval: result.metrics.awaitingVariationApproval,
+          claimReadyToSend: result.metrics.claimReadyToSend,
+          openIssues: result.metrics.openIssues,
+          failedInspections: result.metrics.failedInspections,
+          tasksDueToday: result.metrics.tasksDueToday,
+          pendingVariations: result.metrics.pendingVariations,
+          claimsThisMonth: result.metrics.claimsThisMonth,
+          activeWorkers: result.metrics.activeWorkers,
+          pendingSignoffs: result.metrics.pendingSignoffs,
+          inspectionsToday: result.metrics.inspectionsToday,
+        };
+        const nextFinancials: FinancialSummary = {
+          quoteValue: result.financials.quoteValue,
+          variationTotal: result.financials.variationTotal,
+          claimsSubmitted: result.financials.claimsSubmitted,
+          claimsPaidAmount: result.financials.claimsPaidAmount,
+          claimsUnpaidAmount: result.financials.claimsUnpaidAmount,
+          poOutstandingCount: result.financials.poOutstandingCount,
+          poOutstandingAmount: result.financials.poOutstandingAmount,
+        };
+
+        setContext(nextContext);
+        setProjectDetailsDraft({
+          projectName: nextContext.projectName,
+          clientName: nextContext.clientName,
+          stage: nextContext.stage,
+          location: nextContext.location,
+          createdAt: nextContext.createdAt,
+        });
+        setMetrics(nextMetrics);
+        setFinancials(nextFinancials);
+        setAiInsights(buildDashboardInsights(nextMetrics, nextFinancials));
+        setActivity(buildDashboardActivity(result, projectBase));
+      };
+
+      const { data: aggregateData, error: aggregateError } = await supabase.rpc("get_project_dashboard_aggregate", aggregateRpcArgs);
+      if (!aggregateError) {
+        const normalizedAggregate = normalizeDashboardAggregateResult(aggregateData);
+        if (normalizedAggregate) {
+          applyAggregateResult(normalizedAggregate);
+          console.info("[projects][dashboard] query-count", {
+            projectSlug: routeProjectSlug,
+            approximateQueries: (session.organizationId ? 0 : 1) + 1,
+            source: "aggregate-rpc",
+          });
+          return;
+        }
+
+        console.warn("[projects][dashboard] aggregate rpc returned unexpected shape", {
+          projectSlug: routeProjectSlug,
+          data: aggregateData,
+        });
+      } else {
+        console.error("[projects][dashboard] aggregate rpc error", {
+          projectSlug: routeProjectSlug,
+          message: aggregateError.message,
+        });
+      }
+
+      console.warn("[projects][dashboard] falling back to legacy dashboard loader", {
+        projectSlug: routeProjectSlug,
+      });
 
       const { data: projectRow, error: projectError } = await supabase
         .from("organization_projects")
@@ -283,14 +458,6 @@ export function ProjectDashboardBoard() {
       }
 
       const projectId = String(projectRow.id);
-      const now = new Date();
-      const nowIso = now.toISOString();
-      const today = now.toISOString().slice(0, 10);
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const clientsTable = (supabase as any).from("organization_clients");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -318,11 +485,8 @@ export function ProjectDashboardBoard() {
 
       const [
         clientResult,
-        taskOverdueByDueAtResult,
-        taskOverdueByDateResult,
-        tasksDueTodayDueAtResult,
-        tasksDueTodayDateResult,
-        openIssuesCountResult,
+        openTaskDatesResult,
+        issuesSummaryResult,
         failedInspectionsCountResult,
         awaitingVariationApprovalCountResult,
         claimReadyToSendCountResult,
@@ -337,41 +501,17 @@ export function ProjectDashboardBoard() {
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
         todosTable
-          .select("id", { head: true, count: "exact" })
+          .select("id, title, status, due_at, due_date, updated_at")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
           .neq("status", "Done")
           .neq("status", "Archived")
-          .lt("due_at", nowIso),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectId)
-          .neq("status", "Done")
-          .neq("status", "Archived")
-          .is("due_at", null)
-          .lt("due_date", today),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectId)
-          .neq("status", "Done")
-          .neq("status", "Archived")
-          .gte("due_at", startOfDay.toISOString())
-          .lt("due_at", endOfDay.toISOString()),
-        todosTable
-          .select("id", { head: true, count: "exact" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectId)
-          .neq("status", "Done")
-          .neq("status", "Archived")
-          .is("due_at", null)
-          .eq("due_date", today),
+          .order("updated_at", { ascending: false }),
         issuesTable
-          .select("id", { head: true, count: "exact" })
+          .select("id, title, status, updated_at")
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .in("status", ["Open", "In Progress", "Blocked", "Requires Attention"]),
+          .order("updated_at", { ascending: false }),
         inspectionItemsTable
           .select("id", { head: true, count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
@@ -403,11 +543,8 @@ export function ProjectDashboardBoard() {
 
       const priorityError =
         clientResult.error ??
-        taskOverdueByDueAtResult.error ??
-        taskOverdueByDateResult.error ??
-        tasksDueTodayDueAtResult.error ??
-        tasksDueTodayDateResult.error ??
-        openIssuesCountResult.error ??
+        openTaskDatesResult.error ??
+        issuesSummaryResult.error ??
         failedInspectionsCountResult.error ??
         awaitingVariationApprovalCountResult.error ??
         claimReadyToSendCountResult.error ??
@@ -418,63 +555,60 @@ export function ProjectDashboardBoard() {
         throw new Error(priorityError.message ?? "Unable to load project dashboard.");
       }
 
-      const nextMetrics: DashboardMetrics = {
-        overdueTasks: (taskOverdueByDueAtResult.count ?? 0) + (taskOverdueByDateResult.count ?? 0),
-        awaitingVariationApproval: awaitingVariationApprovalCountResult.count ?? 0,
-        claimReadyToSend: claimReadyToSendCountResult.count ?? 0,
-        openIssues: openIssuesCountResult.count ?? 0,
-        failedInspections: failedInspectionsCountResult.count ?? 0,
-        tasksDueToday: (tasksDueTodayDueAtResult.count ?? 0) + (tasksDueTodayDateResult.count ?? 0),
-        pendingVariations: awaitingVariationApprovalCountResult.count ?? 0,
-        claimsThisMonth: claimsThisMonthCountResult.count ?? 0,
-        activeWorkers: activeWorkersCountResult.count ?? 0,
-        pendingSignoffs: 0,
-        inspectionsToday: 0,
-      };
+      const openTaskRows = (openTaskDatesResult.data ?? []) as Array<Record<string, unknown>>;
+      const overdueTasks = openTaskRows.reduce((sum, row) => {
+        const dueAt = typeof row.due_at === "string" ? row.due_at : null;
+        const dueDate = typeof row.due_date === "string" ? row.due_date : null;
 
-      setContext({
-        organizationId: resolvedOrganizationId,
-        projectId,
-        projectName: String(projectRow.name ?? "Project"),
-        stage: String(projectRow.stage ?? "Planning"),
-        location: String(projectRow.location ?? ""),
-        createdAt: typeof projectRow.created_at === "string" ? projectRow.created_at : nowIso,
-        clientName: String(clientResult.data?.name ?? "Unassigned"),
-      });
-      setProjectDetailsDraft({
-        projectName: String(projectRow.name ?? "Project"),
-        clientName: String(clientResult.data?.name ?? "Unassigned"),
-        stage: String(projectRow.stage ?? "Planning"),
-        location: String(projectRow.location ?? ""),
-        createdAt: typeof projectRow.created_at === "string" ? projectRow.created_at : nowIso,
-      });
-      setMetrics(nextMetrics);
+        if (dueAt) {
+          return sum + (dueAt < nowIso ? 1 : 0);
+        }
+
+        if (dueDate) {
+          return sum + (dueDate < today ? 1 : 0);
+        }
+
+        return sum;
+      }, 0);
+
+      const tasksDueToday = openTaskRows.reduce((sum, row) => {
+        const dueAt = typeof row.due_at === "string" ? row.due_at : null;
+        const dueDate = typeof row.due_date === "string" ? row.due_date : null;
+
+        if (dueAt) {
+          return sum + (dueAt >= startOfDayIso && dueAt < endOfDayIso ? 1 : 0);
+        }
+
+        if (dueDate) {
+          return sum + (dueDate === today ? 1 : 0);
+        }
+
+        return sum;
+      }, 0);
+
+      const issuesRows = (issuesSummaryResult.data ?? []) as Array<Record<string, unknown>>;
+      const openIssues = issuesRows.filter((row) => {
+        const status = String(row.status ?? "");
+        return status === "Open" || status === "In Progress" || status === "Blocked" || status === "Requires Attention";
+      }).length;
 
       const [
-        inspectionsTodayCountResult,
-        pendingSignoffsCountResult,
+        inspectionsTodayExactRowsResult,
         latestQuoteResult,
         variationsSummaryResult,
         claimsSummaryResult,
         poSummaryResult,
-        tasksFeedResult,
-        issuesFeedResult,
         variationsFeedResult,
         claimsFeedResult,
         timeFeedResult,
-        signoffFeedResult,
+        signoffSummaryResult,
       ] = await Promise.all([
         inspectionsTable
-          .select("id", { head: true, count: "planned" })
+          .select("id, scheduled_at", { count: "exact" })
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
-          .gte("scheduled_at", startOfDay.toISOString())
-          .lt("scheduled_at", endOfDay.toISOString()),
-        signoffsTable
-          .select("id", { head: true, count: "planned" })
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectId)
-          .in("status", ["Pending", "Requested"]),
+          .gte("scheduled_at", startOfDayIso)
+          .lt("scheduled_at", endOfDayIso),
         quoteTable
           .select("total_quote_price")
           .eq("organization_id", resolvedOrganizationId)
@@ -497,20 +631,6 @@ export function ProjectDashboardBoard() {
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
           .limit(200),
-        todosTable
-          .select("id, title, status, updated_at")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectId)
-          .neq("status", "Done")
-          .neq("status", "Archived")
-          .order("updated_at", { ascending: false })
-          .limit(6),
-        issuesTable
-          .select("id, title, status, updated_at")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectId)
-          .order("updated_at", { ascending: false })
-          .limit(6),
         variationsTable
           .select("id, variation_number, status, updated_at")
           .eq("organization_id", resolvedOrganizationId)
@@ -534,137 +654,132 @@ export function ProjectDashboardBoard() {
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectId)
           .order("updated_at", { ascending: false })
-          .limit(6),
+          .limit(200),
       ]);
 
       const secondaryError =
-        inspectionsTodayCountResult.error ??
-        pendingSignoffsCountResult.error ??
+        inspectionsTodayExactRowsResult.error ??
         latestQuoteResult.error ??
         variationsSummaryResult.error ??
         claimsSummaryResult.error ??
         poSummaryResult.error ??
-        tasksFeedResult.error ??
-        issuesFeedResult.error ??
         variationsFeedResult.error ??
         claimsFeedResult.error ??
         timeFeedResult.error ??
-        signoffFeedResult.error;
+        signoffSummaryResult.error;
 
       if (secondaryError) {
         throw new Error(secondaryError.message ?? "Unable to load extended dashboard data.");
       }
 
-      const variationsRows = (variationsSummaryResult.data ?? []) as Array<Record<string, unknown>>;
-      const variationTotal = variationsRows.reduce((sum, row) => sum + (typeof row.total_variation_price === "number" ? row.total_variation_price : 0), 0);
-
-      const claimsRows = (claimsSummaryResult.data ?? []) as Array<Record<string, unknown>>;
-      const claimsSubmitted = claimsRows.filter((row) => {
+      const inspectionAuditRows = (inspectionsTodayExactRowsResult.data ?? []) as Array<Record<string, unknown>>;
+      const signoffRows = (signoffSummaryResult.data ?? []) as Array<Record<string, unknown>>;
+      const pendingSignoffs = signoffRows.filter((row) => {
         const status = String(row.status ?? "");
-        return status === "Submitted" || status === "Unpaid" || status === "Paid" || status === "Overdue";
+        return status === "Pending" || status === "Requested";
       }).length;
-      const claimsPaidAmount = claimsRows.reduce((sum, row) => sum + (typeof row.paid_amount === "number" ? row.paid_amount : 0), 0);
-      const claimsUnpaidAmount = claimsRows.reduce((sum, row) => {
-        const claimAmount = typeof row.claim_amount === "number" ? row.claim_amount : 0;
-        const paidAmount = typeof row.paid_amount === "number" ? row.paid_amount : 0;
-        return sum + Math.max(0, claimAmount - paidAmount);
-      }, 0);
-
+      const variationsRows = (variationsSummaryResult.data ?? []) as Array<Record<string, unknown>>;
+      const claimsRows = (claimsSummaryResult.data ?? []) as Array<Record<string, unknown>>;
       const poRows = (poSummaryResult.data ?? []) as Array<Record<string, unknown>>;
       const outstandingPoRows = poRows.filter((row) => {
         const status = String(row.status ?? "");
         return status !== "Invoiced" && status !== "Cancelled" && status !== "Received";
       });
-      const poOutstandingAmount = outstandingPoRows.reduce((sum, row) => sum + (typeof row.total_purchase_order_price === "number" ? row.total_purchase_order_price : 0), 0);
 
-      const taskFeed: ActivityItem[] = ((tasksFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: `task-${String(row.id)}`,
-        label: "Task updated",
-        detail: `${String(row.title ?? "Task")} (${String(row.status ?? "")})`,
-        at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
-        href: `${projectBase}/job-management/todos`,
-      }));
-      const issueFeed: ActivityItem[] = ((issuesFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: `issue-${String(row.id)}`,
-        label: "Issue updated",
-        detail: `${String(row.title ?? "Issue")} (${String(row.status ?? "")})`,
-        at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
-        href: `${projectBase}/job-management/quality-assurance`,
-      }));
-      const variationFeed: ActivityItem[] = ((variationsFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: `variation-${String(row.id)}`,
-        label: "Variation updated",
-        detail: `${String(row.variation_number ?? "Variation")} (${String(row.status ?? "")})`,
-        at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
-        href: `${projectBase}/preconstruction/variations`,
-      }));
-      const claimFeed: ActivityItem[] = ((claimsFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: `claim-${String(row.id)}`,
-        label: "Claim updated",
-        detail: `${String(row.claim_number ?? "Claim")} (${String(row.status ?? "")})`,
-        at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
-        href: `${projectBase}/preconstruction/claims`,
-      }));
-      const timeFeed: ActivityItem[] = ((timeFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: `time-${String(row.id)}`,
-        label: "Time sheet event",
-        detail: String(row.message ?? String(row.event_type ?? "Time update")),
-        at: typeof row.created_at === "string" ? row.created_at : nowIso,
-        href: `${projectBase}/job-management/time-sheets`,
-      }));
-      const signoffFeed: ActivityItem[] = ((signoffFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: `signoff-${String(row.id)}`,
-        label: "Sign-off updated",
-        detail: `${String(row.title ?? "Sign-off")} (${String(row.status ?? "")})`,
-        at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
-        href: `${projectBase}/job-management/quality-assurance`,
-      }));
-
-      const sortedActivity = [...taskFeed, ...issueFeed, ...variationFeed, ...claimFeed, ...timeFeed, ...signoffFeed]
-        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-        .slice(0, 12);
-
-      const nextFinancials: FinancialSummary = {
-        quoteValue: typeof latestQuoteResult.data?.total_quote_price === "number" ? latestQuoteResult.data.total_quote_price : 0,
-        variationTotal,
-        claimsSubmitted,
-        claimsPaidAmount,
-        claimsUnpaidAmount,
-        poOutstandingCount: outstandingPoRows.length,
-        poOutstandingAmount,
+      const fallbackAggregate: DashboardAggregateResult = {
+        project: {
+          projectId,
+          projectName: String(projectRow.name ?? "Project"),
+          stage: String(projectRow.stage ?? "Planning"),
+          location: String(projectRow.location ?? ""),
+          createdAt: typeof projectRow.created_at === "string" ? projectRow.created_at : nowIso,
+          clientName: String(clientResult.data?.name ?? "Unassigned"),
+        },
+        metrics: {
+          overdueTasks,
+          awaitingVariationApproval: awaitingVariationApprovalCountResult.count ?? 0,
+          claimReadyToSend: claimReadyToSendCountResult.count ?? 0,
+          openIssues,
+          failedInspections: failedInspectionsCountResult.count ?? 0,
+          tasksDueToday,
+          pendingVariations: awaitingVariationApprovalCountResult.count ?? 0,
+          claimsThisMonth: claimsThisMonthCountResult.count ?? 0,
+          activeWorkers: activeWorkersCountResult.count ?? 0,
+          pendingSignoffs,
+          inspectionsToday: inspectionsTodayExactRowsResult.count ?? inspectionAuditRows.length,
+        },
+        financials: {
+          quoteValue: typeof latestQuoteResult.data?.total_quote_price === "number" ? latestQuoteResult.data.total_quote_price : 0,
+          variationTotal: variationsRows.reduce(
+            (sum, row) => sum + (typeof row.total_variation_price === "number" ? row.total_variation_price : 0),
+            0
+          ),
+          claimsSubmitted: claimsRows.filter((row) => {
+            const status = String(row.status ?? "");
+            return status === "Submitted" || status === "Unpaid" || status === "Paid" || status === "Overdue";
+          }).length,
+          claimsPaidAmount: claimsRows.reduce((sum, row) => sum + (typeof row.paid_amount === "number" ? row.paid_amount : 0), 0),
+          claimsUnpaidAmount: claimsRows.reduce((sum, row) => {
+            const claimAmount = typeof row.claim_amount === "number" ? row.claim_amount : 0;
+            const paidAmount = typeof row.paid_amount === "number" ? row.paid_amount : 0;
+            return sum + Math.max(0, claimAmount - paidAmount);
+          }, 0),
+          poOutstandingCount: outstandingPoRows.length,
+          poOutstandingAmount: outstandingPoRows.reduce(
+            (sum, row) => sum + (typeof row.total_purchase_order_price === "number" ? row.total_purchase_order_price : 0),
+            0
+          ),
+        },
+        feeds: {
+          tasks: openTaskRows.slice(0, 6).map((row) => ({
+            id: String(row.id ?? ""),
+            title: String(row.title ?? "Task"),
+            status: String(row.status ?? ""),
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
+          })),
+          issues: issuesRows.slice(0, 6).map((row) => ({
+            id: String(row.id ?? ""),
+            title: String(row.title ?? "Issue"),
+            status: String(row.status ?? ""),
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
+          })),
+          variations: ((variationsFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+            id: String(row.id ?? ""),
+            variation_number: String(row.variation_number ?? "Variation"),
+            status: String(row.status ?? ""),
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
+          })),
+          claims: ((claimsFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+            id: String(row.id ?? ""),
+            claim_number: String(row.claim_number ?? "Claim"),
+            status: String(row.status ?? ""),
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
+          })),
+          time_events: ((timeFeedResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+            id: String(row.id ?? ""),
+            event_type: String(row.event_type ?? "Time update"),
+            message: String(row.message ?? String(row.event_type ?? "Time update")),
+            created_at: typeof row.created_at === "string" ? row.created_at : nowIso,
+          })),
+          signoffs: signoffRows.slice(0, 6).map((row) => ({
+            id: String(row.id ?? ""),
+            title: String(row.title ?? "Sign-off"),
+            status: String(row.status ?? ""),
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : nowIso,
+          })),
+        },
       };
 
-      const nextInsights: string[] = [];
-      if (nextMetrics.failedInspections > 0) {
-        nextInsights.push(`${nextMetrics.failedInspections} inspection failures can auto-create follow-up tasks.`);
-      }
-      if (nextMetrics.overdueTasks >= 2) {
-        nextInsights.push(`Task completion is slipping with ${nextMetrics.overdueTasks} overdue items.`);
-      }
-      if (nextMetrics.awaitingVariationApproval > 0 && nextFinancials.poOutstandingCount === 0) {
-        nextInsights.push("Variation risk detected: pending approvals are not yet reflected in purchase orders.");
-      }
-      if (nextFinancials.claimsUnpaidAmount > 0) {
-        nextInsights.push(`Cashflow pressure: ${formatMoney(nextFinancials.claimsUnpaidAmount)} remains unpaid.`);
-      }
-      if (nextMetrics.pendingSignoffs > 0 && nextMetrics.openIssues > 0) {
-        nextInsights.push("Sign-off risk: open QA issues may block approvals.");
-      }
-      if (nextInsights.length === 0) {
-        nextInsights.push("No major risks detected right now. Keep momentum on inspections and claims.");
-      }
-
-      setMetrics((previous) => ({
-        ...previous,
-        pendingSignoffs: pendingSignoffsCountResult.count ?? 0,
-        inspectionsToday: inspectionsTodayCountResult.count ?? 0,
-      }));
-      setFinancials(nextFinancials);
-      setAiInsights(nextInsights);
-      setActivity(sortedActivity);
+      applyAggregateResult(fallbackAggregate);
+      console.info("[projects][dashboard] query-count", {
+        projectSlug: routeProjectSlug,
+        approximateQueries: (session.organizationId ? 0 : 1) + 1 + 8 + 9,
+        source: "legacy-fallback",
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load project command centre.");
     } finally {
+      console.timeEnd(timingLabel);
       isLoadingRef.current = false;
     }
   };
@@ -682,6 +797,8 @@ export function ProjectDashboardBoard() {
     let isCancelled = false;
 
     const loadProjectTeamData = async () => {
+      const timingLabel = `[projects][dashboard][team] load:${routeProjectSlug}`;
+      console.time(timingLabel);
       setIsLoadingProjectMembers(true);
       setProjectMembersError(null);
       setSelectedProjectMemberToAdd("");
@@ -724,6 +841,11 @@ export function ProjectDashboardBoard() {
           setProjectMembersError(loadProjectTeamError instanceof Error ? loadProjectTeamError.message : "Unable to load project team.");
         }
       } finally {
+        console.info("[projects][dashboard][team] query-count", {
+          projectSlug: routeProjectSlug,
+          approximateQueries: 2,
+        });
+        console.timeEnd(timingLabel);
         if (!isCancelled) {
           setIsLoadingProjectMembers(false);
         }
@@ -874,31 +996,32 @@ export function ProjectDashboardBoard() {
 
   return (
     <main className="app-canvas -mb-8 space-y-4 bg-[#F9FAFC] pb-10">
-      <section className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {overviewCards.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
-              >
-                <div className="flex items-center gap-4">
-                  <span className={`inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] ${item.iconClassName}`}>
-                    <Icon className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-                  </span>
-                  <p className="text-[18px] font-medium leading-none text-[#4B5D79]">{item.label}</p>
-                </div>
-                <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">{item.value}</p>
-                <p className={`mt-3 text-[16px] font-medium ${item.metaClassName}`}>{item.meta}</p>
-              </Link>
-            );
-          })}
-        </div>
+      <Suspense fallback={<DashboardSectionSkeleton />}>
+        <section className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {overviewCards.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
+                >
+                  <div className="flex items-center gap-4">
+                    <span className={`inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] ${item.iconClassName}`}>
+                      <Icon className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
+                    </span>
+                    <p className="text-[18px] font-medium leading-none text-[#4B5D79]">{item.label}</p>
+                  </div>
+                  <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">{item.value}</p>
+                  <p className={`mt-3 text-[16px] font-medium ${item.metaClassName}`}>{item.meta}</p>
+                </Link>
+              );
+            })}
+          </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1.35fr)] xl:items-start">
-          <Card className={`${tradePackCardClassName} h-fit`}>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1.35fr)] xl:items-start">
+            <Card className={`${tradePackCardClassName} h-fit`}>
             <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
               <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Project Details</CardTitle>
               {isEditingProjectDetails ? (
@@ -1064,9 +1187,9 @@ export function ProjectDashboardBoard() {
                 ) : null}
               </div>
             </CardContent>
-          </Card>
+            </Card>
 
-          <Card className={`${tradePackCardClassName} h-full`}>
+            <Card className={`${tradePackCardClassName} h-full`}>
             <CardHeader className="pb-[1.15rem] pt-[1.35rem]">
               <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Today&apos;s Priority</CardTitle>
             </CardHeader>
@@ -1113,13 +1236,15 @@ export function ProjectDashboardBoard() {
                 </Link>
               ))}
             </CardContent>
-          </Card>
-        </div>
+            </Card>
+          </div>
 
-      </section>
+        </section>
+      </Suspense>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
-        <Card className={`${tradePackCardClassName} h-fit`}>
+      <Suspense fallback={<DashboardActivitySkeleton />}>
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
+          <Card className={`${tradePackCardClassName} h-fit`}>
           <CardHeader className="pb-[1.15rem] pt-[1.35rem]">
             <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">What&apos;s Coming Up Next</CardTitle>
           </CardHeader>
@@ -1157,9 +1282,10 @@ export function ProjectDashboardBoard() {
               </div>
             ) : null}
           </CardContent>
-        </Card>
-        <div />
-      </section>
+          </Card>
+          <div />
+        </section>
+      </Suspense>
 
     </main>
   );

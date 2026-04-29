@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { QUALITY_PHOTOS_BUCKET } from "@/lib/quality-assurance/constants";
 import {
   isLegacySeedInspectionTitle,
   isLegacySeedIssueTitle,
@@ -25,6 +26,38 @@ import type {
   QualityInspectionThreadResult,
   SignOffStatus,
 } from "@/lib/quality-assurance/types";
+
+async function createQualityPhotoSignedUrlMap(supabase: any, paths: string[]): Promise<Map<string, string>> {
+  const urlMap = new Map<string, string>();
+  const uniquePaths = [...new Set(paths.filter(Boolean))];
+
+  if (uniquePaths.length === 0) {
+    return urlMap;
+  }
+
+  const storageBucket = supabase?.storage?.from?.(QUALITY_PHOTOS_BUCKET);
+  const createSignedUrls = storageBucket?.createSignedUrls;
+
+  if (typeof createSignedUrls === "function") {
+    const { data, error } = await createSignedUrls.call(storageBucket, uniquePaths, 60 * 60);
+    if (!error && Array.isArray(data)) {
+      for (let index = 0; index < uniquePaths.length; index += 1) {
+        const path = uniquePaths[index];
+        const signedUrl = typeof data[index]?.signedUrl === "string" ? data[index].signedUrl : null;
+        urlMap.set(path, signedUrl || path);
+      }
+      return urlMap;
+    }
+  }
+
+  await Promise.all(
+    uniquePaths.map(async (path) => {
+      urlMap.set(path, await getQualityPhotoSignedUrl(supabase, path));
+    })
+  );
+
+  return urlMap;
+}
 
 export async function resolveProjectContext(supabase: any, session: { id?: string | null; organizationId?: string | null }) {
   if (!supabase || !session?.id) {
@@ -144,21 +177,12 @@ export async function listQualityInspections(supabase: any, context: ProjectCont
     })
     .filter((row) => !isLegacySeedInspectionTitle(row.title));
 
-  const inspectionPhotoPaths = [
-    ...new Set(
-      normalized
-        .flatMap((inspection) =>
-          inspection.items.map((item) => item.photoStoragePath ?? (looksLikeStoragePath(item.photoUrl) ? item.photoUrl : null))
-        )
-        .filter((path): path is string => Boolean(path))
-    ),
-  ];
-  const inspectionPhotoUrlMap = new Map<string, string>();
-  await Promise.all(
-    inspectionPhotoPaths.map(async (path) => {
-      inspectionPhotoUrlMap.set(path, await getQualityPhotoSignedUrl(supabase, path));
-    })
-  );
+  const inspectionPhotoPaths = normalized
+    .flatMap((inspection) =>
+      inspection.items.map((item) => item.photoStoragePath ?? (looksLikeStoragePath(item.photoUrl) ? item.photoUrl : null))
+    )
+    .filter((path): path is string => Boolean(path));
+  const inspectionPhotoUrlMap = await createQualityPhotoSignedUrlMap(supabase, inspectionPhotoPaths);
 
   return normalized.map((inspection) => ({
     ...inspection,
@@ -302,18 +326,10 @@ export async function listQualityPhotos(supabase: any, context: ProjectContext):
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
   }));
 
-  const storageUrlMap = new Map<string, string>();
-  await Promise.all(
-    [
-      ...new Set(
-        normalizedBase
-          .map((row) => row.storagePath ?? (looksLikeStoragePath(row.photoUrl) ? row.photoUrl : null))
-          .filter((path): path is string => Boolean(path))
-      ),
-    ].map(async (path) => {
-      storageUrlMap.set(path, await getQualityPhotoSignedUrl(supabase, path));
-    })
-  );
+  const storagePaths = normalizedBase
+    .map((row) => row.storagePath ?? (looksLikeStoragePath(row.photoUrl) ? row.photoUrl : null))
+    .filter((path): path is string => Boolean(path));
+  const storageUrlMap = await createQualityPhotoSignedUrlMap(supabase, storagePaths);
 
   return normalizedBase.map((row) => {
     const storedPath = row.storagePath ?? (looksLikeStoragePath(row.photoUrl) ? row.photoUrl : null);
