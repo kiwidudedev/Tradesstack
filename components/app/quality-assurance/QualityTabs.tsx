@@ -1,64 +1,36 @@
-import { Button } from "@/components/ui/button";
 import { interMedium } from "@/lib/fonts";
 import { QUALITY_TABS } from "@/lib/quality-assurance/constants";
 import type { QaTab } from "@/lib/quality-assurance/types";
 import { cn } from "@/lib/utils";
-import styles from "@/components/app/trade-pack-builder.module.css";
 
 interface QualityTabsProps {
   activeTab: QaTab;
   onChange: (tab: QaTab) => void;
-  onCreateIssue: () => void;
-  onCreateInspection: () => void;
-  onCreatePhoto: () => void;
-  onCreateSignoff: () => void;
 }
 
-export function QualityTabs({
-  activeTab,
-  onChange,
-  onCreateIssue,
-  onCreateInspection,
-  onCreatePhoto,
-  onCreateSignoff,
-}: QualityTabsProps) {
+export function QualityTabs({ activeTab, onChange }: QualityTabsProps) {
+  const getTabLabel = (tab: QaTab) => (tab === "Work Proof" ? "Work Log" : tab);
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {QUALITY_TABS.map((tab) => (
-        <button
-          key={tab}
-          type="button"
-          onClick={() => onChange(tab)}
-          className={cn(
-            `${interMedium.className} rounded-full px-4 py-2 text-[13px] font-semibold transition-colors`,
-            activeTab === tab ? "bg-[#0B2739] text-white" : "border border-[#D7E1EC] bg-[#F8F9FC] text-[#475569] hover:bg-[#EEF2F7]"
-          )}
-        >
-          {tab}
-        </button>
-      ))}
-      <div className="ml-auto">
-        {activeTab === "Issues" ? (
-          <Button type="button" onClick={onCreateIssue} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
-            Add Issue
-          </Button>
-        ) : null}
-        {activeTab === "Inspections" ? (
-          <Button type="button" onClick={onCreateInspection} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
-            Add Inspection
-          </Button>
-        ) : null}
-        {activeTab === "Photo Log" ? (
-          <Button type="button" onClick={onCreatePhoto} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
-            Upload Photo
-          </Button>
-        ) : null}
-        {activeTab === "Sign-Offs" ? (
-          <Button type="button" onClick={onCreateSignoff} className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F15928] !text-white hover:bg-[#d94d20]`}>
-            Add Sign-Off
-          </Button>
-        ) : null}
-      </div>
+    <div className="flex flex-wrap items-center gap-2 border-b border-[#E5EAF1] pb-3">
+      {QUALITY_TABS.map((tab) => {
+        const isActive = activeTab === tab;
+        return (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => onChange(tab)}
+            className={cn(
+              `${interMedium.className} inline-flex h-10 items-center justify-center rounded-[12px] border px-5 text-[14px] font-semibold transition-colors`,
+              isActive
+                ? "border-[#0F172A] bg-[#0F172A] text-white shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                : "border-[#D9E3EE] bg-white text-[#475569] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+            )}
+          >
+            {getTabLabel(tab)}
+          </button>
+        );
+      })}
     </div>
   );
 }

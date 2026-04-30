@@ -24,6 +24,7 @@ import type {
   QualitySignOff,
   QualitySignoffThreadResult,
   QualityInspectionThreadResult,
+  QualityWorkProof,
   SignOffStatus,
 } from "@/lib/quality-assurance/types";
 
@@ -100,7 +101,9 @@ export async function resolveQualityProjectContext(
 export async function listQualityIssues(supabase: any, context: ProjectContext): Promise<QualityIssue[]> {
   const issuesTable = (supabase as any).from("project_quality_issues");
   const { data, error } = await issuesTable
-    .select("id, title, description, trade, location, priority, status, due_date, assignee_name, assignee_user_id, updated_at")
+    .select(
+      "id, title, description, trade, trade_type, work_category, location, area, priority, status, due_date, assignee_name, assignee_user_id, linked_work_proof_id, closed_at, updated_at"
+    )
     .eq("organization_id", context.organizationId)
     .eq("project_id", context.projectId)
     .order("created_at", { ascending: false })
@@ -116,7 +119,10 @@ export async function listQualityIssues(supabase: any, context: ProjectContext):
       title: String(row.title ?? ""),
       description: String(row.description ?? ""),
       trade: String(row.trade ?? ""),
+      tradeType: String(row.trade_type ?? row.trade ?? ""),
+      workCategory: String(row.work_category ?? ""),
       location: String(row.location ?? ""),
+      area: String(row.area ?? row.location ?? ""),
       priority: (
         row.priority === "Low"
           ? "Low"
@@ -130,9 +136,56 @@ export async function listQualityIssues(supabase: any, context: ProjectContext):
       dueDate: typeof row.due_date === "string" ? row.due_date : null,
       assignee: String(row.assignee_name ?? ""),
       assigneeUserId: typeof row.assignee_user_id === "string" ? row.assignee_user_id : null,
+      linkedWorkProofId: typeof row.linked_work_proof_id === "string" ? row.linked_work_proof_id : null,
+      closedAt: typeof row.closed_at === "string" ? row.closed_at : null,
       updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString(),
     }))
     .filter((row) => !isLegacySeedIssueTitle(row.title));
+}
+
+export async function listQualityWorkProofs(supabase: any, context: ProjectContext): Promise<QualityWorkProof[]> {
+  const workProofsTable = (supabase as any).from("project_quality_work_proofs");
+  const { data, error } = await workProofsTable
+    .select(
+      "id, trade_type, work_category, area, note, status, created_by, created_at, updated_at, completed_at, project_quality_work_proof_checklist_items(id, label, checked, checked_by, checked_at)"
+    )
+    .eq("organization_id", context.organizationId)
+    .eq("project_id", context.projectId)
+    .order("created_at", { ascending: false })
+    .limit(400);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const nestedItems = Array.isArray(row.project_quality_work_proof_checklist_items)
+      ? (row.project_quality_work_proof_checklist_items as Array<Record<string, unknown>>)
+      : [];
+
+    return {
+      id: String(row.id),
+      tradeType: String(row.trade_type ?? ""),
+      workCategory: String(row.work_category ?? ""),
+      area: String(row.area ?? ""),
+      note: String(row.note ?? ""),
+      status:
+        row.status === "completed" || row.status === "linked_to_signoff"
+          ? row.status
+          : "draft",
+      createdBy: String(row.created_by ?? ""),
+      createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+      updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString(),
+      completedAt: typeof row.completed_at === "string" ? row.completed_at : null,
+      checklistItems: nestedItems.map((item) => ({
+        id: String(item.id),
+        label: String(item.label ?? ""),
+        checked: Boolean(item.checked),
+        checkedBy: typeof item.checked_by === "string" ? item.checked_by : null,
+        checkedAt: typeof item.checked_at === "string" ? item.checked_at : null,
+      })),
+    } satisfies QualityWorkProof;
+  });
 }
 
 export async function listQualityInspections(supabase: any, context: ProjectContext): Promise<QualityInspection[]> {
@@ -201,7 +254,7 @@ export async function listQualitySignOffs(supabase: any, context: ProjectContext
   const signOffsTable = (supabase as any).from("project_quality_sign_offs");
   const { data, error } = await signOffsTable
     .select(
-      "id, title, signoff_type, trade, location, assignee_name, assignee_user_id, due_date, linked_inspection_id, linked_issue_id, note, status, signed_by_name, signed_at, created_at"
+      "id, title, signoff_type, trade, trade_type, work_category, location, area, assignee_name, assignee_user_id, due_date, linked_work_proof_id, linked_inspection_id, linked_issue_id, note, status, signed_by_name, signed_at, approved_at, approved_by_user_id, created_at"
     )
     .eq("organization_id", context.organizationId)
     .eq("project_id", context.projectId)
@@ -212,7 +265,7 @@ export async function listQualitySignOffs(supabase: any, context: ProjectContext
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>)
+  const signOffRows = ((data ?? []) as Array<Record<string, unknown>>)
     .map((row): QualitySignOff => ({
       id: String(row.id),
       title: String(row.title ?? ""),
@@ -226,19 +279,55 @@ export async function listQualitySignOffs(supabase: any, context: ProjectContext
               : "Internal"
       ) as QualitySignOff["type"],
       trade: String(row.trade ?? ""),
+      tradeType: String(row.trade_type ?? row.trade ?? ""),
+      workCategory: String(row.work_category ?? ""),
       location: String(row.location ?? ""),
+      area: String(row.area ?? row.location ?? ""),
       assignee: String(row.assignee_name ?? ""),
       assigneeUserId: typeof row.assignee_user_id === "string" ? row.assignee_user_id : null,
       dueDate: typeof row.due_date === "string" ? row.due_date : null,
+      linkedWorkProofId: typeof row.linked_work_proof_id === "string" ? row.linked_work_proof_id : null,
+      linkedWorkProofIds: typeof row.linked_work_proof_id === "string" ? [row.linked_work_proof_id] : [],
       linkedInspectionId: typeof row.linked_inspection_id === "string" ? row.linked_inspection_id : null,
       linkedIssueId: typeof row.linked_issue_id === "string" ? row.linked_issue_id : null,
       note: String(row.note ?? ""),
       status: (row.status as SignOffStatus) ?? "Pending",
       signedBy: typeof row.signed_by_name === "string" ? row.signed_by_name : null,
       signedAt: typeof row.signed_at === "string" ? row.signed_at : null,
+      approvedAt: typeof row.approved_at === "string" ? row.approved_at : null,
+      approvedByUserId: typeof row.approved_by_user_id === "string" ? row.approved_by_user_id : null,
       createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
     }))
     .filter((row) => !isLegacySeedSignOffTitle(row.title));
+
+  const { data: linkRows, error: linkError } = await (supabase as any)
+    .from("project_quality_sign_off_work_proofs")
+    .select("sign_off_id, work_proof_id")
+    .eq("organization_id", context.organizationId)
+    .eq("project_id", context.projectId)
+    .limit(1000);
+
+  if (linkError && linkError.code !== "42P01") {
+    throw new Error(linkError.message);
+  }
+
+  const linkMap = new Map<string, string[]>();
+  for (const row of (linkRows ?? []) as Array<Record<string, unknown>>) {
+    const signoffId = typeof row.sign_off_id === "string" ? row.sign_off_id : "";
+    const workProofId = typeof row.work_proof_id === "string" ? row.work_proof_id : "";
+    if (!signoffId || !workProofId) {
+      continue;
+    }
+    linkMap.set(signoffId, [...(linkMap.get(signoffId) ?? []), workProofId]);
+  }
+
+  return signOffRows.map((row) => {
+    const ids = [...new Set([...(row.linkedWorkProofId ? [row.linkedWorkProofId] : []), ...(linkMap.get(row.id) ?? [])])];
+    return {
+      ...row,
+      linkedWorkProofIds: ids,
+    };
+  });
 }
 
 export async function listLinkedTasks(supabase: any, context: ProjectContext): Promise<LinkedTask[]> {
@@ -291,7 +380,7 @@ export async function listQualityPhotos(supabase: any, context: ProjectContext):
   const photosTable = (supabase as any).from("project_quality_photos");
   const { data, error } = await photosTable
     .select(
-      "id, title, notes, photo_url, storage_path, trade, location, photo_type, category, status_tag, phase_tag, assigned_user_id, assigned_user_name, has_signoff_evidence, captured_at, uploaded_by_name, uploaded_by_user_id, linked_issue_id, linked_inspection_id, linked_inspection_item_id, created_at"
+      "id, title, notes, photo_url, storage_path, trade, trade_type, work_category, location, area, photo_type, category, status_tag, phase_tag, assigned_user_id, assigned_user_name, has_signoff_evidence, captured_at, uploaded_by_name, uploaded_by_user_id, linked_work_proof_id, linked_issue_id, linked_inspection_id, linked_inspection_item_id, created_at"
     )
     .eq("organization_id", context.organizationId)
     .eq("project_id", context.projectId)
@@ -308,7 +397,10 @@ export async function listQualityPhotos(supabase: any, context: ProjectContext):
     notes: String(row.notes ?? ""),
     photoUrl: String(row.photo_url ?? ""),
     trade: String(row.trade ?? ""),
+    tradeType: String(row.trade_type ?? row.trade ?? ""),
+    workCategory: String(row.work_category ?? row.category ?? ""),
     location: String(row.location ?? ""),
+    area: String(row.area ?? row.location ?? ""),
     photoType: normalizePhotoType(row.photo_type),
     category: String(row.category ?? "Progress"),
     statusTag: String(row.status_tag ?? ""),
@@ -319,6 +411,7 @@ export async function listQualityPhotos(supabase: any, context: ProjectContext):
     capturedAt: typeof row.captured_at === "string" ? row.captured_at : new Date().toISOString(),
     uploadedByName: String(row.uploaded_by_name ?? ""),
     uploadedByUserId: typeof row.uploaded_by_user_id === "string" ? row.uploaded_by_user_id : null,
+    linkedWorkProofId: typeof row.linked_work_proof_id === "string" ? row.linked_work_proof_id : null,
     linkedIssueId: typeof row.linked_issue_id === "string" ? row.linked_issue_id : null,
     linkedInspectionId: typeof row.linked_inspection_id === "string" ? row.linked_inspection_id : null,
     linkedInspectionItemId: typeof row.linked_inspection_item_id === "string" ? row.linked_inspection_item_id : null,
@@ -347,7 +440,8 @@ export async function listQualityCoreData(
   routeProjectSlug: string
 ): Promise<QualityCoreDataResult> {
   const context = await resolveQualityProjectContext(supabase, session, routeProjectSlug);
-  const [issues, inspections, signOffs, todoLinks, organizationUsers] = await Promise.all([
+  const [workProofs, issues, inspections, signOffs, todoLinks, organizationUsers] = await Promise.all([
+    listQualityWorkProofs(supabase, context),
     listQualityIssues(supabase, context),
     listQualityInspections(supabase, context),
     listQualitySignOffs(supabase, context),
@@ -357,6 +451,7 @@ export async function listQualityCoreData(
 
   return {
     context,
+    workProofs,
     issues,
     inspections,
     signOffs,

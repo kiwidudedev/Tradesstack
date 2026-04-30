@@ -2,6 +2,8 @@
 
 import { Suspense, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -16,13 +18,16 @@ import {
   buildInspectionItemIndex,
   buildIssuePhotoCountMap,
   buildIssuePhotoCoverMap,
+  buildWorkProofPhotoCountMap,
+  buildWorkProofPhotoCoverMap,
   calculateIssueStats,
   canCurrentUserActionSignoff,
   filterInspections,
   filterIssues,
   filterPhotos,
   filterSignOffs,
-  getInspectionStatus,
+  filterWorkProofs,
+  getWorkProofChecklistProgress,
   getRelatedPhotos,
   getSignoffEvidencePhotos,
   getSignoffQaBlockers,
@@ -36,7 +41,12 @@ import {
   createQualityInspectionActivity,
   createQualityIssueActivity,
   createQualitySignoffActivity,
+  createWorkProof,
+  createWorkProofChecklistItems,
   mapInsertedPhoto,
+  replaceSignoffWorkProofLinks,
+  updateWorkProof,
+  updateWorkProofChecklistItem,
 } from "@/lib/quality-assurance/mutations";
 import {
   listLinkedTasks,
@@ -69,10 +79,12 @@ import type {
   QualityPhoto,
   QualitySignOff,
   QualitySignOffActivity,
+  QualityWorkProof,
+  QualityWorkProofChecklistItem,
   SignOffStatus,
   SignOffType,
+  WorkProofStatus,
 } from "@/lib/quality-assurance/types";
-import styles from "@/components/app/trade-pack-builder.module.css";
 import { QualityKpiCards } from "./QualityKpiCards";
 import { QualityOverviewTab } from "./QualityOverviewTab";
 import { QualityIssuesTab } from "./QualityIssuesTab";
@@ -84,6 +96,8 @@ import { CreateQualityIssueSheet, QualityIssueDetailSheet } from "./QualityIssue
 import { CreateQualityInspectionSheet, QualityInspectionDetailSheet } from "./QualityInspectionSheet";
 import { CreateQualityPhotoSheet, QualityPhotoDetailSheet } from "./QualityPhotoSheet";
 import { CreateQualitySignoffSheet, QualitySignoffDetailSheet } from "./QualitySignOffSheet";
+import { CreateQualityWorkProofSheet, QualityWorkProofDetailSheet } from "./QualityWorkProofSheet";
+import { QualityWorkProofsTab } from "./QualityWorkProofsTab";
 
 export function ProjectQualityAssuranceBoard() {
   const params = useParams<{ projectId: string }>();
@@ -92,11 +106,15 @@ export function ProjectQualityAssuranceBoard() {
 
   const [activeTab, setActiveTab] = useState<QaTab>("Overview");
   const [context, setContext] = useState<ProjectContext | null>(null);
+  const [workProofs, setWorkProofs] = useState<QualityWorkProof[]>([]);
   const [issues, setIssues] = useState<QualityIssue[]>([]);
   const [inspections, setInspections] = useState<QualityInspection[]>([]);
   const [signOffs, setSignOffs] = useState<QualitySignOff[]>([]);
   const [todoLinks, setTodoLinks] = useState<LinkedTask[]>([]);
   const [photos, setPhotos] = useState<QualityPhoto[]>([]);
+  const [selectedWorkProofId, setSelectedWorkProofId] = useState<string | null>(null);
+  const [isWorkProofSheetOpen, setIsWorkProofSheetOpen] = useState(false);
+  const [isCreateWorkProofSheetOpen, setIsCreateWorkProofSheetOpen] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [isIssueSheetOpen, setIsIssueSheetOpen] = useState(false);
   const [isCreateIssueSheetOpen, setIsCreateIssueSheetOpen] = useState(false);
@@ -118,6 +136,16 @@ export function ProjectQualityAssuranceBoard() {
   const [newIssueStatus, setNewIssueStatus] = useState<IssueStatus>("Open");
   const [newIssueDueDate, setNewIssueDueDate] = useState("");
   const [newIssueAssigneeUserId, setNewIssueAssigneeUserId] = useState("");
+  const [newIssueLinkedWorkProofId, setNewIssueLinkedWorkProofId] = useState("");
+
+  const [newWorkProofTradeType, setNewWorkProofTradeType] = useState("");
+  const [newWorkProofCategory, setNewWorkProofCategory] = useState("");
+  const [newWorkProofArea, setNewWorkProofArea] = useState("");
+  const [newWorkProofNote, setNewWorkProofNote] = useState("");
+  const [newWorkProofStatus, setNewWorkProofStatus] = useState<WorkProofStatus>("draft");
+  const [newWorkProofChecklistDrafts, setNewWorkProofChecklistDrafts] = useState(["", "", "", "", ""]);
+  const [newWorkProofFileDraft, setNewWorkProofFileDraft] = useState<File | null>(null);
+  const [newWorkProofFileName, setNewWorkProofFileName] = useState("");
 
   const [isCreateInspectionSheetOpen, setIsCreateInspectionSheetOpen] = useState(false);
   const [isInspectionSheetOpen, setIsInspectionSheetOpen] = useState(false);
@@ -141,6 +169,8 @@ export function ProjectQualityAssuranceBoard() {
   const [newSignoffLocation, setNewSignoffLocation] = useState("");
   const [newSignoffAssigneeUserId, setNewSignoffAssigneeUserId] = useState("");
   const [newSignoffDueDate, setNewSignoffDueDate] = useState("");
+  const [newSignoffLinkedWorkProofId, setNewSignoffLinkedWorkProofId] = useState("");
+  const [newSignoffLinkedWorkProofIds, setNewSignoffLinkedWorkProofIds] = useState<string[]>([]);
   const [newSignoffLinkedInspectionId, setNewSignoffLinkedInspectionId] = useState("");
   const [newSignoffLinkedIssueId, setNewSignoffLinkedIssueId] = useState("");
   const [newSignoffNote, setNewSignoffNote] = useState("");
@@ -155,6 +185,7 @@ export function ProjectQualityAssuranceBoard() {
   const [newPhotoLinkMode, setNewPhotoLinkMode] = useState<PhotoLinkMode>("none");
   const [newPhotoCategory, setNewPhotoCategory] = useState("Progress");
   const [newPhotoCapturedAt, setNewPhotoCapturedAt] = useState(toDateTimeLocal(new Date().toISOString()));
+  const [newPhotoWorkProofId, setNewPhotoWorkProofId] = useState("");
   const [newPhotoIssueId, setNewPhotoIssueId] = useState("");
   const [newPhotoInspectionId, setNewPhotoInspectionId] = useState("");
   const [newPhotoInspectionItemId, setNewPhotoInspectionItemId] = useState("");
@@ -171,7 +202,7 @@ export function ProjectQualityAssuranceBoard() {
   const [photoCategoryFilter, setPhotoCategoryFilter] = useState("All");
   const [photoLinkFilter, setPhotoLinkFilter] = useState<PhotoLinkFilter>("All");
   const [photoSignoffFilter, setPhotoSignoffFilter] = useState("All");
-  const [photoViewMode, setPhotoViewMode] = useState<PhotoViewMode>("grid");
+  const [photoViewMode, setPhotoViewMode] = useState<PhotoViewMode>("list");
   const [photoAssigneeFilter, setPhotoAssigneeFilter] = useState("All");
 
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
@@ -185,6 +216,7 @@ export function ProjectQualityAssuranceBoard() {
   const [photoEditCategory, setPhotoEditCategory] = useState("Progress");
   const [photoEditPhaseTag, setPhotoEditPhaseTag] = useState<PhotoPhase>("");
   const [photoEditType, setPhotoEditType] = useState<PhotoType>("general");
+  const [photoEditWorkProofId, setPhotoEditWorkProofId] = useState("");
   const [photoEditIssueId, setPhotoEditIssueId] = useState("");
   const [photoEditInspectionId, setPhotoEditInspectionId] = useState("");
   const [photoEditInspectionItemId, setPhotoEditInspectionItemId] = useState("");
@@ -211,6 +243,11 @@ export function ProjectQualityAssuranceBoard() {
   const [signoffDueFilter, setSignoffDueFilter] = useState("All");
   const [issueComments, setIssueComments] = useState<QualityIssueComment[]>([]);
   const [issueActivity, setIssueActivity] = useState<QualityIssueActivity[]>([]);
+  const [workProofSearch, setWorkProofSearch] = useState("");
+  const [workProofStatusFilter, setWorkProofStatusFilter] = useState("All");
+  const [workProofTradeFilter, setWorkProofTradeFilter] = useState("All");
+  const [workProofCategoryFilter, setWorkProofCategoryFilter] = useState("All");
+  const [workProofAreaFilter, setWorkProofAreaFilter] = useState("All");
 
   const isLoadingRef = useRef(false);
   const contextRef = useRef<ProjectContext | null>(null);
@@ -223,6 +260,10 @@ export function ProjectQualityAssuranceBoard() {
     }
   }, []);
 
+  const selectedWorkProof = useMemo(
+    () => workProofs.find((item) => item.id === selectedWorkProofId) ?? null,
+    [workProofs, selectedWorkProofId]
+  );
   const selectedIssue = useMemo(() => issues.find((item) => item.id === selectedIssueId) ?? null, [issues, selectedIssueId]);
   const selectedInspection = useMemo(
     () => inspections.find((inspection) => inspection.id === selectedInspectionId) ?? null,
@@ -238,13 +279,57 @@ export function ProjectQualityAssuranceBoard() {
     () => [{ userId: "", name: "Unassigned" }, ...organizationUsers],
     [organizationUsers]
   );
+  const workProofIndex = useMemo(() => new Map(workProofs.map((item) => [item.id, item])), [workProofs]);
   const issueIndex = useMemo(() => new Map(issues.map((item) => [item.id, item])), [issues]);
   const inspectionIndex = useMemo(() => new Map(inspections.map((item) => [item.id, item])), [inspections]);
   const inspectionItemIndex = useMemo(() => buildInspectionItemIndex(inspections), [inspections]);
   const issuePhotoCoverMap = useMemo(() => buildIssuePhotoCoverMap(photos), [photos]);
   const issuePhotoCountMap = useMemo(() => buildIssuePhotoCountMap(photos), [photos]);
-  const issueStats = useMemo(() => calculateIssueStats(issues, inspections), [inspections, issues]);
+  const workProofPhotoCoverMap = useMemo(() => buildWorkProofPhotoCoverMap(photos), [photos]);
+  const workProofPhotoCountMap = useMemo(() => buildWorkProofPhotoCountMap(photos), [photos]);
+  const issueStats = useMemo(() => calculateIssueStats(issues, inspections, workProofs, signOffs), [inspections, issues, signOffs, workProofs]);
 
+  const workProofIssueCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const issue of issues) {
+      if (issue.linkedWorkProofId) {
+        map.set(issue.linkedWorkProofId, (map.get(issue.linkedWorkProofId) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [issues]);
+
+  const workProofSignoffMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const statusPriority = new Map<SignOffStatus, number>([
+      ["Signed", 3],
+      ["Requested", 2],
+      ["Pending", 1],
+      ["Rejected", 0],
+    ]);
+    for (const signoff of signOffs) {
+      for (const workProofId of signoff.linkedWorkProofIds) {
+        const currentStatus = map.get(workProofId) as SignOffStatus | undefined;
+        if (!currentStatus || (statusPriority.get(signoff.status) ?? -1) > (statusPriority.get(currentStatus) ?? -1)) {
+          map.set(workProofId, signoff.status);
+        }
+      }
+    }
+    return map;
+  }, [signOffs]);
+
+  const workProofTradeOptions = useMemo(
+    () => ["All", ...new Set(workProofs.map((item) => item.tradeType).filter(Boolean))],
+    [workProofs]
+  );
+  const workProofCategoryOptions = useMemo(
+    () => ["All", ...new Set(workProofs.map((item) => item.workCategory).filter(Boolean))],
+    [workProofs]
+  );
+  const workProofAreaOptions = useMemo(
+    () => ["All", ...new Set(workProofs.map((item) => item.area).filter(Boolean))],
+    [workProofs]
+  );
   const issueTradeOptions = useMemo(() => ["All", ...new Set(issues.map((item) => item.trade).filter(Boolean))], [issues]);
   const issueAssigneeOptions = useMemo(() => ["All", ...new Set(issues.map((item) => item.assignee).filter(Boolean))], [issues]);
   const issueLocationOptions = useMemo(() => ["All", ...new Set(issues.map((item) => item.location).filter(Boolean))], [issues]);
@@ -264,6 +349,18 @@ export function ProjectQualityAssuranceBoard() {
   const signoffAssigneeOptions = useMemo(
     () => ["All", ...new Set(signOffs.map((item) => item.assignee).filter(Boolean))],
     [signOffs]
+  );
+
+  const filteredWorkProofs = useMemo(
+    () =>
+      filterWorkProofs(workProofs, {
+        search: workProofSearch,
+        status: workProofStatusFilter,
+        tradeType: workProofTradeFilter,
+        workCategory: workProofCategoryFilter,
+        area: workProofAreaFilter,
+      }),
+    [workProofAreaFilter, workProofCategoryFilter, workProofSearch, workProofStatusFilter, workProofTradeFilter, workProofs]
   );
 
   const filteredIssues = useMemo(
@@ -345,10 +442,32 @@ export function ProjectQualityAssuranceBoard() {
   );
 
   const timelinePhotos = useMemo(() => groupPhotosByTimeline(filteredPhotos), [filteredPhotos]);
+  const selectedWorkProofPhotos = useMemo(
+    () => photos.filter((item) => item.linkedWorkProofId === selectedWorkProofId),
+    [photos, selectedWorkProofId]
+  );
+  const selectedWorkProofIssues = useMemo(
+    () => issues.filter((item) => item.linkedWorkProofId === selectedWorkProofId),
+    [issues, selectedWorkProofId]
+  );
+  const selectedWorkProofSignoffs = useMemo(
+    () => signOffs.filter((item) => selectedWorkProofId && item.linkedWorkProofIds.includes(selectedWorkProofId)),
+    [signOffs, selectedWorkProofId]
+  );
 
   const openPhotoDetail = (photoId: string) => {
     setSelectedPhotoId(photoId);
     setIsPhotoDetailOpen(true);
+  };
+
+  const openIssueDetail = (issueId: string) => {
+    setSelectedIssueId(issueId);
+    setIsIssueSheetOpen(true);
+  };
+
+  const openSignoffDetail = (signoffId: string) => {
+    setSelectedSignoffId(signoffId);
+    setIsSignoffSheetOpen(true);
   };
 
   const uploadQualityPhotoFile = async (file: File) => {
@@ -371,6 +490,7 @@ export function ProjectQualityAssuranceBoard() {
     setPhotoEditCategory(selectedPhoto.category || "Progress");
     setPhotoEditPhaseTag(selectedPhoto.phaseTag);
     setPhotoEditType(selectedPhoto.photoType);
+    setPhotoEditWorkProofId(selectedPhoto.linkedWorkProofId ?? "");
     setPhotoEditIssueId(selectedPhoto.linkedIssueId ?? "");
     setPhotoEditInspectionId(selectedPhoto.linkedInspectionId ?? "");
     setPhotoEditInspectionItemId(selectedPhoto.linkedInspectionItemId ?? "");
@@ -465,18 +585,20 @@ export function ProjectQualityAssuranceBoard() {
       const data = await listQualityCoreData(supabase, session, routeProjectSlug);
       contextRef.current = data.context;
       setContext(data.context);
+      setWorkProofs(data.workProofs);
       setIssues(data.issues);
       setInspections(data.inspections);
       setSignOffs(data.signOffs);
       setTodoLinks(data.todoLinks);
       setOrganizationUsers(data.organizationUsers);
+      setSelectedWorkProofId((current) => current ?? data.workProofs[0]?.id ?? null);
       setSelectedIssueId((current) => current ?? data.issues[0]?.id ?? null);
       setSelectedInspectionId((current) => current ?? data.inspections[0]?.id ?? null);
       setSelectedSignoffId((current) => current ?? data.signOffs[0]?.id ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load Quality Assurance.");
     } finally {
-      const approximateQueryCount = (session.organizationId ? 0 : 1) + 1 + 5;
+      const approximateQueryCount = (session.organizationId ? 0 : 1) + 1 + 6;
       console.info("[projects][qa] query-count", {
         projectSlug: routeProjectSlug,
         approximateQueries: approximateQueryCount,
@@ -524,13 +646,17 @@ export function ProjectQualityAssuranceBoard() {
     storagePath?: string | null;
     title: string;
     trade: string;
+    tradeType: string;
+    workCategory: string;
     location: string;
+    area: string;
     photoType: PhotoType;
     category: string;
     notes: string;
     statusTag: string;
     phaseTag: PhotoPhase;
     capturedAtIso: string;
+    linkedWorkProofId: string | null;
     linkedIssueId: string | null;
     linkedInspectionId: string | null;
     linkedInspectionItemId: string | null;
@@ -551,8 +677,10 @@ export function ProjectQualityAssuranceBoard() {
   useEffect(() => {
     contextRef.current = null;
     setContext(null);
+    setWorkProofs([]);
     setIssues([]);
     setInspections([]);
+    setSelectedWorkProofId(null);
     setSelectedInspectionId(null);
     setSelectedSignoffId(null);
     setSignOffs([]);
@@ -565,11 +693,20 @@ export function ProjectQualityAssuranceBoard() {
   }, [routeProjectSlug, session?.id, session?.organizationId, supabase]);
 
   useEffect(() => {
-    if (activeTab === "Photo Log" || activeTab === "Issues" || activeTab === "Sign-Offs" || isIssueSheetOpen || isPhotoDetailOpen || isSignoffSheetOpen) {
+    if (
+      activeTab === "Photo Log" ||
+      activeTab === "Issues" ||
+      activeTab === "Sign-Offs" ||
+      activeTab === "Work Proof" ||
+      isIssueSheetOpen ||
+      isPhotoDetailOpen ||
+      isSignoffSheetOpen ||
+      isWorkProofSheetOpen
+    ) {
       void loadPhotos();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, isIssueSheetOpen, isPhotoDetailOpen, isSignoffSheetOpen, issues, inspections]);
+  }, [activeTab, isIssueSheetOpen, isPhotoDetailOpen, isSignoffSheetOpen, isWorkProofSheetOpen, issues, inspections, workProofs]);
 
   useEffect(() => {
     if (!selectedIssueId || !isIssueSheetOpen) {
@@ -598,6 +735,172 @@ export function ProjectQualityAssuranceBoard() {
     void loadSignoffThread(selectedSignoffId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSignoffId, isSignoffSheetOpen]);
+
+  const normalizeLinkedWorkProofIds = (primaryId: string | null, additionalIds: string[] = []) =>
+    [...new Set([...(primaryId ? [primaryId] : []), ...additionalIds.filter(Boolean)])];
+
+  const updateNewSignoffPrimaryWorkProof = (value: string) => {
+    setNewSignoffLinkedWorkProofId(value);
+    setNewSignoffLinkedWorkProofIds((current) => normalizeLinkedWorkProofIds(value || null, current));
+  };
+
+  const toggleNewSignoffLinkedWorkProof = (workProofId: string, checked: boolean) => {
+    setNewSignoffLinkedWorkProofIds((current) => {
+      const next = checked ? [...current, workProofId] : current.filter((item) => item !== workProofId);
+      return normalizeLinkedWorkProofIds(newSignoffLinkedWorkProofId || null, next);
+    });
+  };
+
+  const resetNewWorkProofForm = () => {
+    setNewWorkProofTradeType("");
+    setNewWorkProofCategory("");
+    setNewWorkProofArea("");
+    setNewWorkProofNote("");
+    setNewWorkProofStatus("draft");
+    setNewWorkProofChecklistDrafts(["", "", "", "", ""]);
+    setNewWorkProofFileDraft(null);
+    setNewWorkProofFileName("");
+  };
+
+  const resetNewIssueForm = () => {
+    setNewIssueTitle("");
+    setNewIssueDescription("");
+    setNewIssueTrade("");
+    setNewIssueLocation("");
+    setNewIssuePriority("Medium");
+    setNewIssueStatus("Open");
+    setNewIssueDueDate("");
+    setNewIssueAssigneeUserId("");
+    setNewIssueLinkedWorkProofId("");
+  };
+
+  const resetNewSignoffForm = () => {
+    setNewSignoffTitle("");
+    setNewSignoffType("Internal");
+    setNewSignoffTrade("");
+    setNewSignoffLocation("");
+    setNewSignoffAssigneeUserId("");
+    setNewSignoffDueDate("");
+    setNewSignoffLinkedWorkProofId("");
+    setNewSignoffLinkedWorkProofIds([]);
+    setNewSignoffLinkedInspectionId("");
+    setNewSignoffLinkedIssueId("");
+    setNewSignoffNote("");
+  };
+
+  const handleCreateWorkProofOpenChange = (open: boolean) => {
+    setIsCreateWorkProofSheetOpen(open);
+    if (!open) {
+      resetNewWorkProofForm();
+    }
+  };
+
+  const handleCreateIssueOpenChange = (open: boolean) => {
+    setIsCreateIssueSheetOpen(open);
+    if (!open) {
+      resetNewIssueForm();
+    }
+  };
+
+  const handleCreateSignoffOpenChange = (open: boolean) => {
+    setIsCreateSignoffSheetOpen(open);
+    if (!open) {
+      resetNewSignoffForm();
+    }
+  };
+
+  const setWorkProofLocal = (workProofId: string, patch: Partial<QualityWorkProof>) => {
+    setWorkProofs((current) => current.map((item) => (item.id === workProofId ? { ...item, ...patch } : item)));
+  };
+
+  const setWorkProofChecklistItemLocal = (itemId: string, patch: Partial<QualityWorkProofChecklistItem>) => {
+    setWorkProofs((current) =>
+      current.map((workProof) => ({
+        ...workProof,
+        checklistItems: workProof.checklistItems.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+      }))
+    );
+  };
+
+  const saveWorkProofFields = async (workProofId: string, patch: Partial<QualityWorkProof>) => {
+    if (!context || !supabase) {
+      return;
+    }
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.tradeType !== undefined) {
+      dbPatch.trade_type = patch.tradeType.trim();
+    }
+    if (patch.workCategory !== undefined) {
+      dbPatch.work_category = patch.workCategory.trim();
+    }
+    if (patch.area !== undefined) {
+      dbPatch.area = patch.area.trim();
+    }
+    if (patch.note !== undefined) {
+      const trimmedNote = patch.note.trim();
+      if (!trimmedNote) {
+        setError("What was done is required.");
+        return;
+      }
+      dbPatch.note = trimmedNote;
+    }
+    if (patch.status !== undefined) {
+      dbPatch.status = patch.status;
+      dbPatch.completed_at = patch.status === "draft" ? null : new Date().toISOString();
+    }
+    if (Object.keys(dbPatch).length === 0) {
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      await updateWorkProof(supabase, context, workProofId, dbPatch);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to update work proof.");
+      await loadCoreData({ showLoading: false });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleWorkProofChecklistItem = async (workProofId: string, itemId: string, checked: boolean) => {
+    if (!context || !supabase) {
+      return;
+    }
+    setWorkProofChecklistItemLocal(itemId, {
+      checked,
+      checkedBy: checked ? session?.id ?? null : null,
+      checkedAt: checked ? new Date().toISOString() : null,
+    });
+    setIsSaving(true);
+    setError(null);
+    try {
+      await updateWorkProofChecklistItem(supabase, context, itemId, {
+        checked,
+        checked_by: checked ? session?.id ?? null : null,
+        checked_at: checked ? new Date().toISOString() : null,
+      });
+      const currentWorkProof = workProofIndex.get(workProofId);
+      if (currentWorkProof) {
+        const nextItems = currentWorkProof.checklistItems.map((item) =>
+          item.id === itemId ? { ...item, checked } : item
+        );
+        const progress = getWorkProofChecklistProgress(nextItems);
+        if (progress.total > 0 && progress.checked === progress.total && currentWorkProof.status === "draft") {
+          setWorkProofLocal(workProofId, { status: "completed", completedAt: new Date().toISOString() });
+          await updateWorkProof(supabase, context, workProofId, {
+            status: "completed",
+            completed_at: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to update checklist item.");
+      await loadCoreData({ showLoading: false });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const setInspectionItemLocal = (itemId: string, patch: Partial<QualityInspectionItem>) => {
     setInspections((current) =>
@@ -673,7 +976,24 @@ export function ProjectQualityAssuranceBoard() {
   };
 
   const setSignoffLocal = (signoffId: string, patch: Partial<QualitySignOff>) => {
-    setSignOffs((current) => current.map((item) => (item.id === signoffId ? { ...item, ...patch } : item)));
+    setSignOffs((current) =>
+      current.map((item) => {
+        if (item.id !== signoffId) {
+          return item;
+        }
+        const linkedWorkProofId = patch.linkedWorkProofId !== undefined ? patch.linkedWorkProofId : item.linkedWorkProofId;
+        const linkedWorkProofIds =
+          patch.linkedWorkProofIds !== undefined
+            ? normalizeLinkedWorkProofIds(linkedWorkProofId, patch.linkedWorkProofIds)
+            : normalizeLinkedWorkProofIds(linkedWorkProofId, item.linkedWorkProofIds);
+        return {
+          ...item,
+          ...patch,
+          linkedWorkProofId,
+          linkedWorkProofIds,
+        };
+      })
+    );
   };
 
   const saveSignoffFields = async (
@@ -716,7 +1036,14 @@ export function ProjectQualityAssuranceBoard() {
     if (patch.note !== undefined) {
       dbPatch.note = patch.note;
     }
-    if (Object.keys(dbPatch).length === 0) {
+    if (patch.linkedWorkProofId !== undefined) {
+      dbPatch.linked_work_proof_id = patch.linkedWorkProofId || null;
+    }
+    const linkedWorkProofIds =
+      patch.linkedWorkProofIds !== undefined
+        ? normalizeLinkedWorkProofIds(patch.linkedWorkProofId ?? null, patch.linkedWorkProofIds)
+        : null;
+    if (Object.keys(dbPatch).length === 0 && linkedWorkProofIds === null) {
       return;
     }
     setIsSaving(true);
@@ -731,6 +1058,9 @@ export function ProjectQualityAssuranceBoard() {
         .eq("project_id", context.projectId);
       if (updateError) {
         throw new Error(updateError.message);
+      }
+      if (linkedWorkProofIds !== null) {
+        await replaceSignoffWorkProofLinks(supabase, context, signoffId, linkedWorkProofIds);
       }
       if (activityAction) {
         await writeSignoffActivity(signoffId, activityAction, activityDetail ?? "");
@@ -760,9 +1090,20 @@ export function ProjectQualityAssuranceBoard() {
     }
     if (patch.trade !== undefined) {
       dbPatch.trade = patch.trade;
+      dbPatch.trade_type = patch.trade;
+    }
+    if (patch.tradeType !== undefined) {
+      dbPatch.trade_type = patch.tradeType;
+    }
+    if (patch.workCategory !== undefined) {
+      dbPatch.work_category = patch.workCategory;
     }
     if (patch.location !== undefined) {
       dbPatch.location = patch.location;
+      dbPatch.area = patch.location;
+    }
+    if (patch.area !== undefined) {
+      dbPatch.area = patch.area;
     }
     if (patch.priority !== undefined) {
       dbPatch.priority = patch.priority;
@@ -778,6 +1119,9 @@ export function ProjectQualityAssuranceBoard() {
     }
     if (patch.dueDate !== undefined) {
       dbPatch.due_date = patch.dueDate || null;
+    }
+    if (patch.linkedWorkProofId !== undefined) {
+      dbPatch.linked_work_proof_id = patch.linkedWorkProofId || null;
     }
     if (Object.keys(dbPatch).length === 0) {
       return;
@@ -948,13 +1292,17 @@ export function ProjectQualityAssuranceBoard() {
         storagePath: null,
         title: item.label,
         trade: "",
+        tradeType: "",
+        workCategory: "Inspection",
         location: "",
+        area: "",
         photoType: "inspection",
         category: "Inspection Evidence",
         notes: item.notes,
         statusTag: item.status === "fail" ? "Fail" : item.status === "pass" ? "Pass" : "",
         phaseTag: "",
         capturedAtIso: new Date().toISOString(),
+        linkedWorkProofId: null,
         linkedIssueId: null,
         linkedInspectionId: inspection.id,
         linkedInspectionItemId: item.id,
@@ -996,13 +1344,17 @@ export function ProjectQualityAssuranceBoard() {
         storagePath,
         title: selectedIssue.title,
         trade: selectedIssue.trade,
+        tradeType: selectedIssue.tradeType,
+        workCategory: selectedIssue.workCategory,
         location: selectedIssue.location,
+        area: selectedIssue.area,
         photoType: "issue",
         category: "Defect",
         notes: "",
         statusTag: selectedIssue.status,
         phaseTag: "",
         capturedAtIso: new Date().toISOString(),
+        linkedWorkProofId: selectedIssue.linkedWorkProofId,
         linkedIssueId: selectedIssue.id,
         linkedInspectionId: null,
         linkedInspectionItemId: null,
@@ -1245,7 +1597,10 @@ export function ProjectQualityAssuranceBoard() {
           title: issueTitle,
           description: item.notes || "Auto-created from failed inspection checklist item.",
           trade: inspection.trade,
+          trade_type: inspection.trade,
+          work_category: "Inspection Failure",
           location: inspection.location,
+          area: inspection.location,
           priority: "Medium",
           status: "Open",
           due_date: inspection.dueDate,
@@ -1259,21 +1614,26 @@ export function ProjectQualityAssuranceBoard() {
       }
       if (data) {
         const row: QualityIssue = {
-          id: String(data.id),
-          title: String(data.title ?? ""),
-          description: String(data.description ?? ""),
-          trade: String(data.trade ?? ""),
-          location: String(data.location ?? ""),
-          priority:
+              id: String(data.id),
+              title: String(data.title ?? ""),
+              description: String(data.description ?? ""),
+              trade: String(data.trade ?? ""),
+              tradeType: String(data.trade_type ?? data.trade ?? ""),
+              workCategory: String(data.work_category ?? ""),
+              location: String(data.location ?? ""),
+              area: String(data.area ?? data.location ?? ""),
+              priority:
             data.priority === "Low" || data.priority === "High" || data.priority === "Medium"
               ? data.priority
               : "Medium",
           status: (data.status as IssueStatus) ?? "Open",
-          dueDate: typeof data.due_date === "string" ? data.due_date : null,
-          assignee: String(data.assignee_name ?? ""),
-          assigneeUserId: typeof data.assignee_user_id === "string" ? data.assignee_user_id : null,
-          updatedAt: typeof data.updated_at === "string" ? data.updated_at : new Date().toISOString(),
-        };
+              dueDate: typeof data.due_date === "string" ? data.due_date : null,
+              assignee: String(data.assignee_name ?? ""),
+              assigneeUserId: typeof data.assignee_user_id === "string" ? data.assignee_user_id : null,
+              linkedWorkProofId: typeof data.linked_work_proof_id === "string" ? data.linked_work_proof_id : null,
+              closedAt: typeof data.closed_at === "string" ? data.closed_at : null,
+              updatedAt: typeof data.updated_at === "string" ? data.updated_at : new Date().toISOString(),
+            };
         setIssues((current) => [row, ...current]);
         await writeIssueActivity(row.id, "Issue created", "Auto-created from failed inspection checklist item");
         if (item.photoUrl.trim()) {
@@ -1283,13 +1643,17 @@ export function ProjectQualityAssuranceBoard() {
             storagePath: null,
             title: row.title,
             trade: row.trade,
+            tradeType: row.tradeType,
+            workCategory: row.workCategory,
             location: row.location,
+            area: row.area,
             photoType: "issue",
             category: "Defect",
             notes: item.notes,
             statusTag: row.status,
             phaseTag: "",
             capturedAtIso: new Date().toISOString(),
+            linkedWorkProofId: row.linkedWorkProofId,
             linkedIssueId: row.id,
             linkedInspectionId: inspection.id,
             linkedInspectionItemId: item.id,
@@ -1330,6 +1694,120 @@ export function ProjectQualityAssuranceBoard() {
     }
   };
 
+  const handleNewWorkProofPhotoFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setNewWorkProofFileDraft(null);
+      setNewWorkProofFileName("");
+      return;
+    }
+    setError(null);
+    setNewWorkProofFileDraft(file);
+    setNewWorkProofFileName(file.name);
+  };
+
+  const createWorkProofRecord = async () => {
+    if (!context || !supabase || !session?.id || !newWorkProofFileDraft || !newWorkProofTradeType.trim() || !newWorkProofCategory.trim() || !newWorkProofArea.trim() || !newWorkProofNote.trim()) {
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      const insertedWorkProof = await createWorkProof(supabase, context, session, {
+        tradeType: newWorkProofTradeType,
+        workCategory: newWorkProofCategory,
+        area: newWorkProofArea,
+        note: newWorkProofNote,
+        status: newWorkProofStatus,
+      });
+
+      if (!insertedWorkProof) {
+        throw new Error("Unable to create work proof.");
+      }
+
+      const checklistLabels = newWorkProofChecklistDrafts.map((item) => item.trim()).filter(Boolean);
+      const checklistRows = checklistLabels.length
+        ? await createWorkProofChecklistItems(supabase, context, String(insertedWorkProof.id), checklistLabels)
+        : [];
+      const uploaded = await uploadQualityPhotoFile(newWorkProofFileDraft);
+      const createdPhoto = await insertPhoto({
+        photoUrl: uploaded.signedUrl,
+        storagePath: uploaded.storagePath,
+        title: newWorkProofNote.trim(),
+        trade: newWorkProofTradeType.trim(),
+        tradeType: newWorkProofTradeType.trim(),
+        workCategory: newWorkProofCategory.trim(),
+        location: newWorkProofArea.trim(),
+        area: newWorkProofArea.trim(),
+        photoType: "work_proof",
+        category: "Progress",
+        notes: newWorkProofNote.trim(),
+        statusTag: newWorkProofStatus,
+        phaseTag: "",
+        capturedAtIso: new Date().toISOString(),
+        linkedWorkProofId: String(insertedWorkProof.id),
+        linkedIssueId: null,
+        linkedInspectionId: null,
+        linkedInspectionItemId: null,
+        assignedUserId: session.id ?? null,
+        assignedUserName: organizationUserNameById.get(session.id ?? "") ?? session.name ?? "You",
+        hasSignoffEvidence: true,
+      });
+
+      const row: QualityWorkProof = {
+        id: String(insertedWorkProof.id),
+        tradeType: String(insertedWorkProof.trade_type ?? ""),
+        workCategory: String(insertedWorkProof.work_category ?? ""),
+        area: String(insertedWorkProof.area ?? ""),
+        note: String(insertedWorkProof.note ?? ""),
+        status:
+          insertedWorkProof.status === "completed" || insertedWorkProof.status === "linked_to_signoff"
+            ? insertedWorkProof.status
+            : "draft",
+        createdBy: String(insertedWorkProof.created_by ?? session.id ?? ""),
+        createdAt: typeof insertedWorkProof.created_at === "string" ? insertedWorkProof.created_at : new Date().toISOString(),
+        updatedAt: typeof insertedWorkProof.updated_at === "string" ? insertedWorkProof.updated_at : new Date().toISOString(),
+        completedAt: typeof insertedWorkProof.completed_at === "string" ? insertedWorkProof.completed_at : null,
+        checklistItems: (checklistRows as Array<Record<string, unknown>>).map((item) => ({
+          id: String(item.id),
+          label: String(item.label ?? ""),
+          checked: Boolean(item.checked),
+          checkedBy: typeof item.checked_by === "string" ? item.checked_by : null,
+          checkedAt: typeof item.checked_at === "string" ? item.checked_at : null,
+        })),
+      };
+
+      setWorkProofs((current) => [row, ...current]);
+      setSelectedWorkProofId(row.id);
+      if (createdPhoto) {
+        setPhotos((current) => [createdPhoto, ...current]);
+        setHasLoadedPhotos(true);
+      }
+      resetNewWorkProofForm();
+      setIsCreateWorkProofSheetOpen(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to create work proof.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const createIssueFromWorkProof = async (workProofId: string) => {
+    const workProof = workProofIndex.get(workProofId);
+    if (!workProof) {
+      return;
+    }
+    setNewIssueTitle(`${workProof.note || workProof.tradeType || "Work completed"} issue`);
+    setNewIssueDescription(workProof.note);
+    setNewIssueTrade(workProof.tradeType);
+    setNewIssueLocation(workProof.area);
+    setNewIssuePriority("Medium");
+    setNewIssueStatus("Open");
+    setNewIssueDueDate("");
+    setNewIssueLinkedWorkProofId(workProofId);
+    setIsCreateIssueSheetOpen(true);
+  };
+
   const createIssue = async () => {
     if (!context || !supabase || !session?.id || !newIssueTitle.trim()) {
       return;
@@ -1347,12 +1825,16 @@ export function ProjectQualityAssuranceBoard() {
           title: newIssueTitle.trim(),
           description: newIssueDescription.trim(),
           trade: newIssueTrade.trim(),
+          trade_type: newIssueTrade.trim(),
+          work_category: "",
           location: newIssueLocation.trim(),
+          area: newIssueLocation.trim(),
           priority: newIssuePriority,
           status: newIssueStatus,
           due_date: newIssueDueDate || null,
           assignee_name: newIssueAssigneeUserId ? organizationUserNameById.get(newIssueAssigneeUserId) ?? "" : "",
           assignee_user_id: newIssueAssigneeUserId || null,
+          linked_work_proof_id: newIssueLinkedWorkProofId || null,
         })
         .select("*")
         .maybeSingle();
@@ -1365,7 +1847,10 @@ export function ProjectQualityAssuranceBoard() {
           title: String(data.title ?? ""),
           description: String(data.description ?? ""),
           trade: String(data.trade ?? ""),
+          tradeType: String(data.trade_type ?? data.trade ?? ""),
+          workCategory: String(data.work_category ?? ""),
           location: String(data.location ?? ""),
+          area: String(data.area ?? data.location ?? ""),
           priority:
             data.priority === "Low" || data.priority === "High" || data.priority === "Medium"
               ? data.priority
@@ -1374,20 +1859,15 @@ export function ProjectQualityAssuranceBoard() {
           dueDate: typeof data.due_date === "string" ? data.due_date : null,
           assignee: String(data.assignee_name ?? ""),
           assigneeUserId: typeof data.assignee_user_id === "string" ? data.assignee_user_id : null,
+          linkedWorkProofId: typeof data.linked_work_proof_id === "string" ? data.linked_work_proof_id : null,
+          closedAt: typeof data.closed_at === "string" ? data.closed_at : null,
           updatedAt: typeof data.updated_at === "string" ? data.updated_at : new Date().toISOString(),
         };
         setIssues((current) => [row, ...current]);
         setSelectedIssueId(row.id);
         await writeIssueActivity(row.id, "Issue created", "Linked task is created automatically for active issues");
       }
-      setNewIssueTitle("");
-      setNewIssueDescription("");
-      setNewIssueTrade("");
-      setNewIssueLocation("");
-      setNewIssuePriority("Medium");
-      setNewIssueStatus("Open");
-      setNewIssueDueDate("");
-      setNewIssueAssigneeUserId("");
+      resetNewIssueForm();
       setIsCreateIssueSheetOpen(false);
       await refreshTodoLinks();
     } catch (saveError) {
@@ -1497,6 +1977,7 @@ export function ProjectQualityAssuranceBoard() {
     setIsSaving(true);
     setError(null);
     try {
+      const linkedWorkProofIds = normalizeLinkedWorkProofIds(newSignoffLinkedWorkProofId || null, newSignoffLinkedWorkProofIds);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const signOffsTable = (supabase as any).from("project_quality_sign_offs");
       const { data, error: insertError } = await signOffsTable
@@ -1507,21 +1988,26 @@ export function ProjectQualityAssuranceBoard() {
           title: newSignoffTitle.trim(),
           signoff_type: newSignoffType,
           trade: newSignoffTrade.trim(),
+          trade_type: newSignoffTrade.trim(),
+          work_category: "",
           location: newSignoffLocation.trim(),
+          area: newSignoffLocation.trim(),
           assignee_name: newSignoffAssigneeUserId ? organizationUserNameById.get(newSignoffAssigneeUserId) ?? "" : "",
           assignee_user_id: newSignoffAssigneeUserId || null,
           due_date: newSignoffDueDate || null,
+          linked_work_proof_id: linkedWorkProofIds[0] ?? null,
           linked_inspection_id: newSignoffLinkedInspectionId || null,
           linked_issue_id: newSignoffLinkedIssueId || null,
           note: newSignoffNote.trim(),
           status: "Pending",
         })
-        .select("id, title, signoff_type, trade, location, assignee_name, assignee_user_id, due_date, linked_inspection_id, linked_issue_id, note, status, signed_by_name, signed_at, created_at")
+        .select("id, title, signoff_type, trade, trade_type, work_category, location, area, assignee_name, assignee_user_id, due_date, linked_work_proof_id, linked_inspection_id, linked_issue_id, note, status, signed_by_name, signed_at, approved_at, approved_by_user_id, created_at")
         .maybeSingle();
       if (insertError) {
         throw new Error(insertError.message);
       }
       if (data) {
+        await replaceSignoffWorkProofLinks(supabase, context, String(data.id), linkedWorkProofIds);
         const row: QualitySignOff = {
           id: String(data.id),
           title: String(data.title ?? ""),
@@ -1530,31 +2016,30 @@ export function ProjectQualityAssuranceBoard() {
               ? data.signoff_type
               : "Internal",
           trade: String(data.trade ?? ""),
+          tradeType: String(data.trade_type ?? data.trade ?? ""),
+          workCategory: String(data.work_category ?? ""),
           location: String(data.location ?? ""),
+          area: String(data.area ?? data.location ?? ""),
           assignee: String(data.assignee_name ?? ""),
           assigneeUserId: typeof data.assignee_user_id === "string" ? data.assignee_user_id : null,
           dueDate: typeof data.due_date === "string" ? data.due_date : null,
+          linkedWorkProofId: typeof data.linked_work_proof_id === "string" ? data.linked_work_proof_id : null,
+          linkedWorkProofIds,
           linkedInspectionId: typeof data.linked_inspection_id === "string" ? data.linked_inspection_id : null,
           linkedIssueId: typeof data.linked_issue_id === "string" ? data.linked_issue_id : null,
           note: String(data.note ?? ""),
           status: (data.status as SignOffStatus) ?? "Pending",
           signedBy: typeof data.signed_by_name === "string" ? data.signed_by_name : null,
           signedAt: typeof data.signed_at === "string" ? data.signed_at : null,
+          approvedAt: typeof data.approved_at === "string" ? data.approved_at : null,
+          approvedByUserId: typeof data.approved_by_user_id === "string" ? data.approved_by_user_id : null,
           createdAt: typeof data.created_at === "string" ? data.created_at : new Date().toISOString(),
         };
         setSignOffs((current) => [...current, row]);
         setSelectedSignoffId(row.id);
         await writeSignoffActivity(row.id, "Sign-off created", newSignoffType);
       }
-      setNewSignoffTitle("");
-      setNewSignoffType("Internal");
-      setNewSignoffTrade("");
-      setNewSignoffLocation("");
-      setNewSignoffAssigneeUserId("");
-      setNewSignoffDueDate("");
-      setNewSignoffLinkedInspectionId("");
-      setNewSignoffLinkedIssueId("");
-      setNewSignoffNote("");
+      resetNewSignoffForm();
       setIsCreateSignoffSheetOpen(false);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to create sign-off.");
@@ -1570,10 +2055,12 @@ export function ProjectQualityAssuranceBoard() {
     setIsSaving(true);
     setError(null);
     try {
+      const linkedWorkProofId = newPhotoLinkMode === "work_proof" ? (newPhotoWorkProofId || null) : null;
       const linkedIssueId = newPhotoLinkMode === "issue" ? (newPhotoIssueId || null) : null;
       const linkedInspectionId = newPhotoLinkMode === "inspection" ? (newPhotoInspectionId || null) : null;
       const linkedInspectionItemId = newPhotoLinkMode === "inspection" ? (newPhotoInspectionItemId || null) : null;
-      const photoType: PhotoType = newPhotoLinkMode === "issue" ? "issue" : newPhotoLinkMode === "inspection" ? "inspection" : "general";
+      const photoType: PhotoType =
+        newPhotoLinkMode === "work_proof" ? "work_proof" : newPhotoLinkMode === "issue" ? "issue" : newPhotoLinkMode === "inspection" ? "inspection" : "general";
       let photoUrl = newPhotoUrl.trim();
       let storagePath: string | null = null;
       if (newPhotoFileDraft) {
@@ -1582,24 +2069,29 @@ export function ProjectQualityAssuranceBoard() {
         storagePath = uploaded.storagePath;
       }
 
+      const hasSignoffEvidence = newPhotoLinkMode === "work_proof" ? true : newPhotoHasSignoffEvidence;
       const inserted = await insertPhoto({
         photoUrl,
         storagePath,
         title: newPhotoTitle.trim(),
         trade: newPhotoTrade.trim(),
+        tradeType: newPhotoTrade.trim(),
+        workCategory: newPhotoCategory,
         location: newPhotoLocation.trim(),
+        area: newPhotoLocation.trim(),
         photoType,
         category: newPhotoCategory,
         notes: newPhotoNotes.trim(),
         statusTag: "",
         phaseTag: "",
         capturedAtIso: newPhotoCapturedAt ? toIsoDateTime(newPhotoCapturedAt) : new Date().toISOString(),
+        linkedWorkProofId,
         linkedIssueId,
         linkedInspectionId,
         linkedInspectionItemId,
         assignedUserId: newPhotoAssignedUserId || null,
         assignedUserName: newPhotoAssignedUserId ? organizationUserNameById.get(newPhotoAssignedUserId) ?? "" : "",
-        hasSignoffEvidence: newPhotoHasSignoffEvidence,
+        hasSignoffEvidence,
       });
 
       if (inserted) {
@@ -1614,6 +2106,7 @@ export function ProjectQualityAssuranceBoard() {
       setNewPhotoLinkMode("none");
       setNewPhotoCategory("Progress");
       setNewPhotoCapturedAt(toDateTimeLocal(new Date().toISOString()));
+      setNewPhotoWorkProofId("");
       setNewPhotoIssueId("");
       setNewPhotoInspectionId("");
       setNewPhotoInspectionItemId("");
@@ -1634,10 +2127,16 @@ export function ProjectQualityAssuranceBoard() {
       return;
     }
     const previous = signOffs;
-    const openIssues = issues.filter((item) => item.status !== "Complete" && item.status !== "Verified").length;
-    const incompleteInspections = inspections.filter((inspection) => getInspectionStatus(inspection.items) !== "Complete").length;
-    const signoffEvidenceCount = photos.filter((item) => item.hasSignoffEvidence).length;
-    if (status === "Signed" && (openIssues > 0 || incompleteInspections > 0 || signoffEvidenceCount === 0)) {
+    const targetSignoff = signOffs.find((item) => item.id === signoffId) ?? null;
+    const targetBlockers = getSignoffQaBlockers(issues, inspections, workProofs, photos, targetSignoff);
+    if (
+      status === "Signed" &&
+      (targetBlockers.openIssues > 0 ||
+        targetBlockers.incompleteInspections > 0 ||
+        targetBlockers.incompleteChecklistProofs > 0 ||
+        targetBlockers.missingEvidenceProofs > 0 ||
+        targetBlockers.evidenceCount === 0)
+    ) {
       setError("Cannot sign off — incomplete QA items");
       return;
     }
@@ -1651,6 +2150,8 @@ export function ProjectQualityAssuranceBoard() {
               status,
               signedBy: session?.name ?? "",
               signedAt: status === "Signed" ? new Date().toISOString() : item.signedAt,
+              approvedAt: status === "Signed" ? new Date().toISOString() : null,
+              approvedByUserId: status === "Signed" ? session?.id ?? null : null,
             }
           : item
       )
@@ -1664,6 +2165,8 @@ export function ProjectQualityAssuranceBoard() {
           requested_at: status === "Requested" ? new Date().toISOString() : null,
           signed_by_name: session?.name ?? null,
           signed_at: status === "Signed" ? new Date().toISOString() : null,
+          approved_at: status === "Signed" ? new Date().toISOString() : null,
+          approved_by_user_id: status === "Signed" ? session?.id ?? null : null,
           note: signoffActionNote.trim(),
         })
         .eq("id", signoffId)
@@ -1735,22 +2238,28 @@ export function ProjectQualityAssuranceBoard() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const photosTable = (supabase as any).from("project_quality_photos");
+      const linkedWorkProofId = photoEditType === "work_proof" ? (photoEditWorkProofId || null) : null;
       const linkedIssueId = photoEditType === "issue" ? (photoEditIssueId || null) : null;
       const linkedInspectionId = photoEditType === "inspection" ? (photoEditInspectionId || null) : null;
       const linkedInspectionItemId = photoEditType === "inspection" ? (photoEditInspectionItemId || null) : null;
       const assignedUserId = photoEditAssignedUserId || null;
       const assignedUserName = assignedUserId ? organizationUserNameById.get(assignedUserId) ?? "" : "";
+      const hasSignoffEvidence = linkedWorkProofId ? true : photoEditSignoffEvidence;
       const { error: updateError } = await photosTable
         .update({
           title: photoEditTitle.trim(),
           notes: photoEditNotes.trim(),
           trade: photoEditTrade.trim(),
+          trade_type: photoEditTrade.trim(),
+          work_category: photoEditCategory,
           location: photoEditLocation.trim(),
+          area: photoEditLocation.trim(),
           category: photoEditCategory,
           status_tag: photoEditStatusTag.trim(),
           phase_tag: photoEditPhaseTag || null,
           photo_type: photoEditType,
-          has_signoff_evidence: photoEditSignoffEvidence,
+          has_signoff_evidence: hasSignoffEvidence,
+          linked_work_proof_id: linkedWorkProofId,
           linked_issue_id: linkedIssueId,
           linked_inspection_id: linkedInspectionId,
           linked_inspection_item_id: linkedInspectionItemId,
@@ -1773,12 +2282,16 @@ export function ProjectQualityAssuranceBoard() {
                 title: photoEditTitle.trim(),
                 notes: photoEditNotes.trim(),
                 trade: photoEditTrade.trim(),
+                tradeType: photoEditTrade.trim(),
+                workCategory: photoEditCategory,
                 location: photoEditLocation.trim(),
+                area: photoEditLocation.trim(),
                 category: photoEditCategory,
                 statusTag: photoEditStatusTag.trim(),
                 phaseTag: photoEditPhaseTag,
                 photoType: photoEditType,
-                hasSignoffEvidence: photoEditSignoffEvidence,
+                hasSignoffEvidence,
+                linkedWorkProofId,
                 linkedIssueId,
                 linkedInspectionId,
                 linkedInspectionItemId,
@@ -1801,8 +2314,8 @@ export function ProjectQualityAssuranceBoard() {
   const signoffEvidencePhotos = useMemo(() => getSignoffEvidencePhotos(photos, selectedSignoff), [photos, selectedSignoff]);
 
   const signoffQaBlockers = useMemo(
-    () => getSignoffQaBlockers(issues, inspections, signoffEvidencePhotos.length),
-    [inspections, issues, signoffEvidencePhotos.length]
+    () => getSignoffQaBlockers(issues, inspections, workProofs, photos, selectedSignoff),
+    [inspections, issues, photos, selectedSignoff, workProofs]
   );
 
   const canCurrentUserSignoff = useMemo(
@@ -1810,36 +2323,124 @@ export function ProjectQualityAssuranceBoard() {
     [selectedSignoff, session?.id]
   );
 
-  return (
-    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
+  const saveSelectedWorkProofAndClose = async () => {
+    if (!selectedWorkProof) {
+      return;
+    }
+    if (!selectedWorkProof.note.trim()) {
+      setError("What was done is required.");
+      return;
+    }
+    await saveWorkProofFields(selectedWorkProof.id, {
+      tradeType: selectedWorkProof.tradeType,
+      workCategory: selectedWorkProof.workCategory,
+      area: selectedWorkProof.area,
+      note: selectedWorkProof.note,
+      status: selectedWorkProof.status,
+    });
+    setIsWorkProofSheetOpen(false);
+  };
 
-      {/* Hero */}
-      <section className={`${styles.heroBlock} mb-2`}>
-        <div className="min-w-0 flex-1">
-          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>QA</h1>
-          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>Site-based quality tracking with linked actions and visual proof</p>
+  const saveSelectedIssueAndClose = async () => {
+    if (!selectedIssue) {
+      return;
+    }
+    await saveIssueFields(selectedIssue.id, {
+      title: selectedIssue.title,
+      description: selectedIssue.description,
+      trade: selectedIssue.trade,
+      location: selectedIssue.location,
+      priority: selectedIssue.priority,
+      status: selectedIssue.status,
+      assignee: selectedIssue.assignee,
+      assigneeUserId: selectedIssue.assigneeUserId,
+      dueDate: selectedIssue.dueDate,
+      linkedWorkProofId: selectedIssue.linkedWorkProofId,
+    });
+    setIsIssueSheetOpen(false);
+  };
+
+  const saveSelectedSignoffAndClose = async () => {
+    if (!selectedSignoff) {
+      return;
+    }
+    await saveSignoffFields(selectedSignoff.id, {
+      title: selectedSignoff.title,
+      type: selectedSignoff.type,
+      trade: selectedSignoff.trade,
+      location: selectedSignoff.location,
+      assignee: selectedSignoff.assignee,
+      assigneeUserId: selectedSignoff.assigneeUserId,
+      dueDate: selectedSignoff.dueDate,
+      linkedWorkProofId: selectedSignoff.linkedWorkProofId,
+      linkedWorkProofIds: selectedSignoff.linkedWorkProofIds,
+      linkedInspectionId: selectedSignoff.linkedInspectionId,
+      linkedIssueId: selectedSignoff.linkedIssueId,
+      note: selectedSignoff.note,
+    });
+    setIsSignoffSheetOpen(false);
+  };
+
+  const activePrimaryAction = useMemo(() => {
+    if (activeTab === "Work Proof") {
+      return { label: "Log Work", onClick: () => setIsCreateWorkProofSheetOpen(true) };
+    }
+    if (activeTab === "Issues") {
+      return { label: "Add Issue", onClick: () => setIsCreateIssueSheetOpen(true) };
+    }
+    if (activeTab === "Inspections") {
+      return { label: "Add Inspection", onClick: () => setIsCreateInspectionSheetOpen(true) };
+    }
+    if (activeTab === "Photo Log") {
+      return { label: "Upload Photo", onClick: () => setIsCreatePhotoOpen(true) };
+    }
+    if (activeTab === "Sign-Offs") {
+      return { label: "Add Sign-Off", onClick: () => setIsCreateSignoffSheetOpen(true) };
+    }
+    return { label: "Log Work", onClick: () => setIsCreateWorkProofSheetOpen(true) };
+  }, [activeTab]);
+
+  return (
+    <div className={`${ibmPlexSans.className} w-full space-y-6 pb-8`}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Quality Assurance</h1>
+              <div className="inline-flex items-center gap-2 rounded-[12px] bg-[#FEE2E2] px-4 py-2 text-[14px] font-medium text-[#B91C1C]">
+                <AlertCircle className="h-4 w-4" strokeWidth={2} />
+                {issueStats.openCount} Open Issues
+              </div>
+            </div>
+            <p className={`${interMedium.className} text-[14px] text-[#64748B]`}>
+              Manage work logs, defects, inspections, photos, and sign-off requests in one place.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              onClick={activePrimaryAction.onClick}
+              className="h-9 rounded-[12px] bg-[#F74917] px-4 text-[14px] font-semibold text-white hover:bg-[#e63f10]"
+            >
+              <span className="mr-1 text-[16px] leading-none">+</span>
+              {activePrimaryAction.label}
+            </Button>
+          </div>
         </div>
-      </section>
+      </div>
 
       {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+        <div className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2">
+          <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
+        </div>
       ) : null}
 
       <Suspense fallback={<QualitySectionSkeleton />}>
-        {/* Stat cards */}
         <QualityKpiCards issueStats={issueStats} />
 
-        {/* Tab bar + content */}
-        <div className="px-0 py-0">
-          <div className="space-y-5">
-            <QualityTabs
-              activeTab={activeTab}
-              onChange={setActiveTab}
-              onCreateIssue={() => setIsCreateIssueSheetOpen(true)}
-              onCreateInspection={() => setIsCreateInspectionSheetOpen(true)}
-              onCreatePhoto={() => setIsCreatePhotoOpen(true)}
-              onCreateSignoff={() => setIsCreateSignoffSheetOpen(true)}
-            />
+        <div className="space-y-4">
+          <QualityTabs activeTab={activeTab} onChange={setActiveTab} />
           <div className="pb-6">
             {isLoading ? (
               <div className="space-y-2">
@@ -1850,6 +2451,41 @@ export function ProjectQualityAssuranceBoard() {
 
             {!isLoading && activeTab === "Overview" ? (
               <QualityOverviewTab issueStats={issueStats} issues={issues} inspections={inspections} todoLinks={todoLinks} />
+            ) : null}
+
+            {!isLoading && activeTab === "Work Proof" ? (
+              <QualityWorkProofsTab
+                workProofSearch={workProofSearch}
+                setWorkProofSearch={setWorkProofSearch}
+                workProofStatusFilter={workProofStatusFilter}
+                setWorkProofStatusFilter={setWorkProofStatusFilter}
+                workProofTradeFilter={workProofTradeFilter}
+                setWorkProofTradeFilter={setWorkProofTradeFilter}
+                workProofCategoryFilter={workProofCategoryFilter}
+                setWorkProofCategoryFilter={setWorkProofCategoryFilter}
+                workProofAreaFilter={workProofAreaFilter}
+                setWorkProofAreaFilter={setWorkProofAreaFilter}
+                workProofTradeOptions={workProofTradeOptions}
+                workProofCategoryOptions={workProofCategoryOptions}
+                workProofAreaOptions={workProofAreaOptions}
+                filteredWorkProofs={filteredWorkProofs}
+                workProofPhotoCoverMap={workProofPhotoCoverMap}
+                workProofPhotoCountMap={workProofPhotoCountMap}
+                workProofIssueCountMap={workProofIssueCountMap}
+                workProofSignoffMap={workProofSignoffMap}
+                organizationUserNameById={organizationUserNameById}
+                onResetFilters={() => {
+                  setWorkProofSearch("");
+                  setWorkProofStatusFilter("All");
+                  setWorkProofTradeFilter("All");
+                  setWorkProofCategoryFilter("All");
+                  setWorkProofAreaFilter("All");
+                }}
+                onSelectWorkProof={(workProofId) => {
+                  setSelectedWorkProofId(workProofId);
+                  setIsWorkProofSheetOpen(true);
+                }}
+              />
             ) : null}
 
             {!isLoading && activeTab === "Issues" ? (
@@ -1962,7 +2598,7 @@ export function ProjectQualityAssuranceBoard() {
                 setPhotoSignoffFilter("All");
                 setPhotoDateFromFilter("");
                 setPhotoDateToFilter("");
-                setPhotoViewMode("grid");
+                setPhotoViewMode("list");
               }}
               onOpenPhoto={openPhotoDetail}
               />
@@ -1985,6 +2621,7 @@ export function ProjectQualityAssuranceBoard() {
               signoffTradeOptions={signoffTradeOptions}
               signoffAssigneeOptions={signoffAssigneeOptions}
               filteredSignoffs={filteredSignoffs}
+              organizationUserNameById={organizationUserNameById}
               onResetFilters={() => {
                 setSignoffSearch("");
                 setSignoffStatusFilter("All");
@@ -2000,13 +2637,57 @@ export function ProjectQualityAssuranceBoard() {
               />
             ) : null}
           </div>
-          </div>
         </div>
       </Suspense>
 
+      <CreateQualityWorkProofSheet
+        open={isCreateWorkProofSheetOpen}
+        onOpenChange={handleCreateWorkProofOpenChange}
+        newWorkProofTradeType={newWorkProofTradeType}
+        setNewWorkProofTradeType={setNewWorkProofTradeType}
+        newWorkProofCategory={newWorkProofCategory}
+        setNewWorkProofCategory={setNewWorkProofCategory}
+        newWorkProofArea={newWorkProofArea}
+        setNewWorkProofArea={setNewWorkProofArea}
+        newWorkProofNote={newWorkProofNote}
+        setNewWorkProofNote={setNewWorkProofNote}
+        newWorkProofStatus={newWorkProofStatus}
+        setNewWorkProofStatus={setNewWorkProofStatus}
+        newWorkProofChecklistDrafts={newWorkProofChecklistDrafts}
+        setNewWorkProofChecklistDraft={(index, value) =>
+          setNewWorkProofChecklistDrafts((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)))
+        }
+        newWorkProofFileName={newWorkProofFileName}
+        handleNewWorkProofPhotoFileSelect={handleNewWorkProofPhotoFileSelect}
+        isSaving={isSaving}
+        onCreate={() => void createWorkProofRecord()}
+      />
+
+      <QualityWorkProofDetailSheet
+        open={isWorkProofSheetOpen}
+        onOpenChange={setIsWorkProofSheetOpen}
+        selectedWorkProof={selectedWorkProof}
+        selectedWorkProofPhotos={selectedWorkProofPhotos}
+        selectedWorkProofIssues={selectedWorkProofIssues}
+        selectedWorkProofSignoffs={selectedWorkProofSignoffs}
+        organizationUsers={organizationUserOptions}
+        organizationUserNameById={organizationUserNameById}
+        workProofIssueLinkId={newIssueLinkedWorkProofId}
+        setWorkProofIssueLinkId={setNewIssueLinkedWorkProofId}
+        isSaving={isSaving}
+        setWorkProofLocal={setWorkProofLocal}
+        updateWorkProofChecklistItem={toggleWorkProofChecklistItem}
+        saveWorkProofFields={saveWorkProofFields}
+        openPhotoDetail={openPhotoDetail}
+        openIssueDetail={openIssueDetail}
+        openSignoffDetail={openSignoffDetail}
+        createIssueFromWorkProof={createIssueFromWorkProof}
+        onSaveAndClose={() => void saveSelectedWorkProofAndClose()}
+      />
+
       <CreateQualitySignoffSheet
         open={isCreateSignoffSheetOpen}
-        onOpenChange={setIsCreateSignoffSheetOpen}
+        onOpenChange={handleCreateSignoffOpenChange}
         newSignoffTitle={newSignoffTitle}
         setNewSignoffTitle={setNewSignoffTitle}
         newSignoffType={newSignoffType}
@@ -2019,6 +2700,10 @@ export function ProjectQualityAssuranceBoard() {
         setNewSignoffAssigneeUserId={setNewSignoffAssigneeUserId}
         newSignoffDueDate={newSignoffDueDate}
         setNewSignoffDueDate={setNewSignoffDueDate}
+        newSignoffLinkedWorkProofId={newSignoffLinkedWorkProofId}
+        setNewSignoffLinkedWorkProofId={updateNewSignoffPrimaryWorkProof}
+        newSignoffLinkedWorkProofIds={newSignoffLinkedWorkProofIds}
+        toggleNewSignoffLinkedWorkProof={toggleNewSignoffLinkedWorkProof}
         newSignoffLinkedInspectionId={newSignoffLinkedInspectionId}
         setNewSignoffLinkedInspectionId={setNewSignoffLinkedInspectionId}
         newSignoffLinkedIssueId={newSignoffLinkedIssueId}
@@ -2026,6 +2711,7 @@ export function ProjectQualityAssuranceBoard() {
         newSignoffNote={newSignoffNote}
         setNewSignoffNote={setNewSignoffNote}
         organizationUserOptions={organizationUserOptions}
+        workProofs={workProofs}
         inspections={inspections}
         issues={issues}
         isSaving={isSaving}
@@ -2039,6 +2725,7 @@ export function ProjectQualityAssuranceBoard() {
         isSaving={isSaving}
         inspections={inspections}
         issues={issues}
+        workProofs={workProofs}
         organizationUserOptions={organizationUserOptions}
         organizationUserNameById={organizationUserNameById}
         inspectionIndex={inspectionIndex}
@@ -2053,6 +2740,7 @@ export function ProjectQualityAssuranceBoard() {
         saveSignoffFields={saveSignoffFields}
         updateSignoffStatus={updateSignoffStatus}
         openPhotoDetail={openPhotoDetail}
+        onSaveAndClose={() => void saveSelectedSignoffAndClose()}
       />
 
       <CreateQualityInspectionSheet
@@ -2118,12 +2806,15 @@ export function ProjectQualityAssuranceBoard() {
         newPhotoLinkMode={newPhotoLinkMode}
         setNewPhotoLinkMode={setNewPhotoLinkMode}
         photoLinkModes={PHOTO_LINK_MODES}
+        newPhotoWorkProofId={newPhotoWorkProofId}
+        setNewPhotoWorkProofId={setNewPhotoWorkProofId}
         newPhotoIssueId={newPhotoIssueId}
         setNewPhotoIssueId={setNewPhotoIssueId}
         newPhotoInspectionId={newPhotoInspectionId}
         setNewPhotoInspectionId={setNewPhotoInspectionId}
         newPhotoInspectionItemId={newPhotoInspectionItemId}
         setNewPhotoInspectionItemId={setNewPhotoInspectionItemId}
+        workProofs={workProofs}
         issues={issues}
         inspections={inspections}
         newPhotoNotes={newPhotoNotes}
@@ -2139,7 +2830,7 @@ export function ProjectQualityAssuranceBoard() {
 
       <CreateQualityIssueSheet
         open={isCreateIssueSheetOpen}
-        onOpenChange={setIsCreateIssueSheetOpen}
+        onOpenChange={handleCreateIssueOpenChange}
         newIssueTitle={newIssueTitle}
         setNewIssueTitle={setNewIssueTitle}
         newIssueDescription={newIssueDescription}
@@ -2156,7 +2847,10 @@ export function ProjectQualityAssuranceBoard() {
         setNewIssueDueDate={setNewIssueDueDate}
         newIssueAssigneeUserId={newIssueAssigneeUserId}
         setNewIssueAssigneeUserId={setNewIssueAssigneeUserId}
+        newIssueLinkedWorkProofId={newIssueLinkedWorkProofId}
+        setNewIssueLinkedWorkProofId={setNewIssueLinkedWorkProofId}
         organizationUserOptions={organizationUserOptions}
+        workProofs={workProofs}
         isSaving={isSaving}
         onCreate={() => void createIssue()}
       />
@@ -2166,6 +2860,7 @@ export function ProjectQualityAssuranceBoard() {
         onOpenChange={setIsIssueSheetOpen}
         selectedIssue={selectedIssue}
         organizationUserOptions={organizationUserOptions}
+        workProofs={workProofs}
         issueComments={issueComments}
         issueActivity={issueActivity}
         issuePhotoUrlDraft={issuePhotoUrlDraft}
@@ -2183,6 +2878,7 @@ export function ProjectQualityAssuranceBoard() {
         addIssuePhoto={addIssuePhoto}
         addIssueComment={addIssueComment}
         deleteIssue={deleteIssue}
+        onSaveAndClose={() => void saveSelectedIssueAndClose()}
       />
 
       <QualityPhotoDetailSheet
@@ -2209,6 +2905,8 @@ export function ProjectQualityAssuranceBoard() {
         setPhotoEditAssignedUserId={setPhotoEditAssignedUserId}
         photoEditSignoffEvidence={photoEditSignoffEvidence}
         setPhotoEditSignoffEvidence={setPhotoEditSignoffEvidence}
+        photoEditWorkProofId={photoEditWorkProofId}
+        setPhotoEditWorkProofId={setPhotoEditWorkProofId}
         photoEditIssueId={photoEditIssueId}
         setPhotoEditIssueId={setPhotoEditIssueId}
         photoEditInspectionId={photoEditInspectionId}
@@ -2218,6 +2916,7 @@ export function ProjectQualityAssuranceBoard() {
         photoEditNotes={photoEditNotes}
         setPhotoEditNotes={setPhotoEditNotes}
         organizationUserOptions={organizationUserOptions}
+        workProofs={workProofs}
         issues={issues}
         inspections={inspections}
         photoCategories={PHOTO_CATEGORIES}

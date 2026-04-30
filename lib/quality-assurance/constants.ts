@@ -9,7 +9,7 @@ import type {
   SignOffType,
 } from "@/lib/quality-assurance/types";
 
-export const QUALITY_TABS: QaTab[] = ["Overview", "Issues", "Inspections", "Photo Log", "Sign-Offs"];
+export const QUALITY_TABS: QaTab[] = ["Overview", "Work Proof", "Issues", "Sign-Offs", "Photo Log", "Inspections"];
 
 export const ISSUE_STATUS_OPTIONS: IssueStatus[] = [
   "Open",
@@ -32,11 +32,13 @@ export const PHOTO_CATEGORIES = [
 
 export const PHOTO_LINK_MODES: Array<{ value: PhotoLinkMode; label: string }> = [
   { value: "none", label: "No link" },
+  { value: "work_proof", label: "Link to Work Log" },
   { value: "issue", label: "Link to Issue" },
   { value: "inspection", label: "Link to Inspection" },
 ];
 
 export const PHOTO_VIEW_MODES: Array<{ value: PhotoViewMode; label: string }> = [
+  { value: "list", label: "List" },
   { value: "grid", label: "Grid" },
   { value: "timeline", label: "Timeline" },
 ];
@@ -44,6 +46,7 @@ export const PHOTO_VIEW_MODES: Array<{ value: PhotoViewMode; label: string }> = 
 export const PHOTO_TYPES: Array<{ value: PhotoType; label: string }> = [
   { value: "issue", label: "Issue" },
   { value: "inspection", label: "Inspection" },
+  { value: "work_proof", label: "Work Log" },
   { value: "general", label: "General Site Record" },
 ];
 
@@ -56,10 +59,17 @@ export const PHOTO_PHASE_OPTIONS: Array<{ value: PhotoPhase; label: string }> = 
 
 export const PHOTO_LINK_FILTERS: Array<{ value: PhotoLinkFilter; label: string }> = [
   { value: "All", label: "Any Link" },
+  { value: "Work Proof", label: "Work Log" },
   { value: "Issue", label: "Issue" },
   { value: "Inspection", label: "Inspection" },
   { value: "General", label: "General" },
 ];
+
+export const WORK_PROOF_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "completed", label: "Completed" },
+  { value: "linked_to_signoff", label: "Linked To Sign-Off" },
+] as const;
 
 export const SIGN_OFF_TYPE_OPTIONS: SignOffType[] = [
   "Internal",

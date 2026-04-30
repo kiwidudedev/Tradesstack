@@ -1,15 +1,16 @@
-export type QaTab = "Overview" | "Issues" | "Inspections" | "Photo Log" | "Sign-Offs";
+export type QaTab = "Overview" | "Work Proof" | "Issues" | "Sign-Offs" | "Photo Log" | "Inspections";
 export type IssueStatus = "Open" | "In Progress" | "Blocked" | "Requires Attention" | "Complete" | "Verified";
 export type ChecklistStatus = "pass" | "fail" | null;
 export type InspectionStatus = "Not Started" | "In Progress" | "Complete";
 export type SignOffStatus = "Pending" | "Requested" | "Signed" | "Rejected";
 export type SignOffType = "Internal" | "Client" | "Council" | "Final Handover";
-export type PhotoType = "issue" | "inspection" | "general";
+export type PhotoType = "issue" | "inspection" | "general" | "work_proof";
 export type PhotoPhase = "before" | "during" | "after" | "";
-export type PhotoLinkMode = "none" | "issue" | "inspection";
-export type PhotoLinkFilter = "All" | "Issue" | "Inspection" | "General";
-export type PhotoViewMode = "grid" | "timeline";
+export type PhotoLinkMode = "none" | "issue" | "inspection" | "work_proof";
+export type PhotoLinkFilter = "All" | "Issue" | "Inspection" | "Work Proof" | "General";
+export type PhotoViewMode = "list" | "grid" | "timeline";
 export type Priority = "Low" | "Medium" | "High";
+export type WorkProofStatus = "draft" | "completed" | "linked_to_signoff";
 
 export interface ProjectContext {
   organizationId: string;
@@ -26,11 +27,16 @@ export interface QualityIssue {
   title: string;
   description: string;
   trade: string;
+  tradeType: string;
+  workCategory: string;
   location: string;
+  area: string;
   priority: Priority;
   dueDate: string | null;
   assignee: string;
   assigneeUserId: string | null;
+  linkedWorkProofId: string | null;
+  closedAt: string | null;
   status: IssueStatus;
   updatedAt: string;
 }
@@ -89,16 +95,23 @@ export interface QualitySignOff {
   title: string;
   type: SignOffType;
   trade: string;
+  tradeType: string;
+  workCategory: string;
   location: string;
+  area: string;
   assignee: string;
   assigneeUserId: string | null;
   dueDate: string | null;
+  linkedWorkProofId: string | null;
+  linkedWorkProofIds: string[];
   linkedInspectionId: string | null;
   linkedIssueId: string | null;
   note: string;
   status: SignOffStatus;
   signedBy: string | null;
   signedAt: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
   createdAt: string;
 }
 
@@ -124,7 +137,10 @@ export interface QualityPhoto {
   notes: string;
   photoUrl: string;
   trade: string;
+  tradeType: string;
+  workCategory: string;
   location: string;
+  area: string;
   photoType: PhotoType;
   category: string;
   statusTag: string;
@@ -135,6 +151,7 @@ export interface QualityPhoto {
   capturedAt: string;
   uploadedByName: string;
   uploadedByUserId: string | null;
+  linkedWorkProofId: string | null;
   linkedIssueId: string | null;
   linkedInspectionId: string | null;
   linkedInspectionItemId: string | null;
@@ -142,12 +159,38 @@ export interface QualityPhoto {
   createdAt: string;
 }
 
+export interface QualityWorkProofChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+  checkedBy: string | null;
+  checkedAt: string | null;
+}
+
+export interface QualityWorkProof {
+  id: string;
+  tradeType: string;
+  workCategory: string;
+  area: string;
+  note: string;
+  status: WorkProofStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  checklistItems: QualityWorkProofChecklistItem[];
+}
+
 export interface QualityIssueStats {
+  workProofCount: number;
   openCount: number;
   inProgressCount: number;
   completeCount: number;
   overdueCount: number;
   inspectionsToday: number;
+  workProofsCompleted: number;
+  pendingSignoffs: number;
+  completedWithoutSignoff: number;
 }
 
 export interface QualityInspectionItemIndexValue {
@@ -162,13 +205,17 @@ export interface QualityPhotoInsertPayload {
   storagePath?: string | null;
   title: string;
   trade: string;
+  tradeType: string;
+  workCategory: string;
   location: string;
+  area: string;
   photoType: PhotoType;
   category: string;
   notes: string;
   statusTag: string;
   phaseTag: PhotoPhase;
   capturedAtIso: string;
+  linkedWorkProofId: string | null;
   linkedIssueId: string | null;
   linkedInspectionId: string | null;
   linkedInspectionItemId: string | null;
@@ -179,6 +226,7 @@ export interface QualityPhotoInsertPayload {
 
 export interface QualityCoreDataResult {
   context: ProjectContext;
+  workProofs: QualityWorkProof[];
   issues: QualityIssue[];
   inspections: QualityInspection[];
   signOffs: QualitySignOff[];

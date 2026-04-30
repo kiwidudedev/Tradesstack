@@ -2,8 +2,8 @@
 
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { interMedium } from "@/lib/fonts";
 import { formatTimestamp } from "@/lib/quality-assurance/helpers";
 import type {
@@ -12,6 +12,7 @@ import type {
   QualityIssue,
   QualityIssueActivity,
   QualityIssueComment,
+  QualityWorkProof,
 } from "@/lib/quality-assurance/types";
 
 interface CreateQualityIssueSheetProps {
@@ -33,58 +34,62 @@ interface CreateQualityIssueSheetProps {
   setNewIssueDueDate: (value: string) => void;
   newIssueAssigneeUserId: string;
   setNewIssueAssigneeUserId: (value: string) => void;
+  newIssueLinkedWorkProofId: string;
+  setNewIssueLinkedWorkProofId: (value: string) => void;
   organizationUserOptions: OrganizationUserOption[];
+  workProofs: QualityWorkProof[];
   isSaving: boolean;
   onCreate: () => void;
 }
 
 export function CreateQualityIssueSheet(props: CreateQualityIssueSheetProps) {
   return (
-    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-[520px] overflow-y-auto border-l border-[#E6EAF0] bg-[#F8F9FC] p-5">
-        <div className="space-y-4 pr-6">
-          <div>
-            <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.12em] text-[#64748B]`}>New Issue</p>
-            <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">Add QA Issue</h3>
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+        <div className="space-y-0">
+          <div className="px-7 pb-6 pt-7">
+            <p className={`${interMedium.className} text-[13px] font-semibold text-[#64748B]`}>New issue</p>
+            <h3 className="mt-1 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]">Add QA Issue</h3>
           </div>
 
+          <div className="space-y-3.5 px-7 pb-4">
           <label className="space-y-1">
-            <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Title</span>
-            <Input value={props.newIssueTitle} onChange={(event) => props.setNewIssueTitle(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
+            <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Title</span>
+            <Input value={props.newIssueTitle} onChange={(event) => props.setNewIssueTitle(event.target.value)} className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]" />
           </label>
 
           <label className="space-y-1">
-            <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Notes</span>
+            <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Notes</span>
             <textarea
               value={props.newIssueDescription}
               onChange={(event) => props.setNewIssueDescription(event.target.value)}
-              className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#1E293B] outline-none ring-0`}
+              className={`${interMedium.className} min-h-[96px] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] text-[#10283B] outline-none transition focus:border-[#F15A29]`}
             />
           </label>
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1">
-              <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Trade</span>
-              <Input value={props.newIssueTrade} onChange={(event) => props.setNewIssueTrade(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
+              <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Trade</span>
+              <Input value={props.newIssueTrade} onChange={(event) => props.setNewIssueTrade(event.target.value)} className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]" />
             </label>
             <label className="space-y-1">
-              <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Location</span>
-              <Input value={props.newIssueLocation} onChange={(event) => props.setNewIssueLocation(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
+              <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Location</span>
+              <Input value={props.newIssueLocation} onChange={(event) => props.setNewIssueLocation(event.target.value)} className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]" />
             </label>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1">
-              <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Priority</span>
-              <select value={props.newIssuePriority} onChange={(event) => props.setNewIssuePriority(event.target.value as "Low" | "Medium" | "High")} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}>
+              <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Priority</span>
+              <select value={props.newIssuePriority} onChange={(event) => props.setNewIssuePriority(event.target.value as "Low" | "Medium" | "High")} className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}>
                 <option value="Low">Low</option>
                 <option value="Medium">Medium</option>
                 <option value="High">High</option>
               </select>
             </label>
             <label className="space-y-1">
-              <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Status</span>
-              <select value={props.newIssueStatus} onChange={(event) => props.setNewIssueStatus(event.target.value as IssueStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}>
+              <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Status</span>
+              <select value={props.newIssueStatus} onChange={(event) => props.setNewIssueStatus(event.target.value as IssueStatus)} className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}>
                 <option value="Open">Open</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Blocked">Blocked</option>
@@ -97,12 +102,12 @@ export function CreateQualityIssueSheet(props: CreateQualityIssueSheetProps) {
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1">
-              <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Due Date</span>
-              <Input type="date" value={props.newIssueDueDate} onChange={(event) => props.setNewIssueDueDate(event.target.value)} className="h-10 border-[#CBD5E1] bg-white" />
+              <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Due Date</span>
+              <Input type="date" value={props.newIssueDueDate} onChange={(event) => props.setNewIssueDueDate(event.target.value)} className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]" />
             </label>
             <label className="space-y-1">
-              <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Assigned To</span>
-              <select value={props.newIssueAssigneeUserId} onChange={(event) => props.setNewIssueAssigneeUserId(event.target.value)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm`}>
+              <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Assigned To</span>
+              <select value={props.newIssueAssigneeUserId} onChange={(event) => props.setNewIssueAssigneeUserId(event.target.value)} className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}>
                 {props.organizationUserOptions.map((member) => (
                   <option key={member.userId || "none"} value={member.userId}>
                     {member.name}
@@ -112,14 +117,33 @@ export function CreateQualityIssueSheet(props: CreateQualityIssueSheetProps) {
             </label>
           </div>
 
-          <p className={`${interMedium.className} text-xs text-[#64748B]`}>Linked task is created automatically for active issues.</p>
+          <label className="space-y-1">
+            <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Linked Work Log</span>
+            <select value={props.newIssueLinkedWorkProofId} onChange={(event) => props.setNewIssueLinkedWorkProofId(event.target.value)} className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}>
+              <option value="">No work log link</option>
+              {props.workProofs.map((workProof) => (
+                <option key={workProof.id} value={workProof.id}>
+                  {workProof.tradeType || "Work"} • {workProof.workCategory || "Proof"} • {workProof.area || "Area"}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <Button type="button" onClick={props.onCreate} disabled={props.isSaving || !props.newIssueTitle.trim()} className="h-10 rounded-[6px] bg-[#F74917] px-4 text-xs font-semibold text-white hover:bg-[#e63f10] disabled:cursor-not-allowed disabled:opacity-70">
-            Add Issue
-          </Button>
+          <p className={`${interMedium.className} text-[12px] text-[#64748B]`}>Linked task is created automatically for active issues.</p>
+
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+            <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)} className="h-10 rounded-[10px] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]">
+              Cancel
+            </Button>
+            <Button type="button" onClick={props.onCreate} disabled={props.isSaving || !props.newIssueTitle.trim()} className="h-10 rounded-[10px] bg-[#F15A29] px-5 text-[14px] font-semibold text-white hover:bg-[#db4d1f] disabled:cursor-not-allowed disabled:opacity-70">
+              Add Issue
+            </Button>
+          </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -141,71 +165,74 @@ interface QualityIssueDetailSheetProps {
   saveIssueFields: (issueId: string, patch: Partial<QualityIssue>, activityAction?: string, activityDetail?: string) => Promise<void>;
   setIssueStatus: (issueId: string, status: IssueStatus) => Promise<void>;
   setIssueAssignee: (issueId: string, assigneeUserId: string) => Promise<void>;
+  workProofs: QualityWorkProof[];
   handleIssuePhotoFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   addIssuePhoto: () => Promise<void>;
   addIssueComment: () => Promise<void>;
   deleteIssue: (issueId: string) => Promise<void>;
+  onSaveAndClose: () => void;
 }
 
 export function QualityIssueDetailSheet(props: QualityIssueDetailSheetProps) {
   return (
-    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-[560px] overflow-y-auto border-l border-[#E6EAF0] bg-[#F8F9FC] p-5">
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
         {props.selectedIssue ? (
-          <div className="space-y-4 pr-6">
-            <div>
-              <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.12em] text-[#64748B]`}>Issue Detail</p>
-              <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">{props.selectedIssue.title || "Issue"}</h3>
+          <div className="space-y-0">
+            <div className="px-7 pb-6 pt-7">
+              <p className={`${interMedium.className} text-[13px] font-semibold text-[#64748B]`}>Issue detail</p>
+              <h3 className="mt-1 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]">{props.selectedIssue.title || "Issue"}</h3>
             </div>
 
+            <div className="space-y-3.5 px-7 pb-4">
             <div className="grid gap-3 md:grid-cols-2">
               <label className="space-y-1 md:col-span-2">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Title</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Title</span>
                 <Input
                   value={props.selectedIssue.title}
                   onChange={(event) => props.setIssueLocal(props.selectedIssue!.id, { title: event.target.value })}
                   onBlur={(event) => void props.saveIssueFields(props.selectedIssue!.id, { title: event.target.value.trim(), updatedAt: new Date().toISOString() }, "Details updated", "Title updated")}
                   disabled={props.isSaving}
-                  className="h-10 border-[#CBD5E1] bg-white text-sm text-[#1E293B]"
+                  className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]"
                 />
               </label>
               <label className="space-y-1 md:col-span-2">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Description</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Description</span>
                 <textarea
                   value={props.selectedIssue.description}
                   onChange={(event) => props.setIssueLocal(props.selectedIssue!.id, { description: event.target.value })}
                   onBlur={(event) => void props.saveIssueFields(props.selectedIssue!.id, { description: event.target.value.trim(), updatedAt: new Date().toISOString() }, "Details updated", "Description updated")}
                   disabled={props.isSaving}
-                  className={`${interMedium.className} min-h-[88px] w-full rounded-[6px] border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#1E293B] outline-none ring-0`}
+                  className={`${interMedium.className} min-h-[96px] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] text-[#10283B] outline-none transition focus:border-[#F15A29]`}
                 />
               </label>
               <label className="space-y-1">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Trade</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Trade</span>
                 <Input
                   value={props.selectedIssue.trade}
                   onChange={(event) => props.setIssueLocal(props.selectedIssue!.id, { trade: event.target.value })}
                   onBlur={(event) => void props.saveIssueFields(props.selectedIssue!.id, { trade: event.target.value.trim(), updatedAt: new Date().toISOString() }, "Details updated", "Trade updated")}
                   disabled={props.isSaving}
-                  className="h-10 border-[#CBD5E1] bg-white text-sm text-[#1E293B]"
+                  className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]"
                 />
               </label>
               <label className="space-y-1">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Location</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Location</span>
                 <Input
                   value={props.selectedIssue.location}
                   onChange={(event) => props.setIssueLocal(props.selectedIssue!.id, { location: event.target.value })}
                   onBlur={(event) => void props.saveIssueFields(props.selectedIssue!.id, { location: event.target.value.trim(), updatedAt: new Date().toISOString() }, "Details updated", "Location updated")}
                   disabled={props.isSaving}
-                  className="h-10 border-[#CBD5E1] bg-white text-sm text-[#1E293B]"
+                  className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]"
                 />
               </label>
               <label className="space-y-1">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Status</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Status</span>
                 <select
                   value={props.selectedIssue.status}
                   onChange={(event) => void props.setIssueStatus(props.selectedIssue!.id, event.target.value as IssueStatus)}
                   disabled={props.isSaving}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm text-[#1E293B]`}
+                  className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}
                 >
                   <option value="Open">Open</option>
                   <option value="In Progress">In Progress</option>
@@ -216,7 +243,7 @@ export function QualityIssueDetailSheet(props: QualityIssueDetailSheetProps) {
                 </select>
               </label>
               <label className="space-y-1">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Priority</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Priority</span>
                 <select
                   value={props.selectedIssue.priority}
                   onChange={(event) => {
@@ -225,7 +252,7 @@ export function QualityIssueDetailSheet(props: QualityIssueDetailSheetProps) {
                     void props.saveIssueFields(props.selectedIssue!.id, { priority, updatedAt: new Date().toISOString() }, "Priority changed", `Priority set to ${priority}`);
                   }}
                   disabled={props.isSaving}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm text-[#1E293B]`}
+                  className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
@@ -233,12 +260,12 @@ export function QualityIssueDetailSheet(props: QualityIssueDetailSheetProps) {
                 </select>
               </label>
               <label className="space-y-1">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Assignee</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Assignee</span>
                 <select
                   value={props.selectedIssue.assigneeUserId ?? ""}
                   onChange={(event) => void props.setIssueAssignee(props.selectedIssue!.id, event.target.value)}
                   disabled={props.isSaving}
-                  className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#CBD5E1] bg-white px-2 text-sm text-[#1E293B]`}
+                  className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}
                 >
                   {props.organizationUserOptions.map((member) => (
                     <option key={member.userId || "none"} value={member.userId}>
@@ -248,15 +275,35 @@ export function QualityIssueDetailSheet(props: QualityIssueDetailSheetProps) {
                 </select>
               </label>
               <label className="space-y-1">
-                <span className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]`}>Due Date</span>
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Due Date</span>
                 <Input
                   type="date"
                   value={props.selectedIssue.dueDate ?? ""}
                   onChange={(event) => props.setIssueLocal(props.selectedIssue!.id, { dueDate: event.target.value || null })}
                   onBlur={(event) => void props.saveIssueFields(props.selectedIssue!.id, { dueDate: event.target.value || null, updatedAt: new Date().toISOString() }, "Due date changed", event.target.value ? `Due ${event.target.value}` : "Due date cleared")}
                   disabled={props.isSaving}
-                  className="h-10 border-[#CBD5E1] bg-white text-sm text-[#1E293B]"
+                  className="h-[2.75rem] border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]"
                 />
+              </label>
+              <label className="space-y-1 md:col-span-2">
+                <span className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>Linked Work Log</span>
+                <select
+                  value={props.selectedIssue.linkedWorkProofId ?? ""}
+                  onChange={(event) => {
+                    const linkedWorkProofId = event.target.value || null;
+                    props.setIssueLocal(props.selectedIssue!.id, { linkedWorkProofId });
+                    void props.saveIssueFields(props.selectedIssue!.id, { linkedWorkProofId }, "Work log linked");
+                  }}
+                  disabled={props.isSaving}
+                  className={`${interMedium.className} h-[2.75rem] w-full rounded-[10px] border border-[#D9E3EE] bg-white px-3.5 text-[14px] text-[#10283B]`}
+                >
+                  <option value="">No work log link</option>
+                  {props.workProofs.map((workProof) => (
+                    <option key={workProof.id} value={workProof.id}>
+                      {workProof.tradeType || "Work"} • {workProof.workCategory || "Proof"} • {workProof.area || "Area"}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -326,13 +373,23 @@ export function QualityIssueDetailSheet(props: QualityIssueDetailSheetProps) {
               <Trash2 className="mr-1 h-3.5 w-3.5" />
               Delete Issue
             </Button>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+              <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)} className="h-10 rounded-[10px] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]">
+                Cancel
+              </Button>
+              <Button type="button" onClick={props.onSaveAndClose} disabled={props.isSaving || !props.selectedIssue.title.trim()} className="h-10 rounded-[10px] bg-[#F15A29] px-5 text-[14px] font-semibold text-white hover:bg-[#db4d1f] disabled:cursor-not-allowed disabled:opacity-70">
+                Save Issue
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="h-4 w-36 animate-pulse rounded bg-[#E2E8F0]" />
           </div>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

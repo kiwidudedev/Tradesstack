@@ -7,6 +7,7 @@ import type {
   QualityIssue,
   QualityPhoto,
   QualityPhotoInsertPayload,
+  QualityWorkProof,
   SignOffStatus,
   SignOffType,
 } from "@/lib/quality-assurance/types";
@@ -81,12 +82,16 @@ export async function createIssue(
     title: string;
     description: string;
     trade: string;
+    tradeType: string;
+    workCategory: string;
     location: string;
+    area: string;
     priority: QualityIssue["priority"];
     status: QualityIssue["status"];
     dueDate: string;
     assigneeUserId: string;
     assigneeName: string;
+    linkedWorkProofId: string | null;
   }
 ) {
   const issuesTable = (supabase as any).from("project_quality_issues");
@@ -98,12 +103,16 @@ export async function createIssue(
       title: payload.title.trim(),
       description: payload.description.trim(),
       trade: payload.trade.trim(),
+      trade_type: payload.tradeType.trim() || payload.trade.trim(),
+      work_category: payload.workCategory.trim(),
       location: payload.location.trim(),
+      area: payload.area.trim() || payload.location.trim(),
       priority: payload.priority,
       status: payload.status,
       due_date: payload.dueDate || null,
       assignee_name: payload.assigneeUserId ? payload.assigneeName : "",
       assignee_user_id: payload.assigneeUserId || null,
+      linked_work_proof_id: payload.linkedWorkProofId,
     })
     .select("*")
     .maybeSingle();
@@ -299,7 +308,10 @@ export async function createPhoto(
       title: payload.title,
       notes: payload.notes,
       trade: payload.trade,
+      trade_type: payload.tradeType,
+      work_category: payload.workCategory,
       location: payload.location,
+      area: payload.area,
       photo_type: payload.photoType,
       category: payload.category,
       status_tag: payload.statusTag,
@@ -308,12 +320,13 @@ export async function createPhoto(
       assigned_user_name: payload.assignedUserName,
       has_signoff_evidence: payload.hasSignoffEvidence,
       captured_at: payload.capturedAtIso,
+      linked_work_proof_id: payload.linkedWorkProofId,
       linked_issue_id: payload.linkedIssueId,
       linked_inspection_id: payload.linkedInspectionId,
       linked_inspection_item_id: payload.linkedInspectionItemId,
     })
     .select(
-      "id, title, notes, photo_url, storage_path, trade, location, photo_type, category, status_tag, phase_tag, assigned_user_id, assigned_user_name, has_signoff_evidence, captured_at, uploaded_by_name, uploaded_by_user_id, linked_issue_id, linked_inspection_id, linked_inspection_item_id, created_at"
+      "id, title, notes, photo_url, storage_path, trade, trade_type, work_category, location, area, photo_type, category, status_tag, phase_tag, assigned_user_id, assigned_user_name, has_signoff_evidence, captured_at, uploaded_by_name, uploaded_by_user_id, linked_work_proof_id, linked_issue_id, linked_inspection_id, linked_inspection_item_id, created_at"
     )
     .maybeSingle();
 
@@ -333,7 +346,10 @@ export async function mapInsertedPhoto(supabase: any, data: Record<string, unkno
       typeof data.storage_path === "string" ? data.storage_path : String(data.photo_url ?? "")
     ),
     trade: String(data.trade ?? ""),
+    tradeType: String(data.trade_type ?? data.trade ?? ""),
+    workCategory: String(data.work_category ?? data.category ?? ""),
     location: String(data.location ?? ""),
+    area: String(data.area ?? data.location ?? ""),
     photoType: normalizePhotoType(data.photo_type),
     category: String(data.category ?? "Progress"),
     statusTag: String(data.status_tag ?? ""),
@@ -344,6 +360,7 @@ export async function mapInsertedPhoto(supabase: any, data: Record<string, unkno
     capturedAt: typeof data.captured_at === "string" ? data.captured_at : new Date().toISOString(),
     uploadedByName: String(data.uploaded_by_name ?? ""),
     uploadedByUserId: typeof data.uploaded_by_user_id === "string" ? data.uploaded_by_user_id : null,
+    linkedWorkProofId: typeof data.linked_work_proof_id === "string" ? data.linked_work_proof_id : null,
     linkedIssueId: typeof data.linked_issue_id === "string" ? data.linked_issue_id : null,
     linkedInspectionId: typeof data.linked_inspection_id === "string" ? data.linked_inspection_id : null,
     linkedInspectionItemId: typeof data.linked_inspection_item_id === "string" ? data.linked_inspection_item_id : null,
@@ -384,10 +401,14 @@ export async function createSignOff(
     title: string;
     type: SignOffType;
     trade: string;
+    tradeType: string;
+    workCategory: string;
     location: string;
+    area: string;
     assigneeUserId: string;
     assigneeName: string;
     dueDate: string;
+    linkedWorkProofId: string;
     linkedInspectionId: string;
     linkedIssueId: string;
     note: string;
@@ -402,16 +423,20 @@ export async function createSignOff(
       title: payload.title.trim(),
       signoff_type: payload.type,
       trade: payload.trade.trim(),
+      trade_type: payload.tradeType.trim() || payload.trade.trim(),
+      work_category: payload.workCategory.trim(),
       location: payload.location.trim(),
+      area: payload.area.trim() || payload.location.trim(),
       assignee_name: payload.assigneeUserId ? payload.assigneeName : "",
       assignee_user_id: payload.assigneeUserId || null,
       due_date: payload.dueDate || null,
+      linked_work_proof_id: payload.linkedWorkProofId || null,
       linked_inspection_id: payload.linkedInspectionId || null,
       linked_issue_id: payload.linkedIssueId || null,
       note: payload.note.trim(),
       status: "Pending",
     })
-    .select("id, title, signoff_type, trade, location, assignee_name, assignee_user_id, due_date, linked_inspection_id, linked_issue_id, note, status, signed_by_name, signed_at, created_at")
+    .select("id, title, signoff_type, trade, trade_type, work_category, location, area, assignee_name, assignee_user_id, due_date, linked_work_proof_id, linked_inspection_id, linked_issue_id, note, status, signed_by_name, signed_at, approved_at, approved_by_user_id, created_at")
     .maybeSingle();
   if (error) {
     throw new Error(error.message);
@@ -431,10 +456,47 @@ export async function updateSignOff(supabase: any, context: ProjectContext, sign
   }
 }
 
+export async function replaceSignoffWorkProofLinks(
+  supabase: any,
+  context: ProjectContext,
+  signoffId: string,
+  workProofIds: string[]
+) {
+  const linksTable = (supabase as any).from("project_quality_sign_off_work_proofs");
+  const uniqueWorkProofIds = [...new Set(workProofIds.filter(Boolean))];
+
+  const { error: deleteError } = await linksTable
+    .delete()
+    .eq("sign_off_id", signoffId)
+    .eq("organization_id", context.organizationId)
+    .eq("project_id", context.projectId);
+
+  if (deleteError && deleteError.code !== "42P01") {
+    throw new Error(deleteError.message);
+  }
+
+  if (uniqueWorkProofIds.length === 0) {
+    return;
+  }
+
+  const { error: insertError } = await linksTable.insert(
+    uniqueWorkProofIds.map((workProofId) => ({
+      organization_id: context.organizationId,
+      project_id: context.projectId,
+      sign_off_id: signoffId,
+      work_proof_id: workProofId,
+    }))
+  );
+
+  if (insertError && insertError.code !== "42P01") {
+    throw new Error(insertError.message);
+  }
+}
+
 export async function signOff(
   supabase: any,
   context: ProjectContext,
-  session: { name?: string | null },
+  session: { id?: string | null; name?: string | null },
   signoffId: string,
   status: SignOffStatus,
   note: string
@@ -446,6 +508,8 @@ export async function signOff(
       requested_at: status === "Requested" ? new Date().toISOString() : null,
       signed_by_name: session?.name ?? null,
       signed_at: status === "Signed" ? new Date().toISOString() : null,
+      approved_at: status === "Signed" ? new Date().toISOString() : null,
+      approved_by_user_id: status === "Signed" ? session?.id ?? null : null,
       note: note.trim(),
     })
     .eq("id", signoffId)
@@ -457,3 +521,94 @@ export async function signOff(
 }
 
 export const rejectSignOff = signOff;
+
+export async function createWorkProof(
+  supabase: any,
+  context: ProjectContext,
+  session: { id?: string | null },
+  payload: {
+    tradeType: string;
+    workCategory: string;
+    area: string;
+    note: string;
+    status: QualityWorkProof["status"];
+  }
+) {
+  const workProofsTable = (supabase as any).from("project_quality_work_proofs");
+  const { data, error } = await workProofsTable
+    .insert({
+      organization_id: context.organizationId,
+      project_id: context.projectId,
+      created_by: session.id,
+      trade_type: payload.tradeType.trim(),
+      work_category: payload.workCategory.trim(),
+      area: payload.area.trim(),
+      note: payload.note.trim(),
+      status: payload.status,
+      completed_at: payload.status === "draft" ? null : new Date().toISOString(),
+    })
+    .select("id, trade_type, work_category, area, note, status, created_by, created_at, updated_at, completed_at")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+export async function createWorkProofChecklistItems(
+  supabase: any,
+  context: ProjectContext,
+  workProofId: string,
+  labels: string[]
+) {
+  const itemsTable = (supabase as any).from("project_quality_work_proof_checklist_items");
+  const { data, error } = await itemsTable
+    .insert(
+      labels.map((label) => ({
+        organization_id: context.organizationId,
+        project_id: context.projectId,
+        work_proof_id: workProofId,
+        label,
+        checked: false,
+      }))
+    )
+    .select("id, label, checked, checked_by, checked_at");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
+export async function updateWorkProof(supabase: any, context: ProjectContext, workProofId: string, dbPatch: Record<string, unknown>) {
+  const workProofsTable = (supabase as any).from("project_quality_work_proofs");
+  const { error } = await workProofsTable
+    .update(dbPatch)
+    .eq("id", workProofId)
+    .eq("organization_id", context.organizationId)
+    .eq("project_id", context.projectId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updateWorkProofChecklistItem(
+  supabase: any,
+  context: ProjectContext,
+  itemId: string,
+  dbPatch: Record<string, unknown>
+) {
+  const itemsTable = (supabase as any).from("project_quality_work_proof_checklist_items");
+  const { error } = await itemsTable
+    .update(dbPatch)
+    .eq("id", itemId)
+    .eq("organization_id", context.organizationId)
+    .eq("project_id", context.projectId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
