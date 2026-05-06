@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
@@ -94,6 +95,7 @@ export default function PreconstructionQuotePage() {
   const canManageQuote = canManageCommercialData(session?.role);
 
   const [quoteId, setQuoteId] = useState<string | null>(null);
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [projectCode, setProjectCode] = useState<string | null>(null);
@@ -406,6 +408,7 @@ export default function PreconstructionQuotePage() {
 
         type QuoteRow = {
           id: string;
+          updated_at: string | null;
           status: QuoteStatus;
           quote_title: string;
           quote_number: string;
@@ -471,12 +474,14 @@ export default function PreconstructionQuotePage() {
           if (!cancelled) {
             setQuoteNumber(nextNumber);
             setIsEditing(true);
+            setQuoteUpdatedAt(null);
           }
           setQuoteDate(new Date().toISOString().slice(0, 10));
           return;
         }
 
         setQuoteId(selectedQuote.id);
+        setQuoteUpdatedAt(selectedQuote.updated_at ?? null);
         setQuoteStatus(normalizeAllowedStatus(selectedQuote.status));
         setQuoteTitle(selectedQuote.quote_title);
         setQuoteNumber(selectedQuote.quote_number);
@@ -508,7 +513,7 @@ export default function PreconstructionQuotePage() {
 
         const { data: itemRows, error: itemsError } = await supabase
           .from("project_quote_line_items")
-          .select("id, section, description, quantity, unit, rate, is_optional, sort_order")
+          .select("id, section, description, quantity, unit, rate, is_optional, sort_order, source_opportunity_quote_id, source_opportunity_quote_line_item_id, source_opportunity_quote_number")
           .eq("organization_id", resolvedOrganizationId)
           .eq("quote_id", selectedQuote.id)
           .order("sort_order", { ascending: true });
@@ -525,6 +530,9 @@ export default function PreconstructionQuotePage() {
             unit: item.unit,
             rate: item.rate,
             isOptional: item.is_optional,
+            sourceOpportunityQuoteId: item.source_opportunity_quote_id,
+            sourceOpportunityQuoteLineItemId: item.source_opportunity_quote_line_item_id,
+            sourceOpportunityQuoteNumber: item.source_opportunity_quote_number,
           }));
           setLineItems(nextItems.length > 0 ? nextItems : [makeDefaultLineItem()]);
         }
@@ -715,13 +723,16 @@ export default function PreconstructionQuotePage() {
         unit: item.unit.trim(),
         rate: Number(item.rate),
         isOptional: item.isOptional,
+        sourceOpportunityQuoteId: item.sourceOpportunityQuoteId ?? null,
+        sourceOpportunityQuoteLineItemId: item.sourceOpportunityQuoteLineItemId ?? null,
+        sourceOpportunityQuoteNumber: item.sourceOpportunityQuoteNumber ?? null,
       }));
 
       const { data: saveRows, error: saveError } = await supabase.rpc("save_project_quote_draft", {
         p_organization_id: organizationId,
         p_project_id: dbProjectId,
         p_quote_id: quoteId,
-        p_expected_updated_at: null,
+        p_expected_updated_at: quoteId ? quoteUpdatedAt : null,
         p_quote_title: trimmedTitle,
         p_quote_number: trimmedNumber,
         p_client_name: clientName.trim(),
@@ -761,8 +772,18 @@ export default function PreconstructionQuotePage() {
       if (!savedQuoteId) {
         throw new Error("Quote was saved but no identifier was returned.");
       }
+      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : null;
+      if (!nextUpdatedAt) {
+        throw new Error("Quote was saved but no updated timestamp was returned.");
+      }
 
       setQuoteId(savedQuoteId);
+      setQuoteUpdatedAt(nextUpdatedAt);
+      triggerDocumentClassification({
+        documentKind: "project_quote",
+        documentId: savedQuoteId,
+        keepalive: true,
+      });
 
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
       if (quoteStatus === "Expired") {

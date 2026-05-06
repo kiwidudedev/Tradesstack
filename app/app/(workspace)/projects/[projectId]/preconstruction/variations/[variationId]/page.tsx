@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
@@ -35,6 +36,9 @@ interface CostLine {
   quantity: number;
   unit: string;
   rate: number;
+  sourceProjectQuoteId?: string | null;
+  sourceProjectQuoteLineItemId?: string | null;
+  sourceProjectQuoteNumber?: string;
   sourcePurchaseOrderId?: string | null;
   sourcePurchaseOrderLineItemId?: string | null;
   sourcePurchaseOrderNumber?: string;
@@ -42,7 +46,7 @@ interface CostLine {
 
 type CostLineIdentityFields = Pick<
   CostLine,
-  "section" | "description" | "quantity" | "unit" | "rate" | "sourcePurchaseOrderLineItemId"
+  "section" | "description" | "quantity" | "unit" | "rate" | "sourceProjectQuoteLineItemId" | "sourcePurchaseOrderLineItemId"
 >;
 
 interface AttachmentItem {
@@ -55,6 +59,7 @@ interface AttachmentItem {
 
 interface VariationItem {
   id: string;
+  updatedAt: string | null;
   code: string;
   title: string;
   status: VariationStatus;
@@ -86,6 +91,7 @@ interface VariationItem {
 
 interface VariationRow {
   id: string;
+  updated_at: string | null;
   variation_number: string;
   variation_title: string;
   status: string;
@@ -123,6 +129,22 @@ interface PurchaseOrderOption {
 interface PurchaseOrderLineOption {
   id: string;
   purchase_order_id: string;
+  section: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+}
+
+interface ProjectQuoteOption {
+  id: string;
+  quote_number: string;
+}
+
+interface ProjectQuoteLineOption {
+  id: string;
+  quote_id: string;
+  quote_number: string;
   section: string;
   description: string;
   quantity: number;
@@ -342,9 +364,15 @@ export default function ProjectVariationsPage() {
   const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderOption[]>([]);
   const [purchaseOrderLines, setPurchaseOrderLines] = useState<PurchaseOrderLineOption[]>([]);
+  const [projectQuotes, setProjectQuotes] = useState<ProjectQuoteOption[]>([]);
+  const [projectQuoteLines, setProjectQuoteLines] = useState<ProjectQuoteLineOption[]>([]);
   const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState("");
   const [selectedPurchaseOrderLineIds, setSelectedPurchaseOrderLineIds] = useState<Set<string>>(new Set());
   const [isPurchaseOrderImportOpen, setIsPurchaseOrderImportOpen] = useState(false);
+  const [selectedProjectQuoteId, setSelectedProjectQuoteId] = useState("");
+  const [selectedProjectQuoteLineId, setSelectedProjectQuoteLineId] = useState("");
+  const [quoteLinkTargetLineId, setQuoteLinkTargetLineId] = useState<string | null>(null);
+  const [isQuoteLinkOpen, setIsQuoteLinkOpen] = useState(false);
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -444,11 +472,21 @@ export default function ProjectVariationsPage() {
       const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const purchaseOrderLineItemsTable = (supabase as any).from("project_purchase_order_line_items");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const projectQuotesTable = (supabase as any).from("project_quotes");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const projectQuoteLineItemsTable = (supabase as any).from("project_quote_line_items");
 
-      const [{ data: variationRowsRaw, error: variationError }, { data: purchaseOrderRowsRaw }, { data: purchaseOrderLineRowsRaw }] = await Promise.all([
+      const [
+        { data: variationRowsRaw, error: variationError },
+        { data: purchaseOrderRowsRaw },
+        { data: purchaseOrderLineRowsRaw },
+        { data: projectQuoteRowsRaw },
+        { data: projectQuoteLineRowsRaw },
+      ] = await Promise.all([
         variationsTable
           .select(
-          "id, variation_number, variation_title, status, origin, requested_by, requested_date, due_date, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes, validity_period, payment_terms, lead_time, terms_inclusions, terms_exclusions, clarifications, assumptions"
+          "id, updated_at, variation_number, variation_title, status, origin, requested_by, requested_date, due_date, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes, validity_period, payment_terms, lead_time, terms_inclusions, terms_exclusions, clarifications, assumptions"
         )
         .eq("organization_id", resolvedOrganizationId)
         .eq("project_id", projectRow.id)
@@ -463,6 +501,16 @@ export default function ProjectVariationsPage() {
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
           .order("sort_order", { ascending: true }),
+        projectQuotesTable
+          .select("id, quote_number")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("updated_at", { ascending: false }),
+        projectQuoteLineItemsTable
+          .select("id, quote_id, section, description, quantity, unit, rate")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("sort_order", { ascending: true }),
       ]);
 
       if (variationError) {
@@ -474,6 +522,33 @@ export default function ProjectVariationsPage() {
       const variationRows = (variationRowsRaw ?? []) as VariationRow[];
       setPurchaseOrders((purchaseOrderRowsRaw ?? []) as PurchaseOrderOption[]);
       setPurchaseOrderLines((purchaseOrderLineRowsRaw ?? []) as PurchaseOrderLineOption[]);
+      const projectQuoteRows = (projectQuoteRowsRaw ?? []) as ProjectQuoteOption[];
+      const projectQuoteRowsById = new Map(projectQuoteRows.map((row) => [row.id, row]));
+      setProjectQuotes(projectQuoteRows);
+      setProjectQuoteLines(
+        ((projectQuoteLineRowsRaw ?? []) as Array<{
+          id: string;
+          quote_id: string;
+          section: string;
+          description: string;
+          quantity: number;
+          unit: string;
+          rate: number;
+        }>)
+          .map((lineRow) => {
+            const quoteRow = projectQuoteRowsById.get(lineRow.quote_id);
+            return {
+              id: lineRow.id,
+              quote_id: lineRow.quote_id,
+              quote_number: quoteRow?.quote_number ?? "Quote",
+              section: lineRow.section ?? "Labour",
+              description: lineRow.description ?? "",
+              quantity: Number(lineRow.quantity ?? 0),
+              unit: lineRow.unit ?? "",
+              rate: Number(lineRow.rate ?? 0),
+            } satisfies ProjectQuoteLineOption;
+          })
+      );
       if (variationRows.length === 0) {
         setVariations([]);
         setActiveVariationId(null);
@@ -486,7 +561,7 @@ export default function ProjectVariationsPage() {
       const variationIds = variationRows.map((row) => row.id);
       const [{ data: lineRowsRaw }, { data: attachmentRowsRaw }] = await Promise.all([
         lineItemsTable
-          .select("id, variation_id, section, description, quantity, unit, rate, source_purchase_order_id, source_purchase_order_line_item_id, source_purchase_order_number")
+          .select("id, variation_id, section, description, quantity, unit, rate, source_project_quote_id, source_project_quote_line_item_id, source_project_quote_number, source_purchase_order_id, source_purchase_order_line_item_id, source_purchase_order_number")
           .in("variation_id", variationIds)
           .order("sort_order", { ascending: true }),
         attachmentsTable
@@ -503,6 +578,9 @@ export default function ProjectVariationsPage() {
         quantity: number;
         unit: string;
         rate: number;
+        source_project_quote_id: string | null;
+        source_project_quote_line_item_id: string | null;
+        source_project_quote_number: string | null;
         source_purchase_order_id: string | null;
         source_purchase_order_line_item_id: string | null;
         source_purchase_order_number: string | null;
@@ -526,6 +604,9 @@ export default function ProjectVariationsPage() {
           quantity: Number(lineRow.quantity ?? 0),
           unit: lineRow.unit ?? "",
           rate: Number(lineRow.rate ?? 0),
+          sourceProjectQuoteId: lineRow.source_project_quote_id ?? null,
+          sourceProjectQuoteLineItemId: lineRow.source_project_quote_line_item_id ?? null,
+          sourceProjectQuoteNumber: lineRow.source_project_quote_number ?? "",
           sourcePurchaseOrderId: lineRow.source_purchase_order_id ?? null,
           sourcePurchaseOrderLineItemId: lineRow.source_purchase_order_line_item_id ?? null,
           sourcePurchaseOrderNumber: lineRow.source_purchase_order_number ?? "",
@@ -551,6 +632,7 @@ export default function ProjectVariationsPage() {
 
       const hydratedVariations: VariationItem[] = variationRows.map((row) => ({
         id: row.id,
+        updatedAt: row.updated_at ?? null,
         code: row.variation_number,
         title: row.variation_title,
         status: normalizeStatus(row.status),
@@ -621,6 +703,18 @@ export default function ProjectVariationsPage() {
     () => purchaseOrderLines.filter((line) => line.purchase_order_id === selectedPurchaseOrderId),
     [purchaseOrderLines, selectedPurchaseOrderId]
   );
+  const selectedProjectQuote = useMemo(
+    () => projectQuotes.find((quote) => quote.id === selectedProjectQuoteId) ?? null,
+    [projectQuotes, selectedProjectQuoteId]
+  );
+  const selectedProjectQuoteLineOptions = useMemo(
+    () => projectQuoteLines.filter((line) => line.quote_id === selectedProjectQuoteId),
+    [projectQuoteLines, selectedProjectQuoteId]
+  );
+  const quoteLinkTargetLine = useMemo(
+    () => activeVariation?.costLines.find((line) => line.id === quoteLinkTargetLineId) ?? null,
+    [activeVariation, quoteLinkTargetLineId]
+  );
 
   useEffect(() => {
     if (selectedPurchaseOrderId && purchaseOrders.some((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId)) {
@@ -632,6 +726,24 @@ export default function ProjectVariationsPage() {
   useEffect(() => {
     setSelectedPurchaseOrderLineIds(new Set());
   }, [selectedPurchaseOrderId]);
+
+  useEffect(() => {
+    if (selectedProjectQuoteId && projectQuotes.some((quote) => quote.id === selectedProjectQuoteId)) {
+      return;
+    }
+    setSelectedProjectQuoteId(projectQuotes[0]?.id ?? "");
+  }, [projectQuotes, selectedProjectQuoteId]);
+
+  useEffect(() => {
+    if (!selectedProjectQuoteId) {
+      setSelectedProjectQuoteLineId("");
+      return;
+    }
+    if (selectedProjectQuoteLineId && selectedProjectQuoteLineOptions.some((line) => line.id === selectedProjectQuoteLineId)) {
+      return;
+    }
+    setSelectedProjectQuoteLineId("");
+  }, [selectedProjectQuoteId, selectedProjectQuoteLineId, selectedProjectQuoteLineOptions]);
 
   useEffect(() => {
     if (!routeVariationId || variations.length === 0) {
@@ -708,9 +820,13 @@ export default function ProjectVariationsPage() {
       if (!createdRow?.id) {
         throw new Error("Variation was created but no identifier was returned.");
       }
+      if (typeof createdRow.updated_at !== "string" || createdRow.updated_at.length === 0) {
+        throw new Error("Variation was created but no updated timestamp was returned.");
+      }
 
       const createdVariation: VariationItem = {
         id: createdRow.id,
+        updatedAt: createdRow.updated_at,
         code: createdRow.variation_number || `${jobCode}-VAR-00`,
         title: createdRow.variation_title || "New Variation",
         status: normalizeStatus(createdRow.status),
@@ -830,6 +946,88 @@ export default function ProjectVariationsPage() {
     setSelectedPurchaseOrderLineIds(new Set());
   };
 
+  const openQuoteLinkPicker = (lineId: string) => {
+    if (!activeVariation) {
+      return;
+    }
+
+    const targetLine = activeVariation.costLines.find((line) => line.id === lineId) ?? null;
+    if (!targetLine) {
+      return;
+    }
+
+    setQuoteLinkTargetLineId(lineId);
+    setSelectedProjectQuoteId(targetLine.sourceProjectQuoteId ?? projectQuotes[0]?.id ?? "");
+    setSelectedProjectQuoteLineId(targetLine.sourceProjectQuoteLineItemId ?? "");
+    setIsQuoteLinkOpen(true);
+  };
+
+  const openQuoteLinkPanel = () => {
+    if (!activeVariation) {
+      return;
+    }
+
+    const fallbackLine = activeVariation.costLines[0] ?? null;
+    if (!fallbackLine) {
+      return;
+    }
+
+    openQuoteLinkPicker(fallbackLine.id);
+  };
+
+  const assignSelectedProjectQuoteLine = () => {
+    if (!activeVariation || !quoteLinkTargetLineId) {
+      return;
+    }
+
+    const selectedLine = projectQuoteLines.find((line) => line.id === selectedProjectQuoteLineId) ?? null;
+    if (!selectedLine) {
+      return;
+    }
+
+    updateActiveVariation(
+      "costLines",
+      activeVariation.costLines.map((line) =>
+        line.id === quoteLinkTargetLineId
+          ? {
+              ...line,
+              sourceProjectQuoteId: selectedLine.quote_id,
+              sourceProjectQuoteLineItemId: selectedLine.id,
+              sourceProjectQuoteNumber: selectedLine.quote_number,
+              sourcePurchaseOrderId: null,
+              sourcePurchaseOrderLineItemId: null,
+              sourcePurchaseOrderNumber: "",
+            }
+          : line
+      )
+    );
+    setIsQuoteLinkOpen(false);
+  };
+
+  const clearProjectQuoteLink = (lineId: string) => {
+    if (!activeVariation) {
+      return;
+    }
+
+    updateActiveVariation(
+      "costLines",
+      activeVariation.costLines.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              sourceProjectQuoteId: null,
+              sourceProjectQuoteLineItemId: null,
+              sourceProjectQuoteNumber: "",
+            }
+          : line
+      )
+    );
+
+    if (quoteLinkTargetLineId === lineId) {
+      setSelectedProjectQuoteLineId("");
+    }
+  };
+
   const updateCostLine = <K extends keyof CostLine>(lineId: string, key: K, value: CostLine[K]) => {
     if (!activeVariation) return;
     updateActiveVariation("costLines", activeVariation.costLines.map((line) => (line.id === lineId ? { ...line, [key]: value } : line)));
@@ -920,6 +1118,10 @@ export default function ProjectVariationsPage() {
       setError("Variation save is not ready. Please refresh and try again.");
       return;
     }
+    if (!activeVariation.updatedAt) {
+      setError("Variation version is missing. Please refresh and try again.");
+      return;
+    }
 
     if (!canManageVariation) {
       setError("You do not have permission to edit variations.");
@@ -941,6 +1143,9 @@ export default function ProjectVariationsPage() {
         quantity: Number(line.quantity),
         unit: line.unit,
         rate: Number(line.rate),
+        sourceProjectQuoteId: line.sourceProjectQuoteId ?? null,
+        sourceProjectQuoteLineItemId: line.sourceProjectQuoteLineItemId ?? null,
+        sourceProjectQuoteNumber: line.sourceProjectQuoteNumber ?? "",
         sourcePurchaseOrderId: line.sourcePurchaseOrderId ?? null,
         sourcePurchaseOrderLineItemId: line.sourcePurchaseOrderLineItemId ?? null,
         sourcePurchaseOrderNumber: line.sourcePurchaseOrderNumber ?? "",
@@ -958,7 +1163,7 @@ export default function ProjectVariationsPage() {
         p_organization_id: organizationId,
         p_project_id: dbProjectId,
         p_variation_id: activeVariation.id,
-        p_expected_updated_at: null,
+        p_expected_updated_at: activeVariation.updatedAt,
         p_variation_title: activeVariation.title.trim() || activeVariation.code,
         p_variation_number: activeVariation.code,
         p_status: activeVariation.status,
@@ -997,18 +1202,33 @@ export default function ProjectVariationsPage() {
         throw new Error("Variation was saved but no result was returned.");
       }
 
+      const savedVariationId = typeof savedRow.id === "string" ? savedRow.id : null;
+      if (!savedVariationId) {
+        throw new Error("Variation was saved but no identifier was returned.");
+      }
+      const savedVariationUpdatedAt = typeof savedRow.updated_at === "string" ? savedRow.updated_at : null;
+      if (!savedVariationUpdatedAt) {
+        throw new Error("Variation was saved but no updated timestamp was returned.");
+      }
+
+      triggerDocumentClassification({
+        documentKind: "project_variation",
+        documentId: savedVariationId,
+      });
+
       persistedCostLinesByVariationRef.current.set(
-        activeVariation.id,
+        savedVariationId,
         reconciledCostLines.map((line) => ({ ...line }))
       );
       setVariations((current) =>
         current.map((variation) =>
-          variation.id === activeVariation.id
-            ? { ...variation, costLines: reconciledCostLines }
+          variation.id === activeVariation.id || variation.id === savedVariationId
+            ? { ...variation, id: savedVariationId, updatedAt: savedVariationUpdatedAt, costLines: reconciledCostLines }
             : variation
         )
       );
-      setPersistedVariationIds((current) => new Set([...current, activeVariation.id]));
+      setActiveVariationId(savedVariationId);
+      setPersistedVariationIds((current) => new Set([...current, savedVariationId]));
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save variation.");
@@ -1690,15 +1910,26 @@ export default function ProjectVariationsPage() {
           <section className="py-5">
             <div className="flex items-center justify-between">
               <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Line Items</h2>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
-                className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Import PO Items
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={openQuoteLinkPanel}
+                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Link Quoted Item
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
+                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Import PO Items
+                </Button>
+              </div>
             </div>
 
             <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
@@ -1727,11 +1958,29 @@ export default function ProjectVariationsPage() {
                           />
                         </div>
                         <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
-                          {line.sourcePurchaseOrderNumber ? (
-                            <span className={`${interMedium.className} text-[12px] text-[#64748B]`}>
-                              {line.sourcePurchaseOrderNumber}
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <span className={`${interMedium.className} truncate text-[12px] text-[#64748B]`}>
+                              {line.sourceProjectQuoteNumber || line.sourcePurchaseOrderNumber || "Manual"}
                             </span>
-                          ) : null}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openQuoteLinkPicker(line.id)}
+                                className={`${interMedium.className} text-[11px] text-[#475569] underline-offset-2 hover:text-[#22324A] hover:underline`}
+                              >
+                                {line.sourceProjectQuoteLineItemId ? "Change" : "Link"}
+                              </button>
+                              {line.sourceProjectQuoteLineItemId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => clearProjectQuoteLink(line.id)}
+                                  className={`${interMedium.className} text-[11px] text-[#64748B] underline-offset-2 hover:text-[#22324A] hover:underline`}
+                                >
+                                  Clear
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
                         <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
                           <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}>
@@ -1782,6 +2031,131 @@ export default function ProjectVariationsPage() {
                 Add Item
               </Button>
             </div>
+
+            {isQuoteLinkOpen ? (
+              <div className="mt-3 min-h-0 rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8EDF5] pb-4">
+                  <div className="space-y-1">
+                    <h3 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Link To Quoted Item</h3>
+                    <p className={styles.quoteBodyLabel}>Choose an existing quoted item to link to this variation line.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsQuoteLinkOpen(false)}
+                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={assignSelectedProjectQuoteLine}
+                      disabled={!quoteLinkTargetLineId || !selectedProjectQuoteLineId}
+                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4 disabled:opacity-50`}
+                    >
+                      Link Selected Quote Line
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className={styles.quoteBodyLabel}>Variation line</label>
+                    <select
+                      value={quoteLinkTargetLineId ?? ""}
+                      onChange={(event) => openQuoteLinkPicker(event.target.value)}
+                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                    >
+                      {activeVariation.costLines.map((line, index) => (
+                        <option key={line.id} value={line.id}>
+                          {`Line ${index + 1} - ${line.description.trim() || line.section}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={styles.quoteBodyLabel}>Quote</label>
+                    <select
+                      value={selectedProjectQuoteId}
+                      onChange={(event) => setSelectedProjectQuoteId(event.target.value)}
+                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                    >
+                      <option value="">Select quote</option>
+                      {projectQuotes.map((quote) => (
+                        <option key={quote.id} value={quote.id}>
+                          {quote.quote_number}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedProjectQuote ? (
+                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+                    <table className="min-w-full border-collapse">
+                      <thead>
+                        <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                          <th className="w-[44px] px-3 py-2.5 text-left" />
+                          <th className="px-3 py-2.5 text-left">Description</th>
+                          <th className="w-[140px] px-3 py-2.5 text-left">Item</th>
+                          <th className="w-[90px] px-3 py-2.5 text-left">Qty.</th>
+                          <th className="w-[110px] px-3 py-2.5 text-left">Price</th>
+                          <th className="w-[120px] px-3 py-2.5 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                        {selectedProjectQuoteLineOptions.length > 0 ? (
+                          selectedProjectQuoteLineOptions.map((line) => (
+                            <tr key={line.id} className="transition-colors">
+                              <td className="px-3 py-3 align-middle">
+                                <label className="flex items-center justify-center">
+                                  <input
+                                    type="radio"
+                                    name="selected-project-quote-line"
+                                    checked={selectedProjectQuoteLineId === line.id}
+                                    onChange={() => setSelectedProjectQuoteLineId(line.id)}
+                                    className="h-4 w-4 border-[#CBD5E1]"
+                                  />
+                                </label>
+                              </td>
+                              <td className="min-w-0 px-3 py-3 align-middle">
+                                <span className={`${interMedium.className} block truncate text-sm font-medium text-[#1d2433]`}>
+                                  {line.description || "Untitled line item"}
+                                </span>
+                              </td>
+                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.section}</td>
+                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.quantity}</td>
+                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{toMoney(line.rate)}</td>
+                              <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[#0F172A] align-middle`}>
+                                {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[#64748B]`}>
+                              No quote line items available to link.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className={`${interMedium.className} mt-4 text-sm text-[#64748B]`}>
+                    Select a quote to choose a source line.
+                  </p>
+                )}
+
+                {quoteLinkTargetLine ? (
+                  <p className={`${interMedium.className} mt-3 text-[12px] text-[#64748B]`}>
+                    Linking to: {quoteLinkTargetLine.description.trim() || quoteLinkTargetLine.section}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             {isPurchaseOrderImportOpen ? (
               <div className="mt-3 min-h-0 rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] p-5">

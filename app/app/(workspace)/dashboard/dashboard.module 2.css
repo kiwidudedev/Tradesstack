@@ -1,0 +1,446 @@
+.dashboardScope {
+  --dash-bg: #FBFEFE;
+  --dash-panel: #ffffff;
+  --dash-panel-muted: #F9FAFC;
+  --dash-beige-soft: rgba(245, 239, 230, 0.32);
+  --dash-border: #E2E8F1;
+  --dash-border-strong: #D7E1EC;
+  --dash-ink: #0E172B;
+  --dash-text: #1d1d1d;
+  --dash-muted: #4B5D79;
+  --dash-soft: #7B8CA5;
+  --dash-accent: #F15A29;
+  --dash-sage: #DFF1E5;
+  --dash-sage-ink: #2F6B4F;
+  --dash-gold: #F5EFE6;
+  --dash-gold-ink: #B96A12;
+  background: var(--dash-bg);
+}
+
+.heroBlock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 25px 0 0.35rem;
+}
+
+.heroActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.heroDate {
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 15px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.heroHeading {
+  margin: 0;
+  color: var(--dash-text);
+  font-size: clamp(1.24rem, 2.24vw, 2.08rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+
+.heroSummary {
+  margin: 0.65rem 0 0;
+  max-width: none;
+  color: var(--dash-muted);
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.heroBadgeButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #CBD5E1;
+  border-radius: 0.9rem;
+  background: #FBFEFE;
+  color: #475569;
+  padding: 0.55rem 0.95rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.heroBadgeButton:hover {
+  background: #F8FAFC;
+  opacity: 1;
+}
+
+.dashboardGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.overviewCard,
+.todoCard,
+.todayCard,
+.leadsCard {
+  border: 1.3px solid var(--dash-border);
+  border-radius: 14px;
+  background: #FBFEFE;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.04);
+}
+
+.sectionHeader {
+  padding-top: calc(0.7rem + 5px);
+  padding-bottom: calc(0.7rem + 5px);
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sectionTitle {
+  margin-top: 0;
+  color: var(--dash-text);
+  font-size: 1.4rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.overviewGrid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metricTile {
+  border: 1.3px solid var(--dash-border);
+  border-radius: 14px;
+  background: #FBFEFE;
+  min-height: 170px;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px rgba(15, 23, 42, 0.04);
+}
+
+.metricTop {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.metricLabel {
+  color: #6b6b6b;
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+
+.metricValue {
+  margin: auto 0 0;
+  padding-top: 1rem;
+  color: #111827;
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+}
+
+.metricMeta {
+  margin: 0.65rem 0 0;
+  color: #4b5d79;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.iconBadgeAccent,
+.iconBadgeInk,
+.iconBadgeSage,
+.iconBadgeGold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 3.1rem;
+  width: 3.1rem;
+  border-radius: 1rem;
+}
+
+.iconBadgeAccent {
+  background: #FFE5D9;
+  color: var(--dash-accent);
+}
+
+.iconBadgeInk {
+  background: #0E172B;
+  color: #D9E6F2;
+}
+
+.iconBadgeSage {
+  background: var(--dash-sage);
+  color: #18384C;
+}
+
+.iconBadgeGold {
+  background: var(--dash-gold);
+  color: var(--dash-accent);
+}
+
+.todoList,
+.todayList,
+.leadList {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.todoRow,
+.todayRow,
+.leadRow {
+  border: 1.3px solid var(--dash-border);
+  border-radius: 14px;
+  background: #FBFEFE;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.04);
+}
+
+.todoRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.7rem 0.7rem 0.75rem;
+}
+
+.todoCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: rgba(255, 228, 215, 0.95);
+  color: var(--dash-accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.todoText {
+  min-width: 0;
+}
+
+.todoTitle {
+  margin: 0;
+  color: var(--dash-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.todoMeta {
+  margin: 0.25rem 0 0;
+  color: var(--dash-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.todoArrow {
+  color: var(--dash-soft);
+  height: 0.7rem;
+  width: 0.7rem;
+}
+
+.todayRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.7rem 0.7rem 0.75rem;
+}
+
+.todayCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.65rem;
+  width: 1.65rem;
+  border-radius: 999px;
+  background: #edf7ef;
+  color: #2e7b56;
+}
+
+.todayText {
+  min-width: 0;
+}
+
+.todayEyebrow {
+  margin: 0;
+  color: var(--dash-accent);
+  font-size: 15px;
+}
+
+.todayTitle {
+  margin: 0.25rem 0 0;
+  color: var(--dash-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.todayMeta {
+  margin: 0.25rem 0 0;
+  color: var(--dash-muted);
+  font-size: 15px;
+}
+
+.todayBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--dash-panel-muted);
+  color: var(--dash-ink);
+  padding: 0.35rem 0.55rem;
+  font-size: 15px;
+}
+
+.leadRow {
+  padding: 0.7rem 0.7rem 0.7rem 0.75rem;
+}
+
+.leadTop,
+.leadBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.leadBottom {
+  margin-top: 0.55rem;
+}
+
+.leadTitle {
+  margin: 0;
+  color: var(--dash-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.leadMeta,
+.leadDue {
+  color: var(--dash-muted);
+  font-size: 15px;
+}
+
+.leadStage {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(255, 228, 215, 0.95);
+  color: var(--dash-accent);
+  padding: 0.32rem 0.55rem;
+  font-size: 15px;
+}
+
+.leadValue {
+  color: var(--dash-ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.emptyState {
+  border: 1px dashed var(--dash-border-strong);
+  border-radius: 14px;
+  color: var(--dash-muted);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 3px 8px rgba(15, 23, 42, 0.03);
+  padding: 0.7rem 0.75rem;
+  font-size: 15px;
+}
+
+.editControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.editControlButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2rem;
+  width: 2rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--dash-ink);
+  cursor: pointer;
+  transition: opacity 180ms ease, background-color 180ms ease;
+}
+
+.editControlButton:hover:not(:disabled) {
+  background: var(--dash-panel-muted);
+}
+
+.editControlButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.editingCard {
+  box-shadow:
+    0 20px 40px rgba(17, 17, 17, 0.04),
+    0 4px 14px rgba(17, 17, 17, 0.03),
+    0 0 0 2px rgba(247, 73, 23, 0.12);
+}
+
+@media (min-width: 1024px) {
+  .dashboardGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .overviewCard {
+    grid-column: 1 / -1;
+  }
+
+  .overviewGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .todoCard,
+  .todayCard,
+  .leadsCard {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .heroBlock {
+    flex-direction: column;
+  }
+
+  .heroActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .overviewGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .todoRow,
+  .todayRow {
+    grid-template-columns: auto 1fr;
+  }
+
+  .todoArrow,
+  .todayBadge {
+    display: none;
+  }
+}

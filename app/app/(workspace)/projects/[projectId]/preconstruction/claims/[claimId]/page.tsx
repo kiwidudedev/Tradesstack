@@ -97,6 +97,7 @@ interface CreateClaimDraftRow {
 }
 
 interface SaveClaimDraftRow {
+  id: string;
   updated_at: string;
   claim_amount: number;
   linked_quote_value: number;
@@ -1444,6 +1445,10 @@ export default function ProjectClaimDetailPage() {
       setError("Claim save is not ready. Please refresh and try again.");
       return;
     }
+    if (!claimUpdatedAt) {
+      setError("Claim version is missing. Please reload and try again.");
+      return;
+    }
 
     setIsSaving(true);
     setError(null);
@@ -1498,46 +1503,51 @@ export default function ProjectClaimDetailPage() {
       }
 
       const savedRow = Array.isArray(data) ? (data[0] as SaveClaimDraftRow | undefined) : undefined;
-      if (savedRow) {
-        setClaimUpdatedAt(savedRow.updated_at ?? null);
-        setStatus(savedRow.status ?? status);
-        setPaidAmount(String(savedRow.paid_amount ?? paidAmountNumber));
-        setBaseQuoteValue(Number(savedRow.linked_quote_value ?? 0));
-        setPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
-        setRetentionPercent(String(savedRow.retention_percent ?? retentionPercentNumber));
-        setRetentionReleasedAmount(String(savedRow.retention_released_amount ?? retentionReleasedAmountNumber));
-        setSnapshotClaimAmount(Number(savedRow.claim_amount ?? 0));
-        setSnapshotLinkedQuoteValue(Number(savedRow.linked_quote_value ?? 0));
-        setSnapshotLinkedApprovedVariations(Number(savedRow.linked_approved_variations ?? 0));
-        setSnapshotPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
-        setSnapshotRevisedContractValue(Number(savedRow.revised_contract_value ?? 0));
-        setSnapshotPercentComplete(Number(savedRow.percent_complete ?? 0));
-        setSnapshotRetentionMethod(retentionMethod);
-        setSnapshotRetentionScaleBands(normalizeRetentionScaleBandsForCompare(retentionScaleBands));
-        setSnapshotRetentionPercent(Number(savedRow.retention_percent ?? 0));
-        setSnapshotRetentionWithheldAmount(Number(savedRow.retention_withheld_amount ?? 0));
-        setSnapshotRetentionReleasedAmount(Number(savedRow.retention_released_amount ?? 0));
-        setSnapshotRetentionHeldToDate(Number(savedRow.retention_held_to_date ?? 0));
-        setSnapshotRetentionReleasedToDate(Number(savedRow.retention_released_to_date ?? 0));
-        setSnapshotRetentionBalance(Number(savedRow.retention_balance ?? 0));
-        setSnapshotNetClaimExclGst(Number(savedRow.net_claim_excl_gst ?? 0));
-        setSnapshotGstAmount(Number(savedRow.gst_amount ?? 0));
-        setSnapshotTotalPayable(Number(savedRow.total_payable ?? 0));
-        setRetentionNormalizationStatus("compatible");
-        setPaidToDateTotal((current) => {
-          const currentPaidAmount = numberOrZero(paidAmount);
-          const savedPaidAmount = Number(savedRow.paid_amount ?? currentPaidAmount);
-          return Math.max(0, current - currentPaidAmount + savedPaidAmount);
-        });
-        setPreviousRetentionHeldTotal(Math.max(
-          0,
-          Number(savedRow.retention_held_to_date ?? 0) - Number(savedRow.retention_withheld_amount ?? 0),
-        ));
-        setPreviousRetentionReleasedTotal(Math.max(
-          0,
-          Number(savedRow.retention_released_to_date ?? 0) - Number(savedRow.retention_released_amount ?? 0),
-        ));
+      if (!savedRow?.id) {
+        throw new Error("Claim was saved but no identifier was returned.");
       }
+      if (!savedRow.updated_at) {
+        throw new Error("Claim was saved but no version timestamp was returned.");
+      }
+
+      setClaimUpdatedAt(savedRow.updated_at);
+      setStatus(savedRow.status ?? status);
+      setPaidAmount(String(savedRow.paid_amount ?? paidAmountNumber));
+      setBaseQuoteValue(Number(savedRow.linked_quote_value ?? 0));
+      setPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
+      setRetentionPercent(String(savedRow.retention_percent ?? retentionPercentNumber));
+      setRetentionReleasedAmount(String(savedRow.retention_released_amount ?? retentionReleasedAmountNumber));
+      setSnapshotClaimAmount(Number(savedRow.claim_amount ?? 0));
+      setSnapshotLinkedQuoteValue(Number(savedRow.linked_quote_value ?? 0));
+      setSnapshotLinkedApprovedVariations(Number(savedRow.linked_approved_variations ?? 0));
+      setSnapshotPreviousClaimsTotal(Number(savedRow.previous_claims_total ?? 0));
+      setSnapshotRevisedContractValue(Number(savedRow.revised_contract_value ?? 0));
+      setSnapshotPercentComplete(Number(savedRow.percent_complete ?? 0));
+      setSnapshotRetentionMethod(retentionMethod);
+      setSnapshotRetentionScaleBands(normalizeRetentionScaleBandsForCompare(retentionScaleBands));
+      setSnapshotRetentionPercent(Number(savedRow.retention_percent ?? 0));
+      setSnapshotRetentionWithheldAmount(Number(savedRow.retention_withheld_amount ?? 0));
+      setSnapshotRetentionReleasedAmount(Number(savedRow.retention_released_amount ?? 0));
+      setSnapshotRetentionHeldToDate(Number(savedRow.retention_held_to_date ?? 0));
+      setSnapshotRetentionReleasedToDate(Number(savedRow.retention_released_to_date ?? 0));
+      setSnapshotRetentionBalance(Number(savedRow.retention_balance ?? 0));
+      setSnapshotNetClaimExclGst(Number(savedRow.net_claim_excl_gst ?? 0));
+      setSnapshotGstAmount(Number(savedRow.gst_amount ?? 0));
+      setSnapshotTotalPayable(Number(savedRow.total_payable ?? 0));
+      setRetentionNormalizationStatus("compatible");
+      setPaidToDateTotal((current) => {
+        const currentPaidAmount = numberOrZero(paidAmount);
+        const savedPaidAmount = Number(savedRow.paid_amount ?? currentPaidAmount);
+        return Math.max(0, current - currentPaidAmount + savedPaidAmount);
+      });
+      setPreviousRetentionHeldTotal(Math.max(
+        0,
+        Number(savedRow.retention_held_to_date ?? 0) - Number(savedRow.retention_withheld_amount ?? 0),
+      ));
+      setPreviousRetentionReleasedTotal(Math.max(
+        0,
+        Number(savedRow.retention_released_to_date ?? 0) - Number(savedRow.retention_released_amount ?? 0),
+      ));
 
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveClaimError) {

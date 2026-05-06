@@ -17,6 +17,9 @@ export interface LineItem {
   unit: string;
   rate: number;
   isOptional: boolean;
+  sourceOpportunityQuoteId?: string | null;
+  sourceOpportunityQuoteLineItemId?: string | null;
+  sourceOpportunityQuoteNumber?: string | null;
 }
 
 export interface ScopeCostCategoryItem {

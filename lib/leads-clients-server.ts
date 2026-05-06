@@ -12,7 +12,6 @@ type OpportunityRow = Database["public"]["Tables"]["organization_opportunities"]
 type ClientRow = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
 type MemberRow = Pick<Database["public"]["Tables"]["organization_members"]["Row"], "user_id" | "display_name">;
 type OpportunityQuoteRow = Database["public"]["Tables"]["opportunity_quotes"]["Row"];
-type OpportunityQuoteLineItemRow = Database["public"]["Tables"]["opportunity_quote_line_items"]["Row"];
 type OpportunityQuoteSummaryRow = Pick<
   OpportunityQuoteRow,
   "id" | "opportunity_id" | "status" | "total_quote_price" | "updated_at" | "created_at"
@@ -322,103 +321,16 @@ async function syncLatestOpportunityQuoteToProject(params: {
     return { quoteDate: null };
   }
 
-  const quoteNumberConflictResult = await supabase
-    .from("project_quotes")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("quote_number", latestOpportunityQuote.quote_number)
-    .limit(1)
-    .maybeSingle();
+  const conversionResult = await supabase.rpc("convert_opportunity_quote_to_project_quote", {
+    p_organization_id: organizationId,
+    p_opportunity_id: opportunityId,
+    p_opportunity_quote_id: latestOpportunityQuote.id,
+    p_project_id: projectId,
+    p_fallback_created_by: fallbackCreatedBy,
+  });
 
-  if (quoteNumberConflictResult.error) {
-    throw new Error(quoteNumberConflictResult.error.message);
-  }
-
-  const quoteNumberForProject = quoteNumberConflictResult.data?.id ? "" : latestOpportunityQuote.quote_number;
-
-  const projectQuoteInsertResult = await supabase
-    .from("project_quotes")
-    .insert({
-      organization_id: organizationId,
-      project_id: projectId,
-      created_by: latestOpportunityQuote.created_by || fallbackCreatedBy,
-      quote_title: latestOpportunityQuote.quote_title,
-      quote_number: quoteNumberForProject,
-      client_name: latestOpportunityQuote.client_name,
-      company_name: latestOpportunityQuote.company_name,
-      contact_person: latestOpportunityQuote.contact_person,
-      client_email: latestOpportunityQuote.client_email,
-      client_phone: latestOpportunityQuote.client_phone,
-      site_address: latestOpportunityQuote.site_address,
-      project_name: latestOpportunityQuote.project_name,
-      quote_date: latestOpportunityQuote.quote_date,
-      expiry_date: latestOpportunityQuote.expiry_date,
-      status: latestOpportunityQuote.status,
-      optional_items_notes: latestOpportunityQuote.optional_items_notes,
-      scope_exclusions: latestOpportunityQuote.scope_exclusions,
-      assumptions: latestOpportunityQuote.assumptions,
-      scope_notes: latestOpportunityQuote.scope_notes,
-      subtotal: latestOpportunityQuote.subtotal,
-      optional_subtotal: latestOpportunityQuote.optional_subtotal,
-      margin_percent: latestOpportunityQuote.margin_percent,
-      margin_amount: latestOpportunityQuote.margin_amount,
-      discount_amount: latestOpportunityQuote.discount_amount,
-      contingency_amount: latestOpportunityQuote.contingency_amount,
-      gst_percent: latestOpportunityQuote.gst_percent,
-      gst_amount: latestOpportunityQuote.gst_amount,
-      total_quote_price: latestOpportunityQuote.total_quote_price,
-      validity_period: latestOpportunityQuote.validity_period,
-      payment_terms: latestOpportunityQuote.payment_terms,
-      lead_time: latestOpportunityQuote.lead_time,
-      terms_inclusions: latestOpportunityQuote.terms_inclusions,
-      terms_exclusions: latestOpportunityQuote.terms_exclusions,
-      clarifications: latestOpportunityQuote.clarifications,
-      acceptance_notes: latestOpportunityQuote.acceptance_notes,
-    })
-    .select("id")
-    .single();
-
-  if (projectQuoteInsertResult.error) {
-    throw new Error(projectQuoteInsertResult.error.message);
-  }
-
-  const projectQuoteId = projectQuoteInsertResult.data.id;
-
-  const opportunityQuoteItemsResult = await supabase
-    .from("opportunity_quote_line_items")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .eq("quote_id", latestOpportunityQuote.id)
-    .order("sort_order", { ascending: true });
-
-  if (opportunityQuoteItemsResult.error) {
-    throw new Error(opportunityQuoteItemsResult.error.message);
-  }
-
-  const opportunityQuoteItems = (opportunityQuoteItemsResult.data ?? []) as OpportunityQuoteLineItemRow[];
-
-  if (opportunityQuoteItems.length > 0) {
-    const projectQuoteItemsInsertResult = await supabase
-      .from("project_quote_line_items")
-      .insert(
-        opportunityQuoteItems.map((item) => ({
-          organization_id: organizationId,
-          project_id: projectId,
-          quote_id: projectQuoteId,
-          section: item.section,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          rate: item.rate,
-          total: item.total,
-          is_optional: item.is_optional,
-          sort_order: item.sort_order,
-        }))
-      );
-
-    if (projectQuoteItemsInsertResult.error) {
-      throw new Error(projectQuoteItemsInsertResult.error.message);
-    }
+  if (conversionResult.error) {
+    throw new Error(conversionResult.error.message);
   }
 
   return { quoteDate: latestOpportunityQuote.quote_date ?? null };

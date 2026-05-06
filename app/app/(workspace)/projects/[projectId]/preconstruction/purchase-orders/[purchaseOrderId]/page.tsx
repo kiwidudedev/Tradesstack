@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
@@ -29,12 +30,29 @@ type CostSection = "Labour" | "Materials" | "Subcontractors" | "Plant" | "Margin
 
 interface CostLine {
   id: string;
+  lineUid?: string | null;
+  costItemId?: string | null;
+  sourceCostItemId?: string | null;
   section: CostSection;
   description: string;
   quantity: number;
   unit: string;
   rate: number;
   sourceTimeSheetEntryId?: string | null;
+}
+
+interface SourceCostItemOption {
+  id: string;
+  documentKind: "project_quote" | "project_variation";
+  documentId: string;
+  documentNumber: string;
+  documentTitle: string;
+  section: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitRate: number;
+  sortOrder: number;
 }
 
 interface AttachmentItem {
@@ -134,6 +152,8 @@ interface ProjectMemberListItem {
   avatar_path: string | null;
 }
 
+type RpcResultRow = Record<string, unknown>;
+
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approved", "Issued", "Received", "Invoiced", "Cancelled"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work", "Plant / Equipment Hire", "Site Expense", "Freight / Delivery", "Variation Order", "General Purchase", "Other"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
@@ -211,6 +231,9 @@ function lineTotal(line: CostLine) {
 function makeDefaultCostLine(section: CostSection = "Labour"): CostLine {
   return {
     id: crypto.randomUUID(),
+    lineUid: crypto.randomUUID(),
+    costItemId: null,
+    sourceCostItemId: null,
     section,
     description: "",
     quantity: 1,
@@ -314,6 +337,8 @@ export default function ProjectVariationsPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
   const [suppliers, setSuppliers] = useState<OrganizationSupplier[]>([]);
+  const [quoteSourceOptions, setQuoteSourceOptions] = useState<SourceCostItemOption[]>([]);
+  const [variationSourceOptions, setVariationSourceOptions] = useState<SourceCostItemOption[]>([]);
   const [projectMembers, setProjectMembers] = useState<ProjectMemberListItem[]>([]);
   const [assignedMemberIds, setAssignedMemberIds] = useState<Set<string>>(new Set());
   const [isLoadingAssignedWorkers, setIsLoadingAssignedWorkers] = useState(false);
@@ -409,7 +434,7 @@ export default function ProjectVariationsPage() {
           .eq("id", purchaseOrderId)
           .maybeSingle(),
         lineItemsTable
-          .select("id, purchase_order_id, section, description, quantity, unit, rate, source_time_sheet_entry_id")
+          .select("id, purchase_order_id, line_uid, cost_item_id, source_cost_item_id, section, description, quantity, unit, rate, source_time_sheet_entry_id")
           .eq("organization_id", resolvedOrganizationId)
           .eq("purchase_order_id", purchaseOrderId)
           .order("sort_order", { ascending: true }),
@@ -431,6 +456,9 @@ export default function ProjectVariationsPage() {
       const lineRows = (lineRowsRaw ?? []) as Array<{
         id: string;
         purchase_order_id: string;
+        line_uid: string | null;
+        cost_item_id: string | null;
+        source_cost_item_id: string | null;
         section: string;
         description: string;
         quantity: number;
@@ -450,6 +478,9 @@ export default function ProjectVariationsPage() {
       const hydratedLines = lineRows.length > 0
         ? lineRows.map((lineRow) => ({
             id: lineRow.id,
+            lineUid: lineRow.line_uid ?? crypto.randomUUID(),
+            costItemId: lineRow.cost_item_id ?? null,
+            sourceCostItemId: lineRow.source_cost_item_id ?? null,
             section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
             description: lineRow.description ?? "",
             quantity: Number(lineRow.quantity ?? 0),
@@ -576,15 +607,106 @@ export default function ProjectVariationsPage() {
       const variationsTable = (supabase as any).from("project_purchase_orders");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const suppliersTable = (supabase as any).from("organization_suppliers");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const quotesTable = (supabase as any).from("project_quotes");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const projectVariationsTable = (supabase as any).from("project_variations");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const costItemsTable = (supabase as any).from("cost_items");
 
-      const { data: suppliersRaw } = await suppliersTable
-        .select("id, name, company_name, email, phone")
-        .eq("organization_id", resolvedOrganizationId)
-        .order("company_name", { ascending: true })
-        .order("name", { ascending: true });
+      const [
+        { data: suppliersRaw },
+        { data: quoteRowsRaw },
+        { data: projectVariationRowsRaw },
+        { data: sourceCostItemRowsRaw },
+      ] = await Promise.all([
+        suppliersTable
+          .select("id, name, company_name, email, phone")
+          .eq("organization_id", resolvedOrganizationId)
+          .order("company_name", { ascending: true })
+          .order("name", { ascending: true }),
+        quotesTable
+          .select("id, quote_number, quote_title")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("quote_number", { ascending: true }),
+        projectVariationsTable
+          .select("id, variation_number, variation_title")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .order("variation_number", { ascending: true }),
+        costItemsTable
+          .select("id, source_document_kind, source_document_id, section, description, quantity, unit, unit_rate, sort_order")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", projectRow.id)
+          .eq("is_current", true)
+          .in("source_document_kind", ["project_quote", "project_variation"])
+          .order("source_document_kind", { ascending: true })
+          .order("sort_order", { ascending: true }),
+      ]);
 
       const supplierRows = (suppliersRaw ?? []) as OrganizationSupplier[];
       setSuppliers(supplierRows);
+      const quoteRows = (quoteRowsRaw ?? []) as Array<{ id: string; quote_number: string | null; quote_title: string | null }>;
+      const projectVariationRows = (projectVariationRowsRaw ?? []) as Array<{
+        id: string;
+        variation_number: string | null;
+        variation_title: string | null;
+      }>;
+      const sourceCostItemRows = (sourceCostItemRowsRaw ?? []) as Array<{
+        id: string;
+        source_document_kind: "project_quote" | "project_variation";
+        source_document_id: string;
+        section: string | null;
+        description: string | null;
+        quantity: number | null;
+        unit: string | null;
+        unit_rate: number | null;
+        sort_order: number | null;
+      }>;
+      const quoteRowsById = new Map(quoteRows.map((row) => [row.id, row]));
+      const projectVariationRowsById = new Map(projectVariationRows.map((row) => [row.id, row]));
+
+      setQuoteSourceOptions(
+        sourceCostItemRows
+          .filter((row) => row.source_document_kind === "project_quote")
+          .map((row) => {
+            const quoteRow = quoteRowsById.get(row.source_document_id);
+            return {
+              id: row.id,
+              documentKind: "project_quote",
+              documentId: row.source_document_id,
+              documentNumber: quoteRow?.quote_number ?? "Quote",
+              documentTitle: quoteRow?.quote_title ?? "",
+              section: row.section ?? "",
+              description: row.description ?? "",
+              quantity: Number(row.quantity ?? 0),
+              unit: row.unit ?? "",
+              unitRate: Number(row.unit_rate ?? 0),
+              sortOrder: Number(row.sort_order ?? 0),
+            } satisfies SourceCostItemOption;
+          })
+      );
+      setVariationSourceOptions(
+        sourceCostItemRows
+          .filter((row) => row.source_document_kind === "project_variation")
+          .map((row) => {
+            const variationRow = projectVariationRowsById.get(row.source_document_id);
+            return {
+              id: row.id,
+              documentKind: "project_variation",
+              documentId: row.source_document_id,
+              documentNumber: variationRow?.variation_number ?? "Variation",
+              documentTitle: variationRow?.variation_title ?? "",
+              section: row.section ?? "",
+              description: row.description ?? "",
+              quantity: Number(row.quantity ?? 0),
+              unit: row.unit ?? "",
+              unitRate: Number(row.unit_rate ?? 0),
+              sortOrder: Number(row.sort_order ?? 0),
+            } satisfies SourceCostItemOption;
+          })
+      );
 
       try {
         await refreshSummary(resolvedOrganizationId, projectRow.id);
@@ -707,6 +829,44 @@ export default function ProjectVariationsPage() {
     }
     return suppliers.filter((supplier) => supplierDisplayName(supplier).toLowerCase().includes(query));
   }, [supplierSearchQuery, suppliers]);
+  const sourceOptionsById = useMemo(() => {
+    const entries = [...quoteSourceOptions, ...variationSourceOptions].map((option) => [option.id, option] as const);
+    return new Map(entries);
+  }, [quoteSourceOptions, variationSourceOptions]);
+
+  const resolveSourceLabel = useCallback((line: CostLine) => {
+    if (line.sourceTimeSheetEntryId) {
+      return "Synced from timesheet";
+    }
+
+    if (!line.sourceCostItemId) {
+      return "Manual";
+    }
+
+    const option = sourceOptionsById.get(line.sourceCostItemId);
+    if (!option) {
+      return "Manual";
+    }
+
+    return option.documentNumber || "Manual";
+  }, [sourceOptionsById]);
+
+  const resolveSourceHint = useCallback((line: CostLine) => {
+    if (line.sourceTimeSheetEntryId) {
+      return "";
+    }
+
+    const option = line.sourceCostItemId ? sourceOptionsById.get(line.sourceCostItemId) : null;
+    if (!option) {
+      return "";
+    }
+
+    if (option.documentKind === "project_quote") {
+      return "Quote";
+    }
+
+    return "Variation";
+  }, [sourceOptionsById]);
 
   useEffect(() => {
     if (!activeVariation) {
@@ -869,10 +1029,13 @@ export default function ProjectVariationsPage() {
       if (!createdRow?.id) {
         throw new Error("Purchase order was created but no identifier was returned.");
       }
+      if (typeof createdRow.updated_at !== "string" || createdRow.updated_at.length === 0) {
+        throw new Error("Purchase order was created but no updated timestamp was returned.");
+      }
 
       const nextVariation = makeDefaultVariation(variations.length, jobCode);
       nextVariation.id = createdRow.id;
-      nextVariation.updatedAt = null;
+      nextVariation.updatedAt = createdRow.updated_at;
       nextVariation.code = createdRow.purchase_order_number || `${jobCode}-PO-00`;
       nextVariation.title = createdRow.purchase_order_title || "New Purchase Order";
       nextVariation.status = normalizeStatus(createdRow.status);
@@ -999,6 +1162,24 @@ export default function ProjectVariationsPage() {
     updateActiveVariation("costLines", activeVariation.costLines.map((line) => (line.id === lineId ? { ...line, [key]: value } : line)));
   };
 
+  const assignSourceCostItem = (lineId: string, sourceCostItemId: string | null) => {
+    if (!activeVariation) {
+      return;
+    }
+
+    updateActiveVariation(
+      "costLines",
+      activeVariation.costLines.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              sourceCostItemId,
+            }
+          : line
+      )
+    );
+  };
+
   const removeCostLine = (lineId: string) => {
     if (!activeVariation) return;
     updateActiveVariation(
@@ -1085,6 +1266,10 @@ export default function ProjectVariationsPage() {
   const saveVariation = async () => {
     if (!activeVariation || !supabase || !organizationId || !dbProjectId) {
       setError("Purchase Order save is not ready. Please refresh and try again.");
+      return;
+    }
+    if (!activeVariation.updatedAt) {
+      setError("Purchase order version is missing. Please refresh and try again.");
       return;
     }
 
@@ -1183,18 +1368,22 @@ export default function ProjectVariationsPage() {
         p_include_contingency_in_export: false,
         p_line_items: activeVariation.costLines.map((line) => ({
           id: line.id,
+          line_uid: line.lineUid ?? null,
+          cost_item_id: line.costItemId ?? null,
           section: line.section,
           description: line.description,
           quantity: Number(line.quantity),
           unit: line.unit,
           rate: Number(line.rate),
+          source_cost_item_id: line.sourceCostItemId ?? null,
           source_time_sheet_entry_id: line.sourceTimeSheetEntryId ?? null,
         })),
         p_attachments: activeVariation.attachments.map((attachment) => ({
           id: attachment.id,
-          type: attachment.type,
           name: attachment.name,
-          external_url: attachment.externalUrl ?? `manual://${attachment.name}`,
+          type: attachment.type,
+          storagePath: attachment.storagePath,
+          externalUrl: attachment.externalUrl,
         })),
       });
 
@@ -1202,16 +1391,29 @@ export default function ProjectVariationsPage() {
         throw new Error(saveError.message);
       }
 
-      const savedRow = Array.isArray(saveRows) ? saveRows[0] : null;
-      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : activeVariation.updatedAt;
+      const savedRow = (Array.isArray(saveRows) ? saveRows[0] : null) as RpcResultRow | null;
+      const savedPurchaseOrderId = typeof savedRow?.id === "string" ? savedRow.id : null;
+      if (!savedPurchaseOrderId) {
+        throw new Error("Purchase order was saved but no identifier was returned.");
+      }
+      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : null;
+      if (!nextUpdatedAt) {
+        throw new Error("Purchase order was saved but no updated timestamp was returned.");
+      }
       const nextTotal = Number(savedRow?.total_purchase_order_price ?? pricingSummary.grandTotal);
 
-      setPersistedVariationIds((current) => new Set([...current, activeVariation.id]));
+      triggerDocumentClassification({
+        documentKind: "project_purchase_order",
+        documentId: savedPurchaseOrderId,
+      });
+
+      setPersistedVariationIds((current) => new Set([...current, savedPurchaseOrderId]));
       setVariations((current) =>
         current.map((item) =>
-          item.id === activeVariation.id
+          item.id === activeVariation.id || item.id === savedPurchaseOrderId
             ? {
                 ...item,
+                id: savedPurchaseOrderId,
                 updatedAt: nextUpdatedAt,
                 status: activeVariation.status,
                 invoiceReady: activeVariation.invoiceReady,
@@ -1220,7 +1422,8 @@ export default function ProjectVariationsPage() {
             : item
         )
       );
-      setHydratedPurchaseOrderIds((current) => new Set([...current, activeVariation.id]));
+      setActiveVariationId(savedPurchaseOrderId);
+      setHydratedPurchaseOrderIds((current) => new Set([...current, savedPurchaseOrderId]));
       await refreshSummary(organizationId, dbProjectId);
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
     } catch (saveError) {
@@ -2063,9 +2266,97 @@ export default function ProjectVariationsPage() {
                           />
                         </div>
                         <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
-                          <span className={`${interMedium.className} text-[12px] text-[#64748B]`}>
-                            {line.sourceTimeSheetEntryId ? "Synced from timesheet" : ""}
-                          </span>
+                          {line.sourceTimeSheetEntryId ? (
+                            <span className={`${interMedium.className} text-[12px] text-[#64748B]`}>
+                              Synced from timesheet
+                            </span>
+                          ) : (
+                            <div className="flex min-w-0 flex-col gap-0.5">
+                              <span className={`${interMedium.className} truncate text-[12px] text-[#64748B]`}>
+                                {resolveSourceLabel(line)}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {resolveSourceHint(line) ? (
+                                  <span className={`${interMedium.className} text-[11px] text-[#94A3B8]`}>
+                                    {resolveSourceHint(line)}
+                                  </span>
+                                ) : null}
+                                {canManagePurchaseOrder ? (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button
+                                        type="button"
+                                        className={`${interMedium.className} inline-flex items-center gap-1 text-[11px] text-[#475569] underline-offset-2 hover:text-[#22324A] hover:underline`}
+                                      >
+                                        {line.sourceCostItemId ? "Change" : "Link source"}
+                                        <ChevronDown className="h-3 w-3" />
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                      side="bottom"
+                                      align="start"
+                                      sideOffset={8}
+                                      className="!z-[200] max-h-[320px] min-w-[320px] overflow-y-auto rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                                    >
+                                      <DropdownMenuItem
+                                        onSelect={() => assignSourceCostItem(line.id, null)}
+                                        className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                      >
+                                        <div className="flex min-w-0 flex-col">
+                                          <span>Manual</span>
+                                          <span className="text-[11px] text-[#64748B]">No source link</span>
+                                        </div>
+                                      </DropdownMenuItem>
+                                      {quoteSourceOptions.length > 0 ? (
+                                        <>
+                                          <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
+                                          <div className={`${interMedium.className} px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[#94A3B8]`}>
+                                            Quote Items
+                                          </div>
+                                          {quoteSourceOptions.map((option) => (
+                                            <DropdownMenuItem
+                                              key={option.id}
+                                              onSelect={() => assignSourceCostItem(line.id, option.id)}
+                                              className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                            >
+                                              <div className="flex min-w-0 flex-col">
+                                                <span className="truncate">{option.documentNumber}</span>
+                                                <span className="truncate text-[11px] text-[#64748B]">
+                                                  {option.description || option.documentTitle || option.section || "Quote line"}
+                                                </span>
+                                              </div>
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </>
+                                      ) : null}
+                                      {variationSourceOptions.length > 0 ? (
+                                        <>
+                                          <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
+                                          <div className={`${interMedium.className} px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[#94A3B8]`}>
+                                            Variation Items
+                                          </div>
+                                          {variationSourceOptions.map((option) => (
+                                            <DropdownMenuItem
+                                              key={option.id}
+                                              onSelect={() => assignSourceCostItem(line.id, option.id)}
+                                              className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                            >
+                                              <div className="flex min-w-0 flex-col">
+                                                <span className="truncate">{option.documentNumber}</span>
+                                                <span className="truncate text-[11px] text-[#64748B]">
+                                                  {option.description || option.documentTitle || option.section || "Variation line"}
+                                                </span>
+                                              </div>
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </>
+                                      ) : null}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                ) : null}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
                           <select

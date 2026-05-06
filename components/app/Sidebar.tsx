@@ -56,12 +56,17 @@ const PRIMARY_NAV_ITEMS = [
       { label: "Invoices" },
       { label: "Expenses" },
       { label: "Cash Flow" },
-      { label: "Reports" },
+      { label: "Reports", href: "/app/reports/cost-items/review" },
     ],
   },
   { label: "Resources", icon: Package },
   { label: "Team", icon: UsersRound },
-  { label: "Reports", icon: BarChart3 },
+  {
+    label: "Reports",
+    icon: BarChart3,
+    trailing: "chevron" as const,
+    children: [{ label: "Cost Item Review", href: "/app/reports/cost-items/review" }],
+  },
   { label: "AI Assistant", icon: Sparkles },
 ] as const;
 
@@ -79,7 +84,10 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
   const { session, logout } = useAuth();
   const [isFinancialsExpanded, setIsFinancialsExpanded] = useState(() =>
-    pathname.startsWith("/app/settings/financial-settings")
+    pathname.startsWith("/app/settings/financial-settings") || pathname.startsWith("/app/reports")
+  );
+  const [isReportsExpanded, setIsReportsExpanded] = useState(() =>
+    pathname.startsWith("/app/reports")
   );
 
   const displayName = session?.name ?? mockUser.name;
@@ -114,11 +122,17 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           const hasChildren = "children" in item && Boolean(item.children?.length);
 
           if (hasChildren) {
+            const isReportsSection = item.label === "Reports";
+            const isExpanded = isReportsSection ? isReportsExpanded : isFinancialsExpanded;
+            const toggleExpanded = isReportsSection
+              ? () => setIsReportsExpanded((current) => !current)
+              : () => setIsFinancialsExpanded((current) => !current);
+
             return (
               <div key={item.label} className="space-y-0.5">
                 <button
                   type="button"
-                  onClick={() => setIsFinancialsExpanded((current) => !current)}
+                  onClick={toggleExpanded}
                   className={cn(
                     sidebarItemBaseClass,
                     "w-full",
@@ -133,11 +147,11 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                     <span className="text-[15px] leading-none">{item.label}</span>
                   </span>
                   <ChevronDown
-                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[#8FA1B9] transition-transform", isFinancialsExpanded ? "rotate-180" : "rotate-0")}
+                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[#8FA1B9] transition-transform", isExpanded ? "rotate-180" : "rotate-0")}
                   />
                 </button>
 
-                {isFinancialsExpanded ? (
+                {isExpanded ? (
                   <div className="space-y-0.5 py-1">
                     {item.children.map((child) =>
                       child.href ? (

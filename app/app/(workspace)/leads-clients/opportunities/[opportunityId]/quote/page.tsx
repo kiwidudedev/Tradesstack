@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
 import { useAuth } from "@/hooks/use-auth";
+import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import {
@@ -18,6 +19,8 @@ import {
   makeDefaultLineItem,
   numberOrZero,
 } from "@/components/app/QuoteEditorShared";
+
+type RpcResultRow = Record<string, unknown>;
 
 function normalizeForMatch(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -90,6 +93,7 @@ export default function PreconstructionQuotePage() {
   const canManageQuote = true;
 
   const [quoteId, setQuoteId] = useState<string | null>(null);
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbOpportunityId, setDbOpportunityId] = useState<string | null>(sharedOpportunity.opportunityId);
   const [opportunityCode, setOpportunityCode] = useState<string | null>(null);
@@ -434,6 +438,7 @@ export default function PreconstructionQuotePage() {
             setQuoteNumber(nextNumber);
             setIsEditing(true);
             setQuoteCreatedAt(new Date().toISOString());
+            setQuoteUpdatedAt(null);
           }
           setQuoteDate(new Date().toISOString().slice(0, 10));
           void loadBranding();
@@ -441,6 +446,7 @@ export default function PreconstructionQuotePage() {
         }
 
         setQuoteId(selectedQuote.id);
+        setQuoteUpdatedAt(typeof selectedQuote.updated_at === "string" ? selectedQuote.updated_at : null);
         setQuoteCreatedAt(selectedQuote.created_at ?? null);
         setQuoteStatus(normalizeAllowedStatus(selectedQuote.status));
         setQuoteTitle(selectedQuote.quote_title);
@@ -607,93 +613,72 @@ export default function PreconstructionQuotePage() {
     setSaveMessage(null);
 
     try {
-      const payload = {
-        organization_id: organizationId,
-        opportunity_id: dbOpportunityId,
-        created_by: session.id,
-        quote_title: trimmedTitle,
-        quote_number: trimmedNumber,
-        client_name: clientName.trim(),
-        company_name: companyName.trim(),
-        contact_person: contactPerson.trim(),
-        client_email: email.trim(),
-        client_phone: phone.trim(),
-        site_address: siteAddress.trim(),
-        project_name: projectName.trim(),
-        quote_date: quoteDate || null,
-        expiry_date: expiryDate || null,
-        status: quoteStatus,
-        optional_items_notes: optionalItemsNotes,
-        scope_exclusions: scopeExclusions,
-        assumptions,
-        scope_notes: scopeNotes,
-        subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
-        optional_subtotal: Number(pricingSummary.optionalSubtotal.toFixed(2)),
-        margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
-        margin_amount: Number(pricingSummary.margin.toFixed(2)),
-        discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
-        contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
-        gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
-        gst_amount: Number(pricingSummary.gst.toFixed(2)),
-        total_quote_price: Number(pricingSummary.grandTotal.toFixed(2)),
-        validity_period: validityPeriod,
-        payment_terms: paymentTerms,
-        lead_time: leadTime,
-        terms_inclusions: termsInclusions,
-        terms_exclusions: termsExclusions,
-        clarifications,
-        acceptance_notes: acceptanceNotes,
-      };
+      const lineItemsPayload = lineItems.map((item) => ({
+        id: item.id,
+        section: item.section,
+        description: item.description.trim(),
+        quantity: Number(item.quantity),
+        unit: item.unit.trim(),
+        rate: Number(item.rate),
+        isOptional: item.isOptional,
+      }));
 
-      let resolvedQuoteId = quoteId;
+      const { data: saveRows, error: saveError } = await supabase.rpc("save_opportunity_quote_draft", {
+        p_organization_id: organizationId,
+        p_opportunity_id: dbOpportunityId,
+        p_quote_id: quoteId,
+        p_expected_updated_at: quoteId ? quoteUpdatedAt : null,
+        p_quote_title: trimmedTitle,
+        p_quote_number: trimmedNumber,
+        p_client_name: clientName.trim(),
+        p_company_name: companyName.trim(),
+        p_contact_person: contactPerson.trim(),
+        p_client_email: email.trim(),
+        p_client_phone: phone.trim(),
+        p_site_address: siteAddress.trim(),
+        p_project_name: projectName.trim(),
+        p_quote_date: quoteDate || null,
+        p_expiry_date: expiryDate || null,
+        p_status: quoteStatus,
+        p_optional_items_notes: optionalItemsNotes,
+        p_scope_exclusions: scopeExclusions,
+        p_assumptions: assumptions,
+        p_scope_notes: scopeNotes,
+        p_margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
+        p_discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
+        p_contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
+        p_gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
+        p_validity_period: validityPeriod,
+        p_payment_terms: paymentTerms,
+        p_lead_time: leadTime,
+        p_terms_inclusions: termsInclusions,
+        p_terms_exclusions: termsExclusions,
+        p_clarifications: clarifications,
+        p_acceptance_notes: acceptanceNotes,
+        p_line_items: lineItemsPayload,
+      });
 
-      if (quoteId) {
-        const { data, error: updateError } = await supabase
-          .from("opportunity_quotes")
-          .update(payload)
-          .eq("id", quoteId)
-          .select("id, updated_at")
-          .single();
-        if (updateError) {
-          throw new Error(updateError.message);
-        }
-        resolvedQuoteId = data.id;
-      } else {
-        const { data, error: insertError } = await supabase.from("opportunity_quotes").insert(payload).select("id, updated_at").single();
-        if (insertError) {
-          throw new Error(insertError.message);
-        }
-        resolvedQuoteId = data.id;
-        setQuoteId(data.id);
+      if (saveError) {
+        throw new Error(saveError.message);
       }
 
-      const { error: deleteItemsError } = await supabase
-        .from("opportunity_quote_line_items")
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("quote_id", resolvedQuoteId);
-      if (deleteItemsError) {
-        throw new Error(deleteItemsError.message);
+      const savedRow = (Array.isArray(saveRows) ? saveRows[0] : null) as RpcResultRow | null;
+      const resolvedQuoteId = typeof savedRow?.id === "string" ? savedRow.id : null;
+      if (!resolvedQuoteId) {
+        throw new Error("Quote was saved but no identifier was returned.");
+      }
+      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : null;
+      if (!nextUpdatedAt) {
+        throw new Error("Quote was saved but no updated timestamp was returned.");
       }
 
-      if (lineItems.length > 0) {
-        const itemsPayload = lineItems.map((item, index) => ({
-          organization_id: organizationId,
-          quote_id: resolvedQuoteId,
-          section: item.section,
-          description: item.description.trim(),
-          quantity: Number(item.quantity),
-          unit: item.unit.trim(),
-          rate: Number(item.rate),
-          total: Number(lineItemTotal(item).toFixed(2)),
-          is_optional: item.isOptional,
-          sort_order: index,
-        }));
-        const { error: insertItemsError } = await supabase.from("opportunity_quote_line_items").insert(itemsPayload);
-        if (insertItemsError) {
-          throw new Error(insertItemsError.message);
-        }
-      }
+      setQuoteId(resolvedQuoteId);
+      setQuoteUpdatedAt(nextUpdatedAt);
+      triggerDocumentClassification({
+        documentKind: "opportunity_quote",
+        documentId: resolvedQuoteId,
+        keepalive: quoteStatus === "Accepted",
+      });
 
       if (quoteStatus === "Sent") {
         const { error: opportunityUpdateError } = await supabase

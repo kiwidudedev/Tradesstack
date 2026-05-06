@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
@@ -18,6 +19,9 @@ import {
   makeDefaultLineItem,
   numberOrZero,
 } from "@/components/app/QuoteEditorShared";
+
+type RpcResultRow = Record<string, unknown>;
+
 function normalizeForMatch(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -87,6 +91,7 @@ export default function ProjectQuoteRegisterPage() {
   const canManageQuote = canManageCommercialData(session?.role);
 
   const [quoteId, setQuoteId] = useState<string | null>(null);
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [projectCode, setProjectCode] = useState<string | null>(null);
@@ -335,6 +340,7 @@ export default function ProjectQuoteRegisterPage() {
 
         type QuoteRow = {
           id: string;
+          updated_at: string | null;
           status: QuoteStatus;
           quote_title: string;
           quote_number: string;
@@ -381,12 +387,14 @@ export default function ProjectQuoteRegisterPage() {
           if (!cancelled) {
             setQuoteNumber(nextNumber);
             setIsEditing(true);
+            setQuoteUpdatedAt(null);
           }
           setQuoteDate(new Date().toISOString().slice(0, 10));
           return;
         }
 
         setQuoteId(selectedQuote.id);
+        setQuoteUpdatedAt(selectedQuote.updated_at ?? null);
         setQuoteStatus(normalizeAllowedStatus(selectedQuote.status));
         setQuoteTitle(selectedQuote.quote_title);
         setQuoteNumber(selectedQuote.quote_number);
@@ -418,7 +426,7 @@ export default function ProjectQuoteRegisterPage() {
 
         const { data: itemRows, error: itemsError } = await supabase
           .from("project_quote_line_items")
-          .select("id, section, description, quantity, unit, rate, is_optional, sort_order")
+          .select("id, section, description, quantity, unit, rate, is_optional, sort_order, source_opportunity_quote_id, source_opportunity_quote_line_item_id, source_opportunity_quote_number")
           .eq("organization_id", resolvedOrganizationId)
           .eq("quote_id", selectedQuote.id)
           .order("sort_order", { ascending: true });
@@ -433,6 +441,9 @@ export default function ProjectQuoteRegisterPage() {
             unit: item.unit,
             rate: item.rate,
             isOptional: item.is_optional,
+            sourceOpportunityQuoteId: item.source_opportunity_quote_id,
+            sourceOpportunityQuoteLineItemId: item.source_opportunity_quote_line_item_id,
+            sourceOpportunityQuoteNumber: item.source_opportunity_quote_number,
           }));
           setLineItems(nextItems.length > 0 ? nextItems : [makeDefaultLineItem()]);
         }
@@ -571,94 +582,75 @@ export default function ProjectQuoteRegisterPage() {
     setSaveMessage(null);
 
     try {
-      const payload = {
-        organization_id: organizationId,
-        project_id: dbProjectId,
-        created_by: session.id,
-        quote_title: trimmedTitle,
-        quote_number: trimmedNumber,
-        client_name: clientName.trim(),
-        company_name: companyName.trim(),
-        contact_person: contactPerson.trim(),
-        client_email: email.trim(),
-        client_phone: phone.trim(),
-        site_address: siteAddress.trim(),
-        project_name: projectName.trim(),
-        quote_date: quoteDate || null,
-        expiry_date: expiryDate || null,
-        status: quoteStatus,
-        optional_items_notes: optionalItemsNotes,
-        scope_exclusions: scopeExclusions.trim(),
-        assumptions: assumptions.trim(),
-        scope_notes: scopeNotes.trim() || clarifications.trim(),
-        subtotal: Number(pricingSummary.baseSubtotal.toFixed(2)),
-        optional_subtotal: Number(pricingSummary.optionalSubtotal.toFixed(2)),
-        margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
-        margin_amount: Number(pricingSummary.margin.toFixed(2)),
-        discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
-        contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
-        gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
-        gst_amount: Number(pricingSummary.gst.toFixed(2)),
-        total_quote_price: Number(pricingSummary.grandTotal.toFixed(2)),
-        validity_period: validityPeriod,
-        payment_terms: paymentTerms,
-        lead_time: leadTime,
-        terms_inclusions: termsInclusions,
-        terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
-        clarifications: clarifications.trim() || scopeNotes.trim(),
-        acceptance_notes: acceptanceNotes,
-      };
+      const lineItemsPayload = lineItems.map((item) => ({
+        id: item.id,
+        section: item.section,
+        description: item.description.trim(),
+        quantity: Number(item.quantity),
+        unit: item.unit.trim(),
+        rate: Number(item.rate),
+        isOptional: item.isOptional,
+        sourceOpportunityQuoteId: item.sourceOpportunityQuoteId ?? null,
+        sourceOpportunityQuoteLineItemId: item.sourceOpportunityQuoteLineItemId ?? null,
+        sourceOpportunityQuoteNumber: item.sourceOpportunityQuoteNumber ?? null,
+      }));
 
-      let savedQuoteId = quoteId;
+      const { data: saveRows, error: saveError } = await supabase.rpc("save_project_quote_draft", {
+        p_organization_id: organizationId,
+        p_project_id: dbProjectId,
+        p_quote_id: quoteId,
+        p_expected_updated_at: quoteId ? quoteUpdatedAt : null,
+        p_quote_title: trimmedTitle,
+        p_quote_number: trimmedNumber,
+        p_client_name: clientName.trim(),
+        p_company_name: companyName.trim(),
+        p_contact_person: contactPerson.trim(),
+        p_client_email: email.trim(),
+        p_client_phone: phone.trim(),
+        p_site_address: siteAddress.trim(),
+        p_project_name: projectName.trim(),
+        p_quote_date: quoteDate || null,
+        p_expiry_date: expiryDate || null,
+        p_status: quoteStatus,
+        p_optional_items_notes: optionalItemsNotes,
+        p_scope_exclusions: scopeExclusions.trim(),
+        p_assumptions: assumptions.trim(),
+        p_scope_notes: scopeNotes.trim() || clarifications.trim(),
+        p_margin_percent: Number(numberOrZero(marginPercent).toFixed(3)),
+        p_discount_amount: Number(numberOrZero(discountAmount).toFixed(2)),
+        p_contingency_amount: Number(numberOrZero(contingencyAmount).toFixed(2)),
+        p_gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
+        p_validity_period: validityPeriod,
+        p_payment_terms: paymentTerms,
+        p_lead_time: leadTime,
+        p_terms_inclusions: termsInclusions,
+        p_terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
+        p_clarifications: clarifications.trim() || scopeNotes.trim(),
+        p_acceptance_notes: acceptanceNotes,
+        p_line_items: lineItemsPayload,
+      });
 
-      if (quoteId) {
-        const { data, error: updateError } = await supabase
-          .from("project_quotes")
-          .update(payload)
-          .eq("id", quoteId)
-          .select("id")
-          .single();
-        if (updateError) throw new Error(updateError.message);
-        savedQuoteId = data.id;
-      } else {
-        const { data, error: insertError } = await supabase
-          .from("project_quotes")
-          .insert(payload)
-          .select("id")
-          .single();
-        if (insertError) throw new Error(insertError.message);
-        savedQuoteId = data.id;
-        setQuoteId(data.id);
+      if (saveError) {
+        throw new Error(saveError.message);
       }
 
-      const { error: deleteItemsError } = await supabase
-        .from("project_quote_line_items")
-        .delete()
-        .eq("organization_id", organizationId)
-        .eq("quote_id", savedQuoteId);
-      if (deleteItemsError) throw new Error(deleteItemsError.message);
-
-      if (lineItems.length > 0) {
-        const itemsPayload = lineItems.map((item, index) => ({
-          organization_id: organizationId,
-          project_id: dbProjectId,
-          quote_id: savedQuoteId,
-          section: item.section,
-          description: item.description.trim(),
-          quantity: Number(item.quantity),
-          unit: item.unit.trim(),
-          rate: Number(item.rate),
-          total: Number(lineItemTotal(item).toFixed(2)),
-          is_optional: item.isOptional,
-          sort_order: index,
-        }));
-        const { error: insertItemsError } = await supabase.from("project_quote_line_items").insert(itemsPayload);
-        if (insertItemsError) throw new Error(insertItemsError.message);
+      const savedRow = (Array.isArray(saveRows) ? saveRows[0] : null) as RpcResultRow | null;
+      const savedQuoteId = typeof savedRow?.id === "string" ? savedRow.id : null;
+      if (!savedQuoteId) {
+        throw new Error("Quote was saved but no identifier was returned.");
       }
-
-      if (!savedQuoteId) throw new Error("Quote was saved but no identifier was returned.");
+      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : null;
+      if (!nextUpdatedAt) {
+        throw new Error("Quote was saved but no updated timestamp was returned.");
+      }
 
       setQuoteId(savedQuoteId);
+      setQuoteUpdatedAt(nextUpdatedAt);
+      triggerDocumentClassification({
+        documentKind: "project_quote",
+        documentId: savedQuoteId,
+        keepalive: true,
+      });
       setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
       if (quoteStatus === "Expired") setSaveMessage("Quote marked as expired. Reprice required.");
       setIsEditing(false);
@@ -702,6 +694,7 @@ export default function ProjectQuoteRegisterPage() {
       if (deleteQuoteError) throw new Error(deleteQuoteError.message);
 
       setQuoteId(null);
+      setQuoteUpdatedAt(null);
       setQuoteTitle("");
       setQuoteNumber("");
       setLineItems([makeDefaultLineItem()]);

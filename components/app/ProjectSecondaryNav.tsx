@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   FileText,
   LayoutGrid,
+  Shield,
   ShieldCheck,
   TimerReset,
   WandSparkles,
@@ -28,6 +29,7 @@ const PROJECT_TOP_NAV_ITEMS = [
   { label: "Payment Claim", segment: "preconstruction/claims", icon: DollarSign },
   { label: "Timesheets", segment: "job-management/time-sheets", icon: TimerReset },
   { label: "QA", segment: "job-management/quality-assurance", icon: ShieldCheck },
+  { label: "Site Safety", segment: "site-safety", icon: Shield },
   { label: "AI Assistant", segment: "ai-chatbot", icon: Bot },
 ] as const;
 
