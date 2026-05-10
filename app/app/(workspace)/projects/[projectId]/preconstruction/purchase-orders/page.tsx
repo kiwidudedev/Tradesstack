@@ -45,28 +45,6 @@ function toMoney(value: number) {
   }).format(value);
 }
 
-function toDayMonthYearLabel(value: string | null) {
-  if (!value) {
-    return "—";
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-
-  return parsed.toLocaleDateString("en-NZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
 function statusClassName(status: PurchaseOrderStatus) {
   switch (status) {
     case "Issued":
@@ -94,7 +72,6 @@ export default function ProjectVariationRegisterPage() {
   const sessionOrganizationId = session?.organizationId ?? null;
   const canManagePurchaseOrders = canManageCommercialData(session?.role);
 
-  const [projectName, setProjectName] = useState("");
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -164,7 +141,6 @@ export default function ProjectVariationRegisterPage() {
 
         setOrganizationId(resolvedOrganizationId);
         setProjectId(projectRow.id);
-        setProjectName(projectRow.name || "");
         setPurchaseOrderRows(purchaseOrderRows);
       } catch (loadError) {
         if (!cancelled) {
@@ -293,10 +269,9 @@ export default function ProjectVariationRegisterPage() {
                     <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
                       <th className="w-[130px] px-4 py-2.5 text-left">PO #</th>
                       <th className="w-[200px] px-4 py-2.5 text-left">Name</th>
-                      <th className="w-[150px] px-4 py-2.5 text-left">Issued To</th>
+                      <th className="w-[150px] px-4 py-2.5 text-left">Supplier</th>
                       <th className="w-[140px] px-4 py-2.5 text-left">Status</th>
-                      <th className="w-[110px] px-4 py-2.5 text-left">Requested</th>
-                      <th className="w-[140px] px-4 py-2.5 text-left">Value (excl. GST)</th>
+                      <th className="w-[140px] px-4 py-2.5 text-left">PO Value</th>
                       <th className="w-[52px] px-3 py-2.5" />
                     </tr>
                   </thead>
@@ -336,9 +311,6 @@ export default function ProjectVariationRegisterPage() {
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        </td>
-                        <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
-                          {toDayMonthYearLabel(row.requested_date)}
                         </td>
                         <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
                           {toMoney(calculatePurchaseOrderPreGstTotal(row))}

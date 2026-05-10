@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
   Bell,
+  Building2,
   ChevronDown,
   Clock3,
   DollarSign,
@@ -40,7 +41,7 @@ const sidebarItemActiveClass = "bg-[#F15A29] text-white shadow-none";
 const sidebarItemInactiveClass = "text-[#8FA1B9] hover:bg-[#16233C] hover:text-[#E7ECF5]";
 
 const sidebarSubItemClass =
-  "flex min-h-[36px] w-full min-w-0 items-center pl-[44px] text-[13.5px] font-medium text-[#8FA1B9] transition-colors hover:text-[#E7ECF5]";
+  "flex min-h-[36px] w-full min-w-0 items-center rounded-[10px] px-3 pl-[44px] text-[13.5px] font-medium text-[#8FA1B9] transition-colors hover:bg-[#16233C] hover:text-[#E7ECF5]";
 
 const PRIMARY_NAV_ITEMS = [
   { label: "Dashboard", href: "/app/dashboard", icon: LayoutGrid },
@@ -52,21 +53,25 @@ const PRIMARY_NAV_ITEMS = [
     icon: DollarSign,
     trailing: "chevron" as const,
     children: [
-      { label: "Overview", href: "/app/settings/financial-settings" },
       { label: "Invoices" },
       { label: "Expenses" },
       { label: "Cash Flow" },
-      { label: "Reports", href: "/app/reports/cost-items/review" },
+    ],
+  },
+  {
+    label: "Company",
+    icon: Building2,
+    trailing: "chevron" as const,
+    children: [
+      { label: "Cost Item Review", href: "/app/company/cost-items/review" },
+      { label: "Cost Codes", href: "/app/company/cost-codes" },
+      { label: "Suppliers", href: "/app/company/suppliers" },
+      { label: "Supplier Invoices", href: "/app/company/supplier-invoices" },
     ],
   },
   { label: "Resources", icon: Package },
   { label: "Team", icon: UsersRound },
-  {
-    label: "Reports",
-    icon: BarChart3,
-    trailing: "chevron" as const,
-    children: [{ label: "Cost Item Review", href: "/app/reports/cost-items/review" }],
-  },
+  { label: "Reports", icon: BarChart3 },
   { label: "AI Assistant", icon: Sparkles },
 ] as const;
 
@@ -83,11 +88,9 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { session, logout } = useAuth();
-  const [isFinancialsExpanded, setIsFinancialsExpanded] = useState(() =>
-    pathname.startsWith("/app/settings/financial-settings") || pathname.startsWith("/app/reports")
-  );
-  const [isReportsExpanded, setIsReportsExpanded] = useState(() =>
-    pathname.startsWith("/app/reports")
+  const [isFinancialsExpanded, setIsFinancialsExpanded] = useState(false);
+  const [isCompanyExpanded, setIsCompanyExpanded] = useState(() =>
+    pathname.startsWith("/app/company")
   );
 
   const displayName = session?.name ?? mockUser.name;
@@ -100,7 +103,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <div className={`${ibmPlexSans.className} flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#0E172B] px-3 py-3`}>
+    <div className={`${ibmPlexSans.className} flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0E172B] px-3 py-3`}>
       <div className="pb-[1rem] pl-0 pr-3 pt-[calc(1.55rem+5px)]">
         <Link href="/app/dashboard" className="inline-flex items-center" onClick={onNavigate}>
           <Image
@@ -122,11 +125,11 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           const hasChildren = "children" in item && Boolean(item.children?.length);
 
           if (hasChildren) {
-            const isReportsSection = item.label === "Reports";
-            const isExpanded = isReportsSection ? isReportsExpanded : isFinancialsExpanded;
-            const toggleExpanded = isReportsSection
-              ? () => setIsReportsExpanded((current) => !current)
-              : () => setIsFinancialsExpanded((current) => !current);
+            const isFinancialsSection = item.label === "Financials";
+            const isExpanded = isFinancialsSection ? isFinancialsExpanded : isCompanyExpanded;
+            const toggleExpanded = isFinancialsSection
+              ? () => setIsFinancialsExpanded((current) => !current)
+              : () => setIsCompanyExpanded((current) => !current);
 
             return (
               <div key={item.label} className="space-y-0.5">
@@ -153,17 +156,29 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
 
                 {isExpanded ? (
                   <div className="space-y-0.5 py-1">
-                    {item.children.map((child) =>
-                      child.href ? (
-                        <Link
-                          key={child.label}
-                          href={child.href}
-                          onClick={onNavigate}
-                          className={sidebarSubItemClass}
-                        >
-                          <span className="truncate">{child.label}</span>
-                        </Link>
-                      ) : (
+                    {item.children.map((child) => {
+                      if ("href" in child && child.href) {
+                        const isChildActive =
+                          pathname === child.href || pathname.startsWith(`${child.href}/`);
+
+                        return (
+                          <Link
+                            key={child.label}
+                            href={child.href}
+                            onClick={onNavigate}
+                            className={cn(
+                              sidebarSubItemClass,
+                              isChildActive
+                                ? "rounded-[10px] bg-[#16233C] pr-3 text-[#E7ECF5]"
+                                : ""
+                            )}
+                          >
+                            <span className="truncate">{child.label}</span>
+                          </Link>
+                        );
+                      }
+
+                      return (
                         <button
                           key={child.label}
                           type="button"
@@ -171,8 +186,8 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                         >
                           <span className="truncate">{child.label}</span>
                         </button>
-                      )
-                    )}
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
@@ -297,7 +312,7 @@ export function Sidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[240px] shrink-0 self-start bg-[#0E172B] lg:flex",
+        "sticky top-0 z-20 hidden h-screen w-[240px] shrink-0 self-start bg-[#0E172B] lg:flex",
         className
       )}
     >

@@ -13,6 +13,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { SupplierPicker } from "@/components/app/SupplierPicker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,6 +23,22 @@ import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
+import {
+  getSupplierDisplayName,
+  getSupplierDuplicateWarnings,
+  type OrganizationSupplierRow,
+} from "@/lib/suppliers";
+import {
+  DEFAULT_SUPPLIER_INVOICE_APPROVAL_CHECKS,
+  formatSupplierInvoiceMatchApprovalStatusLabel,
+  formatMatchStatusLabel,
+  getSupplierInvoiceMatchApprovalStatusClassName,
+  getSupplierInvoiceMatchStatusClassName,
+  matchCountsTowardInvoiceTotal,
+  normalizeSupplierInvoiceApprovalChecks,
+  type SupplierInvoiceApprovalChecks,
+  type SupplierInvoiceRow,
+} from "@/lib/supplier-invoices";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Pending Approval" | "Approved" | "Issued" | "Received" | "Invoiced" | "Cancelled";
@@ -130,13 +147,29 @@ interface PurchaseOrderSummaryRow {
   invoice_ready_count: number | null;
 }
 
-interface OrganizationSupplier {
+interface PurchaseOrderInvoiceMatchRow {
   id: string;
-  name: string;
-  company_name: string | null;
-  email: string | null;
-  phone: string | null;
+  organization_id: string;
+  supplier_invoice_id: string;
+  purchase_order_id: string;
+  matched_amount: number;
+  match_status: string;
+  confidence_score: number | null;
+  match_basis: string;
+  approval_status: string;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
+  approval_notes: string;
+  approval_checks_json: Database["public"]["Tables"]["supplier_invoice_purchase_order_matches"]["Row"]["approval_checks_json"];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
+
+type MatchedSupplierInvoiceRow = Pick<
+  SupplierInvoiceRow,
+  "id" | "invoice_number" | "status" | "supplier_id" | "invoice_date" | "due_date" | "total"
+>;
 
 interface ProjectMemberListItem {
   id: string;
@@ -152,6 +185,16 @@ interface ProjectMemberListItem {
   avatar_path: string | null;
 }
 
+interface OrganizationMemberSummary {
+  user_id: string;
+  display_name: string;
+}
+
+type MatchApprovalDraft = {
+  approvalNotes: string;
+  approvalChecks: SupplierInvoiceApprovalChecks;
+};
+
 type RpcResultRow = Record<string, unknown>;
 
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approved", "Issued", "Received", "Invoiced", "Cancelled"];
@@ -160,6 +203,17 @@ const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "
 const NEW_SUPPLIER_OPTION = "__new_supplier__";
 const LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 140px 120px 72px 72px 104px 104px";
 const PURCHASE_ORDER_ATTACHMENTS_BUCKET = "project-variation-attachments";
+const SUPPLIER_INVOICE_APPROVAL_CHECK_OPTIONS: Array<{
+  key: keyof SupplierInvoiceApprovalChecks;
+  label: string;
+}> = [
+  { key: "materials_received", label: "Materials/services received" },
+  { key: "pricing_correct", label: "Pricing correct" },
+  { key: "variation_approved", label: "Variation approved if applicable" },
+  { key: "no_supplier_overcharge", label: "No supplier overcharge" },
+  { key: "allocation_correct", label: "Allocation correct" },
+  { key: "ready_for_accounting", label: "Ready for accounting" },
+];
 
 function DescriptionInputWithPreview({
   value,
@@ -255,10 +309,6 @@ function deriveJobCode(value: string | null | undefined) {
   return normalized || "JOB";
 }
 
-function supplierDisplayName(supplier: OrganizationSupplier) {
-  return supplier.company_name?.trim() || supplier.name?.trim() || "";
-}
-
 function makeDefaultVariation(index: number, jobCode: string): VariationItem {
   const code = `${jobCode}-VAR-${String(index + 1).padStart(2, "0")}`;
   return {
@@ -336,7 +386,7 @@ export default function ProjectVariationsPage() {
   const [jobCode, setJobCode] = useState(() => deriveJobCode(routeProjectSlug));
   const [organizationName, setOrganizationName] = useState("");
   const [organizationLogoUrl, setOrganizationLogoUrl] = useState<string | null>(null);
-  const [suppliers, setSuppliers] = useState<OrganizationSupplier[]>([]);
+  const [suppliers, setSuppliers] = useState<OrganizationSupplierRow[]>([]);
   const [quoteSourceOptions, setQuoteSourceOptions] = useState<SourceCostItemOption[]>([]);
   const [variationSourceOptions, setVariationSourceOptions] = useState<SourceCostItemOption[]>([]);
   const [projectMembers, setProjectMembers] = useState<ProjectMemberListItem[]>([]);
@@ -364,6 +414,13 @@ export default function ProjectVariationsPage() {
     approved: 0,
     invoiceReady: 0,
   });
+  const [purchaseOrderInvoiceMatches, setPurchaseOrderInvoiceMatches] = useState<PurchaseOrderInvoiceMatchRow[]>([]);
+  const [matchedSupplierInvoices, setMatchedSupplierInvoices] = useState<MatchedSupplierInvoiceRow[]>([]);
+  const [organizationMembersByUserId, setOrganizationMembersByUserId] = useState<Record<string, OrganizationMemberSummary>>({});
+  const [canReviewSupplierInvoiceAllocations, setCanReviewSupplierInvoiceAllocations] = useState(false);
+  const [matchApprovalDrafts, setMatchApprovalDrafts] = useState<Record<string, MatchApprovalDraft>>({});
+  const [expandedMatchApprovalId, setExpandedMatchApprovalId] = useState<string | null>(null);
+  const [isSavingMatchApprovalId, setIsSavingMatchApprovalId] = useState<string | null>(null);
   const [hydratedPurchaseOrderIds, setHydratedPurchaseOrderIds] = useState<Set<string>>(new Set());
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
   const isCreatingPurchaseOrderRef = useRef(false);
@@ -606,8 +663,6 @@ export default function ProjectVariationsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const variationsTable = (supabase as any).from("project_purchase_orders");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const suppliersTable = (supabase as any).from("organization_suppliers");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const quotesTable = (supabase as any).from("project_quotes");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const projectVariationsTable = (supabase as any).from("project_variations");
@@ -620,8 +675,9 @@ export default function ProjectVariationsPage() {
         { data: projectVariationRowsRaw },
         { data: sourceCostItemRowsRaw },
       ] = await Promise.all([
-        suppliersTable
-          .select("id, name, company_name, email, phone")
+        supabase
+          .from("organization_suppliers")
+          .select("id, name, company_name, legal_name, email, phone, address, website, default_tax_rate_id, default_payment_terms, is_active, source, created_by, created_at, updated_at")
           .eq("organization_id", resolvedOrganizationId)
           .order("company_name", { ascending: true })
           .order("name", { ascending: true }),
@@ -645,7 +701,7 @@ export default function ProjectVariationsPage() {
           .order("sort_order", { ascending: true }),
       ]);
 
-      const supplierRows = (suppliersRaw ?? []) as OrganizationSupplier[];
+      const supplierRows = (suppliersRaw ?? []) as OrganizationSupplierRow[];
       setSuppliers(supplierRows);
       const quoteRows = (quoteRowsRaw ?? []) as Array<{ id: string; quote_number: string | null; quote_title: string | null }>;
       const projectVariationRows = (projectVariationRowsRaw ?? []) as Array<{
@@ -797,6 +853,118 @@ export default function ProjectVariationsPage() {
     () => variations.find((variation) => variation.id === activeVariationId) ?? variations[0] ?? null,
     [activeVariationId, variations]
   );
+
+  useEffect(() => {
+    if (!supabase || !organizationId || !activeVariation?.id) {
+      setPurchaseOrderInvoiceMatches([]);
+      setMatchedSupplierInvoices([]);
+      setOrganizationMembersByUserId({});
+      setCanReviewSupplierInvoiceAllocations(false);
+      setMatchApprovalDrafts({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadInvoiceMatches = async () => {
+      const [
+        { data: matchRowsRaw, error: matchRowsError },
+        { data: canReviewData, error: canReviewError },
+        { data: memberRowsRaw, error: memberRowsError },
+      ] = await Promise.all([
+        supabase
+          .from("supplier_invoice_purchase_order_matches")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .eq("purchase_order_id", activeVariation.id)
+          .order("created_at", { ascending: true }),
+        supabase.rpc("has_org_permission", {
+          p_organization_id: organizationId,
+          p_permission_key: "supplier_invoices.review",
+        }),
+        supabase
+          .from("organization_members")
+          .select("user_id, display_name")
+          .eq("organization_id", organizationId)
+          .order("display_name", { ascending: true }),
+      ]);
+
+      if (canReviewError) {
+        if (!cancelled) {
+          setError(canReviewError.message);
+        }
+        return;
+      }
+
+      if (memberRowsError) {
+        if (!cancelled) {
+          setError(memberRowsError.message);
+        }
+        return;
+      }
+
+      if (matchRowsError) {
+        if (!cancelled) {
+          setError(matchRowsError.message);
+        }
+        return;
+      }
+
+      const matchRows = (matchRowsRaw ?? []) as PurchaseOrderInvoiceMatchRow[];
+      if (cancelled) {
+        return;
+      }
+
+      setCanReviewSupplierInvoiceAllocations(Boolean(canReviewData));
+      const memberDirectory = Object.fromEntries(
+        ((memberRowsRaw ?? []) as OrganizationMemberSummary[]).map((member) => [
+          member.user_id,
+          member,
+        ])
+      );
+      setOrganizationMembersByUserId(memberDirectory);
+      setPurchaseOrderInvoiceMatches(matchRows);
+      setMatchApprovalDrafts(
+        matchRows.reduce<Record<string, MatchApprovalDraft>>((accumulator, match) => {
+          accumulator[match.id] = {
+            approvalNotes: match.approval_notes ?? "",
+            approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
+          };
+          return accumulator;
+        }, {})
+      );
+
+      const supplierInvoiceIds = [...new Set(matchRows.map((match) => match.supplier_invoice_id).filter(Boolean))];
+      if (supplierInvoiceIds.length === 0) {
+        setMatchedSupplierInvoices([]);
+        return;
+      }
+
+      const { data: invoiceRowsRaw, error: invoiceRowsError } = await supabase
+        .from("supplier_invoices")
+        .select("id, invoice_number, status, supplier_id, invoice_date, due_date, total")
+        .eq("organization_id", organizationId)
+        .in("id", supplierInvoiceIds);
+
+      if (invoiceRowsError) {
+        if (!cancelled) {
+          setError(invoiceRowsError.message);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setMatchedSupplierInvoices((invoiceRowsRaw ?? []) as MatchedSupplierInvoiceRow[]);
+      }
+    };
+
+    void loadInvoiceMatches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVariation?.id, organizationId, supabase]);
+
   const hasVariations = variations.length > 0;
   const assignableProjectMembers = useMemo(
     () =>
@@ -827,12 +995,168 @@ export default function ProjectVariationsPage() {
     if (!query) {
       return suppliers;
     }
-    return suppliers.filter((supplier) => supplierDisplayName(supplier).toLowerCase().includes(query));
+    return suppliers.filter((supplier) => getSupplierDisplayName(supplier).toLowerCase().includes(query));
   }, [supplierSearchQuery, suppliers]);
   const sourceOptionsById = useMemo(() => {
     const entries = [...quoteSourceOptions, ...variationSourceOptions].map((option) => [option.id, option] as const);
     return new Map(entries);
   }, [quoteSourceOptions, variationSourceOptions]);
+  const matchedSupplierInvoiceById = useMemo(
+    () => new Map(matchedSupplierInvoices.map((invoice) => [invoice.id, invoice])),
+    [matchedSupplierInvoices]
+  );
+  const purchaseOrderInvoiceMatchRows = useMemo(
+    () =>
+      purchaseOrderInvoiceMatches.map((match) => ({
+        ...match,
+        invoice: matchedSupplierInvoiceById.get(match.supplier_invoice_id) ?? null,
+        approverName: match.approved_by_user_id
+          ? organizationMembersByUserId[match.approved_by_user_id]?.display_name ?? "Unknown reviewer"
+          : null,
+      })),
+    [matchedSupplierInvoiceById, organizationMembersByUserId, purchaseOrderInvoiceMatches]
+  );
+  const invoiceRollup = useMemo(() => {
+    const invoicedTotal = purchaseOrderInvoiceMatchRows.reduce((sum, match) => {
+      if (!matchCountsTowardInvoiceTotal(match.match_status)) {
+        return sum;
+      }
+      return sum + Number(match.matched_amount ?? 0);
+    }, 0);
+
+    const approvedInvoiceTotal = purchaseOrderInvoiceMatchRows.reduce((sum, match) => {
+      if (!matchCountsTowardInvoiceTotal(match.match_status) || match.approval_status !== "approved") {
+        return sum;
+      }
+      return sum + Number(match.matched_amount ?? 0);
+    }, 0);
+
+    const outstandingAmount = Math.max(0, Number(activeVariation?.totalPrice ?? 0) - approvedInvoiceTotal);
+
+    return {
+      invoicedTotal,
+      approvedInvoiceTotal,
+      outstandingAmount,
+    };
+  }, [activeVariation?.totalPrice, purchaseOrderInvoiceMatchRows]);
+
+  const updateMatchApprovalDraft = useCallback(
+    (
+      matchId: string,
+      updater: (current: MatchApprovalDraft) => MatchApprovalDraft
+    ) => {
+      setMatchApprovalDrafts((current) => {
+        const existing = current[matchId] ?? {
+          approvalNotes: "",
+          approvalChecks: { ...DEFAULT_SUPPLIER_INVOICE_APPROVAL_CHECKS },
+        };
+        return {
+          ...current,
+          [matchId]: updater(existing),
+        };
+      });
+    },
+    []
+  );
+
+  const reviewAllocation = useCallback(
+    async (match: PurchaseOrderInvoiceMatchRow, nextStatus: "approved" | "disputed") => {
+      if (!supabase || !organizationId || !session?.id || !canReviewSupplierInvoiceAllocations) {
+        return;
+      }
+
+      const draft = matchApprovalDrafts[match.id] ?? {
+        approvalNotes: match.approval_notes ?? "",
+        approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
+      };
+
+      if (
+        nextStatus === "approved" &&
+        Object.values(draft.approvalChecks).some((value) => value !== true)
+      ) {
+        setError("Complete every allocation review check before approving this matched amount.");
+        return;
+      }
+
+      setIsSavingMatchApprovalId(match.id);
+      setError(null);
+      setSaveMessage(null);
+
+      try {
+        const { error: updateError } = await supabase
+          .from("supplier_invoice_purchase_order_matches")
+          .update({
+            approval_status: nextStatus,
+            approved_by_user_id: session.id,
+            approved_at: new Date().toISOString(),
+            approval_notes: draft.approvalNotes.trim(),
+            approval_checks_json: draft.approvalChecks,
+          })
+          .eq("id", match.id)
+          .eq("organization_id", organizationId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+
+        const { data: refreshedMatchRowsRaw, error: refreshedMatchRowsError } = await supabase
+          .from("supplier_invoice_purchase_order_matches")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .eq("purchase_order_id", activeVariation?.id)
+          .order("created_at", { ascending: true });
+
+        if (refreshedMatchRowsError) {
+          throw new Error(refreshedMatchRowsError.message);
+        }
+
+        const refreshedMatchRows = (refreshedMatchRowsRaw ?? []) as PurchaseOrderInvoiceMatchRow[];
+        const refreshedSupplierInvoiceIds = [
+          ...new Set(refreshedMatchRows.map((row) => row.supplier_invoice_id).filter(Boolean)),
+        ];
+
+        if (refreshedSupplierInvoiceIds.length > 0) {
+          const { data: refreshedInvoiceRowsRaw, error: refreshedInvoiceRowsError } = await supabase
+            .from("supplier_invoices")
+            .select("id, invoice_number, status, supplier_id, invoice_date, due_date, total")
+            .eq("organization_id", organizationId)
+            .in("id", refreshedSupplierInvoiceIds);
+
+          if (refreshedInvoiceRowsError) {
+            throw new Error(refreshedInvoiceRowsError.message);
+          }
+
+          setMatchedSupplierInvoices((refreshedInvoiceRowsRaw ?? []) as MatchedSupplierInvoiceRow[]);
+        } else {
+          setMatchedSupplierInvoices([]);
+        }
+
+        setPurchaseOrderInvoiceMatches(refreshedMatchRows);
+        setExpandedMatchApprovalId(null);
+        setSaveMessage(
+          nextStatus === "approved"
+            ? "Supplier invoice allocation approved."
+            : "Supplier invoice allocation marked disputed."
+        );
+      } catch (reviewError) {
+        setError(
+          reviewError instanceof Error
+            ? reviewError.message
+            : "Unable to update the supplier invoice allocation."
+        );
+      } finally {
+        setIsSavingMatchApprovalId(null);
+      }
+    },
+    [
+      activeVariation?.id,
+      canReviewSupplierInvoiceAllocations,
+      matchApprovalDrafts,
+      organizationId,
+      session?.id,
+      supabase,
+    ]
+  );
 
   const resolveSourceLabel = useCallback((line: CostLine) => {
     if (line.sourceTimeSheetEntryId) {
@@ -880,7 +1204,7 @@ export default function ProjectVariationsPage() {
 
     const selectedSupplier = suppliers.find((supplier) => supplier.id === activeVariation.issuedToSupplierId);
     if (selectedSupplier) {
-      setSupplierSearchQuery(supplierDisplayName(selectedSupplier));
+      setSupplierSearchQuery(getSupplierDisplayName(selectedSupplier));
       return;
     }
 
@@ -1284,7 +1608,7 @@ export default function ProjectVariationsPage() {
 
     try {
       let resolvedSupplierId: string | null = activeVariation.issuedToSupplierId || null;
-      let resolvedSupplier: OrganizationSupplier | null = suppliers.find((supplier) => supplier.id === resolvedSupplierId) ?? null;
+      let resolvedSupplier: OrganizationSupplierRow | null = suppliers.find((supplier) => supplier.id === resolvedSupplierId) ?? null;
       if (resolvedSupplierId === NEW_SUPPLIER_OPTION) {
         const supplierName = newSupplierName.trim();
         const supplierCompanyName = newSupplierCompanyName.trim();
@@ -1292,30 +1616,48 @@ export default function ProjectVariationsPage() {
         if (!supplierDisplay) {
           throw new Error("Supplier name is required when adding a new supplier.");
         }
+        if (!session?.id) {
+          throw new Error("You must be signed in to create a supplier.");
+        }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const suppliersTable = (supabase as any).from("organization_suppliers");
-        const { data: newSupplierRow, error: newSupplierError } = await suppliersTable
+        const duplicateWarnings = getSupplierDuplicateWarnings({
+          suppliers,
+          name: supplierDisplay,
+          email: newSupplierEmail.trim(),
+        });
+        if (
+          duplicateWarnings.length > 0 &&
+          !window.confirm(
+            `Possible duplicate supplier:\n\n${duplicateWarnings.map((warning) => `• ${warning.message}`).join("\n")}\n\nCreate anyway?`
+          )
+        ) {
+          setIsSaving(false);
+          return;
+        }
+
+        const { data: newSupplierRow, error: newSupplierError } = await supabase
+          .from("organization_suppliers")
           .insert({
             organization_id: organizationId,
-            created_by: session?.id,
-            name: supplierName || supplierDisplay,
-            company_name: supplierCompanyName,
+            created_by: session.id,
+            name: supplierDisplay,
+            company_name: supplierDisplay,
             email: newSupplierEmail.trim() || null,
             phone: newSupplierPhone.trim() || null,
+            source: "purchase_order_inline",
           })
-          .select("id, name, company_name, email, phone")
+          .select("*")
           .single();
 
         if (newSupplierError || !newSupplierRow?.id) {
           throw new Error(newSupplierError?.message ?? "Unable to create supplier.");
         }
 
-        const createdSupplier = newSupplierRow as OrganizationSupplier;
+        const createdSupplier = newSupplierRow as OrganizationSupplierRow;
         setSuppliers((current) => {
           const withoutExisting = current.filter((supplier) => supplier.id !== createdSupplier.id);
           return [...withoutExisting, createdSupplier].sort((left, right) =>
-            supplierDisplayName(left).localeCompare(supplierDisplayName(right))
+            getSupplierDisplayName(left).localeCompare(getSupplierDisplayName(right))
           );
         });
 
@@ -1330,7 +1672,7 @@ export default function ProjectVariationsPage() {
 
       const issuedToLabel =
         resolvedSupplier
-          ? supplierDisplayName(resolvedSupplier)
+          ? getSupplierDisplayName(resolvedSupplier)
           : activeVariation.issuedToLabel.trim();
       const supplierContact = activeVariation.supplierContact.trim();
       const supplierNameSnapshot = resolvedSupplier ? issuedToLabel : "";
@@ -2064,65 +2406,28 @@ export default function ProjectVariationsPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Issued To</label>
-                  <div className="relative">
-                    <Input
-                      value={supplierSearchQuery}
-                      onFocus={() => setIsSupplierMenuOpen(true)}
-                      onBlur={() => {
-                        window.setTimeout(() => setIsSupplierMenuOpen(false), 100);
-                      }}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setSupplierSearchQuery(value);
-                        updateActiveVariation("issuedToSupplierId", "");
-                        updateActiveVariation("issuedToLabel", value);
-                        setIsSupplierMenuOpen(true);
-                      }}
-                      className="h-10 rounded-[6px]"
-                      placeholder="Search supplier..."
-                    />
-                    {isSupplierMenuOpen ? (
-                      <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[#d1d9e6] bg-white shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
-                        {filteredSuppliers.length > 0 ? (
-                          filteredSuppliers.map((supplier) => {
-                            const label = supplierDisplayName(supplier);
-                            return (
-                              <button
-                                key={supplier.id}
-                                type="button"
-                                onMouseDown={(event) => {
-                                  event.preventDefault();
-                                  updateActiveVariation("issuedToSupplierId", supplier.id);
-                                  updateActiveVariation("issuedToLabel", label);
-                                  setSupplierSearchQuery(label);
-                                  setIsSupplierMenuOpen(false);
-                                }}
-                                className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC]`}
-                              >
-                                {label}
-                              </button>
-                            );
-                          })
-                        ) : (
-                          <p className={`${interMedium.className} px-3 py-2 text-sm text-[#64748B]`}>No suppliers found.</p>
-                        )}
-                        <div className="border-t border-[#e7edf5]">
-                          <button
-                            type="button"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              updateActiveVariation("issuedToSupplierId", NEW_SUPPLIER_OPTION);
-                              updateActiveVariation("issuedToLabel", supplierSearchQuery.trim());
-                              setIsSupplierMenuOpen(false);
-                            }}
-                            className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC]`}
-                          >
-                            Add new supplier
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                  <SupplierPicker
+                    suppliers={filteredSuppliers}
+                    searchQuery={supplierSearchQuery}
+                    isOpen={isSupplierMenuOpen}
+                    onSearchQueryChange={(value) => {
+                      setSupplierSearchQuery(value);
+                      updateActiveVariation("issuedToLabel", value);
+                    }}
+                    onOpenChange={setIsSupplierMenuOpen}
+                    onClearSelection={() => updateActiveVariation("issuedToSupplierId", "")}
+                    onSelectSupplier={(supplier) => {
+                      const label = getSupplierDisplayName(supplier);
+                      updateActiveVariation("issuedToSupplierId", supplier.id);
+                      updateActiveVariation("issuedToLabel", label);
+                      setSupplierSearchQuery(label);
+                    }}
+                    onCreateNew={() => {
+                      updateActiveVariation("issuedToSupplierId", NEW_SUPPLIER_OPTION);
+                      updateActiveVariation("issuedToLabel", supplierSearchQuery.trim());
+                    }}
+                    disabled={!canManagePurchaseOrder}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Assigned Worker</label>
@@ -2527,6 +2832,201 @@ export default function ProjectVariationsPage() {
                     <span className="text-[15px] font-semibold text-[#1d2433]">Total (incl. GST)</span>
                     <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
                   </p>
+                </div>
+              </div>
+
+              <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className={`${interMedium.className} text-[15px] font-semibold text-[#1d2433]`}>
+                    Supplier Invoice Approvals
+                  </h3>
+                  <span className={`${interMedium.className} text-[12px] font-medium text-[#64748B]`}>
+                    {canReviewSupplierInvoiceAllocations ? "QS / PM approval" : "Read only"}
+                  </span>
+                </div>
+
+                <div className={`${interMedium.className} space-y-3 text-sm`}>
+                  <p className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Invoiced Total</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.invoicedTotal)}</span>
+                  </p>
+                  <p className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Approved Invoice Total</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.approvedInvoiceTotal)}</span>
+                  </p>
+                  <div className="h-px bg-[#E7ECF3]" />
+                  <p className="flex items-center justify-between">
+                    <span className="text-[15px] font-semibold text-[#1d2433]">Outstanding Amount</span>
+                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(invoiceRollup.outstandingAmount)}</span>
+                  </p>
+                </div>
+
+                <div className="mt-4 rounded-[10px] border border-[#E5EAF2] bg-white px-4 py-3">
+                  <p className={`${interMedium.className} text-[13px] font-semibold text-[#475569]`}>
+                    Approvals happen on each invoice allocation against this purchase order.
+                  </p>
+                  <p className={`${interMedium.className} mt-1 text-[12px] text-[#64748B]`}>
+                    Accounts matches invoices in Company, and QS/PM reviews each matched allocation here.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {purchaseOrderInvoiceMatchRows.length === 0 ? (
+                    <div className="rounded-[10px] border border-dashed border-[#D7E1EC] bg-white px-4 py-5 text-center">
+                      <p className={`${interMedium.className} text-[13px] text-[#64748B]`}>
+                        No supplier invoices matched yet.
+                      </p>
+                    </div>
+                  ) : (
+                    purchaseOrderInvoiceMatchRows.map((match) => (
+                      <div
+                        key={match.id}
+                        className="rounded-[12px] border border-[#E5EAF2] bg-white px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className={`${interMedium.className} truncate text-[13px] font-semibold text-[#1d2433]`}>
+                              {match.invoice?.invoice_number || "Supplier Invoice"}
+                            </p>
+                            <p className={`${interMedium.className} mt-1 text-[12px] text-[#64748B]`}>
+                              {match.invoice?.status || "Unknown"} · {toDayMonthYearLabel(match.invoice?.invoice_date ?? null)}
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7C8DA6]`}>
+                                Allocation
+                              </span>
+                              <span className={`${interMedium.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchStatusClassName(match.match_status)}`}>
+                                {formatMatchStatusLabel(match.match_status)}
+                              </span>
+                              <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7C8DA6]`}>
+                                Approval
+                              </span>
+                              <span className={`${interMedium.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchApprovalStatusClassName(match.approval_status)}`}>
+                                {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>
+                              {toMoney(Number(match.matched_amount ?? 0))}
+                            </p>
+                            <p className={`${interMedium.className} mt-1 text-[12px] text-[#64748B]`}>
+                              {match.approverName
+                                ? `${match.approverName}${match.approved_at ? ` · ${toDayMonthYearLabel(match.approved_at)}` : ""}`
+                                : "Awaiting approval"}
+                            </p>
+                          </div>
+                        </div>
+                        {match.approval_notes?.trim() ? (
+                          <p className={`${interMedium.className} mt-3 text-[12px] text-[#4B5D79]`}>
+                            {match.approval_notes}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {match.invoice?.id ? (
+                            <Link
+                              href={`/app/company/supplier-invoices/${match.invoice.id}`}
+                              className={`${interMedium.className} inline-flex items-center gap-1 rounded-[8px] border border-[#D7E1EC] bg-[#F8FAFC] px-3 py-2 text-[12px] font-medium text-[#475569] transition hover:bg-white`}
+                            >
+                              Open invoice
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Link>
+                          ) : null}
+                          {canReviewSupplierInvoiceAllocations ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() =>
+                                setExpandedMatchApprovalId((current) =>
+                                  current === match.id ? null : match.id
+                                )
+                              }
+                              className={`${interMedium.className} h-9 rounded-[8px] border-[#D7E1EC] bg-[#F8FAFC] text-[12px] text-[#475569]`}
+                            >
+                              {expandedMatchApprovalId === match.id ? "Hide Review" : "Review Allocation"}
+                            </Button>
+                          ) : null}
+                        </div>
+
+                        {expandedMatchApprovalId === match.id && canReviewSupplierInvoiceAllocations ? (
+                          <div className="mt-4 space-y-4 rounded-[10px] border border-[#E5EAF2] bg-[#F8FAFC] px-4 py-4">
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {SUPPLIER_INVOICE_APPROVAL_CHECK_OPTIONS.map((option) => {
+                                const draft = matchApprovalDrafts[match.id] ?? {
+                                  approvalNotes: match.approval_notes ?? "",
+                                  approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
+                                };
+
+                                return (
+                                  <label key={option.key} className="flex items-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={draft.approvalChecks[option.key]}
+                                      onChange={(event) =>
+                                        updateMatchApprovalDraft(match.id, (current) => ({
+                                          ...current,
+                                          approvalChecks: {
+                                            ...current.approvalChecks,
+                                            [option.key]: event.target.checked,
+                                          },
+                                        }))
+                                      }
+                                      className="mt-0.5 h-4 w-4 rounded border-[#CBD5E1] text-[#F15A29] focus:ring-[#F15A29]"
+                                    />
+                                    <span className={`${interMedium.className} text-[12px] text-[#334155]`}>
+                                      {option.label}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className={`${interMedium.className} text-[12px] font-semibold text-[#475569]`}>
+                                Approval notes
+                              </label>
+                              <textarea
+                                rows={3}
+                                value={
+                                  matchApprovalDrafts[match.id]?.approvalNotes ??
+                                  match.approval_notes ??
+                                  ""
+                                }
+                                onChange={(event) =>
+                                  updateMatchApprovalDraft(match.id, (current) => ({
+                                    ...current,
+                                    approvalNotes: event.target.value,
+                                  }))
+                                }
+                                className={`${interMedium.className} min-h-[84px] w-full rounded-[8px] border border-[#D7E1EC] bg-white px-3 py-2 text-[13px] text-[#1d2433]`}
+                              />
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                onClick={() => void reviewAllocation(match, "approved")}
+                                disabled={isSavingMatchApprovalId === match.id}
+                                className={`${interMedium.className} h-9 rounded-[8px] bg-[#F15A29] text-[12px] text-white hover:bg-[#db4d1f]`}
+                              >
+                                {isSavingMatchApprovalId === match.id ? "Saving..." : "Approve Allocation"}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void reviewAllocation(match, "disputed")}
+                                disabled={isSavingMatchApprovalId === match.id}
+                                className={`${interMedium.className} h-9 rounded-[8px] border-[#F5C2C7] bg-white text-[12px] text-[#B42318] hover:bg-[#FFF1F2]`}
+                              >
+                                Mark Disputed
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 

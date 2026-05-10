@@ -8,7 +8,6 @@ import { interMedium } from "@/lib/fonts";
 const tabs = [
   { href: "/app/settings/organization", label: "Organization" },
   { href: "/app/settings/users-permissions", label: "Users & Permissions" },
-  { href: "/app/settings/financial-settings", label: "Financial Settings" },
   { href: "/app/settings/integrations", label: "Integrations" },
   { href: "/app/settings/compliance-contracts", label: "Compliance & Contracts" },
   { href: "/app/settings/platform-preferences", label: "Platform Preferences" },

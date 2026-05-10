@@ -3,10 +3,8 @@ import { Sidebar } from "@/components/app/Sidebar";
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className="mx-auto flex min-h-screen w-full max-w-[1760px] gap-0"
-      style={{ background: "linear-gradient(90deg, #0E172B 0 240px, transparent 240px)" }}
-    >
+    <div className="relative mx-auto flex min-h-screen w-full max-w-[1760px] items-start gap-0">
+      <div aria-hidden="true" className="absolute inset-y-0 left-0 hidden w-[240px] bg-[#0E172B] lg:block" />
       <Sidebar />
       <AppShellFrame>{children}</AppShellFrame>
     </div>
