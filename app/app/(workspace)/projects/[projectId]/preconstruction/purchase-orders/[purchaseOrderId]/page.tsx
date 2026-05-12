@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ChevronDown,
-  Clock3,
   ExternalLink,
   FileStack,
-  Mail,
+  MoreVertical,
   Plus,
   Trash2,
   Upload,
@@ -22,6 +21,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import type { Database } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import {
   getSupplierDisplayName,
@@ -2738,317 +2738,326 @@ export default function ProjectVariationsPage() {
             </div>
           </section>
 
-          <div className="border-t border-[#E8EDF5] py-6">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+          <div className="pt-2 pb-6 space-y-6">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
               <div>
-                <section className="pt-0">
-                  <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Attachments & Notes</h2>
+                <div className="space-y-5">
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => handleAttachmentFilesSelected(event.target.files)}
+                    accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.webp,.eml,.msg,.doc,.docx"
+                  />
 
-                  <div className="mt-4 space-y-4">
-                <input
-                  ref={attachmentInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => handleAttachmentFilesSelected(event.target.files)}
-                  accept={
-                    pendingAttachmentType === "Drawing"
-                      ? ".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.webp"
-                      : pendingAttachmentType === "Email"
-                        ? ".eml,.msg,.pdf,.png,.jpg,.jpeg,.webp"
-                        : ".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
-                  }
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Drawing")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Email")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
-                  <Button type="button" variant="outline" onClick={() => addAttachment("Site Instruction")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
-                </div>
-
-                <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
-                  <label className={styles.quoteBodyLabel}>Linked Documentation</label>
-                  <div className="space-y-2">
-                    {activeVariation.attachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
-                        <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[#1D2433]`}>{attachment.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-[6px] bg-[#EEF3FA] px-2 py-1 text-[11px] font-semibold text-[#4A5D78]">{attachment.type}</span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => removeAttachment(attachment.id)}
-                            className={`${interMedium.className} h-10 w-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] p-0 text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#1d2433]`}
-                            aria-label="Delete attachment"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    {activeVariation.attachments.length === 0 ? <p className={`${interMedium.className} text-sm text-[#73839a]`}>No attachments.</p> : null}
+                  <div>
+                    <label className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4 block`}>
+                      Notes
+                    </label>
+                    <textarea
+                      value={activeVariation.notes}
+                      onChange={(event) => updateActiveVariation("notes", event.target.value)}
+                      className={`${interMedium.className} block min-h-[140px] w-full max-w-[600px] rounded-[8px] border border-[#CBD5E1] bg-white px-3.5 py-3 text-[14px] text-[#1d2433] focus:outline-none focus:border-[#0B2739]`}
+                    />
                   </div>
-                </div>
 
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <label className={styles.quoteBodyLabel}>Purchase order notes</label>
+                  <div className="space-y-2">
                     <Button
                       type="button"
-                      variant="ghost"
-                      onClick={() => updateActiveVariation("notes", "")}
-                      className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
-                      aria-label="Delete notes"
+                      onClick={() => addAttachment("Drawing")}
+                      className={`${ibmPlexSans.className} inline-flex h-9 items-center gap-2 rounded-full bg-[#0B2739] px-5 text-[14px] font-semibold !text-white hover:bg-[#0B2739] hover:opacity-90`}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Upload className="h-4 w-4" />
+                      Attachments
                     </Button>
-                  </div>
-                  <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
-                </div>
-              </div>
-                </section>
-              </div>
 
-              <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
-            <div className="space-y-5">
-              <div className="grid gap-2">
-                <label className={styles.quoteBodyLabel}>GST (%)</label>
-                <Input
-                  type="number"
-                  value={activeVariation.gstPercent}
-                  onChange={(event) => updateActiveVariation("gstPercent", event.target.value)}
-                  className="h-10 rounded-[6px]"
-                />
-              </div>
-
-              <div className="h-px bg-[#E7ECF3]" />
-
-              <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
-                <div className={`${interMedium.className} space-y-3 text-sm`}>
-                  <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span className="font-medium text-[#1d2433]">{toMoney(purchaseOrderPreGstTotal)}</span></p>
-                  <p className="flex items-center justify-between"><span className="text-[#64748B]">GST ({activeVariation.gstPercent.trim() || "15"}%)</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span></p>
-                  <div className="h-px bg-[#E7ECF3]" />
-                  <p className="flex items-center justify-between pt-1">
-                    <span className="text-[15px] font-semibold text-[#1d2433]">Total (incl. GST)</span>
-                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h3 className={`${interMedium.className} text-[15px] font-semibold text-[#1d2433]`}>
-                    Supplier Invoice Approvals
-                  </h3>
-                  <span className={`${interMedium.className} text-[12px] font-medium text-[#64748B]`}>
-                    {canReviewSupplierInvoiceAllocations ? "QS / PM approval" : "Read only"}
-                  </span>
-                </div>
-
-                <div className={`${interMedium.className} space-y-3 text-sm`}>
-                  <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Invoiced Total</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.invoicedTotal)}</span>
-                  </p>
-                  <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Approved Invoice Total</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.approvedInvoiceTotal)}</span>
-                  </p>
-                  <div className="h-px bg-[#E7ECF3]" />
-                  <p className="flex items-center justify-between">
-                    <span className="text-[15px] font-semibold text-[#1d2433]">Outstanding Amount</span>
-                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(invoiceRollup.outstandingAmount)}</span>
-                  </p>
-                </div>
-
-                <div className="mt-4 rounded-[10px] border border-[#E5EAF2] bg-white px-4 py-3">
-                  <p className={`${interMedium.className} text-[13px] font-semibold text-[#475569]`}>
-                    Approvals happen on each invoice allocation against this purchase order.
-                  </p>
-                  <p className={`${interMedium.className} mt-1 text-[12px] text-[#64748B]`}>
-                    Accounts matches invoices in Company, and QS/PM reviews each matched allocation here.
-                  </p>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {purchaseOrderInvoiceMatchRows.length === 0 ? (
-                    <div className="rounded-[10px] border border-dashed border-[#D7E1EC] bg-white px-4 py-5 text-center">
-                      <p className={`${interMedium.className} text-[13px] text-[#64748B]`}>
-                        No supplier invoices matched yet.
-                      </p>
-                    </div>
-                  ) : (
-                    purchaseOrderInvoiceMatchRows.map((match) => (
-                      <div
-                        key={match.id}
-                        className="rounded-[12px] border border-[#E5EAF2] bg-white px-4 py-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className={`${interMedium.className} truncate text-[13px] font-semibold text-[#1d2433]`}>
-                              {match.invoice?.invoice_number || "Supplier Invoice"}
-                            </p>
-                            <p className={`${interMedium.className} mt-1 text-[12px] text-[#64748B]`}>
-                              {match.invoice?.status || "Unknown"} · {toDayMonthYearLabel(match.invoice?.invoice_date ?? null)}
-                            </p>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7C8DA6]`}>
-                                Allocation
-                              </span>
-                              <span className={`${interMedium.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchStatusClassName(match.match_status)}`}>
-                                {formatMatchStatusLabel(match.match_status)}
-                              </span>
-                              <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7C8DA6]`}>
-                                Approval
-                              </span>
-                              <span className={`${interMedium.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchApprovalStatusClassName(match.approval_status)}`}>
-                                {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className={`${interMedium.className} text-[13px] font-semibold text-[#1d2433]`}>
-                              {toMoney(Number(match.matched_amount ?? 0))}
-                            </p>
-                            <p className={`${interMedium.className} mt-1 text-[12px] text-[#64748B]`}>
-                              {match.approverName
-                                ? `${match.approverName}${match.approved_at ? ` · ${toDayMonthYearLabel(match.approved_at)}` : ""}`
-                                : "Awaiting approval"}
-                            </p>
-                          </div>
-                        </div>
-                        {match.approval_notes?.trim() ? (
-                          <p className={`${interMedium.className} mt-3 text-[12px] text-[#4B5D79]`}>
-                            {match.approval_notes}
-                          </p>
-                        ) : null}
-
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          {match.invoice?.id ? (
-                            <Link
-                              href={`/app/company/supplier-invoices/${match.invoice.id}`}
-                              className={`${interMedium.className} inline-flex items-center gap-1 rounded-[8px] border border-[#D7E1EC] bg-[#F8FAFC] px-3 py-2 text-[12px] font-medium text-[#475569] transition hover:bg-white`}
-                            >
-                              Open invoice
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </Link>
-                          ) : null}
-                          {canReviewSupplierInvoiceAllocations ? (
+                    {activeVariation.attachments.length > 0 ? (
+                      <div className="space-y-2 pt-2">
+                        {activeVariation.attachments.map((attachment) => (
+                          <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[8px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
+                            <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[#1D2433]`}>{attachment.name}</span>
                             <Button
                               type="button"
-                              variant="outline"
-                              onClick={() =>
-                                setExpandedMatchApprovalId((current) =>
-                                  current === match.id ? null : match.id
-                                )
-                              }
-                              className={`${interMedium.className} h-9 rounded-[8px] border-[#D7E1EC] bg-[#F8FAFC] text-[12px] text-[#475569]`}
+                              variant="ghost"
+                              onClick={() => removeAttachment(attachment.id)}
+                              className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
+                              aria-label="Delete attachment"
                             >
-                              {expandedMatchApprovalId === match.id ? "Hide Review" : "Review Allocation"}
+                              <Trash2 className="h-4 w-4" />
                             </Button>
-                          ) : null}
-                        </div>
-
-                        {expandedMatchApprovalId === match.id && canReviewSupplierInvoiceAllocations ? (
-                          <div className="mt-4 space-y-4 rounded-[10px] border border-[#E5EAF2] bg-[#F8FAFC] px-4 py-4">
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {SUPPLIER_INVOICE_APPROVAL_CHECK_OPTIONS.map((option) => {
-                                const draft = matchApprovalDrafts[match.id] ?? {
-                                  approvalNotes: match.approval_notes ?? "",
-                                  approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
-                                };
-
-                                return (
-                                  <label key={option.key} className="flex items-start gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={draft.approvalChecks[option.key]}
-                                      onChange={(event) =>
-                                        updateMatchApprovalDraft(match.id, (current) => ({
-                                          ...current,
-                                          approvalChecks: {
-                                            ...current.approvalChecks,
-                                            [option.key]: event.target.checked,
-                                          },
-                                        }))
-                                      }
-                                      className="mt-0.5 h-4 w-4 rounded border-[#CBD5E1] text-[#F15A29] focus:ring-[#F15A29]"
-                                    />
-                                    <span className={`${interMedium.className} text-[12px] text-[#334155]`}>
-                                      {option.label}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <label className={`${interMedium.className} text-[12px] font-semibold text-[#475569]`}>
-                                Approval notes
-                              </label>
-                              <textarea
-                                rows={3}
-                                value={
-                                  matchApprovalDrafts[match.id]?.approvalNotes ??
-                                  match.approval_notes ??
-                                  ""
-                                }
-                                onChange={(event) =>
-                                  updateMatchApprovalDraft(match.id, (current) => ({
-                                    ...current,
-                                    approvalNotes: event.target.value,
-                                  }))
-                                }
-                                className={`${interMedium.className} min-h-[84px] w-full rounded-[8px] border border-[#D7E1EC] bg-white px-3 py-2 text-[13px] text-[#1d2433]`}
-                              />
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                onClick={() => void reviewAllocation(match, "approved")}
-                                disabled={isSavingMatchApprovalId === match.id}
-                                className={`${interMedium.className} h-9 rounded-[8px] bg-[#F15A29] text-[12px] text-white hover:bg-[#db4d1f]`}
-                              >
-                                {isSavingMatchApprovalId === match.id ? "Saving..." : "Approve Allocation"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => void reviewAllocation(match, "disputed")}
-                                disabled={isSavingMatchApprovalId === match.id}
-                                className={`${interMedium.className} h-9 rounded-[8px] border-[#F5C2C7] bg-white text-[12px] text-[#B42318] hover:bg-[#FFF1F2]`}
-                              >
-                                Mark Disputed
-                              </Button>
-                            </div>
                           </div>
-                        ) : null}
+                        ))}
                       </div>
-                    ))
-                  )}
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={!canManagePurchaseOrder || isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
-                  {isSaving ? "Saving..." : "Save Purchase Order"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={exportVariationPdf}
-                  disabled={isSaving}
-                  variant="outline"
-                  className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}
-                >
-                  Export PDF
-                </Button>
-              </div>
-            </div>
+              <div className="rounded-[14px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
+                <div className={`${interMedium.className} space-y-2.5 text-[13px]`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Subtotal</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(purchaseOrderPreGstTotal)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[#64748B]">
+                      GST
+                      <Input
+                        type="number"
+                        value={activeVariation.gstPercent}
+                        onChange={(event) => updateActiveVariation("gstPercent", event.target.value)}
+                        className="h-6 w-12 rounded-[4px] border-[#D7E1EC] bg-white px-1 text-center text-[12px]"
+                      />
+                      %
+                    </span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span>
+                  </div>
+                  <div className="h-px bg-[#E2E8F1]" />
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[15px] font-semibold text-[#1d2433]">Total</span>
+                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-2">
+                  <Button type="button" onClick={saveVariation} disabled={!canManagePurchaseOrder || isSaving} className={`${ibmPlexSans.className} h-9 w-full rounded-full bg-[#0B2739] text-[14px] font-semibold !text-white hover:bg-[#0B2739] hover:opacity-90`}>
+                    {isSaving ? "Saving..." : "Save Purchase Order"}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={exportVariationPdf}
+                    disabled={isSaving}
+                    variant="outline"
+                    className={`${ibmPlexSans.className} h-9 w-full rounded-full border-[#d3dbe8] bg-white px-5 text-[14px] font-semibold text-[#1d2433]`}
+                  >
+                    Export PDF
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        <section className={`${styles.quotePanelCard} overflow-hidden px-6 py-5`}>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Supplier Invoice Approvals</h2>
+                <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[#E2E8F1] bg-white px-3 py-1 text-[12px] font-medium text-[#475569]`}>
+                  {canReviewSupplierInvoiceAllocations ? "QS / PM approval" : "Read only"}
+                </span>
+              </div>
+
+              <div className="rounded-[14px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                <div className={`${interMedium.className} space-y-3 text-[14px]`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Invoiced Total</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.invoicedTotal)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#64748B]">Approved Invoice Total</span>
+                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.approvedInvoiceTotal)}</span>
+                  </div>
+                  <div className="h-px bg-[#E2E8F1]" />
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[15px] font-semibold text-[#1d2433]">Outstanding Amount</span>
+                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(invoiceRollup.outstandingAmount)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {purchaseOrderInvoiceMatchRows.length === 0 ? (
+                <div className="mt-4 rounded-[14px] border border-dashed border-[#D7E1EC] bg-white px-4 py-5 text-center">
+                  <p className={`${ibmPlexSans.className} text-[14px] text-[#64748B]`}>
+                    No supplier invoices matched yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-white">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] border-collapse">
+                      <thead>
+                        <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
+                          {[
+                            "Invoice Number",
+                            "Invoice Date",
+                            "Matched Amount",
+                            "Allocation",
+                            "Approval",
+                            "Approver",
+                            "Actions",
+                          ].map((heading) => (
+                            <th
+                              key={heading}
+                              className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
+                            >
+                              {heading}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {purchaseOrderInvoiceMatchRows.map((match) => {
+                          const isExpanded = expandedMatchApprovalId === match.id && canReviewSupplierInvoiceAllocations;
+                          return (
+                            <Fragment key={match.id}>
+                              <tr className="group border-b border-[#E2E8F1] last:border-0 transition-colors hover:bg-[#F8FBFB]">
+                                <td className="px-6 py-4">
+                                  <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
+                                    {match.invoice?.invoice_number || "Supplier Invoice"}
+                                  </p>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>
+                                    {toDayMonthYearLabel(match.invoice?.invoice_date ?? null)}
+                                  </p>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
+                                    {toMoney(Number(match.matched_amount ?? 0))}
+                                  </p>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${getSupplierInvoiceMatchStatusClassName(match.match_status)}`}>
+                                    {formatMatchStatusLabel(match.match_status)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${getSupplierInvoiceMatchApprovalStatusClassName(match.approval_status)}`}>
+                                    {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <p className={`${ibmPlexSans.className} text-[13px] text-[#4B5D79]`}>
+                                    {match.approverName
+                                      ? `${match.approverName}${match.approved_at ? ` · ${toDayMonthYearLabel(match.approved_at)}` : ""}`
+                                      : "Awaiting approval"}
+                                  </p>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button
+                                        type="button"
+                                        aria-label="Row actions"
+                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E2E8F1] bg-white text-[#475569] transition hover:bg-[#F8FAFC]"
+                                      >
+                                        <MoreVertical className="h-4 w-4" strokeWidth={2.2} />
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="!z-[200] min-w-[160px] rounded-[12px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+                                      {match.invoice?.id ? (
+                                        <DropdownMenuItem asChild className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
+                                          <Link href={`/app/company/supplier-invoices/${match.invoice.id}`}>
+                                            Open
+                                          </Link>
+                                        </DropdownMenuItem>
+                                      ) : null}
+                                      {canReviewSupplierInvoiceAllocations ? (
+                                        <DropdownMenuItem
+                                          className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                          onSelect={(event) => {
+                                            event.preventDefault();
+                                            setExpandedMatchApprovalId((current) =>
+                                              current === match.id ? null : match.id
+                                            );
+                                          }}
+                                        >
+                                          {isExpanded ? "Hide review" : "Review"}
+                                        </DropdownMenuItem>
+                                      ) : null}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </td>
+                              </tr>
+                              {isExpanded ? (
+                                <tr className="border-b border-[#E2E8F1] last:border-0 bg-[#F9FAFC]">
+                                  <td colSpan={7} className="px-6 py-5">
+                                    <div className="space-y-4">
+                                      <div className="grid gap-2 sm:grid-cols-2">
+                                        {SUPPLIER_INVOICE_APPROVAL_CHECK_OPTIONS.map((option) => {
+                                          const draft = matchApprovalDrafts[match.id] ?? {
+                                            approvalNotes: match.approval_notes ?? "",
+                                            approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
+                                          };
+
+                                          return (
+                                            <label key={option.key} className="flex items-start gap-2">
+                                              <input
+                                                type="checkbox"
+                                                checked={draft.approvalChecks[option.key]}
+                                                onChange={(event) =>
+                                                  updateMatchApprovalDraft(match.id, (current) => ({
+                                                    ...current,
+                                                    approvalChecks: {
+                                                      ...current.approvalChecks,
+                                                      [option.key]: event.target.checked,
+                                                    },
+                                                  }))
+                                                }
+                                                className="mt-0.5 h-4 w-4 rounded border-[#CBD5E1] text-[#0B2739] focus:ring-[#0B2739]"
+                                              />
+                                              <span className={`${interMedium.className} text-[13px] text-[#334155]`}>
+                                                {option.label}
+                                              </span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+
+                                      <div className="space-y-1.5">
+                                        <label className={`${ibmPlexSans.className} block text-[13px] font-semibold text-[#1d2433]`}>
+                                          Approval notes
+                                        </label>
+                                        <textarea
+                                          rows={3}
+                                          value={
+                                            matchApprovalDrafts[match.id]?.approvalNotes ??
+                                            match.approval_notes ??
+                                            ""
+                                          }
+                                          onChange={(event) =>
+                                            updateMatchApprovalDraft(match.id, (current) => ({
+                                              ...current,
+                                              approvalNotes: event.target.value,
+                                            }))
+                                          }
+                                          className={`${interMedium.className} min-h-[84px] w-full max-w-[600px] rounded-[8px] border border-[#CBD5E1] bg-white px-3 py-2 text-[13px] text-[#1d2433] focus:border-[#0B2739] focus:outline-none`}
+                                        />
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2">
+                                        <Button
+                                          type="button"
+                                          onClick={() => void reviewAllocation(match, "approved")}
+                                          disabled={isSavingMatchApprovalId === match.id}
+                                          className={`${ibmPlexSans.className} h-9 rounded-full bg-[#0B2739] px-5 text-[14px] font-semibold !text-white hover:bg-[#0B2739] hover:opacity-90`}
+                                        >
+                                          {isSavingMatchApprovalId === match.id ? "Saving..." : "Approve Allocation"}
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          onClick={() => void reviewAllocation(match, "disputed")}
+                                          disabled={isSavingMatchApprovalId === match.id}
+                                          className={`${ibmPlexSans.className} h-9 rounded-full border-[#F5C2C7] bg-white px-5 text-[14px] font-semibold text-[#B42318] hover:bg-[#FFF1F2]`}
+                                        >
+                                          Mark Disputed
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+        </section>
       </div>
       ) : (
         <div className="space-y-6">

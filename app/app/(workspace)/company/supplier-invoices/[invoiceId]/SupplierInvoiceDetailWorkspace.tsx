@@ -3,9 +3,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
-import { ArrowLeft, FileText, Search, Upload } from "lucide-react";
+import { ChevronRight, ChevronUp, MoreVertical, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
@@ -63,6 +69,13 @@ type SupplierInvoiceApprovalStepWithMember = SupplierInvoiceApprovalStepRow & {
 };
 type SupplierInvoiceActivityEventWithMember = SupplierInvoiceActivityEventRow & {
   actorName: string;
+};
+type SupplierInvoiceHistoryRow = {
+  id: string;
+  createdAt: string | null;
+  user: string;
+  action: string;
+  detail: string;
 };
 
 type SupplierInvoiceDetailWorkspaceProps = {
@@ -158,6 +171,29 @@ function makeEmptyLine(): LineFormState {
   };
 }
 
+function formatHistoryDate(value: string | null | undefined) {
+  if (!value) {
+    return "Pending";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Pending";
+  }
+
+  return parsed
+    .toLocaleString("en-NZ", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(",", "")
+    .replace(/\s(am|pm)$/i, (match) => match.toLowerCase());
+}
+
 export function SupplierInvoiceDetailWorkspace({
   organizationId,
   initialInvoice,
@@ -192,6 +228,7 @@ export function SupplierInvoiceDetailWorkspace({
   const [documentsLoading, setDocumentsLoading] = useState(initialDocuments.length > 0);
   const [documentRefreshNonce, setDocumentRefreshNonce] = useState(0);
   const [isMatchDialogOpen, setIsMatchDialogOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [matchSearchQuery, setMatchSearchQuery] = useState("");
   const [matchDrafts, setMatchDrafts] = useState<Record<string, PurchaseOrderMatchDraft>>({});
   const [isSavingMatches, setIsSavingMatches] = useState(false);
@@ -199,10 +236,6 @@ export function SupplierInvoiceDetailWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedSupplier = useMemo(
-    () => suppliers.find((supplier) => supplier.id === (formState.supplierId || null)) ?? null,
-    [formState.supplierId, suppliers]
-  );
   const memberDirectory = useMemo(
     () => new Map(organizationMembers.map((member) => [member.user_id, member])),
     [organizationMembers]
@@ -292,6 +325,30 @@ export function SupplierInvoiceDetailWorkspace({
       })),
     [activityEvents, memberDirectory]
   );
+  const historyRows = useMemo<SupplierInvoiceHistoryRow[]>(() => {
+    const activityRows = activityEventsWithMembers.map((event) => ({
+      id: `activity-${event.id}`,
+      createdAt: event.created_at,
+      user: event.actorName,
+      action: formatSupplierInvoiceActivityEventLabel(event.event_type),
+      detail: event.message,
+    }));
+    const reviewRows = approvalStepsWithMembers.map((step) => ({
+      id: `approval-${step.id}`,
+      createdAt: step.decided_at,
+      user: step.approverName,
+      action: step.status.charAt(0).toUpperCase() + step.status.slice(1),
+      detail:
+        step.decision_notes?.trim() ||
+        `Invoice-level ${step.approver_role ? `${step.approver_role.replaceAll("_", " ")} ` : ""}review decision.`,
+    }));
+
+    return [...activityRows, ...reviewRows].sort((left, right) => {
+      const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightTime - leftTime;
+    });
+  }, [activityEventsWithMembers, approvalStepsWithMembers]);
 
   useEffect(() => {
     if (initialDocuments.length === 0) {
@@ -748,54 +805,55 @@ export function SupplierInvoiceDetailWorkspace({
   }
 
   const primaryDocument = documents[0] ?? null;
+  const detailControlClass = `${ibmPlexSans.className} h-[2.9rem] w-full rounded-[0.75rem] border border-[#DDE4EA] bg-white px-4 text-[14px] font-semibold text-[#202326] shadow-none placeholder:text-[#9BAABB] outline-none transition focus:border-[#CBD5E1]`;
+  const detailLabelClass = `${ibmPlexSans.className} mb-1.5 block text-[13px] font-semibold leading-none text-[#747474]`;
 
   return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-transparent pb-8`}>
       <section className="space-y-4 pt-[25px]">
-        <div className="flex items-center">
+        <nav className="flex items-center gap-2 text-[14px] font-semibold" aria-label="Breadcrumb">
           <Link
             href="/app/company/supplier-invoices"
-            className={`${ibmPlexSans.className} inline-flex items-center gap-[0.4rem] rounded-[0.576rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] shadow-none transition hover:bg-[#F8FAFC]`}
+            className="text-[#0E172B] transition hover:text-[#0E172B] hover:underline hover:underline-offset-4"
           >
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back to Supplier Invoices
+            Supplier Invoices
           </Link>
-        </div>
+          <ChevronRight className="h-4 w-4 text-[#A5B1C2]" strokeWidth={2.4} />
+          <span className="text-[#0E172B]">
+            {invoice.invoice_number || "Supplier Invoice"}
+          </span>
+        </nav>
 
-        <div className="rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-          <div className="p-[1.35rem_1.5rem_1.2rem]">
-            <div className="flex flex-wrap items-start justify-between gap-5">
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className={`${ibmPlexSans.className} m-0 text-[clamp(1.32rem,2.15vw,1.92rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]`}>
-                    {invoice.invoice_number || "Supplier Invoice"}
-                  </h1>
-                  <span
-                    className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-3 py-1.5 text-[13px] font-semibold whitespace-nowrap ${getSupplierInvoiceStatusClassName(displayStatus)}`}
-                  >
-                    {displayStatus}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-x-5 gap-y-2">
-                  <span className={`${ibmPlexSans.className} inline-flex items-center gap-2 text-[14px] font-medium text-[#4B5D79]`}>
-                    <FileText className="h-4 w-4" strokeWidth={2.1} />
-                    <span>{selectedSupplier ? getSupplierDisplayName(selectedSupplier) : "Unassigned supplier"}</span>
-                  </span>
-                  <span className={`${ibmPlexSans.className} inline-flex items-center gap-2 text-[14px] font-medium text-[#4B5D79]`}>
-                    <Upload className="h-4 w-4" strokeWidth={2.1} />
-                    <span>{getSourceLabel(invoice.source)}</span>
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className={`${ibmPlexSans.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#6A7A89]`}>
-                  Total
-                </p>
-                <p className={`${ibmPlexSans.className} mt-1 text-[1.8rem] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>
-                  {toMoney(Number(formState.total))}
-                </p>
-              </div>
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-4">
+            <h1 className={`${ibmPlexSans.className} m-0 text-[clamp(1.45rem,2vw,1.9rem)] font-bold leading-none tracking-[-0.035em] text-[#202326]`}>
+              Invoice {invoice.invoice_number || "Supplier Invoice"}
+            </h1>
+            <span
+              className={`${ibmPlexSans.className} inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold whitespace-nowrap ${getSupplierInvoiceStatusClassName(displayStatus)} ${
+                displayStatus === "Approved" ? "border-[#BBF7D0]" : ""
+              }`}
+            >
+              {displayStatus}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className={`${ibmPlexSans.className} inline-flex h-9 items-center justify-center gap-2 rounded-full border border-[#d3dbe8] bg-[#F8F9FC] px-4 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8F9FC]`}
+            >
+              <Printer className="hidden h-4 w-4 sm:block" strokeWidth={2.2} />
+              Print PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveInvoice()}
+              disabled={!canWrite || isSaving}
+              className={`${ibmPlexSans.className} inline-flex h-9 items-center justify-center rounded-full bg-[#0B2739] px-5 text-[14px] font-semibold !text-white shadow-none transition hover:bg-[#0B2739] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {isSaving ? "Saving..." : "Save Changes"}
+            </button>
           </div>
         </div>
       </section>
@@ -813,29 +871,21 @@ export function SupplierInvoiceDetailWorkspace({
       ) : null}
 
       <div className="space-y-6">
-        <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
+        <Card className="overflow-hidden rounded-[14px] border border-[#DDE6EF] bg-[var(--app-surface)] shadow-[0_2px_7px_rgba(15,23,42,0.08)]">
           <CardContent className="p-0">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8F1] px-6 py-5">
+            <div className="border-b border-[#DDE4EA] px-6 py-5">
               <div className="space-y-1">
-                <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
+                <p className={`${ibmPlexSans.className} text-[20px] font-bold leading-[1.05] tracking-[-0.03em] text-[#202326]`}>
                   Invoice Details
                 </p>
-                <p className={`${interMedium.className} text-[14px] leading-[1.45] text-[#6A7A89]`}>
+                <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
                   Manage the supplier invoice record, dates, totals, and notes.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => void saveInvoice()}
-                disabled={!canWrite || isSaving}
-                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                {isSaving ? "Saving..." : "Save Changes"}
-              </button>
             </div>
-            <div className="grid gap-4 px-6 py-6 md:grid-cols-2">
+            <div className="grid gap-x-6 gap-y-4 px-6 py-6 md:grid-cols-2">
               <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Supplier
                 </label>
                 <select
@@ -844,7 +894,7 @@ export function SupplierInvoiceDetailWorkspace({
                     setFormState((current) => ({ ...current, supplierId: event.target.value }))
                   }
                   disabled={!canWrite}
-                  className={`${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                  className={`${detailControlClass} appearance-none`}
                 >
                   <option value="">Select supplier</option>
                   {suppliers.map((supplier) => (
@@ -855,7 +905,7 @@ export function SupplierInvoiceDetailWorkspace({
                 </select>
               </div>
               <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Invoice Number
                 </label>
                 <Input
@@ -867,12 +917,12 @@ export function SupplierInvoiceDetailWorkspace({
                     }))
                   }
                   disabled={!canWrite}
-                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                  className={detailControlClass}
                 />
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                  <label className={detailLabelClass}>
                     Subtotal
                   </label>
                   <Input
@@ -885,11 +935,11 @@ export function SupplierInvoiceDetailWorkspace({
                       }))
                     }
                     disabled={!canWrite}
-                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                    className={detailControlClass}
                   />
                 </div>
                 <div>
-                  <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                  <label className={detailLabelClass}>
                     Tax
                   </label>
                   <Input
@@ -902,12 +952,12 @@ export function SupplierInvoiceDetailWorkspace({
                       }))
                     }
                     disabled={!canWrite}
-                    className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                    className={detailControlClass}
                   />
                 </div>
               </div>
               <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Invoice Date
                 </label>
                 <Input
@@ -920,11 +970,11 @@ export function SupplierInvoiceDetailWorkspace({
                     }))
                   }
                   disabled={!canWrite}
-                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                  className={detailControlClass}
                 />
               </div>
               <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Due Date
                 </label>
                 <Input
@@ -937,11 +987,11 @@ export function SupplierInvoiceDetailWorkspace({
                     }))
                   }
                   disabled={!canWrite}
-                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                  className={detailControlClass}
                 />
               </div>
               <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Total
                 </label>
                 <Input
@@ -954,31 +1004,189 @@ export function SupplierInvoiceDetailWorkspace({
                     }))
                   }
                   disabled={!canWrite}
-                  className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                  className={detailControlClass}
                 />
               </div>
               <div>
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Source
                 </label>
-                <div className={`${ibmPlexSans.className} flex h-[2.75rem] items-center rounded-[0.6rem] border border-[#E2E8F1] bg-[#F8FAFC] px-3.5 text-[14px] font-medium text-[#475569]`}>
+                <div className={`${detailControlClass} flex items-center`}>
                   {getSourceLabel(invoice.source)}
                 </div>
               </div>
               <div className="md:col-span-2">
-                <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                <label className={detailLabelClass}>
                   Notes
                 </label>
                 <textarea
+                  id="supplier-invoice-notes"
                   rows={4}
                   value={formState.notes}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, notes: event.target.value }))
                   }
                   disabled={!canWrite}
-                  className={`${ibmPlexSans.className} w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                  className={`${ibmPlexSans.className} min-h-[8.5rem] w-full rounded-[0.75rem] border border-[#DDE4EA] bg-white px-4 py-3 text-[14px] font-semibold text-[#202326] shadow-none placeholder:text-[#9BAABB] outline-none transition focus:border-[#CBD5E1]`}
                 />
               </div>
+            </div>
+            <div className="border-t border-[#DDE4EA] px-6 py-5">
+              <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
+                Line Items
+              </p>
+            </div>
+            <div className="px-6 pb-6">
+              {lines.length === 0 ? (
+                <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
+                  <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
+                    No line items added yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+                  <div className="min-w-[1180px]">
+                    <div
+                      className={`${interMedium.className} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+                      style={{
+                        gridTemplateColumns:
+                          "minmax(210px,1.4fr) 82px 108px 108px 82px minmax(170px,0.9fr) minmax(170px,0.9fr) 44px",
+                      }}
+                    >
+                      <span className="px-3 py-2.5 font-semibold">Description</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Qty.</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Unit Price</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Line Total</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Tax</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Cost Code</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Project</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5" />
+                    </div>
+                    <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                      {lines.map((line) => {
+                        const inlineInputClass =
+                          "h-9 w-full !border-0 !bg-transparent px-0 text-left text-[15px] font-medium text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]";
+                        const updateLine = (updates: Partial<LineFormState>) =>
+                          setLines((current) =>
+                            current.map((item) => (item.id === line.id ? { ...item, ...updates } : item))
+                          );
+
+                        return (
+                          <div
+                            key={line.id}
+                            className="group grid items-stretch gap-0"
+                            style={{
+                              gridTemplateColumns:
+                                "minmax(210px,1.4fr) 82px 108px 108px 82px minmax(170px,0.9fr) minmax(170px,0.9fr) 44px",
+                            }}
+                          >
+                            <div className="flex items-center px-3 py-1.5">
+                              <Input
+                                value={line.description}
+                                onChange={(event) => updateLine({ description: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.quantity}
+                                onChange={(event) => updateLine({ quantity: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.unitPrice}
+                                onChange={(event) => updateLine({ unitPrice: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.lineTotal}
+                                onChange={(event) => updateLine({ lineTotal: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.taxAmount}
+                                onChange={(event) => updateLine({ taxAmount: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <select
+                                value={line.costCodeId}
+                                onChange={(event) => updateLine({ costCodeId: event.target.value })}
+                                disabled={!canWrite}
+                                className={`${interMedium.className} h-9 w-full appearance-none !border-0 !bg-transparent pl-0 pr-6 text-left text-[15px] font-medium text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]`}
+                              >
+                                <option value="">Select cost code</option>
+                                {costCodes.map((costCode) => (
+                                  <option key={costCode.id} value={costCode.id}>
+                                    {costCode.code} · {costCode.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <select
+                                value={line.projectId}
+                                onChange={(event) => updateLine({ projectId: event.target.value })}
+                                disabled={!canWrite}
+                                className={`${interMedium.className} h-9 w-full appearance-none !border-0 !bg-transparent pl-0 pr-6 text-left text-[15px] font-medium text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]`}
+                              >
+                                <option value="">Select project</option>
+                                {projects.map((project) => (
+                                  <option key={project.id} value={project.id}>
+                                    {project.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center justify-center border-l border-[#EEF2F7] px-0 py-1.5">
+                              {canWrite ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLines((current) => current.filter((item) => item.id !== line.id))
+                                  }
+                                  aria-label="Delete line item"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-none border-0 bg-transparent p-0 text-[#9AA8BC]/80 opacity-0 shadow-none transition hover:bg-transparent hover:text-[#B42318] group-hover:opacity-100"
+                                >
+                                  <Trash2 className="h-4 w-4" strokeWidth={2.1} />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {canWrite ? (
+                <div className="mt-2 flex justify-end pr-12">
+                  <button
+                    type="button"
+                    onClick={() => setLines((current) => [...current, makeEmptyLine()])}
+                    className={`${ibmPlexSans.className} inline-flex h-8 items-center border-0 bg-transparent px-0 text-[15px] font-semibold text-[#4B5D79] shadow-none transition hover:text-[#22324A]`}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" />
+                    Add Item
+                  </button>
+                </div>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -990,7 +1198,7 @@ export function SupplierInvoiceDetailWorkspace({
                 <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
                   Document
                 </p>
-                <p className={`${interMedium.className} text-[14px] leading-[1.45] text-[#6A7A89]`}>
+                <p className={`${interMedium.className} text-[15px] leading-[1.45] text-[#6A7A89]`}>
                   Review the uploaded invoice alongside the details and line items.
                 </p>
               </div>
@@ -1002,7 +1210,7 @@ export function SupplierInvoiceDetailWorkspace({
                     <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
                       {primaryDocument.file_name}
                     </p>
-                    <p className={`${interMedium.className} text-[13px] text-[#6A7A89]`}>
+                    <p className={`${interMedium.className} text-[15px] text-[#6A7A89]`}>
                       {primaryDocument.mime_type || "Unknown type"}
                       {primaryDocument.size_bytes
                         ? ` · ${(primaryDocument.size_bytes / (1024 * 1024)).toFixed(2)} MB`
@@ -1010,7 +1218,7 @@ export function SupplierInvoiceDetailWorkspace({
                     </p>
                   </div>
                   {documentsLoading ? (
-                    <p className={`${interMedium.className} text-[14px] text-[#6A7A89]`}>
+                    <p className={`${interMedium.className} text-[15px] text-[#6A7A89]`}>
                       Loading document preview...
                     </p>
                   ) : primaryDocument.signedUrl ? (
@@ -1035,14 +1243,14 @@ export function SupplierInvoiceDetailWorkspace({
                         href={primaryDocument.signedUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                        className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
                       >
                         Download document
                       </a>
                     </>
                   ) : (
                     <div className="space-y-3 rounded-[12px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-5 py-5">
-                      <p className={`${interMedium.className} text-[14px] text-[#6A7A89]`}>
+                      <p className={`${interMedium.className} text-[15px] text-[#6A7A89]`}>
                         Document preview unavailable right now.
                       </p>
                       <button
@@ -1052,7 +1260,7 @@ export function SupplierInvoiceDetailWorkspace({
                           setDocuments(initialDocuments.map((document) => ({ ...document, signedUrl: null })));
                           setDocumentRefreshNonce((current) => current + 1);
                         }}
-                        className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                        className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
                       >
                         Retry preview
                       </button>
@@ -1070,23 +1278,14 @@ export function SupplierInvoiceDetailWorkspace({
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
+        <Card className="hidden">
           <CardContent className="p-0">
-            <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F1] px-6 py-5">
+            <div className="flex items-center justify-between gap-3 px-6 py-5">
               <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
                 Line Items
               </p>
-              {canWrite ? (
-                <button
-                  type="button"
-                  onClick={() => setLines((current) => [...current, makeEmptyLine()])}
-                  className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                >
-                  Add Line
-                </button>
-              ) : null}
             </div>
-            <div className="space-y-4 px-6 py-6">
+            <div className="px-6 pb-6">
               {lines.length === 0 ? (
                 <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
                   <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
@@ -1094,132 +1293,149 @@ export function SupplierInvoiceDetailWorkspace({
                   </p>
                 </div>
               ) : (
-                lines.map((line, index) => (
-                  <div
-                    key={line.id}
-                    className="space-y-4 rounded-[12px] border border-[#E2E8F1] bg-[#FCFDFE] p-4"
-                  >
-                    <div className="flex items-center justify-between gap-3 border-b border-[#E7EEF5] pb-3">
-                      <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
-                        Line {index + 1}
-                      </p>
-                      {canWrite ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setLines((current) => current.filter((item) => item.id !== line.id))
-                          }
-                          className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#B42318]`}
-                        >
-                          Remove
-                        </button>
-                      ) : null}
+                <div className="overflow-x-auto rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+                  <div className="min-w-[1180px]">
+                    <div
+                      className={`${interMedium.className} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+                      style={{
+                        gridTemplateColumns:
+                          "minmax(210px,1.4fr) 82px 108px 108px 82px minmax(170px,0.9fr) minmax(170px,0.9fr) 44px",
+                      }}
+                    >
+                      <span className="px-3 py-2.5 font-semibold">Description</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Qty.</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Unit Price</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Line Total</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Tax</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Cost Code</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Project</span>
+                      <span className="border-l border-[#D7E1EC] px-3 py-2.5" />
                     </div>
-                    <div>
-                      <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                        Description
-                      </label>
-                      <Input
-                        value={line.description}
-                        onChange={(event) =>
+                    <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                      {lines.map((line) => {
+                        const inlineInputClass =
+                          "h-9 w-full !border-0 !bg-transparent px-0 text-left text-[15px] font-medium text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]";
+                        const updateLine = (updates: Partial<LineFormState>) =>
                           setLines((current) =>
-                            current.map((item) =>
-                              item.id === line.id
-                                ? { ...item, description: event.target.value }
-                                : item
-                            )
-                          )
-                        }
-                        disabled={!canWrite}
-                        className={`${ibmPlexSans.className} h-[2.9rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
-                      />
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-4">
-                      {[
-                        ["Quantity", line.quantity, "quantity"],
-                        ["Unit Price", line.unitPrice, "unitPrice"],
-                        ["Line Total", line.lineTotal, "lineTotal"],
-                        ["Tax", line.taxAmount, "taxAmount"],
-                      ].map(([label, value, key]) => (
-                        <div key={key}>
-                          <label className={`${ibmPlexSans.className} mb-1 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                            {label}
-                          </label>
-                          <Input
-                            inputMode="decimal"
-                            value={value}
-                            onChange={(event) =>
-                              setLines((current) =>
-                                current.map((item) =>
-                                  item.id === line.id
-                                    ? { ...item, [key]: event.target.value }
-                                    : item
-                                )
-                              )
-                            }
-                            disabled={!canWrite}
-                            className={`${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div>
-                        <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                          Cost Code
-                        </label>
-                        <select
-                          value={line.costCodeId}
-                          onChange={(event) =>
-                            setLines((current) =>
-                              current.map((item) =>
-                                item.id === line.id
-                                  ? { ...item, costCodeId: event.target.value }
-                                  : item
-                              )
-                            )
-                          }
-                          disabled={!canWrite}
-                          className={`${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
-                        >
-                          <option value="">Select cost code</option>
-                          {costCodes.map((costCode) => (
-                            <option key={costCode.id} value={costCode.id}>
-                              {costCode.code} · {costCode.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                          Project
-                        </label>
-                        <select
-                          value={line.projectId}
-                          onChange={(event) =>
-                            setLines((current) =>
-                              current.map((item) =>
-                                item.id === line.id
-                                  ? { ...item, projectId: event.target.value }
-                                  : item
-                              )
-                            )
-                          }
-                          disabled={!canWrite}
-                          className={`${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
-                        >
-                          <option value="">Select project</option>
-                          {projects.map((project) => (
-                            <option key={project.id} value={project.id}>
-                              {project.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                            current.map((item) => (item.id === line.id ? { ...item, ...updates } : item))
+                          );
+
+                        return (
+                          <div
+                            key={line.id}
+                            className="group grid items-stretch gap-0"
+                            style={{
+                              gridTemplateColumns:
+                                "minmax(210px,1.4fr) 82px 108px 108px 82px minmax(170px,0.9fr) minmax(170px,0.9fr) 44px",
+                            }}
+                          >
+                            <div className="flex items-center px-3 py-1.5">
+                              <Input
+                                value={line.description}
+                                onChange={(event) => updateLine({ description: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.quantity}
+                                onChange={(event) => updateLine({ quantity: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.unitPrice}
+                                onChange={(event) => updateLine({ unitPrice: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.lineTotal}
+                                onChange={(event) => updateLine({ lineTotal: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <Input
+                                inputMode="decimal"
+                                value={line.taxAmount}
+                                onChange={(event) => updateLine({ taxAmount: event.target.value })}
+                                disabled={!canWrite}
+                                className={inlineInputClass}
+                              />
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <select
+                                value={line.costCodeId}
+                                onChange={(event) => updateLine({ costCodeId: event.target.value })}
+                                disabled={!canWrite}
+                                className={`${interMedium.className} h-9 w-full appearance-none !border-0 !bg-transparent pl-0 pr-6 text-left text-[15px] font-medium text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]`}
+                              >
+                                <option value="">Select cost code</option>
+                                {costCodes.map((costCode) => (
+                                  <option key={costCode.id} value={costCode.id}>
+                                    {costCode.code} · {costCode.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                              <select
+                                value={line.projectId}
+                                onChange={(event) => updateLine({ projectId: event.target.value })}
+                                disabled={!canWrite}
+                                className={`${interMedium.className} h-9 w-full appearance-none !border-0 !bg-transparent pl-0 pr-6 text-left text-[15px] font-medium text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]`}
+                              >
+                                <option value="">Select project</option>
+                                {projects.map((project) => (
+                                  <option key={project.id} value={project.id}>
+                                    {project.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center justify-center border-l border-[#EEF2F7] px-0 py-1.5">
+                              {canWrite ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLines((current) => current.filter((item) => item.id !== line.id))
+                                  }
+                                  aria-label="Delete line item"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-none border-0 bg-transparent p-0 text-[#9AA8BC]/80 opacity-0 shadow-none transition hover:bg-transparent hover:text-[#B42318] group-hover:opacity-100"
+                                >
+                                  <Trash2 className="h-4 w-4" strokeWidth={2.1} />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ))
+                </div>
               )}
+              {canWrite ? (
+                <div className="mt-2 flex justify-end pr-12">
+                  <button
+                    type="button"
+                    onClick={() => setLines((current) => [...current, makeEmptyLine()])}
+                    className={`${ibmPlexSans.className} inline-flex h-8 items-center border-0 bg-transparent px-0 text-[15px] font-semibold text-[#4B5D79] shadow-none transition hover:text-[#22324A]`}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" />
+                    Add Item
+                  </button>
+                </div>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -1232,7 +1448,7 @@ export function SupplierInvoiceDetailWorkspace({
                   <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
                     Purchase Order Matching
                   </p>
-                  <p className={`${interMedium.className} text-[13px] leading-[1.45] text-[#6A7A89]`}>
+                  <p className={`${interMedium.className} text-[15px] leading-[1.45] text-[#6A7A89]`}>
                     Match this invoice to purchase orders and monitor allocation approval.
                   </p>
                 </div>
@@ -1240,7 +1456,7 @@ export function SupplierInvoiceDetailWorkspace({
                   <button
                     type="button"
                     onClick={openMatchDialog}
-                    className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] bg-[#0B2739] px-3 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#081D2B]`}
+                    className={`${ibmPlexSans.className} inline-flex h-9 items-center justify-center rounded-full border border-[#DDE6EF] bg-white px-4 text-[13px] font-semibold text-[#475569] shadow-none transition hover:border-[#CBD5E1] hover:bg-[#F8FAFC]`}
                   >
                     Match to Purchase Orders
                   </button>
@@ -1257,17 +1473,14 @@ export function SupplierInvoiceDetailWorkspace({
                     <p className={`${ibmPlexSans.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
                       {label}
                     </p>
-                    <p className={`${ibmPlexSans.className} mt-1 text-[14px] font-semibold text-[#10283B]`}>
+                    <p className={`${ibmPlexSans.className} mt-1 text-[15px] font-semibold text-[#10283B]`}>
                       {value}
                     </p>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="space-y-4 px-6 py-6">
-              <p className={`${interMedium.className} text-[12px] leading-[1.45] text-[#6A7A89]`}>
-                QS and PM approval happens inside the matched purchase order. This view tracks the current allocation state.
-              </p>
+            <div className="px-6 py-6">
               {matchesWithPurchaseOrders.length === 0 ? (
                 <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
                   <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
@@ -1275,83 +1488,114 @@ export function SupplierInvoiceDetailWorkspace({
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {matchesWithPurchaseOrders.map((match) => (
-                    <div
-                      key={match.id}
-                      className="space-y-3 rounded-[12px] border border-[#E2E8F1] bg-white p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
+                <div className="overflow-x-auto rounded-[12px] border border-[#E2E8F1] bg-white">
+                  <table className="w-full min-w-[1120px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#E2E8F1]">
+                        <th className={`${ibmPlexSans.className} w-[25%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                          Purchase Order
+                        </th>
+                        <th className={`${ibmPlexSans.className} w-[20%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                          Supplier
+                        </th>
+                        <th className={`${ibmPlexSans.className} w-[18%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                          User
+                        </th>
+                        <th className={`${ibmPlexSans.className} w-[12%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                          Amount
+                        </th>
+                        <th className={`${ibmPlexSans.className} w-[17%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                          Status
+                        </th>
+                        <th className={`${ibmPlexSans.className} px-4 py-3 text-right text-[14px] font-medium text-[#3F4B5F]`}>
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matchesWithPurchaseOrders.map((match) => (
+                        <tr key={match.id} className="border-b border-[#D6DCE5] last:border-b-0">
+                          <td className={`${ibmPlexSans.className} px-4 py-3 align-top text-[15px] font-medium text-[#6A7A89]`}>
+                            <span className="block font-semibold text-[#10283B]">
                               {match.purchaseOrder?.purchase_order_number || "Purchase Order"}
-                            </p>
-                            <span
-                              className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchApprovalStatusClassName(match.approval_status)}`}
-                            >
-                              {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
                             </span>
-                          </div>
-                          <p className={`${ibmPlexSans.className} text-[14px] text-[#4B5D79]`}>
-                            {match.purchaseOrder?.purchase_order_title || "Untitled purchase order"}
-                          </p>
-                          <p className={`${interMedium.className} text-[12px] text-[#6A7A89]`}>
-                            {match.purchaseOrder?.issued_to_label?.trim() || "Unassigned supplier"} · {toDayMonthYearLabel(match.purchaseOrder?.requested_date ?? null)}
-                          </p>
-                          <p className={`${interMedium.className} text-[12px] text-[#6A7A89]`}>
-                            {match.approverName
-                              ? `${match.approverName}${match.approved_at ? ` · ${toDayMonthYearLabel(match.approved_at)}` : ""}`
-                              : "Waiting for QS / PM review on the purchase order page"}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
+                            <span className="block leading-[1.35]">
+                              {match.purchaseOrder?.purchase_order_title || "Untitled purchase order"}
+                            </span>
+                            {match.approval_notes?.trim() ? (
+                              <span className="mt-1 block leading-[1.35]">
+                                {match.approval_notes}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className={`${ibmPlexSans.className} px-4 py-3 align-top text-[15px] font-medium leading-[1.35] text-[#6A7A89]`}>
+                            <span className="block">
+                              {match.purchaseOrder?.issued_to_label?.trim() || "Unassigned supplier"}
+                            </span>
+                            {match.purchaseOrder?.requested_date
+                              ? (
+                                <span className="block">
+                                  {toDayMonthYearLabel(match.purchaseOrder.requested_date)}
+                                </span>
+                              )
+                              : null}
+                          </td>
+                          <td className={`${ibmPlexSans.className} px-4 py-3 align-top text-[15px] font-medium text-[#6A7A89]`}>
+                            {match.approverName || "Unassigned"}
+                          </td>
+                          <td className={`${ibmPlexSans.className} px-4 py-3 align-top text-[15px] font-semibold text-[#6A7A89]`}>
                             {toMoney(Number(match.matched_amount ?? 0))}
-                          </p>
-                          <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchApprovalStatusClassName(match.approval_status)}`}
+                              >
+                                {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
+                              </span>
                             <span
                               className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSupplierInvoiceMatchStatusClassName(match.match_status)}`}
                             >
                               {formatMatchStatusLabel(match.match_status)}
                             </span>
-                          </div>
-                        </div>
-                      </div>
-                      {match.approval_notes?.trim() ? (
-                        <p className={`${interMedium.className} text-[12px] leading-[1.45] text-[#4B5D79]`}>
-                          {match.approval_notes}
-                        </p>
-                      ) : null}
-                      {canWrite ? (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={openMatchDialog}
-                            className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                          >
-                            Edit
-                          </button>
-                          {match.match_status !== "rejected" ? (
-                            <button
-                              type="button"
-                              onClick={() => void updateMatchStatus(match.id, "rejected")}
-                              className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#F5C2C7] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#B42318] transition hover:bg-[#FFF1F2]`}
-                            >
-                              Reject
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => void removeMatch(match.id)}
-                            className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            {canWrite ? (
+                              <div className="flex justify-end">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      aria-label="Purchase order match actions"
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#E2E8F1] bg-white text-[#475569] transition hover:bg-[#F8FAFC]"
+                                    >
+                                      <MoreVertical className="h-4 w-4" strokeWidth={2.4} />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className={`${ibmPlexSans.className} min-w-[9rem]`}>
+                                    <DropdownMenuItem onSelect={openMatchDialog}>
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => void removeMatch(match.id)}>
+                                      Delete
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={match.match_status === "rejected"}
+                                      onSelect={() => void updateMatchStatus(match.id, "rejected")}
+                                      className="text-[#B42318] focus:text-[#B42318]"
+                                    >
+                                      Reject
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -1359,107 +1603,79 @@ export function SupplierInvoiceDetailWorkspace({
         </Card>
       </div>
 
-      {approvalStepsWithMembers.length > 0 ? (
-        <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-          <CardContent className="p-0">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8F1] px-6 py-5">
-              <div className="space-y-1">
-                <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
-                  Legacy Review History
-                </p>
-                <p className={`${interMedium.className} text-[14px] leading-[1.45] text-[#6A7A89]`}>
-                  Earlier invoice-level decisions are kept here for reference only.
-                </p>
-              </div>
-              <span className={`${interMedium.className} text-[13px] text-[#6A7A89]`}>
-                {approvalStepsWithMembers.length} decision{approvalStepsWithMembers.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            <div className="space-y-3 px-6 py-6">
-              {approvalStepsWithMembers.map((step) => (
-                <div
-                  key={step.id}
-                  className="rounded-[12px] border border-[#E2E8F1] bg-[#FCFDFE] px-4 py-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
-                        {step.approverName}
-                        {step.approver_role ? ` · ${step.approver_role.replaceAll("_", " ")}` : ""}
-                      </p>
-                      <p className={`${interMedium.className} mt-1 text-[13px] text-[#6A7A89]`}>
-                        {step.decided_at ? toDayMonthYearLabel(step.decided_at) : "Pending"}
-                      </p>
-                    </div>
-                    <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full bg-[#F1F5F9] px-3 py-1 text-[12px] font-semibold text-[#475569]`}>
-                      {step.status.charAt(0).toUpperCase() + step.status.slice(1)}
-                    </span>
-                  </div>
-                  {step.decision_notes ? (
-                    <p className={`${interMedium.className} mt-3 text-[13px] leading-[1.45] text-[#4B5D79]`}>
-                      {step.decision_notes}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
+      <Card className="overflow-hidden rounded-[14px] border border-[#C9D1DC] bg-[var(--app-surface)] shadow-none">
         <CardContent className="p-0">
-          <div className="border-b border-[#E2E8F1] px-6 py-5">
-            <div className="space-y-1">
+          <div className="flex min-h-[58px] items-center justify-between gap-4 border-b border-[#C9D1DC] px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setIsHistoryOpen((current) => !current)}
+              aria-expanded={isHistoryOpen}
+              className="flex items-center gap-4 text-left"
+            >
+              <ChevronUp
+                className={`h-5 w-5 text-[#5B6677] transition-transform ${isHistoryOpen ? "" : "rotate-180"}`}
+                strokeWidth={2.2}
+              />
               <p className={`${ibmPlexSans.className} text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]`}>
-                Activity Timeline
+                Activity & Notes
               </p>
-              <p className={`${interMedium.className} text-[14px] leading-[1.45] text-[#6A7A89]`}>
-                A record of invoice updates, workflow changes, and review activity.
-              </p>
-            </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => document.getElementById("supplier-invoice-notes")?.focus()}
+              className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+            >
+              Add note
+            </button>
           </div>
-          <div className="space-y-3 px-6 py-6">
-            {activityEventsWithMembers.length === 0 ? (
-              <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
+          {!isHistoryOpen ? null : historyRows.length === 0 ? (
+            <div className="px-4 py-5">
+              <div className="rounded-[8px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-5 py-6 text-center">
                 <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
-                  No activity yet.
+                  No history or notes yet.
                 </p>
               </div>
-            ) : (
-              activityEventsWithMembers.map((event) => (
-                <div
-                  key={event.id}
-                  className="rounded-[12px] border border-[#E2E8F1] bg-white p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
-                        {formatSupplierInvoiceActivityEventLabel(event.event_type)}
-                      </p>
-                      <p className={`${interMedium.className} text-[14px] leading-[1.45] text-[#4B5D79]`}>
-                        {event.message}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#475569]`}>
-                        {event.actorName}
-                      </p>
-                      <p className={`${interMedium.className} mt-1 text-[12px] text-[#6A7A89]`}>
-                        {new Date(event.created_at).toLocaleString("en-NZ", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#C9D1DC]">
+                    <th className={`${ibmPlexSans.className} w-[24%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                      Date
+                    </th>
+                    <th className={`${ibmPlexSans.className} w-[15%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                      User
+                    </th>
+                    <th className={`${ibmPlexSans.className} w-[18%] px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                      Action
+                    </th>
+                    <th className={`${ibmPlexSans.className} px-4 py-3 text-left text-[14px] font-medium text-[#3F4B5F]`}>
+                      Detail
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyRows.map((row) => (
+                    <tr key={row.id} className="border-b border-[#D6DCE5] last:border-b-0">
+                      <td className={`${ibmPlexSans.className} px-4 py-3 text-[15px] font-medium text-[#6A7A89]`}>
+                        {formatHistoryDate(row.createdAt)}
+                      </td>
+                      <td className={`${ibmPlexSans.className} px-4 py-3 text-[15px] font-medium text-[#6A7A89]`}>
+                        {row.user}
+                      </td>
+                      <td className={`${ibmPlexSans.className} px-4 py-3 text-[15px] font-medium text-[#6A7A89]`}>
+                        {row.action}
+                      </td>
+                      <td className={`${ibmPlexSans.className} px-4 py-3 text-[15px] font-medium leading-[1.35] text-[#6A7A89]`}>
+                        {row.detail}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1553,10 +1769,10 @@ export function SupplierInvoiceDetailWorkspace({
                               </span>
                             ) : null}
                           </div>
-                          <p className={`${ibmPlexSans.className} text-[14px] text-[#4B5D79]`}>
+                          <p className={`${ibmPlexSans.className} text-[15px] text-[#4B5D79]`}>
                             {purchaseOrder.purchase_order_title || "Untitled purchase order"}
                           </p>
-                          <p className={`${ibmPlexSans.className} text-[13px] text-[#6A7A89]`}>
+                          <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
                             {purchaseOrder.issued_to_label?.trim() || "Unassigned supplier"} · {purchaseOrder.status} · {toDayMonthYearLabel(purchaseOrder.requested_date)}
                           </p>
                         </div>
@@ -1624,7 +1840,7 @@ export function SupplierInvoiceDetailWorkspace({
                                 return next;
                               })
                             }
-                            className={`${ibmPlexSans.className} inline-flex h-[2.75rem] items-center justify-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-4 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                            className={`${ibmPlexSans.className} inline-flex h-[2.75rem] items-center justify-center rounded-full border border-[#E2E8F1] bg-white px-4 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
                           >
                             Clear
                           </button>
@@ -1641,7 +1857,7 @@ export function SupplierInvoiceDetailWorkspace({
             <DialogClose asChild>
               <button
                 type="button"
-                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-full border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
               >
                 Cancel
               </button>
@@ -1650,7 +1866,7 @@ export function SupplierInvoiceDetailWorkspace({
               type="button"
               onClick={() => void saveMatches()}
               disabled={!canWrite || isSavingMatches}
-              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:cursor-not-allowed disabled:opacity-60`}
+              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-full bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {isSavingMatches ? "Saving..." : "Save Matches"}
             </button>

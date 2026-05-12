@@ -17,7 +17,6 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { ibmPlexSans } from "@/lib/fonts";
-import { leadsCompactTitleClassName } from "@/components/app/LeadsPagePrimitives";
 import { cn } from "@/lib/utils";
 
 const PROJECT_TOP_NAV_ITEMS = [
@@ -50,7 +49,7 @@ export function ProjectSecondaryNav({
       <div className="flex flex-col gap-3 bg-white px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex items-center">
-            <h2 className={`${ibmPlexSans.className} ${leadsCompactTitleClassName}`}>
+            <h2 className={`${ibmPlexSans.className} text-[33px] font-bold leading-[1.05] tracking-[-0.02em] text-[#1d1d1d]`}>
               {projectName}
             </h2>
           </div>
