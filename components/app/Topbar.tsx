@@ -38,7 +38,7 @@ export function Topbar() {
     <div className="mb-8 space-y-3 lg:mb-0">
       <Sheet open={isNavOpen} onOpenChange={setIsNavOpen}>
         <div className="-mx-3 -mt-3 lg:hidden">
-          <div className="flex items-center justify-between bg-[#04234D] px-4 py-3 text-white shadow-[0_6px_20px_rgba(4,35,77,0.26)]">
+          <div className="flex items-center justify-between bg-[var(--sidebar)] px-4 py-3 text-[var(--sidebar-foreground)] shadow-[var(--shadow-md)]">
             <Link href="/app/dashboard" className="inline-flex items-center">
               <Image
                 src="/tradesstacklogowhite.png"
@@ -50,7 +50,11 @@ export function Topbar() {
               />
             </Link>
             <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="h-10 w-10 rounded-[6px] border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-[var(--radius-sm)] border-[var(--sidebar-border)] bg-[var(--sidebar-accent)] text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
+              >
                 <Menu className="h-5 w-5" />
                 <span className="sr-only">Open navigation</span>
               </Button>
@@ -59,7 +63,7 @@ export function Topbar() {
         </div>
         <SheetContent
           side="left"
-          className="w-[320px] rounded-r-none border-0 bg-[var(--app-surface)] p-3"
+          className="w-[320px] rounded-r-none border-0 bg-[var(--sidebar)] p-3"
         >
           <SidebarNavContent onNavigate={() => setIsNavOpen(false)} />
         </SheetContent>

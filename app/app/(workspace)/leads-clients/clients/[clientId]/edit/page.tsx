@@ -2,10 +2,10 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { interMedium } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { requirePermission } from "@/lib/permissions-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -90,94 +90,79 @@ export default async function EditClientPage({
     redirect("/app/leads-clients/clients");
   }
 
+  const FIELD_LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]";
+
   return (
-    <main className="space-y-4 pb-8">
-      <Button
-        variant="ghost"
-        size="sm"
-        asChild
-        className={`${interMedium.className} h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
-      >
+    <main className="space-y-4 bg-[var(--background)] pb-8">
+      <Button variant="ghost" size="sm" asChild>
         <Link href="/app/leads-clients/clients">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
           Back to Clients
         </Link>
       </Button>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardHeader className="pb-3 pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Edit Client</CardTitle>
-              <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
-                Update contact details and company info.
-              </p>
+      <OperationalPageHeader
+        title="Edit Client"
+        description="Update contact details and company info."
+      />
+
+      <OperationalPanel>
+        <form action={updateClient} className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="name" className={FIELD_LABEL_CLASS}>
+                Contact Name
+              </label>
+              <Input id="name" name="name" required defaultValue={client.name} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="companyName" className={FIELD_LABEL_CLASS}>
+                Company Name
+              </label>
+              <Input id="companyName" name="companyName" required defaultValue={client.company_name ?? ""} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="email" className={FIELD_LABEL_CLASS}>
+                Email
+              </label>
+              <Input id="email" name="email" type="email" defaultValue={client.email ?? ""} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="phone" className={FIELD_LABEL_CLASS}>
+                Phone
+              </label>
+              <Input id="phone" name="phone" defaultValue={client.phone ?? ""} />
             </div>
           </div>
-        </CardHeader>
-      </Card>
+          <div className="space-y-2">
+            <p className={FIELD_LABEL_CLASS}>Client Tags</p>
+            <div className="flex flex-wrap gap-2">
+              {CLIENT_TAGS.map((tag) => (
+                <label
+                  key={tag}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)]"
+                >
+                  <input
+                    type="checkbox"
+                    name="tags"
+                    value={tag}
+                    defaultChecked={(client.tags ?? []).includes(tag)}
+                    className="h-3.5 w-3.5 rounded-[var(--radius-sm)] border-[var(--border)]"
+                  />
+                  {tag}
+                </label>
+              ))}
+            </div>
+          </div>
 
-      <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
-        <CardContent className="p-5">
-          <form action={updateClient} className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <label htmlFor="name" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Contact Name
-                </label>
-                <Input id="name" name="name" required defaultValue={client.name} className="h-11 rounded-[6px]" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="companyName" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Company Name
-                </label>
-                <Input id="companyName" name="companyName" required defaultValue={client.company_name ?? ""} className="h-11 rounded-[6px]" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="email" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Email
-                </label>
-                <Input id="email" name="email" type="email" defaultValue={client.email ?? ""} className="h-11 rounded-[6px]" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="phone" className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>
-                  Phone
-                </label>
-                <Input id="phone" name="phone" defaultValue={client.phone ?? ""} className="h-11 rounded-[6px]" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className={`${interMedium.className} text-xs font-semibold uppercase tracking-[0.1em] text-[#60748F]`}>Client Tags</p>
-              <div className="flex flex-wrap gap-2">
-                {CLIENT_TAGS.map((tag) => (
-                  <label
-                    key={tag}
-                    className={`${interMedium.className} inline-flex cursor-pointer items-center gap-2 rounded-[6px] border border-[#D5E0EE] bg-[#F8FAFC] px-3 py-1.5 text-xs font-medium text-[#35567A]`}
-                  >
-                    <input
-                      type="checkbox"
-                      name="tags"
-                      value={tag}
-                      defaultChecked={(client.tags ?? []).includes(tag)}
-                      className="h-3.5 w-3.5 rounded-[6px] border-[#C8D6E8]"
-                    />
-                    {tag}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <Button variant="outline" asChild className="h-10 rounded-[6px] border-[#D6DFEB] px-4 text-sm">
-                <Link href="/app/leads-clients/clients">Cancel</Link>
-              </Button>
-              <Button type="submit" className="h-10 rounded-[6px] bg-[#F74917] px-4 text-sm text-white hover:bg-[#e63f10]">
-                Save Changes
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button variant="secondary" asChild>
+              <Link href="/app/leads-clients/clients">Cancel</Link>
+            </Button>
+            <Button type="submit">Save Changes</Button>
+          </div>
+        </form>
+      </OperationalPanel>
     </main>
   );
 }

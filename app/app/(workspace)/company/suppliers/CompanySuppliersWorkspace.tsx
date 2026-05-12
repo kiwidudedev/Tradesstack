@@ -3,10 +3,24 @@
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Building2, Globe, Mail, Phone, Plus, Search, Users } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
+import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import {
+  OperationalTable,
+  OperationalTableBody,
+  OperationalTableCell,
+  OperationalTableHead,
+  OperationalTableHeader,
+  OperationalTableRow,
+} from "@/components/app/OperationalTable";
+import { OperationalToolbar } from "@/components/app/OperationalToolbar";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import { ibmPlexSans } from "@/lib/fonts";
 import {
   getSupplierDisplayName,
   getSupplierDuplicateWarnings,
@@ -49,8 +63,10 @@ const emptyFormState: SupplierFormState = {
   isActive: true,
 };
 
-const fieldInputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
-const fieldTextAreaClass = `${ibmPlexSans.className} w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
+const FIELD_TEXTAREA_CLASS =
+  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+const FIELD_SELECT_CLASS =
+  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 function toFormState(supplier: OrganizationSupplierRow | null): SupplierFormState {
   if (!supplier) {
@@ -88,12 +104,9 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label
-      htmlFor={htmlFor}
-      className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}
-    >
+    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">
       {children}
-      {required ? <span className="ml-1 text-[#FF4C14]">*</span> : null}
+      {required ? <span className="ml-1 text-[var(--error)]">*</span> : null}
     </label>
   );
 }
@@ -106,9 +119,7 @@ function ContactChip({
   children: ReactNode;
 }) {
   return (
-    <span
-      className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-full border border-[#E2E8F1] bg-white px-3 py-2 text-[14px] font-medium text-[#4B5D79]`}
-    >
+    <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--text-secondary)]">
       {icon}
       <span className="truncate">{children}</span>
     </span>
@@ -350,270 +361,180 @@ export function CompanySuppliersWorkspace({
         : null;
 
   return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
-      <section className="flex items-start justify-between gap-4 pt-[25px]">
-        <div>
-          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
-            Suppliers
-          </h1>
-          <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
-            Keep your supplier register organized for purchase orders and procurement work.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={openCreateModal}
-          disabled={!canEdit}
-          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60`}
-        >
-          <Plus className="h-4 w-4" strokeWidth={2.3} />
-          Add Supplier
-        </button>
-      </section>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+      <OperationalPageHeader
+        title="Suppliers"
+        description="Keep your supplier register organized for purchase orders and procurement work."
+        actions={
+          <Button type="button" onClick={openCreateModal} disabled={!canEdit}>
+            <Plus className="h-4 w-4" strokeWidth={2.3} />
+            Add Supplier
+          </Button>
+        }
+      />
 
-      <div className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <CardContent className="p-0">
-              <div className="grid gap-3 p-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#FFE5D9]">
-                  <Users className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>
-                  Total Suppliers
-                </p>
-                <p className={`${ibmPlexSans.className} text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>
-                  {totalCount}
-                </p>
-                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[#4B5D79]`}>
-                  {activeCount} active
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <OperationalKpiCard
+          label="Total Suppliers"
+          value={totalCount}
+          helper={`${activeCount} active`}
+          icon={<Users className="h-5 w-5" strokeWidth={2.2} />}
+        />
+        <OperationalKpiCard
+          label="Active Suppliers"
+          value={activeCount}
+          helper="Ready for new purchase orders"
+          icon={<Building2 className="h-5 w-5" strokeWidth={2.2} />}
+        />
+        <OperationalKpiCard
+          label="Inactive Suppliers"
+          value={inactiveCount}
+          helper="Preserved for historical records"
+          icon={<Mail className="h-5 w-5" strokeWidth={2.2} />}
+        />
+      </div>
 
-          <Card className="rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <CardContent className="p-0">
-              <div className="grid gap-3 p-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#DFF1E5]">
-                  <Building2 className="h-5 w-5 text-[#18384C]" strokeWidth={2.2} />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>
-                  Active Suppliers
-                </p>
-                <p className={`${ibmPlexSans.className} text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>
-                  {activeCount}
-                </p>
-                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[#18384C]`}>
-                  Ready for new purchase orders
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <CardContent className="p-0">
-              <div className="grid gap-3 p-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[#E8EEF2]">
-                  <Mail className="h-5 w-5 text-[#0E172B]" strokeWidth={2.2} />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>
-                  Inactive Suppliers
-                </p>
-                <p className={`${ibmPlexSans.className} text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>
-                  {inactiveCount}
-                </p>
-                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[#4B5D79]`}>
-                  Preserved for historical records
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mt-4 flex flex-col items-start gap-3 md:flex-row md:items-center">
-          <div className="flex h-[42px] flex-1 items-center gap-2 rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3">
-            <Search className="h-4 w-4 text-[#9AAAB8]" />
-            <input
+      <OperationalToolbar
+        search={
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Input
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search suppliers..."
-              className={`${ibmPlexSans.className} h-full flex-1 border-0 bg-transparent text-[14px] text-[#1d1d1d] outline-none placeholder:text-[#9AAAB8]`}
+              className="pl-9"
             />
           </div>
-          <div className="flex items-center gap-1.5">
-            {(["all", "active", "inactive"] as const).map((filter) => {
-              const isActive = statusFilter === filter;
-              const label = filter.charAt(0).toUpperCase() + filter.slice(1);
+        }
+        filters={(["all", "active", "inactive"] as const).map((filter) => {
+          const isActive = statusFilter === filter;
+          const label = filter.charAt(0).toUpperCase() + filter.slice(1);
 
-              return (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => setStatusFilter(filter)}
-                  className={`${ibmPlexSans.className} inline-flex h-[42px] items-center rounded-[0.8rem] px-5 text-[14px] font-semibold transition ${
-                    isActive
-                      ? "bg-[#0B2739] text-white"
-                      : "border border-[#E2E8F1] bg-white text-[#10283B] hover:bg-[#EEF3F9]"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
+          return (
+            <Button
+              key={filter}
+              type="button"
+              variant={isActive ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setStatusFilter(filter)}
+            >
+              {label}
+            </Button>
+          );
+        })}
+      />
+
+      <OperationalPanel contentClassName="p-0">
+        {filteredSuppliers.length === 0 ? (
+          <div className="p-6">
+            <OperationalEmptyState title="No matching suppliers found." />
           </div>
-        </div>
+        ) : (
+          <OperationalTable className="min-w-[760px]">
+            <OperationalTableHeader>
+              <OperationalTableRow>
+                <OperationalTableHead>Supplier</OperationalTableHead>
+                <OperationalTableHead>Contact</OperationalTableHead>
+                <OperationalTableHead>Payment Terms</OperationalTableHead>
+                <OperationalTableHead>Status</OperationalTableHead>
+                <OperationalTableHead className="text-right">Actions</OperationalTableHead>
+              </OperationalTableRow>
+            </OperationalTableHeader>
+            <OperationalTableBody>
+              {filteredSuppliers.map((supplier) => {
+                const displayName = getSupplierDisplayName(supplier) || "Unknown Supplier";
+                const initials = getSupplierInitials(displayName);
 
-        <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-          <CardContent className="p-0">
-            {filteredSuppliers.length === 0 ? (
-              <div className="px-6 pb-6 pt-6">
-                <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
-                  <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
-                    No matching suppliers found.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
-                      {["Supplier", "Contact", "Payment Terms", "Status", "Actions"].map((heading) => (
-                        <th
-                          key={heading}
-                          className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
+                return (
+                  <OperationalTableRow key={supplier.id}>
+                    <OperationalTableCell>
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--orange-primary)] text-sm font-semibold text-[var(--primary-foreground)]">
+                          {initials}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[var(--text-primary)]">{displayName}</p>
+                          {supplier.legal_name ? (
+                            <p className="text-sm text-[var(--text-secondary)]">{supplier.legal_name}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </OperationalTableCell>
+                    <OperationalTableCell>
+                      <div className="space-y-1 text-sm text-[var(--text-secondary)]">
+                        {supplier.email ? <p>{supplier.email}</p> : null}
+                        {supplier.phone ? <p>{supplier.phone}</p> : null}
+                        {!supplier.email && !supplier.phone ? (
+                          <p className="text-[var(--text-muted)]">—</p>
+                        ) : null}
+                      </div>
+                    </OperationalTableCell>
+                    <OperationalTableCell className="text-[var(--text-primary)]">
+                      {supplier.default_payment_terms || "No payment terms"}
+                    </OperationalTableCell>
+                    <OperationalTableCell>
+                      <StatusBadge status={supplier.is_active ? "approved" : "draft"}>
+                        {supplier.is_active ? "Active" : "Inactive"}
+                      </StatusBadge>
+                    </OperationalTableCell>
+                    <OperationalTableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openDetailModal(supplier)}
                         >
-                          {heading}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSuppliers.map((supplier) => {
-                      const displayName = getSupplierDisplayName(supplier) || "Unknown Supplier";
-                      const initials = getSupplierInitials(displayName);
-
-                      return (
-                        <tr
-                          key={supplier.id}
-                          className="group border-b border-[#E2E8F1] last:border-0 transition-colors hover:bg-[#F8FBFB]"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <span
-                                className={`${ibmPlexSans.className} inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F15A29] text-[13px] font-semibold text-white`}
-                              >
-                                {initials}
-                              </span>
-                              <div>
-                                <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
-                                  {displayName}
-                                </p>
-                                {supplier.legal_name ? (
-                                  <p className={`${ibmPlexSans.className} text-[13px] text-[#6A7A89]`}>
-                                    {supplier.legal_name}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              {supplier.email ? (
-                                <p className={`${ibmPlexSans.className} text-[13px] text-[#4B5D79]`}>
-                                  {supplier.email}
-                                </p>
-                              ) : null}
-                              {supplier.phone ? (
-                                <p className={`${ibmPlexSans.className} text-[13px] text-[#4B5D79]`}>
-                                  {supplier.phone}
-                                </p>
-                              ) : null}
-                              {!supplier.email && !supplier.phone ? (
-                                <p className={`${ibmPlexSans.className} text-[13px] text-[#B0BEC8]`}>—</p>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>
-                              {supplier.default_payment_terms || "No payment terms"}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${
-                                supplier.is_active
-                                  ? "bg-[#DCFCE7] text-[#15803D]"
-                                  : "bg-[#F1F5F9] text-[#64748B]"
-                              }`}
-                            >
-                              {supplier.is_active ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openDetailModal(supplier)}
-                                className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                              >
-                                Open
-                              </button>
-                              {canEdit ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openEditModal(supplier)}
-                                  className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                                >
-                                  Edit
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                          Open
+                        </Button>
+                        {canEdit ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openEditModal(supplier)}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
+                      </div>
+                    </OperationalTableCell>
+                  </OperationalTableRow>
+                );
+              })}
+            </OperationalTableBody>
+          </OperationalTable>
+        )}
+      </OperationalPanel>
 
       <Dialog open={modalState !== null} onOpenChange={(open) => (!open ? closeModal() : undefined)}>
-        <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+        <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto p-0">
           {isEditMode ? (
             <div>
               <div className="px-7 pb-6 pt-7">
-                <h2
-                  className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}
-                >
+                <h2 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
                   {modalTitle}
                 </h2>
               </div>
 
               <div className="space-y-3.5 px-7 pb-4">
                 {message ? (
-                  <div className={`${interMedium.className} rounded-[10px] border border-[#CDE9DA] bg-[#EAF8F1] px-4 py-3 text-sm text-[#166534]`}>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--success-light)] bg-[var(--success-light)] px-4 py-3 text-sm text-[var(--success)]">
                     {message}
                   </div>
                 ) : null}
 
                 {error ? (
-                  <div className={`${interMedium.className} rounded-[10px] border border-[#F5C2C7] bg-[#FFF1F2] px-4 py-3 text-sm text-[#B42318]`}>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
                     {error}
                   </div>
                 ) : null}
 
                 {duplicateWarnings.length > 0 ? (
-                  <div className="space-y-2 rounded-[10px] border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3">
-                    <p className={`${interMedium.className} text-sm font-semibold text-[#92400E]`}>
-                      Possible duplicate supplier
-                    </p>
-                    <ul className={`${interMedium.className} space-y-1 text-sm text-[#92400E]`}>
+                  <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3">
+                    <p className="text-sm font-semibold text-[var(--warning)]">Possible duplicate supplier</p>
+                    <ul className="space-y-1 text-sm text-[var(--warning)]">
                       {duplicateWarnings.map((warning) => (
                         <li key={warning.id}>{warning.message}</li>
                       ))}
@@ -633,7 +554,6 @@ export function CompanySuppliersWorkspace({
                     }
                     placeholder="Acme Building Supplies"
                     disabled={!canEdit}
-                    className={fieldInputClass}
                   />
                 </div>
 
@@ -647,7 +567,6 @@ export function CompanySuppliersWorkspace({
                     }
                     placeholder="Acme Building Supplies Limited"
                     disabled={!canEdit}
-                    className={fieldInputClass}
                   />
                 </div>
 
@@ -663,7 +582,6 @@ export function CompanySuppliersWorkspace({
                       }
                       placeholder="accounts@supplier.com"
                       disabled={!canEdit}
-                      className={fieldInputClass}
                     />
                   </div>
                   <div>
@@ -676,7 +594,6 @@ export function CompanySuppliersWorkspace({
                       }
                       placeholder="+64 21 123 4567"
                       disabled={!canEdit}
-                      className={fieldInputClass}
                     />
                   </div>
                 </div>
@@ -691,7 +608,6 @@ export function CompanySuppliersWorkspace({
                     }
                     placeholder="https://supplier.co.nz"
                     disabled={!canEdit}
-                    className={fieldInputClass}
                   />
                 </div>
 
@@ -706,7 +622,7 @@ export function CompanySuppliersWorkspace({
                     }
                     placeholder="Level 2, 123 Example Street, Auckland"
                     disabled={!canEdit}
-                    className={fieldTextAreaClass}
+                    className={FIELD_TEXTAREA_CLASS}
                   />
                 </div>
 
@@ -723,7 +639,6 @@ export function CompanySuppliersWorkspace({
                     }
                     placeholder="20th of following month"
                     disabled={!canEdit}
-                    className={fieldInputClass}
                   />
                 </div>
 
@@ -739,7 +654,7 @@ export function CompanySuppliersWorkspace({
                       }))
                     }
                     disabled={!canEdit}
-                    className={`${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                    className={FIELD_SELECT_CLASS}
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -750,19 +665,20 @@ export function CompanySuppliersWorkspace({
               <div className="flex items-center justify-between gap-3 px-7 pb-7 pt-5">
                 <div>
                   {modalState?.type === "edit" && selectedSupplier && canEdit ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
                       disabled={isSaving}
                       onClick={() => void toggleSupplierActive(!selectedSupplier.is_active)}
-                      className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60`}
                     >
                       {selectedSupplier.is_active ? "Archive Supplier" : "Reactivate Supplier"}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-3">
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={() => {
                       if (selectedSupplier && modalState?.type === "edit") {
                         setModalState({ type: "detail", supplierId: selectedSupplier.id });
@@ -771,149 +687,130 @@ export function CompanySuppliersWorkspace({
                         closeModal();
                       }
                     }}
-                    className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => void saveSupplier()}
                     disabled={!canEdit || isSaving}
-                    className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     {isSaving
                       ? "Saving..."
                       : modalState?.type === "edit"
                         ? "Save Changes"
                         : "Add Supplier"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
           ) : selectedSupplier ? (
             <div className="space-y-4 px-7 pb-7 pt-7">
               {message ? (
-                <div className={`${interMedium.className} rounded-[10px] border border-[#CDE9DA] bg-[#EAF8F1] px-4 py-3 text-sm text-[#166534]`}>
+                <div className="rounded-[var(--radius-md)] border border-[var(--success-light)] bg-[var(--success-light)] px-4 py-3 text-sm text-[var(--success)]">
                   {message}
                 </div>
               ) : null}
 
               {error ? (
-                <div className={`${interMedium.className} rounded-[10px] border border-[#F5C2C7] bg-[#FFF1F2] px-4 py-3 text-sm text-[#B42318]`}>
+                <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
                   {error}
                 </div>
               ) : null}
 
-              <div className="rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <div className="p-[1.35rem_1.5rem_1.15rem]">
-                  <div className="flex items-center gap-4">
-                    <span className="inline-flex h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#f15a29_0%,#ff4c14_100%)] text-[1.65rem] font-bold text-white">
-                      {getSupplierInitials(getSupplierDisplayName(selectedSupplier))}
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-[0.65rem]">
-                      <div className="flex items-center justify-between gap-4">
-                        <h2 className={`${ibmPlexSans.className} m-0 text-[1.7rem] font-bold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
-                          {getSupplierDisplayName(selectedSupplier)}
-                        </h2>
-                        <span
-                          className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-4 py-[0.55rem] text-[14px] font-semibold whitespace-nowrap ${
-                            selectedSupplier.is_active
-                              ? "bg-[#DFF7E4] text-[#15803D]"
-                              : "bg-[#F1F5F9] text-[#64748B]"
-                          }`}
-                        >
-                          {selectedSupplier.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-[1.1rem_1.4rem]">
-                        {selectedSupplier.email ? (
-                          <ContactChip icon={<Mail className="h-4 w-4" strokeWidth={2.1} />}>
-                            {selectedSupplier.email}
-                          </ContactChip>
-                        ) : null}
-                        {selectedSupplier.phone ? (
-                          <ContactChip icon={<Phone className="h-4 w-4" strokeWidth={2.1} />}>
-                            {selectedSupplier.phone}
-                          </ContactChip>
-                        ) : null}
-                        {selectedSupplier.website ? (
-                          <ContactChip icon={<Globe className="h-4 w-4" strokeWidth={2.1} />}>
-                            {selectedSupplier.website}
-                          </ContactChip>
-                        ) : null}
-                      </div>
+              <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow-sm)]">
+                <div className="flex items-center gap-4">
+                  <span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[var(--orange-primary)] text-2xl font-bold text-[var(--primary-foreground)]">
+                    {getSupplierInitials(getSupplierDisplayName(selectedSupplier))}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex items-center justify-between gap-4">
+                      <h2 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
+                        {getSupplierDisplayName(selectedSupplier)}
+                      </h2>
+                      <StatusBadge status={selectedSupplier.is_active ? "approved" : "draft"}>
+                        {selectedSupplier.is_active ? "Active" : "Inactive"}
+                      </StatusBadge>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedSupplier.email ? (
+                        <ContactChip icon={<Mail className="h-4 w-4" strokeWidth={2.1} />}>
+                          {selectedSupplier.email}
+                        </ContactChip>
+                      ) : null}
+                      {selectedSupplier.phone ? (
+                        <ContactChip icon={<Phone className="h-4 w-4" strokeWidth={2.1} />}>
+                          {selectedSupplier.phone}
+                        </ContactChip>
+                      ) : null}
+                      {selectedSupplier.website ? (
+                        <ContactChip icon={<Globe className="h-4 w-4" strokeWidth={2.1} />}>
+                          {selectedSupplier.website}
+                        </ContactChip>
+                      ) : null}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <Card className="rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <CardContent className="p-0">
-                  <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F1] px-6 py-4">
-                    <p className={`${ibmPlexSans.className} text-[1.4rem] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
-                      Supplier Information
-                    </p>
-                    {canEdit ? (
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(selectedSupplier)}
-                        className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                      >
-                        Edit details
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="grid gap-4 px-6 py-5 md:grid-cols-2">
-                    {[
-                      ["Legal Name", selectedSupplier.legal_name || "-"],
-                      ["Email", selectedSupplier.email || "-"],
-                      ["Phone", selectedSupplier.phone || "-"],
-                      ["Website", selectedSupplier.website || "-"],
-                      ["Payment Terms", selectedSupplier.default_payment_terms || "-"],
-                      ["Status", selectedSupplier.is_active ? "Active" : "Inactive"],
-                    ].map(([label, value]) => (
-                      <div key={label} className="space-y-1">
-                        <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#6A7A89]`}>
-                          {label}
-                        </p>
-                        <p className={`${ibmPlexSans.className} text-[15px] text-[#10283B]`}>
-                          {value}
-                        </p>
-                      </div>
-                    ))}
-                    <div className="space-y-1 md:col-span-2">
-                      <p className={`${ibmPlexSans.className} text-[13px] font-semibold text-[#6A7A89]`}>
-                        Address
+              <OperationalPanel
+                title="Supplier Information"
+                actions={
+                  canEdit ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openEditModal(selectedSupplier)}
+                    >
+                      Edit details
+                    </Button>
+                  ) : null
+                }
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[
+                    ["Legal Name", selectedSupplier.legal_name || "-"],
+                    ["Email", selectedSupplier.email || "-"],
+                    ["Phone", selectedSupplier.phone || "-"],
+                    ["Website", selectedSupplier.website || "-"],
+                    ["Payment Terms", selectedSupplier.default_payment_terms || "-"],
+                    ["Status", selectedSupplier.is_active ? "Active" : "Inactive"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        {label}
                       </p>
-                      <p className={`${ibmPlexSans.className} whitespace-pre-wrap text-[15px] text-[#10283B]`}>
-                        {selectedSupplier.address || "-"}
-                      </p>
+                      <p className="text-sm text-[var(--text-primary)]">{value}</p>
                     </div>
+                  ))}
+                  <div className="space-y-1 md:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Address
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm text-[var(--text-primary)]">
+                      {selectedSupplier.address || "-"}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </OperationalPanel>
 
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div>
                   {canEdit ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
                       disabled={isSaving}
                       onClick={() => void toggleSupplierActive(!selectedSupplier.is_active)}
-                      className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60`}
                     >
                       {selectedSupplier.is_active ? "Archive Supplier" : "Reactivate Supplier"}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                >
+                <Button type="button" variant="secondary" onClick={closeModal}>
                   Close
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}

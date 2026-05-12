@@ -5,20 +5,16 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowLeft, FileText, FolderOpen, LayoutGrid, Ruler } from "lucide-react";
 import { ibmPlexSans } from "@/lib/fonts";
-import {
-  leadsButtonLabelStyle,
-  leadsPageSurfaceTheme,
-  leadsShellActionClassName,
-  leadsShellHeaderClassName,
-  leadsShellTabClassName,
-  leadsShellTabRowClassName,
-  leadsShellTitleStyle,
-  leadsTabLabelStyle,
-} from "@/components/app/LeadsPagePrimitives";
+import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { buildTakeoffHref } from "@/lib/takeoff/navigation";
 
 type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "start-pricing" | "takeoff";
+
+const TAB_BASE_CLASS =
+  "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors";
+const TAB_ACTIVE_CLASS = "border-[var(--orange-primary)] text-[var(--orange-primary)]";
+const TAB_INACTIVE_CLASS = "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]";
 
 interface StoredMeasureContext {
   drawingSetId: string;
@@ -33,7 +29,7 @@ export function OpportunityWorkspaceShell({
   activeTab,
   children,
   titleClassName,
-  contentClassName = "bg-[#FBFEFE] px-5 pt-6",
+  contentClassName = "bg-[var(--background)] px-5 pt-6",
 }: {
   title: string;
   opportunityId: string;
@@ -109,32 +105,32 @@ export function OpportunityWorkspaceShell({
   ] as const;
 
   return (
-    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-[0.384rem] bg-[#FBFEFE] pb-8 sm:-mx-[1.024rem]`} style={{ "--app-canvas": "#FBFEFE" } as React.CSSProperties}>
-      <div className={leadsShellHeaderClassName}>
-        <div className={`${leadsShellHeaderClassName} shadow-none`}>
-          <div className={`flex flex-col gap-3 ${leadsShellHeaderClassName} px-5 py-4 xl:flex-row xl:items-center xl:justify-between`}>
+    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-[0.384rem] bg-[var(--background)] pb-8 sm:-mx-[1.024rem]`}>
+      <div className="bg-[var(--background)]">
+        <div className="bg-[var(--background)] shadow-none">
+          <div className="flex flex-col gap-3 bg-[var(--background)] px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-center">
                 <h2
-                  className={titleClassName ?? `${ibmPlexSans.className} truncate`}
-                  style={titleClassName ? undefined : leadsShellTitleStyle}
+                  className={
+                    titleClassName ??
+                    "m-0 truncate text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[var(--text-primary)]"
+                  }
                 >
                   {title}
                 </h2>
               </div>
             </div>
 
-            <Link
-              href="/app/leads-clients/opportunities"
-              prefetch
-              className={leadsShellActionClassName}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span style={leadsButtonLabelStyle}>Back to Opportunities</span>
-            </Link>
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/app/leads-clients/opportunities" prefetch>
+                <ArrowLeft className="h-4 w-4" />
+                Back to Opportunities
+              </Link>
+            </Button>
           </div>
 
-          <div className={leadsShellTabRowClassName} style={{ borderBottomColor: leadsPageSurfaceTheme.border }}>
+          <div className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)] px-5">
             <nav className="overflow-x-auto">
               <div className="flex min-w-max items-center gap-8">
                 {navItems
@@ -146,27 +142,10 @@ export function OpportunityWorkspaceShell({
                         key={item.label}
                         href={item.href}
                         prefetch
-                        className={`${leadsShellTabClassName} ${
-                          item.active
-                            ? "border-b-2 text-[#F15A29]"
-                            : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
-                        }`}
-                        style={
-                          item.active
-                            ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
-                            : undefined
-                        }
+                        className={`${TAB_BASE_CLASS} ${item.active ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS}`}
                       >
-                        <Icon
-                          strokeWidth={2.2}
-                          className={`h-4 w-4 shrink-0 ${item.active ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
-                        />
-                        <span
-                          className="whitespace-nowrap"
-                          style={item.active ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
-                        >
-                          {item.label}
-                        </span>
+                        <Icon strokeWidth={2.2} className="h-4 w-4 shrink-0" />
+                        <span className="whitespace-nowrap">{item.label}</span>
                       </Link>
                     );
                   })}
@@ -174,39 +153,22 @@ export function OpportunityWorkspaceShell({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className={`${leadsShellTabClassName} cursor-pointer ${
-                        isTakeoffActive
-                          ? "border-b-2 text-[#F15A29]"
-                          : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
-                      }`}
-                      style={
-                        isTakeoffActive
-                          ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
-                          : undefined
-                      }
+                      className={`${TAB_BASE_CLASS} cursor-pointer ${isTakeoffActive ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS}`}
                     >
-                      <Ruler
-                        strokeWidth={2.2}
-                        className={`h-4 w-4 shrink-0 ${isTakeoffActive ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
-                      />
-                      <span
-                        className="whitespace-nowrap"
-                        style={isTakeoffActive ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
-                      >
-                        Takeoff
-                      </span>
+                      <Ruler strokeWidth={2.2} className="h-4 w-4 shrink-0" />
+                      <span className="whitespace-nowrap">Takeoff</span>
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="start"
                     side="bottom"
                     sideOffset={8}
-                    className="!z-[200] min-w-[220px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                    className="!z-[200] min-w-[220px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]"
                   >
                     <DropdownMenuItem
                       asChild
-                      className={`h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium focus:bg-[#F8FAFC] ${
-                        isMeasureActive ? "bg-[#F8FAFC] text-[#F15A29]" : "text-[#1d2433]"
+                      className={`h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${
+                        isMeasureActive ? "bg-[var(--surface-muted)] text-[var(--orange-primary)]" : "text-[var(--text-primary)]"
                       }`}
                     >
                       <Link href={measureHref} prefetch>
@@ -215,8 +177,8 @@ export function OpportunityWorkspaceShell({
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       asChild
-                      className={`h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium focus:bg-[#F8FAFC] ${
-                        isQuantitiesActive ? "bg-[#F8FAFC] text-[#F15A29]" : "text-[#1d2433]"
+                      className={`h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${
+                        isQuantitiesActive ? "bg-[var(--surface-muted)] text-[var(--orange-primary)]" : "text-[var(--text-primary)]"
                       }`}
                     >
                       <Link href={quantitiesHref} prefetch>
@@ -234,27 +196,10 @@ export function OpportunityWorkspaceShell({
                         key={item.label}
                         href={item.href}
                         prefetch
-                        className={`${leadsShellTabClassName} ${
-                          item.active
-                            ? "border-b-2 text-[#F15A29]"
-                            : "border-b-0 text-[#4B5D79] hover:text-[#4B5D79]"
-                        }`}
-                        style={
-                          item.active
-                            ? { borderBottomStyle: "solid", borderBottomColor: leadsPageSurfaceTheme.accent }
-                            : undefined
-                        }
+                        className={`${TAB_BASE_CLASS} ${item.active ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS}`}
                       >
-                        <Icon
-                          strokeWidth={2.2}
-                          className={`h-4 w-4 shrink-0 ${item.active ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"}`}
-                        />
-                        <span
-                          className="whitespace-nowrap"
-                          style={item.active ? { ...leadsTabLabelStyle, color: leadsPageSurfaceTheme.accent } : leadsTabLabelStyle}
-                        >
-                          {item.label}
-                        </span>
+                        <Icon strokeWidth={2.2} className="h-4 w-4 shrink-0" />
+                        <span className="whitespace-nowrap">{item.label}</span>
                       </Link>
                     );
                   })}

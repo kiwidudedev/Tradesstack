@@ -293,7 +293,7 @@ export default function PreconstructionQuotePage() {
         const loadBranding = async () => {
           const { data: organizationRow } = await supabase
             .from("organizations")
-            .select("name, logo_path, brand_primary_color")
+            .select("name, logo_path")
             .eq("id", resolvedOrganizationId)
             .maybeSingle();
 
@@ -302,7 +302,6 @@ export default function PreconstructionQuotePage() {
           }
 
           setOrganizationName(organizationRow?.name ?? "");
-          setOrganizationBrandPrimaryColor((organizationRow?.brand_primary_color ?? "").trim());
           if (organizationRow?.logo_path) {
             const { data: logoUrlData } = supabase.storage.from("organization-logos").getPublicUrl(organizationRow.logo_path);
             if (!cancelled) {
@@ -313,7 +312,8 @@ export default function PreconstructionQuotePage() {
           }
         };
 
-        const shouldLoadScopeItems = Boolean(sharedOpportunity.workspaceProjectId);
+        const workspaceProjectId = sharedOpportunity.workspaceProjectId;
+        const shouldLoadScopeItems = Boolean(workspaceProjectId);
         if (shouldLoadScopeItems) {
           setIsLoadingScopeItems(true);
         }
@@ -346,22 +346,22 @@ export default function PreconstructionQuotePage() {
             .eq("opportunity_id", sharedOpportunity.opportunityId)
             .order("updated_at", { ascending: false })
             .limit(20),
-          shouldLoadScopeItems
+          workspaceProjectId
             ? supabase
                 .from("scope_runs")
                 .select("id, trade_pack_id, result_json, created_at")
                 .eq("organization_id", resolvedOrganizationId)
-                .eq("project_id", sharedOpportunity.workspaceProjectId)
+                .eq("project_id", workspaceProjectId)
                 .eq("status", "complete")
                 .order("created_at", { ascending: false })
                 .limit(120)
             : Promise.resolve({ data: [], error: null }),
-          shouldLoadScopeItems
+          workspaceProjectId
             ? supabase
                 .from("trade_packs")
                 .select("id, trade_label")
                 .eq("organization_id", resolvedOrganizationId)
-                .eq("project_id", sharedOpportunity.workspaceProjectId)
+                .eq("project_id", workspaceProjectId)
             : Promise.resolve({ data: [], error: null }),
         ]);
 
@@ -380,7 +380,7 @@ export default function PreconstructionQuotePage() {
         setDbOpportunityId(sharedOpportunity.opportunityId);
         setOpportunityCode(resolvedOpportunityCode);
         setProjectName((current) => current || sharedOpportunity.name);
-        setSiteAddress((current) => current || opportunityDetailResult.data.location || "");
+        setSiteAddress((current) => current || opportunityDetailResult.data?.location || "");
         setQuoteNumber((current) => current || `Q-${resolvedOpportunityCode}-1`);
 
         if (shouldLoadScopeItems) {

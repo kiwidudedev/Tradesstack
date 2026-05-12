@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { interMedium } from "@/lib/fonts";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
 
 const SITE_SAFETY_SECTIONS = [
   {
@@ -42,49 +42,33 @@ const SITE_SAFETY_SECTIONS = [
 
 export default function ProjectSiteSafetyPage() {
   return (
-    <main className="app-canvas space-y-6 pb-8">
-      <Card className="app-surface app-surface-border relative overflow-hidden shadow-none">
-        <CardHeader className="pt-7">
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">
-            Site Safety
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className={`${interMedium.className} max-w-3xl text-base font-medium leading-relaxed text-[#4F5F79]`}>
-            Set up project-side health and safety workflows for subcontractor teams without
-            overbuilding the system up front.
-          </p>
-        </CardContent>
-      </Card>
+    <main className="space-y-6 bg-[var(--background)] pb-8">
+      <OperationalPageHeader
+        title="Site Safety"
+        description="Set up project-side health and safety workflows for subcontractor teams without overbuilding the system up front."
+      />
 
-      <Card className="relative overflow-hidden border-[#D9E3EE] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-xl font-semibold tracking-[-0.02em] text-[#0F172A]">
-            Start building here
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {SITE_SAFETY_SECTIONS.map((section) => (
-              <Link
-                key={section.href}
-                href={section.href}
-                className="group rounded-[16px] border border-[#D9E3EE] bg-[#FCFDFE] px-5 py-5 transition-colors hover:border-[#F15A29] hover:bg-[#FFF7F4]"
-              >
-                <p className="text-lg font-semibold tracking-[-0.02em] text-[#0F172A]">
-                  {section.title}
-                </p>
-                <p className={`${interMedium.className} mt-2 text-sm font-medium leading-relaxed text-[#64748B]`}>
-                  {section.description}
-                </p>
-                <span className={`${interMedium.className} mt-4 inline-flex text-sm font-semibold text-[#F15A29]`}>
-                  Open placeholder
-                </span>
-              </Link>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <OperationalPanel title="Start building here">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {SITE_SAFETY_SECTIONS.map((section) => (
+            <Link
+              key={section.href}
+              href={section.href}
+              className="group rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] px-5 py-5 transition-colors hover:border-[var(--orange-primary)] hover:bg-[var(--accent)]"
+            >
+              <p className="text-lg font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
+                {section.title}
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                {section.description}
+              </p>
+              <span className="mt-4 inline-flex text-sm font-semibold text-[var(--orange-primary)]">
+                Open placeholder
+              </span>
+            </Link>
+          ))}
+        </div>
+      </OperationalPanel>
     </main>
   );
 }

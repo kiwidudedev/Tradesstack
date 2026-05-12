@@ -34,14 +34,15 @@ import { ibmPlexSans } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 
 const sidebarItemBaseClass =
-  "group flex min-h-[38px] items-center justify-between gap-2 rounded-[10px] px-3.5 text-[15px] font-medium transition-all";
+  "group flex min-h-[38px] items-center justify-between gap-2 rounded-[var(--radius-md)] px-3.5 text-[15px] font-medium transition-all";
 
-const sidebarItemActiveClass = "bg-[#F15A29] text-white shadow-none";
+const sidebarItemActiveClass = "bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-foreground)] shadow-none";
 
-const sidebarItemInactiveClass = "text-[#8FA1B9] hover:bg-[#16233C] hover:text-[#E7ECF5]";
+const sidebarItemInactiveClass =
+  "text-[var(--text-muted)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";
 
 const sidebarSubItemClass =
-  "flex min-h-[36px] w-full min-w-0 items-center rounded-[10px] px-3 pl-[44px] text-[13.5px] font-medium text-[#8FA1B9] transition-colors hover:bg-[#16233C] hover:text-[#E7ECF5]";
+  "flex min-h-[36px] w-full min-w-0 items-center rounded-[var(--radius-md)] px-3 pl-[44px] text-[13.5px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";
 
 const PRIMARY_NAV_ITEMS = [
   { label: "Dashboard", href: "/app/dashboard", icon: LayoutGrid },
@@ -103,7 +104,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <div className={`${ibmPlexSans.className} flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0E172B] px-3 py-3`}>
+    <div className={`${ibmPlexSans.className} flex h-full min-h-0 w-full min-w-0 flex-col bg-[var(--sidebar)] px-3 py-3`}>
       <div className="pb-[1rem] pl-0 pr-3 pt-[calc(1.55rem+5px)]">
         <Link href="/app/dashboard" className="inline-flex items-center" onClick={onNavigate}>
           <Image
@@ -139,18 +140,18 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                   className={cn(
                     sidebarItemBaseClass,
                     "w-full",
-                    "text-[#8FA1B9] hover:bg-[#16233C] hover:text-[#E7ECF5]"
+                    sidebarItemInactiveClass
                   )}
                 >
                   <span className="flex items-center gap-3">
                     <Icon
                       strokeWidth={2.2}
-                      className="h-5 w-5 text-[#8FA1B9]"
+                      className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--sidebar-accent-foreground)]"
                     />
                     <span className="text-[15px] leading-none">{item.label}</span>
                   </span>
                   <ChevronDown
-                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[#8FA1B9] transition-transform", isExpanded ? "rotate-180" : "rotate-0")}
+                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform group-hover:text-[var(--sidebar-accent-foreground)]", isExpanded ? "rotate-180" : "rotate-0")}
                   />
                 </button>
 
@@ -169,7 +170,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                             className={cn(
                               sidebarSubItemClass,
                               isChildActive
-                                ? "rounded-[10px] bg-[#16233C] pr-3 text-[#E7ECF5]"
+                                ? "rounded-[var(--radius-md)] bg-[var(--sidebar-accent)] pr-3 text-[var(--sidebar-accent-foreground)]"
                                 : ""
                             )}
                           >
@@ -208,7 +209,12 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                 <span className="flex items-center gap-3">
                   <Icon
                     strokeWidth={2.2}
-                    className={cn("h-5 w-5", isActive ? "text-white" : "text-[#8FA1B9] group-hover:text-[#E7ECF5]")}
+                    className={cn(
+                      "h-5 w-5",
+                      isActive
+                        ? "text-[var(--sidebar-primary-foreground)]"
+                        : "text-[var(--text-muted)] group-hover:text-[var(--sidebar-accent-foreground)]"
+                    )}
                   />
                   <span className="text-[15px] leading-none">{item.label}</span>
                 </span>
@@ -225,7 +231,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               <span className="flex items-center gap-3">
                 <Icon
                   strokeWidth={2.2}
-                  className="h-5 w-5 text-[#8FA1B9] group-hover:text-[#E7ECF5]"
+                  className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--sidebar-accent-foreground)]"
                 />
                 <span className="text-[15px] leading-none">{item.label}</span>
               </span>
@@ -234,13 +240,13 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
-      <div className="mt-3 border-t border-[#1B2640] pt-4">
+      <div className="mt-3 border-t border-[var(--sidebar-border)] pt-4">
         <div className="flex items-center justify-between gap-3 px-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F74917] text-[15px] font-semibold text-white transition-transform hover:scale-[1.02]"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--sidebar-primary)] text-[15px] font-semibold text-[var(--sidebar-primary-foreground)] transition-transform hover:scale-[1.02]"
                 title={displayName}
               >
                 {initials}
@@ -250,19 +256,19 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               align="start"
               side="top"
               sideOffset={12}
-              className="w-52 rounded-[16px] border border-slate-200/80 bg-white p-2 shadow-[0_18px_48px_rgba(11,38,57,0.18)]"
+              className="w-52 rounded-[var(--radius-lg)] border border-[var(--app-border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lg)]"
             >
-              <DropdownMenuItem className="h-11 rounded-[12px] px-3 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
+              <DropdownMenuItem className="h-11 rounded-[var(--radius-md)] px-3 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]">
                 <Bell className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
                 <span>Notifications</span>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
+              <DropdownMenuItem asChild className="h-11 rounded-[var(--radius-md)] px-0 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]">
                 <Link href="/app/settings/organization" className="flex h-full w-full items-center px-3">
                   <Settings className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
                   <span>Settings</span>
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild className="h-11 rounded-[12px] px-0 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900">
+              <DropdownMenuItem asChild className="h-11 rounded-[var(--radius-md)] px-0 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]">
                 <Link href="/app/settings" className="flex h-full w-full items-center px-3">
                   <Clock3 className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
                   <span>Time settings</span>
@@ -270,7 +276,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleLogout}
-                className="h-11 rounded-[12px] px-3 text-[15px] text-slate-700 focus:bg-slate-100 focus:text-slate-900"
+                className="h-11 rounded-[var(--radius-md)] px-3 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]"
               >
                 <LogOut className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
                 <span>Log out</span>
@@ -281,7 +287,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[#98A2B3] transition-colors hover:bg-[#16233C] hover:text-[#E7ECF5]"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
               aria-label="Help"
             >
               <HelpCircle className="h-6 w-6" strokeWidth={2.1} />
@@ -293,8 +299,8 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               className={cn(
                 "inline-flex h-11 w-11 items-center justify-center rounded-full transition-colors",
                 pathname.startsWith("/app/settings")
-                  ? "bg-[#F15A29] text-white"
-                  : "text-[#98A2B3] hover:bg-[#16233C] hover:text-[#E7ECF5]"
+                  ? "bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-foreground)]"
+                  : "text-[var(--text-muted)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
               )}
               aria-label="Settings"
             >
@@ -312,7 +318,7 @@ export function Sidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "sticky top-0 z-20 hidden h-screen w-[240px] shrink-0 self-start bg-[#0E172B] lg:flex",
+        "sticky top-0 z-20 hidden h-screen w-[240px] shrink-0 self-start bg-[var(--sidebar)] lg:flex",
         className
       )}
     >

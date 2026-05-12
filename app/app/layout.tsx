@@ -10,6 +10,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className={`${interMedium.className} ${interBold.variable} app-shell app-canvas min-h-screen bg-[#FBFEFE]`}>{children}</div>
+    <div className={`${interMedium.className} ${interBold.variable} app-shell app-canvas min-h-screen bg-[var(--app-canvas)]`}>{children}</div>
   );
 }

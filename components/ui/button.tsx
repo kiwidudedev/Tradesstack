@@ -2,8 +2,8 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 
-type ButtonVariant = "default" | "orange" | "outline" | "ghost";
-type ButtonSize = "default" | "sm" | "lg" | "icon";
+type ButtonVariant = "default" | "orange" | "outline" | "ghost" | "primary" | "secondary" | "destructive";
+type ButtonSize = "default" | "sm" | "md" | "lg" | "icon";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -12,17 +12,27 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  default: "bg-[#1d1d1d] text-white hover:bg-[#111111]",
-  orange: "bg-accent text-white hover:bg-accent/90",
+  default:
+    "bg-[var(--orange-primary)] text-white hover:bg-[var(--orange-hover)] focus-visible:ring-[var(--orange-primary)]",
+  orange:
+    "bg-[var(--orange-primary)] text-white hover:bg-[var(--orange-hover)] focus-visible:ring-[var(--orange-primary)]",
+  primary:
+    "bg-[var(--orange-primary)] text-white hover:bg-[var(--orange-hover)] focus-visible:ring-[var(--orange-primary)]",
   outline:
-    "border border-border bg-surface text-text hover:border-accent/45 hover:bg-accent-soft/30 hover:text-accent",
-  ghost: "border border-transparent bg-transparent text-text-muted hover:bg-surface-muted hover:text-text",
+    "border border-[var(--border)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-muted)] focus-visible:ring-[var(--border)]",
+  secondary:
+    "border border-[var(--border)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-muted)] focus-visible:ring-[var(--border)]",
+  ghost:
+    "bg-transparent text-[var(--text-primary)] hover:bg-[var(--surface-muted)] focus-visible:ring-[var(--border)]",
+  destructive:
+    "bg-[var(--error)] text-white hover:bg-[#B91C1C] focus-visible:ring-[var(--error)]",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
-  default: "h-10 px-5 text-sm",
-  sm: "h-9 px-4 text-xs",
-  lg: "h-11 px-6 text-base",
+  default: "h-11 px-4 text-base rounded-[var(--radius-md)]",
+  sm: "h-9 px-3 text-sm rounded-[var(--radius-sm)]",
+  md: "h-11 px-4 text-base rounded-[var(--radius-md)]",
+  lg: "h-12 px-6 text-base rounded-[var(--radius-md)]",
   icon: "h-10 w-10 p-0",
 };
 
@@ -34,7 +44,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         type={asChild ? undefined : type}
         className={cn(
-          "ui-button inline-flex items-center justify-center rounded-[6px] font-body font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+          "ui-button inline-flex items-center justify-center gap-2 whitespace-nowrap font-body font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
           variantStyles[variant],
           sizeStyles[size],
           className,

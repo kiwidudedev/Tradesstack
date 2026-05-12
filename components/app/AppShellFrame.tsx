@@ -12,8 +12,8 @@ export function AppShellFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <main
-      className={`min-w-0 flex-1 p-[0.384rem] sm:p-[1.024rem] ${
-        isSupplierInvoiceDetailPage ? "bg-[#F2F3F4]" : "bg-[#FBFEFE]"
+      className={`min-w-0 flex-1 p-1.5 sm:p-4 ${
+        isSupplierInvoiceDetailPage ? "bg-[var(--surface-muted)]" : "bg-[var(--app-canvas)]"
       }`}
     >
       <Topbar />

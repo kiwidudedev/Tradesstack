@@ -18,14 +18,14 @@ const SheetOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-slate-950/18 backdrop-blur-[1px]", className)}
+    className={cn("fixed inset-0 z-50 bg-[color-mix(in_srgb,var(--navy-primary)_18%,transparent)] backdrop-blur-[1px]", className)}
     {...props}
   />
 ));
 SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 border-[var(--app-border)] bg-[var(--app-surface)] p-6 shadow-none transition ease-in-out",
+  "fixed z-50 gap-4 border-[var(--app-border)] bg-[var(--surface)] p-6 text-[var(--text-primary)] shadow-[var(--shadow-lg)] transition ease-in-out",
   {
     variants: {
       side: {
@@ -51,7 +51,7 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Co
       <SheetOverlay />
       <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
         {children}
-        <SheetClose className="absolute right-4 top-4 rounded-[6px] p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+        <SheetClose className="absolute right-4 top-4 rounded-[var(--radius-sm)] p-1 text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </SheetClose>

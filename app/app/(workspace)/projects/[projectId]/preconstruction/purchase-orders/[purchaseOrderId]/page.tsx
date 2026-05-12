@@ -12,6 +12,8 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { SupplierPicker } from "@/components/app/SupplierPicker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -355,15 +357,15 @@ function normalizeOrigin(value: string): VariationOrigin {
   return "Other";
 }
 
-function purchaseOrderStatusBadgeClass(status: VariationStatus): string {
+function purchaseOrderStatusBadge(status: VariationStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (status) {
-    case "Approved": return "border-[#BBF7D0] bg-[#DCFCE7] text-[#15803D]";
-    case "Cancelled": return "border-[#FECACA] bg-[#FEE2E2] text-[#DC2626]";
-    case "Invoiced": return "border-[#BFDBFE] bg-[#DBEAFE] text-[#1D4ED8]";
-    case "Issued": return "border-[#BFDBFE] bg-[#DBEAFE] text-[#1D4ED8]";
-    case "Pending Approval": return "border-[#FDE68A] bg-[#FEF3C7] text-[#92400E]";
-    case "Received": return "border-[#C7D2FE] bg-[#EEF2FF] text-[#4338CA]";
-    default: return "border-[#D7E1EC] bg-[#FBFEFE] text-[#4B5D79]";
+    case "Approved": return "approved";
+    case "Cancelled": return "overdue";
+    case "Invoiced": return "sent";
+    case "Issued": return "sent";
+    case "Pending Approval": return "pending";
+    case "Received": return "active";
+    default: return "draft";
   }
 }
 
@@ -2230,25 +2232,16 @@ export default function ProjectVariationsPage() {
 
   if (isLoadingVariations) {
     return (
-      <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-        <section className={styles.heroBlock}>
-          <div className="space-y-3">
-            <h1 className={styles.quotePageTitle}>Purchase Order</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] opacity-60`}
-            >
-              Save Purchase Order
-            </Button>
-            <Button type="button" disabled className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white opacity-60`}>
-              Export PDF
-            </Button>
-          </div>
-        </section>
+      <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
+        <OperationalPageHeader
+          title="Purchase Order"
+          actions={
+            <>
+              <Button type="button" variant="secondary" disabled>Save Purchase Order</Button>
+              <Button type="button" disabled>Export PDF</Button>
+            </>
+          }
+        />
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
@@ -2283,93 +2276,91 @@ export default function ProjectVariationsPage() {
   }
 
   return (
-    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-      <section className={styles.heroBlock}>
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className={styles.quotePageTitle}>{activeVariation?.code || "Purchase Order"}</h1>
+    <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
+      <OperationalPageHeader
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>{activeVariation?.code || "Purchase Order"}</span>
             {activeVariation ? (
-              <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] ${purchaseOrderStatusBadgeClass(activeVariation.status)}`}>
+              <StatusBadge status={purchaseOrderStatusBadge(activeVariation.status)}>
                 {activeVariation.status}
-              </span>
+              </StatusBadge>
             ) : null}
-          </div>
-          {saveMessage ? <p className={`${styles.quoteBodyLabel} text-xs`}>{saveMessage}</p> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void saveVariation()}
-            disabled={!canManagePurchaseOrder || isSaving}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
-          >
-            {isSaving ? "Saving..." : "Save Purchase Order"}
-          </Button>
-          <Button
-            type="button"
-            onClick={exportVariationPdf}
-            disabled={isSaving}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
-          >
-            Export PDF
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569]`}
-              >
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[240px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
-              <DropdownMenuItem asChild className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
-                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders`}>
-                  <ExternalLink className="mr-2 h-4 w-4 text-[#64748B]" />
-                  Purchase Order Dashboard
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void createPurchaseOrder();
-                }}
-                disabled={!canManagePurchaseOrder}
-                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
-              >
-                <Plus className="mr-2 h-4 w-4 text-[#64748B]" />
-                New Purchase Order
-              </DropdownMenuItem>
-              {activeVariation ? (
-                <>
-                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      void deletePurchaseOrder(activeVariation.id);
-                    }}
-                    disabled={!canManagePurchaseOrder || isDeleting}
-                    className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]`}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {isDeleting ? "Deleting..." : "Delete"}
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </section>
+          </span>
+        }
+        description={saveMessage ?? undefined}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void saveVariation()}
+              disabled={!canManagePurchaseOrder || isSaving}
+            >
+              {isSaving ? "Saving..." : "Save Purchase Order"}
+            </Button>
+            <Button
+              type="button"
+              onClick={exportVariationPdf}
+              disabled={isSaving}
+            >
+              Export PDF
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="secondary" size="sm" className="h-9 px-3">
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[240px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]">
+                <DropdownMenuItem asChild className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]">
+                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders`}>
+                    <ExternalLink className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                    Purchase Order Dashboard
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    void createPurchaseOrder();
+                  }}
+                  disabled={!canManagePurchaseOrder}
+                  className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
+                >
+                  <Plus className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                  New Purchase Order
+                </DropdownMenuItem>
+                {activeVariation ? (
+                  <>
+                    <DropdownMenuSeparator className="my-1 bg-[var(--border)]" />
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        void deletePurchaseOrder(activeVariation.id);
+                      }}
+                      disabled={!canManagePurchaseOrder || isDeleting}
+                      className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--error)] focus:bg-[var(--error-light)] focus:text-[var(--error)]"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
       {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+          {error}
+        </div>
       ) : null}
       {!canManagePurchaseOrder && session ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
           You can review this purchase order, but only owner, admin, QS, and project manager roles can edit or delete it.
-        </p>
+        </div>
       ) : null}
 
       {hasVariations && activeVariation ? (

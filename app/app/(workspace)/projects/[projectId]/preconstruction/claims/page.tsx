@@ -3,13 +3,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle2, ChevronDown, Clock, DollarSign, Landmark, MoreHorizontal, Pencil, Plus, TrendingUp } from "lucide-react";
+import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
+import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import {
+  OperationalTable,
+  OperationalTableBody,
+  OperationalTableCell,
+  OperationalTableHead,
+  OperationalTableHeader,
+  OperationalTableRow,
+} from "@/components/app/OperationalTable";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
-import styles from "@/components/app/trade-pack-builder.module.css";
 
 type ClaimStatus = "Draft" | "Submitted" | "Unpaid" | "Paid" | "Overdue" | "Cancelled";
 type ClaimType = "Progress" | "Deposit" | "Final";
@@ -70,21 +81,31 @@ function toMoney(value: number) {
   }).format(value);
 }
 
-function statusClassName(status: ClaimStatus) {
+function statusBadgeStatus(status: ClaimStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (status) {
     case "Paid":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      return "approved";
     case "Overdue":
-      return "bg-rose-100 text-rose-800 border-rose-200";
+      return "overdue";
     case "Submitted":
     case "Unpaid":
-      return "bg-amber-100 text-amber-800 border-amber-200";
+      return "pending";
     case "Cancelled":
-      return "bg-slate-200 text-slate-700 border-slate-300";
+      return "draft";
     default:
-      return "bg-slate-100 text-slate-700 border-slate-200";
+      return "draft";
   }
 }
+
+const STATUS_DOT_CLASS_BY_BADGE: Record<NonNullable<StatusBadgeProps["status"]>, string> = {
+  approved: "bg-[var(--success)] border-[var(--success)]",
+  pending: "bg-[var(--warning)] border-[var(--warning)]",
+  overdue: "bg-[var(--error)] border-[var(--error)]",
+  sent: "bg-[var(--info)] border-[var(--info)]",
+  completed: "bg-[var(--status-completed)] border-[var(--status-completed)]",
+  active: "bg-[var(--status-active)] border-[var(--status-active)]",
+  draft: "bg-[var(--text-muted)] border-[var(--text-muted)]",
+};
 
 function toDayMonthYearLabel(value: string | null) {
   if (!value) {
@@ -410,17 +431,11 @@ export default function ProjectClaimsRegisterPage() {
   }, [displayedClaims]);
 
   const ALL_CLAIM_STATUSES: ClaimStatus[] = ["Draft", "Submitted", "Unpaid", "Paid", "Overdue", "Cancelled"];
-  const headerRowClassName = `${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`;
-  const headerTextCellClassName = "px-4 py-2.5 text-left";
-  const headerMoneyCellClassName = "px-4 py-2.5 text-right";
-  const bodyPrimaryTextCellClassName = `${interMedium.className} px-4 py-3 text-[13px] font-normal text-[#1d2433] align-middle`;
-  const bodySecondaryTextCellClassName = `${interMedium.className} px-4 py-3 text-[13px] text-[#475569] align-middle`;
-  const bodyMoneyCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-normal text-[#1d2433] align-middle [font-variant-numeric:tabular-nums]`;
-  const footerBlankCellClassName = "px-4 py-3 align-middle";
-  const footerLabelCellClassName = `${interMedium.className} px-4 py-3 text-[13px] font-semibold tracking-[-0.01em] text-[#334155] align-middle`;
-  const footerMoneyCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-semibold text-[#334155] align-middle [font-variant-numeric:tabular-nums]`;
-  const footerMoneyEmphasisCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-semibold text-[#0F172A] align-middle [font-variant-numeric:tabular-nums]`;
-  const footerMoneyStrongCellClassName = `${interMedium.className} px-4 py-3 text-right text-[13px] font-semibold text-[#0F172A] align-middle [font-variant-numeric:tabular-nums]`;
+  const bodyMoneyCellClassName = "text-right [font-variant-numeric:tabular-nums]";
+  const footerCellClassName = "px-4 py-3 align-middle";
+  const footerLabelCellClassName = "px-4 py-3 align-middle text-sm font-semibold tracking-[-0.01em] text-[var(--text-secondary)]";
+  const footerMoneyCellClassName = "px-4 py-3 align-middle text-right text-sm font-semibold text-[var(--text-secondary)] [font-variant-numeric:tabular-nums]";
+  const footerMoneyStrongCellClassName = "px-4 py-3 align-middle text-right text-sm font-semibold text-[var(--text-primary)] [font-variant-numeric:tabular-nums]";
 
   const updateClaimStatus = useCallback(async (claimId: string, newStatus: ClaimStatus) => {
     if (!supabase || !organizationId) return;
@@ -454,266 +469,220 @@ export default function ProjectClaimsRegisterPage() {
   }, [claims, organizationId, projectId, supabase]);
 
   return (
-    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-
-      {/* Hero */}
-      <section className={`${styles.heroBlock} mb-2`}>
-        <div className="min-w-0 flex-1">
-          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>Financials</h1>
-          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>Create, track, submit, and reconcile payment claims for this job</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
+      <OperationalPageHeader
+        title="Financials"
+        description="Create, track, submit, and reconcile payment claims for this job"
+        actions={
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             onClick={() => void createClaimAndOpen()}
             disabled={isCreatingClaim || isLoading}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             {isCreatingClaim ? "Creating..." : "New Claim"}
           </Button>
-        </div>
-      </section>
+        }
+      />
 
       {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+          {error}
+        </div>
       ) : null}
 
-      <div className="px-0 py-0">
-        {isLoading ? (
-          <p className={`${interMedium.className} py-8 text-center text-sm font-medium text-[#6b6b6b]`}>Loading claims register...</p>
-        ) : (
-          <div className="space-y-6">
+      {isLoading ? (
+        <p className="py-8 text-center text-sm text-[var(--text-secondary)]">Loading claims register...</p>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            <OperationalKpiCard
+              label="Project Total"
+              value={toMoney(contractSummary.contractValue)}
+              helper="incl. approved variations"
+              icon={<DollarSign className="h-5 w-5" strokeWidth={2.1} />}
+            />
+            <OperationalKpiCard
+              label="Submitted"
+              value={toMoney(contractSummary.dueValue)}
+              helper={`${contractSummary.dueClaimsCount} claim${contractSummary.dueClaimsCount !== 1 ? "s" : ""} awaiting payment`}
+              icon={<Clock className="h-5 w-5" strokeWidth={2.1} />}
+              trend="neutral"
+            />
+            <OperationalKpiCard
+              label="Paid"
+              value={toMoney(contractSummary.paidValue)}
+              helper={`${contractSummary.paidClaimsCount} claim${contractSummary.paidClaimsCount !== 1 ? "s" : ""} received`}
+              icon={<CheckCircle2 className="h-5 w-5" strokeWidth={2.1} />}
+              trend="up"
+            />
+            <OperationalKpiCard
+              label="Outstanding"
+              value={toMoney(contractSummary.outstanding)}
+              helper={`${contractSummary.unpaidClaimsCount} claim${contractSummary.unpaidClaimsCount !== 1 ? "s" : ""} unpaid${contractSummary.overdueClaimsCount > 0 ? ` • ${contractSummary.overdueClaimsCount} overdue` : ""}`}
+              icon={<TrendingUp className="h-5 w-5" strokeWidth={2.1} />}
+              trend="down"
+            />
+            <OperationalKpiCard
+              label="Retention"
+              value={toMoney(contractSummary.latestRetentionBalance)}
+              helper="currently held on this project"
+              icon={<Landmark className="h-5 w-5" strokeWidth={2.1} />}
+            />
+          </div>
 
-            {/* Stat cards */}
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-indigo-50">
-                    <DollarSign className="h-5 w-5 text-indigo-500" />
-                  </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Project Total</p>
-                </div>
-                <p
-                  title={toMoney(contractSummary.contractValue)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
-                >
-                  {toMoney(contractSummary.contractValue)}
-                </p>
-                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>incl. approved variations</p>
-              </div>
-              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-amber-50">
-                    <Clock className="h-5 w-5 text-amber-500" />
-                  </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Submitted</p>
-                </div>
-                <p
-                  title={toMoney(contractSummary.dueValue)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
-                >
-                  {toMoney(contractSummary.dueValue)}
-                </p>
-                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-amber-600`}>{contractSummary.dueClaimsCount} claim{contractSummary.dueClaimsCount !== 1 ? "s" : ""} awaiting payment</p>
-              </div>
-              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-emerald-50">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                  </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Paid</p>
-                </div>
-                <p
-                  title={toMoney(contractSummary.paidValue)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
-                >
-                  {toMoney(contractSummary.paidValue)}
-                </p>
-                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-emerald-600`}>{contractSummary.paidClaimsCount} claim{contractSummary.paidClaimsCount !== 1 ? "s" : ""} received</p>
-              </div>
-              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-rose-50">
-                    <TrendingUp className="h-5 w-5 text-rose-500" />
-                  </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Outstanding</p>
-                </div>
-                <p
-                  title={toMoney(contractSummary.outstanding)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
-                >
-                  {toMoney(contractSummary.outstanding)}
-                </p>
-                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>
-                  {contractSummary.unpaidClaimsCount} claim{contractSummary.unpaidClaimsCount !== 1 ? "s" : ""} unpaid
-                  {contractSummary.overdueClaimsCount > 0 ? ` • ${contractSummary.overdueClaimsCount} overdue` : ""}
-                </p>
-              </div>
-              <div className="flex min-h-[130px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-[2.6rem] w-[2.6rem] items-center justify-center rounded-[1rem] bg-sky-50">
-                    <Landmark className="h-5 w-5 text-sky-500" />
-                  </span>
-                  <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Retention</p>
-                </div>
-                <p
-                  title={toMoney(contractSummary.latestRetentionBalance)}
-                  className={`${ibmPlexSans.className} mt-auto max-w-full truncate pt-3 text-[clamp(1.2rem,2vw,1.8rem)] font-semibold leading-none tracking-[-0.02em] text-[#111827]`}
-                >
-                  {toMoney(contractSummary.latestRetentionBalance)}
-                </p>
-                <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-sky-600`}>currently held on this project</p>
-              </div>
-            </div>
-
-            {/* Table */}
-            {claims.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-[#D7E1EC] bg-[#F8FAFC] px-6 py-14 text-center">
-                <p className={`${interMedium.className} text-sm font-medium text-[#6b6b6b]`}>No claims yet for this project.</p>
+          {claims.length === 0 ? (
+            <OperationalEmptyState
+              title="No claims yet for this project."
+              actions={
                 <Button
                   onClick={() => void createClaimAndOpen()}
                   disabled={isLoading || isCreatingClaim}
-                  className={`${styles.quoteButtonLabel} mt-4 h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
                 >
-                  <Plus className="mr-1 h-4 w-4" />
+                  <Plus className="h-4 w-4" />
                   {isCreatingClaim ? "Creating..." : "Create First Claim"}
                 </Button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-[18px] border border-[#D7E1EC]">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className={headerRowClassName}>
-                      <th className={`w-[130px] ${headerTextCellClassName}`}>Claim #</th>
-                      <th className={`w-[240px] ${headerTextCellClassName}`}>Title</th>
-                      <th className={`w-[110px] ${headerTextCellClassName}`}>Date</th>
-                      <th className={`w-[140px] ${headerTextCellClassName}`}>Status</th>
-                      <th className={`w-[170px] whitespace-nowrap ${headerMoneyCellClassName}`}>Retention Withheld</th>
-                      <th className={`w-[160px] ${headerMoneyCellClassName}`}>Released to Date</th>
-                      <th className={`w-[180px] whitespace-nowrap ${headerMoneyCellClassName}`}>Retention Balance</th>
-                      <th className={`w-[120px] ${headerMoneyCellClassName}`}>Gross</th>
-                      <th className="w-[52px] px-2 py-2.5 text-center" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
-                    {displayedClaims.map((claim) => {
-                      const claimAmount = Number(claim.claim_amount ?? 0);
-                      const paidAmount = Number(claim.paid_amount ?? 0);
-                      const balance = Math.max(0, claimAmount - paidAmount);
+              }
+            />
+          ) : (
+            <OperationalPanel contentClassName="p-0">
+              <OperationalTable>
+                <OperationalTableHeader>
+                  <OperationalTableRow>
+                    <OperationalTableHead className="w-[130px]">Claim #</OperationalTableHead>
+                    <OperationalTableHead className="w-[240px]">Title</OperationalTableHead>
+                    <OperationalTableHead className="w-[110px]">Date</OperationalTableHead>
+                    <OperationalTableHead className="w-[140px]">Status</OperationalTableHead>
+                    <OperationalTableHead className="w-[170px] whitespace-nowrap text-right">Retention Withheld</OperationalTableHead>
+                    <OperationalTableHead className="w-[160px] text-right">Released to Date</OperationalTableHead>
+                    <OperationalTableHead className="w-[180px] whitespace-nowrap text-right">Retention Balance</OperationalTableHead>
+                    <OperationalTableHead className="w-[120px] text-right">Gross</OperationalTableHead>
+                    <OperationalTableHead className="w-[52px]" />
+                  </OperationalTableRow>
+                </OperationalTableHeader>
+                <OperationalTableBody>
+                  {displayedClaims.map((claim) => {
+                    const claimAmount = Number(claim.claim_amount ?? 0);
+                    const paidAmount = Number(claim.paid_amount ?? 0);
+                    const balance = Math.max(0, claimAmount - paidAmount);
+                    const rowBadge = statusBadgeStatus(claim.status);
 
-                      return (
-                        <tr key={claim.id} className="transition-colors">
-                          <td className={`w-[130px] ${bodyPrimaryTextCellClassName} font-semibold`}>
-                            {claim.claim_number}
-                          </td>
-                          <td className={`w-[240px] ${bodyPrimaryTextCellClassName}`}>
-                            {claim.claim_title || "Untitled claim"}
-                          </td>
-                          <td className={`w-[110px] ${bodySecondaryTextCellClassName}`}>
-                            {toDayMonthYearLabel(claim.claim_date)}
-                          </td>
-                          <td className="w-[140px] px-4 py-3 align-middle text-left">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button className={`inline-flex cursor-pointer items-center gap-1 rounded-[8px] border px-2.5 py-0.5 text-[12px] font-medium transition-opacity hover:opacity-80 ${statusClassName(claim.status)}`}>
-                                  {claim.status}
-                                  <ChevronDown className="h-3 w-3 opacity-60" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="start"
-                                className="!z-[200] min-w-[160px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                    return (
+                      <OperationalTableRow key={claim.id}>
+                        <OperationalTableCell className="font-semibold text-[var(--text-primary)]">
+                          {claim.claim_number}
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-[var(--text-primary)]">
+                          {claim.claim_title || "Untitled claim"}
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-[var(--text-secondary)]">
+                          {toDayMonthYearLabel(claim.claim_date)}
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="group inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] transition hover:opacity-80"
                               >
-                                {ALL_CLAIM_STATUSES.map((s) => (
+                                <StatusBadge status={rowBadge}>{claim.status}</StatusBadge>
+                                <ChevronDown className="h-3 w-3 text-[var(--text-muted)]" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="start"
+                              className="!z-[200] min-w-[160px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]"
+                            >
+                              {ALL_CLAIM_STATUSES.map((s) => {
+                                const optionBadge = statusBadgeStatus(s);
+                                return (
                                   <DropdownMenuItem
                                     key={s}
                                     onSelect={() => void updateClaimStatus(claim.id, s)}
-                                    className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium focus:bg-[#F8FAFC] ${claim.status === s ? "text-[#F15A29]" : "text-[#1d2433]"}`}
+                                    className={`h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${claim.status === s ? "text-[var(--orange-primary)]" : "text-[var(--text-primary)]"}`}
                                   >
-                                    <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${statusClassName(s)}`} />
+                                    <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${STATUS_DOT_CLASS_BY_BADGE[optionBadge]}`} />
                                     {s}
                                   </DropdownMenuItem>
-                                ))}
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </OperationalTableCell>
+                        <OperationalTableCell className={bodyMoneyCellClassName}>
+                          {toMoney(Number(claim.retention_withheld_amount ?? 0))}
+                        </OperationalTableCell>
+                        <OperationalTableCell className={bodyMoneyCellClassName}>
+                          {toMoney(Number(claim.retention_released_to_date ?? 0))}
+                        </OperationalTableCell>
+                        <OperationalTableCell className={bodyMoneyCellClassName}>
+                          {toMoney(Number(claim.retention_balance ?? 0))}
+                        </OperationalTableCell>
+                        <OperationalTableCell className={bodyMoneyCellClassName}>
+                          {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
+                        </OperationalTableCell>
+                        <OperationalTableCell className="px-2">
+                          <div className="flex items-center justify-center">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-full"
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Actions</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="!z-[200] min-w-[160px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]"
+                              >
+                                <DropdownMenuItem
+                                  onSelect={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`)}
+                                  className="h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
+                                >
+                                  <Pencil className="mr-2 h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                                  Edit
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
-                          </td>
-                          <td className={`w-[170px] ${bodyMoneyCellClassName}`}>
-                            {toMoney(Number(claim.retention_withheld_amount ?? 0))}
-                          </td>
-                          <td className={`w-[160px] ${bodyMoneyCellClassName}`}>
-                            {toMoney(Number(claim.retention_released_to_date ?? 0))}
-                          </td>
-                          <td className={`w-[180px] ${bodyMoneyCellClassName}`}>
-                            {toMoney(Number(claim.retention_balance ?? 0))}
-                          </td>
-                          <td className={`w-[120px] ${bodyMoneyCellClassName}`}>
-                            {toMoney(balance > 0 ? balance : claimAmount || paidAmount)}
-                          </td>
-                          <td className="w-[52px] px-2 py-3 align-middle">
-                            <div className="flex items-center justify-center">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-full border-[#D7E1EC] bg-white text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#1d2433]"
-                                  >
-                                    <MoreHorizontal className="h-4 w-4" />
-                                    <span className="sr-only">Actions</span>
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  className="!z-[200] min-w-[160px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
-                                >
-                                  <DropdownMenuItem
-                                    onSelect={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/claims/${claim.id}`)}
-                                    className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
-                                  >
-                                    <Pencil className="mr-2 h-3.5 w-3.5 text-[#64748B]" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-[#CBD5E1] bg-[#F6F8FB]">
-                      <td className={`w-[130px] ${footerBlankCellClassName}`} />
-                      <td className={`w-[240px] ${footerBlankCellClassName}`} />
-                      <td className={`w-[110px] ${footerBlankCellClassName}`} />
-                      <td className={`w-[140px] ${footerLabelCellClassName}`}>
-                        Totals
-                      </td>
-                      <td className={`w-[170px] ${footerMoneyCellClassName}`}>
-                        {toMoney(claimsTableTotals.retentionWithheldTotal)}
-                      </td>
-                      <td className={`w-[160px] ${footerMoneyCellClassName}`}>
-                        {toMoney(claimsTableTotals.retentionReleasedTotal)}
-                      </td>
-                      <td className={`w-[180px] ${footerMoneyEmphasisCellClassName}`}>
-                        {toMoney(claimsTableTotals.retentionBalanceTotal)}
-                      </td>
-                      <td className={`w-[120px] ${footerMoneyStrongCellClassName}`}>
-                        {toMoney(claimsTableTotals.grossTotal)}
-                      </td>
-                      <td className="w-[52px] px-2 py-3 align-middle" />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-
-          </div>
-        )}
-      </div>
+                          </div>
+                        </OperationalTableCell>
+                      </OperationalTableRow>
+                    );
+                  })}
+                </OperationalTableBody>
+                <tfoot>
+                  <tr className="border-t-2 border-[var(--border)] bg-[var(--surface-muted)]">
+                    <td className={`w-[130px] ${footerCellClassName}`} />
+                    <td className={`w-[240px] ${footerCellClassName}`} />
+                    <td className={`w-[110px] ${footerCellClassName}`} />
+                    <td className={`w-[140px] ${footerLabelCellClassName}`}>
+                      Totals
+                    </td>
+                    <td className={`w-[170px] ${footerMoneyCellClassName}`}>
+                      {toMoney(claimsTableTotals.retentionWithheldTotal)}
+                    </td>
+                    <td className={`w-[160px] ${footerMoneyCellClassName}`}>
+                      {toMoney(claimsTableTotals.retentionReleasedTotal)}
+                    </td>
+                    <td className={`w-[180px] ${footerMoneyStrongCellClassName}`}>
+                      {toMoney(claimsTableTotals.retentionBalanceTotal)}
+                    </td>
+                    <td className={`w-[120px] ${footerMoneyStrongCellClassName}`}>
+                      {toMoney(claimsTableTotals.grossTotal)}
+                    </td>
+                    <td className={`w-[52px] ${footerCellClassName}`} />
+                  </tr>
+                </tfoot>
+              </OperationalTable>
+            </OperationalPanel>
+          )}
+        </div>
+      )}
     </div>
   );
 }

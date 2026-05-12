@@ -15,7 +15,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm", className)}
+    className={cn("fixed inset-0 z-50 bg-[color-mix(in_srgb,var(--navy-primary)_55%,transparent)] backdrop-blur-sm", className)}
     {...props}
   />
 ));
@@ -30,7 +30,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-[95vw] max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-[6px] border border-white/40 bg-white p-0 shadow-lift outline-none",
+        "fixed left-1/2 top-1/2 z-50 w-[95vw] max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-lg)] border border-[var(--app-border)] bg-[var(--surface)] p-0 text-[var(--text-primary)] shadow-[var(--shadow-lg)] outline-none",
         className
       )}
       {...props}
@@ -54,14 +54,16 @@ DialogFooter.displayName = "DialogFooter";
 const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
->(({ className, ...props }, ref) => <DialogPrimitive.Title ref={ref} className={cn("text-lg font-semibold", className)} {...props} />);
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Title ref={ref} className={cn("text-lg font-semibold text-[var(--text-primary)]", className)} {...props} />
+));
 DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
 const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-[hsl(var(--muted-foreground))]", className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-[var(--text-secondary)]", className)} {...props} />
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 

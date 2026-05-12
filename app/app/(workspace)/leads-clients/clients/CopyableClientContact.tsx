@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { ibmPlexSans } from "@/lib/fonts";
 
 type CopyableClientContactProps = {
   label: string;
@@ -40,7 +39,7 @@ export function CopyableClientContact({ label, value, children }: CopyableClient
       <button
         type="button"
         onClick={copyValue}
-        className={`${ibmPlexSans.className} inline-flex items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-[13px] text-[#4B5D79] transition hover:bg-[#EEF3F9] hover:text-[#10283B]`}
+        className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-1 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
         title={`Copy ${label}`}
         aria-label={`Copy ${label}: ${value}`}
       >
@@ -49,7 +48,7 @@ export function CopyableClientContact({ label, value, children }: CopyableClient
       </button>
       <span
         aria-live="polite"
-        className={`${ibmPlexSans.className} text-[12px] font-semibold ${copied ? "text-[#15803D]" : "text-transparent"}`}
+        className={`text-xs font-semibold ${copied ? "text-[var(--success)]" : "text-transparent"}`}
       >
         Copied
       </span>

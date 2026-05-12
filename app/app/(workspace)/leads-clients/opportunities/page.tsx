@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { Search, TrendingUp, DollarSign, CheckCircle2, Clock } from "lucide-react";
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ibmPlexSans } from "@/lib/fonts";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import { OpportunitiesTable } from "./OpportunitiesTable";
 import { NewOpportunityDialog } from "./NewOpportunityDialog";
-import styles from "./opportunities.module.css";
 
 const SUBMITTED_QUOTE_STATUSES: QuoteStatus[] = ["Sent", "Viewed", "Accepted"];
 
@@ -28,34 +32,12 @@ function getDaysUntilIso(isoDate: string | null): number | null {
   return Math.ceil((dueMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-  icon,
-  iconBg,
-  iconColor,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: React.ReactNode;
-  iconBg: string;
-  iconColor?: string;
-}) {
-  return (
-    <div className="flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center gap-3">
-        <span className={`inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] ${iconBg}`}>
-          {icon}
-        </span>
-        <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>{label}</p>
-      </div>
-      <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{value}</p>
-      <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium ${iconColor ?? "text-[#4B5D79]"}`}>{sub}</p>
-    </div>
-  );
-}
+const TABS = [
+  { key: "active", label: "Upcoming Quotes" },
+  { key: "past", label: "Outstanding Quotes" },
+  { key: "won", label: "Won" },
+  { key: "closed", label: "Lost" },
+] as const;
 
 export default async function LeadsClientsOpportunitiesPage({
   searchParams,
@@ -154,119 +136,77 @@ export default async function LeadsClientsOpportunitiesPage({
       : "Upcoming quotes";
 
   return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.page} space-y-6 pb-8`}>
-      {/* ── Header ── */}
-      <section className={styles.heroBlock}>
-        <div className={styles.heroCopy}>
-          <h1 className={styles.heroTitle}>Opportunities</h1>
-          <p className={`${interMedium.className} ${styles.heroSummary}`}>Manage your sales pipeline and track quotes</p>
-        </div>
-        <div className={styles.heroActions}>
-          <NewOpportunityDialog />
-        </div>
-      </section>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+      <OperationalPageHeader
+        title="Opportunities"
+        description="Manage your sales pipeline and track quotes"
+        actions={<NewOpportunityDialog />}
+      />
 
-      {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
+        <OperationalKpiCard
           label="Submitted Quote Value"
           value={formatCurrencyCompactNZD(submittedQuoteValue)}
-          sub={`${submittedQuoteCount} submitted quotes`}
-          icon={<DollarSign className="h-5 w-5 text-[#D9E6F2]" strokeWidth={2.2} />}
-          iconBg="bg-[#0E172B]"
-          iconColor="text-[#0E172B]"
+          helper={`${submittedQuoteCount} submitted quotes`}
+          icon={<DollarSign className="h-5 w-5" strokeWidth={2.2} />}
         />
-        <StatCard
+        <OperationalKpiCard
           label="Win Rate"
           value={`${winRate}%`}
-          sub="Last 6 months average"
-          icon={<TrendingUp className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />}
-          iconBg="bg-[#FFE5D9]"
-          iconColor="text-[#F15A29]"
+          helper="Last 6 months average"
+          icon={<TrendingUp className="h-5 w-5" strokeWidth={2.2} />}
         />
-        <StatCard
+        <OperationalKpiCard
           label="Quotes This Month"
           value={String(quotesThisMonth)}
-          sub={now.toLocaleString("en-NZ", { month: "long", year: "numeric" })}
-          icon={<CheckCircle2 className="h-5 w-5 text-[#18384C]" strokeWidth={2.2} />}
-          iconBg="bg-[#DFF1E5]"
-          iconColor="text-[#18384C]"
+          helper={now.toLocaleString("en-NZ", { month: "long", year: "numeric" })}
+          icon={<CheckCircle2 className="h-5 w-5" strokeWidth={2.2} />}
         />
-        <StatCard
+        <OperationalKpiCard
           label="Due This Week"
           value={String(dueThisWeek)}
-          sub="Tenders closing soon"
-          icon={<Clock className="h-5 w-5 text-[#F15A29]" strokeWidth={2.2} />}
-          iconBg="bg-[#FFE5D9]"
-          iconColor="text-[#F15A29]"
+          helper="Tenders closing soon"
+          icon={<Clock className="h-5 w-5" strokeWidth={2.2} />}
         />
       </div>
 
-      {/* ── Tabs ── */}
-      <div className="flex items-center gap-2">
-        <Link
-          href={`/app/leads-clients/opportunities?tab=active${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
-            tab === "active"
-              ? "bg-[#F15A29] text-white shadow-sm"
-              : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
-          }`}
-        >
-          Upcoming Quotes
-        </Link>
-        <Link
-          href={`/app/leads-clients/opportunities?tab=past${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
-            tab === "past"
-              ? "bg-[#F15A29] text-white shadow-sm"
-              : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
-          }`}
-        >
-          Outstanding Quotes
-        </Link>
-        <Link
-          href={`/app/leads-clients/opportunities?tab=won${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
-            tab === "won"
-              ? "bg-[#F15A29] text-white shadow-sm"
-              : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
-          }`}
-        >
-          Won
-        </Link>
-        <Link
-          href={`/app/leads-clients/opportunities?tab=closed${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
-            tab === "closed"
-              ? "bg-[#F15A29] text-white shadow-sm"
-              : "bg-white border border-[#E9ECF2] text-[#5D708C] hover:bg-[#F7F9FC]"
-          }`}
-        >
-          Lost
-        </Link>
+      <div className="flex flex-wrap items-center gap-2">
+        {TABS.map((entry) => (
+          <Button
+            key={entry.key}
+            asChild
+            variant={tab === entry.key ? "primary" : "secondary"}
+            size="sm"
+          >
+            <Link
+              href={`/app/leads-clients/opportunities?tab=${entry.key}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+            >
+              {entry.label}
+            </Link>
+          </Button>
+        ))}
       </div>
 
-      {/* ── Table section ── */}
-      <div className="overflow-hidden rounded-[14px] border border-[#E9ECF2] bg-white shadow-[0_1px_4px_rgba(15,23,42,0.05)]">
-        {/* Table header */}
-        <div className="flex items-center justify-between border-b border-[#E9ECF2] px-5 py-4">
-          <h2 className={ibmPlexSans.className} style={{ margin: 0, fontSize: "1.4rem", lineHeight: 1, letterSpacing: "-0.03em", fontWeight: 600, color: "#15212b" }}>{sectionLabel}</h2>
-          <form method="get">
+      <OperationalPanel
+        title={sectionLabel}
+        actions={
+          <form method="get" className="flex items-center gap-2">
             <input type="hidden" name="tab" value={tab} />
-            <label className="flex items-center gap-2 rounded-lg border border-[#E9ECF2] bg-[#F7F9FC] px-3 py-2 focus-within:border-[#9DB5D0] focus-within:bg-white transition-all">
-              <Search className="h-3.5 w-3.5 shrink-0 text-[#9BAABB]" strokeWidth={2} />
-              <input
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+              <Input
                 name="q"
                 defaultValue={q}
                 placeholder="Search opportunities..."
-                className="w-48 bg-transparent text-[13px] text-[#2C4460] outline-none placeholder:text-[#9BAABB]"
+                className="w-64 pl-9"
               />
-            </label>
+            </div>
           </form>
-        </div>
-
+        }
+        contentClassName="p-0"
+      >
         <OpportunitiesTable rows={searchedRows} />
-      </div>
+      </OperationalPanel>
     </main>
   );
 }

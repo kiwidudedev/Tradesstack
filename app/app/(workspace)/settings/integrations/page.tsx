@@ -3,14 +3,14 @@ import { interMedium } from "@/lib/fonts";
 
 export default function IntegrationsPage() {
   return (
-    <Card className="rounded-[22px] border border-[#D9DEE5] bg-white shadow-none">
+    <Card className="rounded-[var(--radius-xl)] border border-[var(--app-border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
       <CardHeader className="pb-4 pt-4">
-        <CardTitle className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1d2433]">
+        <CardTitle className="text-[19px] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--text-primary)]">
           Integrations
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <p className={`${interMedium.className} text-sm font-medium text-[#5F7390]`}>
+        <p className={`${interMedium.className} text-sm font-medium text-[var(--text-secondary)]`}>
           Integrations section is ready for connected services and API controls.
         </p>
       </CardContent>

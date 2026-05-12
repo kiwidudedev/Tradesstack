@@ -49,11 +49,11 @@ export function ActivityCard({ items }: { items: RecentActivityItem[] }) {
   return (
     <Card className="relative overflow-hidden rounded-none border-0 bg-transparent shadow-none">
       <CardHeader className="px-0 pb-5 pt-0">
-        <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">Recent Activity</CardTitle>
+        <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[var(--text-primary)]">Recent Activity</CardTitle>
       </CardHeader>
-      <CardContent className="rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] p-0">
+      <CardContent className="rounded-[var(--radius-sm)] border border-[var(--app-border)] bg-[var(--surface-subtle)] p-0">
         {items.length > 0 ? (
-          <ul className="divide-y divide-[#E6EAF0]">
+          <ul className="divide-y divide-[var(--app-border)]">
             {items.map((item) => {
               const { eventLabel, sourceLabel } = parseActivityLabel(item.label);
 
@@ -61,21 +61,21 @@ export function ActivityCard({ items }: { items: RecentActivityItem[] }) {
                 <li key={item.id}>
                   <Link
                     href={item.href}
-                    className={`${interMedium.className} grid grid-cols-[auto_1fr_auto] items-start gap-4 px-5 py-4 text-sm transition-colors hover:bg-[#F8FAFC]`}
+                    className={`${interMedium.className} grid grid-cols-[auto_1fr_auto] items-start gap-4 px-5 py-4 text-sm transition-colors hover:bg-[var(--surface)]`}
                   >
-                    <span className="mt-1 inline-flex h-2.5 w-2.5 rounded-[6px] bg-[#F74917]" />
+                    <span className="mt-1 inline-flex h-2.5 w-2.5 rounded-[var(--radius-sm)] bg-[var(--orange-primary)]" />
                     <span>
-                      <span className="block font-semibold text-[#0F172A]">{eventLabel}</span>
-                      <span className="mt-1 block text-[#64748B]">{sourceLabel}</span>
+                      <span className="block font-semibold text-[var(--text-primary)]">{eventLabel}</span>
+                      <span className="mt-1 block text-[var(--text-secondary)]">{sourceLabel}</span>
                     </span>
-                    <span className="text-[#64748B]">{formatOccurredAt(item.occurredAt)}</span>
+                    <span className="text-[var(--text-secondary)]">{formatOccurredAt(item.occurredAt)}</span>
                   </Link>
                 </li>
               );
             })}
           </ul>
         ) : (
-          <div className={`${interMedium.className} rounded-[6px] px-5 py-4 text-sm font-medium text-[#64748B]`}>
+          <div className={`${interMedium.className} rounded-[var(--radius-sm)] px-5 py-4 text-sm font-medium text-[var(--text-secondary)]`}>
             No recent activity yet.
           </div>
         )}

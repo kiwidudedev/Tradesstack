@@ -2,10 +2,21 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import {
+  OperationalTable,
+  OperationalTableBody,
+  OperationalTableCell,
+  OperationalTableHead,
+  OperationalTableHeader,
+  OperationalTableRow,
+} from "@/components/app/OperationalTable";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import { ibmPlexSans } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type {
   AccountingResolutionPreviewRow,
@@ -129,18 +140,21 @@ function formatAdvancedStatus(value: AccountingResolutionPreviewRow["resolution"
   }
 }
 
-function statusClassName(value: AccountingResolutionPreviewRow["resolution"]["status"]) {
+function resolutionStatusBadge(value: AccountingResolutionPreviewRow["resolution"]["status"]): NonNullable<StatusBadgeProps["status"]> {
   switch (value) {
     case "resolved":
-      return "border-[#CDE9DA] bg-[#EAF8F1] text-[#166534]";
+      return "approved";
     case "fallback":
-      return "border-[#D7E3F7] bg-[#EEF4FF] text-[#285EA8]";
+      return "sent";
     case "classification_review_required":
-      return "border-[#F0E1A8] bg-[#FBF2C8] text-[#8A6A00]";
+      return "pending";
     default:
-      return "border-[#F4CCCC] bg-[#FFF1F1] text-[#9F2F2F]";
+      return "overdue";
   }
 }
+
+const SELECT_CLASS =
+  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2";
 
 function findActiveRule(
   mappingRules: OrganizationCostCodeMappingRuleRow[],
@@ -683,797 +697,535 @@ export function CompanyCostCodesWorkspace({
     });
   };
 
-  return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
-      <section className="pt-[25px]">
-        <div className="max-w-[760px]">
-          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
-            Cost Codes
-          </h1>
-          <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
-            Configure the company cost codes Tradesstack should use for accounting exports, default routing,
-            and advanced mapping rules.
-          </p>
+  const renderCostCodeEditRow = (rowKey: string, statusLabel: string) => (
+    <OperationalTableRow key={rowKey} className="bg-[var(--surface-muted)] align-top hover:bg-[var(--surface-muted)]">
+      <OperationalTableCell>
+        <Input
+          value={codeForm.code}
+          onChange={(event) => setCodeForm((current) => ({ ...current, code: event.target.value }))}
+          placeholder="200"
+          disabled={!canEdit || isPending}
+        />
+      </OperationalTableCell>
+      <OperationalTableCell>
+        <Input
+          value={codeForm.name}
+          onChange={(event) => setCodeForm((current) => ({ ...current, name: event.target.value }))}
+          placeholder="Material"
+          disabled={!canEdit || isPending}
+        />
+      </OperationalTableCell>
+      <OperationalTableCell>
+        <Input
+          value={codeForm.description}
+          onChange={(event) => setCodeForm((current) => ({ ...current, description: event.target.value }))}
+          placeholder="Optional note for your finance team"
+          disabled={!canEdit || isPending}
+        />
+      </OperationalTableCell>
+      <OperationalTableCell>
+        <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+          <input
+            type="checkbox"
+            checked={codeForm.isDefault}
+            onChange={(event) => setCodeForm((current) => ({ ...current, isDefault: event.target.checked }))}
+            disabled={!canEdit || isPending}
+          />
+          Default
+        </label>
+      </OperationalTableCell>
+      <OperationalTableCell className="text-sm text-[var(--text-secondary)]">{statusLabel}</OperationalTableCell>
+      <OperationalTableCell>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={resetCodeForm} disabled={!canEdit || isPending}>
+            Cancel
+          </Button>
+          <Button type="button" size="sm" onClick={handleSaveCostCode} disabled={!canEdit || isPending}>
+            Save
+          </Button>
         </div>
-      </section>
+      </OperationalTableCell>
+    </OperationalTableRow>
+  );
+
+  return (
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+      <OperationalPageHeader
+        title="Cost Codes"
+        description="Configure the company cost codes Tradesstack should use for accounting exports, default routing, and advanced mapping rules."
+      />
 
       <div className="space-y-3">
         {!canEdit ? (
-          <div className="rounded-[12px] border border-[#F0E1A8] bg-[#FBF2C8] px-4 py-3">
-            <p className={`${interMedium.className} text-[14px] text-[#8A6A00]`}>
+          <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3">
+            <p className="text-sm text-[var(--warning)]">
               You can review company cost code setup here, but only owner and admin roles can change it.
             </p>
           </div>
         ) : null}
         {error ? (
-          <div className="rounded-[12px] border border-[#F4CCCC] bg-[#FFF1F1] px-4 py-3">
-            <p className={`${interMedium.className} text-[14px] text-[#9F2F2F]`}>{error}</p>
+          <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3">
+            <p className="text-sm text-[var(--error)]">{error}</p>
           </div>
         ) : null}
         {message ? (
-          <div className="rounded-[12px] border border-[#CDE9DA] bg-[#EAF8F1] px-4 py-3">
-            <p className={`${interMedium.className} text-[14px] text-[#166534]`}>{message}</p>
+          <div className="rounded-[var(--radius-md)] border border-[var(--success-light)] bg-[var(--success-light)] px-4 py-3">
+            <p className="text-sm text-[var(--success)]">{message}</p>
           </div>
         ) : null}
       </div>
 
-      <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]">
-              Company Cost Codes
-            </CardTitle>
-            <Button
-              type="button"
-              onClick={handleStartAddCostCode}
-              disabled={!canEdit || isPending || editingCostCodeId === NEW_COST_CODE_ROW_ID}
-              className="rounded-[0.5rem] bg-[#0B2739] hover:bg-[#081D2B]"
-            >
-              Add Cost Code
-            </Button>
+      <OperationalPanel
+        title="Company Cost Codes"
+        actions={
+          <Button
+            type="button"
+            onClick={handleStartAddCostCode}
+            disabled={!canEdit || isPending || editingCostCodeId === NEW_COST_CODE_ROW_ID}
+          >
+            Add Cost Code
+          </Button>
+        }
+        contentClassName="p-0"
+      >
+        {costCodes.length === 0 && editingCostCodeId !== NEW_COST_CODE_ROW_ID ? (
+          <div className="p-6">
+            <OperationalEmptyState title="No company cost codes yet. Add your first code to start mapping finalized cost items." />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {costCodes.length === 0 ? (
-            editingCostCodeId === NEW_COST_CODE_ROW_ID ? (
-              <div className="overflow-hidden rounded-[12px] border border-[#E2E8F1]">
-                <div className="grid grid-cols-[110px_170px_minmax(0,1fr)_110px_120px_auto] gap-3 border-b border-[#E2E8F1] bg-[#F8FAFB] px-5 py-3">
-                  {["Code", "Name", "Description", "Default", "Status", "Action"].map((heading) => (
-                    <span
-                      key={heading}
-                      className={`${ibmPlexSans.className} text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
-                    >
-                      {heading}
-                    </span>
-                  ))}
-                </div>
-                <div className="grid grid-cols-[110px_170px_minmax(0,1fr)_110px_120px_auto] gap-3 bg-[#FFFDFC] px-5 py-4">
-                  <Input
-                    value={codeForm.code}
-                    onChange={(event) => setCodeForm((current) => ({ ...current, code: event.target.value }))}
-                    placeholder="200"
-                    disabled={!canEdit || isPending}
-                    className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                  />
-                  <Input
-                    value={codeForm.name}
-                    onChange={(event) => setCodeForm((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Material"
-                    disabled={!canEdit || isPending}
-                    className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                  />
-                  <Input
-                    value={codeForm.description}
-                    onChange={(event) =>
-                      setCodeForm((current) => ({ ...current, description: event.target.value }))
-                    }
-                    placeholder="Optional note for your finance team"
-                    disabled={!canEdit || isPending}
-                    className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                  />
-                  <label className={`${ibmPlexSans.className} flex h-[42px] items-center gap-2 text-[13px] text-[#475569]`}>
-                    <input
-                      type="checkbox"
-                      checked={codeForm.isDefault}
-                      onChange={(event) =>
-                        setCodeForm((current) => ({ ...current, isDefault: event.target.checked }))
-                      }
-                      disabled={!canEdit || isPending}
-                    />
-                    Default
-                  </label>
-                  <span className={`${ibmPlexSans.className} flex h-[42px] items-center text-[13px] text-[#64748B]`}>
-                    New
-                  </span>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={resetCodeForm}
-                      disabled={!canEdit || isPending}
-                      className="rounded-[0.5rem]"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleSaveCostCode}
-                      disabled={!canEdit || isPending}
-                      className="rounded-[0.5rem] bg-[#0B2739] hover:bg-[#081D2B]"
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
-                <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
-                  No company cost codes yet. Add your first code to start mapping finalized cost items.
-                </p>
-              </div>
-            )
-          ) : (
-            <div className="overflow-hidden rounded-[12px] border border-[#E2E8F1]">
-              <div className="grid grid-cols-[110px_170px_minmax(0,1fr)_110px_120px_auto] gap-3 border-b border-[#E2E8F1] bg-[#F8FAFB] px-5 py-3">
-                {["Code", "Name", "Description", "Default", "Status", "Action"].map((heading) => (
-                  <span
-                    key={heading}
-                    className={`${ibmPlexSans.className} text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
-                  >
-                    {heading}
-                  </span>
-                ))}
-              </div>
-              {editingCostCodeId === NEW_COST_CODE_ROW_ID ? (
-                <div className="grid grid-cols-[110px_170px_minmax(0,1fr)_110px_120px_auto] gap-3 border-b border-[#E2E8F1] bg-[#FFFDFC] px-5 py-4">
-                  <Input
-                    value={codeForm.code}
-                    onChange={(event) => setCodeForm((current) => ({ ...current, code: event.target.value }))}
-                    placeholder="200"
-                    disabled={!canEdit || isPending}
-                    className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                  />
-                  <Input
-                    value={codeForm.name}
-                    onChange={(event) => setCodeForm((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Material"
-                    disabled={!canEdit || isPending}
-                    className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                  />
-                  <Input
-                    value={codeForm.description}
-                    onChange={(event) =>
-                      setCodeForm((current) => ({ ...current, description: event.target.value }))
-                    }
-                    placeholder="Optional note for your finance team"
-                    disabled={!canEdit || isPending}
-                    className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                  />
-                  <label className={`${ibmPlexSans.className} flex h-[42px] items-center gap-2 text-[13px] text-[#475569]`}>
-                    <input
-                      type="checkbox"
-                      checked={codeForm.isDefault}
-                      onChange={(event) =>
-                        setCodeForm((current) => ({ ...current, isDefault: event.target.checked }))
-                      }
-                      disabled={!canEdit || isPending}
-                    />
-                    Default
-                  </label>
-                  <span className={`${ibmPlexSans.className} flex h-[42px] items-center text-[13px] text-[#64748B]`}>
-                    New
-                  </span>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={resetCodeForm}
-                      disabled={!canEdit || isPending}
-                      className="rounded-[0.5rem]"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleSaveCostCode}
-                      disabled={!canEdit || isPending}
-                      className="rounded-[0.5rem] bg-[#0B2739] hover:bg-[#081D2B]"
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-              {costCodes.map((costCode) => (
+        ) : (
+          <OperationalTable>
+            <OperationalTableHeader>
+              <OperationalTableRow>
+                <OperationalTableHead>Code</OperationalTableHead>
+                <OperationalTableHead>Name</OperationalTableHead>
+                <OperationalTableHead>Description</OperationalTableHead>
+                <OperationalTableHead>Default</OperationalTableHead>
+                <OperationalTableHead>Status</OperationalTableHead>
+                <OperationalTableHead className="text-right">Action</OperationalTableHead>
+              </OperationalTableRow>
+            </OperationalTableHeader>
+            <OperationalTableBody>
+              {editingCostCodeId === NEW_COST_CODE_ROW_ID ? renderCostCodeEditRow("__new-row__", "New") : null}
+              {costCodes.map((costCode) =>
                 editingCostCodeId === costCode.id ? (
-                  <div
-                    key={costCode.id}
-                    className="grid grid-cols-[110px_170px_minmax(0,1fr)_110px_120px_auto] gap-3 border-b border-[#E2E8F1] bg-[#FFFDFC] px-5 py-4 text-sm last:border-b-0"
-                  >
-                    <Input
-                      value={codeForm.code}
-                      onChange={(event) => setCodeForm((current) => ({ ...current, code: event.target.value }))}
-                      placeholder="200"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                    <Input
-                      value={codeForm.name}
-                      onChange={(event) => setCodeForm((current) => ({ ...current, name: event.target.value }))}
-                      placeholder="Material"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                    <Input
-                      value={codeForm.description}
+                  renderCostCodeEditRow(costCode.id, "Editing")
+                ) : (
+                  <OperationalTableRow key={costCode.id}>
+                    <OperationalTableCell className="font-semibold">{costCode.code}</OperationalTableCell>
+                    <OperationalTableCell className="font-semibold">{costCode.name}</OperationalTableCell>
+                    <OperationalTableCell className="text-[var(--text-secondary)]">
+                      <div className="max-w-[360px] truncate">{costCode.description || "No description"}</div>
+                    </OperationalTableCell>
+                    <OperationalTableCell>
+                      <StatusBadge status={costCode.is_default ? "sent" : "draft"}>
+                        {costCode.is_default ? "Default" : "Optional"}
+                      </StatusBadge>
+                    </OperationalTableCell>
+                    <OperationalTableCell>
+                      <StatusBadge status={costCode.is_active ? "approved" : "draft"}>
+                        {costCode.is_active ? "Active" : "Archived"}
+                      </StatusBadge>
+                    </OperationalTableCell>
+                    <OperationalTableCell>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleEditCostCode(costCode)}
+                          disabled={!canEdit || isPending}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleToggleDefaultCostCode(costCode.id, !costCode.is_default)}
+                          disabled={!canEdit || isPending || !costCode.is_active}
+                        >
+                          {costCode.is_default ? "Clear Default" : "Set Default"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleToggleCostCodeActive(costCode.id, !costCode.is_active)}
+                          disabled={!canEdit || isPending}
+                        >
+                          {costCode.is_active ? "Archive" : "Restore"}
+                        </Button>
+                      </div>
+                    </OperationalTableCell>
+                  </OperationalTableRow>
+                )
+              )}
+            </OperationalTableBody>
+          </OperationalTable>
+        )}
+      </OperationalPanel>
+
+      <OperationalPanel
+        title="Quick Setup"
+        description="Assign the most common cost categories first. These defaults cover the majority of accounting mappings without needing advanced rules."
+      >
+        <div className="space-y-3">
+          {QUICK_SETUP_OPTIONS.map((option) => (
+            <div key={option.key} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] p-4">
+              <label className="mb-2 block text-sm font-medium text-[var(--text-primary)]">{option.label}</label>
+              <select
+                value={quickSetupSelections[option.key]}
+                onChange={(event) =>
+                  setQuickSetupSelections((current) => ({
+                    ...current,
+                    [option.key]: event.target.value,
+                  }))
+                }
+                disabled={!canEdit || isPending || activeCostCodes.length === 0}
+                className={SELECT_CLASS}
+              >
+                <option value="">Not set</option>
+                {activeCostCodes.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.code} - {row.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">{option.help}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end">
+          <Button
+            type="button"
+            onClick={handleSaveQuickSetup}
+            disabled={!canEdit || isPending || activeCostCodes.length === 0}
+          >
+            Save Quick Setup
+          </Button>
+        </div>
+      </OperationalPanel>
+
+      <OperationalPanel
+        title="Items Needing a Company Code"
+        description="These items are already classified by Tradesstack. They only need one of your company cost codes so exports and downstream accounting stay consistent."
+        contentClassName="p-0"
+      >
+        {unresolvedRows.length === 0 ? (
+          <div className="p-6">
+            <OperationalEmptyState title="No items are waiting for a company code right now." />
+          </div>
+        ) : (
+          <OperationalTable className="min-w-[980px]">
+            <OperationalTableHeader>
+              <OperationalTableRow>
+                <OperationalTableHead>Description</OperationalTableHead>
+                <OperationalTableHead>Work Type</OperationalTableHead>
+                <OperationalTableHead>Cost Type</OperationalTableHead>
+                <OperationalTableHead>Choose Company Code</OperationalTableHead>
+                <OperationalTableHead className="text-right">Action</OperationalTableHead>
+              </OperationalTableRow>
+            </OperationalTableHeader>
+            <OperationalTableBody>
+              {unresolvedRows.map((row) => (
+                <OperationalTableRow key={row.costItemId} className="align-top">
+                  <OperationalTableCell>
+                    <div className="max-w-[360px]">
+                      <p className="font-semibold text-[var(--text-primary)]">
+                        {row.description || row.title || row.sourceDocumentKind}
+                      </p>
+                      {row.projectName ? (
+                        <p className="mt-1 text-sm text-[var(--text-muted)]">{row.projectName}</p>
+                      ) : null}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">
+                          Advanced details
+                        </summary>
+                        <div className="mt-2 text-xs text-[var(--text-secondary)]">
+                          <p>Tradesstack code: {row.intelligenceCostCode ?? "-"}</p>
+                          <p>Document type: {row.sourceDocumentKind}</p>
+                        </div>
+                      </details>
+                    </div>
+                  </OperationalTableCell>
+                  <OperationalTableCell>{row.workType ?? "-"}</OperationalTableCell>
+                  <OperationalTableCell>{row.costType ?? "-"}</OperationalTableCell>
+                  <OperationalTableCell>
+                    <select
+                      value={reviewSelections[row.costItemId] ?? ""}
                       onChange={(event) =>
-                        setCodeForm((current) => ({ ...current, description: event.target.value }))
+                        setReviewSelections((current) => ({
+                          ...current,
+                          [row.costItemId]: event.target.value,
+                        }))
                       }
-                      placeholder="Optional note for your finance team"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                    <label className={`${ibmPlexSans.className} flex h-[42px] items-center gap-2 text-[13px] text-[#475569]`}>
-                      <input
-                        type="checkbox"
-                        checked={codeForm.isDefault}
-                        onChange={(event) =>
-                          setCodeForm((current) => ({ ...current, isDefault: event.target.checked }))
-                        }
-                        disabled={!canEdit || isPending}
-                      />
-                      Default
-                    </label>
-                    <span className={`${ibmPlexSans.className} flex h-[42px] items-center text-[13px] text-[#64748B]`}>
-                      Editing
-                    </span>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      disabled={!canEdit || isPending || activeCostCodes.length === 0}
+                      className={SELECT_CLASS}
+                    >
+                      <option value="">Choose a company code</option>
+                      {activeCostCodes.map((costCode) => (
+                        <option key={costCode.id} value={costCode.id}>
+                          {costCode.code} - {costCode.name}
+                        </option>
+                      ))}
+                    </select>
+                  </OperationalTableCell>
+                  <OperationalTableCell>
+                    <div className="flex justify-end">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="secondary"
                         size="sm"
-                        onClick={resetCodeForm}
-                        disabled={!canEdit || isPending}
-                        className="rounded-[0.5rem]"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleSaveCostCode}
-                        disabled={!canEdit || isPending}
-                        className="rounded-[0.5rem] bg-[#0B2739] hover:bg-[#081D2B]"
+                        onClick={() => handleApplyReviewSelection(row)}
+                        disabled={!canEdit || isPending || !reviewSelections[row.costItemId]}
                       >
                         Save
                       </Button>
                     </div>
-                  </div>
-                ) : (
-                  <div
-                    key={costCode.id}
-                    className="grid grid-cols-[110px_170px_minmax(0,1fr)_110px_120px_auto] gap-3 border-b border-[#E2E8F1] px-5 py-4 text-sm last:border-b-0"
-                  >
-                    <span className={`${ibmPlexSans.className} font-semibold text-[#10283B]`}>{costCode.code}</span>
-                    <p className={`${ibmPlexSans.className} truncate text-[14px] font-semibold text-[#10283B]`}>
-                      {costCode.name}
-                    </p>
-                    <div className="min-w-0">
-                      <p className={`${interMedium.className} truncate text-[13px] text-[#6A7A89]`}>
-                        {costCode.description || "No description"}
-                      </p>
-                    </div>
-                    <span className={`${ibmPlexSans.className} inline-flex h-fit rounded-full border px-2.5 py-1 text-[12px] font-semibold ${
-                      costCode.is_default
-                        ? "border-[#D7E3F7] bg-[#EEF4FF] text-[#285EA8]"
-                        : "border-[#E2E8F1] bg-[#F8FAFB] text-[#64748B]"
-                    }`}>
-                      {costCode.is_default ? "Default" : "Optional"}
-                    </span>
-                    <span
-                      className={`${ibmPlexSans.className} inline-flex h-fit rounded-full border px-2.5 py-1 text-[12px] font-semibold ${
-                        costCode.is_active
-                          ? "border-[#CDE9DA] bg-[#EAF8F1] text-[#166534]"
-                          : "border-[#E2E8F1] bg-[#F8FAFB] text-[#64748B]"
-                      }`}
-                    >
-                      {costCode.is_active ? "Active" : "Archived"}
-                    </span>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-[0.5rem]"
-                        onClick={() => handleEditCostCode(costCode)}
-                        disabled={!canEdit || isPending}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-[0.5rem]"
-                        onClick={() => handleToggleDefaultCostCode(costCode.id, !costCode.is_default)}
-                        disabled={!canEdit || isPending || !costCode.is_active}
-                      >
-                        {costCode.is_default ? "Clear Default" : "Set Default"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-[0.5rem]"
-                        onClick={() => handleToggleCostCodeActive(costCode.id, !costCode.is_active)}
-                        disabled={!canEdit || isPending}
-                      >
-                        {costCode.is_active ? "Archive" : "Restore"}
-                      </Button>
-                    </div>
-                  </div>
-                )
+                  </OperationalTableCell>
+                </OperationalTableRow>
               ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </OperationalTableBody>
+          </OperationalTable>
+        )}
+      </OperationalPanel>
 
-      <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]">
-            Quick Setup
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className={`${interMedium.className} text-[14px] leading-[1.5] text-[#6A7A89]`}>
-            Assign the most common cost categories first. These defaults cover the majority of
-            accounting mappings without needing advanced rules.
-          </p>
-          <div className="space-y-3">
-            {QUICK_SETUP_OPTIONS.map((option) => (
-              <div key={option.key} className="rounded-[12px] border border-[#E2E8F1] bg-[#FBFEFE] p-4">
-                <label className={`${ibmPlexSans.className} mb-2 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                  {option.label}
-                </label>
-                <select
-                  value={quickSetupSelections[option.key]}
-                  onChange={(event) =>
-                    setQuickSetupSelections((current) => ({
-                      ...current,
-                      [option.key]: event.target.value,
-                    }))
-                  }
-                  disabled={!canEdit || isPending || activeCostCodes.length === 0}
-                  className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#10283B]`}
-                >
-                  <option value="">Not set</option>
-                  {activeCostCodes.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.code} - {row.name}
-                    </option>
-                  ))}
-                </select>
-                <p className={`${interMedium.className} mt-2 text-[13px] text-[#6A7A89]`}>{option.help}</p>
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              onClick={handleSaveQuickSetup}
-              disabled={!canEdit || isPending || activeCostCodes.length === 0}
-              className="rounded-[0.5rem] bg-[#0B2739] hover:bg-[#081D2B]"
-            >
-              Save Quick Setup
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-[20px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]">
-            Items Needing a Company Code
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className={`${interMedium.className} text-[14px] leading-[1.5] text-[#6A7A89]`}>
-            These items are already classified by Tradesstack. They only need one of your company cost
-            codes so exports and downstream accounting stay consistent.
-          </p>
-          {unresolvedRows.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
-              <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
-                No items are waiting for a company code right now.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse overflow-hidden rounded-[12px] border border-[#E2E8F1]">
-                <thead>
-                  <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
-                    {["Description", "Work Type", "Cost Type", "Choose Company Code", "Action"].map((heading) => (
-                      <th
-                        key={heading}
-                        className={`${ibmPlexSans.className} px-5 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
-                      >
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {unresolvedRows.map((row) => (
-                    <tr key={row.costItemId} className="border-b border-[#E2E8F1] align-top last:border-b-0">
-                      <td className="px-5 py-4">
-                        <div className="max-w-[360px]">
-                          <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
-                            {row.description || row.title || row.sourceDocumentKind}
-                          </p>
-                          {row.projectName ? (
-                            <p className={`${interMedium.className} mt-1 text-[13px] text-[#94A3B8]`}>
-                              {row.projectName}
-                            </p>
-                          ) : null}
-                          <details className="mt-2">
-                            <summary className={`${interMedium.className} cursor-pointer text-[12px] text-[#64748B]`}>
-                              Advanced details
-                            </summary>
-                            <div className={`${interMedium.className} mt-2 text-[12px] text-[#64748B]`}>
-                              <p>Tradesstack code: {row.intelligenceCostCode ?? "-"}</p>
-                              <p>Document type: {row.sourceDocumentKind}</p>
-                            </div>
-                          </details>
-                        </div>
-                      </td>
-                      <td className={`${ibmPlexSans.className} px-5 py-4 text-[14px] text-[#10283B]`}>
-                        {row.workType ?? "-"}
-                      </td>
-                      <td className={`${ibmPlexSans.className} px-5 py-4 text-[14px] text-[#10283B]`}>
-                        {row.costType ?? "-"}
-                      </td>
-                      <td className="px-5 py-4">
-                        <select
-                          value={reviewSelections[row.costItemId] ?? ""}
-                          onChange={(event) =>
-                            setReviewSelections((current) => ({
-                              ...current,
-                              [row.costItemId]: event.target.value,
-                            }))
-                          }
-                          disabled={!canEdit || isPending || activeCostCodes.length === 0}
-                          className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#10283B]`}
-                        >
-                          <option value="">Choose a company code</option>
-                          {activeCostCodes.map((costCode) => (
-                            <option key={costCode.id} value={costCode.id}>
-                              {costCode.code} - {costCode.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-5 py-4">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="rounded-[0.5rem]"
-                          onClick={() => handleApplyReviewSelection(row)}
-                          disabled={!canEdit || isPending || !reviewSelections[row.costItemId]}
-                        >
-                          Save
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <details className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)]">
-        <summary className={`${ibmPlexSans.className} cursor-pointer list-none px-6 py-5 text-[20px] font-semibold text-[#10283B]`}>
+      <details className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-sm)]">
+        <summary className="cursor-pointer list-none px-6 py-5 text-lg font-semibold text-[var(--text-primary)]">
           Advanced Mapping
         </summary>
-        <div className="space-y-6 border-t border-[#E2E8F1] px-6 py-6">
-          <p className={`${interMedium.className} max-w-[920px] text-[14px] leading-[1.5] text-[#6A7A89]`}>
+        <div className="space-y-6 border-t border-[var(--border)] px-6 py-6">
+          <p className="max-w-3xl text-sm text-[var(--text-secondary)]">
             Use advanced mapping when you need rule-based routing beyond the quick setup defaults. This
             exposes the internal inputs Tradesstack uses when resolving a company cost code.
           </p>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <Card className="overflow-hidden rounded-[12px] border border-[#E2E8F1] bg-[#FCFDFE] shadow-none">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-[18px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]">
-                  Advanced Rule Builder
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Rule Type
-                    </label>
-                    <select
-                      value={advancedRuleForm.ruleType}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({
-                          ...current,
-                          ruleType: event.target.value as OrganizationCostCodeRuleType,
-                        }))
-                      }
-                      disabled={!canEdit || isPending}
-                      className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#10283B]`}
-                    >
-                      {ADVANCED_RULE_TYPE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Target Company Code
-                    </label>
-                    <select
-                      value={advancedRuleForm.targetCostCodeId}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({ ...current, targetCostCodeId: event.target.value }))
-                      }
-                      disabled={!canEdit || isPending}
-                      className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#10283B]`}
-                    >
-                      <option value="">Choose a code</option>
-                      {activeCostCodes.map((row) => (
-                        <option key={row.id} value={row.id}>
-                          {row.code} - {row.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Internal Cost Code
-                    </label>
-                    <Input
-                      value={advancedRuleForm.intelligenceCostCode}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({
-                          ...current,
-                          intelligenceCostCode: event.target.value,
-                        }))
-                      }
-                      placeholder="07.01.MAT"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                  </div>
-                  <div>
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Work Type
-                    </label>
-                    <Input
-                      value={advancedRuleForm.workType}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({ ...current, workType: event.target.value }))
-                      }
-                      placeholder="Wall Linings"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                  </div>
-                  <div>
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Cost Type
-                    </label>
-                    <Input
-                      value={advancedRuleForm.costType}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({ ...current, costType: event.target.value }))
-                      }
-                      placeholder="MAT"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                  </div>
-                  <div>
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Rule Priority
-                    </label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={advancedRuleForm.priority}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({ ...current, priority: event.target.value }))
-                      }
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
-                      Notes
-                    </label>
-                    <Input
-                      value={advancedRuleForm.notes}
-                      onChange={(event) =>
-                        setAdvancedRuleForm((current) => ({ ...current, notes: event.target.value }))
-                      }
-                      placeholder="Optional context for advanced users"
-                      disabled={!canEdit || isPending}
-                      className="h-[42px] rounded-[0.8rem] border-[#E2E8F1]"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={handleCreateAdvancedRule}
-                    disabled={!canEdit || isPending || activeCostCodes.length === 0}
-                    className="rounded-[0.5rem] bg-[#0B2739] hover:bg-[#081D2B]"
+            <OperationalPanel title="Advanced Rule Builder">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">Rule Type</label>
+                  <select
+                    value={advancedRuleForm.ruleType}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({
+                        ...current,
+                        ruleType: event.target.value as OrganizationCostCodeRuleType,
+                      }))
+                    }
+                    disabled={!canEdit || isPending}
+                    className={SELECT_CLASS}
                   >
-                    Save Advanced Rule
-                  </Button>
+                    {ADVANCED_RULE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </CardContent>
-            </Card>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">
+                    Target Company Code
+                  </label>
+                  <select
+                    value={advancedRuleForm.targetCostCodeId}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({ ...current, targetCostCodeId: event.target.value }))
+                    }
+                    disabled={!canEdit || isPending}
+                    className={SELECT_CLASS}
+                  >
+                    <option value="">Choose a code</option>
+                    {activeCostCodes.map((row) => (
+                      <option key={row.id} value={row.id}>
+                        {row.code} - {row.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">
+                    Internal Cost Code
+                  </label>
+                  <Input
+                    value={advancedRuleForm.intelligenceCostCode}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({
+                        ...current,
+                        intelligenceCostCode: event.target.value,
+                      }))
+                    }
+                    placeholder="07.01.MAT"
+                    disabled={!canEdit || isPending}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">Work Type</label>
+                  <Input
+                    value={advancedRuleForm.workType}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({ ...current, workType: event.target.value }))
+                    }
+                    placeholder="Wall Linings"
+                    disabled={!canEdit || isPending}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">Cost Type</label>
+                  <Input
+                    value={advancedRuleForm.costType}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({ ...current, costType: event.target.value }))
+                    }
+                    placeholder="MAT"
+                    disabled={!canEdit || isPending}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">Rule Priority</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={advancedRuleForm.priority}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({ ...current, priority: event.target.value }))
+                    }
+                    disabled={!canEdit || isPending}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">Notes</label>
+                  <Input
+                    value={advancedRuleForm.notes}
+                    onChange={(event) =>
+                      setAdvancedRuleForm((current) => ({ ...current, notes: event.target.value }))
+                    }
+                    placeholder="Optional context for advanced users"
+                    disabled={!canEdit || isPending}
+                  />
+                </div>
+              </div>
+              <div className="mt-5 flex justify-end">
+                <Button
+                  type="button"
+                  onClick={handleCreateAdvancedRule}
+                  disabled={!canEdit || isPending || activeCostCodes.length === 0}
+                >
+                  Save Advanced Rule
+                </Button>
+              </div>
+            </OperationalPanel>
 
             <div className="space-y-6">
-              <Card className="overflow-hidden rounded-[12px] border border-[#E2E8F1] bg-[#FCFDFE] shadow-none">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-[18px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]">
-                    Advanced Mapping List
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {mappingRules.length === 0 ? (
-                    <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-white px-6 py-8 text-center">
-                      <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
-                        No advanced mappings added yet.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-hidden rounded-[12px] border border-[#E2E8F1]">
-                      <div className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_auto_auto] gap-3 border-b border-[#E2E8F1] bg-[#F8FAFB] px-5 py-3">
-                        {["Rule", "Target", "Status", "Action"].map((heading) => (
-                          <span
-                            key={heading}
-                            className={`${ibmPlexSans.className} text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
-                          >
-                            {heading}
-                          </span>
-                        ))}
-                      </div>
+              <OperationalPanel title="Advanced Mapping List" contentClassName="p-0">
+                {mappingRules.length === 0 ? (
+                  <div className="p-6">
+                    <OperationalEmptyState title="No advanced mappings added yet." />
+                  </div>
+                ) : (
+                  <OperationalTable>
+                    <OperationalTableHeader>
+                      <OperationalTableRow>
+                        <OperationalTableHead>Rule</OperationalTableHead>
+                        <OperationalTableHead>Target</OperationalTableHead>
+                        <OperationalTableHead>Status</OperationalTableHead>
+                        <OperationalTableHead className="text-right">Action</OperationalTableHead>
+                      </OperationalTableRow>
+                    </OperationalTableHeader>
+                    <OperationalTableBody>
                       {mappingRules.map((rule) => (
-                        <div
-                          key={rule.id}
-                          className="grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_auto_auto] gap-3 border-b border-[#E2E8F1] px-5 py-4 last:border-b-0"
-                        >
-                          <div className="min-w-0">
-                            <p className={`${ibmPlexSans.className} truncate text-[14px] font-semibold text-[#10283B]`}>
-                              {formatAdvancedRuleLabel(rule)}
+                        <OperationalTableRow key={rule.id} className="align-top">
+                          <OperationalTableCell>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-[var(--text-primary)]">
+                                {formatAdvancedRuleLabel(rule)}
+                              </p>
+                              <p className="truncate text-sm text-[var(--text-secondary)]">Priority {rule.priority}</p>
+                              {rule.notes ? (
+                                <p className="truncate text-sm text-[var(--text-muted)]">{rule.notes}</p>
+                              ) : null}
+                            </div>
+                          </OperationalTableCell>
+                          <OperationalTableCell>
+                            <span className="truncate text-[var(--text-primary)]">
+                              {costCodeNameById.get(rule.target_cost_code_id) ?? "Unknown code"}
+                            </span>
+                          </OperationalTableCell>
+                          <OperationalTableCell>
+                            <StatusBadge status={rule.is_active ? "approved" : "draft"}>
+                              {rule.is_active ? "Active" : "Archived"}
+                            </StatusBadge>
+                          </OperationalTableCell>
+                          <OperationalTableCell>
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleToggleRuleActive(rule.id, !rule.is_active)}
+                                disabled={!canEdit || isPending}
+                              >
+                                {rule.is_active ? "Archive" : "Restore"}
+                              </Button>
+                            </div>
+                          </OperationalTableCell>
+                        </OperationalTableRow>
+                      ))}
+                    </OperationalTableBody>
+                  </OperationalTable>
+                )}
+              </OperationalPanel>
+
+              <OperationalPanel title="Advanced Preview" contentClassName="p-0">
+                {previewRows.length === 0 ? (
+                  <div className="p-6">
+                    <OperationalEmptyState title="No items available for advanced preview yet." />
+                  </div>
+                ) : (
+                  <OperationalTable className="min-w-[900px]">
+                    <OperationalTableHeader>
+                      <OperationalTableRow>
+                        <OperationalTableHead>Tradesstack Detail</OperationalTableHead>
+                        <OperationalTableHead>Work Type</OperationalTableHead>
+                        <OperationalTableHead>Cost Type</OperationalTableHead>
+                        <OperationalTableHead>Company Code</OperationalTableHead>
+                        <OperationalTableHead>Status</OperationalTableHead>
+                      </OperationalTableRow>
+                    </OperationalTableHeader>
+                    <OperationalTableBody>
+                      {previewRows.map((row) => (
+                        <OperationalTableRow key={row.costItemId} className="align-top">
+                          <OperationalTableCell>
+                            <p className="font-semibold text-[var(--text-primary)]">
+                              {row.intelligenceCostCode ?? "Unclassified"}
                             </p>
-                            <p className={`${interMedium.className} truncate text-[13px] text-[#6A7A89]`}>
-                              Priority {rule.priority}
+                            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                              {row.description || row.title || row.sourceDocumentKind}
                             </p>
-                            {rule.notes ? (
-                              <p className={`${interMedium.className} truncate text-[13px] text-[#94A3B8]`}>
-                                {rule.notes}
+                          </OperationalTableCell>
+                          <OperationalTableCell>{row.workType ?? "-"}</OperationalTableCell>
+                          <OperationalTableCell>{row.costType ?? "-"}</OperationalTableCell>
+                          <OperationalTableCell>
+                            <p className="font-semibold text-[var(--text-primary)]">
+                              {row.resolution.code ? `${row.resolution.code} - ${row.resolution.name ?? ""}` : "-"}
+                            </p>
+                            {row.resolution.matchedRuleType ? (
+                              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                                via {row.resolution.matchedRuleType}
                               </p>
                             ) : null}
-                          </div>
-                          <span className={`${ibmPlexSans.className} truncate text-[14px] text-[#10283B]`}>
-                            {costCodeNameById.get(rule.target_cost_code_id) ?? "Unknown code"}
-                          </span>
-                          <span
-                            className={`${ibmPlexSans.className} inline-flex h-fit rounded-full border px-2.5 py-1 text-[12px] font-semibold ${
-                              rule.is_active
-                                ? "border-[#CDE9DA] bg-[#EAF8F1] text-[#166534]"
-                                : "border-[#E2E8F1] bg-[#F8FAFB] text-[#64748B]"
-                            }`}
-                          >
-                            {rule.is_active ? "Active" : "Archived"}
-                          </span>
-                          <div className="flex justify-end">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="rounded-[0.5rem]"
-                              onClick={() => handleToggleRuleActive(rule.id, !rule.is_active)}
-                              disabled={!canEdit || isPending}
-                            >
-                              {rule.is_active ? "Archive" : "Restore"}
-                            </Button>
-                          </div>
-                        </div>
+                          </OperationalTableCell>
+                          <OperationalTableCell>
+                            <StatusBadge status={resolutionStatusBadge(row.resolution.status)}>
+                              {formatAdvancedStatus(row.resolution.status)}
+                            </StatusBadge>
+                          </OperationalTableCell>
+                        </OperationalTableRow>
                       ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="overflow-hidden rounded-[12px] border border-[#E2E8F1] bg-[#FCFDFE] shadow-none">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-[18px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#10283B]">
-                    Advanced Preview
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {previewRows.length === 0 ? (
-                    <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-white px-6 py-8 text-center">
-                      <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>
-                        No items available for advanced preview yet.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[900px] border-collapse overflow-hidden rounded-[12px] border border-[#E2E8F1]">
-                        <thead>
-                          <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
-                            {["Tradesstack Detail", "Work Type", "Cost Type", "Company Code", "Status"].map(
-                              (heading) => (
-                                <th
-                                  key={heading}
-                                  className={`${ibmPlexSans.className} px-5 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
-                                >
-                                  {heading}
-                                </th>
-                              )
-                            )}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {previewRows.map((row) => (
-                            <tr key={row.costItemId} className="border-b border-[#E2E8F1] last:border-b-0">
-                              <td className="px-5 py-4">
-                                <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
-                                  {row.intelligenceCostCode ?? "Unclassified"}
-                                </p>
-                                <p className={`${interMedium.className} mt-1 text-[13px] text-[#6A7A89]`}>
-                                  {row.description || row.title || row.sourceDocumentKind}
-                                </p>
-                              </td>
-                              <td className={`${ibmPlexSans.className} px-5 py-4 text-[14px] text-[#10283B]`}>
-                                {row.workType ?? "-"}
-                              </td>
-                              <td className={`${ibmPlexSans.className} px-5 py-4 text-[14px] text-[#10283B]`}>
-                                {row.costType ?? "-"}
-                              </td>
-                              <td className="px-5 py-4">
-                                <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
-                                  {row.resolution.code ? `${row.resolution.code} - ${row.resolution.name ?? ""}` : "-"}
-                                </p>
-                                {row.resolution.matchedRuleType ? (
-                                  <p className={`${interMedium.className} mt-1 text-[13px] text-[#6A7A89]`}>
-                                    via {row.resolution.matchedRuleType}
-                                  </p>
-                                ) : null}
-                              </td>
-                              <td className="px-5 py-4">
-                                <span
-                                  className={`${ibmPlexSans.className} inline-flex rounded-full border px-2.5 py-1 text-[12px] font-semibold ${statusClassName(row.resolution.status)}`}
-                                >
-                                  {formatAdvancedStatus(row.resolution.status)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    </OperationalTableBody>
+                  </OperationalTable>
+                )}
+              </OperationalPanel>
             </div>
           </div>
         </div>

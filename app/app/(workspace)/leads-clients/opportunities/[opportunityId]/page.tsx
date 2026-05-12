@@ -2,20 +2,22 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Calendar, DollarSign, LayoutGrid, Pencil, TrendingUp } from "lucide-react";
-import {
-  LeadsPageContent,
-  LeadsPanel,
-  leadsBodyLabelStyle,
-  leadsBodyValueStyle,
-  leadsButtonLabelStyle,
-  leadsMetricPanelClassName,
-  leadsPanelClassName,
-  leadsSectionTitleStyle,
-} from "@/components/app/LeadsPagePrimitives";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { getOpportunityWorkspaceData } from "@/lib/opportunity-workspace-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
+
+const MODAL_INPUT_CLASS =
+  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+const MODAL_SELECT_CLASS = MODAL_INPUT_CLASS;
+const MODAL_TEXTAREA_CLASS =
+  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+const SECTION_TITLE_CLASS = "m-0 text-lg font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]";
+const FIELD_LABEL_CLASS = "mb-1.5 block text-sm font-medium text-[var(--text-primary)]";
 
 function formatDateTime(isoDate: string | null | undefined): string {
   if (!isoDate) {
@@ -177,14 +179,14 @@ function formatTaskTableDate(isoDate: string | null | undefined): string {
   });
 }
 
-function getPriorityPillClasses(priority: string | null | undefined): string {
+function getPriorityBadgeStatus(priority: string | null | undefined): NonNullable<StatusBadgeProps["status"]> {
   if (priority === "High") {
-    return "bg-[#FFE3E3] text-[#C2410C]";
+    return "overdue";
   }
   if (priority === "Low") {
-    return "bg-[#E7F7EE] text-[#15803D]";
+    return "approved";
   }
-  return "bg-[#FFF1BF] text-[#B7791F]";
+  return "pending";
 }
 
 function getInitials(name: string): string {
@@ -192,11 +194,6 @@ function getInitials(name: string): string {
   if (parts.length === 0) return "U";
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
-
-const leadDetailsValueStyle = {
-  ...leadsBodyValueStyle,
-  fontWeight: 500,
-} as const;
 
 function isDueToday(isoDate: string | null | undefined): boolean {
   if (!isoDate) {
@@ -512,531 +509,460 @@ export default async function OpportunityWorkspacePage({
   }
 
   return (
-    <LeadsPageContent>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5`}>
-              <div className="flex items-center gap-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
-                  <LayoutGrid className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-                </span>
-                <p style={leadsBodyLabelStyle}>{leadDateCard.label}</p>
-              </div>
-              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
-                {leadDateCard.value}
-              </p>
-              <p className="mt-3 text-[16px] font-medium text-[#F74919]">{leadDateCard.meta}</p>
-            </div>
+    <div className="min-w-0 flex-1 space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <OperationalKpiCard
+          label={leadDateCard.label}
+          value={leadDateCard.value}
+          helper={leadDateCard.meta}
+          icon={<LayoutGrid className="h-5 w-5" strokeWidth={2.1} />}
+        />
 
-            <Link
-              href={activeOpportunity.clientId ? `/app/leads-clients/clients/${activeOpportunity.clientId}` : "/app/leads-clients/clients"}
-              prefetch
-              className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5 transition hover:bg-[var(--app-surface)]`}
-            >
-              <div className="flex items-center gap-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
-                  <TrendingUp className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-                </span>
-                <p style={leadsBodyLabelStyle}>Client conversion rate</p>
-              </div>
-              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
-                {clientConversionRate}%
-              </p>
-              <p className="mt-3 text-[16px] font-medium text-[#F74919]">
-                {clientWonCount} won of {clientOpportunityCount} opportunities
-              </p>
-            </Link>
+        <Link
+          href={activeOpportunity.clientId ? `/app/leads-clients/clients/${activeOpportunity.clientId}` : "/app/leads-clients/clients"}
+          prefetch
+          className="block rounded-[var(--radius-lg)] transition-colors hover:bg-[var(--surface-muted)]/40"
+        >
+          <OperationalKpiCard
+            label="Client conversion rate"
+            value={`${clientConversionRate}%`}
+            helper={`${clientWonCount} won of ${clientOpportunityCount} opportunities`}
+            icon={<TrendingUp className="h-5 w-5" strokeWidth={2.1} />}
+          />
+        </Link>
 
-            <Link
-              href={`/app/leads-clients/opportunities/${opportunityId}/quote`}
-              prefetch
-              className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5 transition hover:bg-[var(--app-surface)]`}
-            >
-              <div className="flex items-center gap-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
-                  <DollarSign className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-                </span>
-                <p style={leadsBodyLabelStyle}>Quote Total</p>
-              </div>
-              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
-                {formatCurrencyNZD(latestQuoteTotal)}
-              </p>
-              <p className="mt-3 text-[16px] font-medium text-[#F74919]">
-                {latestQuoteStatus ? `Latest quote ${latestQuoteStatus.toLowerCase()}` : "Quote not started"}
-              </p>
-            </Link>
+        <Link
+          href={`/app/leads-clients/opportunities/${opportunityId}/quote`}
+          prefetch
+          className="block rounded-[var(--radius-lg)] transition-colors hover:bg-[var(--surface-muted)]/40"
+        >
+          <OperationalKpiCard
+            label="Quote Total"
+            value={formatCurrencyNZD(latestQuoteTotal)}
+            helper={latestQuoteStatus ? `Latest quote ${latestQuoteStatus.toLowerCase()}` : "Quote not started"}
+            icon={<DollarSign className="h-5 w-5" strokeWidth={2.1} />}
+          />
+        </Link>
 
-            <Link
-              href="#lead-todos"
-              className={`${leadsMetricPanelClassName} app-surface flex min-h-[170px] flex-col p-5 transition hover:bg-[var(--app-surface)]`}
-            >
-              <div className="flex items-center gap-4">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]">
-                  <Calendar className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-                </span>
-                <p style={leadsBodyLabelStyle}>Due Today</p>
-              </div>
-              <p className="mt-auto pt-5" style={leadsBodyValueStyle}>
-                {dueTasksTodayCount}
-              </p>
-              <p className="mt-3 text-[16px] font-medium text-[#F74919]">
-                {dueTasksTodayCount === 1 ? "1 task due today" : `${dueTasksTodayCount} tasks due today`}
-              </p>
-            </Link>
+        <Link
+          href="#lead-todos"
+          className="block rounded-[var(--radius-lg)] transition-colors hover:bg-[var(--surface-muted)]/40"
+        >
+          <OperationalKpiCard
+            label="Due Today"
+            value={dueTasksTodayCount}
+            helper={dueTasksTodayCount === 1 ? "1 task due today" : `${dueTasksTodayCount} tasks due today`}
+            icon={<Calendar className="h-5 w-5" strokeWidth={2.1} />}
+          />
+        </Link>
+      </div>
 
-          </div>
-
-          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.945fr)_minmax(0,1.35fr)] xl:items-stretch">
-            <Card className={`${leadsPanelClassName} app-surface h-full`}>
-              <input id="lead-details-edit-toggle" type="checkbox" className="peer sr-only" />
-              <div className="peer-checked:[&_.lead-details-edit-actions]:flex peer-checked:[&_.lead-details-edit-form]:block peer-checked:[&_.lead-details-edit-toggle]:hidden peer-checked:[&_.lead-details-view]:hidden">
-                <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
-                  <CardTitle className="mt-0" style={leadsSectionTitleStyle}>Lead Details</CardTitle>
-                  <div className="lead-details-edit-actions hidden items-center gap-3">
-                    <label
-                      htmlFor="lead-details-edit-toggle"
-                      className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-[1rem] border border-[#CBD5E1] bg-white px-5 py-2.5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
-                    >
-                      Cancel
-                    </label>
-                    <button
-                      type="submit"
-                      form="opportunity-details-form"
-                      className="inline-flex shrink-0 items-center justify-center rounded-[1rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
-                    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.945fr)_minmax(0,1.35fr)] xl:items-stretch">
+        <div className="relative">
+          <input id="lead-details-edit-toggle" type="checkbox" className="peer sr-only" />
+          <div className="peer-checked:[&_.lead-details-edit-actions]:flex peer-checked:[&_.lead-details-edit-form]:block peer-checked:[&_.lead-details-edit-toggle]:hidden peer-checked:[&_.lead-details-view]:hidden h-full">
+            <OperationalPanel
+              className="h-full"
+              title="Lead Details"
+              actions={
+                <>
+                  <div className="lead-details-edit-actions hidden items-center gap-2">
+                    <Button asChild type="button" variant="secondary" size="sm">
+                      <label htmlFor="lead-details-edit-toggle" className="cursor-pointer">
+                        Cancel
+                      </label>
+                    </Button>
+                    <Button type="submit" form="opportunity-details-form" size="sm">
                       Save
-                    </button>
+                    </Button>
                   </div>
-                  <label
-                    htmlFor="lead-details-edit-toggle"
-                    className="lead-details-edit-toggle inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-[0.72rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
-                    style={leadsButtonLabelStyle}
-                  >
-                    <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
-                    Edit details
-                  </label>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="lead-details-view">
-                    <div className="grid gap-x-[19.2px] gap-y-[14.4px] pt-[1.2rem] md:grid-cols-[160px_minmax(0,1fr)]">
-                      <p style={leadsBodyLabelStyle}>Project Name:</p>
-                      <p style={leadDetailsValueStyle}>{activeOpportunity.name}</p>
-
-                      <p style={leadsBodyLabelStyle}>Client:</p>
-                      <p style={leadDetailsValueStyle}>{activeOpportunity.clientName || "Unassigned"}</p>
-
-                      <p style={leadsBodyLabelStyle}>Location:</p>
-                      <p style={leadDetailsValueStyle}>{activeOpportunity.location || "Not set"}</p>
-
-                      <p style={leadsBodyLabelStyle}>Lead Due Date:</p>
-                      <p style={leadDetailsValueStyle}>{formatDueDate(activeOpportunity.dueDate)}</p>
-
-                      <p style={leadsBodyLabelStyle}>Created:</p>
-                      <p style={leadDetailsValueStyle}>{formatDateTime(activeOpportunity.createdAt)}</p>
-                    </div>
-                  </div>
-
-                  <form id="opportunity-details-form" action={saveOpportunityDetails} className="lead-details-edit-form hidden">
-                    <div className="grid gap-x-[19.2px] gap-y-[14.4px] pt-[1.2rem] md:grid-cols-[160px_minmax(0,1fr)]">
-                      <p className="text-[18px] font-semibold text-[#4B5D79]">Project Name:</p>
-                      <input
-                        name="projectName"
-                        defaultValue={activeOpportunity.name}
-                        required
-                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
-                      />
-
-                      <p className="text-[18px] font-semibold text-[#4B5D79]">Client:</p>
-                      <input
-                        name="clientName"
-                        defaultValue={activeOpportunity.clientName || ""}
-                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
-                      />
-
-                      <p className="text-[18px] font-semibold text-[#4B5D79]">Location:</p>
-                      <input
-                        name="location"
-                        defaultValue={activeOpportunity.location || ""}
-                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
-                      />
-
-                      <p className="text-[18px] font-semibold text-[#4B5D79]">Lead Due Date:</p>
-                      <input
-                        type="date"
-                        name="dueDate"
-                        defaultValue={formatDateInputValue(activeOpportunity.dueDate)}
-                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
-                      />
-
-                      <p className="text-[18px] font-semibold text-[#4B5D79]">Created:</p>
-                      <div className="flex h-[2.9rem] items-center rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827]">
-                        {formatDateTime(activeOpportunity.createdAt)}
-                      </div>
-                    </div>
-                  </form>
-                </CardContent>
-              </div>
-            </Card>
-
-            <Card className={`${leadsPanelClassName} app-surface h-full`}>
-              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
-                <CardTitle className="mt-0" style={leadsSectionTitleStyle}>Notes</CardTitle>
-                <button
-                  type="submit"
-                  form="opportunity-notes-form"
-                  className="inline-flex shrink-0 items-center justify-center rounded-[0.72rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
-                >
-                  Save
-                </button>
-              </CardHeader>
-              <CardContent className="h-full pt-0">
-                <form id="opportunity-notes-form" action={saveOpportunityNotes} className="h-full flex-col">
-                  <textarea
-                    name="notes"
-                    defaultValue={activeOpportunity.notes}
-                    placeholder="Add notes for this lead..."
-                    className="h-[240px] w-full resize-none overflow-y-auto bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_42px,#E2E8F1_42px,#E2E8F1_43px)] bg-transparent px-1 py-2 text-[15px] leading-[43px] text-[#111827] outline-none placeholder:text-[#8A94A6]"
-                  />
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-
-            <div id="lead-todos" className="mt-4 scroll-mt-24 space-y-3">
-              <input id="lead-task-create-toggle" type="checkbox" className="peer sr-only" />
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-2">
-                <p className="m-0" style={leadsSectionTitleStyle}>
-                  To Do
-                </p>
-              </div>
-              <div>
-                <label
-                  htmlFor="lead-task-create-toggle"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[#E2E8F1] bg-white text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#334155]"
-                  aria-label="Add task to To Do"
-                >
-                  +
-                </label>
-              </div>
-            </div>
-
-            <LeadsPanel className="overflow-hidden rounded-[18px] border-[#D9E3EE]">
-              <div className="grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
-                {[
-                  "Task Name",
-                  "Descriptions",
-                  "Priority",
-                  "Timeline Date",
-                  "People",
-                  " ",
-                ].map((heading) => (
-                  <div key={heading} className="flex items-center gap-2">
-                    <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#44556C]">
-                      {heading}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                {leadTasks.length === 0 ? (
-                  <div className="px-5 py-6">
-                    <p className="m-0 text-[13px] text-[#6B7C93]">No tasks in this section yet.</p>
-                  </div>
-                ) : (
-                  leadTasks.map((task) => {
-                    const assigneeName = task.assignedUserId ? assigneeNameById.get(task.assignedUserId) ?? "Team Member" : "Unassigned";
-                    const editToggleId = `lead-task-edit-toggle-${task.id}`;
-                    return (
-                      <div key={task.id}>
-                        <input id={editToggleId} type="checkbox" className="peer sr-only" />
-                        <div className="grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] items-center border-b border-[#EEF3F8] bg-white px-5 py-5 last:border-b-0">
-                          <button type="button" className="min-w-0 text-left">
-                            <div className="flex items-start gap-3">
-                              <span className="mt-0.5 h-4 w-4 rounded-[4px] border border-[#D7E0EA] bg-white" />
-                              <div className="min-w-0">
-                                <p className="m-0 truncate text-[14px] font-semibold text-[#0F172A]">{task.title}</p>
-                              </div>
-                            </div>
-                          </button>
-
-                          <div className="min-w-0 pr-4">
-                            <p className="m-0 truncate text-[13px] text-[#0F172A]">{task.description || "No description added"}</p>
-                          </div>
-
-                          <div className="flex items-center">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-[12px] font-medium ${getPriorityPillClasses(task.priority)}`}>
-                              {task.priority}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-[#64748B]" strokeWidth={2} />
-                            <div>
-                              <p className="m-0 text-[13px] text-[#0F172A]">{formatTaskTableDate(task.dueDate)}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#F74917] text-[12px] font-semibold text-white">
-                              {getInitials(assigneeName)}
-                            </span>
-                            <p className="m-0 truncate text-[13px] text-[#0F172A]">{assigneeName}</p>
-                          </div>
-
-                          <div />
-
-                          <div className="flex items-center justify-end gap-2">
-                            <label
-                              htmlFor={editToggleId}
-                              className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[12px] bg-[#F74917] px-3.5 text-[13px] font-semibold text-white transition hover:bg-[#e63f10]"
-                              aria-label={`Edit ${task.title}`}
-                            >
-                              <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
-                              Edit
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="pointer-events-none fixed inset-0 z-40 hidden items-center justify-center bg-[#0F172A]/45 px-4 py-8 peer-checked:flex">
-                          <label htmlFor={editToggleId} className="absolute inset-0" aria-hidden="true" />
-                          <form
-                            action={updateLeadTask}
-                            className="pointer-events-auto max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]"
-                          >
-                            <input type="hidden" name="taskId" value={task.id} />
-                            <div className="space-y-0">
-                              <div className="px-7 pb-6 pt-7">
-                                <h3 className="m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]">
-                                  Edit Task
-                                </h3>
-                              </div>
-
-                              <div className="space-y-3.5 px-7 pb-4">
-                                <div>
-                                  <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Title</label>
-                                  <input
-                                    name="taskTitle"
-                                    defaultValue={task.title}
-                                    autoFocus
-                                    className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Description</label>
-                                  <textarea
-                                    name="taskDescription"
-                                    rows={3}
-                                    defaultValue={task.description}
-                                    className="w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Assignee</label>
-                                  <select
-                                    name="taskAssignedUserId"
-                                    defaultValue={task.assignedUserId ?? ""}
-                                    className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                                  >
-                                    <option value="">Unassigned</option>
-                                    {organizationAssignees.map((assignee) => (
-                                      <option key={assignee.userId} value={assignee.userId}>
-                                        {assignee.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Due Date</label>
-                                    <input
-                                      type="date"
-                                      name="taskDueDate"
-                                      defaultValue={formatDateInputValue(task.dueDate)}
-                                      className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Due Time</label>
-                                    <input
-                                      type="time"
-                                      name="taskDueTime"
-                                      defaultValue={formatTimeInputValue(task.dueAt)}
-                                      className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29] [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-datetime-edit]:text-[#10283B] [&::-webkit-datetime-edit-fields-wrapper]:text-[#10283B]"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Priority</label>
-                                    <select
-                                      name="taskPriority"
-                                      defaultValue={task.priority}
-                                      className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                                    >
-                                      <option value="High">High</option>
-                                      <option value="Medium">Medium</option>
-                                      <option value="Low">Low</option>
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Status</label>
-                                    <select
-                                      name="taskStatus"
-                                      defaultValue={task.status}
-                                      className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                                    >
-                                      <option value="To Do">To Do</option>
-                                      <option value="In Progress">In Progress</option>
-                                      <option value="Need Review">Need Review</option>
-                                      <option value="Done">Done</option>
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
-                                <label
-                                  htmlFor={editToggleId}
-                                  className="inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
-                                >
-                                  Cancel
-                                </label>
-                                <button
-                                  type="submit"
-                                  className="inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
-                                >
-                                  Save Task
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </LeadsPanel>
-
-            <div className="pointer-events-none fixed inset-0 z-40 hidden items-center justify-center bg-[#0F172A]/45 px-4 py-8 peer-checked:flex">
-              <label htmlFor="lead-task-create-toggle" className="absolute inset-0" aria-hidden="true" />
-              <form
-                action={createLeadTask}
-                className="pointer-events-auto max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]"
-              >
-                <div className="space-y-0">
-                  <div className="px-7 pb-6 pt-7">
-                    <h3 className="m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]">
-                      Add Task
-                    </h3>
-                  </div>
-
-                  <div className="space-y-3.5 px-7 pb-4">
-                    <div>
-                      <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Title</label>
-                      <input
-                        name="taskTitle"
-                        autoFocus
-                        className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Description</label>
-                      <textarea
-                        name="taskDescription"
-                        rows={3}
-                        className="w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Assignee</label>
-                      <select
-                        name="taskAssignedUserId"
-                        defaultValue=""
-                        className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                      >
-                        <option value="">Unassigned</option>
-                        {organizationAssignees.map((assignee) => (
-                          <option key={assignee.userId} value={assignee.userId}>
-                            {assignee.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Due Date</label>
-                        <input
-                          type="date"
-                          name="taskDueDate"
-                          className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Due Time</label>
-                        <input
-                          type="time"
-                          name="taskDueTime"
-                          className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29] [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-datetime-edit]:text-[#10283B] [&::-webkit-datetime-edit-fields-wrapper]:text-[#10283B]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Priority</label>
-                        <select
-                          name="taskPriority"
-                          defaultValue="High"
-                          className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                        >
-                          <option value="High">High</option>
-                          <option value="Medium">Medium</option>
-                          <option value="Low">Low</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[13px] font-semibold text-[#1d2433]">Status</label>
-                        <select
-                          name="taskStatus"
-                          defaultValue="To Do"
-                          className="h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]"
-                        >
-                          <option value="To Do">To Do</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Need Review">Need Review</option>
-                          <option value="Done">Done</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
-                    <label
-                      htmlFor="lead-task-create-toggle"
-                      className="inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
-                    >
-                      Cancel
+                  <Button asChild type="button" variant="secondary" size="sm" className="lead-details-edit-toggle">
+                    <label htmlFor="lead-details-edit-toggle" className="cursor-pointer">
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
+                      Edit details
                     </label>
-                    <button
-                      type="submit"
-                      className="inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
-                    >
-                      Save Task
-                    </button>
+                  </Button>
+                </>
+              }
+            >
+              <div className="lead-details-view">
+                <div className="grid gap-x-5 gap-y-3.5 md:grid-cols-[160px_minmax(0,1fr)]">
+                  <p className="text-sm text-[var(--text-secondary)]">Project Name:</p>
+                  <p className="text-sm text-[var(--text-primary)]">{activeOpportunity.name}</p>
+
+                  <p className="text-sm text-[var(--text-secondary)]">Client:</p>
+                  <p className="text-sm text-[var(--text-primary)]">{activeOpportunity.clientName || "Unassigned"}</p>
+
+                  <p className="text-sm text-[var(--text-secondary)]">Location:</p>
+                  <p className="text-sm text-[var(--text-primary)]">{activeOpportunity.location || "Not set"}</p>
+
+                  <p className="text-sm text-[var(--text-secondary)]">Lead Due Date:</p>
+                  <p className="text-sm text-[var(--text-primary)]">{formatDueDate(activeOpportunity.dueDate)}</p>
+
+                  <p className="text-sm text-[var(--text-secondary)]">Created:</p>
+                  <p className="text-sm text-[var(--text-primary)]">{formatDateTime(activeOpportunity.createdAt)}</p>
+                </div>
+              </div>
+
+              <form id="opportunity-details-form" action={saveOpportunityDetails} className="lead-details-edit-form hidden">
+                <div className="grid gap-x-5 gap-y-3.5 md:grid-cols-[160px_minmax(0,1fr)]">
+                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-projectName">Project Name:</label>
+                  <Input
+                    id="opportunity-projectName"
+                    name="projectName"
+                    defaultValue={activeOpportunity.name}
+                    required
+                  />
+
+                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-clientName">Client:</label>
+                  <Input
+                    id="opportunity-clientName"
+                    name="clientName"
+                    defaultValue={activeOpportunity.clientName || ""}
+                  />
+
+                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-location">Location:</label>
+                  <Input
+                    id="opportunity-location"
+                    name="location"
+                    defaultValue={activeOpportunity.location || ""}
+                  />
+
+                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-dueDate">Lead Due Date:</label>
+                  <Input
+                    id="opportunity-dueDate"
+                    type="date"
+                    name="dueDate"
+                    defaultValue={formatDateInputValue(activeOpportunity.dueDate)}
+                  />
+
+                  <p className="self-center text-sm font-medium text-[var(--text-primary)]">Created:</p>
+                  <div className="flex h-11 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm text-[var(--text-secondary)]">
+                    {formatDateTime(activeOpportunity.createdAt)}
                   </div>
                 </div>
               </form>
-            </div>
+            </OperationalPanel>
           </div>
-    </LeadsPageContent>
+        </div>
+
+        <OperationalPanel
+          className="h-full"
+          title="Notes"
+          actions={
+            <Button type="submit" form="opportunity-notes-form" size="sm">
+              Save
+            </Button>
+          }
+        >
+          <form id="opportunity-notes-form" action={saveOpportunityNotes} className="h-full flex-col">
+            <textarea
+              name="notes"
+              defaultValue={activeOpportunity.notes}
+              placeholder="Add notes for this lead..."
+              className="h-[240px] w-full resize-none overflow-y-auto bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_42px,var(--border)_42px,var(--border)_43px)] bg-transparent px-1 py-2 text-[15px] leading-[43px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+            />
+          </form>
+        </OperationalPanel>
+      </div>
+
+      <div id="lead-todos" className="scroll-mt-24 space-y-3">
+        <input id="lead-task-create-toggle" type="checkbox" className="peer sr-only" />
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <p className={SECTION_TITLE_CLASS}>To Do</p>
+          </div>
+          <div>
+            <Button asChild type="button" variant="secondary" size="sm" className="h-7 w-7 p-0">
+              <label htmlFor="lead-task-create-toggle" className="cursor-pointer" aria-label="Add task to To Do">
+                +
+              </label>
+            </Button>
+          </div>
+        </div>
+
+        <OperationalPanel contentClassName="p-0">
+          <div className="grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-3">
+            {[
+              "Task Name",
+              "Descriptions",
+              "Priority",
+              "Timeline Date",
+              "People",
+              " ",
+            ].map((heading) => (
+              <div key={heading} className="flex items-center gap-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+                  {heading}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            {leadTasks.length === 0 ? (
+              <div className="px-5 py-6">
+                <p className="m-0 text-sm text-[var(--text-secondary)]">No tasks in this section yet.</p>
+              </div>
+            ) : (
+              leadTasks.map((task) => {
+                const assigneeName = task.assignedUserId ? assigneeNameById.get(task.assignedUserId) ?? "Team Member" : "Unassigned";
+                const editToggleId = `lead-task-edit-toggle-${task.id}`;
+                return (
+                  <div key={task.id}>
+                    <input id={editToggleId} type="checkbox" className="peer sr-only" />
+                    <div className="grid grid-cols-[minmax(220px,1.6fr)_minmax(220px,1.8fr)_minmax(120px,0.8fr)_minmax(150px,0.95fr)_minmax(140px,0.9fr)_minmax(150px,0.95fr)_72px] items-center border-b border-[var(--border)] bg-[var(--card)] px-5 py-5 last:border-b-0">
+                      <button type="button" className="min-w-0 text-left">
+                        <div className="flex items-start gap-3">
+                          <span className="mt-0.5 h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)]" />
+                          <div className="min-w-0">
+                            <p className="m-0 truncate text-sm font-semibold text-[var(--text-primary)]">{task.title}</p>
+                          </div>
+                        </div>
+                      </button>
+
+                      <div className="min-w-0 pr-4">
+                        <p className="m-0 truncate text-sm text-[var(--text-primary)]">{task.description || "No description added"}</p>
+                      </div>
+
+                      <div className="flex items-center">
+                        <StatusBadge status={getPriorityBadgeStatus(task.priority)}>{task.priority}</StatusBadge>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-[var(--text-secondary)]" strokeWidth={2} />
+                        <div>
+                          <p className="m-0 text-sm text-[var(--text-primary)]">{formatTaskTableDate(task.dueDate)}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--orange-primary)] text-xs font-semibold text-[var(--primary-foreground)]">
+                          {getInitials(assigneeName)}
+                        </span>
+                        <p className="m-0 truncate text-sm text-[var(--text-primary)]">{assigneeName}</p>
+                      </div>
+
+                      <div />
+
+                      <div className="flex items-center justify-end gap-2">
+                        <Button asChild type="button" size="sm">
+                          <label htmlFor={editToggleId} className="cursor-pointer" aria-label={`Edit ${task.title}`}>
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
+                            Edit
+                          </label>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="pointer-events-none fixed inset-0 z-40 hidden items-center justify-center bg-[var(--text-primary)]/45 px-4 py-8 peer-checked:flex">
+                      <label htmlFor={editToggleId} className="absolute inset-0" aria-hidden="true" />
+                      <form
+                        action={updateLeadTask}
+                        className="pointer-events-auto max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)]"
+                      >
+                        <input type="hidden" name="taskId" value={task.id} />
+                        <div className="space-y-0">
+                          <div className="px-7 pb-6 pt-7">
+                            <h3 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
+                              Edit Task
+                            </h3>
+                          </div>
+
+                          <div className="space-y-3.5 px-7 pb-4">
+                            <div>
+                              <label className={FIELD_LABEL_CLASS}>Title</label>
+                              <Input
+                                name="taskTitle"
+                                defaultValue={task.title}
+                                autoFocus
+                              />
+                            </div>
+
+                            <div>
+                              <label className={FIELD_LABEL_CLASS}>Description</label>
+                              <textarea
+                                name="taskDescription"
+                                rows={3}
+                                defaultValue={task.description}
+                                className={MODAL_TEXTAREA_CLASS}
+                              />
+                            </div>
+
+                            <div>
+                              <label className={FIELD_LABEL_CLASS}>Assignee</label>
+                              <select
+                                name="taskAssignedUserId"
+                                defaultValue={task.assignedUserId ?? ""}
+                                className={MODAL_SELECT_CLASS}
+                              >
+                                <option value="">Unassigned</option>
+                                {organizationAssignees.map((assignee) => (
+                                  <option key={assignee.userId} value={assignee.userId}>
+                                    {assignee.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className={FIELD_LABEL_CLASS}>Due Date</label>
+                                <Input
+                                  type="date"
+                                  name="taskDueDate"
+                                  defaultValue={formatDateInputValue(task.dueDate)}
+                                />
+                              </div>
+                              <div>
+                                <label className={FIELD_LABEL_CLASS}>Due Time</label>
+                                <Input
+                                  type="time"
+                                  name="taskDueTime"
+                                  defaultValue={formatTimeInputValue(task.dueAt)}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className={FIELD_LABEL_CLASS}>Priority</label>
+                                <select
+                                  name="taskPriority"
+                                  defaultValue={task.priority}
+                                  className={MODAL_SELECT_CLASS}
+                                >
+                                  <option value="High">High</option>
+                                  <option value="Medium">Medium</option>
+                                  <option value="Low">Low</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className={FIELD_LABEL_CLASS}>Status</label>
+                                <select
+                                  name="taskStatus"
+                                  defaultValue={task.status}
+                                  className={MODAL_SELECT_CLASS}
+                                >
+                                  <option value="To Do">To Do</option>
+                                  <option value="In Progress">In Progress</option>
+                                  <option value="Need Review">Need Review</option>
+                                  <option value="Done">Done</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+                            <Button asChild type="button" variant="secondary">
+                              <label htmlFor={editToggleId} className="cursor-pointer">Cancel</label>
+                            </Button>
+                            <Button type="submit">Save Task</Button>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </OperationalPanel>
+
+        <div className="pointer-events-none fixed inset-0 z-40 hidden items-center justify-center bg-[var(--text-primary)]/45 px-4 py-8 peer-checked:flex">
+          <label htmlFor="lead-task-create-toggle" className="absolute inset-0" aria-hidden="true" />
+          <form
+            action={createLeadTask}
+            className="pointer-events-auto max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)]"
+          >
+            <div className="space-y-0">
+              <div className="px-7 pb-6 pt-7">
+                <h3 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
+                  Add Task
+                </h3>
+              </div>
+
+              <div className="space-y-3.5 px-7 pb-4">
+                <div>
+                  <label className={FIELD_LABEL_CLASS}>Title</label>
+                  <Input name="taskTitle" autoFocus />
+                </div>
+
+                <div>
+                  <label className={FIELD_LABEL_CLASS}>Description</label>
+                  <textarea
+                    name="taskDescription"
+                    rows={3}
+                    className={MODAL_TEXTAREA_CLASS}
+                  />
+                </div>
+
+                <div>
+                  <label className={FIELD_LABEL_CLASS}>Assignee</label>
+                  <select
+                    name="taskAssignedUserId"
+                    defaultValue=""
+                    className={MODAL_SELECT_CLASS}
+                  >
+                    <option value="">Unassigned</option>
+                    {organizationAssignees.map((assignee) => (
+                      <option key={assignee.userId} value={assignee.userId}>
+                        {assignee.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={FIELD_LABEL_CLASS}>Due Date</label>
+                    <Input type="date" name="taskDueDate" />
+                  </div>
+                  <div>
+                    <label className={FIELD_LABEL_CLASS}>Due Time</label>
+                    <Input type="time" name="taskDueTime" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={FIELD_LABEL_CLASS}>Priority</label>
+                    <select
+                      name="taskPriority"
+                      defaultValue="High"
+                      className={MODAL_SELECT_CLASS}
+                    >
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={FIELD_LABEL_CLASS}>Status</label>
+                    <select
+                      name="taskStatus"
+                      defaultValue="To Do"
+                      className={MODAL_SELECT_CLASS}
+                    >
+                      <option value="To Do">To Do</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Need Review">Need Review</option>
+                      <option value="Done">Done</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
+                <Button asChild type="button" variant="secondary">
+                  <label htmlFor="lead-task-create-toggle" className="cursor-pointer">Cancel</label>
+                </Button>
+                <Button type="submit">Save Task</Button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   );
 }

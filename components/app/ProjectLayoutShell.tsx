@@ -36,26 +36,26 @@ export default function ProjectLayoutShell({
   const sectionHref = match ? `/app/projects/${projectId}/${match.segment}` : null;
 
   return (
-    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-[0.384rem] bg-[#FBFEFE] pb-8 sm:-mx-[1.024rem]`} style={{ "--app-canvas": "#FBFEFE" } as React.CSSProperties}>
-      <div className="space-y-6 bg-[#FBFEFE]">
+    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-1.5 bg-[var(--app-canvas)] pb-8 sm:-mx-4`}>
+      <div className="space-y-6 bg-[var(--app-canvas)]">
         <ProjectSecondaryNav projectName={projectName} projectStage={projectStage} />
-        <div className="min-w-0 flex-1 bg-[#FBFEFE] px-5">
+        <div className="min-w-0 flex-1 bg-[var(--app-canvas)] px-5">
           {sectionLabel ? (
-            <nav className={`${interMedium.className} mb-[12px] flex items-center gap-1.5 text-[12px] text-[#9AA8BC]`}>
-              <Link href={`/app/projects/${projectId}/dashboard`} className="transition-colors hover:text-[#475569]">
+            <nav className={`${interMedium.className} mb-3 flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]`}>
+              <Link href={`/app/projects/${projectId}/dashboard`} className="transition-colors hover:text-[var(--text-secondary)]">
                 {projectName || "Project"}
               </Link>
               <span>/</span>
               {sectionHref && pathname !== sectionHref ? (
                 <>
-                  <Link href={sectionHref} className="transition-colors hover:text-[#475569]">
+                  <Link href={sectionHref} className="transition-colors hover:text-[var(--text-secondary)]">
                     {sectionLabel}
                   </Link>
                   <span>/</span>
-                  <span className="text-[#475569]">Detail</span>
+                  <span className="text-[var(--text-secondary)]">Detail</span>
                 </>
               ) : (
-                <span className="text-[#475569]">{sectionLabel}</span>
+                <span className="text-[var(--text-secondary)]">{sectionLabel}</span>
               )}
             </nav>
           ) : null}

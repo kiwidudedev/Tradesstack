@@ -3,13 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import {
+  OperationalTable,
+  OperationalTableBody,
+  OperationalTableCell,
+  OperationalTableHead,
+  OperationalTableHeader,
+  OperationalTableRow,
+} from "@/components/app/OperationalTable";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
-import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
 
@@ -63,24 +73,34 @@ function toDayMonthYearLabel(value: string | null) {
   });
 }
 
-function statusClassName(status: VariationStatus) {
+function statusBadgeStatus(status: VariationStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (status) {
     case "Approved":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      return "approved";
     case "Rejected":
-      return "bg-rose-100 text-rose-800 border-rose-200";
+      return "overdue";
     case "Invoiced":
-      return "bg-blue-100 text-blue-800 border-blue-200";
+      return "sent";
     case "Sent":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      return "approved";
     case "Client Review":
-      return "bg-amber-100 text-amber-800 border-amber-200";
+      return "pending";
     case "Priced":
-      return "bg-indigo-100 text-indigo-800 border-indigo-200";
+      return "pending";
     default:
-      return "bg-slate-100 text-slate-700 border-slate-200";
+      return "draft";
   }
 }
+
+const STATUS_DOT_CLASS_BY_BADGE: Record<NonNullable<StatusBadgeProps["status"]>, string> = {
+  approved: "bg-[var(--success)] border-[var(--success)]",
+  pending: "bg-[var(--warning)] border-[var(--warning)]",
+  overdue: "bg-[var(--error)] border-[var(--error)]",
+  sent: "bg-[var(--info)] border-[var(--info)]",
+  completed: "bg-[var(--status-completed)] border-[var(--status-completed)]",
+  active: "bg-[var(--status-active)] border-[var(--status-active)]",
+  draft: "bg-[var(--text-muted)] border-[var(--text-muted)]",
+};
 
 function numberOrZero(value: number | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -275,125 +295,125 @@ export default function ProjectVariationRegisterPage() {
   const ALL_STATUSES: VariationStatus[] = ["Draft", "Priced", "Sent", "Client Review", "Approved", "Rejected", "Invoiced"];
 
   return (
-    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-
-      {/* Hero */}
-      <section className={`${styles.heroBlock} mb-2`}>
-        <div className="min-w-0 flex-1">
-          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>Variations</h1>
-          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>Manage and create project variations</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
+      <OperationalPageHeader
+        title="Variations"
+        description="Manage and create project variations"
+        actions={
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             onClick={() => void createVariationAndOpen()}
             disabled={isCreating || isLoading || !canManageVariations}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             {isCreating ? "Creating..." : "New Variation"}
           </Button>
-        </div>
-      </section>
+        }
+      />
 
       {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+          {error}
+        </div>
       ) : null}
       {!canManageVariations && session ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
           Only owner, admin, QS, and project manager roles can create or edit variations.
-        </p>
+        </div>
       ) : null}
 
-      <div className="px-0 py-0">
-        {isLoading ? (
-          <p className={`${interMedium.className} py-8 text-center text-sm font-medium text-[#6b6b6b]`}>Loading variation register...</p>
-        ) : (
-          <div className="space-y-6">
-
-            {/* Table */}
-            {variationRows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-[#D7E1EC] bg-[#F8FAFC] px-6 py-14 text-center">
-                <p className={`${interMedium.className} text-sm font-medium text-[#6b6b6b]`}>No variations yet for this project.</p>
+      {isLoading ? (
+        <p className="py-8 text-center text-sm text-[var(--text-secondary)]">Loading variation register...</p>
+      ) : (
+        <div className="space-y-6">
+          {variationRows.length === 0 ? (
+            <OperationalEmptyState
+              title="No variations yet for this project."
+              actions={
                 <Button
                   onClick={() => void createVariationAndOpen()}
                   disabled={isCreating || isLoading}
-                  className={`${styles.quoteButtonLabel} mt-4 h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
                 >
-                  <Plus className="mr-1 h-4 w-4" />
+                  <Plus className="h-4 w-4" />
                   {isCreating ? "Creating..." : "Create First Variation"}
                 </Button>
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC]">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
-                      <th className="w-[130px] px-4 py-2.5 text-left">Variation #</th>
-                      <th className="w-[200px] px-4 py-2.5 text-left">Name</th>
-                      <th className="w-[120px] px-4 py-2.5 text-left">Status</th>
-                      <th className="w-[110px] px-4 py-2.5 text-left">Requested</th>
-                      <th className="w-[90px] px-4 py-2.5 text-left">Due</th>
-                      <th className="w-[140px] px-4 py-2.5 text-left">Value (excl. GST)</th>
-                      <th className="w-[52px] px-3 py-2.5" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
-                    {variationRows.map((row) => (
-                      <tr
-                        key={row.id}
-                        className="transition-colors"
-                      >
-                        <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+              }
+            />
+          ) : (
+            <OperationalPanel contentClassName="p-0">
+              <OperationalTable>
+                <OperationalTableHeader>
+                  <OperationalTableRow>
+                    <OperationalTableHead className="w-[130px]">Variation #</OperationalTableHead>
+                    <OperationalTableHead className="w-[200px]">Name</OperationalTableHead>
+                    <OperationalTableHead className="w-[120px]">Status</OperationalTableHead>
+                    <OperationalTableHead className="w-[110px]">Requested</OperationalTableHead>
+                    <OperationalTableHead className="w-[90px]">Due</OperationalTableHead>
+                    <OperationalTableHead className="w-[140px]">Value (excl. GST)</OperationalTableHead>
+                    <OperationalTableHead className="w-[52px]" />
+                  </OperationalTableRow>
+                </OperationalTableHeader>
+                <OperationalTableBody>
+                  {variationRows.map((row) => {
+                    const rowBadge = statusBadgeStatus(row.status);
+                    return (
+                      <OperationalTableRow key={row.id}>
+                        <OperationalTableCell className="font-semibold text-[var(--text-primary)]">
                           {row.variation_number}
-                        </td>
-                        <td className={`${interMedium.className} px-4 py-3 text-[13px] font-medium text-[#1d2433]`}>
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-[var(--text-primary)]">
                           {row.variation_title || "Untitled variation"}
-                        </td>
-                        <td className="px-4 py-3">
+                        </OperationalTableCell>
+                        <OperationalTableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button className={`inline-flex cursor-pointer items-center gap-1 rounded-[8px] border px-2.5 py-0.5 text-[12px] font-semibold transition-opacity hover:opacity-80 ${statusClassName(row.status)}`}>
-                                {row.status}
-                                <ChevronDown className="h-3 w-3 opacity-60" />
+                              <button
+                                type="button"
+                                className="group inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] transition hover:opacity-80"
+                              >
+                                <StatusBadge status={rowBadge}>{row.status}</StatusBadge>
+                                <ChevronDown className="h-3 w-3 text-[var(--text-muted)]" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                               align="start"
-                              className="!z-[200] min-w-[160px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                              className="!z-[200] min-w-[160px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]"
                             >
-                              {ALL_STATUSES.map((s) => (
-                                <DropdownMenuItem
-                                  key={s}
-                                  onSelect={() => void updateVariationStatus(row.id, s)}
-                                  className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium focus:bg-[#F8FAFC] ${row.status === s ? "text-[#F15A29]" : "text-[#1d2433]"}`}
-                                >
-                                  <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${statusClassName(s)}`} />
-                                  {s}
-                                </DropdownMenuItem>
-                              ))}
+                              {ALL_STATUSES.map((s) => {
+                                const optionBadge = statusBadgeStatus(s);
+                                return (
+                                  <DropdownMenuItem
+                                    key={s}
+                                    onSelect={() => void updateVariationStatus(row.id, s)}
+                                    className={`h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${row.status === s ? "text-[var(--orange-primary)]" : "text-[var(--text-primary)]"}`}
+                                  >
+                                    <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${STATUS_DOT_CLASS_BY_BADGE[optionBadge]}`} />
+                                    {s}
+                                  </DropdownMenuItem>
+                                );
+                              })}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        </td>
-                        <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-[var(--text-secondary)]">
                           {toDayMonthYearLabel(row.requested_date)}
-                        </td>
-                        <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-[var(--text-secondary)]">
                           {toDayMonthYearLabel(row.due_date)}
-                        </td>
-                        <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>
+                        </OperationalTableCell>
+                        <OperationalTableCell className="font-semibold text-[var(--text-primary)]">
                           {toMoney(variationTotalById.get(row.id) ?? 0)}
-                        </td>
-                        <td className="px-2 py-3">
+                        </OperationalTableCell>
+                        <OperationalTableCell className="px-2">
                           <div className="flex items-center justify-center">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   type="button"
-                                  variant="outline"
+                                  variant="secondary"
                                   size="icon"
-                                  className="h-8 w-8 rounded-full border-[#D7E1EC] bg-white text-[#9AA8BC] hover:bg-[#F8FAFC] hover:text-[#1d2433]"
+                                  className="h-8 w-8 rounded-full"
                                 >
                                   <MoreHorizontal className="h-4 w-4" />
                                   <span className="sr-only">Actions</span>
@@ -401,19 +421,19 @@ export default function ProjectVariationRegisterPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent
                                 align="end"
-                                className="!z-[200] min-w-[160px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                                className="!z-[200] min-w-[160px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]"
                               >
                                 <DropdownMenuItem
                                   onSelect={() => router.push(`/app/projects/${routeProjectSlug}/preconstruction/variations/${row.id}`)}
-                                  className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                  className="h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
                                 >
-                                  <Pencil className="mr-2 h-3.5 w-3.5 text-[#64748B]" />
+                                  <Pencil className="mr-2 h-3.5 w-3.5 text-[var(--text-secondary)]" />
                                   Edit
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
+                                <DropdownMenuSeparator className="my-1 bg-[var(--border)]" />
                                 <DropdownMenuItem
                                   onSelect={() => {}}
-                                  className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-rose-600 focus:bg-rose-50`}
+                                  className="h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--error)] focus:bg-[var(--error-light)]"
                                 >
                                   <Trash2 className="mr-2 h-3.5 w-3.5" />
                                   Delete
@@ -421,25 +441,23 @@ export default function ProjectVariationRegisterPage() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                        </OperationalTableCell>
+                      </OperationalTableRow>
+                    );
+                  })}
+                </OperationalTableBody>
+              </OperationalTable>
+            </OperationalPanel>
+          )}
 
-            {/* Total Value */}
-            <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
-              <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
-                <span>Total (excl. GST)</span>
-                <span>{toMoney(totalVariationValue)}</span>
-              </p>
-            </div>
-
+          <div className="flex items-center justify-end border-t border-[var(--border)] pt-4">
+            <p className="flex items-center gap-6 text-lg font-semibold text-[var(--text-primary)]">
+              <span>Total (excl. GST)</span>
+              <span>{toMoney(totalVariationValue)}</span>
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, FileDown, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -577,20 +579,20 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function claimStatusClassName(status: ClaimStatus) {
+function claimStatusBadge(status: ClaimStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (status) {
     case "Paid":
-      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+      return "approved";
     case "Overdue":
-      return "border-rose-200 bg-rose-100 text-rose-800";
+      return "overdue";
     case "Submitted":
-      return "border-blue-200 bg-blue-100 text-blue-800";
+      return "sent";
     case "Unpaid":
-      return "border-amber-200 bg-amber-100 text-amber-800";
+      return "pending";
     case "Cancelled":
-      return "border-slate-300 bg-slate-200 text-slate-700";
+      return "draft";
     default:
-      return "border-slate-200 bg-slate-100 text-slate-700";
+      return "draft";
   }
 }
 
@@ -2058,39 +2060,25 @@ export default function ProjectClaimDetailPage() {
 
   if (isLoading) {
     return (
-      <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-        <section className={styles.heroBlock}>
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className={styles.quotePageTitle}>Payment Claim</h1>
-              <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border border-[#D7E1EC] bg-[#FBFEFE] px-3 py-1.5 text-[12px] text-[#4B5D79]`}>
-                Draft
-              </span>
-            </div>
-            <p className={`${styles.quoteBodyLabel} text-xs`}>Live claim calculation based on contract progress.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] opacity-60`}
-            >
-              Save Claim
-            </Button>
-            <Button type="button" disabled className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white opacity-60`}>
-              Export PDF
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569] opacity-60`}
-            >
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-          </div>
-        </section>
+      <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
+        <OperationalPageHeader
+          title={
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>Payment Claim</span>
+              <StatusBadge status="draft">Draft</StatusBadge>
+            </span>
+          }
+          description="Live claim calculation based on contract progress."
+          actions={
+            <>
+              <Button type="button" variant="secondary" disabled>Save Claim</Button>
+              <Button type="button" disabled>Export PDF</Button>
+              <Button type="button" variant="secondary" size="sm" disabled className="h-9 px-3">
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </>
+          }
+        />
 
         <div className="space-y-6">
           <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
@@ -2145,148 +2133,140 @@ export default function ProjectClaimDetailPage() {
   }
 
   return (
-    <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
-      <section className={styles.heroBlock}>
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className={styles.quotePageTitle}>{claimNumber || "Payment Claim"}</h1>
-            <span className={`${styles.quoteButtonLabel} inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] ${claimStatusClassName(status)}`}>
-              {status}
-            </span>
-          </div>
-          <p className={`${styles.quoteBodyLabel} text-xs`}>
-            Live claim calculation based on contract progress{projectName ? ` for ${projectName}` : ""}.
-          </p>
-          {saveMessage ? <p className={`${styles.quoteBodyLabel} text-xs`}>{saveMessage}</p> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void saveClaim();
-            }}
-            disabled={isSaving || !claimId}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}
-          >
-            {isSaving ? "Saving..." : "Save Claim"}
-          </Button>
-          <Button
-            type="button"
-            onClick={exportClaimPdf}
-            disabled={!claimId}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#0B2739] px-5 !text-white hover:bg-[#0B2739]`}
-          >
-            Export PDF
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className={`${interMedium.className} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-3 text-[13px] text-[#475569]`}
-              >
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[220px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
-              <DropdownMenuItem asChild className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
-                <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>
-                  <ExternalLink className="mr-2 h-4 w-4 text-[#64748B]" />
-                  Claims Register
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void createClaim();
-                }}
-                disabled={isCreatingClaim || !projectDbId || !organizationId}
-                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
-              >
-                <Plus className="mr-2 h-4 w-4 text-[#64748B]" />
-                {isCreatingClaim ? "Creating..." : "New Claim"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void saveClaim();
-                }}
-                disabled={isSaving || !claimId}
-                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
-              >
-                <Save className="mr-2 h-4 w-4 text-[#64748B]" />
-                {isSaving ? "Saving..." : "Save Claim"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  exportClaimPdf();
-                }}
-                disabled={!claimId}
-                className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
-              >
-                <FileDown className="mr-2 h-4 w-4 text-[#64748B]" />
-                Export PDF
-              </DropdownMenuItem>
-              {claimId && canManageClaim ? (
-                <>
-                  <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      setIsDeleteDialogOpen(true);
-                    }}
-                    disabled={isDeleting}
-                    className={`${interMedium.className} h-10 cursor-pointer rounded-[8px] px-3 text-[14px] font-medium text-[#b42318] focus:bg-[#FEF3F2] focus:text-[#b42318]`}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {isDeleting ? "Deleting..." : "Delete"}
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </section>
+    <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
+      <OperationalPageHeader
+        title={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>{claimNumber || "Payment Claim"}</span>
+            <StatusBadge status={claimStatusBadge(status)}>{status}</StatusBadge>
+          </span>
+        }
+        description={
+          saveMessage
+            ? `${saveMessage}`
+            : `Live claim calculation based on contract progress${projectName ? ` for ${projectName}` : ""}.`
+        }
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                void saveClaim();
+              }}
+              disabled={isSaving || !claimId}
+            >
+              {isSaving ? "Saving..." : "Save Claim"}
+            </Button>
+            <Button
+              type="button"
+              onClick={exportClaimPdf}
+              disabled={!claimId}
+            >
+              Export PDF
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="secondary" size="sm" className="h-9 px-3">
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end" sideOffset={8} className="!z-[200] min-w-[220px] rounded-[var(--radius-lg)] border border-[var(--border)] !bg-[var(--card)] p-1.5 shadow-[var(--shadow-md)]">
+                <DropdownMenuItem asChild className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]">
+                  <Link href={`/app/projects/${routeProjectSlug}/preconstruction/claims`}>
+                    <ExternalLink className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                    Claims Register
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    void createClaim();
+                  }}
+                  disabled={isCreatingClaim || !projectDbId || !organizationId}
+                  className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
+                >
+                  <Plus className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                  {isCreatingClaim ? "Creating..." : "New Claim"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    void saveClaim();
+                  }}
+                  disabled={isSaving || !claimId}
+                  className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
+                >
+                  <Save className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                  {isSaving ? "Saving..." : "Save Claim"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    exportClaimPdf();
+                  }}
+                  disabled={!claimId}
+                  className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
+                >
+                  <FileDown className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                  Export PDF
+                </DropdownMenuItem>
+                {claimId && canManageClaim ? (
+                  <>
+                    <DropdownMenuSeparator className="my-1 bg-[var(--border)]" />
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setIsDeleteDialogOpen(true);
+                      }}
+                      disabled={isDeleting}
+                      className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--error)] focus:bg-[var(--error-light)] focus:text-[var(--error)]"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
       {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+          {error}
+        </div>
       ) : null}
       {!canManageClaim && session ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
           You can review this claim, but only owner, admin, QS, and project manager roles can edit or delete it.
-        </p>
+        </div>
       ) : null}
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="w-[calc(100vw-24px)] max-w-[520px] rounded-[16px] border border-[#E8EDF5] bg-[#FBFEFE] p-0 shadow-[0_10px_28px_rgba(15,23,42,0.08)] sm:w-full">
-          <DialogHeader className="border-b border-[#E8EDF5] px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
-            <DialogTitle className={`${ibmPlexSans.className} text-[24px] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+        <DialogContent className="w-[calc(100vw-24px)] max-w-[520px] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)] sm:w-full">
+          <DialogHeader className="border-b border-[var(--border)] px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
+            <DialogTitle className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
               Delete payment claim {claimNumber || "this claim"}?
             </DialogTitle>
-            <DialogDescription className={`${interMedium.className} pt-2 text-[14px] leading-6 text-[#4B5D79]`}>
+            <DialogDescription className="pt-2 text-sm leading-6 text-[var(--text-secondary)]">
               This will permanently delete this payment claim and its line items. Claims after it will be recalculated. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="px-5 py-4 sm:px-6">
             <DialogClose asChild>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isDeleting}
-                className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-5`}
-              >
+              <Button type="button" variant="secondary" disabled={isDeleting}>
                 Cancel
               </Button>
             </DialogClose>
             <Button
               type="button"
+              variant="destructive"
               onClick={() => {
                 void deleteClaim();
               }}
               disabled={isDeleting}
-              className={`${styles.quoteButtonLabel} h-10 rounded-full bg-[#B42318] px-5 !text-white hover:bg-[#B42318]`}
             >
               {isDeleting ? "Deleting..." : "Delete"}
             </Button>
@@ -2384,9 +2364,7 @@ export default function ProjectClaimDetailPage() {
                         <div className="space-y-1">
                           <p className={styles.quoteCardTitle}>Claim Status</p>
                           <p className={styles.quoteBodyLabel}>Current lifecycle state</p>
-                          <span className={`${styles.quoteButtonLabel} inline-flex rounded-full border px-3 py-1.5 text-[12px] ${claimStatusClassName(status)}`}>
-                            {status}
-                          </span>
+                          <StatusBadge status={claimStatusBadge(status)}>{status}</StatusBadge>
                         </div>
                         <div className="space-y-1">
                           <p className={styles.quoteCardTitle}>This Claim</p>

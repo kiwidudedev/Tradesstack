@@ -2,6 +2,16 @@
 
 import Link from "next/link";
 import { CalendarDays, User } from "lucide-react";
+import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
+import {
+  OperationalTable,
+  OperationalTableBody,
+  OperationalTableCell,
+  OperationalTableHead,
+  OperationalTableHeader,
+  OperationalTableRow,
+} from "@/components/app/OperationalTable";
+import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import type { LiveOpportunityRow } from "@/lib/leads-clients-server";
 
 const currencyFormatter = new Intl.NumberFormat("en-NZ", {
@@ -41,26 +51,26 @@ function getDaysLeftBadge(isoDate: string | null) {
   const days = getDaysUntilIso(isoDate);
   if (days === null) return null;
 
-  let bg = "bg-green-100 text-green-700";
-  if (days < 0) bg = "bg-red-100 text-red-700";
-  else if (days <= 7) bg = "bg-red-100 text-red-700";
-  else if (days <= 14) bg = "bg-orange-100 text-orange-700";
-  else if (days <= 21) bg = "bg-yellow-100 text-yellow-700";
+  let status: NonNullable<StatusBadgeProps["status"]> = "approved";
+  if (days < 0) status = "overdue";
+  else if (days <= 7) status = "overdue";
+  else if (days <= 14) status = "pending";
+  else if (days <= 21) status = "pending";
 
   const label = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Today" : `${days} days`;
-  return <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[12px] font-semibold ${bg}`}>{label}</span>;
+  return <StatusBadge status={status}>{label}</StatusBadge>;
 }
 
 function WinProbabilityBar({ pct }: { pct: LiveOpportunityRow["clientWinRatePct"] }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#E9ECF2]">
+      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[var(--surface-muted)]">
         <div
-          className="h-full rounded-full bg-[#F15A29] transition-all"
+          className="h-full rounded-full bg-[var(--orange-primary)] transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[12px] font-medium text-[#5D708C]">{pct}%</span>
+      <span className="text-xs font-medium text-[var(--text-secondary)]">{pct}%</span>
     </div>
   );
 }
@@ -69,10 +79,10 @@ function OwnerAvatar({ name }: { name: string }) {
   const initial = name.slice(0, 1).toUpperCase();
   return (
     <span className="inline-flex items-center gap-2">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0B2E4D] text-[11px] font-bold text-white">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--navy-primary)] text-xs font-bold text-[var(--sidebar-foreground)]">
         {initial}
       </span>
-      <span className="text-[13px] text-[#2C4460]">{name}</span>
+      <span className="text-sm text-[var(--text-primary)]">{name}</span>
     </span>
   );
 }
@@ -80,87 +90,76 @@ function OwnerAvatar({ name }: { name: string }) {
 export function OpportunitiesTable({ rows }: { rows: LiveOpportunityRow[] }) {
   if (rows.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16 text-center">
-        <CalendarDays className="h-8 w-8 text-[#C5D3E0]" strokeWidth={1.5} />
-        <p className="text-[14px] text-[#8A9BB0]">No opportunities found.</p>
+      <div className="p-6">
+        <OperationalEmptyState
+          icon={<CalendarDays className="h-8 w-8" strokeWidth={1.5} />}
+          title="No opportunities found."
+        />
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] border-collapse text-left">
-        <thead>
-          <tr className="border-b border-[#E9ECF2]">
-            {["OPPORTUNITY", "CONTACT", "TEAM MEMBER", "QUOTED AMOUNT", "QUOTED DATE", "DUE DATE", "DAYS LEFT", "WIN PROBABILITY"].map((col) => (
-              <th key={col} className="px-4 py-3 text-[11px] font-semibold tracking-[0.07em] text-[#8A9BB0]">
-                {col}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.opportunityId}
-              className="border-b border-[#F0F3F8] transition-colors hover:bg-[#F7F9FC]"
-            >
-              {/* Opportunity */}
-              <td className="px-4 py-4">
-                <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="group block">
-                  <p className="text-[13px] font-semibold text-[#0F2238] group-hover:text-[#F15A29] transition-colors">
-                    {row.name}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-[#7A8FA8]">{row.clientName}</p>
-                </Link>
-              </td>
-
-              {/* Contact */}
-              <td className="px-4 py-4">
-                <div className="flex items-center gap-1.5">
-                  <User className="h-3.5 w-3.5 shrink-0 text-[#9BAABB]" strokeWidth={1.8} />
-                  <span className="text-[13px] text-[#2C4460]">{row.clientName}</span>
-                </div>
-                {row.location ? (
-                  <p className="mt-0.5 pl-5 text-[11.5px] text-[#9BAABB]">{row.location}</p>
-                ) : null}
-              </td>
-
-              {/* Team member */}
-              <td className="px-4 py-4">
-                <OwnerAvatar name={row.ownerName} />
-              </td>
-
-              {/* Quoted amount */}
-              <td className="px-4 py-4">
-                <span className="text-[13px] font-semibold text-[#0F2238]">
-                  {row.valueNZD > 0 ? formatCurrencyNZD(row.valueNZD) : <span className="font-normal text-[#9BAABB]">Pending</span>}
-                </span>
-              </td>
-
-              {/* Quoted date */}
-              <td className="px-4 py-4">
-                <span className="text-[13px] text-[#4A6080]">{formatDate(row.quotedDateIso)}</span>
-              </td>
-
-              {/* Due date */}
-              <td className="px-4 py-4">
-                <span className="text-[13px] text-[#4A6080]">{formatDate(row.dueDateIso)}</span>
-              </td>
-
-              {/* Days left */}
-              <td className="px-4 py-4">
-                {getDaysLeftBadge(row.dueDateIso) ?? <span className="text-[12px] text-[#9BAABB]">—</span>}
-              </td>
-
-              {/* Win probability */}
-              <td className="px-4 py-4">
-                <WinProbabilityBar pct={row.clientWinRatePct} />
-              </td>
-            </tr>
+    <OperationalTable className="min-w-[900px]">
+      <OperationalTableHeader>
+        <OperationalTableRow>
+          {["OPPORTUNITY", "CONTACT", "TEAM MEMBER", "QUOTED AMOUNT", "QUOTED DATE", "DUE DATE", "DAYS LEFT", "WIN PROBABILITY"].map((col) => (
+            <OperationalTableHead key={col} className="text-xs tracking-[0.07em] text-[var(--text-secondary)]">
+              {col}
+            </OperationalTableHead>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </OperationalTableRow>
+      </OperationalTableHeader>
+      <OperationalTableBody>
+        {rows.map((row) => (
+          <OperationalTableRow key={row.opportunityId}>
+            <OperationalTableCell>
+              <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="group block">
+                <p className="text-sm font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--orange-primary)]">
+                  {row.name}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{row.clientName}</p>
+              </Link>
+            </OperationalTableCell>
+
+            <OperationalTableCell>
+              <div className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" strokeWidth={1.8} />
+                <span className="text-sm text-[var(--text-primary)]">{row.clientName}</span>
+              </div>
+              {row.location ? (
+                <p className="mt-0.5 pl-5 text-xs text-[var(--text-muted)]">{row.location}</p>
+              ) : null}
+            </OperationalTableCell>
+
+            <OperationalTableCell>
+              <OwnerAvatar name={row.ownerName} />
+            </OperationalTableCell>
+
+            <OperationalTableCell>
+              <span className="text-sm font-semibold text-[var(--text-primary)]">
+                {row.valueNZD > 0 ? formatCurrencyNZD(row.valueNZD) : <span className="font-normal text-[var(--text-muted)]">Pending</span>}
+              </span>
+            </OperationalTableCell>
+
+            <OperationalTableCell className="text-sm text-[var(--text-secondary)]">
+              {formatDate(row.quotedDateIso)}
+            </OperationalTableCell>
+
+            <OperationalTableCell className="text-sm text-[var(--text-secondary)]">
+              {formatDate(row.dueDateIso)}
+            </OperationalTableCell>
+
+            <OperationalTableCell>
+              {getDaysLeftBadge(row.dueDateIso) ?? <span className="text-xs text-[var(--text-muted)]">—</span>}
+            </OperationalTableCell>
+
+            <OperationalTableCell>
+              <WinProbabilityBar pct={row.clientWinRatePct} />
+            </OperationalTableCell>
+          </OperationalTableRow>
+        ))}
+      </OperationalTableBody>
+    </OperationalTable>
   );
 }

@@ -2,9 +2,10 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Building2, Mail, Phone, Plus, Tag, X } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { interMedium, ibmPlexSans } from "@/lib/fonts";
+import { ibmPlexSans } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { requirePermission } from "@/lib/permissions-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -21,9 +22,9 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label htmlFor={htmlFor} className={`${ibmPlexSans.className} text-[16px] font-semibold text-[#3E4F68]`}>
+    <label htmlFor={htmlFor} className="text-base font-semibold text-[var(--text-primary)]">
       {children}
-      {required ? <span className="ml-1 text-[#FF4C14]">*</span> : null}
+      {required ? <span className="ml-1 text-[var(--error)]">*</span> : null}
     </label>
   );
 }
@@ -45,14 +46,14 @@ function IconField({
 }) {
   return (
     <div className="relative">
-      {icon ? <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-[#8EA0BC]">{icon}</span> : null}
+      {icon ? <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">{icon}</span> : null}
       <Input
         id={id}
         name={name}
         type={type}
         required={required}
         placeholder={placeholder}
-        className={`${ibmPlexSans.className} h-[4.75rem] rounded-[1rem] border-[1.3px] border-[#C8D7E8] bg-white ${icon ? "pl-14" : "pl-5"} pr-5 text-[18px] text-[#10283B] placeholder:text-[#8a8a8a]`}
+        className={`h-[4.75rem] rounded-[var(--radius-lg)] border-[1.3px] ${icon ? "pl-14" : "pl-5"} pr-5 text-lg`}
       />
     </div>
   );
@@ -122,113 +123,101 @@ export default async function NewClientPage() {
   }
 
   return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} bg-[#FBFEFE] pb-8 pt-[25px]`}>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} bg-[var(--background)] pb-8 pt-6`}>
       <form action={createClient} className="mx-auto max-w-[1120px]">
-        <Card className="overflow-hidden rounded-[24px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-[#E2E8F1] px-8 py-7">
-            <CardTitle className="m-0 text-[clamp(1.7rem,2.8vw,2.5rem)] font-bold leading-none tracking-[-0.04em] text-[#1D2740]">
-              Add New Client
-            </CardTitle>
-            <Link
-              href="/app/leads-clients/clients"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#D3DDEA] bg-white text-[#8EA0BC] transition hover:bg-[#F8FAFC]"
-              aria-label="Close add client"
-            >
-              <X className="h-6 w-6" strokeWidth={2.2} />
-            </Link>
-          </CardHeader>
+        <OperationalPanel
+          title="Add New Client"
+          actions={
+            <Button asChild variant="secondary" size="icon" className="h-11 w-11 rounded-full">
+              <Link href="/app/leads-clients/clients" aria-label="Close add client">
+                <X className="h-6 w-6" strokeWidth={2.2} />
+              </Link>
+            </Button>
+          }
+        >
+          <div className="grid gap-8">
+            <div className="grid gap-3">
+              <FieldLabel htmlFor="companyName" required>Client Name</FieldLabel>
+              <IconField
+                id="companyName"
+                name="companyName"
+                required
+                placeholder="e.g., Auckland Developments Ltd"
+                icon={<Building2 className="h-6 w-6" strokeWidth={2} />}
+              />
+            </div>
 
-          <CardContent className="px-8 pb-8 pt-8">
-            <div className="grid gap-8">
+            <div className="grid gap-3">
+              <FieldLabel htmlFor="contactName" required>Primary Contact</FieldLabel>
+              <IconField
+                id="contactName"
+                name="contactName"
+                required
+                placeholder="e.g., Michael Zhang"
+              />
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
               <div className="grid gap-3">
-                <FieldLabel htmlFor="companyName" required>Client Name</FieldLabel>
+                <FieldLabel htmlFor="email" required>Email</FieldLabel>
                 <IconField
-                  id="companyName"
-                  name="companyName"
+                  id="email"
+                  name="email"
+                  type="email"
                   required
-                  placeholder="e.g., Auckland Developments Ltd"
-                  icon={<Building2 className="h-6 w-6" strokeWidth={2} />}
+                  placeholder="email@example.com"
+                  icon={<Mail className="h-6 w-6" strokeWidth={2} />}
                 />
               </div>
 
               <div className="grid gap-3">
-                <FieldLabel htmlFor="contactName" required>Primary Contact</FieldLabel>
+                <FieldLabel htmlFor="phone" required>Phone</FieldLabel>
                 <IconField
-                  id="contactName"
-                  name="contactName"
+                  id="phone"
+                  name="phone"
                   required
-                  placeholder="e.g., Michael Zhang"
+                  placeholder="+64 9 123 4567"
+                  icon={<Phone className="h-6 w-6" strokeWidth={2} />}
                 />
               </div>
+            </div>
 
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="grid gap-3">
-                  <FieldLabel htmlFor="email" required>Email</FieldLabel>
-                  <IconField
-                    id="email"
-                    name="email"
-                    type="email"
-                    required
-                    placeholder="email@example.com"
-                    icon={<Mail className="h-6 w-6" strokeWidth={2} />}
-                  />
+            <div className="grid gap-3">
+              <FieldLabel htmlFor="profileTags">Profile Tags</FieldLabel>
+              <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-5">
+                <div className="mb-4 flex items-center gap-2 text-[var(--text-secondary)]">
+                  <Tag className="h-5 w-5" strokeWidth={2} />
+                  <p className="m-0 text-sm">
+                    Add any relationship flags that help your team qualify this client faster.
+                  </p>
                 </div>
-
-                <div className="grid gap-3">
-                  <FieldLabel htmlFor="phone" required>Phone</FieldLabel>
-                  <IconField
-                    id="phone"
-                    name="phone"
-                    required
-                    placeholder="+64 9 123 4567"
-                    icon={<Phone className="h-6 w-6" strokeWidth={2} />}
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-3">
-                <FieldLabel htmlFor="profileTags">Profile Tags</FieldLabel>
-                <div className="rounded-[1rem] border-[1.3px] border-[#E2E8F1] bg-white p-5">
-                  <div className="mb-4 flex items-center gap-2 text-[#6A7A89]">
-                    <Tag className="h-5 w-5" strokeWidth={2} />
-                    <p className={`${interMedium.className} m-0 text-[14px]`}>
-                      Add any relationship flags that help your team qualify this client faster.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    {PROFILE_TAGS.map((tag) => (
-                      <label
-                        key={tag}
-                        className={`${interMedium.className} inline-flex items-center gap-2 rounded-full border border-[#D9E3EE] bg-[#FBFEFE] px-4 py-2 text-[14px] font-medium text-[#35567A]`}
-                      >
-                        <input type="checkbox" name="profileTags" value={tag} className="h-4 w-4 rounded border-[#C8D6E8]" />
-                        {tag}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-[#E2E8F1] pt-8">
-                <div className="flex flex-wrap items-center justify-end gap-3">
-                  <Link
-                    href="/app/leads-clients/clients"
-                    className="inline-flex items-center justify-center rounded-[0.9rem] border border-[#CBD5E1] bg-white px-6 py-3 text-[16px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
-                  >
-                    Cancel
-                  </Link>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center gap-2 rounded-[0.9rem] bg-[#F15A29] px-6 py-3 text-[16px] font-semibold text-white transition hover:bg-[#db4d1f]"
-                  >
-                    <Plus className="h-4 w-4" strokeWidth={2.4} />
-                    Add Client
-                  </button>
+                <div className="flex flex-wrap gap-3">
+                  {PROFILE_TAGS.map((tag) => (
+                    <label
+                      key={tag}
+                      className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2 text-sm font-medium text-[var(--text-primary)]"
+                    >
+                      <input type="checkbox" name="profileTags" value={tag} className="h-4 w-4 rounded border-[var(--border)]" />
+                      {tag}
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+
+            <div className="border-t border-[var(--border)] pt-8">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <Button asChild variant="secondary">
+                  <Link href="/app/leads-clients/clients">Cancel</Link>
+                </Button>
+                <Button type="submit">
+                  <Plus className="h-4 w-4" strokeWidth={2.4} />
+                  Add Client
+                </Button>
+              </div>
+            </div>
+          </div>
+        </OperationalPanel>
       </form>
     </main>
   );

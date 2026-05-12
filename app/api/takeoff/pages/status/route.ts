@@ -4,7 +4,7 @@ import { readSearchParam } from "@/lib/takeoff/navigation";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const pageId = readSearchParam(searchParams.get("pageId"));
+  const pageId = readSearchParam(searchParams.get("pageId") ?? undefined);
 
   if (!pageId) {
     return NextResponse.json({ error: "Missing pageId." }, { status: 400 });

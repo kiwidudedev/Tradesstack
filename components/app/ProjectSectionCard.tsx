@@ -9,12 +9,12 @@ interface ProjectSectionCardProps {
 export function ProjectSectionCard({ title, description }: ProjectSectionCardProps) {
   return (
     <main className="app-canvas space-y-8 pb-8">
-      <Card className="app-surface app-surface-border relative overflow-hidden shadow-none">
+      <Card className="relative overflow-hidden border border-[var(--app-border)] bg-[var(--app-surface)] shadow-[var(--shadow-sm)]">
         <CardHeader className="pt-7">
-          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[#0F172A]">{title}</CardTitle>
+          <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[var(--text-primary)]">{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className={`${interMedium.className} max-w-3xl text-base font-medium leading-relaxed text-[#4f5f79]`}>{description}</p>
+          <p className={`${interMedium.className} max-w-3xl text-base font-medium leading-relaxed text-[var(--text-secondary)]`}>{description}</p>
         </CardContent>
       </Card>
     </main>

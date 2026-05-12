@@ -1,37 +1,203 @@
 @import "tailwindcss";
 
 :root {
-  --app-canvas: #FBFEFE;
-  --app-surface: #FBFEFE;
-  --app-surface-muted: #FBFEFE;
-  --app-border: #EAF3F3;
-  --background: #FBFEFE;
-  --surface: #FBFEFE;
-  --surface-muted: #f7f7f5;
-  --text: #1d1d1d;
-  --text-muted: #6b6b6b;
-  --border: rgba(17, 17, 17, 0.1);
-  --accent: #ff5406;
-  --accent-soft: #ffe4d7;
-  --black: #1d1d1d;
-  --ink: #061a25;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-  --radius-xl: 22px;
+  /* Tradesstack Design System - canonical tokens */
+  --font-size: 16px;
+
+  /* Brand colours */
+  --navy-primary: #07122B;
+  --orange-primary: #F7631B;
+  --orange-hover: #E55A18;
+
+  /* Backgrounds and surfaces */
+  --background: #F7F8FA;
+  --foreground: #111827;
+  --card: #FFFFFF;
+  --card-foreground: #111827;
+  --surface: #FFFFFF;
+  --surface-muted: #F3F4F6;
+  --surface-subtle: #F7F8FA;
+
+  /* Text colours */
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-muted: #9CA3AF;
+
+  /* Borders and focus */
+  --border: #E5E7EB;
+  --border-subtle: #F3F4F6;
+  --ring: var(--orange-primary);
+
+  /* HSL compatibility tokens for legacy hsl(var(...)) consumers */
+  --foreground-hsl: 221 39% 11%;
+  --border-hsl: 220 13% 91%;
+  --muted-foreground: #6B7280;
+  --muted-foreground-hsl: 220 9% 46%;
+
+  /* Semantic colours */
+  --success: #16A34A;
+  --success-light: #DCFCE7;
+  --warning: #F59E0B;
+  --warning-light: #FEF3C7;
+  --error: #DC2626;
+  --error-light: #FEE2E2;
+  --info: #2563EB;
+  --info-light: #DBEAFE;
+
+  /* Status colours */
+  --status-draft: #6B7280;
+  --status-draft-light: #F3F4F6;
+  --status-pending: #F59E0B;
+  --status-pending-light: #FEF3C7;
+  --status-sent: #2563EB;
+  --status-sent-light: #DBEAFE;
+  --status-approved: #16A34A;
+  --status-approved-light: #DCFCE7;
+  --status-overdue: #DC2626;
+  --status-overdue-light: #FEE2E2;
+  --status-completed: #059669;
+  --status-completed-light: #D1FAE5;
+  --status-active: #0891B2;
+  --status-active-light: #CFFAFE;
+
+  /* Spacing scale - 8px base */
+  --spacing-xs: 8px;
+  --spacing-sm: 16px;
+  --spacing-md: 24px;
+  --spacing-lg: 32px;
+  --spacing-xl: 40px;
+  --spacing-2xl: 48px;
+
+  /* Radius scale */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius: var(--radius-md);
+
+  /* Typography weights */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.05);
+
+  /* Sidebar */
+  --sidebar: var(--navy-primary);
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-primary: var(--orange-primary);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(247, 99, 27, 0.1);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: var(--orange-primary);
+
+  /* Popover and form compatibility */
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
+  --primary: var(--orange-primary);
+  --primary-foreground: #FFFFFF;
+  --secondary: #F3F4F6;
+  --secondary-foreground: #111827;
+  --muted: #F3F4F6;
+  --destructive: var(--error);
+  --destructive-foreground: #FFFFFF;
+  --input: transparent;
+  --input-background: #FFFFFF;
+  --switch-background: #E5E7EB;
+
+  /* Chart colours */
+  --chart-1: var(--orange-primary);
+  --chart-2: var(--info);
+  --chart-3: var(--success);
+  --chart-4: var(--warning);
+  --chart-5: var(--navy-primary);
+
+  /* Existing Tradesstack aliases - preserved for current components */
+  --app-canvas: var(--background);
+  --app-surface: var(--surface);
+  --app-surface-muted: var(--surface-muted);
+  --app-border: #E5E7EB;
+  --text: var(--text-primary);
+  --accent: #F7F8FA;
+  --accent-soft: #FFE8DC;
+  --accent-foreground: #111827;
+  --black: var(--text-primary);
+  --ink: var(--navy-primary);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-float: var(--shadow-md);
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-surface-subtle: var(--surface-subtle);
   --color-text: var(--text);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
   --color-black: var(--black);
   --color-ink: var(--ink);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+  --color-error: var(--error);
+  --color-error-light: var(--error-light);
+  --color-info: var(--info);
+  --color-info-light: var(--info-light);
+  --color-status-draft: var(--status-draft);
+  --color-status-draft-light: var(--status-draft-light);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-light: var(--status-pending-light);
+  --color-status-sent: var(--status-sent);
+  --color-status-sent-light: var(--status-sent-light);
+  --color-status-approved: var(--status-approved);
+  --color-status-approved-light: var(--status-approved-light);
+  --color-status-overdue: var(--status-overdue);
+  --color-status-overdue-light: var(--status-overdue-light);
+  --color-status-completed: var(--status-completed);
+  --color-status-completed-light: var(--status-completed-light);
+  --color-status-active: var(--status-active);
+  --color-status-active-light: var(--status-active-light);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --font-sans: var(--font-body);
 }
 
@@ -69,13 +235,11 @@ h2 {
 }
 
 .shadow-soft {
-  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.06);
+  box-shadow: var(--shadow-soft);
 }
 
 .shadow-float {
-  box-shadow:
-    0 18px 34px rgba(17, 17, 17, 0.08),
-    0 3px 10px rgba(17, 17, 17, 0.05);
+  box-shadow: var(--shadow-float);
 }
 
 .panel-gradient {

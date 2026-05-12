@@ -2,8 +2,20 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
-import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
+import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import {
+  OperationalTable,
+  OperationalTableBody,
+  OperationalTableCell,
+  OperationalTableHead,
+  OperationalTableHeader,
+  OperationalTableRow,
+} from "@/components/app/OperationalTable";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { ibmPlexSans } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -389,12 +401,10 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
 
   if (!member) {
     return (
-      <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
-        <Card className="overflow-hidden rounded-[32px] border-none bg-[var(--app-surface)] shadow-none">
-          <CardContent className="px-6 py-6">
-            <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>Sign in to review cost item classifications.</p>
-          </CardContent>
-        </Card>
+      <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+        <OperationalPanel>
+          <p className="text-sm text-[var(--text-secondary)]">Sign in to review cost item classifications.</p>
+        </OperationalPanel>
       </main>
     );
   }
@@ -403,34 +413,24 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
   const projectNameById = await fetchProjectNames([...new Set(reviewRows.map((row) => row.project_id).filter(Boolean))]);
 
   return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[#FBFEFE] pb-8`}>
-      <section className="flex items-start justify-between gap-4 pt-[25px]">
-        <div>
-          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
-            Cost Item Review
-          </h1>
-          <p className={`${interMedium.className} mt-[0.65rem] text-[15px] leading-[1.45] text-[#6b6b6b]`}>
-            Review low-confidence cost item classifications before they become part of your org’s confirmed intelligence.
-          </p>
-        </div>
-        <div className="inline-flex items-center rounded-[0.8rem] border border-[#E2E8F1] bg-white px-4 py-2 text-[14px] font-semibold text-[#10283B]">
-          {reviewRows.length} needing review
-        </div>
-      </section>
+    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+      <OperationalPageHeader
+        title="Cost Item Review"
+        description="Review low-confidence cost item classifications before they become part of your org’s confirmed intelligence."
+        actions={
+          <StatusBadge status="draft">{reviewRows.length} needing review</StatusBadge>
+        }
+      />
 
-      <Card className="overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-[var(--app-surface)] shadow-none">
-        <CardContent className="p-0">
+      <OperationalPanel contentClassName="p-0">
           {reviewRows.length === 0 ? (
             <div className="px-6 pb-6 pt-6">
-              <div className="rounded-[10px] border border-dashed border-[#CBD7E2] bg-[#FBFEFE] px-6 py-8 text-center">
-                <p className={`${ibmPlexSans.className} text-[15px] text-[#6A7A89]`}>No cost items need review right now.</p>
-              </div>
+              <OperationalEmptyState title="No cost items need review right now." />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1280px] border-collapse">
-                <thead>
-                  <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
+            <OperationalTable className="min-w-[1280px]">
+                <OperationalTableHeader>
+                  <OperationalTableRow>
                     {[
                       "Description",
                       "Project",
@@ -441,16 +441,11 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
                       "Confidence",
                       "Action",
                     ].map((heading) => (
-                      <th
-                        key={heading}
-                        className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
-                      >
-                        {heading}
-                      </th>
+                      <OperationalTableHead key={heading}>{heading}</OperationalTableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </OperationalTableRow>
+                </OperationalTableHeader>
+                <OperationalTableBody>
                   {reviewRows.map((row) => {
                     const description = getReviewDescription(row);
                     const projectName = projectNameById.get(row.project_id) ?? "Unknown project";
@@ -458,68 +453,46 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
                     const confidence = row.classification_confidence;
                     const confidenceTone =
                       typeof confidence === "number" && confidence >= 0.75
-                        ? "bg-[#DCFCE7] text-[#15803D]"
+                        ? "approved"
                         : typeof confidence === "number" && confidence >= 0.5
-                          ? "bg-[#FEF3C7] text-[#B45309]"
-                          : "bg-[#FEE2E2] text-[#B91C1C]";
+                          ? "pending"
+                          : "overdue";
 
                     return (
                       <Fragment key={row.id}>
-                        <tr className="group border-b border-[#E2E8F1] transition-colors hover:bg-[#F8FBFB]">
-                          <td className="px-6 py-4 align-top">
-                            <div className="max-w-[320px]">
-                              <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>{description}</p>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 align-top">
-                            <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>{projectName}</p>
-                          </td>
-                          <td className="px-6 py-4 align-top">
-                            <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[13px] font-semibold text-[#475569]`}>
-                              {formatDocumentKind(row.source_document_kind)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 align-top">
-                            <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>{row.work_type ?? "—"}</p>
-                          </td>
-                          <td className="px-6 py-4 align-top">
-                            <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>{row.cost_type ?? "—"}</p>
-                          </td>
-                          <td className="px-6 py-4 align-top">
-                            <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>{row.cost_code ?? "—"}</p>
-                          </td>
-                          <td className="px-6 py-4 align-top">
-                            <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${confidenceTone}`}>
-                              {formatConfidence(confidence)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 align-top">
+                        <OperationalTableRow>
+                          <OperationalTableCell>
+                            <div className="max-w-[320px] font-semibold">{description}</div>
+                          </OperationalTableCell>
+                          <OperationalTableCell>{projectName}</OperationalTableCell>
+                          <OperationalTableCell>
+                            <StatusBadge status="draft">{formatDocumentKind(row.source_document_kind)}</StatusBadge>
+                          </OperationalTableCell>
+                          <OperationalTableCell>{row.work_type ?? "—"}</OperationalTableCell>
+                          <OperationalTableCell>{row.cost_type ?? "—"}</OperationalTableCell>
+                          <OperationalTableCell>{row.cost_code ?? "—"}</OperationalTableCell>
+                          <OperationalTableCell>
+                            <StatusBadge status={confidenceTone}>{formatConfidence(confidence)}</StatusBadge>
+                          </OperationalTableCell>
+                          <OperationalTableCell>
                             <div className="flex items-center gap-2">
                               <form action={confirmCostItem}>
                                 <input type="hidden" name="costItemId" value={row.id} />
-                                <button
-                                  type="submit"
-                                  className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
-                                >
+                                <Button type="submit" variant="secondary" size="sm">
                                   Confirm
-                                </button>
+                                </Button>
                               </form>
-                              <Link
-                                href={isEditing ? PAGE_PATH : `${PAGE_PATH}?edit=${row.id}`}
-                                className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border px-3 py-1.5 text-[13px] font-semibold transition ${
-                                  isEditing
-                                    ? "border-[#F15A29] bg-[#FFF1EB] text-[#C2410C]"
-                                    : "border-[#E2E8F1] bg-white text-[#475569] hover:bg-[#F8FAFC]"
-                                }`}
-                              >
-                                {isEditing ? "Close" : "Review"}
-                              </Link>
+                              <Button asChild variant={isEditing ? "primary" : "secondary"} size="sm">
+                                <Link href={isEditing ? PAGE_PATH : `${PAGE_PATH}?edit=${row.id}`}>
+                                  {isEditing ? "Close" : "Review"}
+                                </Link>
+                              </Button>
                             </div>
-                          </td>
-                        </tr>
+                          </OperationalTableCell>
+                        </OperationalTableRow>
                         {isEditing ? (
-                          <tr className="border-b border-[#E2E8F1] bg-[#FFFDFC]">
-                            <td colSpan={8} className="px-6 py-5">
+                          <OperationalTableRow className="bg-[var(--surface-muted)]">
+                            <OperationalTableCell colSpan={8} className="py-5">
                               <ReviewEditorForm
                                 action={saveReviewedCostItem}
                                 cancelHref={PAGE_PATH}
@@ -530,21 +503,19 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
                                 workTypeOptions={WORK_TYPE_OPTIONS}
                                 costTypeOptions={[...COST_TYPE_OPTIONS]}
                               />
-                            </td>
-                          </tr>
+                            </OperationalTableCell>
+                          </OperationalTableRow>
                         ) : null}
                       </Fragment>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </OperationalTableBody>
+              </OperationalTable>
           )}
-        </CardContent>
-      </Card>
+      </OperationalPanel>
 
       {reviewRows.length > 0 ? (
-        <p className={`${interMedium.className} text-[13px] text-[#6b6b6b]`}>
+        <p className="text-sm text-[var(--text-secondary)]">
           `Confirm` accepts the current suggestion as-is. `Review` opens an inline editor so the suggested work type, cost type, and cost code can be amended before confirming.
         </p>
       ) : null}

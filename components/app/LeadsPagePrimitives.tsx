@@ -2,27 +2,27 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export const leadsPageSurfaceTheme = {
-  canvas: "#FBFEFE",
-  panel: "#FBFEFE",
-  border: "#E2E8F1",
-  text: "#1d1d1d",
-  muted: "#4B5D79",
-  accent: "#F15A29",
-  actionBorder: "#CBD5E1",
-  actionText: "#475569",
-  actionHover: "#F8FAFC",
+  canvas: "var(--app-canvas)",
+  panel: "var(--app-surface)",
+  border: "var(--app-border)",
+  text: "var(--text-primary)",
+  muted: "var(--text-secondary)",
+  accent: "var(--orange-primary)",
+  actionBorder: "var(--app-border)",
+  actionText: "var(--text-secondary)",
+  actionHover: "var(--surface-subtle)",
 } as const;
 
 export const leadsPanelClassName =
-  "rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]";
+  "rounded-[var(--radius-lg)] border-[1.3px] border-[var(--app-border)] bg-[var(--app-surface)] shadow-[var(--shadow-sm)]";
 
 export const leadsMetricPanelClassName =
-  "rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]";
+  "rounded-[var(--radius-lg)] border-[1.3px] border-[var(--app-border)] bg-[var(--app-surface)] shadow-[var(--shadow-sm)]";
 
-export const leadsShellHeaderClassName = "bg-[#FBFEFE]";
+export const leadsShellHeaderClassName = "bg-[var(--app-canvas)]";
 export const leadsShellActionClassName =
-  "inline-flex items-center gap-[0.4rem] rounded-[0.9rem] border border-[#CBD5E1] bg-[#FBFEFE] px-4 py-2 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]";
-export const leadsShellTabRowClassName = "sticky top-0 z-20 border-b-2 bg-[#FBFEFE] px-5";
+  "inline-flex items-center gap-[0.4rem] rounded-[var(--radius-lg)] border border-[var(--app-border)] bg-[var(--app-surface)] px-4 py-2 text-[14px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-subtle)]";
+export const leadsShellTabRowClassName = "sticky top-0 z-20 border-b-2 border-[var(--app-border)] bg-[var(--app-canvas)] px-5";
 export const leadsShellTabClassName =
   "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 border-transparent px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors";
 
@@ -35,7 +35,7 @@ export const leadsShellTitleStyle: React.CSSProperties = {
 };
 
 export const leadsCompactTitleClassName =
-  "truncate text-[1.7rem] font-bold leading-none tracking-[-0.03em] text-[#1d1d1d]";
+  "truncate text-[1.7rem] font-bold leading-none tracking-[-0.03em] text-[var(--text-primary)]";
 
 export const leadsSectionTitleStyle: React.CSSProperties = {
   fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif",
@@ -58,7 +58,7 @@ export const leadsBodyLabelStyle: React.CSSProperties = {
   fontSize: "15px",
   fontWeight: 500,
   lineHeight: 1.2,
-  color: "#6b6b6b",
+  color: "var(--text-secondary)",
 };
 
 export const leadsBodyValueStyle: React.CSSProperties = {
@@ -67,7 +67,7 @@ export const leadsBodyValueStyle: React.CSSProperties = {
   fontWeight: 600,
   lineHeight: 1.1,
   letterSpacing: "-0.03em",
-  color: "#111827",
+  color: "var(--text-primary)",
 };
 
 export const leadsTabLabelStyle: React.CSSProperties = {
