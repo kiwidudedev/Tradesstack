@@ -7118,6 +7118,107 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _task_assert_project_access: {
+        Args: { p_organization_id?: string; p_project_id: string }
+        Returns: {
+          client_id: string | null
+          cover_image_url: string | null
+          created_at: string
+          created_by: string
+          id: string
+          location: string
+          name: string
+          organization_id: string
+          project_code: string
+          slug: string
+          source_opportunity_id: string | null
+          stage: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "organization_projects"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      _task_assert_task_access: {
+        Args: { p_task_id: string }
+        Returns: {
+          archive_reason: string | null
+          archived_at: string | null
+          archived_by: string | null
+          assigned_user_id: string | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          created_by: string
+          delete_reason: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          description: string
+          due_at: string | null
+          due_date: string | null
+          id: string
+          is_completed: boolean
+          linked_client_id: string | null
+          linked_inspection_id: string | null
+          linked_inspection_item_id: string | null
+          linked_issue_id: string | null
+          linked_purchase_order_id: string | null
+          linked_quote_id: string | null
+          linked_variation_id: string | null
+          metadata: Json
+          opportunity_id: string | null
+          organization_id: string
+          priority: string
+          project_id: string
+          source_id: string | null
+          source_type: string | null
+          status: string
+          task_type: string | null
+          title: string
+          trade: string
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "project_job_todos"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      _task_current_organization_id: { Args: never; Returns: string }
+      _task_normalize_priority: {
+        Args: { p_priority: string }
+        Returns: string
+      }
+      _task_normalize_status: { Args: { p_status: string }; Returns: string }
+      _task_to_json: {
+        Args: {
+          p_task: Database["public"]["Tables"]["project_job_todos"]["Row"]
+        }
+        Returns: Json
+      }
+      _task_validate_assignee: {
+        Args: { p_assigned_user_id: string; p_organization_id: string }
+        Returns: undefined
+      }
+      _write_task_activity: {
+        Args: {
+          p_actor_user_id: string
+          p_event_type: string
+          p_field_name?: string
+          p_metadata?: Json
+          p_new_value?: Json
+          p_old_value?: Json
+          p_organization_id: string
+          p_project_id: string
+          p_task_id: string
+        }
+        Returns: string
+      }
       accept_organization_invite: {
         Args: { invite_token: string }
         Returns: string
@@ -7169,6 +7270,23 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      add_task_link: {
+        Args: {
+          p_linked_id: string
+          p_linked_type: string
+          p_metadata?: Json
+          p_task_id: string
+        }
+        Returns: Json
+      }
+      archive_task: {
+        Args: { p_reason?: string; p_task_id: string }
+        Returns: Json
+      }
+      assign_task: {
+        Args: { p_assigned_user_id: string; p_task_id: string }
+        Returns: Json
       }
       begin_cost_item_revision: {
         Args: { p_document_id: string; p_document_kind: string }
@@ -7263,6 +7381,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      complete_task: { Args: { p_task_id: string }; Returns: Json }
       compute_cost_item_source_fingerprint: {
         Args: {
           p_description: string
@@ -7363,6 +7482,11 @@ export type Database = {
           variation_title: string
         }[]
       }
+      create_task: { Args: { p_input: Json }; Returns: Json }
+      create_task_comment: {
+        Args: { p_comment: string; p_metadata?: Json; p_task_id: string }
+        Returns: Json
+      }
       default_trade_pack_monthly_limit: {
         Args: { plan_tier: string }
         Returns: number
@@ -7375,6 +7499,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      delete_task_comment: { Args: { p_comment_id: string }; Returns: Json }
       enforce_shared_rate_limit: {
         Args: {
           p_limit: number
@@ -7468,6 +7593,7 @@ export type Database = {
           total_value: number
         }[]
       }
+      get_task: { Args: { p_task_id: string }; Returns: Json }
       get_trade_pack_monthly_limit_for_organization: {
         Args: { p_organization_id: string }
         Returns: number
@@ -7537,6 +7663,25 @@ export type Database = {
           purchase_order_id: string
           updated_at: string
         }[]
+      }
+      list_task_activity: { Args: { p_task_id: string }; Returns: Json }
+      list_task_attachments: {
+        Args: { p_include_deleted?: boolean; p_task_id: string }
+        Returns: Json
+      }
+      list_task_comments: {
+        Args: { p_include_deleted?: boolean; p_task_id: string }
+        Returns: Json
+      }
+      list_tasks: {
+        Args: {
+          p_include_archived?: boolean
+          p_include_deleted?: boolean
+          p_opportunity_id?: string
+          p_project_id?: string
+          p_statuses?: string[]
+        }
+        Returns: Json
       }
       list_worker_assigned_purchase_orders: {
         Args: {
@@ -7622,6 +7767,8 @@ export type Database = {
         }
         Returns: undefined
       }
+      remove_task_link: { Args: { p_task_link_id: string }; Returns: Json }
+      reopen_task: { Args: { p_task_id: string }; Returns: Json }
       reorder_client_notes: {
         Args: { p_client_id: string; p_ordered_ids: string[] }
         Returns: undefined
@@ -7659,6 +7806,7 @@ export type Database = {
           project_id: string
         }[]
       }
+      restore_task: { Args: { p_task_id: string }; Returns: Json }
       retire_purchase_order_line_cost_item: {
         Args: { p_cost_item_id: string }
         Returns: undefined
@@ -8026,6 +8174,10 @@ export type Database = {
           passed: boolean
         }[]
       }
+      soft_delete_task: {
+        Args: { p_reason?: string; p_task_id: string }
+        Returns: Json
+      }
       supersede_previous_cost_items: {
         Args: {
           p_document_id: string
@@ -8185,6 +8337,11 @@ export type Database = {
           total_payable: number
           updated_at: string
         }[]
+      }
+      update_task: { Args: { p_patch: Json; p_task_id: string }; Returns: Json }
+      update_task_comment: {
+        Args: { p_comment: string; p_comment_id: string; p_metadata?: Json }
+        Returns: Json
       }
       upsert_cost_items_for_document: {
         Args: {
