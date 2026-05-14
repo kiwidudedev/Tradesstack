@@ -2,7 +2,7 @@
 
 import { Suspense, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { AlertCircle, Calendar, FileText, Flag, ListTodo, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
+import { AlertCircle, Calendar, FileText, Flag, ListTodo, Pencil, Search, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -922,36 +922,6 @@ export function ProjectTodosBoard() {
       }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to update task.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const deleteTask = async () => {
-    if (!context || !supabase || !selectedTask) {
-      return;
-    }
-
-    setError(null);
-    setIsSaving(true);
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const todosTable = (supabase as any).from("project_job_todos");
-      const { error: deleteError } = await todosTable
-        .delete()
-        .eq("id", selectedTask.id)
-        .eq("organization_id", context.organizationId)
-        .eq("project_id", context.projectId);
-
-      if (deleteError) {
-        throw new Error(deleteError.message);
-      }
-
-      setIsDetailOpen(false);
-      setSelectedTaskId(null);
-      await loadData({ showLoading: false });
-    } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Unable to delete task.");
     } finally {
       setIsSaving(false);
     }
