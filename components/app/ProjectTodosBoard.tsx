@@ -24,9 +24,12 @@ import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   createTask as createSharedTask,
+  deleteTaskAttachment,
   getTask as getSharedTask,
+  listTaskAttachments,
   listTasks as listSharedTasks,
   updateTask as updateSharedTask,
+  uploadTaskAttachment,
 } from "@/lib/tasks/service";
 import type { TaskPayload, TaskStatus } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
@@ -83,12 +86,16 @@ interface LinkedInspectionItemOption {
 
 interface TodoAttachment {
   id: string;
+  displayKey: string;
+  source: "legacy" | "storage";
   todoId: string;
   fileName: string;
   fileUrl: string;
   mimeType: string;
   fileSizeBytes: number | null;
   createdAt: string;
+  storageBucket: string | null;
+  storagePath: string | null;
 }
 
 interface TaskStats {
@@ -281,13 +288,9 @@ function isPdfFile(file: File) {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Unable to read file."));
-    reader.readAsDataURL(file);
-  });
+function getLegacyAttachmentId(metadata: Record<string, unknown>): string | null {
+  const value = metadata.legacyAttachmentId;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function isOverdue(dueDate: string | null, dueAt: string | null, status: TodoStatus) {
@@ -387,7 +390,7 @@ export function ProjectTodosBoard() {
   const [newDueDate, setNewDueDate] = useState("");
   const [newDueTime, setNewDueTime] = useState("");
   const [newPdfName, setNewPdfName] = useState("");
-  const [newPdfDataUrl, setNewPdfDataUrl] = useState("");
+  const [newPdfFile, setNewPdfFile] = useState<File | null>(null);
   const [newPdfSizeBytes, setNewPdfSizeBytes] = useState<number | null>(null);
   const [newPriority, setNewPriority] = useState<TodoPriority>("Medium");
   const [newStatus, setNewStatus] = useState<TodoStatus>("To Do");
@@ -401,7 +404,7 @@ export function ProjectTodosBoard() {
   const [detailDueDate, setDetailDueDate] = useState("");
   const [detailDueTime, setDetailDueTime] = useState("");
   const [detailPdfName, setDetailPdfName] = useState("");
-  const [detailPdfDataUrl, setDetailPdfDataUrl] = useState("");
+  const [detailPdfFile, setDetailPdfFile] = useState<File | null>(null);
   const [detailPdfSizeBytes, setDetailPdfSizeBytes] = useState<number | null>(null);
   const [detailPriority, setDetailPriority] = useState<TodoPriority>("Medium");
   const [detailStatus, setDetailStatus] = useState<TodoStatus>("To Do");
@@ -455,7 +458,7 @@ export function ProjectTodosBoard() {
     setDetailDueDate(selectedTask.dueDate ?? toDateInputValue(selectedTask.dueAt));
     setDetailDueTime(toTimeInputValue(selectedTask.dueAt));
     setDetailPdfName("");
-    setDetailPdfDataUrl("");
+    setDetailPdfFile(null);
     setDetailPdfSizeBytes(null);
     setDetailPriority(selectedTask.priority);
     setDetailStatus(selectedTask.status);
@@ -472,24 +475,54 @@ export function ProjectTodosBoard() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const attachmentTable = (supabase as any).from("project_job_todo_attachments");
-      const { data, error: attachmentError } = await attachmentTable
-        .select("id, todo_id, file_name, file_url, mime_type, file_size_bytes, created_at")
-        .eq("organization_id", taskContext.organizationId)
-        .eq("project_id", taskContext.projectId)
-        .eq("todo_id", taskId)
-        .order("created_at", { ascending: false });
+      const [storageAttachments, legacyAttachmentsResult] = await Promise.all([
+        listTaskAttachments(supabase, taskId),
+        attachmentTable
+          .select("id, todo_id, file_name, file_url, mime_type, file_size_bytes, created_at")
+          .eq("organization_id", taskContext.organizationId)
+          .eq("project_id", taskContext.projectId)
+          .eq("todo_id", taskId)
+          .order("created_at", { ascending: false }),
+      ]);
+      const { data, error: attachmentError } = legacyAttachmentsResult;
       if (attachmentError) {
         throw new Error(attachmentError.message);
       }
-      const normalized: TodoAttachment[] = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: String(row.id),
-        todoId: String(row.todo_id ?? ""),
-        fileName: String(row.file_name ?? "Attachment.pdf"),
-        fileUrl: String(row.file_url ?? ""),
-        mimeType: String(row.mime_type ?? ""),
-        fileSizeBytes: typeof row.file_size_bytes === "number" ? row.file_size_bytes : null,
-        createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+
+      const migratedLegacyIds = new Set(
+        storageAttachments
+          .map((attachment) => getLegacyAttachmentId(attachment.metadata as Record<string, unknown>))
+          .filter((value): value is string => Boolean(value))
+      );
+      const normalizedStorage: TodoAttachment[] = storageAttachments.map((attachment) => ({
+        id: attachment.id,
+        displayKey: `storage:${attachment.id}`,
+        source: "storage",
+        todoId: attachment.taskId,
+        fileName: attachment.fileName || "Attachment.pdf",
+        fileUrl: "",
+        mimeType: attachment.mimeType,
+        fileSizeBytes: attachment.fileSize,
+        createdAt: attachment.createdAt,
+        storageBucket: attachment.storageBucket,
+        storagePath: attachment.storagePath,
       }));
+      const normalizedLegacy: TodoAttachment[] = ((data ?? []) as Array<Record<string, unknown>>)
+        .filter((row) => !migratedLegacyIds.has(String(row.id)))
+        .map((row) => ({
+          id: String(row.id),
+          displayKey: `legacy:${String(row.id)}`,
+          source: "legacy",
+          todoId: String(row.todo_id ?? ""),
+          fileName: String(row.file_name ?? "Attachment.pdf"),
+          fileUrl: String(row.file_url ?? ""),
+          mimeType: String(row.mime_type ?? ""),
+          fileSizeBytes: typeof row.file_size_bytes === "number" ? row.file_size_bytes : null,
+          createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+          storageBucket: null,
+          storagePath: null,
+        }));
+      const normalized = [...normalizedStorage, ...normalizedLegacy].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
       setSelectedTaskAttachments(normalized);
     } catch (attachmentLoadError) {
       setError(attachmentLoadError instanceof Error ? attachmentLoadError.message : "Unable to load task PDFs.");
@@ -783,7 +816,7 @@ export function ProjectTodosBoard() {
     setNewDueDate("");
     setNewDueTime("");
     setNewPdfName("");
-    setNewPdfDataUrl("");
+    setNewPdfFile(null);
     setNewPdfSizeBytes(null);
     setNewPriority("Medium");
     setNewStatus("To Do");
@@ -795,7 +828,7 @@ export function ProjectTodosBoard() {
     const file = event.target.files?.[0];
     if (!file) {
       setNewPdfName("");
-      setNewPdfDataUrl("");
+      setNewPdfFile(null);
       setNewPdfSizeBytes(null);
       return;
     }
@@ -804,21 +837,16 @@ export function ProjectTodosBoard() {
       event.target.value = "";
       return;
     }
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      setNewPdfName(file.name);
-      setNewPdfDataUrl(dataUrl);
-      setNewPdfSizeBytes(file.size);
-    } catch (fileError) {
-      setError(fileError instanceof Error ? fileError.message : "Unable to read PDF.");
-    }
+    setNewPdfName(file.name);
+    setNewPdfFile(file);
+    setNewPdfSizeBytes(file.size);
   };
 
   const handleDetailPdfSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       setDetailPdfName("");
-      setDetailPdfDataUrl("");
+      setDetailPdfFile(null);
       setDetailPdfSizeBytes(null);
       return;
     }
@@ -827,14 +855,9 @@ export function ProjectTodosBoard() {
       event.target.value = "";
       return;
     }
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      setDetailPdfName(file.name);
-      setDetailPdfDataUrl(dataUrl);
-      setDetailPdfSizeBytes(file.size);
-    } catch (fileError) {
-      setError(fileError instanceof Error ? fileError.message : "Unable to read PDF.");
-    }
+    setDetailPdfName(file.name);
+    setDetailPdfFile(file);
+    setDetailPdfSizeBytes(file.size);
   };
 
   const createTask = async () => {
@@ -860,22 +883,12 @@ export function ProjectTodosBoard() {
         linkedInspectionId: newLinkedInspectionId || null,
       });
 
-      if (newPdfDataUrl && insertedTask?.id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const attachmentTable = (supabase as any).from("project_job_todo_attachments");
-        const { error: attachmentError } = await attachmentTable.insert({
-          organization_id: context.organizationId,
-          project_id: context.projectId,
-          todo_id: insertedTask.id,
-          created_by: session.id,
-          file_name: newPdfName || "Attachment.pdf",
-          file_url: newPdfDataUrl,
-          mime_type: "application/pdf",
-          file_size_bytes: newPdfSizeBytes,
+      if (newPdfFile && insertedTask?.id) {
+        await uploadTaskAttachment(supabase, {
+          taskId: insertedTask.id,
+          file: newPdfFile,
+          attachmentType: "pdf",
         });
-        if (attachmentError) {
-          throw new Error(attachmentError.message);
-        }
       }
 
       setIsCreateOpen(false);
@@ -928,29 +941,19 @@ export function ProjectTodosBoard() {
   };
 
   const addAttachmentToSelectedTask = async () => {
-    if (!context || !supabase || !session?.id || !selectedTask || !detailPdfDataUrl) {
+    if (!context || !supabase || !session?.id || !selectedTask || !detailPdfFile) {
       return;
     }
     setError(null);
     setIsSaving(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attachmentTable = (supabase as any).from("project_job_todo_attachments");
-      const { error: attachmentError } = await attachmentTable.insert({
-        organization_id: context.organizationId,
-        project_id: context.projectId,
-        todo_id: selectedTask.id,
-        created_by: session.id,
-        file_name: detailPdfName || "Attachment.pdf",
-        file_url: detailPdfDataUrl,
-        mime_type: "application/pdf",
-        file_size_bytes: detailPdfSizeBytes,
+      await uploadTaskAttachment(supabase, {
+        taskId: selectedTask.id,
+        file: detailPdfFile,
+        attachmentType: "pdf",
       });
-      if (attachmentError) {
-        throw new Error(attachmentError.message);
-      }
       setDetailPdfName("");
-      setDetailPdfDataUrl("");
+      setDetailPdfFile(null);
       setDetailPdfSizeBytes(null);
       await Promise.all([
         loadData({ showLoading: false }),
@@ -963,22 +966,26 @@ export function ProjectTodosBoard() {
     }
   };
 
-  const deleteAttachment = async (attachmentId: string) => {
+  const deleteAttachment = async (attachment: TodoAttachment) => {
     if (!context || !supabase) {
       return;
     }
     setError(null);
     setIsSaving(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attachmentTable = (supabase as any).from("project_job_todo_attachments");
-      const { error: removeError } = await attachmentTable
-        .delete()
-        .eq("id", attachmentId)
-        .eq("organization_id", context.organizationId)
-        .eq("project_id", context.projectId);
-      if (removeError) {
-        throw new Error(removeError.message);
+      if (attachment.source === "storage") {
+        await deleteTaskAttachment(supabase, attachment.id);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const attachmentTable = (supabase as any).from("project_job_todo_attachments");
+        const { error: removeError } = await attachmentTable
+          .delete()
+          .eq("id", attachment.id)
+          .eq("organization_id", context.organizationId)
+          .eq("project_id", context.projectId);
+        if (removeError) {
+          throw new Error(removeError.message);
+        }
       }
       await Promise.all([
         loadData({ showLoading: false }),
@@ -993,6 +1000,20 @@ export function ProjectTodosBoard() {
 
   const openAttachment = async (attachment: TodoAttachment) => {
     try {
+      if (attachment.source === "storage") {
+        if (!supabase || !attachment.storageBucket || !attachment.storagePath) {
+          throw new Error("Missing attachment storage path.");
+        }
+        const { data, error: signedUrlError } = await supabase.storage
+          .from(attachment.storageBucket)
+          .createSignedUrl(attachment.storagePath, 60);
+        if (signedUrlError || !data?.signedUrl) {
+          throw new Error(signedUrlError?.message ?? "Unable to open PDF.");
+        }
+        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
       if (!attachment.fileUrl) {
         throw new Error("Missing attachment URL.");
       }
