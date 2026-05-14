@@ -7189,6 +7189,12 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      _task_attachment_to_json: {
+        Args: {
+          p_attachment: Database["public"]["Tables"]["task_attachments"]["Row"]
+        }
+        Returns: Json
+      }
       _task_current_organization_id: { Args: never; Returns: string }
       _task_normalize_priority: {
         Args: { p_priority: string }
@@ -7483,6 +7489,10 @@ export type Database = {
         }[]
       }
       create_task: { Args: { p_input: Json }; Returns: Json }
+      create_task_attachment: {
+        Args: { p_input: Json; p_task_id: string }
+        Returns: Json
+      }
       create_task_comment: {
         Args: { p_comment: string; p_metadata?: Json; p_task_id: string }
         Returns: Json
@@ -7498,6 +7508,10 @@ export type Database = {
           p_project_id: string
         }
         Returns: undefined
+      }
+      delete_task_attachment: {
+        Args: { p_attachment_id: string }
+        Returns: Json
       }
       delete_task_comment: { Args: { p_comment_id: string }; Returns: Json }
       enforce_shared_rate_limit: {

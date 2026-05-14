@@ -136,6 +136,17 @@ export interface TaskAttachmentPayload {
   deletedBy: string | null;
 }
 
+export type TaskAttachmentType =
+  | "photo"
+  | "pdf"
+  | "document"
+  | "delivery_docket"
+  | "qa_photo"
+  | "site_photo"
+  | "variation_attachment"
+  | "invoice_attachment"
+  | "other";
+
 export interface TaskLinkPayload {
   id: string;
   organizationId: string;
@@ -206,6 +217,35 @@ export interface TaskCommentInput {
   taskId: string;
   comment: string;
   metadata?: TaskMetadata;
+}
+
+export interface TaskAttachmentInput {
+  taskId: string;
+  fileName: string;
+  originalFileName?: string | null;
+  fileType?: string | null;
+  mimeType: string;
+  storageBucket?: string;
+  storagePath: string;
+  fileSize?: number | null;
+  attachmentType?: TaskAttachmentType;
+  commentId?: string | null;
+  metadata?: TaskMetadata;
+}
+
+export interface TaskAttachmentUploadInput {
+  taskId: string;
+  file: File;
+  attachmentType?: TaskAttachmentType;
+  commentId?: string | null;
+  metadata?: TaskMetadata;
+}
+
+export interface TaskAttachmentStoragePathInput {
+  organizationId: string;
+  projectId?: string | null;
+  taskId: string;
+  fileName: string;
 }
 
 export interface UpdateTaskCommentInput {

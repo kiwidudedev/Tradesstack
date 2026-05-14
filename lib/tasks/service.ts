@@ -1,6 +1,7 @@
 import type { Json } from "@/lib/supabase/types";
 import {
   normalizeTaskActivityPayloadList,
+  normalizeTaskAttachmentPayload,
   normalizeTaskAttachmentPayloadList,
   normalizeTaskCommentPayload,
   normalizeTaskCommentPayloadList,
@@ -11,8 +12,11 @@ import {
 import type {
   CreateTaskInput,
   ListTasksInput,
+  TaskAttachmentInput,
   TaskActivityPayload,
   TaskAttachmentPayload,
+  TaskAttachmentStoragePathInput,
+  TaskAttachmentUploadInput,
   TaskCommentInput,
   TaskCommentPayload,
   TaskLinkInput,
@@ -40,6 +44,97 @@ async function unwrapRpc<T>(request: unknown, normalize: (value: unknown) => T):
   }
 
   return normalize(data);
+}
+
+const TASK_ATTACHMENTS_BUCKET = "task-attachments";
+
+function randomStorageToken(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getFileType(fileName: string, mimeType: string): string | null {
+  if (mimeType) {
+    const [type] = mimeType.split("/");
+    if (type) {
+      return type;
+    }
+  }
+
+  const extension = fileName.split(".").pop()?.trim().toLowerCase();
+  return extension && extension !== fileName.toLowerCase() ? extension : null;
+}
+
+function inferTaskAttachmentMimeType(fileName: string, providedMimeType: string): string {
+  if (providedMimeType) {
+    return providedMimeType;
+  }
+
+  const extension = fileName.split(".").pop()?.trim().toLowerCase();
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "heic":
+      return "image/heic";
+    case "heif":
+      return "image/heif";
+    case "gif":
+      return "image/gif";
+    case "pdf":
+      return "application/pdf";
+    case "txt":
+      return "text/plain";
+    case "csv":
+      return "text/csv";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "xls":
+      return "application/vnd.ms-excel";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "ppt":
+      return "application/vnd.ms-powerpoint";
+    case "pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    default:
+      return "application/pdf";
+  }
+}
+
+export function sanitizeTaskAttachmentFileName(fileName: string): string {
+  const trimmed = fileName.trim() || "attachment";
+  const sanitized = trimmed
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^\.+/, "")
+    .slice(0, 160)
+    .trim();
+
+  return sanitized || "attachment";
+}
+
+export function buildTaskAttachmentStoragePath(input: TaskAttachmentStoragePathInput): string {
+  const organizationId = input.organizationId.trim();
+  const projectSegment = input.projectId?.trim() || "unscoped";
+  const taskId = input.taskId.trim();
+  const fileName = sanitizeTaskAttachmentFileName(input.fileName);
+
+  if (!organizationId || !projectSegment || !taskId) {
+    throw new Error("Task attachment storage path requires organization, project, and task identifiers.");
+  }
+
+  return `${organizationId}/${projectSegment}/tasks/${taskId}/${fileName}`;
 }
 
 export async function listTasks(client: TaskRpcClient, input: ListTasksInput = {}): Promise<TaskPayload[]> {
@@ -89,6 +184,73 @@ export async function listTaskAttachments(
     }),
     normalizeTaskAttachmentPayloadList
   );
+}
+
+export async function createTaskAttachment(client: TaskRpcClient, input: TaskAttachmentInput): Promise<TaskAttachmentPayload> {
+  return unwrapRpc(
+    client.rpc("create_task_attachment", {
+      p_task_id: input.taskId,
+      p_input: toRpcJson({
+        fileName: input.fileName,
+        originalFileName: input.originalFileName ?? null,
+        fileType: input.fileType ?? null,
+        mimeType: input.mimeType,
+        storageBucket: input.storageBucket ?? TASK_ATTACHMENTS_BUCKET,
+        storagePath: input.storagePath,
+        fileSize: input.fileSize ?? null,
+        attachmentType: input.attachmentType ?? "other",
+        commentId: input.commentId ?? null,
+        metadata: input.metadata ?? {},
+      }),
+    }),
+    normalizeTaskAttachmentPayload
+  );
+}
+
+export async function deleteTaskAttachment(client: TaskRpcClient, attachmentId: string): Promise<TaskAttachmentPayload> {
+  return unwrapRpc(client.rpc("delete_task_attachment", { p_attachment_id: attachmentId }), normalizeTaskAttachmentPayload);
+}
+
+export async function uploadTaskAttachment(client: TaskRpcClient, input: TaskAttachmentUploadInput): Promise<TaskAttachmentPayload> {
+  const task = await getTask(client, input.taskId);
+  const originalFileName = input.file.name || "attachment";
+  const safeFileName = sanitizeTaskAttachmentFileName(originalFileName);
+  const storageFileName = `${randomStorageToken()}-${safeFileName}`;
+  const storagePath = buildTaskAttachmentStoragePath({
+    organizationId: task.organizationId,
+    projectId: task.projectId,
+    taskId: task.id,
+    fileName: storageFileName,
+  });
+  const mimeType = inferTaskAttachmentMimeType(safeFileName, input.file.type);
+
+  const { error: uploadError } = await client.storage.from(TASK_ATTACHMENTS_BUCKET).upload(storagePath, input.file, {
+    contentType: mimeType,
+    upsert: false,
+  });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  try {
+    return await createTaskAttachment(client, {
+      taskId: task.id,
+      fileName: safeFileName,
+      originalFileName,
+      fileType: getFileType(safeFileName, mimeType),
+      mimeType,
+      storageBucket: TASK_ATTACHMENTS_BUCKET,
+      storagePath,
+      fileSize: input.file.size,
+      attachmentType: input.attachmentType ?? "other",
+      commentId: input.commentId ?? null,
+      metadata: input.metadata,
+    });
+  } catch (metadataError) {
+    await client.storage.from(TASK_ATTACHMENTS_BUCKET).remove([storagePath]);
+    throw metadataError;
+  }
 }
 
 export async function createTask(client: TaskRpcClient, input: CreateTaskInput): Promise<TaskPayload> {
