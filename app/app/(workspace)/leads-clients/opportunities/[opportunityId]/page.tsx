@@ -11,6 +11,8 @@ import { formatMoneyOperational } from "@/lib/format/currency";
 import { getOpportunityWorkspaceData } from "@/lib/opportunity-workspace-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { createTask, getTask, listTasks, updateTask } from "@/lib/tasks/service";
+import type { TaskPriority, TaskStatus } from "@/lib/tasks/types";
 
 const MODAL_INPUT_CLASS =
   "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
@@ -19,6 +21,16 @@ const MODAL_TEXTAREA_CLASS =
   "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 const SECTION_TITLE_CLASS = "m-0 text-lg font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]";
 const FIELD_LABEL_CLASS = "mb-1.5 block text-sm font-medium text-[var(--text-primary)]";
+const TASK_PRIORITIES: TaskPriority[] = ["Low", "Medium", "High"];
+const TASK_STATUSES: TaskStatus[] = ["To Do", "In Progress", "Need Review", "Done", "Archived"];
+
+function normalizeTaskPriority(value: string): TaskPriority {
+  return TASK_PRIORITIES.includes(value as TaskPriority) ? (value as TaskPriority) : "Medium";
+}
+
+function normalizeTaskStatus(value: string): TaskStatus {
+  return TASK_STATUSES.includes(value as TaskStatus) ? (value as TaskStatus) : "To Do";
+}
 
 function formatDateTime(isoDate: string | null | undefined): string {
   if (!isoDate) {
@@ -275,15 +287,11 @@ export default async function OpportunityWorkspacePage({
           .eq("stage", "Won")
       : Promise.resolve({ count: 0 }),
     activeOpportunity.opportunityId
-      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase as any)
-          .from("project_job_todos")
-          .select("id, title, description, priority, due_date, due_at, assigned_user_id, status")
-          .eq("organization_id", member.organization_id)
-          .eq("opportunity_id", activeOpportunity.opportunityId)
-          .eq("status", "To Do")
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] }),
+      ? listTasks(supabase, {
+          opportunityId: activeOpportunity.opportunityId,
+          statuses: ["To Do"],
+        })
+      : Promise.resolve([]),
     supabase
       .from("organization_members")
       .select("user_id, display_name")
@@ -311,16 +319,18 @@ export default async function OpportunityWorkspacePage({
     userId: person.user_id,
     name: person.display_name || "Team Member",
   }));
-  const leadTasks = ((leadTasksResult.data ?? []) as Array<Record<string, unknown>>).map((task) => ({
-    id: typeof task.id === "string" ? task.id : "",
-    title: typeof task.title === "string" ? task.title : "Untitled task",
-    description: typeof task.description === "string" ? task.description : "",
-    priority: typeof task.priority === "string" ? task.priority : "Medium",
-    dueDate: typeof task.due_date === "string" ? task.due_date : null,
-    dueAt: typeof task.due_at === "string" ? task.due_at : null,
-    assignedUserId: typeof task.assigned_user_id === "string" ? task.assigned_user_id : null,
-    status: typeof task.status === "string" ? task.status : "To Do",
-  }));
+  const leadTasks = [...leadTasksResult]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      dueDate: task.dueDate,
+      dueAt: task.dueAt,
+      assignedUserId: task.assignedUserId,
+      status: task.status,
+    }));
   const dueTasksTodayCount = leadTasks.filter((task) => isDueToday(task.dueDate)).length;
   async function saveOpportunityDetails(formData: FormData) {
     "use server";
@@ -418,8 +428,8 @@ export default async function OpportunityWorkspacePage({
     const supabase = await createServerSupabaseClient();
     const title = String(formData.get("taskTitle") ?? "").trim();
     const description = String(formData.get("taskDescription") ?? "").trim();
-    const priority = String(formData.get("taskPriority") ?? "Medium").trim() || "Medium";
-    const status = String(formData.get("taskStatus") ?? "To Do").trim() || "To Do";
+    const priority = normalizeTaskPriority(String(formData.get("taskPriority") ?? "Medium").trim() || "Medium");
+    const status = normalizeTaskStatus(String(formData.get("taskStatus") ?? "To Do").trim() || "To Do");
     const dueDate = String(formData.get("taskDueDate") ?? "").trim();
     const dueTime = String(formData.get("taskDueTime") ?? "").trim();
     const assignedUserId = String(formData.get("taskAssignedUserId") ?? "").trim();
@@ -428,31 +438,18 @@ export default async function OpportunityWorkspacePage({
       redirect(`/app/leads-clients/opportunities/${opportunityId}`);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const todosTable = (supabase as any).from("project_job_todos");
-    const { error } = await todosTable.insert({
-      organization_id: member.organization_id,
-      project_id: activeOpportunity.workspaceProjectId,
-      opportunity_id: activeOpportunity.opportunityId,
-      created_by: member.user_id,
+    await createTask(supabase, {
+      projectId: activeOpportunity.workspaceProjectId,
+      opportunityId: activeOpportunity.opportunityId,
       title,
       description,
-      due_date: dueDate || null,
-      due_at: buildDueAt(dueDate, dueTime),
-      assigned_user_id: assignedUserId || null,
+      dueDate: dueDate || null,
+      dueAt: buildDueAt(dueDate, dueTime),
+      assignedUserId: assignedUserId || null,
       trade: "",
       priority,
       status,
-      is_completed: status === "Done",
-      source_type: null,
-      source_id: null,
-      linked_issue_id: null,
-      linked_inspection_id: null,
     });
-
-    if (error) {
-      throw new Error(error.message);
-    }
 
     revalidatePath(`/app/leads-clients/opportunities/${opportunityId}`);
     redirect(`/app/leads-clients/opportunities/${opportunityId}#lead-todos`);
@@ -469,8 +466,8 @@ export default async function OpportunityWorkspacePage({
     const taskId = String(formData.get("taskId") ?? "").trim();
     const title = String(formData.get("taskTitle") ?? "").trim();
     const description = String(formData.get("taskDescription") ?? "").trim();
-    const priority = String(formData.get("taskPriority") ?? "Medium").trim() || "Medium";
-    const status = String(formData.get("taskStatus") ?? "To Do").trim() || "To Do";
+    const priority = normalizeTaskPriority(String(formData.get("taskPriority") ?? "Medium").trim() || "Medium");
+    const status = normalizeTaskStatus(String(formData.get("taskStatus") ?? "To Do").trim() || "To Do");
     const dueDate = String(formData.get("taskDueDate") ?? "").trim();
     const dueTime = String(formData.get("taskDueTime") ?? "").trim();
     const assignedUserId = String(formData.get("taskAssignedUserId") ?? "").trim();
@@ -480,26 +477,20 @@ export default async function OpportunityWorkspacePage({
     }
 
     const supabase = await createServerSupabaseClient();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const todosTable = (supabase as any).from("project_job_todos");
-    const { error } = await todosTable
-      .update({
-        title,
-        description,
-        due_date: dueDate || null,
-        due_at: buildDueAt(dueDate, dueTime),
-        assigned_user_id: assignedUserId || null,
-        priority,
-        status,
-        is_completed: status === "Done",
-      })
-      .eq("organization_id", member.organization_id)
-      .eq("id", taskId)
-      .eq("opportunity_id", activeOpportunity.opportunityId);
-
-    if (error) {
-      throw new Error(error.message);
+    const existingTask = await getTask(supabase, taskId);
+    if (existingTask.opportunityId !== activeOpportunity.opportunityId) {
+      redirect(`/app/leads-clients/opportunities/${opportunityId}`);
     }
+
+    await updateTask(supabase, taskId, {
+      title,
+      description,
+      dueDate: dueDate || null,
+      dueAt: buildDueAt(dueDate, dueTime),
+      assignedUserId: assignedUserId || null,
+      priority,
+      status,
+    });
 
     revalidatePath(`/app/leads-clients/opportunities/${opportunityId}`);
     redirect(`/app/leads-clients/opportunities/${opportunityId}#lead-todos`);
