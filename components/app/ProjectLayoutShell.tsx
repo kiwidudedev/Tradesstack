@@ -34,13 +34,14 @@ export default function ProjectLayoutShell({
   const match = SECTION_MAP.find((s) => pathname.includes(`/${s.segment}`));
   const sectionLabel = match?.label ?? null;
   const sectionHref = match ? `/app/projects/${projectId}/${match.segment}` : null;
+  const isAiChatbotRoute = pathname.includes("/ai-chatbot");
 
   return (
-    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-1.5 bg-[var(--app-canvas)] pb-8 sm:-mx-4`}>
-      <div className="space-y-6 bg-[var(--app-canvas)]">
+    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-1.5 bg-[var(--background)] pb-8 sm:-mx-4`}>
+      <div className="space-y-6 bg-[var(--background)]">
         <ProjectSecondaryNav projectName={projectName} projectStage={projectStage} />
-        <div className="min-w-0 flex-1 bg-[var(--app-canvas)] px-5">
-          {sectionLabel ? (
+        <div className="min-w-0 flex-1 bg-[var(--background)] px-5">
+          {sectionLabel && !isAiChatbotRoute ? (
             <nav className={`${interMedium.className} mb-3 flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]`}>
               <Link href={`/app/projects/${projectId}/dashboard`} className="transition-colors hover:text-[var(--text-secondary)]">
                 {projectName || "Project"}

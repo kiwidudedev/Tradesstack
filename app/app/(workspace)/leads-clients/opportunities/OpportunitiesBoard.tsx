@@ -82,6 +82,7 @@ function formatCurrencyCompactNZD(value: number) {
   return new Intl.NumberFormat("en-NZ", {
     style: "currency",
     currency: "NZD",
+    currencyDisplay: "narrowSymbol",
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);

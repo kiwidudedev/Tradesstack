@@ -29,8 +29,8 @@ export function SettingsTabs() {
               href={tab.href}
               className={`${interMedium.className} inline-flex min-h-[42px] items-center rounded-[14px] px-5 text-[15px] ${
                 isActive
-                  ? "bg-[#E9EDF1] font-semibold text-[#1d2433]"
-                  : "font-medium text-[#4B5563] hover:bg-[#F4F7FA] hover:text-[#1d2433]"
+                  ? "bg-[var(--surface-muted)] font-semibold text-[var(--text-primary)]"
+                  : "font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
               }`}
               aria-current={isActive ? "page" : undefined}
             >

@@ -41,6 +41,6 @@ export function AppPageSurface({
   }, [pathname]);
 
   return (
-    <div ref={rootRef} className="app-page-surface min-h-full">{children}</div>
+    <div ref={rootRef} className="min-h-full">{children}</div>
   );
 }

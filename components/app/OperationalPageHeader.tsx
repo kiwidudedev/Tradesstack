@@ -1,5 +1,5 @@
 import * as React from "react";
-import { interMedium } from "@/lib/fonts";
+import { interBold, interMedium } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 
 interface OperationalPageHeaderProps extends React.HTMLAttributes<HTMLElement> {
@@ -29,7 +29,7 @@ export function OperationalPageHeader({
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="m-0 text-[32px] font-bold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[40px]">
+        <h1 className={`${interBold.className} m-0 text-[var(--font-size-page-title)] font-bold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[var(--font-size-page-title-lg)]`}>
           {title}
         </h1>
         {description ? (

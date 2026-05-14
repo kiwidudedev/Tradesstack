@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Award, DollarSign, Mail, Phone, Search, TrendingUp, Users } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -413,7 +413,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Clients"
         description="Track who you work with most and keep client relationships moving."
         actions={<AddClientDialog createClientAction={createClient} />}
@@ -571,7 +571,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
                   <OperationalTableRow key={client.id}>
                     <OperationalTableCell>
                       <div className="flex items-center gap-3">
-                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--orange-primary)] text-sm font-semibold text-white">
+                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-sm font-semibold text-white">
                           {initials}
                         </span>
                         <div className="min-w-0">

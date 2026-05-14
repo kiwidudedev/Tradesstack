@@ -11,9 +11,11 @@ import {
   Phone,
   Receipt,
 } from "lucide-react";
+import { OperationalBreadcrumbs } from "@/components/app/OperationalBreadcrumbs";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
+import { StatusBadge } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ibmPlexSans } from "@/lib/fonts";
-import { leadsCompactTitleClassName } from "@/components/app/LeadsPagePrimitives";
 import type { ClientRow } from "./client-detail-data";
 import { formatDate } from "./client-detail-data";
 import styles from "./client-detail.module.css";
@@ -32,11 +34,6 @@ export function ClientDetailHeader({
   isActive: boolean;
 }) {
   const displayName = client.company_name?.trim() || client.name;
-  const clientInitials = displayName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? "")
-    .join("");
 
   const navItems = [
     { key: "overview", label: "Overview", icon: LayoutGrid, href: `/app/leads-clients/clients/${clientId}` },
@@ -50,49 +47,45 @@ export function ClientDetailHeader({
 
   return (
     <section className={styles.headerSection}>
-      <div className={styles.backActionRow}>
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className={`${ibmPlexSans.className} inline-flex items-center gap-[0.4rem] rounded-[0.576rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] shadow-none transition hover:bg-[#F8FAFC] hover:text-[#475569]`}
-        >
-          <Link href="/app/leads-clients/clients">
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back to Clients
-          </Link>
-        </Button>
-      </div>
+      <OperationalBreadcrumbs
+        items={[
+          { label: "Clients", href: "/app/leads-clients/clients" },
+          { label: displayName },
+        ]}
+      />
 
-      <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.heroCard}`}>
-        <div className={styles.heroCardBody}>
-          <div className={styles.heroIdentityRow}>
-            <span className={styles.heroAvatar}>{clientInitials || "CL"}</span>
-            <div className={styles.heroIdentityText}>
-              <div className={styles.heroTopline}>
-                <h1 className={`${ibmPlexSans.className} ${leadsCompactTitleClassName}`}>
-                  {displayName}
-                </h1>
-                <span className={isActive ? styles.statusPillActive : styles.statusPillInactive}>{isActive ? "Active" : "Inactive"}</span>
-              </div>
-              <div className={styles.heroContactRow}>
-                <span className={`${ibmPlexSans.className} ${styles.heroContactItem}`}>
-                  <Mail className="h-4 w-4" strokeWidth={2.1} />
-                  <span>{client.email || "-"}</span>
-                </span>
-                <span className={`${ibmPlexSans.className} ${styles.heroContactItem}`}>
-                  <Phone className="h-4 w-4" strokeWidth={2.1} />
-                  <span>{client.phone || "-"}</span>
-                </span>
-                <span className={`${ibmPlexSans.className} ${styles.heroContactItem}`}>
-                  <Clock3 className="h-4 w-4" strokeWidth={2.1} />
-                  <span>Client since {formatDate(client.created_at)}</span>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <OperationalModuleHeader
+        title={displayName}
+        description={
+          <span className="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="h-4 w-4" strokeWidth={2.1} />
+              {client.email || "—"}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Phone className="h-4 w-4" strokeWidth={2.1} />
+              {client.phone || "—"}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Clock3 className="h-4 w-4" strokeWidth={2.1} />
+              Client since {formatDate(client.created_at)}
+            </span>
+          </span>
+        }
+        actions={
+          <>
+            <StatusBadge status={isActive ? "approved" : "draft"}>
+              {isActive ? "Active" : "Inactive"}
+            </StatusBadge>
+            <Button variant="secondary" asChild>
+              <Link href="/app/leads-clients/clients">
+                <ArrowLeft className="h-4 w-4" />
+                Back to Clients
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
       <div className={styles.topNavWrap}>
         <nav className={styles.topNav}>

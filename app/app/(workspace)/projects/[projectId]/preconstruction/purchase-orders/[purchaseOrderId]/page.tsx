@@ -12,7 +12,8 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { SupplierPicker } from "@/components/app/SupplierPicker";
 import { Button } from "@/components/ui/button";
@@ -2233,7 +2234,7 @@ export default function ProjectVariationsPage() {
   if (isLoadingVariations) {
     return (
       <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-        <OperationalPageHeader
+        <OperationalModuleHeader
           title="Purchase Order"
           actions={
             <>
@@ -2246,17 +2247,17 @@ export default function ProjectVariationsPage() {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-4">
-              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)] md:col-span-2" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               </div>
-              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading purchase orders...</p>
+              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[var(--text-secondary)]`}>Loading purchase orders...</p>
             </div>
           </div>
           <div className={`${styles.quotePanelCard} overflow-hidden`}>
@@ -2264,10 +2265,10 @@ export default function ProjectVariationsPage() {
               <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</h2>
             </div>
             <div className="space-y-3 px-5 pb-5">
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
             </div>
           </div>
         </div>
@@ -2277,7 +2278,7 @@ export default function ProjectVariationsPage() {
 
   return (
     <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title={
           <span className="inline-flex flex-wrap items-center gap-2">
             <span>{activeVariation?.code || "Purchase Order"}</span>
@@ -2353,21 +2354,21 @@ export default function ProjectVariationsPage() {
       />
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
       {!canManagePurchaseOrder && session ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
+        <OperationalAlert variant="warning">
           You can review this purchase order, but only owner, admin, QS, and project manager roles can edit or delete it.
-        </div>
+        </OperationalAlert>
       ) : null}
 
       {hasVariations && activeVariation ? (
       isActiveVariationHydrated ? (
-      <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE]">
+      <div className="space-y-6 [&_input]:border-[var(--border)] [&_input]:bg-[var(--surface)] [&_select]:border-[var(--border)] [&_select]:bg-[var(--surface)] [&_textarea]:border-[var(--border)] [&_textarea]:bg-[var(--surface)]">
         <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
-          <section className="border-b border-[#E8EDF5] pb-5">
+          <section className="border-b border-[var(--border-subtle)] pb-5">
             <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Purchase Order Details</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
@@ -2377,17 +2378,17 @@ export default function ProjectVariationsPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Status</label>
-                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
+                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}>
                     {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Purchase Order Number</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Purchase Order Number</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[var(--surface-muted)]" /></div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>PO Type</label>
-                  <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
+                  <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}>
                     {ORIGIN_OPTIONS.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
                   </select>
                 </div>
@@ -2423,7 +2424,7 @@ export default function ProjectVariationsPage() {
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Assigned Worker</label>
                   <div className="relative">
-                    <div className="min-h-10 rounded-[6px] border border-[#d1d9e6] bg-[#FBFEFE] px-3 py-2">
+                    <div className="min-h-10 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
                       <div className="flex flex-wrap items-center gap-2">
                         {assignedWorkers.map((member) => {
                           const isPending = assignmentPendingMemberIds.has(member.organization_member_id);
@@ -2436,7 +2437,7 @@ export default function ProjectVariationsPage() {
                                 onClick={() => {
                                   void toggleAssignedWorker(member.organization_member_id, false);
                                 }}
-                                className="font-body text-sm font-normal leading-none text-text-muted hover:text-[#B42318] disabled:cursor-not-allowed disabled:text-[#94A3B8]"
+                                className="font-body text-sm font-normal leading-none text-text-muted hover:text-[var(--error)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
                                 aria-label={`Remove ${member.display_name}`}
                               >
                                 ×
@@ -2461,7 +2462,7 @@ export default function ProjectVariationsPage() {
                       </div>
                     </div>
                     {isAssignedWorkerMenuOpen ? (
-                      <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[#d1d9e6] bg-white shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
+                      <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
                         {filteredAssignableWorkers.length > 0 ? (
                           filteredAssignableWorkers.map((member) => {
                             const isPending = assignmentPendingMemberIds.has(member.organization_member_id);
@@ -2476,14 +2477,14 @@ export default function ProjectVariationsPage() {
                                     void toggleAssignedWorker(member.organization_member_id, true);
                                   }
                                 }}
-                                className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:text-[#94A3B8]`}
+                                className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]`}
                               >
                                 {member.display_name}
                               </button>
                             );
                           })
                         ) : (
-                          <p className={`${interMedium.className} px-3 py-2 text-sm text-[#64748B]`}>
+                          <p className={`${interMedium.className} px-3 py-2 text-sm text-[var(--text-secondary)]`}>
                             {assignedWorkers.length === assignableProjectMembers.length
                               ? "All project workers are already assigned."
                               : "No matching workers found."}
@@ -2500,7 +2501,7 @@ export default function ProjectVariationsPage() {
               </div>
 
               {activeVariation.issuedToSupplierId === NEW_SUPPLIER_OPTION ? (
-                <div className="rounded-[6px] border border-[#d7deea] bg-[#f8faff] p-3">
+                <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
                   <p className={styles.quoteCardTitle}>Add New Supplier</p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1.5">
@@ -2535,23 +2536,23 @@ export default function ProjectVariationsPage() {
               <div className="h-10" />
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+            <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
               <div>
                 <div>
                   <div
-                    className={`${interMedium.className} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+                    className={`${interMedium.className} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
                     style={{ gridTemplateColumns: `${LINE_GRID_TEMPLATE} 44px` }}
                   >
                     <span className="px-3 py-2.5 font-semibold">Description</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Source</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Item</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Qty.</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Unit</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Price</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Amount</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5" />
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Source</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Item</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Qty.</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Unit</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Price</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Amount</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5" />
                   </div>
-                  <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                  <div className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
                     {activeVariation.costLines.map((line) => (
                       <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${LINE_GRID_TEMPLATE} 44px` }}>
                         <div className="flex items-center px-3 py-1.5">
@@ -2561,19 +2562,19 @@ export default function ProjectVariationsPage() {
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
                           />
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           {line.sourceTimeSheetEntryId ? (
-                            <span className={`${interMedium.className} text-[12px] text-[#64748B]`}>
+                            <span className={`${interMedium.className} text-[12px] text-[var(--text-secondary)]`}>
                               Synced from timesheet
                             </span>
                           ) : (
                             <div className="flex min-w-0 flex-col gap-0.5">
-                              <span className={`${interMedium.className} truncate text-[12px] text-[#64748B]`}>
+                              <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
                                 {resolveSourceLabel(line)}
                               </span>
                               <div className="flex items-center gap-2">
                                 {resolveSourceHint(line) ? (
-                                  <span className={`${interMedium.className} text-[11px] text-[#94A3B8]`}>
+                                  <span className={`${interMedium.className} text-[11px] text-[var(--text-muted)]`}>
                                     {resolveSourceHint(line)}
                                   </span>
                                 ) : null}
@@ -2582,7 +2583,7 @@ export default function ProjectVariationsPage() {
                                     <DropdownMenuTrigger asChild>
                                       <button
                                         type="button"
-                                        className={`${interMedium.className} inline-flex items-center gap-1 text-[11px] text-[#475569] underline-offset-2 hover:text-[#22324A] hover:underline`}
+                                        className={`${interMedium.className} inline-flex items-center gap-1 text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
                                       >
                                         {line.sourceCostItemId ? "Change" : "Link source"}
                                         <ChevronDown className="h-3 w-3" />
@@ -2592,32 +2593,32 @@ export default function ProjectVariationsPage() {
                                       side="bottom"
                                       align="start"
                                       sideOffset={8}
-                                      className="!z-[200] max-h-[320px] min-w-[320px] overflow-y-auto rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
+                                      className="!z-[200] max-h-[320px] min-w-[320px] overflow-y-auto rounded-[14px] border border-[var(--border)] !bg-[var(--surface)] p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]"
                                     >
                                       <DropdownMenuItem
                                         onSelect={() => assignSourceCostItem(line.id, null)}
-                                        className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                        className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}
                                       >
                                         <div className="flex min-w-0 flex-col">
                                           <span>Manual</span>
-                                          <span className="text-[11px] text-[#64748B]">No source link</span>
+                                          <span className="text-[11px] text-[var(--text-secondary)]">No source link</span>
                                         </div>
                                       </DropdownMenuItem>
                                       {quoteSourceOptions.length > 0 ? (
                                         <>
-                                          <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
-                                          <div className={`${interMedium.className} px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[#94A3B8]`}>
+                                          <DropdownMenuSeparator className="my-1 bg-[var(--border-subtle)]" />
+                                          <div className={`${interMedium.className} px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]`}>
                                             Quote Items
                                           </div>
                                           {quoteSourceOptions.map((option) => (
                                             <DropdownMenuItem
                                               key={option.id}
                                               onSelect={() => assignSourceCostItem(line.id, option.id)}
-                                              className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                              className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}
                                             >
                                               <div className="flex min-w-0 flex-col">
                                                 <span className="truncate">{option.documentNumber}</span>
-                                                <span className="truncate text-[11px] text-[#64748B]">
+                                                <span className="truncate text-[11px] text-[var(--text-secondary)]">
                                                   {option.description || option.documentTitle || option.section || "Quote line"}
                                                 </span>
                                               </div>
@@ -2627,19 +2628,19 @@ export default function ProjectVariationsPage() {
                                       ) : null}
                                       {variationSourceOptions.length > 0 ? (
                                         <>
-                                          <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
-                                          <div className={`${interMedium.className} px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[#94A3B8]`}>
+                                          <DropdownMenuSeparator className="my-1 bg-[var(--border-subtle)]" />
+                                          <div className={`${interMedium.className} px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]`}>
                                             Variation Items
                                           </div>
                                           {variationSourceOptions.map((option) => (
                                             <DropdownMenuItem
                                               key={option.id}
                                               onSelect={() => assignSourceCostItem(line.id, option.id)}
-                                              className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                              className={`${interMedium.className} min-h-10 cursor-pointer rounded-[8px] px-3 py-2 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}
                                             >
                                               <div className="flex min-w-0 flex-col">
                                                 <span className="truncate">{option.documentNumber}</span>
-                                                <span className="truncate text-[11px] text-[#64748B]">
+                                                <span className="truncate text-[11px] text-[var(--text-secondary)]">
                                                   {option.description || option.documentTitle || option.section || "Variation line"}
                                                 </span>
                                               </div>
@@ -2654,56 +2655,56 @@ export default function ProjectVariationsPage() {
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <select
                             value={line.section}
                             onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)}
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:cursor-not-allowed disabled:!bg-transparent disabled:text-[#7A889C]`}
+                            className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[var(--text-primary)] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:cursor-not-allowed disabled:!bg-transparent disabled:text-[var(--text-secondary)]`}
                           >
                             {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
                           </select>
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <Input
                             type="number"
                             value={line.quantity}
                             onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))}
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]"
+                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[var(--text-secondary)]"
                           />
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <Input
                             value={line.unit}
                             onChange={(event) => updateCostLine(line.id, "unit", event.target.value)}
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]"
+                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[var(--text-secondary)]"
                           />
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <div className="relative w-full">
-                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>$</span>
                             <Input
                               type="number"
                               value={line.rate === 0 ? "" : line.rate}
                               onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))}
                               disabled={Boolean(line.sourceTimeSheetEntryId) ? !canManagePurchaseOrder : false}
-                              className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[#7A889C]"
+                              className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[var(--text-secondary)]"
                               title={line.sourceTimeSheetEntryId ? "Synced from timesheet: rate is editable, other fields are locked." : undefined}
                             />
                           </div>
                         </div>
-                        <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
-                          <div className={`${interMedium.className} text-right text-sm text-[#1d2433]`}>{toMoney(lineTotal(line))}</div>
+                        <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+                          <div className={`${interMedium.className} text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
                         </div>
-                        <div className="flex items-center justify-center border-l border-[#EEF2F7] px-0 py-1.5">
+                        <div className="flex items-center justify-center border-l border-[var(--border-subtle)] px-0 py-1.5">
                           <Button
                             type="button"
                             variant="ghost"
                             onClick={() => removeCostLine(line.id)}
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[#9AA8BC]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[#B42318] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-40"
+                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[var(--text-muted)]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[var(--error)] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-40"
                             aria-label="Delete line item"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -2721,7 +2722,7 @@ export default function ProjectVariationsPage() {
                 type="button"
                 variant="ghost"
                 onClick={() => addCostLine("Labour")}
-                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[#4B5D79] shadow-none hover:bg-transparent hover:text-[#22324A] focus-visible:outline-none focus-visible:ring-0`}
+                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[var(--text-secondary)] shadow-none hover:bg-transparent hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-0`}
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Add Item
@@ -2749,7 +2750,7 @@ export default function ProjectVariationsPage() {
                     <textarea
                       value={activeVariation.notes}
                       onChange={(event) => updateActiveVariation("notes", event.target.value)}
-                      className={`${interMedium.className} block min-h-[140px] w-full max-w-[600px] rounded-[8px] border border-[#CBD5E1] bg-white px-3.5 py-3 text-[14px] text-[#1d2433] focus:outline-none focus:border-[#0B2739]`}
+                      className={`${interMedium.className} block min-h-[140px] w-full max-w-[600px] rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--navy-primary)]`}
                     />
                   </div>
 
@@ -2757,7 +2758,7 @@ export default function ProjectVariationsPage() {
                     <Button
                       type="button"
                       onClick={() => addAttachment("Drawing")}
-                      className={`${ibmPlexSans.className} inline-flex h-9 items-center gap-2 rounded-full bg-[#0B2739] px-5 text-[14px] font-semibold !text-white hover:bg-[#0B2739] hover:opacity-90`}
+                      className={`${ibmPlexSans.className} inline-flex h-9 items-center gap-2 rounded-full bg-[var(--navy-primary)] px-5 text-[14px] font-semibold !text-white hover:bg-[var(--navy-primary)] hover:opacity-90`}
                     >
                       <Upload className="h-4 w-4" />
                       Attachments
@@ -2766,13 +2767,13 @@ export default function ProjectVariationsPage() {
                     {activeVariation.attachments.length > 0 ? (
                       <div className="space-y-2 pt-2">
                         {activeVariation.attachments.map((attachment) => (
-                          <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[8px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
-                            <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[#1D2433]`}>{attachment.name}</span>
+                          <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                            <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[var(--text-primary)]`}>{attachment.name}</span>
                             <Button
                               type="button"
                               variant="ghost"
                               onClick={() => removeAttachment(attachment.id)}
-                              className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
+                              className="h-8 w-8 rounded-[6px] p-0 text-[var(--text-muted)]/80 hover:bg-[var(--error-light)] hover:text-[var(--error)]"
                               aria-label="Delete attachment"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -2785,35 +2786,35 @@ export default function ProjectVariationsPage() {
                 </div>
               </div>
 
-              <div className="rounded-[14px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+              <div className="rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
                 <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
                 <div className={`${interMedium.className} space-y-2.5 text-[13px]`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Subtotal</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(purchaseOrderPreGstTotal)}</span>
+                    <span className="text-[var(--text-secondary)]">Subtotal</span>
+                    <span className="font-medium text-[var(--text-primary)]">{toMoney(purchaseOrderPreGstTotal)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[#64748B]">
+                    <span className="inline-flex items-center gap-1.5 text-[var(--text-secondary)]">
                       GST
                       <Input
                         type="number"
                         value={activeVariation.gstPercent}
                         onChange={(event) => updateActiveVariation("gstPercent", event.target.value)}
-                        className="h-6 w-12 rounded-[4px] border-[#D7E1EC] bg-white px-1 text-center text-[12px]"
+                        className="h-6 w-12 rounded-[4px] border-[var(--border)] bg-[var(--surface)] px-1 text-center text-[12px]"
                       />
                       %
                     </span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span>
+                    <span className="font-medium text-[var(--text-primary)]">{toMoney(pricingSummary.gst)}</span>
                   </div>
-                  <div className="h-px bg-[#E2E8F1]" />
+                  <div className="h-px bg-[var(--border)]" />
                   <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-[15px] font-semibold text-[#1d2433]">Total</span>
-                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
+                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">Total</span>
+                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(pricingSummary.grandTotal)}</span>
                   </div>
                 </div>
 
                 <div className="mt-4 flex flex-col gap-2">
-                  <Button type="button" onClick={saveVariation} disabled={!canManagePurchaseOrder || isSaving} className={`${ibmPlexSans.className} h-9 w-full rounded-full bg-[#0B2739] text-[14px] font-semibold !text-white hover:bg-[#0B2739] hover:opacity-90`}>
+                  <Button type="button" onClick={saveVariation} disabled={!canManagePurchaseOrder || isSaving} className={`${ibmPlexSans.className} h-9 w-full rounded-full bg-[var(--navy-primary)] text-[14px] font-semibold !text-white hover:bg-[var(--navy-primary)] hover:opacity-90`}>
                     {isSaving ? "Saving..." : "Save Purchase Order"}
                   </Button>
                   <Button
@@ -2821,7 +2822,7 @@ export default function ProjectVariationsPage() {
                     onClick={exportVariationPdf}
                     disabled={isSaving}
                     variant="outline"
-                    className={`${ibmPlexSans.className} h-9 w-full rounded-full border-[#d3dbe8] bg-white px-5 text-[14px] font-semibold text-[#1d2433]`}
+                    className={`${ibmPlexSans.className} h-9 w-full rounded-full border-[var(--border)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--text-primary)]`}
                   >
                     Export PDF
                   </Button>
@@ -2834,41 +2835,41 @@ export default function ProjectVariationsPage() {
         <section className={`${styles.quotePanelCard} overflow-hidden px-6 py-5`}>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Supplier Invoice Approvals</h2>
-                <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[#E2E8F1] bg-white px-3 py-1 text-[12px] font-medium text-[#475569]`}>
+                <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[12px] font-medium text-[var(--text-secondary)]`}>
                   {canReviewSupplierInvoiceAllocations ? "QS / PM approval" : "Read only"}
                 </span>
               </div>
 
-              <div className="rounded-[14px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+              <div className="rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
                 <div className={`${interMedium.className} space-y-3 text-[14px]`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Invoiced Total</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.invoicedTotal)}</span>
+                    <span className="text-[var(--text-secondary)]">Invoiced Total</span>
+                    <span className="font-medium text-[var(--text-primary)]">{toMoney(invoiceRollup.invoicedTotal)}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Approved Invoice Total</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(invoiceRollup.approvedInvoiceTotal)}</span>
+                    <span className="text-[var(--text-secondary)]">Approved Invoice Total</span>
+                    <span className="font-medium text-[var(--text-primary)]">{toMoney(invoiceRollup.approvedInvoiceTotal)}</span>
                   </div>
-                  <div className="h-px bg-[#E2E8F1]" />
+                  <div className="h-px bg-[var(--border)]" />
                   <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-[15px] font-semibold text-[#1d2433]">Outstanding Amount</span>
-                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(invoiceRollup.outstandingAmount)}</span>
+                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">Outstanding Amount</span>
+                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(invoiceRollup.outstandingAmount)}</span>
                   </div>
                 </div>
               </div>
 
               {purchaseOrderInvoiceMatchRows.length === 0 ? (
-                <div className="mt-4 rounded-[14px] border border-dashed border-[#D7E1EC] bg-white px-4 py-5 text-center">
-                  <p className={`${ibmPlexSans.className} text-[14px] text-[#64748B]`}>
+                <div className="mt-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-5 text-center">
+                  <p className={`${ibmPlexSans.className} text-[14px] text-[var(--text-secondary)]`}>
                     No supplier invoices matched yet.
                   </p>
                 </div>
               ) : (
-                <div className="mt-4 overflow-hidden rounded-[14px] border border-[#E2E8F1] bg-white">
+                <div className="mt-4 overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)]">
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[900px] border-collapse">
                       <thead>
-                        <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
+                        <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)]">
                           {[
                             "Invoice Number",
                             "Invoice Date",
@@ -2880,7 +2881,7 @@ export default function ProjectVariationsPage() {
                           ].map((heading) => (
                             <th
                               key={heading}
-                              className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}
+                              className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}
                             >
                               {heading}
                             </th>
@@ -2892,19 +2893,19 @@ export default function ProjectVariationsPage() {
                           const isExpanded = expandedMatchApprovalId === match.id && canReviewSupplierInvoiceAllocations;
                           return (
                             <Fragment key={match.id}>
-                              <tr className="group border-b border-[#E2E8F1] last:border-0 transition-colors hover:bg-[#F8FBFB]">
+                              <tr className="group border-b border-[var(--border)] last:border-0 transition-colors hover:bg-[var(--surface-muted)]">
                                 <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#10283B]`}>
+                                  <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[var(--text-primary)]`}>
                                     {match.invoice?.invoice_number || "Supplier Invoice"}
                                   </p>
                                 </td>
                                 <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[14px] text-[#10283B]`}>
+                                  <p className={`${ibmPlexSans.className} text-[14px] text-[var(--text-primary)]`}>
                                     {toDayMonthYearLabel(match.invoice?.invoice_date ?? null)}
                                   </p>
                                 </td>
                                 <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>
+                                  <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[var(--text-primary)]`}>
                                     {toMoney(Number(match.matched_amount ?? 0))}
                                   </p>
                                 </td>
@@ -2919,7 +2920,7 @@ export default function ProjectVariationsPage() {
                                   </span>
                                 </td>
                                 <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[13px] text-[#4B5D79]`}>
+                                  <p className={`${ibmPlexSans.className} text-[13px] text-[var(--text-secondary)]`}>
                                     {match.approverName
                                       ? `${match.approverName}${match.approved_at ? ` · ${toDayMonthYearLabel(match.approved_at)}` : ""}`
                                       : "Awaiting approval"}
@@ -2931,14 +2932,14 @@ export default function ProjectVariationsPage() {
                                       <button
                                         type="button"
                                         aria-label="Row actions"
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E2E8F1] bg-white text-[#475569] transition hover:bg-[#F8FAFC]"
+                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]"
                                       >
                                         <MoreVertical className="h-4 w-4" strokeWidth={2.2} />
                                       </button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="!z-[200] min-w-[160px] rounded-[12px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+                                    <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="!z-[200] min-w-[160px] rounded-[12px] border border-[var(--border)] !bg-[var(--surface)] p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
                                       {match.invoice?.id ? (
-                                        <DropdownMenuItem asChild className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
+                                        <DropdownMenuItem asChild className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}>
                                           <Link href={`/app/company/supplier-invoices/${match.invoice.id}`}>
                                             Open
                                           </Link>
@@ -2946,7 +2947,7 @@ export default function ProjectVariationsPage() {
                                       ) : null}
                                       {canReviewSupplierInvoiceAllocations ? (
                                         <DropdownMenuItem
-                                          className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}
+                                          className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}
                                           onSelect={(event) => {
                                             event.preventDefault();
                                             setExpandedMatchApprovalId((current) =>
@@ -2962,7 +2963,7 @@ export default function ProjectVariationsPage() {
                                 </td>
                               </tr>
                               {isExpanded ? (
-                                <tr className="border-b border-[#E2E8F1] last:border-0 bg-[#F9FAFC]">
+                                <tr className="border-b border-[var(--border)] last:border-0 bg-[var(--surface-muted)]">
                                   <td colSpan={7} className="px-6 py-5">
                                     <div className="space-y-4">
                                       <div className="grid gap-2 sm:grid-cols-2">
@@ -2986,9 +2987,9 @@ export default function ProjectVariationsPage() {
                                                     },
                                                   }))
                                                 }
-                                                className="mt-0.5 h-4 w-4 rounded border-[#CBD5E1] text-[#0B2739] focus:ring-[#0B2739]"
+                                                className="mt-0.5 h-4 w-4 rounded border-[var(--border)] text-[var(--navy-primary)] focus:ring-[var(--navy-primary)]"
                                               />
-                                              <span className={`${interMedium.className} text-[13px] text-[#334155]`}>
+                                              <span className={`${interMedium.className} text-[13px] text-[var(--text-secondary)]`}>
                                                 {option.label}
                                               </span>
                                             </label>
@@ -2997,7 +2998,7 @@ export default function ProjectVariationsPage() {
                                       </div>
 
                                       <div className="space-y-1.5">
-                                        <label className={`${ibmPlexSans.className} block text-[13px] font-semibold text-[#1d2433]`}>
+                                        <label className={`${ibmPlexSans.className} block text-[13px] font-semibold text-[var(--text-primary)]`}>
                                           Approval notes
                                         </label>
                                         <textarea
@@ -3013,7 +3014,7 @@ export default function ProjectVariationsPage() {
                                               approvalNotes: event.target.value,
                                             }))
                                           }
-                                          className={`${interMedium.className} min-h-[84px] w-full max-w-[600px] rounded-[8px] border border-[#CBD5E1] bg-white px-3 py-2 text-[13px] text-[#1d2433] focus:border-[#0B2739] focus:outline-none`}
+                                          className={`${interMedium.className} min-h-[84px] w-full max-w-[600px] rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--navy-primary)] focus:outline-none`}
                                         />
                                       </div>
 
@@ -3022,7 +3023,7 @@ export default function ProjectVariationsPage() {
                                           type="button"
                                           onClick={() => void reviewAllocation(match, "approved")}
                                           disabled={isSavingMatchApprovalId === match.id}
-                                          className={`${ibmPlexSans.className} h-9 rounded-full bg-[#0B2739] px-5 text-[14px] font-semibold !text-white hover:bg-[#0B2739] hover:opacity-90`}
+                                          className={`${ibmPlexSans.className} h-9 rounded-full bg-[var(--navy-primary)] px-5 text-[14px] font-semibold !text-white hover:bg-[var(--navy-primary)] hover:opacity-90`}
                                         >
                                           {isSavingMatchApprovalId === match.id ? "Saving..." : "Approve Allocation"}
                                         </Button>
@@ -3031,7 +3032,7 @@ export default function ProjectVariationsPage() {
                                           variant="outline"
                                           onClick={() => void reviewAllocation(match, "disputed")}
                                           disabled={isSavingMatchApprovalId === match.id}
-                                          className={`${ibmPlexSans.className} h-9 rounded-full border-[#F5C2C7] bg-white px-5 text-[14px] font-semibold text-[#B42318] hover:bg-[#FFF1F2]`}
+                                          className={`${ibmPlexSans.className} h-9 rounded-full border-[var(--error-light)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--error)] hover:bg-[var(--error-light)]`}
                                         >
                                           Mark Disputed
                                         </Button>
@@ -3054,46 +3055,46 @@ export default function ProjectVariationsPage() {
         <div className="space-y-6">
           <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-4">
-              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)] md:col-span-2" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               </div>
               <p className={`${styles.quoteBodyLabel} pt-2`}>Loading purchase order details...</p>
             </div>
           </div>
           <div className={`${styles.quotePanelCard} overflow-hidden`}>
-            <div className="border-b border-[#E8EDF5] px-5 py-4">
+            <div className="border-b border-[var(--border-subtle)] px-5 py-4">
               <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</h2>
             </div>
             <div className="space-y-3 px-5 py-5">
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
             </div>
           </div>
         </div>
       )
       ) : (
-        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        <Card className="border-[var(--border)] bg-[var(--surface-muted)] shadow-none">
           <CardContent className="flex flex-col items-center justify-center px-6 py-14 text-center">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-[6px] bg-[#EEF3FA] text-[#29446E]">
+            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-[6px] bg-[var(--border-subtle)] text-[var(--text-primary)]">
               <FileStack className="h-6 w-6" />
             </div>
-            <h2 className="text-xl font-semibold tracking-[-0.01em] text-[#0F172A]">No purchase orders yet</h2>
-            <p className={`${interMedium.className} mt-2 max-w-[520px] text-sm text-[#64748B]`}>
+            <h2 className="text-xl font-semibold tracking-[-0.01em] text-[var(--text-primary)]">No purchase orders yet</h2>
+            <p className={`${interMedium.className} mt-2 max-w-[520px] text-sm text-[var(--text-secondary)]`}>
               Start your purchase order register by creating the first purchase order for this project. You can then build costs,
               attach supporting documents, send to client, and track approval through to invoicing.
             </p>
             <Button
               type="button"
               onClick={() => void createPurchaseOrder()}
-              className={`${interMedium.className} mt-6 h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+              className={`${interMedium.className} mt-6 h-10 rounded-[6px] bg-[var(--primary)] px-4 text-sm font-medium text-white hover:bg-[var(--primary-hover)]`}
             >
               <Plus className="mr-1 h-4 w-4" />
               Create First Purchase Order

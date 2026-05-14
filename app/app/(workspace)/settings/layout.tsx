@@ -7,7 +7,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} -mb-8 w-full space-y-6 pb-8`}>
       <section className="grid gap-4 pt-[25px] lg:grid-cols-[240px_minmax(0,672px)] lg:gap-8">
         <div>
-          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[#1d1d1d]">
+          <h1 className="m-0 text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[var(--text-primary)]">
             Settings
           </h1>
         </div>

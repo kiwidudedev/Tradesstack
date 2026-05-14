@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -18,6 +19,7 @@ import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
 
@@ -44,11 +46,7 @@ interface VariationLineItemRow {
 }
 
 function toMoney(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoneyOperational(value, { decimals: 2 });
 }
 
 function toDayMonthYearLabel(value: string | null) {
@@ -296,7 +294,7 @@ export default function ProjectVariationRegisterPage() {
 
   return (
     <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Variations"
         description="Manage and create project variations"
         actions={
@@ -313,14 +311,14 @@ export default function ProjectVariationRegisterPage() {
       />
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
       {!canManageVariations && session ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
+        <OperationalAlert variant="warning">
           Only owner, admin, QS, and project manager roles can create or edit variations.
-        </div>
+        </OperationalAlert>
       ) : null}
 
       {isLoading ? (
@@ -386,7 +384,7 @@ export default function ProjectVariationRegisterPage() {
                                   <DropdownMenuItem
                                     key={s}
                                     onSelect={() => void updateVariationStatus(row.id, s)}
-                                    className={`h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${row.status === s ? "text-[var(--orange-primary)]" : "text-[var(--text-primary)]"}`}
+                                    className={`h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${row.status === s ? "text-[var(--brand-blue)]" : "text-[var(--text-primary)]"}`}
                                   >
                                     <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${STATUS_DOT_CLASS_BY_BADGE[optionBadge]}`} />
                                     {s}

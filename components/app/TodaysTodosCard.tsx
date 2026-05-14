@@ -12,18 +12,18 @@ export interface TodayFocusStats {
 export function TodaysTodosCard({ stats }: { stats: TodayFocusStats }) {
   return (
     <section className="space-y-2">
-      <h2 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.08em] text-[#5E718A]`}>Today&apos;s Focus</h2>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-[#435872]">
-        <span className={`${interMedium.className}`}>Tasks due: <span className="font-semibold text-[#0F172A]">{stats.tasksDueToday}</span></span>
-        <span className="text-[#A1AEC0]">•</span>
-        <span className={`${interMedium.className}`}>Overdue: <span className="font-semibold text-[#B91C1C]">{stats.overdueItems}</span></span>
-        <span className="text-[#A1AEC0]">•</span>
-        <span className={`${interMedium.className}`}>Pricing deadlines: <span className="font-semibold text-[#0F172A]">{stats.pricingDeadlines}</span></span>
-        <span className="text-[#A1AEC0]">•</span>
-        <span className={`${interMedium.className}`}>Follow-ups: <span className="font-semibold text-[#0F172A]">{stats.followUpsNeeded}</span></span>
+      <h2 className={`${interMedium.className} text-sm font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>Today&apos;s Focus</h2>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+        <span className={`${interMedium.className}`}>Tasks due: <span className="font-semibold text-[var(--text-primary)]">{stats.tasksDueToday}</span></span>
+        <span className="text-[var(--text-muted)]">•</span>
+        <span className={`${interMedium.className}`}>Overdue: <span className="font-semibold text-[var(--error)]">{stats.overdueItems}</span></span>
+        <span className="text-[var(--text-muted)]">•</span>
+        <span className={`${interMedium.className}`}>Pricing deadlines: <span className="font-semibold text-[var(--text-primary)]">{stats.pricingDeadlines}</span></span>
+        <span className="text-[var(--text-muted)]">•</span>
+        <span className={`${interMedium.className}`}>Follow-ups: <span className="font-semibold text-[var(--text-primary)]">{stats.followUpsNeeded}</span></span>
       </div>
       <div>
-        <Button className="h-7 rounded-[7px] border border-[#9DC58A] bg-[#F4FBF0] px-3 text-xs font-semibold text-[#4A7D37] hover:bg-[#E9F7E2]" asChild>
+        <Button className="h-7 rounded-[7px] border border-[var(--success)] bg-[var(--success-light)] px-3 text-xs font-semibold text-[var(--success)] hover:bg-[var(--success-light)]" asChild>
           <Link href="/app/leads-clients/opportunities/new">Plan Today</Link>
         </Button>
       </div>

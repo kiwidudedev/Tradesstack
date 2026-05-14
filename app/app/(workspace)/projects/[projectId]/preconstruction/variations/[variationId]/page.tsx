@@ -14,7 +14,8 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1733,7 +1734,7 @@ export default function ProjectVariationsPage() {
   if (isLoadingVariations) {
     return (
       <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-        <OperationalPageHeader
+        <OperationalModuleHeader
           title={<span className="inline-block h-9 w-48 animate-pulse rounded-full bg-[var(--surface-muted)]" aria-hidden="true" />}
           actions={
             <>
@@ -1746,17 +1747,17 @@ export default function ProjectVariationsPage() {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-4">
-              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)] md:col-span-2" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
               </div>
-              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[#64748B]`}>Loading variations...</p>
+              <p className={`${interMedium.className} pt-2 text-sm font-medium text-[var(--text-secondary)]`}>Loading variations...</p>
             </div>
           </div>
           <div className={`${styles.quotePanelCard} overflow-hidden`}>
@@ -1764,10 +1765,10 @@ export default function ProjectVariationsPage() {
               <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</h2>
             </div>
             <div className="space-y-3 px-5 pb-5">
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-              <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+              <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
             </div>
           </div>
         </div>
@@ -1777,7 +1778,7 @@ export default function ProjectVariationsPage() {
 
   return (
     <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title={
           <span className="inline-flex flex-wrap items-center gap-2">
             <span>{activeVariation?.code || "Variation"}</span>
@@ -1853,20 +1854,20 @@ export default function ProjectVariationsPage() {
       />
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
       {!canManageVariation && session ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
+        <OperationalAlert variant="warning">
           You can review this variation, but only owner, admin, QS, and project manager roles can edit or delete it.
-        </div>
+        </OperationalAlert>
       ) : null}
 
       {hasVariations && activeVariation ? (
-      <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE]">
+      <div className="space-y-6 [&_input]:border-[var(--border)] [&_input]:bg-[var(--surface)] [&_select]:border-[var(--border)] [&_select]:bg-[var(--surface)] [&_textarea]:border-[var(--border)] [&_textarea]:bg-[var(--surface)]">
         <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
-          <section className="border-b border-[#E8EDF5] pb-5">
+          <section className="border-b border-[var(--border-subtle)] pb-5">
             <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Variation Details</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
@@ -1876,17 +1877,17 @@ export default function ProjectVariationsPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Status</label>
-                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] pl-3 pr-8 text-sm text-[#1d2433]`}>
+                  <select value={activeVariation.status} onChange={(event) => setStatus(event.target.value as VariationStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] pl-3 pr-8 text-sm text-[var(--text-primary)]`}>
                     {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Variation code</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[#f8fafc]" /></div>
+                <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Variation code</label><Input value={activeVariation.code} readOnly className="h-10 rounded-[6px] bg-[var(--surface-muted)]" /></div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Origin</label>
-                  <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
+                  <select value={activeVariation.origin} onChange={(event) => updateActiveVariation("origin", event.target.value as VariationOrigin)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}>
                     {ORIGIN_OPTIONS.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
                   </select>
                 </div>
@@ -1898,7 +1899,7 @@ export default function ProjectVariationsPage() {
                 <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Due date</label><Input type="date" value={activeVariation.dueDate} onChange={(event) => updateActiveVariation("dueDate", event.target.value)} className="h-10 rounded-[6px]" /></div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Invoice ready</label>
-                  <button type="button" onClick={() => updateActiveVariation("invoiceReady", !activeVariation.invoiceReady)} className={`flex h-10 w-full items-center justify-between rounded-[6px] border px-3 text-sm ${activeVariation.invoiceReady ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#d1d9e6] bg-[#F8F9FC] text-[#334155]"}`}>
+                  <button type="button" onClick={() => updateActiveVariation("invoiceReady", !activeVariation.invoiceReady)} className={`flex h-10 w-full items-center justify-between rounded-[6px] border px-3 text-sm ${activeVariation.invoiceReady ? "border-[var(--success-light)] bg-[var(--success-light)] text-[var(--success)]" : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]"}`}>
                     <span className={interMedium.className}>{activeVariation.invoiceReady ? "Ready for invoice" : "Not ready"}</span>
                     <Check className="h-4 w-4" />
                   </button>
@@ -1915,7 +1916,7 @@ export default function ProjectVariationsPage() {
                   type="button"
                   variant="outline"
                   onClick={openQuoteLinkPanel}
-                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
                 >
                   <Plus className="mr-1 h-4 w-4" />
                   Link Quoted Item
@@ -1924,7 +1925,7 @@ export default function ProjectVariationsPage() {
                   type="button"
                   variant="outline"
                   onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
-                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
                 >
                   <Plus className="mr-1 h-4 w-4" />
                   Import PO Items
@@ -1932,23 +1933,23 @@ export default function ProjectVariationsPage() {
               </div>
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+            <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
               <div>
                 <div>
                   <div
-                    className={`${interMedium.className} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+                    className={`${interMedium.className} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
                     style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}
                   >
                     <span className="px-3 py-2.5 font-semibold">Description</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Source</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Item</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Qty.</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Unit</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Price</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Amount</span>
-                    <span className="border-l border-[#D7E1EC] px-3 py-2.5" />
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Source</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Item</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Qty.</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Unit</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Price</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Amount</span>
+                    <span className="border-l border-[var(--border)] px-3 py-2.5" />
                   </div>
-                  <div className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                  <div className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
                     {activeVariation.costLines.map((line) => (
                       <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
                         <div className="flex items-center px-3 py-1.5">
@@ -1957,16 +1958,16 @@ export default function ProjectVariationsPage() {
                             onChange={(value) => updateCostLine(line.id, "description", value)}
                           />
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <div className="flex min-w-0 flex-col gap-0.5">
-                            <span className={`${interMedium.className} truncate text-[12px] text-[#64748B]`}>
+                            <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
                               {line.sourceProjectQuoteNumber || line.sourcePurchaseOrderNumber || "Manual"}
                             </span>
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => openQuoteLinkPicker(line.id)}
-                                className={`${interMedium.className} text-[11px] text-[#475569] underline-offset-2 hover:text-[#22324A] hover:underline`}
+                                className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
                               >
                                 {line.sourceProjectQuoteLineItemId ? "Change" : "Link"}
                               </button>
@@ -1974,7 +1975,7 @@ export default function ProjectVariationsPage() {
                                 <button
                                   type="button"
                                   onClick={() => clearProjectQuoteLink(line.id)}
-                                  className={`${interMedium.className} text-[11px] text-[#64748B] underline-offset-2 hover:text-[#22324A] hover:underline`}
+                                  className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
                                 >
                                   Clear
                                 </button>
@@ -1982,32 +1983,32 @@ export default function ProjectVariationsPage() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
-                          <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[#1d2433] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}>
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
+                          <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[var(--text-primary)] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}>
                             {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
                           </select>
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                         </div>
-                        <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <div className="relative w-full">
-                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>$</span>
+                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>$</span>
                             <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                           </div>
                         </div>
-                        <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
-                          <div className={`${interMedium.className} text-right text-sm text-[#1d2433]`}>{toMoney(lineTotal(line))}</div>
+                        <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+                          <div className={`${interMedium.className} text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
                         </div>
-                        <div className="flex items-center justify-center border-l border-[#EEF2F7] px-0 py-1.5">
+                        <div className="flex items-center justify-center border-l border-[var(--border-subtle)] px-0 py-1.5">
                           <Button
                             type="button"
                             variant="ghost"
                             onClick={() => removeCostLine(line.id)}
-                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[#9AA8BC]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[#B42318] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0"
+                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[var(--text-muted)]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[var(--error)] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0"
                             aria-label="Delete line item"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -2025,7 +2026,7 @@ export default function ProjectVariationsPage() {
                 type="button"
                 variant="ghost"
                 onClick={() => addCostLine("Labour")}
-                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[#4B5D79] shadow-none hover:bg-transparent hover:text-[#22324A] focus-visible:outline-none focus-visible:ring-0`}
+                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[var(--text-secondary)] shadow-none hover:bg-transparent hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-0`}
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Add Item
@@ -2033,8 +2034,8 @@ export default function ProjectVariationsPage() {
             </div>
 
             {isQuoteLinkOpen ? (
-              <div className="mt-3 min-h-0 rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8EDF5] pb-4">
+              <div className="mt-3 min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-4">
                   <div className="space-y-1">
                     <h3 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Link To Quoted Item</h3>
                     <p className={styles.quoteBodyLabel}>Choose an existing quoted item to link to this variation line.</p>
@@ -2044,7 +2045,7 @@ export default function ProjectVariationsPage() {
                       type="button"
                       variant="outline"
                       onClick={() => setIsQuoteLinkOpen(false)}
-                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4`}
+                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
                     >
                       Close
                     </Button>
@@ -2053,7 +2054,7 @@ export default function ProjectVariationsPage() {
                       variant="outline"
                       onClick={assignSelectedProjectQuoteLine}
                       disabled={!quoteLinkTargetLineId || !selectedProjectQuoteLineId}
-                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4 disabled:opacity-50`}
+                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4 disabled:opacity-50`}
                     >
                       Link Selected Quote Line
                     </Button>
@@ -2066,7 +2067,7 @@ export default function ProjectVariationsPage() {
                     <select
                       value={quoteLinkTargetLineId ?? ""}
                       onChange={(event) => openQuoteLinkPicker(event.target.value)}
-                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}
                     >
                       {activeVariation.costLines.map((line, index) => (
                         <option key={line.id} value={line.id}>
@@ -2080,7 +2081,7 @@ export default function ProjectVariationsPage() {
                     <select
                       value={selectedProjectQuoteId}
                       onChange={(event) => setSelectedProjectQuoteId(event.target.value)}
-                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}
                     >
                       <option value="">Select quote</option>
                       {projectQuotes.map((quote) => (
@@ -2093,10 +2094,10 @@ export default function ProjectVariationsPage() {
                 </div>
 
                 {selectedProjectQuote ? (
-                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
                     <table className="min-w-full border-collapse">
                       <thead>
-                        <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                        <tr className={`${interMedium.className} border-b border-[var(--border)] bg-[var(--surface-muted)] text-[13px] font-semibold text-[var(--text-secondary)]`}>
                           <th className="w-[44px] px-3 py-2.5 text-left" />
                           <th className="px-3 py-2.5 text-left">Description</th>
                           <th className="w-[140px] px-3 py-2.5 text-left">Item</th>
@@ -2105,7 +2106,7 @@ export default function ProjectVariationsPage() {
                           <th className="w-[120px] px-3 py-2.5 text-right">Amount</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                      <tbody className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
                         {selectedProjectQuoteLineOptions.length > 0 ? (
                           selectedProjectQuoteLineOptions.map((line) => (
                             <tr key={line.id} className="transition-colors">
@@ -2116,26 +2117,26 @@ export default function ProjectVariationsPage() {
                                     name="selected-project-quote-line"
                                     checked={selectedProjectQuoteLineId === line.id}
                                     onChange={() => setSelectedProjectQuoteLineId(line.id)}
-                                    className="h-4 w-4 border-[#CBD5E1]"
+                                    className="h-4 w-4 border-[var(--border)]"
                                   />
                                 </label>
                               </td>
                               <td className="min-w-0 px-3 py-3 align-middle">
-                                <span className={`${interMedium.className} block truncate text-sm font-medium text-[#1d2433]`}>
+                                <span className={`${interMedium.className} block truncate text-sm font-medium text-[var(--text-primary)]`}>
                                   {line.description || "Untitled line item"}
                                 </span>
                               </td>
-                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.section}</td>
-                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.quantity}</td>
-                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{toMoney(line.rate)}</td>
-                              <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[#0F172A] align-middle`}>
+                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.section}</td>
+                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.quantity}</td>
+                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{toMoney(line.rate)}</td>
+                              <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[var(--text-primary)] align-middle`}>
                                 {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
                               </td>
                             </tr>
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[#64748B]`}>
+                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[var(--text-secondary)]`}>
                               No quote line items available to link.
                             </td>
                           </tr>
@@ -2144,13 +2145,13 @@ export default function ProjectVariationsPage() {
                     </table>
                   </div>
                 ) : (
-                  <p className={`${interMedium.className} mt-4 text-sm text-[#64748B]`}>
+                  <p className={`${interMedium.className} mt-4 text-sm text-[var(--text-secondary)]`}>
                     Select a quote to choose a source line.
                   </p>
                 )}
 
                 {quoteLinkTargetLine ? (
-                  <p className={`${interMedium.className} mt-3 text-[12px] text-[#64748B]`}>
+                  <p className={`${interMedium.className} mt-3 text-[12px] text-[var(--text-secondary)]`}>
                     Linking to: {quoteLinkTargetLine.description.trim() || quoteLinkTargetLine.section}
                   </p>
                 ) : null}
@@ -2158,8 +2159,8 @@ export default function ProjectVariationsPage() {
             ) : null}
 
             {isPurchaseOrderImportOpen ? (
-              <div className="mt-3 min-h-0 rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8EDF5] pb-4">
+              <div className="mt-3 min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-4">
                   <div className="space-y-1">
                     <h3 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Import From Purchase Order</h3>
                     <p className={styles.quoteBodyLabel}>Select purchase order lines to add into this variation.</p>
@@ -2169,7 +2170,7 @@ export default function ProjectVariationsPage() {
                     variant="outline"
                     onClick={importSelectedPurchaseOrderLines}
                     disabled={selectedPurchaseOrderLineIds.size === 0}
-                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#D7E1EC] bg-[#FBFEFE] px-4 disabled:opacity-50`}
+                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4 disabled:opacity-50`}
                   >
                     Import Selected PO Lines
                   </Button>
@@ -2179,7 +2180,7 @@ export default function ProjectVariationsPage() {
                   <select
                     value={selectedPurchaseOrderId}
                     onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
-                    className={`${interMedium.className} h-10 min-w-[260px] flex-1 rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}
+                    className={`${interMedium.className} h-10 min-w-[260px] flex-1 rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}
                   >
                     <option value="">Select purchase order</option>
                     {purchaseOrders.map((purchaseOrder) => (
@@ -2191,10 +2192,10 @@ export default function ProjectVariationsPage() {
                 </div>
 
                 {selectedPurchaseOrder ? (
-                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE]">
+                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
                     <table className="min-w-full border-collapse">
                       <thead>
-                        <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                        <tr className={`${interMedium.className} border-b border-[var(--border)] bg-[var(--surface-muted)] text-[13px] font-semibold text-[var(--text-secondary)]`}>
                           <th className="w-[44px] px-3 py-2.5 text-left" />
                           <th className="px-3 py-2.5 text-left">Description</th>
                           <th className="w-[140px] px-3 py-2.5 text-left">Item</th>
@@ -2203,7 +2204,7 @@ export default function ProjectVariationsPage() {
                           <th className="w-[120px] px-3 py-2.5 text-right">Amount</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+                      <tbody className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
                         {selectedPurchaseOrderLineOptions.length > 0 ? (
                           selectedPurchaseOrderLineOptions.map((line) => {
                             const alreadyImported = activeVariation?.costLines.some((costLine) => costLine.sourcePurchaseOrderLineItemId === line.id) ?? false;
@@ -2216,24 +2217,24 @@ export default function ProjectVariationsPage() {
                                       checked={selectedPurchaseOrderLineIds.has(line.id)}
                                       onChange={() => togglePurchaseOrderLine(line.id)}
                                       disabled={alreadyImported}
-                                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                                      className="h-4 w-4 rounded border-[var(--border)]"
                                     />
                                   </label>
                                 </td>
                                 <td className="min-w-0 px-3 py-3 align-middle">
-                                  <span className={`${interMedium.className} block truncate text-sm font-medium text-[#1d2433]`}>
+                                  <span className={`${interMedium.className} block truncate text-sm font-medium text-[var(--text-primary)]`}>
                                     {line.description || "Untitled line item"}
                                   </span>
                                   {alreadyImported ? (
-                                    <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[#64748B]`}>
+                                    <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[var(--text-secondary)]`}>
                                       Already imported into this variation
                                     </span>
                                   ) : null}
                                 </td>
-                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.section}</td>
-                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{line.quantity}</td>
-                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[#475569] align-middle`}>{toMoney(line.rate)}</td>
-                                <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[#0F172A] align-middle`}>
+                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.section}</td>
+                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.quantity}</td>
+                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{toMoney(line.rate)}</td>
+                                <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[var(--text-primary)] align-middle`}>
                                   {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
                                 </td>
                               </tr>
@@ -2241,7 +2242,7 @@ export default function ProjectVariationsPage() {
                           })
                         ) : (
                           <tr>
-                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[#64748B]`}>
+                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[var(--text-secondary)]`}>
                               No purchase order line items available to import.
                             </td>
                           </tr>
@@ -2254,7 +2255,7 @@ export default function ProjectVariationsPage() {
             ) : null}
           </section>
 
-          <div className="border-t border-[#E8EDF5] py-6">
+          <div className="border-t border-[var(--border-subtle)] py-6">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
               <div>
           <section className="pb-5">
@@ -2277,21 +2278,21 @@ export default function ProjectVariationsPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Inclusions</label>
-                  <textarea value={activeVariation.inclusions} onChange={(event) => updateActiveVariation("inclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={activeVariation.inclusions} onChange={(event) => updateActiveVariation("inclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm`} />
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Exclusions</label>
-                  <textarea value={activeVariation.exclusions} onChange={(event) => updateActiveVariation("exclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={activeVariation.exclusions} onChange={(event) => updateActiveVariation("exclusions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm`} />
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Clarifications</label>
-                  <textarea value={activeVariation.clarifications} onChange={(event) => updateActiveVariation("clarifications", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={activeVariation.clarifications} onChange={(event) => updateActiveVariation("clarifications", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm`} />
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Assumptions</label>
-                  <textarea value={activeVariation.assumptions} onChange={(event) => updateActiveVariation("assumptions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={activeVariation.assumptions} onChange={(event) => updateActiveVariation("assumptions", event.target.value)} className={`${interMedium.className} min-h-[90px] w-full rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm`} />
                 </div>
               </div>
             </div>
@@ -2316,24 +2317,24 @@ export default function ProjectVariationsPage() {
                   }
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Drawing")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Email")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Site Instruction")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Drawing")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[var(--border)] bg-[var(--surface-muted)]`}><Upload className="mr-1 h-4 w-4" />Attach Drawing</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Email")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[var(--border)] bg-[var(--surface-muted)]`}><Mail className="mr-1 h-4 w-4" />Attach Email</Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker("Site Instruction")} className={`${styles.quoteButtonLabel} h-9 rounded-full border-[var(--border)] bg-[var(--surface-muted)]`}><Clock3 className="mr-1 h-4 w-4" />Attach SI</Button>
                 </div>
 
-                <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-3 py-3">
+                <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-3">
                   <label className={styles.quoteBodyLabel}>Linked Documentation</label>
                   <div className="space-y-2">
                     {activeVariation.attachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[6px] border border-[#E5EAF2] bg-[#F8F9FC] px-3 py-2">
-                        <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[#1D2433]`}>{attachment.name}</span>
+                      <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                        <span className={`${interMedium.className} min-w-0 flex-1 truncate text-sm text-[var(--text-primary)]`}>{attachment.name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="rounded-[6px] bg-[#EEF3FA] px-2 py-1 text-[11px] font-semibold text-[#4A5D78]">{attachment.type}</span>
+                          <span className="rounded-[6px] bg-[var(--border-subtle)] px-2 py-1 text-[11px] font-semibold text-[var(--text-secondary)]">{attachment.type}</span>
                           <Button
                             type="button"
                             variant="outline"
                             onClick={() => removeAttachment(attachment.id)}
-                            className={`${interMedium.className} h-10 w-10 rounded-[6px] border-[#d6dfeb] bg-[#F8F9FC] p-0 text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#1d2433]`}
+                            className={`${interMedium.className} h-10 w-10 rounded-[6px] border-[var(--border)] bg-[var(--surface-muted)] p-0 text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]`}
                             aria-label="Delete attachment"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -2341,7 +2342,7 @@ export default function ProjectVariationsPage() {
                         </div>
                       </div>
                     ))}
-                    {activeVariation.attachments.length === 0 ? <p className={`${interMedium.className} text-sm text-[#73839a]`}>No attachments.</p> : null}
+                    {activeVariation.attachments.length === 0 ? <p className={`${interMedium.className} text-sm text-[var(--text-secondary)]`}>No attachments.</p> : null}
                   </div>
                 </div>
 
@@ -2352,18 +2353,18 @@ export default function ProjectVariationsPage() {
                       type="button"
                       variant="ghost"
                       onClick={() => updateActiveVariation("notes", "")}
-                      className="h-8 w-8 rounded-[6px] p-0 text-[#9AA8BC]/80 hover:bg-[#FEF2F2] hover:text-[#B42318]"
+                      className="h-8 w-8 rounded-[6px] p-0 text-[var(--text-muted)]/80 hover:bg-[var(--error-light)] hover:text-[var(--error)]"
                       aria-label="Delete notes"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[#d1d9e6] px-3 py-2 text-sm`} />
+                  <textarea value={activeVariation.notes} onChange={(event) => updateActiveVariation("notes", event.target.value)} className={`${interMedium.className} min-h-[96px] w-full rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm`} />
                 </div>
               </div>
           </section>
               </div>
-              <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+              <div className="border-t border-[var(--border-subtle)] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
             <div className="space-y-5">
               <div className="grid grid-cols-2 gap-4">
@@ -2373,7 +2374,7 @@ export default function ProjectVariationsPage() {
                       type="checkbox"
                       checked={activeVariation.includeMarginInExport}
                       onChange={() => updateActiveVariation("includeMarginInExport", !activeVariation.includeMarginInExport)}
-                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                      className="h-4 w-4 rounded border-[var(--border)]"
                     />
                     <span className={styles.quoteBodyLabel}>Mark up (%)</span>
                   </label>
@@ -2390,7 +2391,7 @@ export default function ProjectVariationsPage() {
                       type="checkbox"
                       checked={activeVariation.includeDiscountInExport}
                       onChange={() => updateActiveVariation("includeDiscountInExport", !activeVariation.includeDiscountInExport)}
-                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                      className="h-4 w-4 rounded border-[var(--border)]"
                     />
                     <span className={styles.quoteBodyLabel}>Discount</span>
                   </label>
@@ -2407,7 +2408,7 @@ export default function ProjectVariationsPage() {
                       type="checkbox"
                       checked={activeVariation.includeContingencyInExport}
                       onChange={() => updateActiveVariation("includeContingencyInExport", !activeVariation.includeContingencyInExport)}
-                      className="h-4 w-4 rounded border-[#CBD5E1]"
+                      className="h-4 w-4 rounded border-[var(--border)]"
                     />
                     <span className={styles.quoteBodyLabel}>P&G</span>
                   </label>
@@ -2429,29 +2430,29 @@ export default function ProjectVariationsPage() {
                 </div>
               </div>
 
-              <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+              <div className="rounded-[16px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
                 <div className={`${interMedium.className} space-y-3 text-sm`}>
-                  <p className="flex items-center justify-between"><span className="text-[#64748B]">Discount</span><span className="font-medium text-[#1d2433]">-{toMoney(pricingSummary.discount)}</span></p>
-                  <p className="flex items-center justify-between"><span className="text-[#64748B]">P&G</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.contingency)}</span></p>
+                  <p className="flex items-center justify-between"><span className="text-[var(--text-secondary)]">Discount</span><span className="font-medium text-[var(--text-primary)]">-{toMoney(pricingSummary.discount)}</span></p>
+                  <p className="flex items-center justify-between"><span className="text-[var(--text-secondary)]">P&G</span><span className="font-medium text-[var(--text-primary)]">{toMoney(pricingSummary.contingency)}</span></p>
                   {showMarginBreakout ? (
-                    <p className="flex items-center justify-between"><span className="text-[#64748B]">Mark up</span><span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.margin)}</span></p>
+                    <p className="flex items-center justify-between"><span className="text-[var(--text-secondary)]">Mark up</span><span className="font-medium text-[var(--text-primary)]">{toMoney(pricingSummary.margin)}</span></p>
                   ) : null}
-                  <div className="h-px bg-[#E7ECF3]" />
-                  <p className="flex items-center justify-between"><span className="text-[#64748B]">Subtotal (excl. GST)</span><span className="font-medium text-[#1d2433]">{toMoney(variationPreGstTotal)}</span></p>
+                  <div className="h-px bg-[var(--border)]" />
+                  <p className="flex items-center justify-between"><span className="text-[var(--text-secondary)]">Subtotal (excl. GST)</span><span className="font-medium text-[var(--text-primary)]">{toMoney(variationPreGstTotal)}</span></p>
                   <p className="flex items-center justify-between">
-                    <span className="text-[#64748B]">Total GST {activeVariation.gstPercent.trim() || "15"}.00%</span>
-                    <span className="font-medium text-[#1d2433]">{toMoney(pricingSummary.gst)}</span>
+                    <span className="text-[var(--text-secondary)]">Total GST {activeVariation.gstPercent.trim() || "15"}.00%</span>
+                    <span className="font-medium text-[var(--text-primary)]">{toMoney(pricingSummary.gst)}</span>
                   </p>
-                  <div className="h-px bg-[#E7ECF3]" />
+                  <div className="h-px bg-[var(--border)]" />
                   <p className="flex items-center justify-between pt-1">
-                    <span className="text-[15px] font-semibold text-[#1d2433]">Total (incl. GST)</span>
-                    <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(pricingSummary.grandTotal)}</span>
+                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">Total (incl. GST)</span>
+                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(pricingSummary.grandTotal)}</span>
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2 pt-1">
-                <Button type="button" onClick={saveVariation} disabled={!canManageVariation || isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[#0B2739] text-sm font-medium text-white hover:bg-[#0B2739]`}>
+                <Button type="button" onClick={saveVariation} disabled={!canManageVariation || isSaving} className={`${interMedium.className} h-10 w-full rounded-full bg-[var(--navy-primary)] text-sm font-medium text-white hover:bg-[var(--navy-primary)]`}>
                   {isSaving ? "Saving..." : "Save Variation"}
                 </Button>
                 <Button
@@ -2459,7 +2460,7 @@ export default function ProjectVariationsPage() {
                   onClick={exportVariationPdf}
                   disabled={isSaving}
                   variant="outline"
-                  className={`${interMedium.className} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC] text-sm font-medium text-[#1d2433]`}
+                  className={`${interMedium.className} h-10 w-full rounded-full border-[var(--border)] bg-[var(--surface-muted)] text-sm font-medium text-[var(--text-primary)]`}
                 >
                   Export PDF
                 </Button>
@@ -2471,13 +2472,13 @@ export default function ProjectVariationsPage() {
         </div>
       </div>
       ) : (
-        <Card className="border-[#E6EAF0] bg-[#F8F9FC] shadow-none">
+        <Card className="border-[var(--border)] bg-[var(--surface-muted)] shadow-none">
           <CardContent className="flex flex-col items-center justify-center px-6 py-14 text-center">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-[6px] bg-[#EEF3FA] text-[#29446E]">
+            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-[6px] bg-[var(--border-subtle)] text-[var(--text-primary)]">
               <FileStack className="h-6 w-6" />
             </div>
-            <h2 className="text-xl font-semibold tracking-[-0.01em] text-[#0F172A]">No variations yet</h2>
-            <p className={`${interMedium.className} mt-2 max-w-[520px] text-sm text-[#64748B]`}>
+            <h2 className="text-xl font-semibold tracking-[-0.01em] text-[var(--text-primary)]">No variations yet</h2>
+            <p className={`${interMedium.className} mt-2 max-w-[520px] text-sm text-[var(--text-secondary)]`}>
               Start your variation register by creating the first variation for this project. You can then build costs,
               attach supporting documents, send to client, and track approval through to invoicing.
             </p>
@@ -2485,7 +2486,7 @@ export default function ProjectVariationsPage() {
               type="button"
               onClick={() => void createVariation()}
               disabled={isCreatingVariation}
-              className={`${interMedium.className} mt-6 h-10 rounded-[6px] bg-[#F74917] px-4 text-sm font-medium text-white hover:bg-[#e63f10]`}
+              className={`${interMedium.className} mt-6 h-10 rounded-[6px] bg-[var(--primary)] px-4 text-sm font-medium text-white hover:bg-[var(--primary-hover)]`}
             >
               <Plus className="mr-1 h-4 w-4" />
               {isCreatingVariation ? "Creating..." : "Create First Variation"}

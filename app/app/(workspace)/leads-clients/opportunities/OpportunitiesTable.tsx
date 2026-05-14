@@ -12,13 +12,8 @@ import {
   OperationalTableRow,
 } from "@/components/app/OperationalTable";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import type { LiveOpportunityRow } from "@/lib/leads-clients-server";
-
-const currencyFormatter = new Intl.NumberFormat("en-NZ", {
-  style: "currency",
-  currency: "NZD",
-  maximumFractionDigits: 0,
-});
 
 const dateFormatter = new Intl.DateTimeFormat("en-NZ", {
   day: "numeric",
@@ -37,7 +32,7 @@ function getDaysUntilIso(isoDate: string | null): number | null {
 }
 
 function formatCurrencyNZD(value: number) {
-  return currencyFormatter.format(value);
+  return formatMoneyOperational(value);
 }
 
 function formatDate(isoDate: string | null): string {
@@ -66,7 +61,7 @@ function WinProbabilityBar({ pct }: { pct: LiveOpportunityRow["clientWinRatePct"
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[var(--surface-muted)]">
         <div
-          className="h-full rounded-full bg-[var(--orange-primary)] transition-all"
+          className="h-full rounded-full bg-[var(--brand-blue)] transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -115,7 +110,7 @@ export function OpportunitiesTable({ rows }: { rows: LiveOpportunityRow[] }) {
           <OperationalTableRow key={row.opportunityId}>
             <OperationalTableCell>
               <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="group block">
-                <p className="text-sm font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--orange-primary)]">
+                <p className="text-sm font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--brand-blue)]">
                   {row.name}
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{row.clientName}</p>

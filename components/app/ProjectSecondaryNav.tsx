@@ -16,7 +16,7 @@ import {
   TimerReset,
   WandSparkles,
 } from "lucide-react";
-import { ibmPlexSans } from "@/lib/fonts";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const PROJECT_TOP_NAV_ITEMS = [
@@ -45,28 +45,25 @@ export function ProjectSecondaryNav({
   const isDashboardRoute = pathname === `/app/projects/${projectId}` || pathname === dashboardHref;
 
   return (
-    <div className="bg-white shadow-none">
-      <div className="flex flex-col gap-3 bg-white px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className="shadow-none">
+      <div className="flex flex-col gap-3 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center">
-            <h2 className={`${ibmPlexSans.className} text-[33px] font-bold leading-[1.05] tracking-[-0.02em] text-[#1d1d1d]`}>
-              {projectName}
-            </h2>
-          </div>
+          <h2 className="m-0 truncate text-[45px] font-bold leading-[1.05] tracking-[-0.02em] text-[var(--text-primary)]">
+            {projectName}
+          </h2>
         </div>
 
         {isDashboardRoute ? (
-          <Link
-            href="/app/projects"
-            className="inline-flex items-center gap-[0.4rem] rounded-[0.9rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Projects
-          </Link>
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/app/projects" prefetch>
+              <ArrowLeft className="h-4 w-4" />
+              Back to Projects
+            </Link>
+          </Button>
         ) : null}
       </div>
 
-      <div className="sticky top-0 z-20 border-b-2 bg-white px-5" style={{ borderBottomColor: "#E2E8F1" }}>
+      <div className="sticky top-14 z-20 border-b border-[var(--border)] bg-[var(--background)] px-5">
         <nav className="overflow-x-auto">
           <div className="flex min-w-max items-center gap-8">
             {PROJECT_TOP_NAV_ITEMS.map((item) => {
@@ -82,21 +79,17 @@ export function ProjectSecondaryNav({
                   key={item.segment}
                   href={href}
                   className={cn(
-                    "group -mx-[0.35rem] inline-flex items-center gap-2 px-[0.35rem] py-3 text-[15px] font-medium transition-colors",
+                    "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors",
                     isActive
-                      ? "text-[#F15A29]"
-                      : "text-[#4B5D79] hover:text-[#4B5D79]"
+                      ? "border-[var(--orange-primary)] text-[var(--brand-blue)]"
+                      : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   )}
-                  style={isActive ? { borderBottomWidth: "2px", borderBottomStyle: "solid", borderBottomColor: "#F15A29" } : undefined}
                 >
                   <Icon
                     strokeWidth={2.2}
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      isActive ? "text-[#F15A29]" : "text-[#4B5D79] group-hover:text-[#4B5D79]"
-                    )}
+                    className="h-4 w-4 shrink-0"
                   />
-                  <span className="whitespace-nowrap text-[15px] leading-none">
+                  <span className="whitespace-nowrap">
                     {item.label}
                   </span>
                 </Link>

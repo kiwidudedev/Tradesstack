@@ -3,7 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 
 type ButtonVariant = "default" | "orange" | "outline" | "ghost" | "primary" | "secondary" | "destructive";
-type ButtonSize = "default" | "sm" | "md" | "lg" | "icon";
+type ButtonSize = "default" | "sm" | "md" | "lg" | "icon" | "toolbar";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -13,11 +13,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<ButtonVariant, string> = {
   default:
-    "bg-[var(--orange-primary)] text-white hover:bg-[var(--orange-hover)] focus-visible:ring-[var(--orange-primary)]",
+    "bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] focus-visible:ring-[var(--primary)]",
   orange:
     "bg-[var(--orange-primary)] text-white hover:bg-[var(--orange-hover)] focus-visible:ring-[var(--orange-primary)]",
   primary:
-    "bg-[var(--orange-primary)] text-white hover:bg-[var(--orange-hover)] focus-visible:ring-[var(--orange-primary)]",
+    "bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] focus-visible:ring-[var(--primary)]",
   outline:
     "border border-[var(--border)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-muted)] focus-visible:ring-[var(--border)]",
   secondary:
@@ -34,6 +34,10 @@ const sizeStyles: Record<ButtonSize, string> = {
   md: "h-11 px-4 text-base rounded-[var(--radius-md)]",
   lg: "h-12 px-6 text-base rounded-[var(--radius-md)]",
   icon: "h-10 w-10 p-0",
+  // Toolbar-aligned size: matches the operational toolbar control rhythm
+  // (40px height, 14px text, 12px radius) so buttons sit flush with search
+  // inputs and selects inside OperationalToolbar.
+  toolbar: "h-10 px-3.5 text-sm rounded-[var(--radius-md)]",
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(

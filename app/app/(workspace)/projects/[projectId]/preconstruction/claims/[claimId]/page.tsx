@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ExternalLink, FileDown, Maximize2, Plus, Save, Trash2, X } from "lucide-react";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -443,8 +444,8 @@ function applyCanonicalClaimLineIdentity(row: ClaimLineItem, canonical: ClaimLin
 }
 
 const RETENTION_PRESET_OPTIONS = [0, 2.5, 5, 10] as const;
-const retentionInputClass = "font-[family-name:var(--font-ibm-plex-sans)] h-10 w-full rounded-[10px] border border-[#D7E1EC] bg-[#FBFEFE] px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]";
-const retentionLabelClass = "font-[family-name:var(--font-ibm-plex-sans)] mb-1.5 block text-[14px] font-medium text-[#4B5D79]";
+const retentionInputClass = "font-[family-name:var(--font-ibm-plex-sans)] h-10 w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--brand-blue)]";
+const retentionLabelClass = "font-[family-name:var(--font-ibm-plex-sans)] mb-1.5 block text-[14px] font-medium text-[var(--text-secondary)]";
 const retentionChoiceButtonClass = "inline-flex h-10 items-center justify-center rounded-[10px] border px-4 text-left text-[14px] font-medium transition";
 
 function normalizeClaimRowsAgainstLiveSource(rows: ClaimLineItem[], liveSourceRows: ClaimLineItem[]) {
@@ -1352,34 +1353,34 @@ export default function ProjectClaimDetailPage() {
   const renderLineItemRow = (line: (typeof claimLineItemsComputed)[number]) => (
     <div
       key={line.id}
-      className="grid items-stretch gap-0 border-b border-[#E8EDF5] px-0 py-0 last:border-b-0"
+      className="grid items-stretch gap-0 border-b border-[var(--border-subtle)] px-0 py-0 last:border-b-0"
       style={{ gridTemplateColumns: lineItemsGridTemplate }}
     >
       <div className="flex min-w-0 items-center px-3 py-1.5">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-[#1d2433]">
+          <p className="truncate text-sm font-medium text-[var(--text-primary)]">
             {line.sourceNumber || line.description || "Untitled line"}
           </p>
           {line.sourceKind === "Variation" && line.sourceTitle ? (
-            <p className={`${interMedium.className} truncate text-[11px] text-[#64748B]`}>
+            <p className={`${interMedium.className} truncate text-[11px] text-[var(--text-secondary)]`}>
               {line.sourceTitle}
             </p>
           ) : null}
         </div>
       </div>
-      <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
-        <span className={`${interMedium.className} min-w-0 truncate text-sm text-[#334155]`}>{line.section}</span>
+      <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-sm text-[var(--text-secondary)]`}>{line.section}</span>
       </div>
-      <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
-        <span className={`${interMedium.className} truncate text-xs text-[#64748B]`}>{line.sourceKind} {line.sourceNumber}</span>
+      <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
+        <span className={`${interMedium.className} truncate text-xs text-[var(--text-secondary)]`}>{line.sourceKind} {line.sourceNumber}</span>
       </div>
-      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
-        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.sourceTotal)}</span>
+      <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[var(--text-secondary)]`}>{toMoney(line.sourceTotal)}</span>
       </div>
-      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
-        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.previouslyClaimedAmount)}</span>
+      <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[var(--text-secondary)]`}>{toMoney(line.previouslyClaimedAmount)}</span>
       </div>
-      <div className="flex items-center border-l border-[#EEF2F7] px-3 py-1.5">
+      <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
         <div className="relative w-full">
           <Input
             type="number"
@@ -1389,47 +1390,47 @@ export default function ProjectClaimDetailPage() {
             value={line.claimPercent.toString()}
             onChange={(event) => updateClaimLinePercent(line.id, event.target.value)}
             disabled={isSubmittedLocked}
-            className="h-9 rounded-[6px] border-[#D7E1EC] bg-[#FBFEFE] pr-7 text-right"
+            className="h-9 rounded-[6px] border-[var(--border)] bg-[var(--surface)] pr-7 text-right"
           />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#64748B]">%</span>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-secondary)]">%</span>
         </div>
       </div>
-      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
-        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm font-semibold text-[#0F172A]`}>{toMoney(line.claimAmount)}</span>
+      <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm font-semibold text-[var(--text-primary)]`}>{toMoney(line.claimAmount)}</span>
       </div>
-      <div className="flex items-center justify-end border-l border-[#EEF2F7] px-3 py-1.5">
-        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[#334155]`}>{toMoney(line.cumulativeClaimedAmount)}</span>
+      <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+        <span className={`${interMedium.className} min-w-0 truncate text-right text-sm text-[var(--text-secondary)]`}>{toMoney(line.cumulativeClaimedAmount)}</span>
       </div>
     </div>
   );
 
   const renderLineItemsTable = (containerClassName = "") => (
-    <div className={`overflow-x-auto rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] ${containerClassName}`.trim()}>
+    <div className={`overflow-x-auto rounded-[18px] border border-[var(--border)] bg-[var(--surface)] ${containerClassName}`.trim()}>
       <div
-        className={`${styles.quoteButtonLabel} grid items-center gap-0 border-b border-[#D7E1EC] bg-[#F3F4F6] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[#475569]`}
+        className={`${styles.quoteButtonLabel} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
         style={{ gridTemplateColumns: lineItemsGridTemplate }}
       >
         <span className="px-3 py-2.5 font-semibold">Description</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Section</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Source</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Line Total</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Prev Claimed</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 font-semibold">Claim %</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">This Claim</span>
-        <span className="border-l border-[#D7E1EC] px-3 py-2.5 text-right font-semibold">Claimed to Date</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Section</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Source</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Line Total</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Prev Claimed</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Claim %</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">This Claim</span>
+        <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Claimed to Date</span>
       </div>
-      <div className="bg-[#FBFEFE]">
+      <div className="bg-[var(--surface)]">
         {quoteLineItems.length > 0 ? (
-          <div className="border-b border-[#E8EDF5] bg-[#F8FAFC] px-3 py-2">
-            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>
+          <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2">
+            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
               Quote Value
             </p>
           </div>
         ) : null}
         {quoteLineItems.map(renderLineItemRow)}
         {variationLineItems.length > 0 ? (
-          <div className="border-y border-[#E8EDF5] bg-[#F8FAFC] px-3 py-2">
-            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>
+          <div className="border-y border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2">
+            <p className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
               Variations Value
             </p>
           </div>
@@ -2061,7 +2062,7 @@ export default function ProjectClaimDetailPage() {
   if (isLoading) {
     return (
       <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-        <OperationalPageHeader
+        <OperationalModuleHeader
           title={
             <span className="inline-flex flex-wrap items-center gap-2">
               <span>Payment Claim</span>
@@ -2083,44 +2084,44 @@ export default function ProjectClaimDetailPage() {
         <div className="space-y-6">
           <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
             <div className="space-y-5">
-              <section className="border-b border-[#E8EDF5] pb-5">
-                <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <section className="border-b border-[var(--border-subtle)] pb-5">
+                <div className="h-10 w-56 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5] md:col-span-2" />
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)] md:col-span-2" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                 </div>
               </section>
-              <section className="border-b border-[#E8EDF5] py-5">
-                <div className="h-10 w-48 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+              <section className="border-b border-[var(--border-subtle)] py-5">
+                <div className="h-10 w-48 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                 <div className="mt-4 grid gap-3 md:grid-cols-4">
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                  <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                  <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                 </div>
               </section>
               <section className="py-5">
-                <div className="h-10 w-40 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                <div className="mt-4 h-56 animate-pulse rounded-[18px] bg-[#E8EDF5]" />
+                <div className="h-10 w-40 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                <div className="mt-4 h-56 animate-pulse rounded-[18px] bg-[var(--border-subtle)]" />
                 <p className={`${styles.quoteBodyLabel} pt-4`}>Loading claim...</p>
               </section>
-              <div className="border-t border-[#E8EDF5] py-6">
+              <div className="border-t border-[var(--border-subtle)] py-6">
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
                   <div className="space-y-4">
-                    <div className="h-10 w-44 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                    <div className="h-28 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                    <div className="h-10 w-44 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                    <div className="h-28 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                   </div>
-                  <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+                  <div className="border-t border-[var(--border-subtle)] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
                     <div className="space-y-3">
-                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
-                      <div className="h-10 animate-pulse rounded-[8px] bg-[#E8EDF5]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
+                      <div className="h-10 animate-pulse rounded-[8px] bg-[var(--border-subtle)]" />
                     </div>
                   </div>
                 </div>
@@ -2134,7 +2135,7 @@ export default function ProjectClaimDetailPage() {
 
   return (
     <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title={
           <span className="inline-flex flex-wrap items-center gap-2">
             <span>{claimNumber || "Payment Claim"}</span>
@@ -2234,14 +2235,14 @@ export default function ProjectClaimDetailPage() {
       />
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
       {!canManageClaim && session ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
+        <OperationalAlert variant="warning">
           You can review this claim, but only owner, admin, QS, and project manager roles can edit or delete it.
-        </div>
+        </OperationalAlert>
       ) : null}
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -2274,15 +2275,15 @@ export default function ProjectClaimDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="space-y-6 [&_input]:border-[#D7E1EC] [&_input]:bg-[#FBFEFE] [&_input]:text-[#1D1D1D] [&_select]:border-[#D7E1EC] [&_select]:bg-[#FBFEFE] [&_select]:text-[#1D1D1D] [&_textarea]:border-[#D7E1EC] [&_textarea]:bg-[#FBFEFE] [&_textarea]:text-[#1D1D1D]">
+      <div className="space-y-6 [&_input]:border-[var(--border)] [&_input]:bg-[var(--surface)] [&_input]:text-[var(--text-primary)] [&_select]:border-[var(--border)] [&_select]:bg-[var(--surface)] [&_select]:text-[var(--text-primary)] [&_textarea]:border-[var(--border)] [&_textarea]:bg-[var(--surface)] [&_textarea]:text-[var(--text-primary)]">
         <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
-          <section className="border-b border-[#E8EDF5] pb-5">
+          <section className="border-b border-[var(--border-subtle)] pb-5">
             <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Claim Workspace</h2>
             <div className="mt-4 space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Claim No.</label>
-                  <Input value={claimNumber} onChange={(event) => setClaimNumber(event.target.value)} className="h-10 rounded-[6px] bg-[#f8fafc]" disabled />
+                  <Input value={claimNumber} onChange={(event) => setClaimNumber(event.target.value)} className="h-10 rounded-[6px] bg-[var(--surface-muted)]" disabled />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
                   <label className={styles.quoteBodyLabel}>Claim Title</label>
@@ -2292,7 +2293,7 @@ export default function ProjectClaimDetailPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Claim Type</label>
-                  <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`} disabled={isSubmittedLocked}>
+                  <select value={claimType} onChange={(event) => setClaimType(event.target.value as ClaimType)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`} disabled={isSubmittedLocked}>
                     <option value="Progress">Progress</option>
                     <option value="Deposit">Deposit</option>
                     <option value="Final">Final</option>
@@ -2300,7 +2301,7 @@ export default function ProjectClaimDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Status</label>
-                  <select value={status} onChange={(event) => setStatus(event.target.value as ClaimStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[#d1d9e6] bg-[#F8F9FC] px-3 text-sm text-[#1d2433]`}>
+                  <select value={status} onChange={(event) => setStatus(event.target.value as ClaimStatus)} className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}>
                     <option value="Draft">Draft</option>
                     <option value="Submitted">Submitted</option>
                     <option value="Unpaid">Unpaid</option>
@@ -2311,13 +2312,13 @@ export default function ProjectClaimDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>% Complete</label>
-                  <Input type="number" value={displayedPercentComplete} className="h-10 rounded-[6px] bg-[#f8fafc]" disabled />
+                  <Input type="number" value={displayedPercentComplete} className="h-10 rounded-[6px] bg-[var(--surface-muted)]" disabled />
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="border-b border-[#E8EDF5] py-5">
+          <section className="border-b border-[var(--border-subtle)] py-5">
             <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Claim Period</h2>
             <div className="mt-4 grid gap-3 md:grid-cols-4">
               <div className="space-y-1.5"><label className={styles.quoteBodyLabel}>Claim Date</label><Input type="date" value={claimDate} onChange={(event) => setClaimDate(event.target.value)} className="h-10 rounded-[6px]" disabled={isSubmittedLocked} /></div>
@@ -2327,7 +2328,7 @@ export default function ProjectClaimDetailPage() {
             </div>
           </section>
 
-          <section className="border-b border-[#E8EDF5] py-5">
+          <section className="border-b border-[var(--border-subtle)] py-5">
             <button type="button" onClick={() => setIsLineItemsOpen((current) => !current)} className="flex w-full items-center justify-between">
               <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Line Items</h2>
               <div className="flex items-center gap-2">
@@ -2338,12 +2339,12 @@ export default function ProjectClaimDetailPage() {
                     event.stopPropagation();
                     setIsLineItemsExpanded(true);
                   }}
-                  className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-4`}
+                  className={`${styles.quoteButtonLabel} h-9 rounded-full border-[var(--border)] bg-[var(--surface-muted)] px-4`}
                 >
                   <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
                   Expand
                 </Button>
-                <ChevronDown className={`h-4 w-4 text-[#64748B] transition-transform ${isLineItemsOpen ? "rotate-180" : ""}`} />
+                <ChevronDown className={`h-4 w-4 text-[var(--text-secondary)] transition-transform ${isLineItemsOpen ? "rotate-180" : ""}`} />
               </div>
             </button>
             {isLineItemsOpen ? (
@@ -2353,13 +2354,13 @@ export default function ProjectClaimDetailPage() {
             ) : null}
           </section>
 
-          <div className="border-t border-[#E8EDF5] py-6">
+          <div className="border-t border-[var(--border-subtle)] py-6">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
               <div>
                 <section className="pt-0">
                   <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Payment & Notes</h2>
                   <div className="mt-4 space-y-4">
-                    <div className="rounded-[6px] border border-[#E5EAF2] bg-[#FAFCFF] px-4 py-4">
+                    <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-4">
                       <div className="grid gap-3 md:grid-cols-3">
                         <div className="space-y-1">
                           <p className={styles.quoteCardTitle}>Claim Status</p>
@@ -2380,46 +2381,46 @@ export default function ProjectClaimDetailPage() {
                     </div>
                     <div className="space-y-1.5">
                       <label className={styles.quoteBodyLabel}>Notes</label>
-                      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${interMedium.className} min-h-[110px] w-full rounded-[6px] border border-[#D7E1EC] px-3 py-2 text-sm`} disabled={isSubmittedLocked} />
+                      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${interMedium.className} min-h-[110px] w-full rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm`} disabled={isSubmittedLocked} />
                     </div>
                   </div>
                 </section>
               </div>
 
-              <div className="border-t border-[#E8EDF5] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+              <div className="border-t border-[var(--border-subtle)] pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
                 <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Claim Summary</h2>
                 <div className="space-y-5">
-                  <div className="rounded-[16px] border border-[#E8EDF5] bg-[#F9FAFC] px-4 py-4">
+                  <div className="rounded-[16px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
                     <div className={`${interMedium.className} space-y-3 text-sm`}>
                       <p className={styles.quoteCardTitle}>Contract Position</p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Contract Amount</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryOriginalContract)}</span>
+                        <span className="text-[var(--text-secondary)]">Contract Amount</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryOriginalContract)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Approved Variations</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryApprovedVariations)}</span>
+                        <span className="text-[var(--text-secondary)]">Approved Variations</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryApprovedVariations)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Revised Contract Value</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRevisedContractValue)}</span>
+                        <span className="text-[var(--text-secondary)]">Revised Contract Value</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryRevisedContractValue)}</span>
                       </p>
-                      <div className="h-px bg-[#E7ECF3]" />
+                      <div className="h-px bg-[var(--border)]" />
 
                       <p className={styles.quoteCardTitle}>Claim Position</p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Gross Claim To Date</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryValueEarnedToDate)}</span>
+                        <span className="text-[var(--text-secondary)]">Gross Claim To Date</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryValueEarnedToDate)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Less Previous Claims</span>
-                        <span className="font-medium text-[#1d2433]">-{toMoney(summaryPreviousClaimsTotal)}</span>
+                        <span className="text-[var(--text-secondary)]">Less Previous Claims</span>
+                        <span className="font-medium text-[var(--text-primary)]">-{toMoney(summaryPreviousClaimsTotal)}</span>
                       </p>
                       <p className="flex items-center justify-between pt-1">
-                        <span className="text-[#64748B]">Gross Current Claim</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryGrossCurrentClaim)}</span>
+                        <span className="text-[var(--text-secondary)]">Gross Current Claim</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryGrossCurrentClaim)}</span>
                       </p>
-                      <div className="h-px bg-[#E7ECF3]" />
+                      <div className="h-px bg-[var(--border)]" />
 
                       <p className={styles.quoteCardTitle}>Retention</p>
                       <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
@@ -2430,20 +2431,20 @@ export default function ProjectClaimDetailPage() {
                               <button
                                 type="button"
                                 disabled={isRetentionLocked}
-                                className="relative flex h-10 w-full items-center rounded-[6px] border border-[#D9E3EE] bg-white px-3 pr-8 text-left text-[14px] font-medium text-[#10283B] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-[#94A3B8]"
+                                className="relative flex h-10 w-full items-center rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 pr-8 text-left text-[14px] font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)] disabled:text-[var(--text-muted)]"
                               >
                                 <span className="truncate">{retentionSelectorDisplay}</span>
                                 {retentionMethod === "flat" ? (
-                                  <span className={`${interMedium.className} pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>%</span>
+                                  <span className={`${interMedium.className} pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>%</span>
                                 ) : null}
-                                <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8] transition-transform ${isRetentionSelectorOpen ? "rotate-180" : ""}`} />
+                                <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)] transition-transform ${isRetentionSelectorOpen ? "rotate-180" : ""}`} />
                               </button>
                             </DialogTrigger>
-                            <DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-[760px] overflow-y-auto rounded-[16px] border border-[#E8EDF5] bg-[#FBFEFE] p-0 shadow-[0_10px_28px_rgba(15,23,42,0.08)] sm:w-full">
-                              <DialogHeader className="border-b border-[#E8EDF5] px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
+                            <DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-[760px] overflow-y-auto rounded-[16px] border border-[var(--border-subtle)] bg-[var(--surface)] p-0 shadow-[0_10px_28px_rgba(15,23,42,0.08)] sm:w-full">
+                              <DialogHeader className="border-b border-[var(--border-subtle)] px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
                                 <div className="flex items-start justify-between gap-4">
                                   <div className="space-y-1.5">
-                                    <DialogTitle className={`${ibmPlexSans.className} m-0 text-[24px] font-semibold leading-none tracking-[-0.03em] text-[#1d1d1d]`}>
+                                    <DialogTitle className={`${ibmPlexSans.className} m-0 text-[24px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>
                                       Retention
                                     </DialogTitle>
                                     <p className={styles.quoteBodyLabel}>
@@ -2453,7 +2454,7 @@ export default function ProjectClaimDetailPage() {
                                   <DialogClose asChild>
                                     <button
                                       type="button"
-                                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#D7E1EC] bg-[#F8F9FC] text-[#64748B] transition hover:bg-white hover:text-[#1d2433]"
+                                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] transition hover:bg-[var(--surface)] hover:text-[var(--text-primary)]"
                                       aria-label="Close retention dialog"
                                     >
                                       <X className="h-4 w-4" />
@@ -2463,18 +2464,18 @@ export default function ProjectClaimDetailPage() {
                               </DialogHeader>
                               <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
                                 {retentionNormalizationStatus === "lossy" ? (
-                                  <p className={`${interMedium.className} rounded-[12px] border border-amber-300/70 bg-amber-50 px-3.5 py-3 text-[13px] leading-5 text-amber-900`}>
+                                  <p className={`${interMedium.className} rounded-[12px] border border-[var(--warning-light)] bg-[var(--warning-light)] px-3.5 py-3 text-[13px] leading-5 text-[var(--warning)]`}>
                                     This claim used an older retention band structure and has been converted into the new fixed 3-band editor. Retention above previous caps may now behave differently, so please review the three band values before saving.
                                   </p>
                                 ) : null}
-                                <div className="inline-flex w-full rounded-[12px] border border-[#D7E1EC] bg-[#F8F9FC] p-1 sm:w-auto">
+                                <div className="inline-flex w-full rounded-[12px] border border-[var(--border)] bg-[var(--surface-muted)] p-1 sm:w-auto">
                                   <button
                                     type="button"
                                     onClick={() => handleSelectRetentionMethod("flat")}
                                     className={`inline-flex flex-1 items-center justify-center rounded-[10px] px-4 py-2.5 text-[14px] font-medium transition-colors sm:flex-none ${
                                       retentionMethod === "flat"
-                                        ? "bg-white text-[#F15A29] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
-                                        : "text-[#4B5D79] hover:text-[#22324A]"
+                                        ? "bg-[var(--surface)] text-[var(--brand-blue)] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                                     }`}
                                   >
                                     Flat %
@@ -2484,8 +2485,8 @@ export default function ProjectClaimDetailPage() {
                                     onClick={() => handleSelectRetentionMethod("sliding_scale")}
                                     className={`inline-flex flex-1 items-center justify-center rounded-[10px] px-4 py-2.5 text-[14px] font-medium transition-colors sm:flex-none ${
                                       retentionMethod === "sliding_scale"
-                                        ? "bg-white text-[#F15A29] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
-                                        : "text-[#4B5D79] hover:text-[#22324A]"
+                                        ? "bg-[var(--surface)] text-[var(--brand-blue)] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                                     }`}
                                   >
                                     Sliding Scale
@@ -2503,8 +2504,8 @@ export default function ProjectClaimDetailPage() {
                                             onClick={() => handleSelectRetentionPreset(option)}
                                             className={`${retentionChoiceButtonClass} ${
                                               isSelected
-                                                ? "border-[#F15A29] bg-[#FFF3EE] text-[#10283B]"
-                                                : "border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50"
+                                                ? "border-[var(--orange-primary)] bg-[var(--warning-light)] text-[var(--text-primary)]"
+                                                : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
                                             }`}
                                           >
                                             {option}%
@@ -2516,8 +2517,8 @@ export default function ProjectClaimDetailPage() {
                                         onClick={() => setIsRetentionCustomMode(true)}
                                         className={`${retentionChoiceButtonClass} ${
                                           isRetentionCustomMode || hasCustomRetentionPercent
-                                            ? "border-[#F15A29] bg-[#FFF3EE] text-[#10283B]"
-                                            : "border-[#D9E3EE] bg-white text-[#10283B] hover:bg-slate-50"
+                                            ? "border-[var(--orange-primary)] bg-[var(--warning-light)] text-[var(--text-primary)]"
+                                            : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
                                         }`}
                                       >
                                         Custom
@@ -2536,7 +2537,7 @@ export default function ProjectClaimDetailPage() {
                                             onChange={(event) => setRetentionPercent(event.target.value)}
                                             className={`${retentionInputClass} pr-9`}
                                           />
-                                          <span className={`${interMedium.className} pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>%</span>
+                                          <span className={`${interMedium.className} pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>%</span>
                                         </div>
                                       </div>
                                     ) : null}
@@ -2556,12 +2557,12 @@ export default function ProjectClaimDetailPage() {
                                         return (
                                           <div
                                             key={band.id ?? `retention-tier-${index}`}
-                                            className="rounded-[14px] border border-[#E8EDF5] bg-white px-4 py-4 sm:px-5"
+                                            className="rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-4 sm:px-5"
                                           >
-                                            <div className="flex items-start justify-between gap-3 border-b border-[#EEF2F7] pb-3">
+                                            <div className="flex items-start justify-between gap-3 border-b border-[var(--border-subtle)] pb-3">
                                               <div className="space-y-1">
                                                 <p className={styles.quoteCardTitle}>{rowLabel}</p>
-                                                <p className={`${interMedium.className} text-[13px] text-[#6B7A90]`}>
+                                                <p className={`${interMedium.className} text-[13px] text-[var(--text-secondary)]`}>
                                                   {isRemainingTier
                                                     ? `Remaining amount at ${numberOrZero(band.rate_percent)}%`
                                                     : `${rowLabel} ${toMoney(numberOrZero(bandAmount))} at ${numberOrZero(band.rate_percent)}%`}
@@ -2572,8 +2573,8 @@ export default function ProjectClaimDetailPage() {
                                               <div className="space-y-2.5">
                                                 <label className={retentionLabelClass}>{amountLabel}</label>
                                                 {isRemainingTier ? (
-                                                  <div className="flex h-10 items-center rounded-[10px] border border-[#D7E1EC] bg-[#FBFEFE] px-3.5">
-                                                    <p className={`${interMedium.className} text-[13px] text-[#6B7A90]`}>
+                                                  <div className="flex h-10 items-center rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-3.5">
+                                                    <p className={`${interMedium.className} text-[13px] text-[var(--text-secondary)]`}>
                                                       Remaining amount above {toMoney(previousUpperBound)}
                                                     </p>
                                                   </div>
@@ -2602,7 +2603,7 @@ export default function ProjectClaimDetailPage() {
                                                     onBlur={handleCommitRetentionScaleBandDrafts}
                                                     className={`${retentionInputClass} pr-9`}
                                                   />
-                                                  <span className={`${interMedium.className} pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#64748B]`}>%</span>
+                                                  <span className={`${interMedium.className} pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>%</span>
                                                 </div>
                                               </div>
                                             </div>
@@ -2612,12 +2613,12 @@ export default function ProjectClaimDetailPage() {
                                     </div>
                                   </div>
                                 )}
-                                <div className="flex flex-col-reverse gap-3 border-t border-[#E8EDF5] pt-5 sm:flex-row sm:items-center sm:justify-end">
+                                <div className="flex flex-col-reverse gap-3 border-t border-[var(--border-subtle)] pt-5 sm:flex-row sm:items-center sm:justify-end">
                                   <DialogClose asChild>
                                     <Button
                                       type="button"
                                       variant="outline"
-                                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-5`}
+                                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface-muted)] px-5`}
                                     >
                                       Cancel
                                     </Button>
@@ -2625,7 +2626,7 @@ export default function ProjectClaimDetailPage() {
                                   <Button
                                     type="button"
                                     onClick={() => setIsRetentionSelectorOpen(false)}
-                                    className={`${styles.quoteButtonLabel} h-10 rounded-full bg-[#0B2739] px-6 !text-white hover:bg-[#0B2739]`}
+                                    className={`${styles.quoteButtonLabel} h-10 rounded-full bg-[var(--navy-primary)] px-6 !text-white hover:bg-[var(--navy-primary)]`}
                                   >
                                     Done
                                   </Button>
@@ -2647,49 +2648,49 @@ export default function ProjectClaimDetailPage() {
                           />
                         </div>
                       </div>
-                      <div className="h-px bg-[#E7ECF3]" />
+                      <div className="h-px bg-[var(--border)]" />
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Less Retention (This Claim)</span>
-                        <span className="font-medium text-[#1d2433]">-{toMoney(summaryRetentionWithheldAmount)}</span>
+                        <span className="text-[var(--text-secondary)]">Less Retention (This Claim)</span>
+                        <span className="font-medium text-[var(--text-primary)]">-{toMoney(summaryRetentionWithheldAmount)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Retention Held to Date</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRetentionHeldToDate)}</span>
+                        <span className="text-[var(--text-secondary)]">Retention Held to Date</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryRetentionHeldToDate)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Retention Released to Date</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRetentionReleasedToDate)}</span>
+                        <span className="text-[var(--text-secondary)]">Retention Released to Date</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryRetentionReleasedToDate)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Current Retention Balance</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryRetentionBalance)}</span>
+                        <span className="text-[var(--text-secondary)]">Current Retention Balance</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryRetentionBalance)}</span>
                       </p>
-                      <div className="h-px bg-[#E7ECF3]" />
+                      <div className="h-px bg-[var(--border)]" />
                       <p className={styles.quoteCardTitle}>Payment Breakdown</p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">Net Current Claim (excl. GST)</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryNetClaimExclGst)}</span>
+                        <span className="text-[var(--text-secondary)]">Net Current Claim (excl. GST)</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryNetClaimExclGst)}</span>
                       </p>
                       <p className="flex items-center justify-between">
-                        <span className="text-[#64748B]">GST ({(claimGstRate * 100).toFixed(0)}%)</span>
-                        <span className="font-medium text-[#1d2433]">{toMoney(summaryGstAmount)}</span>
+                        <span className="text-[var(--text-secondary)]">GST ({(claimGstRate * 100).toFixed(0)}%)</span>
+                        <span className="font-medium text-[var(--text-primary)]">{toMoney(summaryGstAmount)}</span>
                       </p>
                       <p className="flex items-center justify-between pt-1">
-                        <span className="text-[15px] font-semibold text-[#1d2433]">Total Payable (incl. GST)</span>
-                        <span className="text-[15px] font-semibold text-[#1d2433]">{toMoney(summaryTotalPayable)}</span>
+                        <span className="text-[15px] font-semibold text-[var(--text-primary)]">Total Payable (incl. GST)</span>
+                        <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(summaryTotalPayable)}</span>
                       </p>
                     </div>
                   </div>
 
                   <div className="space-y-2 pt-1">
-                    <Button type="button" onClick={() => void saveClaim()} disabled={isSaving || !claimId} variant="outline" className={`${styles.quoteButtonLabel} h-10 w-full rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}>
+                    <Button type="button" onClick={() => void saveClaim()} disabled={isSaving || !claimId} variant="outline" className={`${styles.quoteButtonLabel} h-10 w-full rounded-full border-[var(--border)] bg-[var(--surface-muted)]`}>
                       {isSaving ? "Saving..." : "Save Claim"}
                     </Button>
                     <Button
                       type="button"
                       onClick={exportClaimPdf}
                       disabled={!claimId}
-                      className={`${styles.quoteButtonLabel} h-10 w-full rounded-full bg-[#0B2739] !text-white hover:bg-[#0B2739]`}
+                      className={`${styles.quoteButtonLabel} h-10 w-full rounded-full bg-[var(--navy-primary)] !text-white hover:bg-[var(--navy-primary)]`}
                     >
                       Export PDF
                     </Button>
@@ -2702,28 +2703,28 @@ export default function ProjectClaimDetailPage() {
       </div>
 
       {isLineItemsExpanded ? (
-        <div className="fixed inset-0 z-[240] bg-[#0B1626]/55 p-4 sm:p-6">
-          <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col rounded-[18px] border border-[#D7E1EC] bg-[#FBFEFE] shadow-[0_18px_48px_rgba(2,6,23,0.28)]">
-            <div className="flex items-center justify-between border-b border-[#E8EDF5] px-5 py-4">
+        <div className="fixed inset-0 z-[240] bg-[var(--navy-primary)]/55 p-4 sm:p-6">
+          <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_18px_48px_rgba(2,6,23,0.28)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-5 py-4">
               <h2 className={styles.quoteSectionTitle}>Line Items</h2>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsLineItemsExpanded(false)}
-                className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC] px-4`}
+                className={`${styles.quoteButtonLabel} h-9 rounded-full border-[var(--border)] bg-[var(--surface-muted)] px-4`}
               >
                 <X className="mr-1.5 h-3.5 w-3.5" />
                 Close
               </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-[#E8EDF5] px-5 py-3">
-              <div className="inline-flex items-center gap-2 rounded-[6px] border border-[#D8E0EB] bg-[#F8FAFC] px-3 py-1.5">
-                <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Quote Total</span>
-                <span className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(quoteLineTotalValue)}</span>
+            <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-subtle)] px-5 py-3">
+              <div className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5">
+                <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>Quote Total</span>
+                <span className={`${interMedium.className} text-sm font-semibold text-[var(--text-primary)]`}>{toMoney(quoteLineTotalValue)}</span>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-[6px] border border-[#D8E0EB] bg-[#F8FAFC] px-3 py-1.5">
-                <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[#4D617A]`}>Variation Total</span>
-                <span className={`${interMedium.className} text-sm font-semibold text-[#0F172A]`}>{toMoney(variationLineTotalValue)}</span>
+              <div className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5">
+                <span className={`${interMedium.className} text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>Variation Total</span>
+                <span className={`${interMedium.className} text-sm font-semibold text-[var(--text-primary)]`}>{toMoney(variationLineTotalValue)}</span>
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">

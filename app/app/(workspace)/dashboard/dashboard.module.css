@@ -1,6 +1,6 @@
 .dashboardScope {
-  --dash-bg: #FBFEFE;
-  --dash-panel: #ffffff;
+  --dash-bg: var(--background);
+  --dash-panel: var(--surface);
   --dash-panel-muted: #F9FAFC;
   --dash-beige-soft: rgba(245, 239, 230, 0.32);
   --dash-border: #E2E8F1;
@@ -62,10 +62,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  border: 1px solid #CBD5E1;
+  border: 1px solid var(--border);
   border-radius: 0.9rem;
-  background: #FBFEFE;
-  color: #475569;
+  background: var(--surface);
+  color: var(--text-secondary);
   padding: 0.55rem 0.95rem;
   white-space: nowrap;
   cursor: pointer;
@@ -89,7 +89,7 @@
 .leadsCard {
   border: 1.3px solid var(--dash-border);
   border-radius: 14px;
-  background: #FBFEFE;
+  background: var(--surface);
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.05),
     0 3px 8px rgba(15, 23, 42, 0.04);
@@ -124,7 +124,7 @@
 .metricTile {
   border: 1.3px solid var(--dash-border);
   border-radius: 14px;
-  background: #FBFEFE;
+  background: var(--surface);
   min-height: 170px;
   padding: 1rem;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px rgba(15, 23, 42, 0.04);
@@ -173,23 +173,23 @@
 }
 
 .iconBadgeAccent {
-  background: #FFE5D9;
-  color: var(--dash-accent);
+  background: var(--kpi-bg-peach);
+  color: var(--kpi-fg-orange);
 }
 
 .iconBadgeInk {
-  background: #0E172B;
-  color: #D9E6F2;
+  background: var(--kpi-bg-navy);
+  color: var(--kpi-fg-navy);
 }
 
 .iconBadgeSage {
-  background: var(--dash-sage);
-  color: #18384C;
+  background: var(--kpi-bg-sage);
+  color: var(--kpi-fg-sage);
 }
 
 .iconBadgeGold {
-  background: var(--dash-gold);
-  color: var(--dash-accent);
+  background: var(--kpi-bg-amber);
+  color: var(--kpi-fg-orange);
 }
 
 .todoList,
@@ -204,7 +204,7 @@
 .leadRow {
   border: 1.3px solid var(--dash-border);
   border-radius: 14px;
-  background: #FBFEFE;
+  background: var(--surface);
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.05),
     0 3px 8px rgba(15, 23, 42, 0.04);

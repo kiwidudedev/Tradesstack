@@ -97,7 +97,7 @@ export default async function OpportunityTakeoffQuantitiesPage({
 
   if (!resolvedDrawingSetId) {
     content = (
-      <div className="min-w-0 flex-1 rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] px-5 py-6 text-[15px] font-medium text-[#4B5D79] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+      <div className="min-w-0 flex-1 rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] px-5 py-6 text-[15px] font-medium text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
         No takeoff drawing set is available for this opportunity yet.
       </div>
     );
@@ -199,7 +199,7 @@ export default async function OpportunityTakeoffQuantitiesPage({
 
     if (loadErrorMessage) {
       content = (
-        <div className="min-w-0 flex-1 rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] px-5 py-6 text-[15px] font-medium text-[#4B5D79] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+        <div className="min-w-0 flex-1 rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] px-5 py-6 text-[15px] font-medium text-[var(--text-secondary)] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
           {loadErrorMessage}
         </div>
       );

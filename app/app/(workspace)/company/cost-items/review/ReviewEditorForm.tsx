@@ -50,18 +50,18 @@ export function ReviewEditorForm({
   const resolvedCostCode = hasCodePrefix ? buildCostCode(selectedWorkType?.codePrefix, costType) : costCode;
 
   return (
-    <form action={action} className="rounded-[12px] border border-[#F3D7C8] bg-white p-4">
+    <form action={action} className="rounded-[12px] border border-[var(--warning-light)] bg-[var(--surface)] p-4">
       <input type="hidden" name="costItemId" value={costItemId} />
       <div className="grid gap-4 md:grid-cols-3">
         <label className="block">
-          <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
+          <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
             Work Type
           </span>
           <select
             name="workType"
             value={workType}
             onChange={(event) => setWorkType(event.target.value)}
-            className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#1d1d1d] outline-none`}
+            className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)] outline-none`}
           >
             {workTypeOptions.map((option) => (
               <option key={option.workType} value={option.workType}>
@@ -71,14 +71,14 @@ export function ReviewEditorForm({
           </select>
         </label>
         <label className="block">
-          <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
+          <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
             Cost Type
           </span>
           <select
             name="costType"
             value={costType}
             onChange={(event) => setCostType(event.target.value)}
-            className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#1d1d1d] outline-none`}
+            className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)] outline-none`}
           >
             {costTypeOptions.map((option) => (
               <option key={option} value={option}>
@@ -88,7 +88,7 @@ export function ReviewEditorForm({
           </select>
         </label>
         <label className="block">
-          <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
+          <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
             Cost Code
           </span>
           <input
@@ -97,20 +97,20 @@ export function ReviewEditorForm({
             value={resolvedCostCode}
             readOnly={hasCodePrefix}
             onChange={(event) => setCostCode(event.target.value)}
-            className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[#E2E8F1] bg-white px-3 text-[14px] text-[#1d1d1d] outline-none ${hasCodePrefix ? "cursor-not-allowed bg-[#F8FAFB] text-[#64748B]" : ""}`}
+            className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)] outline-none ${hasCodePrefix ? "cursor-not-allowed bg-[var(--surface-muted)] text-[var(--text-secondary)]" : ""}`}
           />
         </label>
       </div>
       <div className="mt-4 flex items-center gap-2">
         <button
           type="submit"
-          className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#0B2739] bg-[#0B2739] px-3 py-1.5 text-[13px] font-semibold text-white transition hover:opacity-95`}
+          className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[var(--navy-primary)] bg-[var(--navy-primary)] px-3 py-1.5 text-[13px] font-semibold text-white transition hover:opacity-95`}
         >
           Save Review
         </button>
         <a
           href={cancelHref}
-          className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[#E2E8F1] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+          className={`${ibmPlexSans.className} inline-flex items-center rounded-[0.5rem] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[13px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]`}
         >
           Cancel
         </a>

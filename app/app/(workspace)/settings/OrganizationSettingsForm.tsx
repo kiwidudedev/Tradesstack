@@ -1,6 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
+import {
+  DEFAULT_ACTION_COLOR,
+  DEFAULT_PLATFORM_COLOR,
+  darken,
+  isValidHex,
+} from "@/components/app/BrandThemeProvider";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -30,7 +37,8 @@ interface OrganizationSettingsFormProps {
   canEdit: boolean;
 }
 
-const DEFAULT_BRAND_PRIMARY_COLOR = "#0B2739";
+const DEFAULT_BRAND_PRIMARY_COLOR = DEFAULT_PLATFORM_COLOR;
+const DEFAULT_BRAND_ACCENT_COLOR = DEFAULT_ACTION_COLOR;
 const ALLOWED_LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 function normalizeHexColor(value: string | null | undefined, fallback: string) {
@@ -69,7 +77,9 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   const [brandPrimaryColor, setBrandPrimaryColor] = useState(
     normalizeHexColor(props.initialBrandPrimaryColor, DEFAULT_BRAND_PRIMARY_COLOR),
   );
-  const [brandAccentColor, setBrandAccentColor] = useState(props.initialBrandAccentColor?.trim() || "#F74917");
+  const [brandAccentColor, setBrandAccentColor] = useState(
+    normalizeHexColor(props.initialBrandAccentColor, DEFAULT_BRAND_ACCENT_COLOR),
+  );
   const [businessNumber, setBusinessNumber] = useState(props.initialBusinessNumber?.trim() || "");
   const [gstNumber, setGstNumber] = useState(props.initialGstNumber?.trim() || "");
   const [bankAccountDetails, setBankAccountDetails] = useState(props.initialBankAccountDetails?.trim() || "");
@@ -125,7 +135,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
         p_name: trimmedName,
         p_logo_path: null,
         p_brand_primary_color: normalizeHexColor(brandPrimaryColor, DEFAULT_BRAND_PRIMARY_COLOR),
-        p_brand_accent_color: brandAccentColor.trim() || null,
+        p_brand_accent_color: normalizeHexColor(brandAccentColor, DEFAULT_BRAND_ACCENT_COLOR),
         p_business_number: businessNumber.trim() || null,
         p_bank_account_details: bankAccountDetails.trim() || null,
         p_gst_number: gstNumber.trim() || null,
@@ -219,9 +229,9 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   };
 
 
-  const fieldLabel = "mb-1 block text-[13px] font-semibold text-[#1d2433] font-[family-name:var(--font-ibm-plex-sans)]";
-  const fieldInput = "h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29] font-[family-name:var(--font-ibm-plex-sans)]";
-  const fieldSelect = "h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29] font-[family-name:var(--font-ibm-plex-sans)]";
+  const fieldLabel = "mb-1 block text-[13px] font-semibold text-[var(--text-primary)] font-[family-name:var(--font-ibm-plex-sans)]";
+  const fieldInput = "h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--brand-blue)] font-[family-name:var(--font-ibm-plex-sans)]";
+  const fieldSelect = "h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--brand-blue)] font-[family-name:var(--font-ibm-plex-sans)]";
 
   return (
     <form
@@ -234,35 +244,32 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
       <section className="overflow-visible bg-transparent px-0 pb-0 pt-0">
         <div className="max-w-[672px] space-y-5">
           <div className="pb-1 pt-1">
-            <p className="text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-[#1d2433]">
+            <p className="text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)]">
               Organization
             </p>
           </div>
 
           {error ? (
-            <p className={`${interMedium.className} rounded-[0.6rem] border border-[#f1c5c5] bg-[#fff1f1] px-3.5 py-2.5 text-[13px] text-[#8f2d2d]`}>{error}</p>
+            <p className={`${interMedium.className} rounded-[0.6rem] border border-[var(--error-light)] bg-[var(--error-light)] px-3.5 py-2.5 text-[13px] text-[var(--error)]`}>{error}</p>
           ) : null}
           {message ? (
-            <p className={`${interMedium.className} rounded-[0.6rem] border border-[#c5dfc1] bg-[#f1faf0] px-3.5 py-2.5 text-[13px] text-[#2d6b35]`}>{message}</p>
+            <p className={`${interMedium.className} rounded-[0.6rem] border border-[var(--success-light)] bg-[var(--success-light)] px-3.5 py-2.5 text-[13px] text-[var(--success)]`}>{message}</p>
           ) : null}
 
-          {/* Company Profile */}
-          <div className="rounded-[18px] border border-[#E2E8F1] bg-white px-6 pb-6 pt-5">
-            <h3 className="mb-4 text-[15px] font-semibold tracking-[-0.01em] text-[#1d2433]">Company Profile</h3>
-
+          <OperationalPanel title="Company Profile">
             <div className="space-y-3.5">
               <div className="max-w-[220px] space-y-1.5">
                 <p className={fieldLabel}>Company logo</p>
                 <label className="group block">
                   <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onUploadLogo} disabled={!props.canEdit || isUploading} className="hidden" />
-                  <span className={`relative flex h-20 w-full items-center justify-center overflow-hidden rounded-[0.6rem] border border-[#D9E3EE] bg-white transition-colors ${!props.canEdit || isUploading ? "cursor-not-allowed opacity-70" : "cursor-pointer group-hover:border-[#9fb2ce] group-hover:bg-[#e9edf3]"}`}>
+                  <span className={`relative flex h-20 w-full items-center justify-center overflow-hidden rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] transition-colors ${!props.canEdit || isUploading ? "cursor-not-allowed opacity-70" : "cursor-pointer group-hover:border-[var(--text-muted)] group-hover:bg-[var(--surface-muted)]"}`}>
                     {logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={logoUrl} alt="Organization logo" className="h-full w-full object-contain" />
                     ) : (
-                      <span className={`${interMedium.className} text-[11px] text-[#9BAABB]`}>No logo uploaded</span>
+                      <span className={`${interMedium.className} text-[11px] text-[var(--text-muted)]`}>No logo uploaded</span>
                     )}
-                    <span className={`${interMedium.className} pointer-events-none absolute inset-0 inline-flex items-center justify-center text-[13px] font-semibold text-[#1d2433] transition-opacity ${!props.canEdit || isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"}`}>
+                    <span className={`${interMedium.className} pointer-events-none absolute inset-0 inline-flex items-center justify-center text-[13px] font-semibold text-[var(--text-primary)] transition-opacity ${!props.canEdit || isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"}`}>
                       {isUploading ? "Uploading..." : logoUrl ? "Change logo" : "Upload logo"}
                     </span>
                   </span>
@@ -308,32 +315,90 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                 </div>
               </div>
             </div>
-          </div>
+          </OperationalPanel>
 
-          {/* Branding */}
-          <div className="rounded-[18px] border border-[#E2E8F1] bg-white px-6 pb-6 pt-5">
-            <h3 className="mb-4 text-[15px] font-semibold tracking-[-0.01em] text-[#1d2433]">Branding</h3>
-            <div className="grid gap-3.5 md:grid-cols-2">
-              <div>
-                <label className={fieldLabel}>Brand primary colour</label>
-                <div className="flex h-[2.75rem] items-center gap-2 rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3">
-                  <input type="color" value={brandPrimaryColor} onChange={(e) => setBrandPrimaryColor(e.target.value)} disabled={!props.canEdit || isSaving} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0" />
-                  <Input value={brandPrimaryColor} onChange={(e) => setBrandPrimaryColor(e.target.value)} disabled={!props.canEdit || isSaving} className={`${interMedium.className} h-7 border-none bg-transparent px-1 text-[13px] text-[#1d2433] shadow-none focus-visible:ring-0`} />
+          <OperationalPanel title="Branding">
+            <div className="space-y-4">
+              <div className="grid gap-3.5 md:grid-cols-2">
+                <div>
+                  <label className={fieldLabel}>Platform colour</label>
+                  <p className={`${interMedium.className} mb-1.5 text-[12px] text-[var(--text-secondary)]`}>
+                    Top bar &amp; shell identity
+                  </p>
+                  <div className="flex h-[2.75rem] items-center gap-2 rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3">
+                    <input type="color" value={brandPrimaryColor} onChange={(e) => setBrandPrimaryColor(e.target.value)} disabled={!props.canEdit || isSaving} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0" aria-label="Platform colour" />
+                    <Input value={brandPrimaryColor} onChange={(e) => setBrandPrimaryColor(e.target.value)} disabled={!props.canEdit || isSaving} className={`${interMedium.className} h-7 border-none bg-transparent px-1 text-[13px] text-[var(--text-primary)] shadow-none focus-visible:ring-0`} />
+                  </div>
+                </div>
+                <div>
+                  <label className={fieldLabel}>Action colour</label>
+                  <p className={`${interMedium.className} mb-1.5 text-[12px] text-[var(--text-secondary)]`}>
+                    Primary CTAs &amp; action buttons
+                  </p>
+                  <div className="flex h-[2.75rem] items-center gap-2 rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3">
+                    <input type="color" value={brandAccentColor} onChange={(e) => setBrandAccentColor(e.target.value)} disabled={!props.canEdit || isSaving} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0" aria-label="Action colour" />
+                    <Input value={brandAccentColor} onChange={(e) => setBrandAccentColor(e.target.value)} disabled={!props.canEdit || isSaving} className={`${interMedium.className} h-7 border-none bg-transparent px-1 text-[13px] text-[var(--text-primary)] shadow-none focus-visible:ring-0`} />
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className={fieldLabel}>Brand accent colour</label>
-                <div className="flex h-[2.75rem] items-center gap-2 rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3">
-                  <input type="color" value={brandAccentColor} onChange={(e) => setBrandAccentColor(e.target.value)} disabled={!props.canEdit || isSaving} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0" />
-                  <Input value={brandAccentColor} onChange={(e) => setBrandAccentColor(e.target.value)} disabled={!props.canEdit || isSaving} className={`${interMedium.className} h-7 border-none bg-transparent px-1 text-[13px] text-[#1d2433] shadow-none focus-visible:ring-0`} />
+
+              {/* Live preview */}
+              <div className="overflow-hidden rounded-[0.6rem] border border-[var(--border)]">
+                <div
+                  className="flex h-10 items-center px-3.5"
+                  style={{ background: isValidHex(brandPrimaryColor) ? brandPrimaryColor : DEFAULT_BRAND_PRIMARY_COLOR }}
+                >
+                  <span className={`${interMedium.className} text-[12px] font-semibold text-white/85`}>
+                    Top bar preview
+                  </span>
                 </div>
+                <div className="flex items-center justify-between gap-3 bg-[var(--surface)] px-3.5 py-3">
+                  <span className={`${interMedium.className} text-[12px] text-[var(--text-secondary)]`}>
+                    Primary action
+                  </span>
+                  <button
+                    type="button"
+                    disabled
+                    className={`${interMedium.className} inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] px-4 text-[13px] font-medium text-white shadow-none`}
+                    style={{
+                      background: isValidHex(brandAccentColor) ? brandAccentColor : DEFAULT_BRAND_ACCENT_COLOR,
+                    }}
+                    onMouseEnter={(event) => {
+                      if (isValidHex(brandAccentColor)) {
+                        event.currentTarget.style.background = darken(brandAccentColor, 0.92);
+                      }
+                    }}
+                    onMouseLeave={(event) => {
+                      if (isValidHex(brandAccentColor)) {
+                        event.currentTarget.style.background = brandAccentColor;
+                      }
+                    }}
+                  >
+                    Save changes
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className={`${interMedium.className} text-[12px] text-[var(--text-muted)]`}>
+                  These colours apply to your whole organisation.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBrandPrimaryColor(DEFAULT_BRAND_PRIMARY_COLOR);
+                    setBrandAccentColor(DEFAULT_BRAND_ACCENT_COLOR);
+                  }}
+                  disabled={!props.canEdit || isSaving}
+                  className={`${interMedium.className} inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  Reset to defaults
+                </button>
               </div>
             </div>
-          </div>
+          </OperationalPanel>
 
-          {/* Financial Settings */}
-          <div className="rounded-[18px] border border-[#E2E8F1] bg-white px-6 pb-6 pt-5">
-            <h3 className="mb-4 text-[15px] font-semibold tracking-[-0.01em] text-[#1d2433]">Financial Settings</h3>
+          <OperationalPanel title="Financial Settings">
             <div className="grid gap-3.5 md:grid-cols-3">
               <div>
                 <label className={fieldLabel}>ABN / NZBN</label>
@@ -359,11 +424,9 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                 <Input value={defaultTaxRate} onChange={(e) => setDefaultTaxRate(e.target.value)} disabled={!props.canEdit || isSaving} className={fieldInput} />
               </div>
             </div>
-          </div>
+          </OperationalPanel>
 
-          {/* Regional Settings */}
-          <div className="rounded-[18px] border border-[#E2E8F1] bg-white px-6 pb-6 pt-5">
-            <h3 className="mb-4 text-[15px] font-semibold tracking-[-0.01em] text-[#1d2433]">Regional Settings</h3>
+          <OperationalPanel title="Regional Settings">
             <div className="grid gap-3.5 md:grid-cols-2">
               <div>
                 <label className={fieldLabel}>Default currency</label>
@@ -381,10 +444,10 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                 </select>
               </div>
             </div>
-          </div>
+          </OperationalPanel>
 
           {!props.canEdit ? (
-            <p className={`${interMedium.className} text-sm text-[#5f6f89]`}>You do not have permission to update organization settings.</p>
+            <p className={`${interMedium.className} text-sm text-[var(--text-secondary)]`}>You do not have permission to update organization settings.</p>
           ) : null}
         </div>
       </section>

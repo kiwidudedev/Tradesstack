@@ -858,13 +858,13 @@ export function ScopeBuilderWorkbench({
     <main className={`${styles.scope} ${projectDashboardHref ? "-mb-8" : "pb-8"} space-y-6`}>
       <section className="space-y-5">
         <div className={styles.dashboardGrid}>
-          <div className="lg:col-span-2 bg-white px-7 pb-6 pt-7 md:px-8 md:pb-6 md:pt-8">
+          <div className="lg:col-span-2 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] px-7 pb-6 pt-7 md:px-8 md:pb-6 md:pt-8">
             <div className={`${styles.sectionHeader} relative pb-5 pr-0 sm:pr-[240px]`}>
               <p className={styles.sectionTitle} style={leadsSectionTitleStyle}>Generate Scope Build</p>
               {isProjectScopePage ? (
                 <div className="mt-3 sm:absolute sm:right-0 sm:top-0 sm:mt-0">
                   <Button
-                    className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
+                    size="sm"
                     onClick={runScopeBuilder}
                     disabled={isGenerating || isLoadingLinkedPdf}
                   >
@@ -875,11 +875,11 @@ export function ScopeBuilderWorkbench({
               ) : null}
             </div>
 
-            <div className="mt-2 space-y-5 lg:relative">
-              <div className={`${styles.selectionBox} flex h-full flex-col gap-4 p-4 lg:w-[49%] lg:max-w-[49%]`}>
+            <div className="mt-2 grid gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-stretch">
+              <div className={`${styles.selectionBox} flex h-full flex-col gap-4 p-4`}>
                 <div className="space-y-2">
                   <span className={styles.stepBadge}>Step 1</span>
-                  <p className={`${ibmPlexSans.className} relative top-1 text-[15px] font-semibold text-[#111827]`}>Upload or select a trade pack</p>
+                  <p className={`${ibmPlexSans.className} relative top-1 text-[15px] font-semibold text-[var(--text-primary)]`}>Upload or select a trade pack</p>
                 </div>
 
                 <input
@@ -897,32 +897,32 @@ export function ScopeBuilderWorkbench({
                   onDrop={onDropZoneDrop}
                   className={`${styles.dropZone} ${isProjectScopePage ? styles.opportunityDropZone : ""} ${
                     isDropZoneActive ? styles.dropZoneActive : ""
-                  } ${isGenerating || isLoadingLinkedPdf ? "pointer-events-none opacity-70" : "cursor-pointer"} rounded-[20px] border-[2px] py-2.5`}
+                  } ${isGenerating || isLoadingLinkedPdf ? "pointer-events-none opacity-70" : "cursor-pointer"} rounded-[var(--radius-lg)] border-[2px] py-2.5`}
                   style={{ minHeight: "112px" }}
                 >
                   <span className={styles.dropZoneIcon}>
                     <CloudUpload className="h-5 w-5" strokeWidth={2.1} />
                   </span>
                   <div className="space-y-1 text-center">
-                    <p className={`${ibmPlexSans.className} text-[0.98rem] font-medium text-[#111827]`}>
-                      Drag & Drop or <span className="text-[#F15A29]">Choose file</span> to upload
+                    <p className={`${ibmPlexSans.className} text-[0.98rem] font-medium text-[var(--text-primary)]`}>
+                      Drag & Drop or <span className="text-[var(--primary)]">Choose file</span> to upload
                     </p>
-                    <p className="text-[13px] text-[#7A7F87]">
+                    <p className="text-[13px] text-[var(--text-muted)]">
                       Supported format: PDF. File size max {formatFileSize(MAX_DRAWING_SET_UPLOAD_SIZE_BYTES)}
                     </p>
                   </div>
                 </label>
 
                 <div className="flex items-center gap-3 py-1">
-                  <span className="h-px flex-1 bg-[#E2E8F1]" />
-                  <span className={`${ibmPlexSans.className} text-[12px] font-medium uppercase tracking-[0.18em] text-[#94A3B8]`}>Or</span>
-                  <span className="h-px flex-1 bg-[#E2E8F1]" />
+                  <span className="h-px flex-1 bg-[var(--border)]" />
+                  <span className={`${ibmPlexSans.className} text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]`}>Or</span>
+                  <span className="h-px flex-1 bg-[var(--border)]" />
                 </div>
 
                 <div className="w-full space-y-2">
                   <div className="relative">
                     <select
-                      className={`${ibmPlexSans.className} ${styles.fieldSelect} rounded-[16px] bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/20`}
+                      className={`${ibmPlexSans.className} ${styles.fieldSelect} rounded-[var(--radius-lg)] bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/20`}
                       value={selectedGeneratedTradePackId ?? ""}
                       onChange={(event) => onSelectGeneratedTradePackById(event.target.value)}
                       disabled={isGenerating || isLoadingLinkedPdf || generatedTradePacks.length === 0}
@@ -937,74 +937,77 @@ export function ScopeBuilderWorkbench({
                   </div>
                 </div>
 
-                <div className="rounded-[18px] border border-[#E2E8F1] bg-[#F8FAFC] px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#FFF1EB] text-[#F15A29]">
-                      <FileText className="h-5 w-5" strokeWidth={2} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className={`${ibmPlexSans.className} truncate text-[15px] font-semibold text-[#0F172A]`}>
-                        {selectedPdfFile ? selectedPdfFile.name : "No source file selected"}
-                      </p>
-                      <p className="mt-0.5 truncate text-[13px] text-[#7A7F87]">
-                        {selectedPdfFile ? `PDF • ${formatFileSize(selectedPdfFile.size)}` : "Choose a trade pack above or upload a PDF"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={revealStepTwo}
-                    disabled={!canContinueToStepTwo}
-                    className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
-                  >
-                    {isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {isLoadingLinkedPdf ? "Loading Trade Pack..." : "Upload Files"}
-                  </Button>
-                </div>
               </div>
 
-              {isStepTwoVisible ? (
-                <div className={`${styles.selectionBox} ml-auto flex flex-col justify-between gap-4 p-4 lg:absolute lg:right-0 lg:top-0 lg:w-[49%]`}>
-                  <div className="space-y-2">
-                    <span className={styles.stepBadge}>Step 2</span>
-                    <p className={`${ibmPlexSans.className} relative top-1 text-[15px] font-semibold text-[#111827]`}>Choose trade heading</p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="w-full space-y-1.5">
-                      <div className="mt-4">
-                        <select
-                          className={`${ibmPlexSans.className} ${styles.fieldSelect} bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff5406]/20`}
-                          value={selectedTradeId}
-                          onChange={(event) => setSelectedTradeId(event.target.value)}
-                          disabled={isGenerating || isLoadingLinkedPdf}
-                        >
-                          {TRADE_PACK_TRADES.map((trade) => (
-                            <option key={trade.id} value={trade.id}>
-                              {trade.label}
-                            </option>
-                          ))}
-                        </select>
+              <div className={`${styles.selectionBox} flex h-full flex-col justify-between gap-4 p-4`}>
+                <div className="space-y-4">
+                  <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                        <FileText className="h-5 w-5" strokeWidth={2} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className={`${ibmPlexSans.className} truncate text-[15px] font-semibold text-[var(--text-primary)]`}>
+                          {selectedPdfFile ? selectedPdfFile.name : "No source file selected"}
+                        </p>
+                        <p className="mt-0.5 truncate text-[13px] text-[var(--text-muted)]">
+                          {selectedPdfFile ? `PDF • ${formatFileSize(selectedPdfFile.size)}` : "Choose a trade pack above or upload a PDF"}
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex justify-end">
+                  {isStepTwoVisible ? (
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <span className={styles.stepBadge}>Step 2</span>
+                        <p className={`${ibmPlexSans.className} relative top-1 text-[15px] font-semibold text-[var(--text-primary)]`}>Choose trade heading</p>
+                      </div>
+
+                      <div className="w-full space-y-1.5">
+                        <div className="mt-4">
+                          <select
+                            className={`${ibmPlexSans.className} ${styles.fieldSelect} bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/20`}
+                            value={selectedTradeId}
+                            onChange={(event) => setSelectedTradeId(event.target.value)}
+                            disabled={isGenerating || isLoadingLinkedPdf}
+                          >
+                            {TRADE_PACK_TRADES.map((trade) => (
+                              <option key={trade.id} value={trade.id}>
+                                {trade.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex justify-end">
+                  {isStepTwoVisible ? (
                     <Button
                       type="button"
                       onClick={runScopeBuilder}
                       disabled={isGenerating || isLoadingLinkedPdf}
-                      className={`${ibmPlexSans.className} ${styles.heroPrimaryButton}`}
+                      size="sm"
                     >
                       {isGenerating || isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       {isGenerating ? "Generating Scope..." : isLoadingLinkedPdf ? "Loading Trade Pack..." : "Generate Scope Builder"}
                     </Button>
-                  </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={revealStepTwo}
+                      disabled={!canContinueToStepTwo}
+                      size="sm"
+                    >
+                      {isLoadingLinkedPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {isLoadingLinkedPdf ? "Loading Trade Pack..." : "Upload Files"}
+                    </Button>
+                  )}
                 </div>
-              ) : null}
+              </div>
             </div>
           </div>
 
@@ -1016,7 +1019,7 @@ export function ScopeBuilderWorkbench({
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <div className="w-full sm:w-[360px]">
               <select
-                className={`${styles.fieldSelect} h-10 outline-none focus:border-[#ff5406]`}
+                className={`${styles.fieldSelect} h-10 outline-none focus:border-[var(--primary)]`}
                 value={selectedStoredTradeId}
                 onChange={(event) => onSelectStoredTrade(event.target.value)}
                 disabled={storedRunsSelectDisabled}
@@ -1029,7 +1032,7 @@ export function ScopeBuilderWorkbench({
                 ))}
               </select>
             </div>
-            {loadingStoredTradeId ? <Loader2 className="h-4 w-4 animate-spin text-[#7A7F87]" /> : null}
+            {loadingStoredTradeId ? <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" /> : null}
             <Button
               variant="outline"
               className={`${ibmPlexSans.className} ${styles.controlButton} ${styles.scopeWorkbenchActionButtonGrey} h-10 px-[18px] text-sm`}
@@ -1050,21 +1053,21 @@ export function ScopeBuilderWorkbench({
             </Button>
           </div>
           {storedRunsError ? (
-            <p className="mt-3 text-[13px] text-[#7A7F87]">{storedRunsError}</p>
+            <p className="mt-3 text-[13px] text-[var(--text-muted)]">{storedRunsError}</p>
           ) : null}
           </div>
         </div>
         {error ? (
-          <p className="text-[13px] text-[#b42318]">{error}</p>
+          <p className="text-[13px] text-[var(--error)]">{error}</p>
         ) : null}
         {status ? <p className="sr-only">{status}</p> : null}
       </section>
 
       {runResult ? (
-        <section className={`space-y-5 ${isProjectScopePage ? "px-7 md:px-8" : "mx-7 rounded-[28px] border border-white bg-white px-7 pb-6 pt-7 md:mx-8 md:px-8 md:pb-6 md:pt-8"}`}>
+        <section className={`space-y-5 ${isProjectScopePage ? "px-7 md:px-8" : "mx-7 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] px-7 pb-6 pt-7 md:mx-8 md:px-8 md:pb-6 md:pt-8"}`}>
           <div className="space-y-1">
             <h3 className={styles.sectionTitle} style={leadsSectionTitleStyle}>Scope Output</h3>
-            <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[#111827]`}>{runResult.tradeLabel}</p>
+            <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[var(--text-primary)]`}>{runResult.tradeLabel}</p>
           </div>
 
           <section className="space-y-3">
@@ -1099,26 +1102,26 @@ export function ScopeBuilderWorkbench({
 
 function ScopeSummaryCard({ summary, projectStyle = false }: { summary: ScopeStructuredItem[]; projectStyle?: boolean }) {
   const itemNumberClassName =
-    "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eceff3] px-1.5 text-xs font-semibold text-[#5f6b7a]";
+    "inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-muted)] px-1.5 text-xs font-semibold text-[var(--text-secondary)]";
   const cardClassName = projectStyle
     ? leadsPanelClassName
-    : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
+    : "rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] shadow-none";
   const rowClassName = projectStyle
     ? "bg-transparent px-0 py-0"
-    : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3";
+    : "rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3";
   const summaryClassName = projectStyle
-    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
+    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[var(--surface-muted)] px-4 py-4 [&::-webkit-details-marker]:hidden"
     : "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden";
   const contentClassName = projectStyle
-    ? "border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 pb-4 pt-3"
-    : "border-t border-[#E6EAF0] px-4 pb-4 pt-3";
+    ? "border-t border-[var(--border)] bg-[var(--surface-muted)] px-4 pb-4 pt-3"
+    : "border-t border-[var(--border)] px-4 pb-4 pt-3";
 
   return (
     <Card className={cardClassName}>
       <details className="group">
         <summary className={summaryClassName}>
           <CardTitle style={leadsCardTitleStyle}>Summary</CardTitle>
-          <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
           <div className={projectStyle ? "space-y-4" : "space-y-2.5"}>
@@ -1155,22 +1158,22 @@ function ScopeListCard({
   compact?: boolean;
   projectStyle?: boolean;
 }) {
-  const titleClassName = "text-[15px] font-semibold leading-6 text-[#1a2333]";
+  const titleClassName = "text-[15px] font-semibold leading-6 text-[var(--text-primary)]";
   const itemNumberClassName = compact
-    ? "inline-flex h-6 min-w-6 items-center justify-center rounded-[6px] bg-[#eceff3] px-1.5 text-[0.7rem] font-semibold text-[#5f6b7a]"
-    : "inline-flex h-7 min-w-7 items-center justify-center rounded-[6px] bg-[#eceff3] px-1.5 text-xs font-semibold text-[#5f6b7a]";
+    ? "inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-muted)] px-1.5 text-[0.7rem] font-semibold text-[var(--text-secondary)]"
+    : "inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-muted)] px-1.5 text-xs font-semibold text-[var(--text-secondary)]";
   const rowClassName = projectStyle
-    ? "rounded-[10px] border border-[#E2E8F1] bg-[#FBFEFE] px-4 py-3"
-    : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] px-4 py-3";
+    ? "rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3"
+    : "rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3";
   const cardClassName = projectStyle
     ? leadsPanelClassName
-    : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
+    : "rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] shadow-none";
   const summaryClassName = projectStyle
-    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
+    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[var(--surface-muted)] px-4 py-4 [&::-webkit-details-marker]:hidden"
     : "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden";
   const contentClassName = projectStyle
-    ? "border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 pb-4 pt-3"
-    : "border-t border-[#E6EAF0] px-4 pb-4 pt-3";
+    ? "border-t border-[var(--border)] bg-[var(--surface-muted)] px-4 pb-4 pt-3"
+    : "border-t border-[var(--border)] px-4 pb-4 pt-3";
   const sectionNumber = title.match(/^(\d+)\./)?.[1] ?? null;
 
   return (
@@ -1178,7 +1181,7 @@ function ScopeListCard({
       <details className="group">
         <summary className={summaryClassName}>
           <CardTitle className={titleClassName} style={leadsCardTitleStyle}>{title}</CardTitle>
-          <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
           <div className="space-y-2.5">
@@ -1204,22 +1207,22 @@ function ScopeListCard({
 function ScopeStructuredTableCard({ title, rows, projectStyle = false }: { title: string; rows: ScopeStructuredItem[]; projectStyle?: boolean }) {
   const cardClassName = projectStyle
     ? leadsPanelClassName
-    : "rounded-[6px] border border-[#E6EAF0] bg-[#F8F9FC] shadow-none";
-  const headBorderClassName = projectStyle ? "border-[#d9dee5] text-[#6b6b6b]" : "border-[#e8edf6] text-[#61738f]";
-  const rowBorderClassName = projectStyle ? "border-[#e5e7eb] text-[#1d2433]" : "border-[#f0f4fa] text-[#1f2a3d]";
+    : "rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] shadow-none";
+  const headBorderClassName = projectStyle ? "border-[var(--border)] text-[var(--text-secondary)]" : "border-[var(--border)] text-[var(--text-secondary)]";
+  const rowBorderClassName = projectStyle ? "border-[var(--border)] text-[var(--text-primary)]" : "border-[var(--border)] text-[var(--text-primary)]";
   const summaryClassName = projectStyle
-    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#FBFEFE] px-4 py-4 [&::-webkit-details-marker]:hidden"
+    ? "flex cursor-pointer list-none items-center justify-between gap-3 bg-[var(--surface-muted)] px-4 py-4 [&::-webkit-details-marker]:hidden"
     : "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden";
   const contentClassName = projectStyle
-    ? "border-t border-[#E2E8F1] bg-[#FBFEFE] px-4 pb-4 pt-3"
-    : "border-t border-[#E6EAF0] px-4 pb-4 pt-3";
+    ? "border-t border-[var(--border)] bg-[var(--surface-muted)] px-4 pb-4 pt-3"
+    : "border-t border-[var(--border)] px-4 pb-4 pt-3";
 
   return (
     <Card className={cardClassName}>
       <details className="group">
         <summary className={summaryClassName}>
           <CardTitle style={leadsCardTitleStyle}>{title}</CardTitle>
-          <ChevronDown className="h-4 w-4 shrink-0 text-[#7989a4] transition-transform duration-200 group-open:rotate-180" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180" />
         </summary>
         <div className={contentClassName}>
           <div className="overflow-x-auto">
@@ -1277,8 +1280,8 @@ function ReadableItemRow({
           <p
             className={
               compact
-                ? "text-[15px] font-semibold leading-6 text-[#1f2a3d]"
-                : "text-[15px] font-semibold leading-6 text-[#1f2a3d]"
+                ? "text-[15px] font-semibold leading-6 text-[var(--text-primary)]"
+                : "text-[15px] font-semibold leading-6 text-[var(--text-primary)]"
             }
             style={leadsCardTitleStyle}
           >
@@ -1287,8 +1290,8 @@ function ReadableItemRow({
           <p
             className={
               compact
-                ? "mt-1 text-[13px] leading-[1.6] text-[#475569]"
-                : "mt-1 text-[13px] leading-[1.6] text-[#475569]"
+                ? "mt-1 text-[13px] leading-[1.6] text-[var(--text-secondary)]"
+                : "mt-1 text-[13px] leading-[1.6] text-[var(--text-secondary)]"
             }
             style={projectStyle ? leadsBodyLabelStyle : undefined}
           >

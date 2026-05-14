@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { ChevronRight, ChevronUp, MoreVertical, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -248,9 +249,9 @@ function matchStatusBadge(value: SupplierInvoiceMatchStatus): NonNullable<Status
 }
 
 const FIELD_SELECT_CLASS =
-  "h-11 w-full appearance-none rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-11 w-full appearance-none rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 const FIELD_TEXTAREA_CLASS =
-  "flex min-h-[8.5rem] w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "flex min-h-[8.5rem] w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function SupplierInvoiceDetailWorkspace({
   organizationId,
@@ -881,7 +882,7 @@ export function SupplierInvoiceDetailWorkspace({
         </span>
       </nav>
 
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title={`Invoice ${invoice.invoice_number || "Supplier Invoice"}`}
         actions={
           <>
@@ -902,15 +903,15 @@ export function SupplierInvoiceDetailWorkspace({
       />
 
       {message ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--success-light)] bg-[var(--success-light)] px-4 py-3 text-sm text-[var(--success)]">
+        <OperationalAlert variant="success">
           {message}
-        </div>
+        </OperationalAlert>
       ) : null}
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
 
       <div className="space-y-6">

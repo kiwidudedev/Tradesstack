@@ -48,7 +48,7 @@ export function SupplierPicker({
         placeholder={placeholder}
       />
       {isOpen ? (
-        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[#d1d9e6] bg-white shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
+        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
           {suppliers.length > 0 ? (
             suppliers.map((supplier) => {
               const label = getSupplierDisplayName(supplier);
@@ -61,11 +61,11 @@ export function SupplierPicker({
                     onSelectSupplier(supplier);
                     onOpenChange(false);
                   }}
-                  className={`${interMedium.className} flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC]`}
+                  className={`${interMedium.className} flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--surface-muted)]`}
                 >
                   <span className="truncate">{label}</span>
                   {!supplier.is_active ? (
-                    <Badge variant="secondary" className="bg-[#F1F5F9] text-[#64748B]">
+                    <Badge variant="secondary" className="bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                       Inactive
                     </Badge>
                   ) : null}
@@ -73,9 +73,9 @@ export function SupplierPicker({
               );
             })
           ) : (
-            <p className={`${interMedium.className} px-3 py-2 text-sm text-[#64748B]`}>No suppliers found.</p>
+            <p className={`${interMedium.className} px-3 py-2 text-sm text-[var(--text-secondary)]`}>No suppliers found.</p>
           )}
-          <div className="border-t border-[#e7edf5]">
+          <div className="border-t border-[var(--border)]">
             <button
               type="button"
               onMouseDown={(event) => {
@@ -83,7 +83,7 @@ export function SupplierPicker({
                 onCreateNew();
                 onOpenChange(false);
               }}
-              className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[#1d2433] hover:bg-[#F8FAFC]`}
+              className={`${interMedium.className} block w-full px-3 py-2 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--surface-muted)]`}
             >
               Add new supplier
             </button>

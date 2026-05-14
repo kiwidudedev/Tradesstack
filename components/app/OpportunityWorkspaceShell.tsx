@@ -13,7 +13,7 @@ type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "star
 
 const TAB_BASE_CLASS =
   "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors";
-const TAB_ACTIVE_CLASS = "border-[var(--orange-primary)] text-[var(--orange-primary)]";
+const TAB_ACTIVE_CLASS = "border-[var(--orange-primary)] text-[var(--brand-blue)]";
 const TAB_INACTIVE_CLASS = "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]";
 
 interface StoredMeasureContext {
@@ -110,16 +110,14 @@ export function OpportunityWorkspaceShell({
         <div className="bg-[var(--background)] shadow-none">
           <div className="flex flex-col gap-3 bg-[var(--background)] px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center">
-                <h2
-                  className={
-                    titleClassName ??
-                    "m-0 truncate text-[clamp(1.24rem,2.24vw,2.08rem)] font-bold leading-[0.98] tracking-[-0.04em] text-[var(--text-primary)]"
-                  }
-                >
-                  {title}
-                </h2>
-              </div>
+              <h2
+                className={
+                  titleClassName ??
+                  "m-0 truncate text-[45px] font-bold leading-[1.05] tracking-[-0.02em] text-[var(--text-primary)]"
+                }
+              >
+                {title}
+              </h2>
             </div>
 
             <Button asChild variant="secondary" size="sm">
@@ -130,7 +128,7 @@ export function OpportunityWorkspaceShell({
             </Button>
           </div>
 
-          <div className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)] px-5">
+          <div className="sticky top-14 z-20 border-b border-[var(--border)] bg-[var(--background)] px-5">
             <nav className="overflow-x-auto">
               <div className="flex min-w-max items-center gap-8">
                 {navItems
@@ -168,7 +166,7 @@ export function OpportunityWorkspaceShell({
                     <DropdownMenuItem
                       asChild
                       className={`h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${
-                        isMeasureActive ? "bg-[var(--surface-muted)] text-[var(--orange-primary)]" : "text-[var(--text-primary)]"
+                        isMeasureActive ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : "text-[var(--text-primary)]"
                       }`}
                     >
                       <Link href={measureHref} prefetch>
@@ -178,7 +176,7 @@ export function OpportunityWorkspaceShell({
                     <DropdownMenuItem
                       asChild
                       className={`h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${
-                        isQuantitiesActive ? "bg-[var(--surface-muted)] text-[var(--orange-primary)]" : "text-[var(--text-primary)]"
+                        isQuantitiesActive ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : "text-[var(--text-primary)]"
                       }`}
                     >
                       <Link href={quantitiesHref} prefetch>

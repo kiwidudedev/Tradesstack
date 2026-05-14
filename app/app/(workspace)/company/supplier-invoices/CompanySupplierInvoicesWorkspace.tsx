@@ -6,7 +6,8 @@ import { useMemo, useState } from "react";
 import { FileText, Plus, Search, Upload } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -91,9 +92,9 @@ function FieldLabel({
 }
 
 const FIELD_SELECT_CLASS =
-  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 const FIELD_TEXTAREA_CLASS =
-  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 function displayStatusBadge(value: SupplierInvoiceDisplayStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (value) {
@@ -403,7 +404,7 @@ export function CompanySupplierInvoicesWorkspace({
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Supplier Invoices"
         description="Capture supplier invoices separately from purchase orders and review them before approval."
         actions={
@@ -526,7 +527,7 @@ export function CompanySupplierInvoicesWorkspace({
       </OperationalPanel>
 
       <Dialog open={isCreateOpen} onOpenChange={(open) => (!open ? closeCreateModal() : undefined)}>
-        <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto p-0">
+        <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto p-0">
           <div className="px-7 pb-6 pt-7">
             <h2 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
               New Supplier Invoice
@@ -535,9 +536,9 @@ export function CompanySupplierInvoicesWorkspace({
 
           <div className="space-y-3.5 px-7 pb-4">
             {error ? (
-              <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+              <OperationalAlert variant="error">
                 {error}
-              </div>
+              </OperationalAlert>
             ) : null}
 
             <div>

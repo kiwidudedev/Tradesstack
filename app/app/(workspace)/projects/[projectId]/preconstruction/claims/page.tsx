@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { CheckCircle2, ChevronDown, Clock, DollarSign, Landmark, MoreHorizontal, Pencil, Plus, TrendingUp } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -19,6 +20,7 @@ import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { QuoteStatus } from "@/lib/supabase/types";
 
@@ -74,11 +76,7 @@ interface VariationRow {
 }
 
 function toMoney(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatMoneyOperational(value, { decimals: 2 });
 }
 
 function statusBadgeStatus(status: ClaimStatus): NonNullable<StatusBadgeProps["status"]> {
@@ -470,7 +468,7 @@ export default function ProjectClaimsRegisterPage() {
 
   return (
     <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Financials"
         description="Create, track, submit, and reconcile payment claims for this job"
         actions={
@@ -487,46 +485,46 @@ export default function ProjectClaimsRegisterPage() {
       />
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
 
       {isLoading ? (
         <p className="py-8 text-center text-sm text-[var(--text-secondary)]">Loading claims register...</p>
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <OperationalKpiCard
               label="Project Total"
-              value={toMoney(contractSummary.contractValue)}
+              value={formatMoneyOperational(contractSummary.contractValue)}
               helper="incl. approved variations"
               icon={<DollarSign className="h-5 w-5" strokeWidth={2.1} />}
             />
             <OperationalKpiCard
               label="Submitted"
-              value={toMoney(contractSummary.dueValue)}
+              value={formatMoneyOperational(contractSummary.dueValue)}
               helper={`${contractSummary.dueClaimsCount} claim${contractSummary.dueClaimsCount !== 1 ? "s" : ""} awaiting payment`}
               icon={<Clock className="h-5 w-5" strokeWidth={2.1} />}
               trend="neutral"
             />
             <OperationalKpiCard
               label="Paid"
-              value={toMoney(contractSummary.paidValue)}
+              value={formatMoneyOperational(contractSummary.paidValue)}
               helper={`${contractSummary.paidClaimsCount} claim${contractSummary.paidClaimsCount !== 1 ? "s" : ""} received`}
               icon={<CheckCircle2 className="h-5 w-5" strokeWidth={2.1} />}
               trend="up"
             />
             <OperationalKpiCard
               label="Outstanding"
-              value={toMoney(contractSummary.outstanding)}
+              value={formatMoneyOperational(contractSummary.outstanding)}
               helper={`${contractSummary.unpaidClaimsCount} claim${contractSummary.unpaidClaimsCount !== 1 ? "s" : ""} unpaid${contractSummary.overdueClaimsCount > 0 ? ` • ${contractSummary.overdueClaimsCount} overdue` : ""}`}
               icon={<TrendingUp className="h-5 w-5" strokeWidth={2.1} />}
               trend="down"
             />
             <OperationalKpiCard
               label="Retention"
-              value={toMoney(contractSummary.latestRetentionBalance)}
+              value={formatMoneyOperational(contractSummary.latestRetentionBalance)}
               helper="currently held on this project"
               icon={<Landmark className="h-5 w-5" strokeWidth={2.1} />}
             />
@@ -600,7 +598,7 @@ export default function ProjectClaimsRegisterPage() {
                                   <DropdownMenuItem
                                     key={s}
                                     onSelect={() => void updateClaimStatus(claim.id, s)}
-                                    className={`h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${claim.status === s ? "text-[var(--orange-primary)]" : "text-[var(--text-primary)]"}`}
+                                    className={`h-9 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium focus:bg-[var(--surface-muted)] ${claim.status === s ? "text-[var(--brand-blue)]" : "text-[var(--text-primary)]"}`}
                                   >
                                     <span className={`mr-2 inline-block h-2 w-2 rounded-full border ${STATUS_DOT_CLASS_BY_BADGE[optionBadge]}`} />
                                     {s}

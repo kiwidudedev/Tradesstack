@@ -29,15 +29,15 @@ export function AnalyticsHeaderFilters({
 }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <div className="flex items-center gap-2 rounded-[6px] border border-[#E8EDF4] bg-white px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[#70839E]">
-        <BarChart3 className="h-3.5 w-3.5 text-[#7F90A8]" />
+      <div className="flex items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+        <BarChart3 className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
         Analytics Filters
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         <select
           value={range}
           onChange={(event) => onRangeChange(event.target.value)}
-          className={`${interMedium.className} h-10 rounded-[6px] border border-[#D8E2EE] bg-white px-3 text-sm font-medium text-[#24324A]`}
+          className={`${interMedium.className} h-10 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-medium text-[var(--text-primary)]`}
         >
           <option value="7d">Date: Last 7 days</option>
           <option value="30d">Date: Last 30 days</option>
@@ -47,7 +47,7 @@ export function AnalyticsHeaderFilters({
         <select
           value={estimator}
           onChange={(event) => onEstimatorChange(event.target.value)}
-          className={`${interMedium.className} h-10 rounded-[6px] border border-[#D8E2EE] bg-white px-3 text-sm font-medium text-[#24324A]`}
+          className={`${interMedium.className} h-10 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-medium text-[var(--text-primary)]`}
         >
           <option value="all">Estimator: All</option>
           {estimatorOptions.map((name) => (
@@ -59,7 +59,7 @@ export function AnalyticsHeaderFilters({
         <select
           value={client}
           onChange={(event) => onClientChange(event.target.value)}
-          className={`${interMedium.className} h-10 rounded-[6px] border border-[#D8E2EE] bg-white px-3 text-sm font-medium text-[#24324A]`}
+          className={`${interMedium.className} h-10 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-medium text-[var(--text-primary)]`}
         >
           <option value="all">Client: All</option>
           {clientOptions.map((name) => (
@@ -70,7 +70,7 @@ export function AnalyticsHeaderFilters({
         </select>
         <Button
           onClick={onExport}
-          className="h-10 rounded-[6px] bg-[#082851] px-4 text-sm font-medium text-white hover:bg-[#0b3467]"
+          className="h-10 rounded-[6px] bg-[var(--navy-primary)] px-4 text-sm font-medium text-white hover:bg-[var(--navy-primary)]"
         >
           <Download className="mr-2 h-4 w-4" />
           Export

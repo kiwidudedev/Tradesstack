@@ -4,35 +4,42 @@
   /* Tradesstack Design System - canonical tokens */
   --font-size: 16px;
 
-  /* Brand colours */
+  /* Brand colours — premium navy chrome + refined orange CTA + blue-grey operational */
   --navy-primary: #07122B;
-  --orange-primary: #F7631B;
-  --orange-hover: #E55A18;
+  --orange-primary: #F45D22;
+  --orange-hover: #E5531B;
+  --orange-pressed: #CC4714;
+  --orange-soft: #FFF1EB;
+  --brand-blue: #315BFF;
+  --brand-blue-hover: #2647D9;
 
-  /* Backgrounds and surfaces */
-  --background: #F7F8FA;
+  /* Backgrounds and surfaces — layered: cards > canvas > sidebar > hover */
+  --background: #F7F9FC;
   --foreground: #111827;
   --card: #FFFFFF;
   --card-foreground: #111827;
   --surface: #FFFFFF;
-  --surface-muted: #F3F4F6;
-  --surface-subtle: #F7F8FA;
+  --surface-muted: #E9EFF7;
+  --surface-subtle: #F7F9FC;
+  --surface-hover: #DDE5F0;
+  --topbar: #0F172A;
+  --slate-accent: #344256;
 
   /* Text colours */
   --text-primary: #111827;
-  --text-secondary: #6B7280;
-  --text-muted: #9CA3AF;
+  --text-secondary: #5B6472;
+  --text-muted: #6A7383;
 
   /* Borders and focus */
-  --border: #E5E7EB;
-  --border-subtle: #F3F4F6;
-  --ring: var(--orange-primary);
+  --border: #DDE3EC;
+  --border-subtle: #E9EFF7;
+  --ring: var(--brand-blue);
 
   /* HSL compatibility tokens for legacy hsl(var(...)) consumers */
   --foreground-hsl: 221 39% 11%;
-  --border-hsl: 220 13% 91%;
-  --muted-foreground: #6B7280;
-  --muted-foreground-hsl: 220 9% 46%;
+  --border-hsl: 214 17% 92%;
+  --muted-foreground: #5B6472;
+  --muted-foreground-hsl: 217 11% 40%;
 
   /* Semantic colours */
   --success: #16A34A;
@@ -43,22 +50,38 @@
   --error-light: #FEE2E2;
   --info: #2563EB;
   --info-light: #DBEAFE;
+  --neutral: #5B6472;
+  --neutral-light: #E9EFF7;
+
+  /* KPI palette — brand-aligned soft-tint system for metric/KPI icon containers.
+     Pairs a soft background tone with a foreground icon colour. Brand orange
+     (--orange-primary) is used as the foreground for both peach + amber bgs to
+     anchor the system in TradesStack's primary identity. */
+  --kpi-bg-peach: #FFE5D9;
+  --kpi-bg-navy: #DCE6EE;
+  --kpi-bg-sage: var(--success-light);
+  --kpi-bg-amber: var(--warning-light);
+  --kpi-bg-red: var(--error-light);
+  --kpi-fg-orange: #F7631B;
+  --kpi-fg-navy: #22324A;
+  --kpi-fg-sage: #16A34A;
+  --kpi-fg-red: var(--error);
 
   /* Status colours */
-  --status-draft: #6B7280;
-  --status-draft-light: #F3F4F6;
-  --status-pending: #F59E0B;
-  --status-pending-light: #FEF3C7;
-  --status-sent: #2563EB;
-  --status-sent-light: #DBEAFE;
-  --status-approved: #16A34A;
-  --status-approved-light: #DCFCE7;
-  --status-overdue: #DC2626;
-  --status-overdue-light: #FEE2E2;
-  --status-completed: #059669;
-  --status-completed-light: #D1FAE5;
-  --status-active: #0891B2;
-  --status-active-light: #CFFAFE;
+  --status-draft: var(--neutral);
+  --status-draft-light: var(--neutral-light);
+  --status-pending: var(--warning);
+  --status-pending-light: var(--warning-light);
+  --status-sent: var(--info);
+  --status-sent-light: var(--info-light);
+  --status-approved: var(--success);
+  --status-approved-light: var(--success-light);
+  --status-overdue: var(--error);
+  --status-overdue-light: var(--error-light);
+  --status-completed: var(--success);
+  --status-completed-light: var(--success-light);
+  --status-active: var(--info);
+  --status-active-light: var(--info-light);
 
   /* Spacing scale - 8px base */
   --spacing-xs: 8px;
@@ -82,34 +105,63 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
+  /* Typography size scale — formalises the implicit operational scale.
+     Names map to semantic roles. Values match the current visual identity
+     exactly — this block adds tokens only, no consumers are migrated yet.
+
+     Hierarchy:
+       micro         11px  — tiniest helper text, dense labels
+       caption       12px  — captions, fine print, footnotes
+       meta          13px  — form labels, metadata, filter labels, tags
+       body          14px  — body text, table cells, descriptions
+       description   15px  — page descriptions, emphasised body
+       section-title 18px  — card/section titles (CardTitle parity)
+       kpi           1.75rem — OperationalKpiCard value (≈ 28px at default root; preserves rem scaling)
+       page-title    38px  — OperationalPageHeader h1 (mobile)
+       page-title-lg 48px  — OperationalPageHeader h1 (sm and up) */
+  --font-size-micro: 11px;
+  --font-size-caption: 12px;
+  --font-size-meta: 13px;
+  --font-size-body: 14px;
+  --font-size-description: 15px;
+  --font-size-section-title: 18px;
+  --font-size-kpi: 1.75rem;
+  --font-size-page-title: 38px;
+  --font-size-page-title-lg: 48px;
+
   /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.05);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.05);
+  --shadow-card-elevated: 0 1px 2px rgba(15,23,42,0.05), 0 3px 8px rgba(15,23,42,0.04);
+  --shadow-overlay: 0 8px 32px rgba(15,23,42,0.12);
 
-  /* Sidebar */
-  --sidebar: var(--navy-primary);
-  --sidebar-foreground: #FFFFFF;
-  --sidebar-primary: var(--orange-primary);
+  /* Sidebar — soft blue-grey shell, navy active states */
+  --sidebar: var(--surface-muted);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--brand-blue);
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: rgba(247, 99, 27, 0.1);
-  --sidebar-accent-foreground: #FFFFFF;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: var(--orange-primary);
+  --sidebar-accent: #D6DDE7;
+  --sidebar-accent-foreground: #1E3A5F;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--brand-blue);
 
   /* Popover and form compatibility */
   --popover: #FFFFFF;
   --popover-foreground: #111827;
   --primary: var(--orange-primary);
+  --primary-hover: var(--orange-hover);
+  --primary-pressed: var(--orange-pressed);
+  --primary-soft: var(--orange-soft);
   --primary-foreground: #FFFFFF;
-  --secondary: #F3F4F6;
+  --secondary: #E9EFF7;
   --secondary-foreground: #111827;
-  --muted: #F3F4F6;
+  --muted: #E9EFF7;
   --destructive: var(--error);
   --destructive-foreground: #FFFFFF;
   --input: transparent;
   --input-background: #FFFFFF;
-  --switch-background: #E5E7EB;
+  --switch-background: #DDE3EC;
 
   /* Chart colours */
   --chart-1: var(--orange-primary);
@@ -122,7 +174,7 @@
   --app-canvas: var(--background);
   --app-surface: var(--surface);
   --app-surface-muted: var(--surface-muted);
-  --app-border: #E5E7EB;
+  --app-border: #DDE3EC;
   --text: var(--text-primary);
   --accent: #F7F8FA;
   --accent-soft: #FFE8DC;
@@ -141,6 +193,16 @@
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
   --color-surface-subtle: var(--surface-subtle);
+  --color-surface-hover: var(--surface-hover);
+  --color-topbar: var(--topbar);
+  --color-slate-accent: var(--slate-accent);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-hover: var(--brand-blue-hover);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-primary-soft: var(--primary-soft);
+  --color-orange-pressed: var(--orange-pressed);
+  --color-orange-soft: var(--orange-soft);
   --color-text: var(--text);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
@@ -171,6 +233,15 @@
   --color-error-light: var(--error-light);
   --color-info: var(--info);
   --color-info-light: var(--info-light);
+  --color-kpi-bg-peach: var(--kpi-bg-peach);
+  --color-kpi-bg-navy: var(--kpi-bg-navy);
+  --color-kpi-bg-sage: var(--kpi-bg-sage);
+  --color-kpi-bg-amber: var(--kpi-bg-amber);
+  --color-kpi-bg-red: var(--kpi-bg-red);
+  --color-kpi-fg-orange: var(--kpi-fg-orange);
+  --color-kpi-fg-navy: var(--kpi-fg-navy);
+  --color-kpi-fg-sage: var(--kpi-fg-sage);
+  --color-kpi-fg-red: var(--kpi-fg-red);
   --color-status-draft: var(--status-draft);
   --color-status-draft-light: var(--status-draft-light);
   --color-status-pending: var(--status-pending);
@@ -215,16 +286,13 @@ body {
   overflow-x: hidden;
 }
 
-h2 {
-  font-family: var(--font-akzidenz-pro-boldex), Helvetica, Arial, sans-serif;
-  font-size: 35px;
-}
-
-@media (min-width: 1024px) {
-  h2 {
-    font-size: 45px;
-  }
-}
+/* Removed: bare `h2 { font-family: akzidenz-pro-boldex; font-size: 35/45px }`.
+   The rule was a global override that bled into app pages and clashed with
+   Tailwind utility classes (utilities are wrapped in :where() in v4, so
+   element rules win specificity). Every marketing h2 already declares its
+   own typography classes explicitly (e.g. text-[26px] font-semibold or
+   akzidenzProBoldEx.className), so removing the bare rule has no effect on
+   marketing — and lets app detail headers honour their text-* classes. */
 
 .font-heading {
   font-family: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;

@@ -7,15 +7,16 @@ import { OperationalPanel } from "@/components/app/OperationalPanel";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import { getOpportunityWorkspaceData } from "@/lib/opportunity-workspace-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 
 const MODAL_INPUT_CLASS =
-  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 const MODAL_SELECT_CLASS = MODAL_INPUT_CLASS;
 const MODAL_TEXTAREA_CLASS =
-  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 const SECTION_TITLE_CLASS = "m-0 text-lg font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]";
 const FIELD_LABEL_CLASS = "mb-1.5 block text-sm font-medium text-[var(--text-primary)]";
 
@@ -43,11 +44,7 @@ function formatCurrencyNZD(value: number | null | undefined): string {
     return "$0";
   }
 
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyOperational(value);
 }
 
 function formatDueDate(isoDate: string | null | undefined): string {
@@ -737,7 +734,7 @@ export default async function OpportunityWorkspacePage({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--orange-primary)] text-xs font-semibold text-[var(--primary-foreground)]">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--primary)] text-xs font-semibold text-[var(--primary-foreground)]">
                           {getInitials(assigneeName)}
                         </span>
                         <p className="m-0 truncate text-sm text-[var(--text-primary)]">{assigneeName}</p>
@@ -759,7 +756,7 @@ export default async function OpportunityWorkspacePage({
                       <label htmlFor={editToggleId} className="absolute inset-0" aria-hidden="true" />
                       <form
                         action={updateLeadTask}
-                        className="pointer-events-auto max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)]"
+                        className="pointer-events-auto max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)]"
                       >
                         <input type="hidden" name="taskId" value={task.id} />
                         <div className="space-y-0">
@@ -873,7 +870,7 @@ export default async function OpportunityWorkspacePage({
           <label htmlFor="lead-task-create-toggle" className="absolute inset-0" aria-hidden="true" />
           <form
             action={createLeadTask}
-            className="pointer-events-auto max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)]"
+            className="pointer-events-auto max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-0 shadow-[var(--shadow-lg)]"
           >
             <div className="space-y-0">
               <div className="px-7 pb-6 pt-7">

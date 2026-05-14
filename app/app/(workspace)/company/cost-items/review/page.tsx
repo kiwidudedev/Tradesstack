@@ -3,7 +3,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -414,7 +414,7 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Cost Item Review"
         description="Review low-confidence cost item classifications before they become part of your org’s confirmed intelligence."
         actions={

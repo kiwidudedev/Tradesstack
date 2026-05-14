@@ -7,7 +7,7 @@ export const leadsPageSurfaceTheme = {
   border: "var(--app-border)",
   text: "var(--text-primary)",
   muted: "var(--text-secondary)",
-  accent: "var(--orange-primary)",
+  accent: "var(--brand-blue)",
   actionBorder: "var(--app-border)",
   actionText: "var(--text-secondary)",
   actionHover: "var(--surface-subtle)",
@@ -22,7 +22,7 @@ export const leadsMetricPanelClassName =
 export const leadsShellHeaderClassName = "bg-[var(--app-canvas)]";
 export const leadsShellActionClassName =
   "inline-flex items-center gap-[0.4rem] rounded-[var(--radius-lg)] border border-[var(--app-border)] bg-[var(--app-surface)] px-4 py-2 text-[14px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-subtle)]";
-export const leadsShellTabRowClassName = "sticky top-0 z-20 border-b-2 border-[var(--app-border)] bg-[var(--app-canvas)] px-5";
+export const leadsShellTabRowClassName = "sticky top-14 z-20 border-b-2 border-[var(--app-border)] bg-[var(--app-canvas)] px-5";
 export const leadsShellTabClassName =
   "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 border-transparent px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors";
 

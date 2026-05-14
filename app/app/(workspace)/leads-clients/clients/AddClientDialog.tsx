@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ibmPlexSans } from "@/lib/fonts";
+import { FormLabel } from "@/components/app/FormLabel";
 
 function FieldLabel({
   htmlFor,
@@ -15,14 +16,14 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label htmlFor={htmlFor} className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+    <FormLabel htmlFor={htmlFor}>
       {children}
-      {required ? <span className="ml-1 text-[#FF4C14]">*</span> : null}
-    </label>
+      {required ? <span className="ml-1 text-[var(--orange-primary)]">*</span> : null}
+    </FormLabel>
   );
 }
 
-const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
+const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--primary)]`;
 
 export function AddClientDialog({
   createClientAction,
@@ -34,17 +35,17 @@ export function AddClientDialog({
       <DialogTrigger asChild>
         <button
           type="button"
-          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
+          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[var(--primary)] bg-[var(--primary)] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
         >
           <Plus className="h-4 w-4" strokeWidth={2.3} />
           Add Client
         </button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+      <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
         <form action={createClientAction}>
           <DialogHeader className="px-7 pb-6 pt-7">
-            <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
+            <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[var(--text-primary)]`}>
               Add Client
             </DialogTitle>
           </DialogHeader>
@@ -116,7 +117,7 @@ export function AddClientDialog({
                 name="fullAddress"
                 rows={1}
                 placeholder="Level 12, 123 Queen Street, Auckland 1010"
-                className={`${ibmPlexSans.className} w-full resize-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 py-2.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`}
+                className={`${ibmPlexSans.className} w-full resize-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--primary)]`}
               />
             </div>
 
@@ -126,7 +127,7 @@ export function AddClientDialog({
               <select
                 id="status"
                 name="status"
-                className={`${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`}
+                className={`${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)]`}
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -139,14 +140,14 @@ export function AddClientDialog({
             <DialogClose asChild>
               <button
                 type="button"
-                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[var(--border)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]`}
               >
                 Cancel
               </button>
             </DialogClose>
             <button
               type="submit"
-              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]`}
+              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[var(--primary)] px-5 text-[14px] font-semibold text-white transition hover:bg-[var(--primary-hover)]`}
             >
               Add Client
             </button>

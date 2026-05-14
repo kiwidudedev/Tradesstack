@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Search, TrendingUp, DollarSign, CheckCircle2, Clock } from "lucide-react";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ function formatCurrencyCompactNZD(value: number) {
   return new Intl.NumberFormat("en-NZ", {
     style: "currency",
     currency: "NZD",
+    currencyDisplay: "narrowSymbol",
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
@@ -137,7 +138,7 @@ export default async function LeadsClientsOpportunitiesPage({
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Opportunities"
         description="Manage your sales pipeline and track quotes"
         actions={<NewOpportunityDialog />}

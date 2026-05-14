@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -135,11 +136,7 @@ type ClientDetailDataOptions = {
 type HeaderOpportunityRow = Pick<OpportunityRow, "id" | "stage">;
 
 export function toMoney(value: number): string {
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyOperational(value);
 }
 
 function toDate(value: string | null | undefined): Date | null {

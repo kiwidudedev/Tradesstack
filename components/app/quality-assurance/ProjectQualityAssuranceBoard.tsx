@@ -3,6 +3,7 @@
 import { Suspense, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AlertCircle } from "lucide-react";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
@@ -2402,37 +2403,28 @@ export function ProjectQualityAssuranceBoard() {
 
   return (
     <div className={`${ibmPlexSans.className} w-full space-y-6 pb-8`}>
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">Quality Assurance</h1>
-              <div className="inline-flex items-center gap-2 rounded-[12px] bg-[#FEE2E2] px-4 py-2 text-[14px] font-medium text-[#B91C1C]">
-                <AlertCircle className="h-4 w-4" strokeWidth={2} />
-                {issueStats.openCount} Open Issues
-              </div>
-            </div>
-            <p className={`${interMedium.className} text-[14px] text-[#64748B]`}>
-              Manage work logs, defects, inspections, photos, and sign-off requests in one place.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              onClick={activePrimaryAction.onClick}
-              className="h-9 rounded-[12px] bg-[#F74917] px-4 text-[14px] font-semibold text-white hover:bg-[#e63f10]"
-            >
-              <span className="mr-1 text-[16px] leading-none">+</span>
-              {activePrimaryAction.label}
-            </Button>
-          </div>
+      <OperationalModuleHeader
+        title="Quality Assurance"
+        description="Manage work logs, defects, inspections, photos, and sign-off requests in one place."
+        actions={
+          <Button
+            type="button"
+            onClick={activePrimaryAction.onClick}
+          >
+            <span className="text-[16px] leading-none">+</span>
+            {activePrimaryAction.label}
+          </Button>
+        }
+      >
+        <div className="mt-3 inline-flex items-center gap-2 rounded-[12px] bg-[var(--error-light)] px-4 py-2 text-[14px] font-medium text-[var(--error)]">
+          <AlertCircle className="h-4 w-4" strokeWidth={2} />
+          {issueStats.openCount} Open Issues
         </div>
-      </div>
+      </OperationalModuleHeader>
 
       {error ? (
-        <div className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2">
-          <p className={`${interMedium.className} text-xs font-medium text-rose-800`}>{error}</p>
+        <div className="rounded-[10px] border border-[var(--error-light)] bg-[var(--error-light)] px-3 py-2">
+          <p className={`${interMedium.className} text-xs font-medium text-[var(--error)]`}>{error}</p>
         </div>
       ) : null}
 
@@ -2444,8 +2436,8 @@ export function ProjectQualityAssuranceBoard() {
           <div className="pb-6">
             {isLoading ? (
               <div className="space-y-2">
-                <div className="h-4 w-48 animate-pulse rounded bg-[#E2E8F0]" />
-                <div className="h-4 w-64 animate-pulse rounded bg-[#E2E8F0]" />
+                <div className="h-4 w-48 animate-pulse rounded bg-[var(--surface-muted)]" />
+                <div className="h-4 w-64 animate-pulse rounded bg-[var(--surface-muted)]" />
               </div>
             ) : null}
 

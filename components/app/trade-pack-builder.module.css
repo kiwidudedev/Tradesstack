@@ -35,7 +35,7 @@
   --dash-soft: #6b6b6b;
   --dash-ink: #111827;
   --dash-accent: #F15A29;
-  background: var(--dash-bg);
+  background: transparent;
 }
 
 .quotePageTitle {

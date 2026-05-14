@@ -1,48 +1,52 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Bell,
   Building2,
   ChevronDown,
-  Clock3,
   DollarSign,
   FolderKanban,
-  HelpCircle,
   LayoutGrid,
-  LogOut,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   Sparkles,
-  Settings,
   TrendingUp,
   Users,
   UsersRound,
 } from "lucide-react";
-import { useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
-import { mockUser } from "@/lib/mock";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { useState, type ReactNode } from "react";
 import { ibmPlexSans } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
+import {
+  SIDEBAR_COMPACT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  useSidebarState,
+} from "@/components/app/SidebarState";
 
 const sidebarItemBaseClass =
-  "group flex min-h-[38px] items-center justify-between gap-2 rounded-[var(--radius-md)] px-3.5 text-[15px] font-medium transition-all";
+  "group flex min-h-[36px] items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 text-[14px] font-medium transition-colors";
 
-const sidebarItemActiveClass = "bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-foreground)] shadow-none";
+const sidebarItemActiveClass =
+  "bg-[var(--sidebar-accent)] text-[var(--sidebar-accent-foreground)] font-semibold";
 
 const sidebarItemInactiveClass =
-  "text-[var(--text-muted)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";
+  "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]";
 
 const sidebarSubItemClass =
-  "flex min-h-[36px] w-full min-w-0 items-center rounded-[var(--radius-md)] px-3 pl-[44px] text-[13.5px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";
+  "flex min-h-[32px] w-full min-w-0 items-center rounded-[var(--radius-md)] px-3 pl-[40px] text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]";
+
+const sidebarCompactItemBaseClass =
+  "group flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] transition-colors";
+
+const sidebarCompactItemActiveClass = "bg-[var(--sidebar-accent)]";
+
+const sidebarCompactItemInactiveClass =
+  "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]";
 
 const PRIMARY_NAV_ITEMS = [
   { label: "Dashboard", href: "/app/dashboard", icon: LayoutGrid },
@@ -76,55 +80,98 @@ const PRIMARY_NAV_ITEMS = [
   { label: "AI Assistant", icon: Sparkles },
 ] as const;
 
-function getInitials(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
+interface SidebarNavContentProps {
+  onNavigate?: () => void;
+  isCompact?: boolean;
+  footer?: ReactNode;
 }
 
-export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNavContent({
+  onNavigate,
+  isCompact = false,
+  footer = null,
+}: SidebarNavContentProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { session, logout } = useAuth();
+  const { toggle: toggleSidebar } = useSidebarState();
   const [isFinancialsExpanded, setIsFinancialsExpanded] = useState(false);
   const [isCompanyExpanded, setIsCompanyExpanded] = useState(() =>
     pathname.startsWith("/app/company")
   );
 
-  const displayName = session?.name ?? mockUser.name;
-  const initials = getInitials(displayName) || mockUser.initials;
-
-  async function handleLogout() {
-    await logout();
-    router.push("/");
-    router.refresh();
-  }
-
   return (
-    <div className={`${ibmPlexSans.className} flex h-full min-h-0 w-full min-w-0 flex-col bg-[var(--sidebar)] px-3 py-3`}>
-      <div className="pb-[1rem] pl-0 pr-3 pt-[calc(1.55rem+5px)]">
-        <Link href="/app/dashboard" className="inline-flex items-center" onClick={onNavigate}>
-          <Image
-            src="/tradesstacklogowhite.png"
-            alt="TradesStack"
-            width={220}
-            height={52}
-            className="h-auto w-auto max-h-[3.65rem]"
-            unoptimized
-            priority
-          />
-        </Link>
-      </div>
-
-      <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 pt-6">
+    <div
+      className={cn(
+        ibmPlexSans.className,
+        "flex h-full min-h-0 w-full min-w-0 flex-col bg-[var(--surface-muted)] px-2 pt-3 pb-3"
+      )}
+    >
+      <nav
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          isCompact ? "flex flex-col items-center space-y-1 pr-0" : "space-y-px pr-1"
+        )}
+      >
         {PRIMARY_NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = "href" in item && item.href ? pathname.startsWith(item.href) : false;
           const hasChildren = "children" in item && Boolean(item.children?.length);
 
+          // ── COMPACT MODE ──────────────────────────────────
+          if (isCompact) {
+            const iconClass = cn(
+              "h-[18px] w-[18px]",
+              isActive
+                ? "text-[var(--sidebar-accent-foreground)]"
+                : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+            );
+            const itemClass = cn(
+              sidebarCompactItemBaseClass,
+              isActive ? sidebarCompactItemActiveClass : sidebarCompactItemInactiveClass
+            );
+
+            // Section with children — clicking expands the sidebar so user can access children
+            if (hasChildren) {
+              return (
+                <Tooltip key={item.label} label={item.label} side="right">
+                  <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    aria-label={item.label}
+                    className={itemClass}
+                  >
+                    <Icon strokeWidth={2} className={iconClass} />
+                  </button>
+                </Tooltip>
+              );
+            }
+
+            // Regular nav link
+            if ("href" in item && item.href) {
+              return (
+                <Tooltip key={item.label} label={item.label} side="right">
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-label={item.label}
+                    className={itemClass}
+                  >
+                    <Icon strokeWidth={2} className={iconClass} />
+                  </Link>
+                </Tooltip>
+              );
+            }
+
+            // Non-href button (Resources / Team / Reports / AI Assistant)
+            return (
+              <Tooltip key={item.label} label={item.label} side="right">
+                <button type="button" aria-label={item.label} className={itemClass}>
+                  <Icon strokeWidth={2} className={iconClass} />
+                </button>
+              </Tooltip>
+            );
+          }
+
+          // ── EXPANDED MODE ──────────────────────────────────
           if (hasChildren) {
             const isFinancialsSection = item.label === "Financials";
             const isExpanded = isFinancialsSection ? isFinancialsExpanded : isCompanyExpanded;
@@ -133,30 +180,29 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               : () => setIsCompanyExpanded((current) => !current);
 
             return (
-              <div key={item.label} className="space-y-0.5">
+              <div key={item.label} className="space-y-px">
                 <button
                   type="button"
                   onClick={toggleExpanded}
-                  className={cn(
-                    sidebarItemBaseClass,
-                    "w-full",
-                    sidebarItemInactiveClass
-                  )}
+                  className={cn(sidebarItemBaseClass, "w-full", sidebarItemInactiveClass)}
                 >
                   <span className="flex items-center gap-3">
                     <Icon
-                      strokeWidth={2.2}
-                      className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--sidebar-accent-foreground)]"
+                      strokeWidth={2}
+                      className="h-[18px] w-[18px] text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
                     />
-                    <span className="text-[15px] leading-none">{item.label}</span>
+                    <span className="leading-none">{item.label}</span>
                   </span>
                   <ChevronDown
-                    className={cn("mr-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform group-hover:text-[var(--sidebar-accent-foreground)]", isExpanded ? "rotate-180" : "rotate-0")}
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform group-hover:text-[var(--text-primary)]",
+                      isExpanded ? "rotate-180" : "rotate-0"
+                    )}
                   />
                 </button>
 
                 {isExpanded ? (
-                  <div className="space-y-0.5 py-1">
+                  <div className="space-y-px py-0.5">
                     {item.children.map((child) => {
                       if ("href" in child && child.href) {
                         const isChildActive =
@@ -170,7 +216,7 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
                             className={cn(
                               sidebarSubItemClass,
                               isChildActive
-                                ? "rounded-[var(--radius-md)] bg-[var(--sidebar-accent)] pr-3 text-[var(--sidebar-accent-foreground)]"
+                                ? "bg-[var(--sidebar-accent)] font-semibold text-[var(--sidebar-accent-foreground)]"
                                 : ""
                             )}
                           >
@@ -208,15 +254,15 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <span className="flex items-center gap-3">
                   <Icon
-                    strokeWidth={2.2}
+                    strokeWidth={2}
                     className={cn(
-                      "h-5 w-5",
+                      "h-[18px] w-[18px]",
                       isActive
-                        ? "text-[var(--sidebar-primary-foreground)]"
-                        : "text-[var(--text-muted)] group-hover:text-[var(--sidebar-accent-foreground)]"
+                        ? "text-[var(--sidebar-accent-foreground)]"
+                        : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
                     )}
                   />
-                  <span className="text-[15px] leading-none">{item.label}</span>
+                  <span className="leading-none">{item.label}</span>
                 </span>
               </Link>
             );
@@ -230,99 +276,148 @@ export function SidebarNavContent({ onNavigate }: { onNavigate?: () => void }) {
             >
               <span className="flex items-center gap-3">
                 <Icon
-                  strokeWidth={2.2}
-                  className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--sidebar-accent-foreground)]"
+                  strokeWidth={2}
+                  className="h-[18px] w-[18px] text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
                 />
-                <span className="text-[15px] leading-none">{item.label}</span>
+                <span className="leading-none">{item.label}</span>
               </span>
             </button>
           );
         })}
       </nav>
+      {footer}
+    </div>
+  );
+}
 
-      <div className="mt-3 border-t border-[var(--sidebar-border)] pt-4">
-        <div className="flex items-center justify-between gap-3 px-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--sidebar-primary)] text-[15px] font-semibold text-[var(--sidebar-primary-foreground)] transition-transform hover:scale-[1.02]"
-                title={displayName}
-              >
-                {initials}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              side="top"
-              sideOffset={12}
-              className="w-52 rounded-[var(--radius-lg)] border border-[var(--app-border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lg)]"
-            >
-              <DropdownMenuItem className="h-11 rounded-[var(--radius-md)] px-3 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]">
-                <Bell className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-                <span>Notifications</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="h-11 rounded-[var(--radius-md)] px-0 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]">
-                <Link href="/app/settings/organization" className="flex h-full w-full items-center px-3">
-                  <Settings className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-                  <span>Settings</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="h-11 rounded-[var(--radius-md)] px-0 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]">
-                <Link href="/app/settings" className="flex h-full w-full items-center px-3">
-                  <Clock3 className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-                  <span>Time settings</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleLogout}
-                className="h-11 rounded-[var(--radius-md)] px-3 text-[15px] text-[var(--text-primary)] focus:bg-[var(--surface-muted)] focus:text-[var(--text-primary)]"
-              >
-                <LogOut className="mr-3 h-4.5 w-4.5" strokeWidth={2.3} />
-                <span>Log out</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+function SidebarToggleFooter({
+  isCompact,
+  onToggle,
+}: {
+  isCompact: boolean;
+  onToggle: () => void;
+}) {
+  const label = isCompact ? "Expand sidebar" : "Collapse sidebar";
+  const button = (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={label}
+      className={cn(
+        "inline-flex items-center rounded-[var(--radius-md)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]",
+        isCompact ? "h-10 w-10 justify-center" : "h-9 w-full justify-start gap-2 px-3 text-[13px] font-medium"
+      )}
+    >
+      {isCompact ? (
+        <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={2} />
+      ) : (
+        <>
+          <PanelLeftClose className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
+          <span className="leading-none">Collapse sidebar</span>
+        </>
+      )}
+    </button>
+  );
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
-              aria-label="Help"
-            >
-              <HelpCircle className="h-6 w-6" strokeWidth={2.1} />
-            </button>
-
-            <Link
-              href="/app/settings/organization"
-              onClick={onNavigate}
-              className={cn(
-                "inline-flex h-11 w-11 items-center justify-center rounded-full transition-colors",
-                pathname.startsWith("/app/settings")
-                  ? "bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-foreground)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
-              )}
-              aria-label="Settings"
-            >
-              <Settings className="h-6 w-6" strokeWidth={2.1} />
-            </Link>
-          </div>
-        </div>
-
-      </div>
+  return (
+    <div
+      className={cn(
+        "mt-2 border-t border-[var(--border)] pt-2",
+        isCompact ? "flex justify-center" : ""
+      )}
+    >
+      {isCompact ? (
+        <Tooltip label={label} side="right">
+          {button}
+        </Tooltip>
+      ) : (
+        button
+      )}
     </div>
   );
 }
 
 export function Sidebar({ className }: { className?: string }) {
+  const { isCollapsed, toggle, width, setWidth, isDragging, setDragging } = useSidebarState();
+  const actualWidth = isCollapsed ? SIDEBAR_COMPACT_WIDTH : width;
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (isCollapsed) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = width;
+    setDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const next = Math.max(
+        SIDEBAR_MIN_WIDTH,
+        Math.min(SIDEBAR_MAX_WIDTH, startWidth + delta)
+      );
+      setWidth(next);
+    };
+
+    const onUp = () => {
+      setDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+  };
+
+  const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isCollapsed) return;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setWidth(width - 16);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setWidth(width + 16);
+    }
+  };
+
   return (
     <aside
+      style={{ width: actualWidth }}
       className={cn(
-        "sticky top-0 z-20 hidden h-screen w-[240px] shrink-0 self-start bg-[var(--sidebar)] lg:flex",
+        "sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] shrink-0 self-start bg-[var(--surface-muted)] lg:flex",
+        !isDragging && "transition-[width] duration-200 ease-out",
         className
       )}
     >
-      <SidebarNavContent />
+      <SidebarNavContent
+        isCompact={isCollapsed}
+        footer={<SidebarToggleFooter isCompact={isCollapsed} onToggle={toggle} />}
+      />
+      {!isCollapsed ? (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          aria-valuenow={width}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          tabIndex={0}
+          onPointerDown={handleResizeStart}
+          onKeyDown={handleResizeKeyDown}
+          className={cn(
+            "absolute inset-y-0 right-0 z-20 w-1 cursor-col-resize transition-colors",
+            "focus-visible:outline-none focus-visible:bg-[var(--brand-blue)]/40",
+            isDragging
+              ? "bg-[var(--brand-blue)]"
+              : "bg-transparent hover:bg-[var(--brand-blue)]"
+          )}
+        />
+      ) : null}
     </aside>
   );
 }

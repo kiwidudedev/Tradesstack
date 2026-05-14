@@ -2,7 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,7 +101,7 @@ export default async function EditClientPage({
         </Link>
       </Button>
 
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Edit Client"
         description="Update contact details and company info."
       />

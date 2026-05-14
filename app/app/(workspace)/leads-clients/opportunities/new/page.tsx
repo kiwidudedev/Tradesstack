@@ -310,9 +310,9 @@ export default function NewOpportunityPage() {
     }
   };
 
-  const inputClass = `font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
-  const selectClass = `font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`;
-  const labelClass = `font-[family-name:var(--font-ibm-plex-sans)] mb-1 block text-[13px] font-semibold text-[#1d2433]`;
+  const inputClass = `font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--primary)]`;
+  const selectClass = `font-[family-name:var(--font-ibm-plex-sans)] h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)]`;
+  const labelClass = `font-[family-name:var(--font-ibm-plex-sans)] mb-1 block text-[13px] font-semibold text-[var(--text-primary)]`;
 
   return (
     <main className="pb-8">
@@ -321,7 +321,7 @@ export default function NewOpportunityPage() {
         variant="ghost"
         size="sm"
         asChild
-        className={`${interMedium.className} mb-6 h-8 rounded-[6px] px-2 text-xs font-medium text-[#667085] hover:bg-transparent hover:text-[#344054]`}
+        className={`${interMedium.className} mb-6 h-8 rounded-[6px] px-2 text-xs font-medium text-[var(--text-secondary)] hover:bg-transparent hover:text-[var(--text-primary)]`}
       >
         <Link href="/app/leads-clients/opportunities">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
@@ -329,18 +329,18 @@ export default function NewOpportunityPage() {
         </Link>
       </Button>
 
-      <div className="w-full max-w-[660px] rounded-[18px] border border-[#E2E8F1] bg-white shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+      <div className="w-full max-w-[660px] rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-overlay)]">
         {!isAuthLoading && session && !canManageOpportunities ? (
-          <p className={`${interMedium.className} mx-7 mt-7 rounded-[0.6rem] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800`}>
+          <p className={`${interMedium.className} mx-7 mt-7 rounded-[0.6rem] border border-[var(--warning-light)] bg-[var(--warning-light)] px-3 py-2 text-sm font-medium text-[var(--warning)]`}>
             Only owner, admin, QS, and project manager roles can create opportunities.
           </p>
         ) : null}
 
         <div className="px-7 pb-6 pt-7">
-          <h1 className="font-[family-name:var(--font-ibm-plex-sans)] m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]">
+          <h1 className="font-[family-name:var(--font-ibm-plex-sans)] m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[var(--text-primary)]">
             Create Tender Opportunity
           </h1>
-          <p className={`${interMedium.className} mt-3 text-sm font-medium text-[#5F7390]`}>
+          <p className={`${interMedium.className} mt-3 text-sm font-medium text-[var(--text-secondary)]`}>
             Log a new tender so the team can start pricing.
           </p>
         </div>
@@ -350,7 +350,7 @@ export default function NewOpportunityPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label htmlFor="opportunityName" className={labelClass}>
-                Tender Name <span className="text-[#FF4C14]">*</span>
+                Tender Name <span className="text-[var(--orange-primary)]">*</span>
               </label>
               <Input
                 id="opportunityName"
@@ -363,10 +363,10 @@ export default function NewOpportunityPage() {
             </div>
             <div>
               <label htmlFor="opportunityClient" className={labelClass}>
-                Client <span className="text-[#FF4C14]">*</span>
+                Client <span className="text-[var(--orange-primary)]">*</span>
               </label>
               {isLoadingFormData ? (
-                <p className="text-[14px] font-medium text-[#687996]">Loading clients...</p>
+                <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading clients...</p>
               ) : clients.length > 0 ? (
                 <div className="relative">
                   <select
@@ -385,10 +385,10 @@ export default function NewOpportunityPage() {
                     ))}
                     <option value={NEW_CLIENT_OPTION}>Add new client</option>
                   </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
               ) : (
-                <p className="text-[14px] font-medium text-[#687996]">No clients yet. Add a client below.</p>
+                <p className="text-[14px] font-medium text-[var(--text-secondary)]">No clients yet. Add a client below.</p>
               )}
             </div>
           </div>
@@ -411,7 +411,7 @@ export default function NewOpportunityPage() {
             <>
               <div>
                 <label htmlFor="clientContactName" className={labelClass}>
-                  Contact Name <span className="text-[#FF4C14]">*</span>
+                  Contact Name <span className="text-[var(--orange-primary)]">*</span>
                 </label>
                 <Input
                   id="clientContactName"
@@ -424,7 +424,7 @@ export default function NewOpportunityPage() {
               </div>
               <div>
                 <label htmlFor="clientCompanyName" className={labelClass}>
-                  Company Name <span className="text-[#FF4C14]">*</span>
+                  Company Name <span className="text-[var(--orange-primary)]">*</span>
                 </label>
                 <Input
                   id="clientCompanyName"
@@ -465,7 +465,7 @@ export default function NewOpportunityPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label htmlFor="opportunityDueDate" className={labelClass}>
-                Tender Due Date <span className="text-[#FF4C14]">*</span>
+                Tender Due Date <span className="text-[var(--orange-primary)]">*</span>
               </label>
               <Input
                 id="opportunityDueDate"
@@ -494,10 +494,10 @@ export default function NewOpportunityPage() {
           {/* Estimator / Owner */}
           <div>
             <label htmlFor="opportunityOwner" className={labelClass}>
-              Estimator / Owner <span className="text-[#FF4C14]">*</span>
+              Estimator / Owner <span className="text-[var(--orange-primary)]">*</span>
             </label>
             {isLoadingFormData ? (
-              <p className="text-[14px] font-medium text-[#687996]">Loading estimators...</p>
+              <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading estimators...</p>
             ) : (
               <div className="relative">
                 <select
@@ -512,13 +512,13 @@ export default function NewOpportunityPage() {
                     </option>
                   ))}
                 </select>
-                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
             )}
           </div>
 
           {error ? (
-            <p className="rounded-[0.6rem] border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] font-medium text-red-700">
+            <p className="rounded-[0.6rem] border border-[var(--error-light)] bg-[var(--error-light)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--error)]">
               {error}
             </p>
           ) : null}
@@ -527,7 +527,7 @@ export default function NewOpportunityPage() {
         <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
           <Link
             href="/app/leads-clients/opportunities"
-            className="font-[family-name:var(--font-ibm-plex-sans)] inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
+            className="font-[family-name:var(--font-ibm-plex-sans)] inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[var(--border)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]"
           >
             Cancel
           </Link>
@@ -536,7 +536,7 @@ export default function NewOpportunityPage() {
             form="opportunityForm"
             disabled={!canManageOpportunities || isSubmitting || isAuthLoading || isLoadingFormData}
             onClick={(e) => { e.preventDefault(); document.querySelector<HTMLFormElement>("form")?.requestSubmit(); }}
-            className="font-[family-name:var(--font-ibm-plex-sans)] inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:opacity-60"
+            className="font-[family-name:var(--font-ibm-plex-sans)] inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[var(--primary)] px-5 text-[14px] font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:opacity-60"
           >
             {isSubmitting ? "Creating..." : "Create Tender"}
           </button>

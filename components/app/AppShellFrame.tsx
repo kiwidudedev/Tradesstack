@@ -1,7 +1,6 @@
 "use client";
 
 import { AppPageSurface } from "@/components/app/AppPageSurface";
-import { Topbar } from "@/components/app/Topbar";
 import { usePathname } from "next/navigation";
 
 export function AppShellFrame({ children }: { children: React.ReactNode }) {
@@ -13,10 +12,9 @@ export function AppShellFrame({ children }: { children: React.ReactNode }) {
   return (
     <main
       className={`min-w-0 flex-1 p-1.5 sm:p-4 ${
-        isSupplierInvoiceDetailPage ? "bg-[var(--surface-muted)]" : "bg-[var(--app-canvas)]"
+        isSupplierInvoiceDetailPage ? "bg-[var(--surface-muted)]" : "bg-[var(--background)]"
       }`}
     >
-      <Topbar />
       <AppPageSurface>{children}</AppPageSurface>
     </main>
   );

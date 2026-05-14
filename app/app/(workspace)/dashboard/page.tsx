@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { DashboardWorkspace } from "./DashboardWorkspace";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import { getLiveOpportunitiesForCurrentUser } from "@/lib/leads-clients-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { getTradePackWorkspacesForCurrentUser } from "@/lib/trade-pack-workspaces-server";
@@ -40,11 +41,7 @@ function formatShortDate(value: Date): string {
 }
 
 function formatMoney(value: number): string {
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyOperational(value);
 }
 
 export default async function DashboardPage() {

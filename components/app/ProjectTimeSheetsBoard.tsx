@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Clock, Download, FileText, Users } from "lucide-react";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -139,17 +140,17 @@ function registerStatus(entry: TimeEntryRow, now: Date) {
   const hours = getHours(entry, now);
   if (!entry.clock_out_at) {
     if (hours >= 10) {
-      return { label: "Auto Pending", tone: "bg-rose-100 text-rose-800 border-rose-200" };
+      return { label: "Auto Pending", tone: "bg-[var(--error-light)] text-[var(--error)] border-[var(--error-light)]" };
     }
     if (hours >= 8.5) {
-      return { label: "Warning", tone: "bg-amber-100 text-amber-800 border-amber-200" };
+      return { label: "Warning", tone: "bg-[var(--warning-light)] text-[var(--warning)] border-[var(--warning-light)]" };
     }
-    return { label: "Clocked In", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+    return { label: "Clocked In", tone: "bg-[var(--success-light)] text-[var(--success)] border-[var(--success-light)]" };
   }
   if (entry.auto_clocked_out) {
-    return { label: "Auto Clocked", tone: "bg-rose-100 text-rose-800 border-rose-200" };
+    return { label: "Auto Clocked", tone: "bg-[var(--error-light)] text-[var(--error)] border-[var(--error-light)]" };
   }
-  return { label: "Finished", tone: "bg-slate-100 text-slate-700 border-slate-200" };
+  return { label: "Finished", tone: "bg-[var(--surface-muted)] text-[var(--text-secondary)] border-[var(--border)]" };
 }
 
 function locationLabel(latitude: number | null, longitude: number | null, accuracy: number | null) {
@@ -645,67 +646,63 @@ export function ProjectTimeSheetsBoard() {
   return (
     <div className={`${ibmPlexSans.className} ${styles.quoteDashboardScope} -mb-8 w-full space-y-6`}>
 
-      {/* Hero */}
-      <section className={`${styles.heroBlock} mb-2`}>
-        <div className="min-w-0 flex-1">
-          <h1 className={`${ibmPlexSans.className} ${styles.quotePageTitle}`}>Timesheets</h1>
-          <p className={`${interMedium.className} mt-1 text-[15px] text-[#6b6b6b]`}>
-            Real-time labour visibility and control for {context?.projectName ?? "this job"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" className={`${styles.quoteButtonLabel} h-9 rounded-full border-[#d3dbe8] bg-[#F8F9FC]`}>
-                Range: {range}
-                <ChevronDown className="ml-1 h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="!z-[200] min-w-[180px] rounded-[14px] border border-[#E2E8F1] !bg-white p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
-              {(["Today", "This week", "All recent"] as DashboardRange[]).map((r) => (
-                <DropdownMenuItem key={r} onClick={() => setRange(r)} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium focus:bg-[#F8FAFC] ${range === r ? "text-[#F15A29]" : "text-[#1d2433]"}`}>
-                  <span className="mr-2 inline-flex w-4 items-center justify-center">{range === r ? <Check className="h-4 w-4" /> : null}</span>
-                  {r}
+      <OperationalModuleHeader
+        title="Timesheets"
+        description={`Real-time labour visibility and control for ${context?.projectName ?? "this job"}`}
+        actions={
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="secondary">
+                  Range: {range}
+                  <ChevronDown className="ml-1 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="!z-[200] min-w-[180px] rounded-[14px] border border-[var(--border)] !bg-[var(--surface)] p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
+                {(["Today", "This week", "All recent"] as DashboardRange[]).map((r) => (
+                  <DropdownMenuItem key={r} onClick={() => setRange(r)} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium focus:bg-[var(--surface-muted)] ${range === r ? "text-[var(--brand-blue)]" : "text-[var(--text-primary)]"}`}>
+                    <span className="mr-2 inline-flex w-4 items-center justify-center">{range === r ? <Check className="h-4 w-4" /> : null}</span>
+                    {r}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator className="my-1 bg-[var(--border-subtle)]" />
+                <DropdownMenuItem onClick={exportCsv} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}>
+                  <Download className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />Export CSV
                 </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator className="my-1 bg-[#E8EDF5]" />
-              <DropdownMenuItem onClick={exportCsv} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
-                <Download className="mr-2 h-4 w-4 text-[#64748B]" />Export CSV
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.print()} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[#1d2433] focus:bg-[#F8FAFC]`}>
-                <FileText className="mr-2 h-4 w-4 text-[#64748B]" />Print PDF
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            type="button"
-            onClick={() => { if (activeMyEntry) { void clockOut(); } else { void clockIn(); } }}
-            disabled={isSaving}
-            className={`${styles.quoteButtonLabel} h-9 rounded-full bg-[#F74917] px-5 !text-white hover:bg-[#e63f10]`}
-          >
-            {activeMyEntry ? "Clock Out" : "Clock In"}
-          </Button>
-        </div>
-      </section>
+                <DropdownMenuItem onClick={() => window.print()} className={`${interMedium.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}>
+                  <FileText className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />Print PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              type="button"
+              onClick={() => { if (activeMyEntry) { void clockOut(); } else { void clockIn(); } }}
+              disabled={isSaving}
+            >
+              {activeMyEntry ? "Clock Out" : "Clock In"}
+            </Button>
+          </>
+        }
+      />
 
       {error ? (
-        <p className={`${interMedium.className} rounded-[10px] border border-red-300/60 bg-red-50 px-3 py-2 text-sm font-medium text-red-700`}>{error}</p>
+        <p className={`${interMedium.className} rounded-[10px] border border-[var(--error-light)] bg-[var(--error-light)] px-3 py-2 text-sm font-medium text-[var(--error)]`}>{error}</p>
       ) : null}
 
       {activeMyEntry ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#BDE7C9] bg-[#ECFDF3] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[var(--success-light)] bg-[var(--success-light)] px-4 py-3">
           <div>
-            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[#15803D]`}>You are clocked in</p>
-            <p className={`${ibmPlexSans.className} mt-1 text-[15px] font-semibold text-[#14532D]`}>
+            <p className={`${interMedium.className} text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--success)]`}>You are clocked in</p>
+            <p className={`${ibmPlexSans.className} mt-1 text-[15px] font-semibold text-[var(--success)]`}>
               {formatTime(activeMyEntry.clock_in_at)} → Now ({formatHours(getHours(activeMyEntry, now))})
             </p>
             {activeMyEntry.purchase_order_number ? (
-              <p className={`${interMedium.className} mt-1 text-[12px] font-medium text-[#166534]`}>
+              <p className={`${interMedium.className} mt-1 text-[12px] font-medium text-[var(--success)]`}>
                 Linked to {activeMyEntry.purchase_order_number}{activeMyEntry.purchase_order_title ? ` - ${activeMyEntry.purchase_order_title}` : ""}
               </p>
             ) : null}
           </div>
-          <Button type="button" onClick={() => void clockOut()} disabled={isSaving} className="h-9 rounded-full bg-[#F74917] px-5 text-sm font-medium text-white hover:bg-[#e63f10]">
+          <Button type="button" onClick={() => void clockOut()} disabled={isSaving} className="h-9 rounded-full bg-[var(--primary)] px-5 text-sm font-medium text-white hover:bg-[var(--primary-hover)]">
             Clock Out
           </Button>
         </div>
@@ -716,45 +713,45 @@ export function ProjectTimeSheetsBoard() {
 
           {/* Stat cards */}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-emerald-50">
-                  <Users className="h-5 w-5 text-emerald-500" />
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-sage)]">
+                  <Users className="h-5 w-5 text-[var(--kpi-fg-sage)]" />
                 </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>On Site Now</p>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>On Site Now</p>
               </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{summary.onSiteNow}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-emerald-600`}>Workers Currently Clocked In</p>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{summary.onSiteNow}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-sage)]`}>Workers Currently Clocked In</p>
             </div>
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-rose-50">
-                  <AlertTriangle className="h-5 w-5 text-rose-500" />
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-red)]">
+                  <AlertTriangle className="h-5 w-5 text-[var(--kpi-fg-red)]" />
                 </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Overtime Alerts</p>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>Overtime Alerts</p>
               </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{summary.overtimeAlerts}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-rose-500`}>Entries Over Threshold</p>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{summary.overtimeAlerts}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-red)]`}>Entries Over Threshold</p>
             </div>
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-indigo-50">
-                  <CheckCircle2 className="h-5 w-5 text-indigo-500" />
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-navy)]">
+                  <CheckCircle2 className="h-5 w-5 text-[var(--kpi-fg-navy)]" />
                 </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Complete</p>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>Complete</p>
               </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{Math.max(0, summary.workersToday - summary.missingClockOuts)}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[#4B5D79]`}>Finished Shifts This Range</p>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{Math.max(0, summary.workersToday - summary.missingClockOuts)}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-navy)]`}>Finished Shifts This Range</p>
             </div>
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] bg-[#FBFEFE] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
+            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-amber-50">
-                  <Clock className="h-5 w-5 text-amber-500" />
+                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-amber)]">
+                  <Clock className="h-5 w-5 text-[var(--kpi-fg-orange)]" />
                 </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[#6b6b6b]`}>Total Hours</p>
+                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>Total Hours</p>
               </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]`}>{formatHours(summary.totalHours)}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-amber-600`}>Labour Hours In Selected Range</p>
+              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{formatHours(summary.totalHours)}</p>
+              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-orange)]`}>Labour Hours In Selected Range</p>
             </div>
           </div>
 
@@ -762,7 +759,7 @@ export function ProjectTimeSheetsBoard() {
           {isWorkerRole ? (
             <div className="flex flex-wrap items-center gap-2">
               {purchaseOrders.length === 1 && selectedPurchaseOrder ? (
-                <div className={`${interMedium.className} flex h-9 items-center rounded-full border border-[#D7E1EC] bg-[#F8F9FC] px-4 text-[13px] font-medium text-[#1D2433]`}>
+                <div className={`${interMedium.className} flex h-9 items-center rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-4 text-[13px] font-medium text-[var(--text-primary)]`}>
                   PO: {selectedPurchaseOrder.purchase_order_number} — {selectedPurchaseOrder.purchase_order_title || "Untitled"}
                 </div>
               ) : (
@@ -770,7 +767,7 @@ export function ProjectTimeSheetsBoard() {
                   value={selectedPurchaseOrderId}
                   onChange={(e) => setSelectedPurchaseOrderId(e.target.value)}
                   disabled={isSaving || Boolean(activeMyEntry)}
-                  className={`${interMedium.className} h-9 rounded-full border border-[#D7E1EC] bg-[#F8F9FC] px-4 text-[13px] font-medium text-[#1D2433] disabled:opacity-50`}
+                  className={`${interMedium.className} h-9 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-4 text-[13px] font-medium text-[var(--text-primary)] disabled:opacity-50`}
                 >
                   <option value="">Select purchase order</option>
                   {purchaseOrders.map((po) => (
@@ -779,7 +776,7 @@ export function ProjectTimeSheetsBoard() {
                 </select>
               )}
               {isWorkerRole && purchaseOrders.length === 0 ? (
-                <p className={`${interMedium.className} text-[13px] font-medium text-amber-700`}>No purchase order assigned. Contact your manager.</p>
+                <p className={`${interMedium.className} text-[13px] font-medium text-[var(--warning)]`}>No purchase order assigned. Contact your manager.</p>
               ) : null}
             </div>
           ) : null}
@@ -794,20 +791,20 @@ export function ProjectTimeSheetsBoard() {
                 <select
                   value={filter.value}
                   onChange={(e) => filter.onChange(e.target.value)}
-                  className={`${interMedium.className} h-9 w-full appearance-none rounded-full border border-[#D7E1EC] bg-[#F8F9FC] pl-4 pr-9 text-[13px] font-medium text-[#1D2433]`}
+                  className={`${interMedium.className} h-9 w-full appearance-none rounded-full border border-[var(--border)] bg-[var(--surface-muted)] pl-4 pr-9 text-[13px] font-medium text-[var(--text-primary)]`}
                 >
                   {filter.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9AA8BC]" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
               </div>
             ))}
           </div>
 
           {/* Table */}
-          <div className="overflow-hidden rounded-[18px] border border-[#D7E1EC]">
+          <div className="overflow-hidden rounded-[18px] border border-[var(--border)]">
             <table className="min-w-full border-collapse">
               <thead>
-                <tr className={`${interMedium.className} border-b border-[#D7E1EC] bg-[#F3F4F6] text-[13px] font-semibold text-[#475569]`}>
+                <tr className={`${interMedium.className} border-b border-[var(--border)] bg-[var(--surface-muted)] text-[13px] font-semibold text-[var(--text-secondary)]`}>
                   <th className="w-[13%] px-4 py-2.5 text-left">Worker</th>
                   <th className="w-[25%] px-4 py-2.5 text-left">Purchase Order</th>
                   <th className="w-[12%] px-4 py-2.5 text-left">Date</th>
@@ -817,10 +814,10 @@ export function ProjectTimeSheetsBoard() {
                   <th className="w-[14%] px-4 py-2.5 text-left">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8EDF5] bg-[#FBFEFE]">
+              <tbody className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
                 {sortedEntries.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className={`${interMedium.className} px-4 py-10 text-center text-[13px] text-[#6b6b6b]`}>
+                    <td colSpan={7} className={`${interMedium.className} px-4 py-10 text-center text-[13px] text-[var(--text-secondary)]`}>
                       No timesheet entries for the selected range.
                     </td>
                   </tr>
@@ -828,14 +825,14 @@ export function ProjectTimeSheetsBoard() {
                   const status = registerStatus(entry, now);
                   return (
                     <tr key={entry.id} className="transition-colors">
-                      <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[#1d2433]`}>{entry.worker_name}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] font-semibold text-[var(--text-primary)]`}>{entry.worker_name}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[var(--text-secondary)]`}>
                         {entry.purchase_order_number ? `${entry.purchase_order_number}${entry.purchase_order_title ? ` — ${entry.purchase_order_title}` : ""}` : "—"}
                       </td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>{formatDate(entry.clock_in_at)}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>{formatTime(entry.clock_in_at)}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[#475569]`}>{formatTime(entry.clock_out_at)}</td>
-                      <td className={`${interMedium.className} px-4 py-3 text-[13px] font-medium text-[#1d2433]`}>{formatHours(getHours(entry, now))}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[var(--text-secondary)]`}>{formatDate(entry.clock_in_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[var(--text-secondary)]`}>{formatTime(entry.clock_in_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] text-[var(--text-secondary)]`}>{formatTime(entry.clock_out_at)}</td>
+                      <td className={`${interMedium.className} px-4 py-3 text-[13px] font-medium text-[var(--text-primary)]`}>{formatHours(getHours(entry, now))}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-[8px] border px-2.5 py-0.5 text-[12px] font-semibold ${status.tone}`}>{status.label}</span>
                       </td>
@@ -847,8 +844,8 @@ export function ProjectTimeSheetsBoard() {
           </div>
 
           {/* Total */}
-          <div className="flex items-center justify-end border-t border-[#E8EDF5] pt-4">
-            <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[#1d2433]`}>
+          <div className="flex items-center justify-end border-t border-[var(--border-subtle)] pt-4">
+            <p className={`${interMedium.className} flex items-center gap-6 text-[18px] font-semibold text-[var(--text-primary)]`}>
               <span>Total Hours</span>
               <span>{formatHours(summary.totalHours)}</span>
             </p>

@@ -5,7 +5,7 @@ function SkeletonBlock({
 }: {
   className: string;
 }) {
-  return <div className={`animate-pulse rounded-[14px] bg-[#E2E8F0] ${className}`} />;
+  return <div className={`animate-pulse rounded-[14px] bg-[var(--surface-muted)] ${className}`} />;
 }
 
 function ProjectFrame({
@@ -14,10 +14,10 @@ function ProjectFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-[0.384rem] bg-[#FBFEFE] pb-8 sm:-mx-[1.024rem]`}>
-      <div className="space-y-6 bg-[#FBFEFE]">
-        <div className="bg-white shadow-none">
-          <div className="flex flex-col gap-3 bg-white px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-[0.384rem] bg-[var(--background)] pb-8 sm:-mx-[1.024rem]`}>
+      <div className="space-y-6 bg-[var(--background)]">
+        <div className="bg-[var(--surface)] shadow-none">
+          <div className="flex flex-col gap-3 bg-[var(--surface)] px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0 flex-1 space-y-3">
               <SkeletonBlock className="h-8 w-64 max-w-full" />
               <SkeletonBlock className="h-4 w-36" />
@@ -25,7 +25,7 @@ function ProjectFrame({
             <SkeletonBlock className="h-10 w-40" />
           </div>
 
-          <div className="sticky top-0 z-20 border-b-2 bg-white px-5" style={{ borderBottomColor: "#E2E8F1" }}>
+          <div className="sticky top-14 z-20 border-b-2 bg-[var(--surface)] px-5" style={{ borderBottomColor: "var(--border)" }}>
             <div className="flex min-w-max items-center gap-8 py-3">
               {Array.from({ length: 6 }).map((_, index) => (
                 <SkeletonBlock key={index} className="h-6 w-24 rounded-full" />
@@ -34,7 +34,7 @@ function ProjectFrame({
           </div>
         </div>
 
-        <div className="min-w-0 flex-1 bg-[#FBFEFE] px-5">{children}</div>
+        <div className="min-w-0 flex-1 bg-[var(--background)] px-5">{children}</div>
       </div>
     </div>
   );
@@ -50,7 +50,7 @@ export function ProjectWorkspaceLoadingSkeleton() {
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="rounded-[14px] border border-[#E2E8F1] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+            <div key={index} className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
               <SkeletonBlock className="h-12 w-12 rounded-[16px]" />
               <SkeletonBlock className="mt-6 h-8 w-24" />
               <SkeletonBlock className="mt-4 h-4 w-32" />
@@ -72,7 +72,7 @@ export function DashboardLoadingSkeleton() {
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="rounded-[14px] border border-[#E2E8F1] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+            <div key={index} className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
               <div className="flex items-center gap-4">
                 <SkeletonBlock className="h-[3.1rem] w-[3.1rem] rounded-[1rem]" />
                 <SkeletonBlock className="h-5 w-28" />
@@ -111,7 +111,7 @@ export function BoardLoadingSkeleton({
       <div className="space-y-6 pb-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-3">
-            <h1 className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[#0F172A]">{title}</h1>
+            <h1 className="m-0 text-[22px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]">{title}</h1>
             <div className="flex flex-wrap items-center gap-3">
               {Array.from({ length: metricCount }).map((_, index) => (
                 <SkeletonBlock key={index} className="h-10 w-36 rounded-[12px]" />
@@ -129,8 +129,8 @@ export function BoardLoadingSkeleton({
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-[18px] border border-[#D9E3EE] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
+        <div className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-5 py-3">
             <SkeletonBlock className="h-4 w-48 rounded-full" />
           </div>
           <div className="space-y-3 px-5 py-4">
@@ -154,7 +154,7 @@ export function DashboardSectionSkeleton() {
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="rounded-[14px] border border-[#E2E8F1] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div key={index} className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
             <SkeletonBlock className="h-5 w-28" />
             <SkeletonBlock className="mt-8 h-10 w-24" />
             <SkeletonBlock className="mt-4 h-4 w-32" />
@@ -177,8 +177,8 @@ export function TodosSectionSkeleton() {
   return (
     <div className="space-y-4">
       <SkeletonBlock className="h-10 w-full rounded-[12px]" />
-      <div className="overflow-hidden rounded-[18px] border border-[#D9E3EE] bg-white">
-        <div className="border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
+      <div className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
+        <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-5 py-3">
           <SkeletonBlock className="h-4 w-40" />
         </div>
         <div className="space-y-4 px-5 py-4">
@@ -201,7 +201,7 @@ export function QualitySectionSkeleton() {
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="rounded-[14px] border border-[#E2E8F1] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+          <div key={index} className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
             <SkeletonBlock className="h-5 w-24" />
             <SkeletonBlock className="mt-8 h-10 w-20" />
             <SkeletonBlock className="mt-4 h-4 w-28" />
@@ -219,7 +219,7 @@ function SkeletonCard({
   lines?: number;
 }) {
   return (
-    <div className="rounded-[14px] border border-[#E2E8F1] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+    <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
       <SkeletonBlock className="h-6 w-40" />
       <div className="mt-5 space-y-3">
         {Array.from({ length: lines }).map((_, index) => (
@@ -229,7 +229,7 @@ function SkeletonCard({
           />
         ))}
       </div>
-      <p className={`${interMedium.className} mt-4 text-xs text-[#94A3B8]`}>Loading project workspace…</p>
+      <p className={`${interMedium.className} mt-4 text-xs text-[var(--text-muted)]`}>Loading project workspace…</p>
     </div>
   );
 }

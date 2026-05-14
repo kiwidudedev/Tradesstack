@@ -10,6 +10,7 @@ import type { Database } from "@/lib/supabase/types";
 import { PROJECT_STAGE_OPTIONS } from "@/lib/projects";
 import type { ProjectStage } from "@/lib/projects";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { FormLabel } from "@/components/app/FormLabel";
 import { Input } from "@/components/ui/input";
 
 const NEW_CLIENT_OPTION = "__new_client__";
@@ -262,8 +263,8 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
     }
   };
 
-  const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
-  const selectClass = `${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`;
+  const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--primary)]`;
+  const selectClass = `${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)]`;
 
   const showNewClientFields = (selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingClients;
 
@@ -272,17 +273,17 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
       <DialogTrigger asChild>
         <button
           type="button"
-          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition hover:bg-[#db4d1f]`}
+          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[var(--primary)] bg-[var(--primary)] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition hover:bg-[var(--primary-hover)]`}
         >
           <Plus className="h-4 w-4" strokeWidth={2.3} />
           Create Project
         </button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+      <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
         <form onSubmit={onSubmit}>
           <DialogHeader className="px-7 pb-6 pt-7">
-            <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
+            <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[var(--text-primary)]`}>
               Create a Project
             </DialogTitle>
           </DialogHeader>
@@ -290,9 +291,9 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
           <div className="space-y-3.5 px-7 pb-4">
             {/* Project Name */}
             <div>
-              <label htmlFor="projectName" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                Project Name <span className="text-[#FF4C14]">*</span>
-              </label>
+              <FormLabel htmlFor="projectName">
+                Project Name <span className="text-[var(--orange-primary)]">*</span>
+              </FormLabel>
               <Input
                 id="projectName"
                 value={name}
@@ -305,11 +306,11 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
 
             {/* Client */}
             <div>
-              <label htmlFor="client" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                Client <span className="text-[#FF4C14]">*</span>
-              </label>
+              <FormLabel htmlFor="client">
+                Client <span className="text-[var(--orange-primary)]">*</span>
+              </FormLabel>
               {isLoadingClients ? (
-                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[#687996]`}>Loading clients...</p>
+                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[var(--text-secondary)]`}>Loading clients...</p>
               ) : clients.length > 0 ? (
                 <div className="relative">
                   <select
@@ -327,10 +328,10 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
                     ))}
                     <option value={NEW_CLIENT_OPTION}>+ Add new client</option>
                   </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
               ) : (
-                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[#687996]`}>
+                <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[var(--text-secondary)]`}>
                   No clients yet. Fill in the new client details below.
                 </p>
               )}
@@ -340,9 +341,9 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
             {showNewClientFields ? (
               <>
                 <div>
-                  <label htmlFor="contactName" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                    Primary Contact <span className="text-[#FF4C14]">*</span>
-                  </label>
+                  <FormLabel htmlFor="contactName">
+                    Primary Contact <span className="text-[var(--orange-primary)]">*</span>
+                  </FormLabel>
                   <Input
                     id="contactName"
                     value={clientContactName}
@@ -354,9 +355,9 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
                 </div>
 
                 <div>
-                  <label htmlFor="companyName" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
-                    Company Name <span className="text-[#FF4C14]">*</span>
-                  </label>
+                  <FormLabel htmlFor="companyName">
+                    Company Name <span className="text-[var(--orange-primary)]">*</span>
+                  </FormLabel>
                   <Input
                     id="companyName"
                     value={clientCompanyName}
@@ -369,9 +370,9 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label htmlFor="clientEmail" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    <FormLabel htmlFor="clientEmail">
                       Email
-                    </label>
+                    </FormLabel>
                     <Input
                       id="clientEmail"
                       type="email"
@@ -382,9 +383,9 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
                     />
                   </div>
                   <div>
-                    <label htmlFor="clientPhone" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+                    <FormLabel htmlFor="clientPhone">
                       Phone
-                    </label>
+                    </FormLabel>
                     <Input
                       id="clientPhone"
                       value={clientPhone}
@@ -399,9 +400,9 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
 
             {/* Stage */}
             <div>
-              <label htmlFor="stage" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+              <FormLabel htmlFor="stage">
                 Stage
-              </label>
+              </FormLabel>
               <div className="relative">
                 <select
                   id="stage"
@@ -415,15 +416,15 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
                     </option>
                   ))}
                 </select>
-                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
             </div>
 
             {/* Location */}
             <div>
-              <label htmlFor="location" className={`${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`}>
+              <FormLabel htmlFor="location">
                 Location
-              </label>
+              </FormLabel>
               <Input
                 id="location"
                 value={location}
@@ -434,7 +435,7 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
             </div>
 
             {error ? (
-              <p className={`${ibmPlexSans.className} rounded-[0.6rem] border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] font-medium text-red-700`}>
+              <p className={`${ibmPlexSans.className} rounded-[0.6rem] border border-[var(--error-light)] bg-[var(--error-light)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--error)]`}>
                 {error}
               </p>
             ) : null}
@@ -445,7 +446,7 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
             <DialogClose asChild>
               <button
                 type="button"
-                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}
+                className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[var(--border)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]`}
               >
                 Cancel
               </button>
@@ -453,7 +454,7 @@ export function CreateProjectDialog({ initialOpen = false }: { initialOpen?: boo
             <button
               type="submit"
               disabled={isSubmitting || isAuthLoading}
-              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:opacity-60`}
+              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[var(--primary)] px-5 text-[14px] font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:opacity-60`}
             >
               {isSubmitting ? "Creating..." : isAuthLoading ? "Loading..." : "Create Project"}
             </button>

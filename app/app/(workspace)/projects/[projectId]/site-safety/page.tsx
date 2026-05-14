@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 
 const SITE_SAFETY_SECTIONS = [
@@ -43,7 +43,7 @@ const SITE_SAFETY_SECTIONS = [
 export default function ProjectSiteSafetyPage() {
   return (
     <main className="space-y-6 bg-[var(--background)] pb-8">
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Site Safety"
         description="Set up project-side health and safety workflows for subcontractor teams without overbuilding the system up front."
       />
@@ -54,7 +54,7 @@ export default function ProjectSiteSafetyPage() {
             <Link
               key={section.href}
               href={section.href}
-              className="group rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] px-5 py-5 transition-colors hover:border-[var(--orange-primary)] hover:bg-[var(--accent)]"
+              className="group rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] px-5 py-5 transition-colors hover:border-[var(--brand-blue)] hover:bg-[var(--accent)]"
             >
               <p className="text-lg font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
                 {section.title}
@@ -62,7 +62,7 @@ export default function ProjectSiteSafetyPage() {
               <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
                 {section.description}
               </p>
-              <span className="mt-4 inline-flex text-sm font-semibold text-[var(--orange-primary)]">
+              <span className="mt-4 inline-flex text-sm font-semibold text-[var(--brand-blue)]">
                 Open placeholder
               </span>
             </Link>

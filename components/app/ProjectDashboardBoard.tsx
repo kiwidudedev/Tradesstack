@@ -12,9 +12,15 @@ import {
   ReceiptText,
   Sparkles,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  OperationalKpiCard,
+  type OperationalKpiTone,
+} from "@/components/app/OperationalKpiCard";
+import { OperationalPanel } from "@/components/app/OperationalPanel";
 import { DashboardActivitySkeleton, DashboardSectionSkeleton } from "@/components/app/ProjectRouteSkeletons";
 import { useAuth } from "@/hooks/use-auth";
+import { formatMoneyOperational } from "@/lib/format/currency";
 import { interMedium } from "@/lib/fonts";
 import {
   normalizeDashboardAggregateResult,
@@ -141,11 +147,7 @@ function formatDateTime(value: string | null) {
 }
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatMoneyOperational(value);
 }
 
 function buildDashboardInsights(nextMetrics: DashboardMetrics, nextFinancials: FinancialSummary) {
@@ -259,46 +261,44 @@ export function ProjectDashboardBoard() {
   }, []);
 
   const projectBase = useMemo(() => `/app/projects/${routeProjectSlug}`, [routeProjectSlug]);
-  const tradePackCardClassName =
-    "app-surface rounded-[14px] border-[1.3px] border-[#E2E8F1] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]";
 
   const overviewCards = useMemo(
     () => [
       {
         label: "Due today",
         value: String(metrics.tasksDueToday),
-        meta: `${metrics.overdueTasks} overdue`,
+        helper: `${metrics.overdueTasks} overdue`,
         href: `${projectBase}/job-management/todos`,
         icon: ClipboardList,
-        iconClassName: "bg-[#F74919] text-white shadow-[0_4px_10px_rgba(247,73,25,0.14)]",
-        metaClassName: "text-[#F74919]",
+        tone: "orange" as OperationalKpiTone,
+        helperColorClass: "text-[var(--kpi-fg-orange)]",
       },
       {
         label: "Open issues",
         value: String(metrics.openIssues),
-        meta: `${metrics.failedInspections} failed inspections`,
+        helper: `${metrics.failedInspections} failed inspections`,
         href: `${projectBase}/job-management/quality-assurance`,
         icon: FileSearch,
-        iconClassName: "bg-[#0E172B] text-[#D9E6F2] shadow-[0_4px_10px_rgba(14,23,43,0.12)]",
-        metaClassName: "text-[#0E172B]",
+        tone: "red" as OperationalKpiTone,
+        helperColorClass: "text-[var(--kpi-fg-red)]",
       },
       {
         label: "Active workers",
         value: String(metrics.activeWorkers),
-        meta: `${metrics.inspectionsToday} inspections today`,
+        helper: `${metrics.inspectionsToday} inspections today`,
         href: `${projectBase}/job-management/time-sheets`,
         icon: BriefcaseBusiness,
-        iconClassName: "bg-[#AACFDF] text-[#18384C] shadow-[0_4px_10px_rgba(80,119,139,0.10)]",
-        metaClassName: "text-[#0E172B]",
+        tone: "sage" as OperationalKpiTone,
+        helperColorClass: "text-[var(--kpi-fg-sage)]",
       },
       {
         label: "Pipeline value",
         value: formatMoney(financials.quoteValue + financials.variationTotal),
-        meta: `${financials.claimsSubmitted} claims submitted`,
+        helper: `${financials.claimsSubmitted} claims submitted`,
         href: `${projectBase}/preconstruction/claims`,
         icon: ReceiptText,
-        iconClassName: "bg-[#FFE5D9] text-[#F74919] shadow-[0_4px_10px_rgba(247,73,25,0.08)]",
-        metaClassName: "text-[#F74919]",
+        tone: "amber" as OperationalKpiTone,
+        helperColorClass: "text-[var(--kpi-fg-orange)]",
       },
     ],
     [
@@ -995,9 +995,9 @@ export function ProjectDashboardBoard() {
   ] as const;
 
   return (
-    <main className="app-canvas -mb-8 space-y-4 bg-[#F9FAFC] pb-10">
+    <main className="app-canvas -mb-8 space-y-6 bg-[var(--background)] pb-8">
       <Suspense fallback={<DashboardSectionSkeleton />}>
-        <section className="space-y-4">
+        <section className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {overviewCards.map((item) => {
               const Icon = item.icon;
@@ -1005,83 +1005,81 @@ export function ProjectDashboardBoard() {
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="app-surface flex min-h-[170px] flex-col rounded-[14px] border-[1.3px] border-[#E2E8F1] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
+                  className="block transition hover:opacity-90"
                 >
-                  <div className="flex items-center gap-4">
-                    <span className={`inline-flex h-[3.1rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[1rem] ${item.iconClassName}`}>
-                      <Icon className="h-[1.45rem] w-[1.45rem]" strokeWidth={2.1} />
-                    </span>
-                    <p className="text-[18px] font-medium leading-none text-[#4B5D79]">{item.label}</p>
-                  </div>
-                  <p className="mt-auto pt-5 text-[clamp(2.1rem,3vw,2.75rem)] font-semibold leading-none tracking-[-0.03em] text-[#111827]">{item.value}</p>
-                  <p className={`mt-3 text-[16px] font-medium ${item.metaClassName}`}>{item.meta}</p>
+                  <OperationalKpiCard
+                    label={item.label}
+                    value={item.value}
+                    helper={<span className={item.helperColorClass}>{item.helper}</span>}
+                    icon={<Icon className="h-5 w-5" strokeWidth={2.1} />}
+                    tone={item.tone}
+                  />
                 </Link>
               );
             })}
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1.35fr)] xl:items-start">
-            <Card className={`${tradePackCardClassName} h-fit`}>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-[1.15rem] pt-[1.35rem]">
-              <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Project Details</CardTitle>
-              {isEditingProjectDetails ? (
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (context) {
-                        setProjectDetailsDraft({
-                          projectName: context.projectName,
-                          clientName: context.clientName,
-                          stage: context.stage,
-                          location: context.location,
-                          createdAt: context.createdAt,
-                        });
-                      }
-                      setIsEditingProjectDetails(false);
-                    }}
-                    className="inline-flex shrink-0 items-center justify-center rounded-[1rem] border border-[#CBD5E1] bg-white px-5 py-2.5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]"
+            <OperationalPanel
+              className="h-fit"
+              title="Project Details"
+              actions={
+                isEditingProjectDetails ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        if (context) {
+                          setProjectDetailsDraft({
+                            projectName: context.projectName,
+                            clientName: context.clientName,
+                            stage: context.stage,
+                            location: context.location,
+                            createdAt: context.createdAt,
+                          });
+                        }
+                        setIsEditingProjectDetails(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setContext((previous) =>
+                          previous
+                            ? {
+                                ...previous,
+                                projectName: projectDetailsDraft.projectName,
+                                clientName: projectDetailsDraft.clientName,
+                                stage: projectDetailsDraft.stage,
+                                location: projectDetailsDraft.location,
+                                createdAt: projectDetailsDraft.createdAt,
+                              }
+                            : previous
+                        );
+                        setIsEditingProjectDetails(false);
+                      }}
+                    >
+                      Save
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIsEditingProjectDetails(true)}
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setContext((previous) =>
-                        previous
-                          ? {
-                              ...previous,
-                              projectName: projectDetailsDraft.projectName,
-                              clientName: projectDetailsDraft.clientName,
-                              stage: projectDetailsDraft.stage,
-                              location: projectDetailsDraft.location,
-                              createdAt: projectDetailsDraft.createdAt,
-                            }
-                          : previous
-                      );
-                      setIsEditingProjectDetails(false);
-                    }}
-                    className="inline-flex shrink-0 items-center justify-center rounded-[1rem] bg-[#F15A29] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f]"
-                  >
-                    Save
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingProjectDetails(true)}
-                  className="inline-flex shrink-0 items-center rounded-[0.72rem] border border-[#CBD5E1] bg-white px-4 py-2 text-[14px] font-medium text-[#475569] transition hover:bg-[#F8FAFC]"
-                  style={{ fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', sans-serif", fontWeight: 500 }}
-                >
-                  Edit details
-                </button>
-              )}
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="grid gap-x-4 gap-y-3 pt-1 md:grid-cols-[160px_minmax(0,1fr)]">
+                    Edit details
+                  </Button>
+                )
+              }
+            >
+              <div className="grid gap-x-4 gap-y-3 md:grid-cols-[160px_minmax(0,1fr)]">
                 {detailRows.map((row) => (
                   <Fragment key={row.key}>
-                    <p className="text-[18px] font-semibold text-[#4B5D79]">{row.label}</p>
+                    <p className="text-sm font-medium text-[var(--text-secondary)]">{row.label}</p>
                     {isEditingProjectDetails ? (
                       <input
                         value={row.draftValue}
@@ -1091,52 +1089,52 @@ export function ProjectDashboardBoard() {
                             [row.key]: event.target.value,
                           }))
                         }
-                        className="h-[2.9rem] rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[18px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29]"
+                        className="h-[2.9rem] rounded-[0.85rem] border border-[var(--border)] bg-[var(--surface)] px-4 text-[15px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)]"
                       />
                     ) : (
-                      <p className="text-[18px] font-medium text-[#111827]">{row.value}</p>
+                      <p className="text-[15px] font-medium text-[var(--text-primary)]">{row.value}</p>
                     )}
                   </Fragment>
                 ))}
                 {!isEditingProjectDetails ? (
                   <>
-                    <p className="text-[18px] font-semibold text-[#4B5D79]">Project Team:</p>
+                    <p className="text-sm font-medium text-[var(--text-secondary)]">Project Team:</p>
                     <div>
                       {isLoadingProjectMembers ? (
-                        <p className="text-[18px] font-medium text-[#64748B]">Loading project team...</p>
+                        <p className="text-[15px] font-medium text-[var(--text-secondary)]">Loading project team...</p>
                       ) : projectMembers.length > 0 ? (
                         <div className="space-y-1.5">
                           {projectMembers.map((member) => (
                             <div key={member.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <p className="text-[18px] font-medium text-[#111827]">{member.display_name}</p>
-                              <span className="text-[14px] font-medium uppercase tracking-[0.06em] text-[#64748B]">
+                              <p className="text-[15px] font-medium text-[var(--text-primary)]">{member.display_name}</p>
+                              <span className="text-[14px] font-medium uppercase tracking-[0.06em] text-[var(--text-secondary)]">
                                 {member.role.replace(/_/g, " ")}
                               </span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-[18px] font-medium text-[#64748B]">No members assigned</p>
+                        <p className="text-[15px] font-medium text-[var(--text-secondary)]">No members assigned</p>
                       )}
                     </div>
                   </>
                 ) : null}
                 {isEditingProjectDetails ? (
                   <>
-                    <p className="text-[18px] font-semibold text-[#4B5D79]">Project Team:</p>
+                    <p className="text-sm font-medium text-[var(--text-secondary)]">Project Team:</p>
                     <div className="space-y-3">
                       {isLoadingProjectMembers ? (
-                        <p className="text-[16px] font-medium text-[#64748B]">Loading project team...</p>
+                        <p className="text-[16px] font-medium text-[var(--text-secondary)]">Loading project team...</p>
                       ) : projectMembers.length > 0 ? (
                         <div className="space-y-2">
                           {projectMembers.map((member) => (
                             <div
                               key={member.id}
-                              className="flex items-center justify-between gap-3 rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 py-3"
+                              className="flex items-center justify-between gap-3 rounded-[0.85rem] border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
                             >
                               <div className="min-w-0">
-                                <p className="truncate text-[16px] font-medium text-[#111827]">{member.display_name}</p>
-                                <p className="mt-0.5 text-[13px] font-medium uppercase tracking-[0.06em] text-[#64748B]">
+                                <p className="truncate text-[16px] font-medium text-[var(--text-primary)]">{member.display_name}</p>
+                                <p className="mt-0.5 text-[13px] font-medium uppercase tracking-[0.06em] text-[var(--text-secondary)]">
                                   {member.role.replace(/_/g, " ")}
                                 </p>
                               </div>
@@ -1144,7 +1142,7 @@ export function ProjectDashboardBoard() {
                                 type="button"
                                 onClick={() => void handleRemoveProjectMember(member)}
                                 disabled={removingProjectMemberId === member.id || isAddingProjectMember}
-                                className="inline-flex shrink-0 items-center justify-center rounded-[0.7rem] border border-[#E2E8F0] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#C2410C] transition hover:bg-[#FFF7ED] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex shrink-0 items-center justify-center rounded-[0.7rem] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[13px] font-semibold text-[var(--error)] transition hover:bg-[var(--error-light)] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {removingProjectMemberId === member.id ? "Removing..." : "Remove"}
                               </button>
@@ -1152,7 +1150,7 @@ export function ProjectDashboardBoard() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-[16px] font-medium text-[#64748B]">No members assigned yet</p>
+                        <p className="text-[16px] font-medium text-[var(--text-secondary)]">No members assigned yet</p>
                       )}
 
                       {availableOrganizationMembers.length > 0 ? (
@@ -1166,7 +1164,7 @@ export function ProjectDashboardBoard() {
                             }
                           }}
                           disabled={isLoadingProjectMembers || isAddingProjectMember || Boolean(removingProjectMemberId)}
-                          className="h-[2.9rem] w-full rounded-[0.85rem] border border-[#CBD5E1] bg-white px-4 text-[16px] font-medium text-[#111827] outline-none transition focus:border-[#F15A29] disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
+                          className="h-[2.9rem] w-full rounded-[0.85rem] border border-[var(--border)] bg-[var(--surface)] px-4 text-[16px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)] disabled:text-[var(--text-muted)]"
                         >
                           <option value="">{isAddingProjectMember ? "Adding member..." : "Add member"}</option>
                           {availableOrganizationMembers.map((member) => (
@@ -1176,24 +1174,19 @@ export function ProjectDashboardBoard() {
                           ))}
                         </select>
                       ) : (
-                        <p className="text-[14px] font-medium text-[#64748B]">All organization members are already assigned.</p>
+                        <p className="text-[14px] font-medium text-[var(--text-secondary)]">All organization members are already assigned.</p>
                       )}
 
                       {projectMembersError ? (
-                        <p className="text-[14px] font-medium text-[#B91C1C]">{projectMembersError}</p>
+                        <p className="text-[14px] font-medium text-[var(--error)]">{projectMembersError}</p>
                       ) : null}
                     </div>
                   </>
                 ) : null}
               </div>
-            </CardContent>
-            </Card>
+            </OperationalPanel>
 
-            <Card className={`${tradePackCardClassName} h-full`}>
-            <CardHeader className="pb-[1.15rem] pt-[1.35rem]">
-              <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">Today&apos;s Priority</CardTitle>
-            </CardHeader>
-            <CardContent className="flex h-full flex-col pt-0">
+            <OperationalPanel className="h-full" title="Today's Priority" contentClassName="flex h-full flex-col p-6 pt-6">
               {(focusItems.length > 0 ? focusItems : aiInsights.map((insight, index) => ({
                 id: `insight-${index}`,
                 title: insight,
@@ -1202,41 +1195,40 @@ export function ProjectDashboardBoard() {
                 <Link
                   key={item.id}
                   href={item.href}
-                  className={`grid grid-cols-[auto_1fr] items-start gap-4 py-5 transition-colors hover:bg-[var(--app-surface)] ${index < items.length - 1 ? "border-b border-[#E2E8F1]" : ""}`}
+                  className={`grid grid-cols-[auto_1fr] items-start gap-3 py-4 transition-colors hover:bg-[var(--app-surface)] ${index < items.length - 1 ? "border-b border-[var(--border)]" : ""}`}
                 >
-                  <span className="inline-flex h-[3.15rem] w-[3.15rem] shrink-0 items-center justify-center rounded-[1rem] bg-[#DCE9FF]">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--info-light)]">
                     <input
                       type="checkbox"
                       checked={false}
                       readOnly
                       aria-label={`Mark ${item.title} complete`}
-                      className="h-5 w-5 shrink-0 accent-[#2F67F6]"
+                      className="h-4 w-4 shrink-0 accent-[var(--info)]"
                     />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-[16px] font-semibold leading-[1.3] text-[#111827]">{item.title}</p>
-                    <p className="mt-1.5 text-[15px] font-medium text-[#64748B]">
+                    <p className="text-sm font-semibold leading-[1.35] text-[var(--text-primary)]">{item.title}</p>
+                    <p className="mt-1 text-[13px] font-medium text-[var(--text-secondary)]">
                       Assigned to: {index === 0 ? "Project Lead" : index === 1 ? "Site Manager" : "Operations Team"}
                     </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
                       <span
-                        className={`rounded-[10px] px-3 py-1.5 text-[14px] font-semibold ${
+                        className={`rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-semibold ${
                           index === 0
-                            ? "bg-[#FDE7E5] text-[#C2410C]"
-                            : "bg-[#FEF3C7] text-[#B7791F]"
+                            ? "bg-[var(--error-light)] text-[var(--error)]"
+                            : "bg-[var(--warning-light)] text-[var(--warning)]"
                         }`}
                       >
                         {index === 0 ? "High Priority" : "Medium Priority"}
                       </span>
-                      <span className="text-[15px] font-medium text-[#64748B]">
+                      <span className="text-[13px] font-medium text-[var(--text-secondary)]">
                         Due: {index === 0 ? "Today" : index === 1 ? "Tomorrow" : "This Week"}
                       </span>
                     </div>
                   </div>
                 </Link>
               ))}
-            </CardContent>
-            </Card>
+            </OperationalPanel>
           </div>
 
         </section>
@@ -1244,45 +1236,40 @@ export function ProjectDashboardBoard() {
 
       <Suspense fallback={<DashboardActivitySkeleton />}>
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
-          <Card className={`${tradePackCardClassName} h-fit`}>
-          <CardHeader className="pb-[1.15rem] pt-[1.35rem]">
-            <CardTitle className="mt-0 text-[1.4rem] leading-none tracking-[-0.03em] text-[#1d1d1d]">What&apos;s Coming Up Next</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-[0.65rem] pt-0">
+          <OperationalPanel className="h-fit" title="What's Coming Up Next" contentClassName="space-y-[0.65rem] p-6">
             {upcomingItems.length === 0 ? (
-              <div className="app-surface rounded-[14px] border-[1.3px] border-[#E2E8F1] px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-                <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>No recent project activity.</p>
+              <div className="app-surface rounded-[var(--radius-md)] border border-[var(--border)] px-4 py-4">
+                <p className={`${interMedium.className} text-sm text-[var(--text-secondary)]`}>No recent project activity.</p>
               </div>
             ) : (
               upcomingItems.map((item) => (
                 <Link
                   key={item.id}
                   href={item.href}
-                  className="app-surface block rounded-[14px] border-[1.3px] border-[#E2E8F1] px-[0.75rem] py-[0.7rem] shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)] transition hover:bg-[var(--app-surface)]"
+                  className="app-surface block rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-3 transition hover:bg-[var(--app-surface)]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-[15px] font-semibold text-[#1d1d1d]">{item.label}</p>
-                      <p className={`${interMedium.className} mt-[0.25rem] truncate text-[15px] text-[#6b6b6b]`}>{item.detail}</p>
+                      <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{item.label}</p>
+                      <p className={`${interMedium.className} mt-0.5 truncate text-[13px] text-[var(--text-secondary)]`}>{item.detail}</p>
                     </div>
-                    <span className={`${interMedium.className} shrink-0 rounded-full bg-[rgba(255,228,215,0.95)] px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-[#f74917]`}>
+                    <span className={`${interMedium.className} shrink-0 rounded-full bg-[var(--warning-light)] px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-[var(--orange-primary)]`}>
                       Live
                     </span>
                   </div>
-                  <div className="mt-[0.45rem] flex items-center justify-between gap-3">
-                    <p className={`${interMedium.className} text-[15px] text-[#6b6b6b]`}>{formatDateTime(item.at)}</p>
-                    <span className="text-[15px] font-semibold text-[#0b2639]">View</span>
+                  <div className="mt-1.5 flex items-center justify-between gap-3">
+                    <p className={`${interMedium.className} text-[13px] text-[var(--text-secondary)]`}>{formatDateTime(item.at)}</p>
+                    <span className="text-[13px] font-semibold text-[var(--navy-primary)]">View</span>
                   </div>
                 </Link>
               ))
             )}
             {error ? (
-              <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3">
-                <p className={`${interMedium.className} text-sm text-rose-800`}>{error}</p>
+              <div className="rounded-[18px] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3">
+                <p className={`${interMedium.className} text-sm text-[var(--error)]`}>{error}</p>
               </div>
             ) : null}
-          </CardContent>
-          </Card>
+          </OperationalPanel>
           <div />
         </section>
       </Suspense>

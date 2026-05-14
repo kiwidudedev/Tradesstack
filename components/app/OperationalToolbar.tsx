@@ -1,6 +1,16 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Canonical toolbar control rhythm:
+ *   height  = 40px (h-10)
+ *   text    = 14px (text-sm)
+ *   radius  = 12px (var(--radius-md))
+ *   gap     = 12px (gap-3, owned by this primitive)
+ *
+ * Use Button size="toolbar" for action buttons so they align flush with the
+ * search input and filter selects passed into the search/filters slots.
+ */
 interface OperationalToolbarProps extends React.HTMLAttributes<HTMLDivElement> {
   leading?: React.ReactNode;
   search?: React.ReactNode;

@@ -42,7 +42,7 @@ export default async function ClientFilesPage({ params }: { params: Promise<{ cl
                 {data.drawingSets.map((file) => (
                   <div key={file.id} className={styles.fileTableRow}>
                     <div className={styles.fileNameCell}>
-                      <FileDown className="h-5 w-5 text-[#8AA0BD]" strokeWidth={2} />
+                      <FileDown className="h-5 w-5 text-[var(--text-muted)]" strokeWidth={2} />
                       <p className={styles.fileNameText}>{file.file_name}</p>
                     </div>
                     <p className={styles.fileMetaText}>{formatFileSize(file.file_size_bytes)}</p>

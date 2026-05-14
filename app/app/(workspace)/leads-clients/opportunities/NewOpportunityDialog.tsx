@@ -9,6 +9,7 @@ import { resolveUniqueProjectSlug, toProjectSlug } from "@/lib/projects";
 import { ibmPlexSans } from "@/lib/fonts";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { FormLabel } from "@/components/app/FormLabel";
 import { useAuth } from "@/hooks/use-auth";
 import { canManageCommercialData } from "@/lib/role-permissions";
 
@@ -16,9 +17,8 @@ const NEW_CLIENT_OPTION = "__new_client__";
 type OrganizationClient = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
 type OrganizationMember = Pick<Database["public"]["Tables"]["organization_members"]["Row"], "user_id" | "display_name">;
 
-const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] placeholder:text-[#9BAABB] outline-none transition focus:border-[#F15A29]`;
-const selectClass = `${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[#D9E3EE] bg-white px-3.5 text-[14px] font-medium text-[#10283B] outline-none transition focus:border-[#F15A29]`;
-const labelClass = `${ibmPlexSans.className} mb-1 block text-[13px] font-semibold text-[#1d2433]`;
+const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--primary)]`;
+const selectClass = `${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)]`;
 
 export function NewOpportunityDialog() {
   const router = useRouter();
@@ -182,39 +182,39 @@ export function NewOpportunityDialog() {
       <DialogTrigger asChild>
         <button
           type="button"
-          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[#F15A29] bg-[#F15A29] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
+          className={`${ibmPlexSans.className} inline-flex items-center gap-2 rounded-[0.5rem] border border-[var(--primary)] bg-[var(--primary)] px-[0.95rem] py-[0.55rem] text-[14px] font-semibold text-white shadow-none transition-opacity hover:opacity-90`}
         >
           <Plus className="h-4 w-4" strokeWidth={2.3} />
           New Opportunity
         </button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+      <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
         <form onSubmit={onSubmit}>
           <DialogHeader className="px-7 pb-6 pt-7">
-            <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[#1d1d1d]`}>
+            <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[var(--text-primary)]`}>
               New Opportunity
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3.5 px-7 pb-4">
             {!isAuthLoading && session && !canManageOpportunities ? (
-              <p className="rounded-[0.6rem] border border-amber-300/70 bg-amber-50 px-3.5 py-2.5 text-[13px] font-medium text-amber-800">
+              <p className="rounded-[0.6rem] border border-[var(--warning-light)] bg-[var(--warning-light)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--warning)]">
                 Only owner, admin, QS, and project manager roles can create opportunities.
               </p>
             ) : null}
 
             {/* Tender Name */}
             <div>
-              <label htmlFor="oppName" className={labelClass}>Tender Name <span className="text-[#FF4C14]">*</span></label>
+              <FormLabel htmlFor="oppName">Tender Name <span className="text-[var(--orange-primary)]">*</span></FormLabel>
               <Input id="oppName" value={name} onChange={(e) => setName(e.target.value)} placeholder="Hobson Office Upgrade" className={inputClass} required />
             </div>
 
             {/* Client */}
             <div>
-              <label htmlFor="oppClient" className={labelClass}>Client <span className="text-[#FF4C14]">*</span></label>
+              <FormLabel htmlFor="oppClient">Client <span className="text-[var(--orange-primary)]">*</span></FormLabel>
               {isLoadingFormData ? (
-                <p className="text-[14px] font-medium text-[#687996]">Loading clients...</p>
+                <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading clients...</p>
               ) : clients.length > 0 ? (
                 <div className="relative">
                   <select id="oppClient" value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)} className={selectClass} disabled={isAuthLoading} required={clients.length > 0}>
@@ -222,16 +222,16 @@ export function NewOpportunityDialog() {
                     {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name?.trim() || "Unknown Company"}</option>)}
                     <option value={NEW_CLIENT_OPTION}>Add new client</option>
                   </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
               ) : (
-                <p className="text-[14px] font-medium text-[#687996]">No clients yet. Add below.</p>
+                <p className="text-[14px] font-medium text-[var(--text-secondary)]">No clients yet. Add below.</p>
               )}
             </div>
 
             {/* Project Location */}
             <div>
-              <label htmlFor="oppLocation" className={labelClass}>Project Location</label>
+              <FormLabel htmlFor="oppLocation">Project Location</FormLabel>
               <Input id="oppLocation" autoComplete="street-address" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Hobson Street, Auckland" className={inputClass} />
             </div>
 
@@ -239,20 +239,20 @@ export function NewOpportunityDialog() {
             {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingFormData ? (
               <>
                 <div>
-                  <label htmlFor="oppContactName" className={labelClass}>Contact Name <span className="text-[#FF4C14]">*</span></label>
+                  <FormLabel htmlFor="oppContactName">Contact Name <span className="text-[var(--orange-primary)]">*</span></FormLabel>
                   <Input id="oppContactName" value={clientContactName} onChange={(e) => setClientContactName(e.target.value)} placeholder="John Andrews" className={inputClass} required />
                 </div>
                 <div>
-                  <label htmlFor="oppCompanyName" className={labelClass}>Company Name <span className="text-[#FF4C14]">*</span></label>
+                  <FormLabel htmlFor="oppCompanyName">Company Name <span className="text-[var(--orange-primary)]">*</span></FormLabel>
                   <Input id="oppCompanyName" value={clientCompanyName} onChange={(e) => setClientCompanyName(e.target.value)} placeholder="Auckland Developments Ltd" className={inputClass} required />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label htmlFor="oppEmail" className={labelClass}>Email</label>
+                    <FormLabel htmlFor="oppEmail">Email</FormLabel>
                     <Input id="oppEmail" type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="Email@example.com" className={inputClass} />
                   </div>
                   <div>
-                    <label htmlFor="oppPhone" className={labelClass}>Phone</label>
+                    <FormLabel htmlFor="oppPhone">Phone</FormLabel>
                     <Input id="oppPhone" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+64 9 123 4567" className={inputClass} />
                   </div>
                 </div>
@@ -262,45 +262,45 @@ export function NewOpportunityDialog() {
             {/* Due Date + Estimated Value */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="oppDueDate" className={labelClass}>Tender Due Date <span className="text-[#FF4C14]">*</span></label>
+                <FormLabel htmlFor="oppDueDate">Tender Due Date <span className="text-[var(--orange-primary)]">*</span></FormLabel>
                 <Input id="oppDueDate" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} required />
               </div>
               <div>
-                <label htmlFor="oppValue" className={labelClass}>Estimated Value (NZD)</label>
+                <FormLabel htmlFor="oppValue">Estimated Value (NZD)</FormLabel>
                 <Input id="oppValue" type="number" min="0" step="100" value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)} placeholder="500000" className={inputClass} />
               </div>
             </div>
 
             {/* Estimator / Owner */}
             <div>
-              <label htmlFor="oppOwner" className={labelClass}>Estimator / Owner <span className="text-[#FF4C14]">*</span></label>
+              <FormLabel htmlFor="oppOwner">Estimator / Owner <span className="text-[var(--orange-primary)]">*</span></FormLabel>
               {isLoadingFormData ? (
-                <p className="text-[14px] font-medium text-[#687996]">Loading estimators...</p>
+                <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading estimators...</p>
               ) : (
                 <div className="relative">
                   <select id="oppOwner" value={selectedOwnerUserId} onChange={(e) => setSelectedOwnerUserId(e.target.value)} className={selectClass}>
                     {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}
                   </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
               )}
             </div>
 
             {error ? (
-              <p className="rounded-[0.6rem] border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] font-medium text-red-700">{error}</p>
+              <p className="rounded-[0.6rem] border border-[var(--error-light)] bg-[var(--error-light)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--error)]">{error}</p>
             ) : null}
           </div>
 
           <div className="flex items-center justify-end gap-3 px-7 pb-7 pt-5">
             <DialogClose asChild>
-              <button type="button" className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[#D9E3EE] bg-white px-5 text-[14px] font-semibold text-[#475569] transition hover:bg-[#F8FAFC]`}>
+              <button type="button" className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] border border-[var(--border)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]`}>
                 Cancel
               </button>
             </DialogClose>
             <button
               type="submit"
               disabled={!canManageOpportunities || isSubmitting || isAuthLoading || isLoadingFormData}
-              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[#F15A29] px-5 text-[14px] font-semibold text-white transition hover:bg-[#db4d1f] disabled:opacity-60`}
+              className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[var(--primary)] px-5 text-[14px] font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:opacity-60`}
             >
               {isSubmitting ? "Creating..." : "Create Tender"}
             </button>

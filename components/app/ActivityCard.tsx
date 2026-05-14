@@ -51,9 +51,9 @@ export function ActivityCard({ items }: { items: RecentActivityItem[] }) {
       <CardHeader className="px-0 pb-5 pt-0">
         <CardTitle className="text-2xl font-semibold tracking-[-0.02em] text-[var(--text-primary)]">Recent Activity</CardTitle>
       </CardHeader>
-      <CardContent className="rounded-[var(--radius-sm)] border border-[var(--app-border)] bg-[var(--surface-subtle)] p-0">
+      <CardContent className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-subtle)] p-0">
         {items.length > 0 ? (
-          <ul className="divide-y divide-[var(--app-border)]">
+          <ul className="divide-y divide-[var(--border)]">
             {items.map((item) => {
               const { eventLabel, sourceLabel } = parseActivityLabel(item.label);
 

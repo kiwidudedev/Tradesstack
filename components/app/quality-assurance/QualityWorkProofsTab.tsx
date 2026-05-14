@@ -36,18 +36,19 @@ export function QualityWorkProofsTab(props: QualityWorkProofsTabProps) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[260px] flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" strokeWidth={2} />
           <Input
             value={props.workProofSearch}
             onChange={(event) => props.setWorkProofSearch(event.target.value)}
             placeholder="Search work log..."
-            className="h-10 rounded-[12px] border-[#D9E3EE] bg-white pl-11 text-[14px]"
+            size="toolbar"
+            className="pl-11"
           />
         </div>
         <select
           value={props.workProofStatusFilter}
           onChange={(event) => props.setWorkProofStatusFilter(event.target.value)}
-          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}
+          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}
         >
           <option value="All">All Status</option>
           <option value="draft">Draft</option>
@@ -57,7 +58,7 @@ export function QualityWorkProofsTab(props: QualityWorkProofsTabProps) {
         <select
           value={props.workProofTradeFilter}
           onChange={(event) => props.setWorkProofTradeFilter(event.target.value)}
-          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}
+          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}
         >
           {props.workProofTradeOptions.map((item) => (
             <option key={item} value={item}>
@@ -68,7 +69,7 @@ export function QualityWorkProofsTab(props: QualityWorkProofsTabProps) {
         <select
           value={props.workProofCategoryFilter}
           onChange={(event) => props.setWorkProofCategoryFilter(event.target.value)}
-          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}
+          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}
         >
           {props.workProofCategoryOptions.map((item) => (
             <option key={item} value={item}>
@@ -79,7 +80,7 @@ export function QualityWorkProofsTab(props: QualityWorkProofsTabProps) {
         <select
           value={props.workProofAreaFilter}
           onChange={(event) => props.setWorkProofAreaFilter(event.target.value)}
-          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}
+          className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}
         >
           {props.workProofAreaOptions.map((item) => (
             <option key={item} value={item}>
@@ -87,22 +88,22 @@ export function QualityWorkProofsTab(props: QualityWorkProofsTabProps) {
             </option>
           ))}
         </select>
-        <Button type="button" variant="outline" onClick={props.onResetFilters} className="h-10 rounded-[12px] border border-[#D9E3EE] bg-white px-4 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]">
+        <Button type="button" variant="outline" size="toolbar" onClick={props.onResetFilters} className="px-4 font-semibold text-[var(--text-secondary)]">
           Reset
         </Button>
       </div>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className={`${interMedium.className} m-0 text-[16px] font-semibold text-[#0F172A]`}>Work Logged</h3>
+          <h3 className={`${interMedium.className} m-0 text-[16px] font-semibold text-[var(--text-primary)]`}>Work Logged</h3>
         </div>
         {props.filteredWorkProofs.length === 0 ? (
           <QualityEmptyState title="No work logged yet" description="Log completed work with photos, checklist items, and location details." />
         ) : (
-          <div className="overflow-hidden rounded-[18px] border border-[#D9E3EE] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <div className="grid grid-cols-[minmax(260px,1.8fr)_minmax(180px,1fr)_minmax(140px,0.85fr)_minmax(160px,1fr)_minmax(140px,0.85fr)_120px_140px] border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
+          <div className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card-elevated)]">
+            <div className="grid grid-cols-[minmax(260px,1.8fr)_minmax(180px,1fr)_minmax(140px,0.85fr)_minmax(160px,1fr)_minmax(140px,0.85fr)_120px_140px] border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-5 py-3">
               {["Work Log", "Trade / Category", "Area", "Checklist", "Evidence", "Issues", "Status"].map((heading) => (
-                <p key={heading} className={`${interMedium.className} m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
+                <p key={heading} className={`${interMedium.className} m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
                   {heading}
                 </p>
               ))}
@@ -122,57 +123,57 @@ export function QualityWorkProofsTab(props: QualityWorkProofsTabProps) {
                     key={workProof.id}
                     type="button"
                     onClick={() => props.onSelectWorkProof(workProof.id)}
-                    className="grid w-full grid-cols-[minmax(260px,1.8fr)_minmax(180px,1fr)_minmax(140px,0.85fr)_minmax(160px,1fr)_minmax(140px,0.85fr)_120px_140px] items-center border-b border-[#EEF3F8] px-5 py-4 text-left transition hover:bg-[#F8FAFC] last:border-b-0"
+                    className="grid w-full grid-cols-[minmax(260px,1.8fr)_minmax(180px,1fr)_minmax(140px,0.85fr)_minmax(160px,1fr)_minmax(140px,0.85fr)_120px_140px] items-center border-b border-[var(--border-subtle)] px-5 py-4 text-left transition hover:bg-[var(--surface-muted)] last:border-b-0"
                   >
                     <div className="flex min-w-0 items-center gap-3 pr-4">
-                      <div className="h-12 w-12 overflow-hidden rounded-[10px] border border-[#E2E8F1] bg-[#F8FAFC]">
+                      <div className="h-12 w-12 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface-muted)]">
                         {leadPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={leadPhoto} alt={workProof.note || "Work completed"} className="h-full w-full object-cover" />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[#64748B]">
+                          <div className="flex h-full w-full items-center justify-center text-[var(--text-secondary)]">
                             <Camera className="h-4 w-4" />
                           </div>
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className={`${interMedium.className} truncate text-[14px] font-semibold text-[#0F172A]`}>
+                        <p className={`${interMedium.className} truncate text-[14px] font-semibold text-[var(--text-primary)]`}>
                           {workProof.note || "Work completed"}
                         </p>
-                        <p className={`${interMedium.className} mt-1 truncate text-[12px] text-[#6B7C93]`}>
+                        <p className={`${interMedium.className} mt-1 truncate text-[12px] text-[var(--text-secondary)]`}>
                           Created by {createdByName} • {formatTimestamp(workProof.createdAt)}
                         </p>
                       </div>
                     </div>
 
-                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[#0F172A]`}>
+                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[var(--text-primary)]`}>
                       {[workProof.tradeType || "No trade", workProof.workCategory || "No category"].join(" / ")}
                     </p>
-                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[#0F172A]`}>
+                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[var(--text-primary)]`}>
                       {workProof.area || "No area"}
                     </p>
                     <div className="pr-4">
-                      <p className={`${interMedium.className} text-[13px] font-medium text-[#0F172A]`}>
+                      <p className={`${interMedium.className} text-[13px] font-medium text-[var(--text-primary)]`}>
                         {checklistProgress.checked}/{checklistProgress.total || 0}
                       </p>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E6EDF5]">
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-muted)]">
                         <div
-                          className="h-full rounded-full bg-[#1DA1F2]"
+                          className="h-full rounded-full bg-[var(--info)]"
                           style={{ width: `${checklistProgress.total ? (checklistProgress.checked / checklistProgress.total) * 100 : 0}%` }}
                         />
                       </div>
                     </div>
 
                     <div className="pr-4">
-                      <p className={`${interMedium.className} text-[13px] text-[#0F172A]`}>
+                      <p className={`${interMedium.className} text-[13px] text-[var(--text-primary)]`}>
                         {photoCount} photo{photoCount === 1 ? "" : "s"}
                       </p>
-                      <p className={`${interMedium.className} mt-1 text-[11px] text-[#64748B]`}>
+                      <p className={`${interMedium.className} mt-1 text-[11px] text-[var(--text-secondary)]`}>
                         {signoffStatus ? signoffStatus : "No sign-off linked"}
                       </p>
                     </div>
 
-                    <p className={`${interMedium.className} text-[13px] text-[#0F172A]`}>
+                    <p className={`${interMedium.className} text-[13px] text-[var(--text-primary)]`}>
                       {issueCount}
                     </p>
 

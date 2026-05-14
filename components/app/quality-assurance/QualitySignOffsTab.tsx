@@ -32,63 +32,64 @@ export function QualitySignOffsTab(props: QualitySignOffsTabProps) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[260px] flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" strokeWidth={2} />
           <Input
             value={props.signoffSearch}
             onChange={(event) => props.setSignoffSearch(event.target.value)}
             placeholder="Search sign-offs..."
-            className="h-10 rounded-[12px] border-[#D9E3EE] bg-white pl-11 text-[14px]"
+            size="toolbar"
+            className="pl-11"
           />
         </div>
-        <select value={props.signoffStatusFilter} onChange={(event) => props.setSignoffStatusFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}>
+        <select value={props.signoffStatusFilter} onChange={(event) => props.setSignoffStatusFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}>
           <option value="All">All Status</option>
           <option value="Pending">Pending</option>
           <option value="Signed">Signed</option>
           <option value="Rejected">Rejected</option>
         </select>
-        <select value={props.signoffDueFilter} onChange={(event) => props.setSignoffDueFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}>
+        <select value={props.signoffDueFilter} onChange={(event) => props.setSignoffDueFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}>
           <option value="All">Due Date</option>
           <option value="Overdue">Overdue</option>
           <option value="Due Today">Due Today</option>
           <option value="No Due Date">No Due Date</option>
         </select>
-        <select value={props.signoffTypeFilter} onChange={(event) => props.setSignoffTypeFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}>
+        <select value={props.signoffTypeFilter} onChange={(event) => props.setSignoffTypeFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}>
           <option value="All">Type</option>
           <option value="Internal">Internal</option>
           <option value="Client">Client</option>
           <option value="Council">Council</option>
           <option value="Final Handover">Final Handover</option>
         </select>
-        <select value={props.signoffTradeFilter} onChange={(event) => props.setSignoffTradeFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}>
+        <select value={props.signoffTradeFilter} onChange={(event) => props.setSignoffTradeFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}>
           {props.signoffTradeOptions.map((item) => (
             <option key={item} value={item}>
               {item === "All" ? "Trade" : item}
             </option>
           ))}
         </select>
-        <select value={props.signoffAssigneeFilter} onChange={(event) => props.setSignoffAssigneeFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[#D9E3EE] bg-white px-3 text-[14px] text-[#0F172A]`}>
+        <select value={props.signoffAssigneeFilter} onChange={(event) => props.setSignoffAssigneeFilter(event.target.value)} className={`${interMedium.className} h-10 min-w-[150px] rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)]`}>
           {props.signoffAssigneeOptions.map((item) => (
             <option key={item} value={item}>
               {item === "All" ? "People" : item}
             </option>
           ))}
         </select>
-        <Button type="button" variant="outline" onClick={props.onResetFilters} className="h-10 rounded-[12px] border border-[#D9E3EE] bg-white px-4 text-[14px] font-semibold text-[#475569] hover:bg-[#F8FAFC]">
+        <Button type="button" variant="outline" size="toolbar" onClick={props.onResetFilters} className="px-4 font-semibold text-[var(--text-secondary)]">
           Reset
         </Button>
       </div>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className={`${interMedium.className} m-0 text-[16px] font-semibold text-[#0F172A]`}>Sign-Offs</h3>
+          <h3 className={`${interMedium.className} m-0 text-[16px] font-semibold text-[var(--text-primary)]`}>Sign-Offs</h3>
         </div>
         {props.filteredSignoffs.length === 0 ? (
           <QualityEmptyState title="No sign-offs yet" description="Create sign-offs to approve completed work and track accountability." />
         ) : (
-          <div className="overflow-hidden rounded-[18px] border border-[#D9E3EE] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_rgba(15,23,42,0.04)]">
-            <div className="grid grid-cols-[minmax(240px,1.7fr)_minmax(160px,1fr)_140px_minmax(150px,0.9fr)_minmax(150px,0.9fr)_160px] border-b border-[#EEF3F8] bg-[#FCFDFE] px-5 py-3">
+          <div className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-card-elevated)]">
+            <div className="grid grid-cols-[minmax(240px,1.7fr)_minmax(160px,1fr)_140px_minmax(150px,0.9fr)_minmax(150px,0.9fr)_160px] border-b border-[var(--border-subtle)] bg-[var(--surface-muted)] px-5 py-3">
               {["Sign-Off", "Linked Work Logs", "Status", "Requested By", "Approved By", "Date"].map((heading) => (
-                <p key={heading} className={`${interMedium.className} m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#44556C]`}>
+                <p key={heading} className={`${interMedium.className} m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
                   {heading}
                 </p>
               ))}
@@ -104,17 +105,17 @@ export function QualitySignOffsTab(props: QualitySignOffsTabProps) {
                     key={item.id}
                     type="button"
                     onClick={() => props.onSelectSignoff(item.id)}
-                    className="grid w-full grid-cols-[minmax(240px,1.7fr)_minmax(160px,1fr)_140px_minmax(150px,0.9fr)_minmax(150px,0.9fr)_160px] items-center border-b border-[#EEF3F8] px-5 py-4 text-left transition hover:bg-[#F8FAFC] last:border-b-0"
+                    className="grid w-full grid-cols-[minmax(240px,1.7fr)_minmax(160px,1fr)_140px_minmax(150px,0.9fr)_minmax(150px,0.9fr)_160px] items-center border-b border-[var(--border-subtle)] px-5 py-4 text-left transition hover:bg-[var(--surface-muted)] last:border-b-0"
                   >
                     <div className="min-w-0 pr-4">
-                      <p className={`${interMedium.className} truncate text-[14px] font-semibold text-[#0F172A]`}>{item.title}</p>
-                      <p className={`${interMedium.className} mt-1 truncate text-[12px] text-[#6B7C93]`}>{item.type} • {item.location || "No location"}</p>
+                      <p className={`${interMedium.className} truncate text-[14px] font-semibold text-[var(--text-primary)]`}>{item.title}</p>
+                      <p className={`${interMedium.className} mt-1 truncate text-[12px] text-[var(--text-secondary)]`}>{item.type} • {item.location || "No location"}</p>
                     </div>
                     <div className="pr-4">
-                      <p className={`${interMedium.className} text-[13px] text-[#0F172A]`}>
+                      <p className={`${interMedium.className} text-[13px] text-[var(--text-primary)]`}>
                         {linkedCount} linked
                       </p>
-                      <p className={`${interMedium.className} mt-1 truncate text-[11px] text-[#64748B]`}>
+                      <p className={`${interMedium.className} mt-1 truncate text-[11px] text-[var(--text-secondary)]`}>
                         {item.trade || "No trade"}
                       </p>
                     </div>
@@ -123,11 +124,11 @@ export function QualitySignOffsTab(props: QualitySignOffsTabProps) {
                         {item.status}
                       </span>
                     </div>
-                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[#0F172A]`}>{item.assignee || "Unassigned"}</p>
-                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[#0F172A]`}>{approvedBy}</p>
+                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[var(--text-primary)]`}>{item.assignee || "Unassigned"}</p>
+                    <p className={`${interMedium.className} truncate pr-4 text-[13px] text-[var(--text-primary)]`}>{approvedBy}</p>
                     <div>
-                      <p className={`${interMedium.className} text-[13px] text-[#0F172A]`}>{item.signedAt ? formatTimestamp(item.signedAt) : formatTimestamp(item.createdAt)}</p>
-                      {item.dueDate ? <p className={`${interMedium.className} mt-1 text-[11px] text-[#64748B]`}>Due {item.dueDate}</p> : null}
+                      <p className={`${interMedium.className} text-[13px] text-[var(--text-primary)]`}>{item.signedAt ? formatTimestamp(item.signedAt) : formatTimestamp(item.createdAt)}</p>
+                      {item.dueDate ? <p className={`${interMedium.className} mt-1 text-[11px] text-[var(--text-secondary)]`}>Due {item.dueDate}</p> : null}
                     </div>
                   </button>
                 );

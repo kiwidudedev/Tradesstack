@@ -2,7 +2,8 @@
 import { useEffect, useRef } from "react";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -705,7 +706,7 @@ export function QuoteEditorLayout({
 
   return (
     <div className={`${ibmPlexSans.className} -mb-8 w-full space-y-6 bg-[var(--background)]`} aria-busy={isLoadingQuote}>
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title={
           <span className="inline-flex flex-wrap items-center gap-2">
             <span>{headerTitle}</span>
@@ -737,14 +738,14 @@ export function QuoteEditorLayout({
       />
 
       {error ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--error-light)] bg-[var(--error-light)] px-4 py-3 text-sm text-[var(--error)]">
+        <OperationalAlert variant="error">
           {error}
-        </div>
+        </OperationalAlert>
       ) : null}
       {readOnlyMessage ? (
-        <div className="rounded-[var(--radius-md)] border border-[var(--warning-light)] bg-[var(--warning-light)] px-4 py-3 text-sm text-[var(--warning)]">
+        <OperationalAlert variant="warning">
           {readOnlyMessage}
-        </div>
+        </OperationalAlert>
       ) : null}
 
       {isHydratingExistingQuote ? (

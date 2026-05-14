@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
-import { OperationalPageHeader } from "@/components/app/OperationalPageHeader";
+import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
   OperationalTable,
@@ -154,7 +154,7 @@ function resolutionStatusBadge(value: AccountingResolutionPreviewRow["resolution
 }
 
 const SELECT_CLASS =
-  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange-primary)] focus-visible:ring-offset-2";
+  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2";
 
 function findActiveRule(
   mappingRules: OrganizationCostCodeMappingRuleRow[],
@@ -750,7 +750,7 @@ export function CompanyCostCodesWorkspace({
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
-      <OperationalPageHeader
+      <OperationalModuleHeader
         title="Cost Codes"
         description="Configure the company cost codes Tradesstack should use for accounting exports, default routing, and advanced mapping rules."
       />
