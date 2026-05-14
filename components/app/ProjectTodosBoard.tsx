@@ -22,6 +22,13 @@ import { TodosSectionSkeleton } from "@/components/app/ProjectRouteSkeletons";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import {
+  createTask as createSharedTask,
+  getTask as getSharedTask,
+  listTasks as listSharedTasks,
+  updateTask as updateSharedTask,
+} from "@/lib/tasks/service";
+import type { TaskPayload, TaskStatus } from "@/lib/tasks/types";
 import { cn } from "@/lib/utils";
 
 type TodoStatus = "To Do" | "In Progress" | "Need Review" | "Done";
@@ -129,6 +136,29 @@ function normalizeSourceType(value: unknown): TodoSourceType {
     return "quality_inspection_item";
   }
   return null;
+}
+
+function mapTaskPayloadToTodoRow(task: TaskPayload): TodoRow {
+  const status = normalizeStatus(task.status);
+
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    dueDate: task.dueDate,
+    dueAt: task.dueAt,
+    isCompleted: status === "Done" || Boolean(task.completedAt),
+    assignedUserId: task.assignedUserId,
+    sourceType: normalizeSourceType(task.sourceType),
+    linkedIssueId: task.linkedIssueId,
+    linkedInspectionId: task.linkedInspectionId,
+    linkedInspectionItemId: task.linkedInspectionItemId,
+    trade: task.trade,
+    priority: normalizePriority(task.priority),
+    status,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  };
 }
 
 function formatDueDate(value: string | null) {
@@ -400,7 +430,7 @@ export function ProjectTodosBoard() {
   );
   const statusesToLoad = useMemo(() => {
     if (statusFilter === "Done") {
-      return ["Done", "Complete", "Archived"];
+      return ["Done", "Archived"];
     }
     if (statusFilter === "To Do") {
       return ["To Do"];
@@ -502,8 +532,6 @@ export function ProjectTodosBoard() {
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const todosTable = (supabase as any).from("project_job_todos");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const usersTable = (supabase as any).from("organization_members");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const issuesTable = (supabase as any).from("project_quality_issues");
@@ -513,17 +541,11 @@ export function ProjectTodosBoard() {
       const inspectionItemsTable = (supabase as any).from("project_quality_inspection_items");
 
       const [todosResult, usersResult, issuesResult, inspectionsResult, inspectionItemsResult, statsSummaryResult] = await Promise.all([
-        todosTable
-          .select(
-            "id, title, description, due_date, due_at, is_completed, assigned_user_id, source_type, linked_issue_id, linked_inspection_id, linked_inspection_item_id, trade, priority, status, created_at, updated_at"
-          )
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .in("status", statusesToLoad)
-          .order("due_at", { ascending: true, nullsFirst: false })
-          .order("due_date", { ascending: true, nullsFirst: false })
-          .order("updated_at", { ascending: false })
-          .limit(1000),
+        listSharedTasks(supabase, {
+          projectId: projectRow.id,
+          statuses: statusesToLoad as TaskStatus[],
+          includeArchived: statusFilter === "Done",
+        }),
         usersTable
           .select("user_id, display_name")
           .eq("organization_id", resolvedOrganizationId)
@@ -545,50 +567,29 @@ export function ProjectTodosBoard() {
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
           .limit(1500),
-        todosTable
-          .select("status, due_date, due_at")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .in("status", ["To Do", "In Progress", "Done", "Complete", "Archived"]),
+        listSharedTasks(supabase, {
+          projectId: projectRow.id,
+          statuses: ["To Do", "In Progress", "Done", "Archived"],
+          includeArchived: true,
+        }),
       ]);
 
       if (
-        todosResult.error ||
         usersResult.error ||
         issuesResult.error ||
         inspectionsResult.error ||
-        inspectionItemsResult.error ||
-        statsSummaryResult.error
+        inspectionItemsResult.error
       ) {
         throw new Error(
-          todosResult.error?.message ??
-            usersResult.error?.message ??
+          usersResult.error?.message ??
             issuesResult.error?.message ??
             inspectionsResult.error?.message ??
             inspectionItemsResult.error?.message ??
-            statsSummaryResult.error?.message ??
             "Unable to load tasks."
         );
       }
 
-      const normalizedTodos: TodoRow[] = ((todosResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: String(row.id),
-        title: String(row.title ?? ""),
-        description: String(row.description ?? ""),
-        dueDate: typeof row.due_date === "string" ? row.due_date : null,
-        dueAt: typeof row.due_at === "string" ? row.due_at : null,
-        isCompleted: Boolean(row.is_completed),
-        assignedUserId: typeof row.assigned_user_id === "string" ? row.assigned_user_id : null,
-        sourceType: normalizeSourceType(row.source_type),
-        linkedIssueId: typeof row.linked_issue_id === "string" ? row.linked_issue_id : null,
-        linkedInspectionId: typeof row.linked_inspection_id === "string" ? row.linked_inspection_id : null,
-        linkedInspectionItemId: typeof row.linked_inspection_item_id === "string" ? row.linked_inspection_item_id : null,
-        trade: String(row.trade ?? ""),
-        priority: normalizePriority(row.priority),
-        status: normalizeStatus(row.status),
-        createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
-        updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString(),
-      }));
+      const normalizedTodos = todosResult.map(mapTaskPayloadToTodoRow);
 
       const normalizedUsers: OrganizationUserOption[] = ((usersResult.data ?? []) as Array<Record<string, unknown>>)
         .map((row) => ({
@@ -616,11 +617,11 @@ export function ProjectTodosBoard() {
           inspectionId: String(row.inspection_id ?? ""),
           label: String(row.label ?? ""),
         }));
-      const statsRows = (statsSummaryResult.data ?? []) as Array<Record<string, unknown>>;
-      const nextStats = statsRows.reduce<TaskStats>((summary, row) => {
-        const status = normalizeStatus(row.status);
-        const dueAt = typeof row.due_at === "string" ? row.due_at : null;
-        const dueDate = typeof row.due_date === "string" ? row.due_date : null;
+      const nextStats = statsSummaryResult.reduce<TaskStats>((summary, task) => {
+        const row = mapTaskPayloadToTodoRow(task);
+        const status = row.status;
+        const dueAt = row.dueAt;
+        const dueDate = row.dueDate;
 
         if (status === "To Do") {
           summary.todoCount += 1;
@@ -844,34 +845,20 @@ export function ProjectTodosBoard() {
     setError(null);
     setIsSaving(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const todosTable = (supabase as any).from("project_job_todos");
       const dueAt = buildDueAt(newDueDate, newDueTime);
-      const { data: insertedTask, error: insertError } = await todosTable
-        .insert({
-          organization_id: context.organizationId,
-          project_id: context.projectId,
-          created_by: session.id,
-          title: newTitle.trim(),
-          description: newDescription.trim(),
-          due_date: newDueDate || null,
-          due_at: dueAt,
-          assigned_user_id: newAssignedUserId || null,
-          trade: newTrade.trim(),
-          priority: newPriority,
-          status: newStatus,
-          is_completed: newStatus === "Done",
-          source_type: null,
-          source_id: null,
-          linked_issue_id: newLinkedIssueId || null,
-          linked_inspection_id: newLinkedInspectionId || null,
-        })
-        .select("id")
-        .single();
-
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
+      const insertedTask = await createSharedTask(supabase, {
+        projectId: context.projectId,
+        title: newTitle.trim(),
+        description: newDescription.trim(),
+        dueDate: newDueDate || null,
+        dueAt,
+        assignedUserId: newAssignedUserId || null,
+        trade: newTrade.trim(),
+        priority: newPriority,
+        status: newStatus,
+        linkedIssueId: newLinkedIssueId || null,
+        linkedInspectionId: newLinkedInspectionId || null,
+      });
 
       if (newPdfDataUrl && insertedTask?.id) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -909,30 +896,24 @@ export function ProjectTodosBoard() {
     setError(null);
     setIsSaving(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const todosTable = (supabase as any).from("project_job_todos");
-      const dueAt = buildDueAt(detailDueDate, detailDueTime);
-      const { error: updateError } = await todosTable
-        .update({
-          title: detailTitle.trim(),
-          description: detailDescription.trim(),
-          due_date: detailDueDate || null,
-          due_at: dueAt,
-          assigned_user_id: detailAssignedUserId || null,
-          trade: detailTrade.trim(),
-          priority: detailPriority,
-          status: detailStatus,
-          is_completed: detailStatus === "Done",
-          linked_issue_id: detailLinkedIssueId || null,
-          linked_inspection_id: detailLinkedInspectionId || null,
-        })
-        .eq("id", selectedTask.id)
-        .eq("organization_id", context.organizationId)
-        .eq("project_id", context.projectId);
-
-      if (updateError) {
-        throw new Error(updateError.message);
+      const existingTask = await getSharedTask(supabase, selectedTask.id);
+      if (existingTask.projectId !== context.projectId) {
+        throw new Error("Task does not belong to this project.");
       }
+
+      const dueAt = buildDueAt(detailDueDate, detailDueTime);
+      await updateSharedTask(supabase, selectedTask.id, {
+        title: detailTitle.trim(),
+        description: detailDescription.trim(),
+        dueDate: detailDueDate || null,
+        dueAt,
+        assignedUserId: detailAssignedUserId || null,
+        trade: detailTrade.trim(),
+        priority: detailPriority,
+        status: detailStatus,
+        linkedIssueId: detailLinkedIssueId || null,
+        linkedInspectionId: detailLinkedInspectionId || null,
+      });
 
       await loadData({ showLoading: false });
       if (detailStatus === "Done") {
