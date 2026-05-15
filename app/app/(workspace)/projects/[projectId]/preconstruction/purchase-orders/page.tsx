@@ -20,6 +20,11 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { formatMoneyOperational } from "@/lib/format/currency";
+import {
+  createPurchaseOrderDraft,
+  listPurchaseOrders,
+  updatePurchaseOrderStatus as updatePurchaseOrderStatusMutation,
+} from "@/lib/purchase-orders/service";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
 
@@ -138,20 +143,26 @@ export default function ProjectVariationRegisterPage() {
           throw new Error(projectError?.message ?? "Project not found.");
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
-
-        const { data: purchaseOrdersRaw, error: purchaseOrdersError } = await purchaseOrdersTable
-          .select("id, purchase_order_number, purchase_order_title, issued_to_label, status, requested_date, due_date, subtotal, margin_percent, discount_amount, contingency_amount, total_purchase_order_price, updated_at")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .order("updated_at", { ascending: false });
-
-        if (purchaseOrdersError) {
-          throw new Error(purchaseOrdersError.message);
-        }
-
-        const purchaseOrderRows = (purchaseOrdersRaw ?? []) as PurchaseOrderRegisterRow[];
+        const purchaseOrderRows = (
+          await listPurchaseOrders(supabase, {
+            organizationId: resolvedOrganizationId,
+            projectId: projectRow.id,
+          })
+        ).map((row) => ({
+          id: row.id,
+          purchase_order_number: row.purchaseOrderNumber,
+          purchase_order_title: row.purchaseOrderTitle,
+          issued_to_label: row.issuedToLabel,
+          status: row.status as PurchaseOrderStatus,
+          requested_date: row.requestedDate,
+          due_date: row.dueDate,
+          subtotal: row.subtotal,
+          margin_percent: row.marginPercent,
+          discount_amount: row.discountAmount,
+          contingency_amount: row.contingencyAmount,
+          total_purchase_order_price: row.totalPurchaseOrderPrice,
+          updated_at: row.updatedAt,
+        })) as PurchaseOrderRegisterRow[];
 
         if (cancelled) {
           return;
@@ -196,22 +207,12 @@ export default function ProjectVariationRegisterPage() {
     setError(null);
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: createdRows, error: createError } = await (supabase as any).rpc("create_project_purchase_order_draft", {
-        p_organization_id: organizationId,
-        p_project_id: projectId,
-        p_title: "New Purchase Order",
-        p_origin: "Material Supply",
+      const createdRow = await createPurchaseOrderDraft(supabase, {
+        organizationId,
+        projectId,
+        title: "New Purchase Order",
+        origin: "Material Supply",
       });
-
-      if (createError) {
-        throw new Error(createError.message);
-      }
-
-      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
-      if (!createdRow?.id) {
-        throw new Error("Purchase order was created but no identifier was returned.");
-      }
 
       router.push(`/app/projects/${routeProjectSlug}/preconstruction/purchase-orders/${createdRow.id}`);
     } catch (createErr) {
@@ -222,10 +223,23 @@ export default function ProjectVariationRegisterPage() {
 
   const updatePurchaseOrderStatus = useCallback(async (purchaseOrderId: string, newStatus: PurchaseOrderStatus) => {
     if (!supabase || !organizationId || !canManagePurchaseOrders) return;
+    if (!projectId) return;
+
+    const previousRows = purchaseOrderRows;
     setPurchaseOrderRows((prev) => prev.map((r) => r.id === purchaseOrderId ? { ...r, status: newStatus } : r));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("project_purchase_orders").update({ status: newStatus }).eq("id", purchaseOrderId).eq("organization_id", organizationId);
-  }, [canManagePurchaseOrders, organizationId, supabase]);
+
+    try {
+      await updatePurchaseOrderStatusMutation(supabase, {
+        organizationId,
+        projectId,
+        purchaseOrderId,
+        status: newStatus,
+      });
+    } catch (statusError) {
+      setPurchaseOrderRows(previousRows);
+      setError(statusError instanceof Error ? statusError.message : "Unable to update purchase order status.");
+    }
+  }, [canManagePurchaseOrders, organizationId, projectId, purchaseOrderRows, supabase]);
 
   const ALL_STATUSES: PurchaseOrderStatus[] = ["Draft", "Pending Approval", "Approved", "Issued", "Received", "Invoiced", "Cancelled"];
 

@@ -23,6 +23,17 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
+import {
+  createPurchaseOrderDraft,
+  getProjectPurchaseOrderSummary,
+  getPurchaseOrder,
+  listProjectMembers,
+  listPurchaseOrderAssignments,
+  listPurchaseOrderAttachments,
+  listPurchaseOrderInvoiceMatches,
+  listPurchaseOrderLineItems,
+  savePurchaseOrderDraft,
+} from "@/lib/purchase-orders/service";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
@@ -142,14 +153,6 @@ interface VariationRow {
   notes: string;
 }
 
-interface PurchaseOrderSummaryRow {
-  total_value: number | null;
-  draft_count: number | null;
-  awaiting_client_count: number | null;
-  approved_count: number | null;
-  invoice_ready_count: number | null;
-}
-
 interface PurchaseOrderInvoiceMatchRow {
   id: string;
   organization_id: string;
@@ -197,8 +200,6 @@ type MatchApprovalDraft = {
   approvalNotes: string;
   approvalChecks: SupplierInvoiceApprovalChecks;
 };
-
-type RpcResultRow = Record<string, unknown>;
 
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approved", "Issued", "Received", "Invoiced", "Cancelled"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work", "Plant / Equipment Hire", "Site Expense", "Freight / Delivery", "Variation Order", "General Purchase", "Other"];
@@ -448,23 +449,16 @@ export default function ProjectVariationsPage() {
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error: summaryError } = await (supabase as any).rpc("get_project_purchase_order_summary", {
-      p_organization_id: nextOrganizationId,
-      p_project_id: nextProjectId,
+    const row = await getProjectPurchaseOrderSummary(supabase, {
+      organizationId: nextOrganizationId,
+      projectId: nextProjectId,
     });
-
-    if (summaryError) {
-      throw new Error(summaryError.message);
-    }
-
-    const row = (Array.isArray(data) ? data[0] : null) as PurchaseOrderSummaryRow | null;
     setSummary({
-      totalValue: Number(row?.total_value ?? 0),
-      draft: Number(row?.draft_count ?? 0),
-      awaitingClient: Number(row?.awaiting_client_count ?? 0),
-      approved: Number(row?.approved_count ?? 0),
-      invoiceReady: Number(row?.invoice_ready_count ?? 0),
+      totalValue: Number(row.totalValue ?? 0),
+      draft: Number(row.draftCount ?? 0),
+      awaitingClient: Number(row.awaitingClientCount ?? 0),
+      approved: Number(row.approvedCount ?? 0),
+      invoiceReady: Number(row.invoiceReadyCount ?? 0),
     });
   }, [supabase]);
 
@@ -477,88 +471,52 @@ export default function ProjectVariationsPage() {
     }
     hydratingPurchaseOrderIdsRef.current.add(purchaseOrderId);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lineItemsTable = (supabase as any).from("project_purchase_order_line_items");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const attachmentsTable = (supabase as any).from("project_purchase_order_attachments");
-
     try {
-      const [{ data: purchaseOrderRowRaw, error: purchaseOrderError }, { data: lineRowsRaw }, { data: attachmentRowsRaw }] = await Promise.all([
-        purchaseOrdersTable
-          .select(
-            "id, updated_at, purchase_order_number, purchase_order_title, status, origin, supplier_id, issued_to_label, supplier_contact, supplier_name_snapshot, supplier_email_snapshot, supplier_phone_snapshot, requested_by, requested_date, due_date, total_purchase_order_price, sent_to_client_at, approved_at, invoice_ready, margin_percent, discount_amount, contingency_amount, gst_percent, include_margin_in_export, include_discount_in_export, include_contingency_in_export, notes"
-          )
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("id", purchaseOrderId)
-          .maybeSingle(),
-        lineItemsTable
-          .select("id, purchase_order_id, line_uid, cost_item_id, source_cost_item_id, section, description, quantity, unit, rate, source_time_sheet_entry_id")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("purchase_order_id", purchaseOrderId)
-          .order("sort_order", { ascending: true }),
-        attachmentsTable
-          .select("id, purchase_order_id, file_name, file_kind, storage_path, external_url")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("purchase_order_id", purchaseOrderId)
-          .order("created_at", { ascending: true }),
+      const [purchaseOrderRowRaw, lineRowsRaw, attachmentRowsRaw] = await Promise.all([
+        getPurchaseOrder(supabase, {
+          organizationId: resolvedOrganizationId,
+          purchaseOrderId,
+        }),
+        listPurchaseOrderLineItems(supabase, {
+          organizationId: resolvedOrganizationId,
+          purchaseOrderId,
+        }),
+        listPurchaseOrderAttachments(supabase, {
+          organizationId: resolvedOrganizationId,
+          purchaseOrderId,
+        }),
       ]);
 
-      if (purchaseOrderError) {
-        throw new Error(purchaseOrderError.message);
-      }
       if (!purchaseOrderRowRaw) {
         return;
       }
 
-      const row = purchaseOrderRowRaw as VariationRow;
-      const lineRows = (lineRowsRaw ?? []) as Array<{
-        id: string;
-        purchase_order_id: string;
-        line_uid: string | null;
-        cost_item_id: string | null;
-        source_cost_item_id: string | null;
-        section: string;
-        description: string;
-        quantity: number;
-        unit: string;
-        rate: number;
-        source_time_sheet_entry_id: string | null;
-      }>;
-      const attachmentRows = (attachmentRowsRaw ?? []) as Array<{
-        id: string;
-        purchase_order_id: string;
-        file_name: string;
-        file_kind: string;
-        storage_path: string | null;
-        external_url: string | null;
-      }>;
+      const row = purchaseOrderRowRaw;
 
-      const hydratedLines = lineRows.length > 0
-        ? lineRows.map((lineRow) => ({
+      const hydratedLines = lineRowsRaw.length > 0
+        ? lineRowsRaw.map((lineRow) => ({
             id: lineRow.id,
-            lineUid: lineRow.line_uid ?? crypto.randomUUID(),
-            costItemId: lineRow.cost_item_id ?? null,
-            sourceCostItemId: lineRow.source_cost_item_id ?? null,
+            lineUid: lineRow.lineUid ?? crypto.randomUUID(),
+            costItemId: lineRow.costItemId ?? null,
+            sourceCostItemId: lineRow.sourceCostItemId ?? null,
             section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
             description: lineRow.description ?? "",
             quantity: Number(lineRow.quantity ?? 0),
             unit: lineRow.unit ?? "",
             rate: Number(lineRow.rate ?? 0),
-            sourceTimeSheetEntryId: lineRow.source_time_sheet_entry_id ?? null,
+            sourceTimeSheetEntryId: lineRow.sourceTimeSheetEntryId ?? null,
           }))
         : [makeDefaultCostLine("Labour")];
 
-      const hydratedAttachments: AttachmentItem[] = attachmentRows.map((attachmentRow) => ({
+      const hydratedAttachments: AttachmentItem[] = attachmentRowsRaw.map((attachmentRow) => ({
         id: attachmentRow.id,
-        name: attachmentRow.file_name ?? "",
+        name: attachmentRow.fileName ?? "",
         type:
-          attachmentRow.file_kind === "Drawing" || attachmentRow.file_kind === "Email" || attachmentRow.file_kind === "Site Instruction"
-            ? (attachmentRow.file_kind as AttachmentItem["type"])
+          attachmentRow.fileKind === "Drawing" || attachmentRow.fileKind === "Email" || attachmentRow.fileKind === "Site Instruction"
+            ? (attachmentRow.fileKind as AttachmentItem["type"])
             : "Email",
-        storagePath: attachmentRow.storage_path ?? null,
-        externalUrl: attachmentRow.external_url ?? null,
+        storagePath: attachmentRow.storagePath ?? null,
+        externalUrl: attachmentRow.externalUrl ?? null,
       }));
 
       setVariations((current) =>
@@ -567,28 +525,28 @@ export default function ProjectVariationsPage() {
             ? variation
             : {
                 ...variation,
-                updatedAt: row.updated_at ?? null,
-                code: row.purchase_order_number,
-                title: row.purchase_order_title,
+                updatedAt: row.updatedAt ?? null,
+                code: row.purchaseOrderNumber,
+                title: row.purchaseOrderTitle,
                 status: normalizeStatus(row.status),
                 origin: normalizeOrigin(row.origin),
-                issuedToSupplierId: row.supplier_id ?? "",
-                issuedToLabel: row.issued_to_label ?? row.supplier_name_snapshot ?? "",
-                supplierContact: row.supplier_contact ?? "",
-                requestedBy: row.requested_by ?? "",
-                requestedDate: row.requested_date ?? "",
-                dueDate: row.due_date ?? "",
-                clientSentAt: row.sent_to_client_at,
-                approvedAt: row.approved_at,
-                invoiceReady: Boolean(row.invoice_ready),
-                marginPercent: String(row.margin_percent ?? 0),
-                discountAmount: String(row.discount_amount ?? 0),
-                contingencyAmount: String(row.contingency_amount ?? 0),
-                gstPercent: String(row.gst_percent ?? 15),
-                includeMarginInExport: row.include_margin_in_export ?? true,
-                includeDiscountInExport: Boolean(row.include_discount_in_export),
-                includeContingencyInExport: Boolean(row.include_contingency_in_export),
-                totalPrice: Number(row.total_purchase_order_price ?? 0),
+                issuedToSupplierId: row.supplierId ?? "",
+                issuedToLabel: row.issuedToLabel ?? row.supplierNameSnapshot ?? "",
+                supplierContact: row.supplierContact ?? "",
+                requestedBy: row.requestedBy ?? "",
+                requestedDate: row.requestedDate ?? "",
+                dueDate: row.dueDate ?? "",
+                clientSentAt: row.sentToClientAt,
+                approvedAt: row.approvedAt,
+                invoiceReady: Boolean(row.invoiceReady),
+                marginPercent: String(row.marginPercent ?? 0),
+                discountAmount: String(row.discountAmount ?? 0),
+                contingencyAmount: String(row.contingencyAmount ?? 0),
+                gstPercent: String(row.gstPercent ?? 15),
+                includeMarginInExport: row.includeMarginInExport ?? true,
+                includeDiscountInExport: Boolean(row.includeDiscountInExport),
+                includeContingencyInExport: Boolean(row.includeContingencyInExport),
+                totalPrice: Number(row.totalPurchaseOrderPrice ?? 0),
                 notes: row.notes ?? "",
                 costLines: hydratedLines,
                 attachments: hydratedAttachments,
@@ -871,16 +829,14 @@ export default function ProjectVariationsPage() {
 
     const loadInvoiceMatches = async () => {
       const [
-        { data: matchRowsRaw, error: matchRowsError },
+        matchRowsRaw,
         { data: canReviewData, error: canReviewError },
         { data: memberRowsRaw, error: memberRowsError },
       ] = await Promise.all([
-        supabase
-          .from("supplier_invoice_purchase_order_matches")
-          .select("*")
-          .eq("organization_id", organizationId)
-          .eq("purchase_order_id", activeVariation.id)
-          .order("created_at", { ascending: true }),
+        listPurchaseOrderInvoiceMatches(supabase, {
+          organizationId,
+          purchaseOrderId: activeVariation.id,
+        }),
         supabase.rpc("has_org_permission", {
           p_organization_id: organizationId,
           p_permission_key: "supplier_invoices.review",
@@ -906,14 +862,24 @@ export default function ProjectVariationsPage() {
         return;
       }
 
-      if (matchRowsError) {
-        if (!cancelled) {
-          setError(matchRowsError.message);
-        }
-        return;
-      }
-
-      const matchRows = (matchRowsRaw ?? []) as PurchaseOrderInvoiceMatchRow[];
+      const matchRows = matchRowsRaw.map((match) => ({
+        id: match.id,
+        organization_id: match.organizationId,
+        supplier_invoice_id: match.supplierInvoiceId,
+        purchase_order_id: match.purchaseOrderId,
+        matched_amount: match.matchedAmount,
+        match_status: match.matchStatus,
+        confidence_score: match.confidenceScore,
+        match_basis: match.matchBasis,
+        approval_status: match.approvalStatus,
+        approved_by_user_id: match.approvedByUserId,
+        approved_at: match.approvedAt,
+        approval_notes: match.approvalNotes,
+        approval_checks_json: match.approvalChecksJson,
+        created_by: match.createdBy,
+        created_at: match.createdAt,
+        updated_at: match.updatedAt,
+      })) as PurchaseOrderInvoiceMatchRow[];
       if (cancelled) {
         return;
       }
@@ -1252,30 +1218,40 @@ export default function ProjectVariationsPage() {
 
       try {
         const [projectMembersResult, assignmentsResult] = await Promise.all([
-          supabase.rpc("list_project_members", {
-            p_organization_id: organizationId,
-            p_project_id: dbProjectId,
+          listProjectMembers(supabase, {
+            organizationId,
+            projectId: dbProjectId,
           }),
-          supabase.rpc("list_purchase_order_assignments", {
-            p_organization_id: organizationId,
-            p_project_id: dbProjectId,
-            p_purchase_order_id: activeVariation.id,
+          listPurchaseOrderAssignments(supabase, {
+            organizationId,
+            projectId: dbProjectId,
+            purchaseOrderId: activeVariation.id,
           }),
         ]);
-
-        if (projectMembersResult.error || assignmentsResult.error) {
-          throw new Error(projectMembersResult.error?.message ?? assignmentsResult.error?.message ?? "Unable to load assigned workers.");
-        }
 
         if (cancelled) {
           return;
         }
 
-        const nextProjectMembers = ((projectMembersResult.data ?? []) as ProjectMemberListItem[]).filter((member) => member.is_active);
+        const nextProjectMembers = projectMembersResult
+          .map((member) => ({
+            id: member.id,
+            organization_id: member.organizationId,
+            project_id: member.projectId,
+            organization_member_id: member.organizationMemberId,
+            is_active: member.isActive,
+            created_at: member.createdAt,
+            updated_at: member.updatedAt,
+            role: member.role,
+            user_id: member.userId,
+            display_name: member.displayName,
+            avatar_path: member.avatarPath,
+          }))
+          .filter((member) => member.is_active) as ProjectMemberListItem[];
         const nextAssignedMemberIds = new Set(
-          ((assignmentsResult.data ?? []) as Array<{ organization_member_id: string; is_active: boolean }>)
-            .filter((assignment) => assignment.is_active)
-            .map((assignment) => assignment.organization_member_id)
+          assignmentsResult
+            .filter((assignment) => assignment.isActive)
+            .map((assignment) => assignment.organizationMemberId)
         );
 
         setProjectMembers(nextProjectMembers);
@@ -1340,31 +1316,21 @@ export default function ProjectVariationsPage() {
         return;
       }
       // Use atomic DB-side draft creation to prevent purchase_order_number races under concurrency.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: createdRows, error: createError } = await (supabase as any).rpc("create_project_purchase_order_draft", {
-        p_organization_id: organizationId,
-        p_project_id: dbProjectId,
-        p_title: "New Purchase Order",
-        p_origin: "Material Supply",
+      const createdRow = await createPurchaseOrderDraft(supabase, {
+        organizationId,
+        projectId: dbProjectId,
+        title: "New Purchase Order",
+        origin: "Material Supply",
       });
-
-      if (createError) {
-        throw new Error(createError.message);
-      }
-
-      const createdRow = Array.isArray(createdRows) ? createdRows[0] : null;
-      if (!createdRow?.id) {
-        throw new Error("Purchase order was created but no identifier was returned.");
-      }
-      if (typeof createdRow.updated_at !== "string" || createdRow.updated_at.length === 0) {
+      if (typeof createdRow.updatedAt !== "string" || createdRow.updatedAt.length === 0) {
         throw new Error("Purchase order was created but no updated timestamp was returned.");
       }
 
       const nextVariation = makeDefaultVariation(variations.length, jobCode);
       nextVariation.id = createdRow.id;
-      nextVariation.updatedAt = createdRow.updated_at;
-      nextVariation.code = createdRow.purchase_order_number || `${jobCode}-PO-00`;
-      nextVariation.title = createdRow.purchase_order_title || "New Purchase Order";
+      nextVariation.updatedAt = createdRow.updatedAt;
+      nextVariation.code = createdRow.purchaseOrderNumber || `${jobCode}-PO-00`;
+      nextVariation.title = createdRow.purchaseOrderTitle || "New Purchase Order";
       nextVariation.status = normalizeStatus(createdRow.status);
       nextVariation.origin = normalizeOrigin(createdRow.origin);
 
@@ -1439,7 +1405,7 @@ export default function ProjectVariationsPage() {
         next.delete(purchaseOrderId);
         return next;
       });
-      if (dbProjectId) {
+      if (dbProjectId && organizationId) {
         await refreshSummary(organizationId, dbProjectId);
       }
 
@@ -1681,49 +1647,48 @@ export default function ProjectVariationsPage() {
       const supplierNameSnapshot = resolvedSupplier ? issuedToLabel : "";
       const supplierEmailSnapshot = resolvedSupplier?.email?.trim() || "";
       const supplierPhoneSnapshot = resolvedSupplier?.phone?.trim() || "";
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: saveRows, error: saveError } = await (supabase as any).rpc("save_project_purchase_order_draft", {
-        p_organization_id: organizationId,
-        p_project_id: dbProjectId,
-        p_purchase_order_id: activeVariation.id,
-        p_expected_updated_at: activeVariation.updatedAt,
-        p_purchase_order_title: activeVariation.title.trim() || activeVariation.code,
-        p_purchase_order_number: activeVariation.code,
-        p_status: activeVariation.status,
-        p_origin: activeVariation.origin,
-        p_supplier_id: resolvedSupplierId,
-        p_issued_to_label: issuedToLabel,
-        p_supplier_contact: supplierContact,
-        p_supplier_name_snapshot: supplierNameSnapshot,
-        p_supplier_email_snapshot: supplierEmailSnapshot,
-        p_supplier_phone_snapshot: supplierPhoneSnapshot,
-        p_requested_by: activeVariation.requestedBy,
-        p_requested_date: activeVariation.requestedDate || null,
-        p_due_date: activeVariation.dueDate || null,
-        p_sent_to_client_at: activeVariation.clientSentAt || null,
-        p_approved_at: activeVariation.approvedAt || null,
-        p_invoice_ready: activeVariation.invoiceReady,
-        p_notes: activeVariation.notes,
-        p_margin_percent: 0,
-        p_discount_amount: 0,
-        p_contingency_amount: 0,
-        p_gst_percent: Number(numberOrZero(activeVariation.gstPercent).toFixed(3)),
-        p_include_margin_in_export: false,
-        p_include_discount_in_export: false,
-        p_include_contingency_in_export: false,
-        p_line_items: activeVariation.costLines.map((line) => ({
+      const savedRow = await savePurchaseOrderDraft(supabase, {
+        organizationId,
+        projectId: dbProjectId,
+        purchaseOrderId: activeVariation.id,
+        expectedUpdatedAt: activeVariation.updatedAt,
+        purchaseOrderTitle: activeVariation.title.trim() || activeVariation.code,
+        purchaseOrderNumber: activeVariation.code,
+        status: activeVariation.status,
+        origin: activeVariation.origin,
+        supplierId: resolvedSupplierId,
+        issuedToLabel,
+        supplierContact,
+        supplierNameSnapshot,
+        supplierEmailSnapshot,
+        supplierPhoneSnapshot,
+        requestedBy: activeVariation.requestedBy,
+        requestedDate: activeVariation.requestedDate || null,
+        dueDate: activeVariation.dueDate || null,
+        sentToClientAt: activeVariation.clientSentAt || null,
+        approvedAt: activeVariation.approvedAt || null,
+        invoiceReady: activeVariation.invoiceReady,
+        notes: activeVariation.notes,
+        marginPercent: 0,
+        discountAmount: 0,
+        contingencyAmount: 0,
+        gstPercent: Number(numberOrZero(activeVariation.gstPercent).toFixed(3)),
+        includeMarginInExport: false,
+        includeDiscountInExport: false,
+        includeContingencyInExport: false,
+        lineItems: activeVariation.costLines.map((line) => ({
           id: line.id,
-          line_uid: line.lineUid ?? null,
-          cost_item_id: line.costItemId ?? null,
+          lineUid: line.lineUid ?? null,
+          costItemId: line.costItemId ?? null,
           section: line.section,
           description: line.description,
           quantity: Number(line.quantity),
           unit: line.unit,
           rate: Number(line.rate),
-          source_cost_item_id: line.sourceCostItemId ?? null,
-          source_time_sheet_entry_id: line.sourceTimeSheetEntryId ?? null,
+          sourceCostItemId: line.sourceCostItemId ?? null,
+          sourceTimeSheetEntryId: line.sourceTimeSheetEntryId ?? null,
         })),
-        p_attachments: activeVariation.attachments.map((attachment) => ({
+        attachments: activeVariation.attachments.map((attachment) => ({
           id: attachment.id,
           name: attachment.name,
           type: attachment.type,
@@ -1731,21 +1696,15 @@ export default function ProjectVariationsPage() {
           externalUrl: attachment.externalUrl,
         })),
       });
-
-      if (saveError) {
-        throw new Error(saveError.message);
-      }
-
-      const savedRow = (Array.isArray(saveRows) ? saveRows[0] : null) as RpcResultRow | null;
       const savedPurchaseOrderId = typeof savedRow?.id === "string" ? savedRow.id : null;
       if (!savedPurchaseOrderId) {
         throw new Error("Purchase order was saved but no identifier was returned.");
       }
-      const nextUpdatedAt = typeof savedRow?.updated_at === "string" ? savedRow.updated_at : null;
+      const nextUpdatedAt = typeof savedRow?.updatedAt === "string" ? savedRow.updatedAt : null;
       if (!nextUpdatedAt) {
         throw new Error("Purchase order was saved but no updated timestamp was returned.");
       }
-      const nextTotal = Number(savedRow?.total_purchase_order_price ?? pricingSummary.grandTotal);
+      const nextTotal = Number(savedRow?.totalPurchaseOrderPrice ?? pricingSummary.grandTotal);
 
       triggerDocumentClassification({
         documentKind: "project_purchase_order",

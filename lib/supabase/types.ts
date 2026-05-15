@@ -8352,6 +8352,19 @@ export type Database = {
           updated_at: string
         }[]
       }
+      update_purchase_order_status: {
+        Args: {
+          p_organization_id: string
+          p_project_id: string
+          p_purchase_order_id: string
+          p_status: string
+        }
+        Returns: {
+          id: string
+          status: string
+          updated_at: string
+        }[]
+      }
       update_task: { Args: { p_patch: Json; p_task_id: string }; Returns: Json }
       update_task_comment: {
         Args: { p_comment: string; p_comment_id: string; p_metadata?: Json }
