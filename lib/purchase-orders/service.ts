@@ -173,6 +173,7 @@ export async function savePurchaseOrderDraft(
       type: attachment.type,
       storagePath: attachment.storagePath ?? null,
       externalUrl: attachment.externalUrl ?? null,
+      notes: attachment.notes ?? "",
     })),
   } as unknown as Database["public"]["Functions"]["save_project_purchase_order_draft"]["Args"];
 

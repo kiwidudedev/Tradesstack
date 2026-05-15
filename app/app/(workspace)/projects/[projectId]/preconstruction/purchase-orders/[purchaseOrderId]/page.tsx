@@ -517,6 +517,7 @@ export default function ProjectVariationsPage() {
             : "Email",
         storagePath: attachmentRow.storagePath ?? null,
         externalUrl: attachmentRow.externalUrl ?? null,
+        notes: attachmentRow.notes ?? "",
       }));
 
       setVariations((current) =>
@@ -1694,6 +1695,7 @@ export default function ProjectVariationsPage() {
           type: attachment.type,
           storagePath: attachment.storagePath,
           externalUrl: attachment.externalUrl,
+          notes: attachment.notes,
         })),
       });
       const savedPurchaseOrderId = typeof savedRow?.id === "string" ? savedRow.id : null;
