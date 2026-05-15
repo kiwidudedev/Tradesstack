@@ -7607,6 +7607,41 @@ export type Database = {
           total_value: number
         }[]
       }
+      get_mobile_worker_project_purchase_order_detail: {
+        Args: { p_project_id: string; p_purchase_order_id: string }
+        Returns: {
+          attachments: Json
+          created_at: string
+          due_date: string | null
+          gst_total: number
+          issued_to_label: string
+          line_items: Json
+          notes: string
+          origin: string
+          project_id: string
+          purchase_order_id: string
+          purchase_order_number: string
+          purchase_order_title: string
+          requested_by: string
+          requested_date: string | null
+          status: string
+          subtotal: number
+          total_purchase_order_price: number
+          updated_at: string
+        }[]
+      }
+      get_mobile_worker_purchase_order_attachment_url: {
+        Args: { p_attachment_id: string; p_project_id: string }
+        Returns: {
+          attachment_id: string
+          expires_at: string | null
+          file_kind: string
+          file_name: string
+          purchase_order_id: string
+          source: string
+          url: string
+        }[]
+      }
       get_task: { Args: { p_task_id: string }; Returns: Json }
       get_trade_pack_monthly_limit_for_organization: {
         Args: { p_organization_id: string }
@@ -7696,6 +7731,24 @@ export type Database = {
           p_statuses?: string[]
         }
         Returns: Json
+      }
+      list_mobile_worker_project_purchase_orders: {
+        Args: { p_project_id: string }
+        Returns: {
+          created_at: string
+          due_date: string | null
+          issued_to_label: string
+          notes: string
+          origin: string
+          project_id: string
+          purchase_order_id: string
+          purchase_order_number: string
+          purchase_order_title: string
+          requested_by: string
+          requested_date: string | null
+          status: string
+          updated_at: string
+        }[]
       }
       list_worker_assigned_purchase_orders: {
         Args: {
