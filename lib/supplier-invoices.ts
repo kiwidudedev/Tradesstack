@@ -1,3 +1,4 @@
+import type { OrganizationAccountingResolutionStatus } from "@/lib/accounting/types";
 import { sanitizeFileName } from "@/lib/quality-assurance/helpers";
 import type { Database } from "@/lib/supabase/types";
 
@@ -54,6 +55,8 @@ export const SUPPLIER_INVOICE_ACTIVITY_EVENT_TYPES = [
   "allocation_approved",
   "allocation_disputed",
   "allocation_approval_changed",
+  "actual_costs_posted",
+  "actual_cost_posting_skipped",
   "approval_note_added",
 ] as const;
 
@@ -68,9 +71,18 @@ export type SupplierInvoiceApprovalStepStatus =
 export type SupplierInvoiceActivityEventType =
   (typeof SUPPLIER_INVOICE_ACTIVITY_EVENT_TYPES)[number];
 export type SupplierInvoiceDisplayStatus = SupplierInvoiceStatus | "Partially Approved";
+export type SupplierInvoiceAllocationPreviewStatus =
+  | "Ready"
+  | "Needs cost review"
+  | "Needs accounting mapping"
+  | "No PO line candidate";
 
 export type SupplierInvoiceRow = Database["public"]["Tables"]["supplier_invoices"]["Row"];
 export type SupplierInvoiceLineRow = Database["public"]["Tables"]["supplier_invoice_lines"]["Row"];
+export type SupplierInvoiceLineAllocationRow =
+  Database["public"]["Tables"]["supplier_invoice_line_allocations"]["Row"];
+export type SupplierInvoiceAISuggestionRow =
+  Database["public"]["Tables"]["supplier_invoice_ai_suggestions"]["Row"];
 export type SupplierInvoiceDocumentRow =
   Database["public"]["Tables"]["supplier_invoice_documents"]["Row"];
 export type SupplierInvoicePurchaseOrderMatchRow =
@@ -81,6 +93,31 @@ export type SupplierInvoiceApprovalStepRow =
   Database["public"]["Tables"]["supplier_invoice_approval_steps"]["Row"];
 export type SupplierInvoiceActivityEventRow =
   Database["public"]["Tables"]["supplier_invoice_activity_events"]["Row"];
+export type ProjectActualCostEventRow =
+  Database["public"]["Tables"]["project_actual_cost_events"]["Row"];
+export type SupplierInvoiceLineAllocationPreviewRow = {
+  candidateKey: string;
+  invoiceLineId: string;
+  invoiceLineDescription: string;
+  invoiceLineAmount: number;
+  candidatePurchaseOrderId: string | null;
+  candidatePurchaseOrderNumber: string | null;
+  candidatePurchaseOrderTitle: string | null;
+  candidatePurchaseOrderLineItemId: string | null;
+  candidatePurchaseOrderLineDescription: string | null;
+  candidatePurchaseOrderLineAmount: number | null;
+  costItemId: string | null;
+  sourceCostItemId: string | null;
+  workType: string | null;
+  costType: string | null;
+  internalCostCode: string | null;
+  organizationCostCodeId: string | null;
+  organizationCostCode: string | null;
+  organizationCostCodeName: string | null;
+  accountingResolutionStatus: OrganizationAccountingResolutionStatus | "pending";
+  status: SupplierInvoiceAllocationPreviewStatus;
+  candidateScore: number;
+};
 
 export type SupplierInvoiceApprovalChecks = {
   materials_received: boolean;
@@ -336,6 +373,10 @@ export function formatSupplierInvoiceActivityEventLabel(
       return "Allocation disputed";
     case "allocation_approval_changed":
       return "Allocation review updated";
+    case "actual_costs_posted":
+      return "Actual costs posted";
+    case "actual_cost_posting_skipped":
+      return "Actual cost posting skipped";
     case "approval_note_added":
       return "Approval note added";
     default:

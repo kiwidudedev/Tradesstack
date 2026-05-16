@@ -10,6 +10,7 @@ const SECTION_MAP: { segment: string; label: string }[] = [
   { segment: "preconstruction/variations", label: "Variations" },
   { segment: "preconstruction/purchase-orders", label: "Purchase Orders" },
   { segment: "preconstruction/claims", label: "Payment Claim" },
+  { segment: "financials", label: "Financials" },
   { segment: "job-management/todos", label: "Tasks" },
   { segment: "job-management/time-sheets", label: "Timesheets" },
   { segment: "job-management/quality-assurance", label: "QA" },

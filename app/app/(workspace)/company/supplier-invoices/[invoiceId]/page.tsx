@@ -6,11 +6,23 @@ import type { OrganizationSupplierRow } from "@/lib/suppliers";
 import type {
   SupplierInvoiceActivityEventRow,
   SupplierInvoiceApprovalStepRow,
+  SupplierInvoiceLineAllocationRow,
   SupplierInvoiceDocumentRow,
+  SupplierInvoiceLineAllocationPreviewRow,
   SupplierInvoiceLineRow,
   SupplierInvoicePurchaseOrderMatchRow,
   SupplierInvoiceRow,
+  ProjectActualCostEventRow,
 } from "@/lib/supplier-invoices";
+import type {
+  CostItemRow,
+  PurchaseOrderLineItemRow,
+} from "@/lib/supplier-invoice-lineage";
+import {
+  buildAccountingResolutionInput,
+  resolveInheritedAccountingCode,
+  resolvePurchaseOrderLineLineage,
+} from "@/lib/supplier-invoice-lineage";
 import type { Database } from "@/lib/supabase/types";
 import { SupplierInvoiceDetailWorkspace } from "./SupplierInvoiceDetailWorkspace";
 
@@ -20,6 +32,8 @@ type SupplierInvoiceDetailPageProps = {
 
 type OrganizationProjectRow = Database["public"]["Tables"]["organization_projects"]["Row"];
 type OrganizationCostCodeRow = Database["public"]["Tables"]["organization_cost_codes"]["Row"];
+type OrganizationCostCodeMappingRuleRow =
+  Database["public"]["Tables"]["organization_cost_code_mapping_rules"]["Row"];
 type OrganizationMemberRow = Database["public"]["Tables"]["organization_members"]["Row"];
 type PurchaseOrderCandidateRow = {
   id: string;
@@ -32,6 +46,78 @@ type PurchaseOrderCandidateRow = {
   requested_date: string | null;
   total_purchase_order_price: number | null;
 };
+const MAX_PREVIEW_CANDIDATES_PER_LINE = 3;
+
+function normalizePreviewText(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().toLowerCase();
+}
+
+function scorePreviewCandidate(line: SupplierInvoiceLineRow, purchaseOrderLine: PurchaseOrderLineItemRow) {
+  const invoiceDescription = normalizePreviewText(line.description);
+  const purchaseOrderDescription = normalizePreviewText(purchaseOrderLine.description);
+  let score = 0;
+
+  if (invoiceDescription && purchaseOrderDescription) {
+    if (invoiceDescription === purchaseOrderDescription) {
+      score += 4;
+    } else if (
+      invoiceDescription.includes(purchaseOrderDescription) ||
+      purchaseOrderDescription.includes(invoiceDescription)
+    ) {
+      score += 3;
+    } else {
+      const invoiceTerms = new Set(invoiceDescription.split(/\s+/).filter(Boolean));
+      const purchaseOrderTerms = purchaseOrderDescription.split(/\s+/).filter(Boolean);
+      const overlapCount = purchaseOrderTerms.filter((term) => invoiceTerms.has(term)).length;
+      score += Math.min(overlapCount, 2);
+    }
+  }
+
+  const invoiceAmount = Number(line.line_total ?? 0);
+  const purchaseOrderAmount = Number(purchaseOrderLine.total ?? 0);
+  if (Math.abs(invoiceAmount - purchaseOrderAmount) < 0.01) {
+    score += 2;
+  }
+
+  if (line.project_id && line.project_id === purchaseOrderLine.project_id) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function derivePreviewStatus(params: {
+  hasPurchaseOrderLine: boolean;
+  workType: string | null;
+  costType: string | null;
+  internalCostCode: string | null;
+  classificationNeedsReview: boolean;
+  organizationCostCodeId: string | null;
+  needsAccountingReview: boolean;
+}) {
+  if (!params.hasPurchaseOrderLine) {
+    return "No PO line candidate" as const;
+  }
+
+  if (
+    params.classificationNeedsReview ||
+    !params.workType ||
+    !params.costType ||
+    !params.internalCostCode
+  ) {
+    return "Needs cost review" as const;
+  }
+
+  if (!params.organizationCostCodeId || params.needsAccountingReview) {
+    return "Needs accounting mapping" as const;
+  }
+
+  return "Ready" as const;
+}
 
 export default async function SupplierInvoiceDetailPage({
   params,
@@ -68,6 +154,8 @@ export default async function SupplierInvoiceDetailPage({
     { data: activityEvents, error: activityEventsError },
     { data: members, error: membersError },
     { data: purchaseOrders, error: purchaseOrdersError },
+    { data: draftAllocations, error: draftAllocationsError },
+    { data: actualCostEvents, error: actualCostEventsError },
   ] = await Promise.all([
     supabase
       .from("supplier_invoices")
@@ -133,6 +221,20 @@ export default async function SupplierInvoiceDetailPage({
       )
       .eq("organization_id", currentMember.organization_id)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("supplier_invoice_line_allocations")
+      .select("*")
+      .eq("organization_id", currentMember.organization_id)
+      .eq("supplier_invoice_id", invoiceId)
+      .order("supplier_invoice_line_id", { ascending: true })
+      .order("allocation_sequence", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("project_actual_cost_events")
+      .select("*")
+      .eq("organization_id", currentMember.organization_id)
+      .eq("supplier_invoice_id", invoiceId)
+      .order("created_at", { ascending: true }),
   ]);
 
   if (invoiceError) {
@@ -168,10 +270,186 @@ export default async function SupplierInvoiceDetailPage({
   if (purchaseOrdersError) {
     throw new Error(purchaseOrdersError.message);
   }
+  if (draftAllocationsError) {
+    throw new Error(draftAllocationsError.message);
+  }
+  if (actualCostEventsError) {
+    throw new Error(actualCostEventsError.message);
+  }
 
   if (!invoice) {
     notFound();
   }
+
+  const matchedPurchaseOrderIds = Array.from(
+    new Set((matches ?? []).map((match) => match.purchase_order_id).filter(Boolean))
+  );
+
+  const [{ data: mappingRules, error: mappingRulesError }, matchedPurchaseOrderLinesResult] =
+    await Promise.all([
+      supabase
+        .from("organization_cost_code_mapping_rules")
+        .select("*")
+        .eq("organization_id", currentMember.organization_id)
+        .order("priority", { ascending: true })
+        .order("created_at", { ascending: true }),
+      matchedPurchaseOrderIds.length > 0
+        ? supabase
+            .from("project_purchase_order_line_items")
+            .select("*")
+            .eq("organization_id", currentMember.organization_id)
+            .in("purchase_order_id", matchedPurchaseOrderIds)
+            .order("purchase_order_id", { ascending: true })
+            .order("sort_order", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+  if (mappingRulesError) {
+    throw new Error(mappingRulesError.message);
+  }
+  if (matchedPurchaseOrderLinesResult.error) {
+    throw new Error(matchedPurchaseOrderLinesResult.error.message);
+  }
+
+  const matchedPurchaseOrderLines =
+    (matchedPurchaseOrderLinesResult.data ?? []) as PurchaseOrderLineItemRow[];
+  const costItemIds = Array.from(
+    new Set(
+      matchedPurchaseOrderLines
+        .flatMap((line) => [line.cost_item_id, line.source_cost_item_id])
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+    )
+  );
+
+  const { data: previewCostItems, error: previewCostItemsError } =
+    costItemIds.length > 0
+      ? await supabase
+          .from("cost_items")
+          .select("*")
+          .eq("organization_id", currentMember.organization_id)
+          .in("id", costItemIds)
+      : { data: [], error: null };
+
+  if (previewCostItemsError) {
+    throw new Error(previewCostItemsError.message);
+  }
+
+  const costItemById = new Map(
+    ((previewCostItems ?? []) as CostItemRow[]).map((costItem) => [costItem.id, costItem])
+  );
+  const purchaseOrderById = new Map(
+    ((purchaseOrders ?? []) as PurchaseOrderCandidateRow[]).map((purchaseOrder) => [
+      purchaseOrder.id,
+      purchaseOrder,
+    ])
+  );
+  const previewRows: SupplierInvoiceLineAllocationPreviewRow[] = ((lines ?? []) as SupplierInvoiceLineRow[]).flatMap<SupplierInvoiceLineAllocationPreviewRow>(
+    (line) => {
+      if (matchedPurchaseOrderLines.length === 0) {
+        return [
+          {
+            candidateKey: `${line.id}:none`,
+            invoiceLineId: line.id,
+            invoiceLineDescription: line.description ?? "Untitled invoice line",
+            invoiceLineAmount: Number(line.line_total ?? 0),
+            candidatePurchaseOrderId: null,
+            candidatePurchaseOrderNumber: null,
+            candidatePurchaseOrderTitle: null,
+            candidatePurchaseOrderLineItemId: null,
+            candidatePurchaseOrderLineDescription: null,
+            candidatePurchaseOrderLineAmount: null,
+            costItemId: null,
+            sourceCostItemId: null,
+            workType: null,
+            costType: null,
+            internalCostCode: null,
+            organizationCostCodeId: null,
+            organizationCostCode: null,
+            organizationCostCodeName: null,
+            accountingResolutionStatus: "pending",
+            status: "No PO line candidate",
+            candidateScore: 0,
+          } satisfies SupplierInvoiceLineAllocationPreviewRow,
+        ];
+      }
+
+      return matchedPurchaseOrderLines
+        .map((purchaseOrderLine) => {
+          const purchaseOrder = purchaseOrderById.get(purchaseOrderLine.purchase_order_id) ?? null;
+          const lineage = resolvePurchaseOrderLineLineage({
+            purchaseOrderLine,
+            costItem: purchaseOrderLine.cost_item_id
+              ? costItemById.get(purchaseOrderLine.cost_item_id) ?? null
+              : null,
+            sourceCostItem: purchaseOrderLine.source_cost_item_id
+              ? costItemById.get(purchaseOrderLine.source_cost_item_id) ?? null
+              : null,
+          });
+          const accountingInput = buildAccountingResolutionInput({
+            costItemId: lineage.costItemId ?? lineage.sourceCostItemId,
+            projectId: lineage.projectId,
+            title: line.description ?? "Supplier invoice line",
+            description: line.description ?? "",
+            lineage,
+          });
+          const accountingResolution = resolveInheritedAccountingCode({
+            costCodes: (costCodes ?? []) as OrganizationCostCodeRow[],
+            mappingRules: (mappingRules ?? []) as OrganizationCostCodeMappingRuleRow[],
+            input: accountingInput,
+          });
+          const status = derivePreviewStatus({
+            hasPurchaseOrderLine: true,
+            workType: lineage.workType,
+            costType: lineage.costType,
+            internalCostCode: lineage.internalCostCode,
+            classificationNeedsReview: lineage.classificationNeedsReview,
+            organizationCostCodeId: accountingResolution?.organizationCostCodeId ?? null,
+            needsAccountingReview: accountingResolution?.needsAccountingReview ?? false,
+          });
+          const candidateScore = scorePreviewCandidate(line, purchaseOrderLine);
+
+          return {
+            candidateKey: `${line.id}:${purchaseOrderLine.id}`,
+            invoiceLineId: line.id,
+            invoiceLineDescription: line.description ?? "Untitled invoice line",
+            invoiceLineAmount: Number(line.line_total ?? 0),
+            candidatePurchaseOrderId: purchaseOrderLine.purchase_order_id,
+            candidatePurchaseOrderNumber: purchaseOrder?.purchase_order_number ?? null,
+            candidatePurchaseOrderTitle: purchaseOrder?.purchase_order_title ?? null,
+            candidatePurchaseOrderLineItemId: purchaseOrderLine.id,
+            candidatePurchaseOrderLineDescription: purchaseOrderLine.description ?? null,
+            candidatePurchaseOrderLineAmount: Number(purchaseOrderLine.total ?? 0),
+            costItemId: lineage.costItemId,
+            sourceCostItemId: lineage.sourceCostItemId,
+            workType: lineage.workType,
+            costType: lineage.costType,
+            internalCostCode: lineage.internalCostCode,
+            organizationCostCodeId: accountingResolution?.organizationCostCodeId ?? null,
+            organizationCostCode: accountingResolution?.code ?? null,
+            organizationCostCodeName: accountingResolution?.name ?? null,
+            accountingResolutionStatus: accountingResolution?.status ?? "pending",
+            status,
+            candidateScore,
+          } satisfies SupplierInvoiceLineAllocationPreviewRow;
+        })
+        .sort((left, right) => {
+          if (right.candidateScore !== left.candidateScore) {
+            return right.candidateScore - left.candidateScore;
+          }
+
+          const leftPurchaseOrderNumber = left.candidatePurchaseOrderNumber ?? "";
+          const rightPurchaseOrderNumber = right.candidatePurchaseOrderNumber ?? "";
+          if (leftPurchaseOrderNumber !== rightPurchaseOrderNumber) {
+            return leftPurchaseOrderNumber.localeCompare(rightPurchaseOrderNumber);
+          }
+
+          return (left.candidatePurchaseOrderLineDescription ?? "").localeCompare(
+            right.candidatePurchaseOrderLineDescription ?? ""
+          );
+        })
+        .slice(0, MAX_PREVIEW_CANDIDATES_PER_LINE);
+    }
+  );
 
   return (
     <SupplierInvoiceDetailWorkspace
@@ -187,6 +465,9 @@ export default async function SupplierInvoiceDetailPage({
       projects={(projects ?? []) as OrganizationProjectRow[]}
       costCodes={(costCodes ?? []) as OrganizationCostCodeRow[]}
       organizationMembers={(members ?? []) as OrganizationMemberRow[]}
+      allocationPreviewRows={previewRows}
+      initialDraftAllocations={(draftAllocations ?? []) as SupplierInvoiceLineAllocationRow[]}
+      initialActualCostEvents={(actualCostEvents ?? []) as ProjectActualCostEventRow[]}
       canWrite={canWrite}
       canReview={canReview}
     />

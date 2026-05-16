@@ -2785,6 +2785,191 @@ export type Database = {
           },
         ]
       }
+      project_actual_cost_events: {
+        Row: {
+          amount: number
+          cost_item_id: string | null
+          cost_type: string | null
+          created_at: string
+          created_by_user_id: string | null
+          event_date: string
+          event_status: string
+          id: string
+          internal_cost_code: string | null
+          organization_cost_code_id: string | null
+          organization_id: string
+          posting_source: string
+          project_id: string
+          purchase_order_id: string | null
+          purchase_order_line_item_id: string | null
+          quantity: number | null
+          source_cost_item_id: string | null
+          source_invoice_allocation_id: string | null
+          source_invoice_line_id: string | null
+          source_reference: string
+          source_type: string
+          supplier_id: string | null
+          supplier_invoice_id: string | null
+          supplier_invoice_line_allocation_id: string | null
+          supplier_invoice_line_id: string | null
+          tax_amount: number
+          total_amount: number
+          work_type: string | null
+        }
+        Insert: {
+          amount?: number
+          cost_item_id?: string | null
+          cost_type?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          event_date: string
+          event_status?: string
+          id?: string
+          internal_cost_code?: string | null
+          organization_cost_code_id?: string | null
+          organization_id: string
+          posting_source?: string
+          project_id: string
+          purchase_order_id?: string | null
+          purchase_order_line_item_id?: string | null
+          quantity?: number | null
+          source_cost_item_id?: string | null
+          source_invoice_allocation_id?: string | null
+          source_invoice_line_id?: string | null
+          source_reference?: string
+          source_type?: string
+          supplier_id?: string | null
+          supplier_invoice_id?: string | null
+          supplier_invoice_line_allocation_id?: string | null
+          supplier_invoice_line_id?: string | null
+          tax_amount?: number
+          total_amount?: number
+          work_type?: string | null
+        }
+        Update: {
+          amount?: number
+          cost_item_id?: string | null
+          cost_type?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          event_date?: string
+          event_status?: string
+          id?: string
+          internal_cost_code?: string | null
+          organization_cost_code_id?: string | null
+          organization_id?: string
+          posting_source?: string
+          project_id?: string
+          purchase_order_id?: string | null
+          purchase_order_line_item_id?: string | null
+          quantity?: number | null
+          source_cost_item_id?: string | null
+          source_invoice_allocation_id?: string | null
+          source_invoice_line_id?: string | null
+          source_reference?: string
+          source_type?: string
+          supplier_id?: string | null
+          supplier_invoice_id?: string | null
+          supplier_invoice_line_allocation_id?: string | null
+          supplier_invoice_line_id?: string | null
+          tax_amount?: number
+          total_amount?: number
+          work_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_actual_cost_events_cost_item_id_fkey"
+            columns: ["cost_item_id"]
+            isOneToOne: false
+            referencedRelation: "cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_organization_cost_code_id_fkey"
+            columns: ["organization_cost_code_id"]
+            isOneToOne: false
+            referencedRelation: "organization_cost_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "project_purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_purchase_order_line_item_id_fkey"
+            columns: ["purchase_order_line_item_id"]
+            isOneToOne: false
+            referencedRelation: "project_purchase_order_line_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_source_cost_item_id_fkey"
+            columns: ["source_cost_item_id"]
+            isOneToOne: false
+            referencedRelation: "cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_source_invoice_allocation_id_fkey"
+            columns: ["source_invoice_allocation_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_line_allocations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_source_invoice_line_id_fkey"
+            columns: ["source_invoice_line_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "organization_suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_supplier_invoice_id_fkey"
+            columns: ["supplier_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_supplier_invoice_line_allocation_id_fkey"
+            columns: ["supplier_invoice_line_allocation_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_line_allocations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_supplier_invoice_line_id_fkey"
+            columns: ["supplier_invoice_line_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_purchase_order_status_events: {
         Row: {
           changed_at: string
@@ -5035,6 +5220,73 @@ export type Database = {
           },
         ]
       }
+      purchase_order_activity_log: {
+        Row: {
+          actor_user_id: string | null
+          created_at: string
+          event_type: string
+          field_name: string | null
+          id: string
+          metadata: Json
+          new_value: Json | null
+          old_value: Json | null
+          organization_id: string
+          project_id: string
+          purchase_order_id: string
+          summary: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          created_at?: string
+          event_type: string
+          field_name?: string | null
+          id?: string
+          metadata?: Json
+          new_value?: Json | null
+          old_value?: Json | null
+          organization_id: string
+          project_id: string
+          purchase_order_id: string
+          summary: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          created_at?: string
+          event_type?: string
+          field_name?: string | null
+          id?: string
+          metadata?: Json
+          new_value?: Json | null
+          old_value?: Json | null
+          organization_id?: string
+          project_id?: string
+          purchase_order_id?: string
+          summary?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_activity_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_activity_log_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_activity_log_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "project_purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       request_concurrency_limits: {
         Row: {
           active_count: number
@@ -5401,11 +5653,20 @@ export type Database = {
           created_at: string
           description: string
           id: string
+          import_source: string
           line_total: number
+          line_uid: string
+          normalized_line_text: string | null
+          ocr_confidence: number | null
           organization_id: string
           project_id: string | null
           quantity: number
+          raw_line_text: string | null
           sort_order: number
+          source_metadata_json: Json
+          source_row_number: number | null
+          supplier_description: string | null
+          supplier_item_code: string | null
           supplier_invoice_id: string
           tax_amount: number
           unit_price: number
@@ -5416,11 +5677,20 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
+          import_source?: string
           line_total?: number
+          line_uid?: string
+          normalized_line_text?: string | null
+          ocr_confidence?: number | null
           organization_id: string
           project_id?: string | null
           quantity?: number
+          raw_line_text?: string | null
           sort_order?: number
+          source_metadata_json?: Json
+          source_row_number?: number | null
+          supplier_description?: string | null
+          supplier_item_code?: string | null
           supplier_invoice_id: string
           tax_amount?: number
           unit_price?: number
@@ -5431,11 +5701,20 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
+          import_source?: string
           line_total?: number
+          line_uid?: string
+          normalized_line_text?: string | null
+          ocr_confidence?: number | null
           organization_id?: string
           project_id?: string | null
           quantity?: number
+          raw_line_text?: string | null
           sort_order?: number
+          source_metadata_json?: Json
+          source_row_number?: number | null
+          supplier_description?: string | null
+          supplier_item_code?: string | null
           supplier_invoice_id?: string
           tax_amount?: number
           unit_price?: number
@@ -5468,6 +5747,302 @@ export type Database = {
             columns: ["supplier_invoice_id"]
             isOneToOne: false
             referencedRelation: "supplier_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_invoice_line_allocations: {
+        Row: {
+          accepted_ai_suggestion: boolean
+          accounting_resolution_status: string
+          ai_confidence_score: number | null
+          ai_reasoning_summary: string | null
+          ai_suggested_cost_item_id: string | null
+          ai_suggested_purchase_order_line_item_id: string | null
+          ai_suggestion_metadata_json: Json
+          allocated_amount: number
+          allocated_quantity: number | null
+          allocation_sequence: number
+          allocation_source: string
+          allocation_status: string
+          approval_checks_json: Json
+          approval_notes: string
+          approval_status: string
+          approved_at: string | null
+          approved_by_user_id: string | null
+          classification_status: string
+          cost_item_id: string | null
+          cost_type: string | null
+          created_at: string
+          id: string
+          internal_cost_code: string | null
+          match_status: string
+          matched_amount: number
+          organization_cost_code_id: string | null
+          organization_id: string
+          project_id: string | null
+          purchase_order_id: string | null
+          purchase_order_line_item_id: string | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          source_cost_item_id: string | null
+          supplier_invoice_id: string
+          supplier_invoice_line_id: string
+          updated_at: string
+          work_type: string | null
+        }
+        Insert: {
+          accepted_ai_suggestion?: boolean
+          accounting_resolution_status?: string
+          ai_confidence_score?: number | null
+          ai_reasoning_summary?: string | null
+          ai_suggested_cost_item_id?: string | null
+          ai_suggested_purchase_order_line_item_id?: string | null
+          ai_suggestion_metadata_json?: Json
+          allocated_amount?: number
+          allocated_quantity?: number | null
+          allocation_sequence?: number
+          allocation_source?: string
+          allocation_status?: string
+          approval_checks_json?: Json
+          approval_notes?: string
+          approval_status?: string
+          approved_at?: string | null
+          approved_by_user_id?: string | null
+          classification_status?: string
+          cost_item_id?: string | null
+          cost_type?: string | null
+          created_at?: string
+          id?: string
+          internal_cost_code?: string | null
+          match_status?: string
+          matched_amount?: number
+          organization_cost_code_id?: string | null
+          organization_id: string
+          project_id?: string | null
+          purchase_order_id?: string | null
+          purchase_order_line_item_id?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          source_cost_item_id?: string | null
+          supplier_invoice_id: string
+          supplier_invoice_line_id: string
+          updated_at?: string
+          work_type?: string | null
+        }
+        Update: {
+          accepted_ai_suggestion?: boolean
+          accounting_resolution_status?: string
+          ai_confidence_score?: number | null
+          ai_reasoning_summary?: string | null
+          ai_suggested_cost_item_id?: string | null
+          ai_suggested_purchase_order_line_item_id?: string | null
+          ai_suggestion_metadata_json?: Json
+          allocated_amount?: number
+          allocated_quantity?: number | null
+          allocation_sequence?: number
+          allocation_source?: string
+          allocation_status?: string
+          approval_checks_json?: Json
+          approval_notes?: string
+          approval_status?: string
+          approved_at?: string | null
+          approved_by_user_id?: string | null
+          classification_status?: string
+          cost_item_id?: string | null
+          cost_type?: string | null
+          created_at?: string
+          id?: string
+          internal_cost_code?: string | null
+          match_status?: string
+          matched_amount?: number
+          organization_cost_code_id?: string | null
+          organization_id?: string
+          project_id?: string | null
+          purchase_order_id?: string | null
+          purchase_order_line_item_id?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          source_cost_item_id?: string | null
+          supplier_invoice_id?: string
+          supplier_invoice_line_id?: string
+          updated_at?: string
+          work_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_ai_suggested_cost_item_id_fkey"
+            columns: ["ai_suggested_cost_item_id"]
+            isOneToOne: false
+            referencedRelation: "cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_ai_suggested_purchase_order_line_item_id_fkey"
+            columns: ["ai_suggested_purchase_order_line_item_id"]
+            isOneToOne: false
+            referencedRelation: "project_purchase_order_line_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_cost_item_id_fkey"
+            columns: ["cost_item_id"]
+            isOneToOne: false
+            referencedRelation: "cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_organization_cost_code_id_fkey"
+            columns: ["organization_cost_code_id"]
+            isOneToOne: false
+            referencedRelation: "organization_cost_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "project_purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_purchase_order_line_item_id_fkey"
+            columns: ["purchase_order_line_item_id"]
+            isOneToOne: false
+            referencedRelation: "project_purchase_order_line_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_source_cost_item_id_fkey"
+            columns: ["source_cost_item_id"]
+            isOneToOne: false
+            referencedRelation: "cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_supplier_invoice_id_fkey"
+            columns: ["supplier_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_supplier_invoice_line_id_fkey"
+            columns: ["supplier_invoice_line_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_invoice_ai_suggestions: {
+        Row: {
+          accepted_at: string | null
+          accepted_by_user_id: string | null
+          confidence_score: number | null
+          created_at: string
+          final_outcome_json: Json
+          id: string
+          input_fingerprint: string | null
+          model: string | null
+          organization_id: string
+          output_json: Json
+          prompt_version: string | null
+          provider: string | null
+          reasoning_summary: string | null
+          rejected_at: string | null
+          rejected_by_user_id: string | null
+          suggestion_type: string
+          supplier_invoice_id: string
+          supplier_invoice_line_allocation_id: string | null
+          supplier_invoice_line_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          confidence_score?: number | null
+          created_at?: string
+          final_outcome_json?: Json
+          id?: string
+          input_fingerprint?: string | null
+          model?: string | null
+          organization_id: string
+          output_json?: Json
+          prompt_version?: string | null
+          provider?: string | null
+          reasoning_summary?: string | null
+          rejected_at?: string | null
+          rejected_by_user_id?: string | null
+          suggestion_type: string
+          supplier_invoice_id: string
+          supplier_invoice_line_allocation_id?: string | null
+          supplier_invoice_line_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          confidence_score?: number | null
+          created_at?: string
+          final_outcome_json?: Json
+          id?: string
+          input_fingerprint?: string | null
+          model?: string | null
+          organization_id?: string
+          output_json?: Json
+          prompt_version?: string | null
+          provider?: string | null
+          reasoning_summary?: string | null
+          rejected_at?: string | null
+          rejected_by_user_id?: string | null
+          suggestion_type?: string
+          supplier_invoice_id?: string
+          supplier_invoice_line_allocation_id?: string | null
+          supplier_invoice_line_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_invoice_ai_suggestions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_ai_suggestions_supplier_invoice_id_fkey"
+            columns: ["supplier_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_ai_suggestions_supplier_invoice_line_allocation_id_fkey"
+            columns: ["supplier_invoice_line_allocation_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_line_allocations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_ai_suggestions_supplier_invoice_line_id_fkey"
+            columns: ["supplier_invoice_line_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_lines"
             referencedColumns: ["id"]
           },
         ]
@@ -7211,6 +7786,21 @@ export type Database = {
         Args: { p_assigned_user_id: string; p_organization_id: string }
         Returns: undefined
       }
+      _write_purchase_order_activity: {
+        Args: {
+          p_actor_user_id: string
+          p_event_type: string
+          p_field_name: string
+          p_metadata?: Json
+          p_new_value: Json
+          p_old_value: Json
+          p_organization_id: string
+          p_project_id: string
+          p_purchase_order_id: string
+          p_summary: string
+        }
+        Returns: undefined
+      }
       _write_task_activity: {
         Args: {
           p_actor_user_id: string
@@ -7552,6 +8142,68 @@ export type Database = {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
       }
+      get_mobile_project_purchase_order_detail_v2: {
+        Args: { p_project_id: string; p_purchase_order_id: string }
+        Returns: {
+          attachments: Json
+          created_at: string
+          due_date: string
+          gst_total: number
+          issued_to_label: string
+          line_items: Json
+          notes: string
+          origin: string
+          project_id: string
+          purchase_order_id: string
+          purchase_order_number: string
+          purchase_order_title: string
+          requested_by: string
+          requested_date: string
+          status: string
+          subtotal: number
+          supplier_contact: string
+          supplier_email_snapshot: string
+          supplier_name_snapshot: string
+          supplier_phone_snapshot: string
+          total_purchase_order_price: number
+          updated_at: string
+        }[]
+      }
+      get_mobile_worker_project_purchase_order_detail: {
+        Args: { p_project_id: string; p_purchase_order_id: string }
+        Returns: {
+          attachments: Json
+          created_at: string
+          due_date: string
+          gst_total: number
+          issued_to_label: string
+          line_items: Json
+          notes: string
+          origin: string
+          project_id: string
+          purchase_order_id: string
+          purchase_order_number: string
+          purchase_order_title: string
+          requested_by: string
+          requested_date: string
+          status: string
+          subtotal: number
+          total_purchase_order_price: number
+          updated_at: string
+        }[]
+      }
+      get_mobile_worker_purchase_order_attachment_url: {
+        Args: { p_attachment_id: string; p_project_id: string }
+        Returns: {
+          attachment_id: string
+          expires_at: string
+          file_kind: string
+          file_name: string
+          purchase_order_id: string
+          source: string
+          url: string
+        }[]
+      }
       get_organization_member_emails: {
         Args: { p_organization_id: string }
         Returns: {
@@ -7607,41 +8259,6 @@ export type Database = {
           total_value: number
         }[]
       }
-      get_mobile_worker_project_purchase_order_detail: {
-        Args: { p_project_id: string; p_purchase_order_id: string }
-        Returns: {
-          attachments: Json
-          created_at: string
-          due_date: string | null
-          gst_total: number
-          issued_to_label: string
-          line_items: Json
-          notes: string
-          origin: string
-          project_id: string
-          purchase_order_id: string
-          purchase_order_number: string
-          purchase_order_title: string
-          requested_by: string
-          requested_date: string | null
-          status: string
-          subtotal: number
-          total_purchase_order_price: number
-          updated_at: string
-        }[]
-      }
-      get_mobile_worker_purchase_order_attachment_url: {
-        Args: { p_attachment_id: string; p_project_id: string }
-        Returns: {
-          attachment_id: string
-          expires_at: string | null
-          file_kind: string
-          file_name: string
-          purchase_order_id: string
-          source: string
-          url: string
-        }[]
-      }
       get_task: { Args: { p_task_id: string }; Returns: Json }
       get_trade_pack_monthly_limit_for_organization: {
         Args: { p_organization_id: string }
@@ -7675,9 +8292,54 @@ export type Database = {
         Args: { target_organization_id: string }
         Returns: boolean
       }
+      is_mobile_worker_assigned_purchase_order: {
+        Args: {
+          p_organization_member_id: string
+          p_project_id: string
+          p_purchase_order_id: string
+        }
+        Returns: boolean
+      }
       is_owner_of_organization: {
         Args: { target_organization_id: string }
         Returns: boolean
+      }
+      is_safe_mobile_https_url: { Args: { p_url: string }; Returns: boolean }
+      list_mobile_project_purchase_orders_v2: {
+        Args: { p_project_id: string }
+        Returns: {
+          created_at: string
+          due_date: string
+          issued_to_label: string
+          notes: string
+          origin: string
+          project_id: string
+          purchase_order_id: string
+          purchase_order_number: string
+          purchase_order_title: string
+          requested_by: string
+          requested_date: string
+          status: string
+          updated_at: string
+        }[]
+      }
+      list_mobile_worker_project_purchase_orders: {
+        Args: { p_project_id: string }
+        Returns: {
+          created_at: string
+          due_date: string
+          issued_to_label: string
+          notes: string
+          origin: string
+          project_id: string
+          purchase_order_id: string
+          purchase_order_number: string
+          purchase_order_title: string
+          requested_by: string
+          requested_date: string
+          status: string
+          updated_at: string
+        }[]
       }
       list_project_members: {
         Args: { p_organization_id: string; p_project_id: string }
@@ -7731,24 +8393,6 @@ export type Database = {
           p_statuses?: string[]
         }
         Returns: Json
-      }
-      list_mobile_worker_project_purchase_orders: {
-        Args: { p_project_id: string }
-        Returns: {
-          created_at: string
-          due_date: string | null
-          issued_to_label: string
-          notes: string
-          origin: string
-          project_id: string
-          purchase_order_id: string
-          purchase_order_number: string
-          purchase_order_title: string
-          requested_by: string
-          requested_date: string | null
-          status: string
-          updated_at: string
-        }[]
       }
       list_worker_assigned_purchase_orders: {
         Args: {
@@ -7871,6 +8515,20 @@ export type Database = {
         Returns: {
           organization_id: string
           project_id: string
+        }[]
+      }
+      resolve_mobile_project_member_context_v2: {
+        Args: { p_project_id: string }
+        Returns: {
+          organization_id: string
+          organization_member_id: string
+        }[]
+      }
+      resolve_mobile_worker_project_context: {
+        Args: { p_project_id: string }
+        Returns: {
+          organization_id: string
+          organization_member_id: string
         }[]
       }
       restore_task: { Args: { p_task_id: string }; Returns: Json }
