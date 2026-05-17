@@ -57,6 +57,8 @@ export const SUPPLIER_INVOICE_ACTIVITY_EVENT_TYPES = [
   "allocation_approval_changed",
   "actual_costs_posted",
   "actual_cost_posting_skipped",
+  "actual_cost_reversed",
+  "actual_cost_correction_started",
   "approval_note_added",
 ] as const;
 
@@ -377,6 +379,10 @@ export function formatSupplierInvoiceActivityEventLabel(
       return "Actual costs posted";
     case "actual_cost_posting_skipped":
       return "Actual cost posting skipped";
+    case "actual_cost_reversed":
+      return "Actual cost reversed";
+    case "actual_cost_correction_started":
+      return "Actual cost correction started";
     case "approval_note_added":
       return "Approval note added";
     default:

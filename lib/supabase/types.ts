@@ -801,6 +801,66 @@ export type Database = {
           },
         ]
       }
+      opportunity_pricing_worksheets: {
+        Row: {
+          created_at: string
+          created_by: string
+          extracted_pricing_data: Json
+          id: string
+          name: string
+          opportunity_id: string
+          organization_id: string
+          pricing_summary: Json
+          updated_at: string
+          updated_by: string
+          version: number
+          worksheet_data: Json
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          extracted_pricing_data?: Json
+          id?: string
+          name?: string
+          opportunity_id: string
+          organization_id: string
+          pricing_summary?: Json
+          updated_at?: string
+          updated_by: string
+          version?: number
+          worksheet_data?: Json
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          extracted_pricing_data?: Json
+          id?: string
+          name?: string
+          opportunity_id?: string
+          organization_id?: string
+          pricing_summary?: Json
+          updated_at?: string
+          updated_by?: string
+          version?: number
+          worksheet_data?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_pricing_worksheets_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "organization_opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opportunity_pricing_worksheets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_client_contacts: {
         Row: {
           client_id: string
@@ -2788,12 +2848,14 @@ export type Database = {
       project_actual_cost_events: {
         Row: {
           amount: number
+          correction_root_event_id: string | null
           cost_item_id: string | null
           cost_type: string | null
           created_at: string
           created_by_user_id: string | null
           event_date: string
           event_status: string
+          event_type: string
           id: string
           internal_cost_code: string | null
           organization_cost_code_id: string | null
@@ -2803,6 +2865,9 @@ export type Database = {
           purchase_order_id: string | null
           purchase_order_line_item_id: string | null
           quantity: number | null
+          reverses_event_id: string | null
+          reversal_note: string | null
+          reversal_reason: string | null
           source_cost_item_id: string | null
           source_invoice_allocation_id: string | null
           source_invoice_line_id: string | null
@@ -2818,12 +2883,14 @@ export type Database = {
         }
         Insert: {
           amount?: number
+          correction_root_event_id?: string | null
           cost_item_id?: string | null
           cost_type?: string | null
           created_at?: string
           created_by_user_id?: string | null
           event_date: string
           event_status?: string
+          event_type?: string
           id?: string
           internal_cost_code?: string | null
           organization_cost_code_id?: string | null
@@ -2833,6 +2900,9 @@ export type Database = {
           purchase_order_id?: string | null
           purchase_order_line_item_id?: string | null
           quantity?: number | null
+          reverses_event_id?: string | null
+          reversal_note?: string | null
+          reversal_reason?: string | null
           source_cost_item_id?: string | null
           source_invoice_allocation_id?: string | null
           source_invoice_line_id?: string | null
@@ -2848,12 +2918,14 @@ export type Database = {
         }
         Update: {
           amount?: number
+          correction_root_event_id?: string | null
           cost_item_id?: string | null
           cost_type?: string | null
           created_at?: string
           created_by_user_id?: string | null
           event_date?: string
           event_status?: string
+          event_type?: string
           id?: string
           internal_cost_code?: string | null
           organization_cost_code_id?: string | null
@@ -2863,6 +2935,9 @@ export type Database = {
           purchase_order_id?: string | null
           purchase_order_line_item_id?: string | null
           quantity?: number | null
+          reverses_event_id?: string | null
+          reversal_note?: string | null
+          reversal_reason?: string | null
           source_cost_item_id?: string | null
           source_invoice_allocation_id?: string | null
           source_invoice_line_id?: string | null
@@ -2877,6 +2952,13 @@ export type Database = {
           work_type?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "project_actual_cost_events_correction_root_event_id_fkey"
+            columns: ["correction_root_event_id"]
+            isOneToOne: false
+            referencedRelation: "project_actual_cost_events"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "project_actual_cost_events_cost_item_id_fkey"
             columns: ["cost_item_id"]
@@ -2917,6 +2999,13 @@ export type Database = {
             columns: ["purchase_order_line_item_id"]
             isOneToOne: false
             referencedRelation: "project_purchase_order_line_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_actual_cost_events_reverses_event_id_fkey"
+            columns: ["reverses_event_id"]
+            isOneToOne: false
+            referencedRelation: "project_actual_cost_events"
             referencedColumns: ["id"]
           },
           {
@@ -5762,6 +5851,7 @@ export type Database = {
           ai_suggestion_metadata_json: Json
           allocated_amount: number
           allocated_quantity: number | null
+          allocation_group_id: string
           allocation_sequence: number
           allocation_source: string
           allocation_status: string
@@ -5774,6 +5864,7 @@ export type Database = {
           cost_item_id: string | null
           cost_type: string | null
           created_at: string
+          edit_state: string
           id: string
           internal_cost_code: string | null
           match_status: string
@@ -5787,6 +5878,7 @@ export type Database = {
           reviewed_at: string | null
           reviewed_by_user_id: string | null
           source_cost_item_id: string | null
+          supersedes_allocation_id: string | null
           supplier_invoice_id: string
           supplier_invoice_line_id: string
           updated_at: string
@@ -5802,6 +5894,7 @@ export type Database = {
           ai_suggestion_metadata_json?: Json
           allocated_amount?: number
           allocated_quantity?: number | null
+          allocation_group_id?: string
           allocation_sequence?: number
           allocation_source?: string
           allocation_status?: string
@@ -5814,6 +5907,7 @@ export type Database = {
           cost_item_id?: string | null
           cost_type?: string | null
           created_at?: string
+          edit_state?: string
           id?: string
           internal_cost_code?: string | null
           match_status?: string
@@ -5827,6 +5921,7 @@ export type Database = {
           reviewed_at?: string | null
           reviewed_by_user_id?: string | null
           source_cost_item_id?: string | null
+          supersedes_allocation_id?: string | null
           supplier_invoice_id: string
           supplier_invoice_line_id: string
           updated_at?: string
@@ -5842,6 +5937,7 @@ export type Database = {
           ai_suggestion_metadata_json?: Json
           allocated_amount?: number
           allocated_quantity?: number | null
+          allocation_group_id?: string
           allocation_sequence?: number
           allocation_source?: string
           allocation_status?: string
@@ -5854,6 +5950,7 @@ export type Database = {
           cost_item_id?: string | null
           cost_type?: string | null
           created_at?: string
+          edit_state?: string
           id?: string
           internal_cost_code?: string | null
           match_status?: string
@@ -5867,6 +5964,7 @@ export type Database = {
           reviewed_at?: string | null
           reviewed_by_user_id?: string | null
           source_cost_item_id?: string | null
+          supersedes_allocation_id?: string | null
           supplier_invoice_id?: string
           supplier_invoice_line_id?: string
           updated_at?: string
@@ -5934,6 +6032,13 @@ export type Database = {
             columns: ["source_cost_item_id"]
             isOneToOne: false
             referencedRelation: "cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_invoice_line_allocations_supersedes_allocation_id_fkey"
+            columns: ["supersedes_allocation_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_invoice_line_allocations"
             referencedColumns: ["id"]
           },
           {
@@ -8098,6 +8203,22 @@ export type Database = {
           p_project_id: string
         }
         Returns: undefined
+      }
+      reverse_supplier_invoice_actual_cost_event: {
+        Args: {
+          p_event_id: string
+          p_organization_id: string
+          p_reversal_note?: string | null
+          p_reversal_reason?: string | null
+          p_supplier_invoice_id: string
+        }
+        Returns: {
+          original_event_id: string
+          project_id: string
+          reversal_event_id: string
+          successor_allocation_id: string
+          supplier_invoice_id: string
+        }[]
       }
       delete_task_attachment: {
         Args: { p_attachment_id: string }

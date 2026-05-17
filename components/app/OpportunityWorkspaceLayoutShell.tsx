@@ -22,6 +22,10 @@ function getActiveOpportunityTab(pathname: string, opportunityId: string) {
     return "start-pricing" as const;
   }
 
+  if (pathname.startsWith(`${basePath}/pricing-worksheet`)) {
+    return "pricing-worksheet" as const;
+  }
+
   return "overview" as const;
 }
 

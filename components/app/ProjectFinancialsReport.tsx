@@ -83,6 +83,18 @@ function deriveRowStatus(row: ProjectCostReportRow) {
   return { label: "No budget", status: "pending" as const };
 }
 
+function actualLedgerBadgeStatus(value: ProjectCostReportRow["drilldown"]["actualEvents"][number]["ledgerLabel"]) {
+  switch (value) {
+    case "Reversal":
+      return "overdue" as const;
+    case "Repost":
+      return "sent" as const;
+    case "Posting":
+    default:
+      return "approved" as const;
+  }
+}
+
 function CompactEmptyLine({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-[var(--text-secondary)]">{children}</p>;
 }
@@ -363,6 +375,7 @@ function DrilldownContent({
         </DetailSubsection>
 
         <DetailSubsection title="Actual spend" subtotal={row.drilldown.actualSubtotal}>
+          <p className="text-xs text-[var(--text-secondary)]">Includes postings, reversals, and reposts.</p>
           {row.drilldown.actualEvents.length === 0 ? (
             <CompactEmptyLine>No actual spend</CompactEmptyLine>
           ) : (
@@ -370,6 +383,7 @@ function DrilldownContent({
               <OperationalTableHeader>
                 <OperationalTableRow>
                   <OperationalTableHead>Date</OperationalTableHead>
+                  <OperationalTableHead>Type</OperationalTableHead>
                   <OperationalTableHead>Source</OperationalTableHead>
                   <OperationalTableHead>Supplier</OperationalTableHead>
                   <OperationalTableHead>Match</OperationalTableHead>
@@ -382,6 +396,18 @@ function DrilldownContent({
                 {row.drilldown.actualEvents.map((event) => (
                   <OperationalTableRow key={event.id}>
                     <OperationalTableCell>{event.eventDate}</OperationalTableCell>
+                    <OperationalTableCell>
+                      <div className="space-y-1">
+                        <StatusBadge status={actualLedgerBadgeStatus(event.ledgerLabel)}>
+                          {event.ledgerLabel}
+                        </StatusBadge>
+                        {event.isCorrectionChain ? (
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            Chain {event.correctionRootEventId?.slice(0, 8) ?? "—"}
+                          </p>
+                        ) : null}
+                      </div>
+                    </OperationalTableCell>
                     <OperationalTableCell>
                       <div className="space-y-1">
                         {event.supplierInvoiceId && event.supplierInvoiceNumber ? (
@@ -407,6 +433,16 @@ function DrilldownContent({
                         {event.supplierReference ? (
                           <p className="max-w-[220px] break-words text-xs text-[var(--text-secondary)]">
                             Ref: {event.supplierReference}
+                          </p>
+                        ) : null}
+                        {event.reversalReason ? (
+                          <p className="max-w-[220px] break-words text-xs text-[var(--text-secondary)]">
+                            Reason: {event.reversalReason}
+                          </p>
+                        ) : null}
+                        {event.reversalNote ? (
+                          <p className="max-w-[220px] break-words text-xs text-[var(--text-secondary)]">
+                            Note: {event.reversalNote}
                           </p>
                         ) : null}
                       </div>
@@ -472,12 +508,19 @@ export function ProjectFinancialsReport({
       ? "No committed purchase order costs found yet in Approved, Issued, Received, or Invoiced status."
       : null,
     !report.states.hasPostedActuals
-      ? "No posted actual costs found yet. Supplier invoice allocations must be approved and posted before they appear here."
+      ? "No posted actual-cost ledger events found yet. Supplier invoice allocations must be approved and posted before they appear here."
       : null,
   ].filter((value): value is string => Boolean(value));
 
   const budgetRows = report.rows.filter((row) => row.estimated !== 0 || row.isBudgetAdjustment);
-  const spendRows = report.rows.filter((row) => row.estimated !== 0 || row.committed !== 0 || row.actual !== 0 || row.isUnmatchedActual);
+  const spendRows = report.rows.filter(
+    (row) =>
+      row.estimated !== 0 ||
+      row.committed !== 0 ||
+      row.actual !== 0 ||
+      row.isUnmatchedActual ||
+      row.drilldown.actualEvents.length > 0
+  );
 
   return (
     <main className="space-y-6 bg-[var(--background)] pb-8">
@@ -526,7 +569,7 @@ export function ProjectFinancialsReport({
         <OperationalKpiCard
           label="Spent"
           value={formatMoney(report.summary.actual)}
-          helper="Posted actual cost events only"
+          helper="Net posted actual-cost ledger events"
           icon={<ReceiptText className="h-5 w-5" />}
           tone="orange"
         />

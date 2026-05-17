@@ -49,9 +49,17 @@ export interface ProjectCostReportCommittedLine {
 export interface ProjectCostReportActualEvent {
   id: string;
   eventDate: string;
+  createdAt: string;
   amount: number;
   taxAmount: number;
   totalAmount: number;
+  eventType: "posting" | "reversal";
+  ledgerLabel: "Posting" | "Reversal" | "Repost";
+  correctionRootEventId: string | null;
+  reversesEventId: string | null;
+  reversalReason: string | null;
+  reversalNote: string | null;
+  isCorrectionChain: boolean;
   supplierInvoiceId: string | null;
   supplierInvoiceNumber: string | null;
   supplierReference: string | null;
@@ -263,6 +271,21 @@ function resolveActualEventClassification(event: Pick<
   };
 }
 
+function deriveActualLedgerLabel(event: Pick<
+  ActualCostEventRow,
+  "id" | "event_type" | "correction_root_event_id"
+>): "Posting" | "Reversal" | "Repost" {
+  if (event.event_type === "reversal") {
+    return "Reversal";
+  }
+
+  if (event.correction_root_event_id && event.correction_root_event_id !== event.id) {
+    return "Repost";
+  }
+
+  return "Posting";
+}
+
 function createEmptyDrilldown(): ProjectCostReportRowDrilldown {
   return {
     estimatedSubtotal: 0,
@@ -343,12 +366,18 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
       .select(
         [
           "id",
+          "created_at",
           "project_id",
           "event_date",
           "amount",
           "tax_amount",
           "total_amount",
           "event_status",
+          "event_type",
+          "reverses_event_id",
+          "correction_root_event_id",
+          "reversal_reason",
+          "reversal_note",
           "work_type",
           "cost_type",
           "internal_cost_code",
@@ -364,6 +393,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
       )
       .eq("organization_id", organizationId)
       .eq("project_id", projectId)
+      .in("event_type", ["posting", "reversal"])
       .eq("event_status", "posted"),
   ]);
 
@@ -544,13 +574,19 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     ])
   );
 
-  const actualEvents = (actualCostRows ?? []) as Pick<
+  const actualEvents = ((actualCostRows ?? []) as unknown) as Pick<
     ActualCostEventRow,
     | "id"
+    | "created_at"
     | "event_date"
     | "amount"
     | "tax_amount"
     | "total_amount"
+    | "event_type"
+    | "reverses_event_id"
+    | "correction_root_event_id"
+    | "reversal_reason"
+    | "reversal_note"
     | "internal_cost_code"
     | "work_type"
     | "cost_type"
@@ -752,6 +788,11 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
 
   for (const event of actualEvents) {
     const classification = resolveActualEventClassification(event);
+    const ledgerLabel = deriveActualLedgerLabel(event);
+    const isCorrectionChain = Boolean(
+      event.event_type === "reversal" ||
+      (event.correction_root_event_id && event.correction_root_event_id !== event.id)
+    );
     const key = buildClassificationKey({
       internalCostCode: classification.internalCostCode,
       workType: classification.workType,
@@ -781,9 +822,17 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
       row.drilldown.actualEvents.push({
         id: event.id,
         eventDate: event.event_date,
+        createdAt: event.created_at,
         amount: roundMoney(Number(event.amount ?? 0)),
         taxAmount: roundMoney(Number(event.tax_amount ?? 0)),
         totalAmount: roundMoney(Number(event.total_amount ?? 0)),
+        eventType: event.event_type as "posting" | "reversal",
+        ledgerLabel,
+        correctionRootEventId: event.correction_root_event_id ?? null,
+        reversesEventId: event.reverses_event_id ?? null,
+        reversalReason: normalizeText(event.reversal_reason),
+        reversalNote: normalizeText(event.reversal_note),
+        isCorrectionChain,
         supplierInvoiceId: event.supplier_invoice_id ?? null,
         supplierInvoiceNumber: supplierInvoice?.invoice_number ?? null,
         supplierReference: normalizeText(event.source_reference),
@@ -820,7 +869,17 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
         actualEvents: [...row.drilldown.actualEvents].sort((left, right) => {
           const leftAt = new Date(left.eventDate).getTime();
           const rightAt = new Date(right.eventDate).getTime();
-          return rightAt - leftAt;
+          if (rightAt !== leftAt) {
+            return rightAt - leftAt;
+          }
+
+          const leftCreatedAt = new Date(left.createdAt).getTime();
+          const rightCreatedAt = new Date(right.createdAt).getTime();
+          if (rightCreatedAt !== leftCreatedAt) {
+            return rightCreatedAt - leftCreatedAt;
+          }
+
+          return right.id.localeCompare(left.id);
         }),
       },
     }))
@@ -925,7 +984,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     states: {
       hasBaselineQuote: baselineQuote !== null,
       hasCommittedCosts: committed > 0,
-      hasPostedActuals: actual > 0,
+      hasPostedActuals: actualEvents.length > 0,
       hasReportRows: rows.length > 0,
     },
   };

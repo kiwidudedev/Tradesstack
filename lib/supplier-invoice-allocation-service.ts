@@ -63,6 +63,17 @@ export type SupplierInvoiceActualCostPostingResult = {
   skippedMessages: string[];
 };
 
+export type SupplierInvoiceActualCostReversalResult = {
+  originalEvent: ProjectActualCostEventRow;
+  reversalEvent: ProjectActualCostEventRow;
+  successorAllocation: SupplierInvoiceLineAllocationRow;
+  supplierInvoiceId: string;
+  projectId: string;
+};
+
+type ReverseSupplierInvoiceActualCostEventRpcRow =
+  Database["public"]["Functions"]["reverse_supplier_invoice_actual_cost_event"]["Returns"][number];
+
 function toNumber(value: number | null | undefined) {
   return Number(value ?? 0);
 }
@@ -122,6 +133,27 @@ async function fetchActualCostEventsForInvoice(params: {
   }
 
   return (data ?? []) as ProjectActualCostEventRow[];
+}
+
+async function loadActualCostEventRow(params: {
+  supabase: ServerSupabase;
+  organizationId: string;
+  supplierInvoiceId: string;
+  eventId: string;
+}) {
+  const { data, error } = await params.supabase
+    .from("project_actual_cost_events")
+    .select("*")
+    .eq("organization_id", params.organizationId)
+    .eq("supplier_invoice_id", params.supplierInvoiceId)
+    .eq("id", params.eventId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Actual cost event not found.");
+  }
+
+  return data as ProjectActualCostEventRow;
 }
 
 async function fetchPostedActualCostEventsByAllocationIds(params: {
@@ -1229,4 +1261,83 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
     skippedCount: skippedMessages.length,
     skippedMessages,
   } satisfies SupplierInvoiceActualCostPostingResult;
+}
+
+export async function reverseSupplierInvoiceActualCostEvent(params: {
+  supabase: ServerSupabase;
+  organizationId: string;
+  supplierInvoiceId: string;
+  eventId: string;
+  reversalReason: string;
+  reversalNote?: string | null;
+  canReverse: boolean;
+}) {
+  if (!params.canReverse) {
+    throw new Error("You do not have permission to reverse actual costs.");
+  }
+
+  const reversalReason = params.reversalReason.trim();
+  const reversalNote = params.reversalNote?.trim() ?? "";
+
+  if (reversalReason.length === 0) {
+    throw new Error("Add a reversal reason before reversing an actual cost.");
+  }
+
+  const originalEvent = await loadActualCostEventRow({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    supplierInvoiceId: params.supplierInvoiceId,
+    eventId: params.eventId,
+  });
+
+  if (originalEvent.event_type !== "posting") {
+    throw new Error("Only posting actual cost events can be reversed.");
+  }
+
+  if (originalEvent.event_status !== "posted") {
+    throw new Error("Only posted actual cost events can be reversed.");
+  }
+
+  const { data, error } = await params.supabase.rpc(
+    "reverse_supplier_invoice_actual_cost_event" as never,
+    {
+      p_organization_id: params.organizationId,
+      p_supplier_invoice_id: params.supplierInvoiceId,
+      p_event_id: params.eventId,
+      p_reversal_reason: reversalReason,
+      p_reversal_note: reversalNote.length > 0 ? reversalNote : null,
+    } as never
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const resultRow = (Array.isArray(data) ? data[0] : null) as ReverseSupplierInvoiceActualCostEventRpcRow | null;
+  if (!resultRow?.reversal_event_id || !resultRow?.successor_allocation_id) {
+    throw new Error("The actual cost reversal did not return the expected result.");
+  }
+
+  const [reversalEvent, successorAllocation] = await Promise.all([
+    loadActualCostEventRow({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      supplierInvoiceId: params.supplierInvoiceId,
+      eventId: resultRow.reversal_event_id,
+    }),
+    loadAllocationRow({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      supplierInvoiceId: params.supplierInvoiceId,
+      allocationId: resultRow.successor_allocation_id,
+    }),
+  ]);
+
+  return {
+    originalEvent,
+    reversalEvent,
+    successorAllocation,
+    supplierInvoiceId: params.supplierInvoiceId,
+    projectId: resultRow.project_id,
+  } satisfies SupplierInvoiceActualCostReversalResult;
 }

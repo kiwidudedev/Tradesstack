@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
+import { Fragment, useMemo, useState, useEffect } from "react";
 import { ChevronRight, ChevronUp, MoreVertical, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
@@ -35,6 +35,7 @@ import {
   disputeSupplierInvoiceDraftAllocationAction,
   markSupplierInvoiceLineAllocationUnmatchedAction,
   postSupplierInvoiceActualCostsAction,
+  reverseSupplierInvoiceActualCostEventAction,
   saveAllReadySupplierInvoiceDraftAllocationsAction,
   saveSupplierInvoiceDraftAllocationAction,
 } from "./actions";
@@ -126,6 +127,18 @@ type SupplierInvoiceAllocationPreviewData = {
   candidateScore: number;
 };
 
+type AllocationReviewTableRow = {
+  line: LineFormState;
+  lineDraftAllocations: SupplierInvoiceLineAllocationRow[];
+  candidatePreviewRows: SupplierInvoiceAllocationPreviewData[];
+  selectedAllocation: SupplierInvoiceLineAllocationRow | null;
+  selectedPreviewRow: SupplierInvoiceAllocationPreviewData;
+  operationalStatus: AllocationOperationalStatus;
+  alternateCandidateCount: number;
+  lineHasServerBackedPreview: boolean;
+  lineHasPostedActualCosts: boolean;
+};
+
 type SupplierInvoiceDetailWorkspaceProps = {
   organizationId: string;
   initialInvoice: SupplierInvoiceRow;
@@ -144,6 +157,7 @@ type SupplierInvoiceDetailWorkspaceProps = {
   initialActualCostEvents: ProjectActualCostEventRow[];
   canWrite: boolean;
   canReview: boolean;
+  canReverse: boolean;
 };
 
 type InvoiceFormState = {
@@ -286,80 +300,75 @@ function matchStatusBadge(value: SupplierInvoiceMatchStatus | string): NonNullab
   }
 }
 
-function allocationPreviewStatusBadge(
-  value: SupplierInvoiceAllocationPreviewStatus
+type AllocationOperationalStatus =
+  | "Ready"
+  | "Needs review"
+  | "Approved"
+  | "Posted"
+  | "Needs correction"
+  | "Corrected";
+
+const ACTUAL_COST_REVERSAL_REASONS = [
+  { value: "allocation_correction", label: "Allocation correction" },
+  { value: "classification_correction", label: "Classification correction" },
+  { value: "accounting_mapping_correction", label: "Accounting mapping correction" },
+  { value: "duplicate_posting", label: "Duplicate posting" },
+  { value: "other", label: "Other" },
+] as const;
+
+function allocationOperationalStatusBadge(value: AllocationOperationalStatus): NonNullable<StatusBadgeProps["status"]> {
+  switch (value) {
+    case "Posted":
+    case "Corrected":
+      return "approved";
+    case "Approved":
+      return "sent";
+    case "Ready":
+      return "draft";
+    case "Needs correction":
+      return "overdue";
+    case "Needs review":
+    default:
+      return "pending";
+  }
+}
+
+function allocationExceptionBadgeStatus(
+  value:
+    | "Needs classification review"
+    | "Needs accounting mapping"
+    | "Unmatched"
+    | "Disputed"
+    | "Needs correction"
 ): NonNullable<StatusBadgeProps["status"]> {
   switch (value) {
-    case "Ready":
-      return "approved";
+    case "Unmatched":
+      return "draft";
     case "Needs accounting mapping":
       return "sent";
-    case "Needs cost review":
-      return "pending";
-    case "No PO line candidate":
-    default:
-      return "draft";
-  }
-}
-
-function allocationReviewStatusBadge(value: string): NonNullable<StatusBadgeProps["status"]> {
-  switch (value) {
-    case "reviewed":
-      return "approved";
-    case "needs_accounting_review":
-      return "sent";
-    case "needs_cost_review":
-      return "pending";
-    case "disputed":
+    case "Disputed":
+    case "Needs correction":
       return "overdue";
-    case "pending":
-    default:
-      return "draft";
-  }
-}
-
-function allocationApprovalStatusBadge(value: string): NonNullable<StatusBadgeProps["status"]> {
-  switch (value) {
-    case "approved":
-      return "approved";
-    case "disputed":
-      return "overdue";
-    case "pending":
+    case "Needs classification review":
     default:
       return "pending";
   }
 }
 
-function formatAllocationReviewStatusLabel(value: string) {
-  switch (value) {
-    case "reviewed":
-      return "Reviewed";
-    case "needs_accounting_review":
-      return "Needs accounting review";
-    case "needs_cost_review":
-      return "Needs cost review";
-    case "disputed":
-      return "Disputed";
-    case "pending":
-    default:
-      return "Pending review";
+function actualCostHistoryLabel(event: ProjectActualCostEventRow) {
+  if (event.event_type === "reversal") {
+    return "Reversal";
   }
-}
 
-function formatAllocationApprovalStatusLabel(value: string) {
-  switch (value) {
-    case "approved":
-      return "Approved";
-    case "disputed":
-      return "Disputed";
-    case "pending":
-    default:
-      return "Pending";
+  if (
+    event.event_type === "posting" &&
+    event.correction_root_event_id &&
+    event.correction_root_event_id !== event.id
+  ) {
+    return "Repost";
   }
-}
 
-function actualCostPostingStatusBadge(value: "Posted" | "Not posted"): NonNullable<StatusBadgeProps["status"]> {
-  return value === "Posted" ? "approved" : "draft";
+  return "Posted";
 }
 
 const FIELD_SELECT_CLASS =
@@ -385,6 +394,7 @@ export function SupplierInvoiceDetailWorkspace({
   initialActualCostEvents,
   canWrite,
   canReview,
+  canReverse,
 }: SupplierInvoiceDetailWorkspaceProps) {
   const { session } = useAuth();
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
@@ -414,11 +424,20 @@ export function SupplierInvoiceDetailWorkspace({
   const [isSavingDraftAllocations, setIsSavingDraftAllocations] = useState(false);
   const [isReviewingAllocationId, setIsReviewingAllocationId] = useState<string | null>(null);
   const [isPostingActualCosts, setIsPostingActualCosts] = useState(false);
+  const [isReverseActualCostDialogOpen, setIsReverseActualCostDialogOpen] = useState(false);
+  const [isReversingActualCost, setIsReversingActualCost] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState<{
+    allocation: SupplierInvoiceLineAllocationRow;
+    event: ProjectActualCostEventRow;
+  } | null>(null);
+  const [reversalReason, setReversalReason] = useState("");
+  const [reversalNote, setReversalNote] = useState("");
   const [allocationReviewNoteMode, setAllocationReviewNoteMode] = useState<{
     allocationId: string;
     mode: "approve_unmatched" | "dispute";
   } | null>(null);
   const [allocationReviewNotes, setAllocationReviewNotes] = useState<Record<string, string>>({});
+  const [expandedAllocationReviewRows, setExpandedAllocationReviewRows] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -557,15 +576,26 @@ export function SupplierInvoiceDetailWorkspace({
 
     return grouped;
   }, [draftAllocations]);
-  const postedActualCostEventsByAllocationId = useMemo(() => {
+  const postedPostingActualCostEventsByAllocationId = useMemo(() => {
     const map = new Map<string, ProjectActualCostEventRow>();
 
     actualCostEvents.forEach((event) => {
       const allocationId =
         event.source_invoice_allocation_id ?? event.supplier_invoice_line_allocation_id;
 
-      if (allocationId && event.event_status === "posted") {
+      if (allocationId && event.event_status === "posted" && event.event_type === "posting") {
         map.set(allocationId, event);
+      }
+    });
+
+    return map;
+  }, [actualCostEvents]);
+  const reversalActualCostEventsByOriginalEventId = useMemo(() => {
+    const map = new Map<string, ProjectActualCostEventRow>();
+
+    actualCostEvents.forEach((event) => {
+      if (event.event_type === "reversal" && event.reverses_event_id) {
+        map.set(event.reverses_event_id, event);
       }
     });
 
@@ -575,9 +605,9 @@ export function SupplierInvoiceDetailWorkspace({
     () =>
       summarizeApprovedUnpostedAllocations({
         allocations: draftAllocations,
-        postedAllocationIds: new Set(postedActualCostEventsByAllocationId.keys()),
+        postedAllocationIds: new Set(postedPostingActualCostEventsByAllocationId.keys()),
       }),
-    [draftAllocations, postedActualCostEventsByAllocationId]
+    [draftAllocations, postedPostingActualCostEventsByAllocationId]
   );
   const readyDraftCandidates = useMemo(() => {
     const candidates: Array<{ invoiceLineId: string; purchaseOrderLineItemId: string }> = [];
@@ -598,51 +628,196 @@ export function SupplierInvoiceDetailWorkspace({
 
     return candidates;
   }, [allocationPreviewRowsByInvoiceLine]);
-  function getLineDraftAllocations(invoiceLineId: string) {
-    return draftAllocationsByInvoiceLine.get(invoiceLineId) ?? [];
-  }
-
-  function hasSavedDraftForCandidate(invoiceLineId: string, purchaseOrderLineItemId: string | null) {
-    const lineDraftAllocations = getLineDraftAllocations(invoiceLineId);
-    if (!purchaseOrderLineItemId) {
-      return lineDraftAllocations.some(
-        (allocation) =>
-          allocation.allocation_status === "unmatched" && !allocation.purchase_order_line_item_id
+  const allocationReviewRows = useMemo<AllocationReviewTableRow[]>(() => {
+    return lines.map((line) => {
+      const lineDraftAllocations = draftAllocationsByInvoiceLine.get(line.id) ?? [];
+      const activeLineDraftAllocations = lineDraftAllocations.filter(
+        (allocation) => allocation.edit_state !== "reversed" && allocation.edit_state !== "superseded"
       );
-    }
-
-    return lineDraftAllocations.some(
-      (allocation) => allocation.purchase_order_line_item_id === purchaseOrderLineItemId
-    );
-  }
-
-  function getSavedDraftForCandidate(invoiceLineId: string, purchaseOrderLineItemId: string | null) {
-    const lineDraftAllocations = getLineDraftAllocations(invoiceLineId);
-    if (!purchaseOrderLineItemId) {
-      return (
-        lineDraftAllocations.find(
+      const basePreviewRows = allocationPreviewRowsByInvoiceLine.get(line.id) ?? [
+        {
+          candidateKey: `${line.id}:none`,
+          invoiceLineId: line.id,
+          invoiceLineDescription: line.description.trim() || "Untitled invoice line",
+          invoiceLineAmount: Number(line.lineTotal),
+          candidatePurchaseOrderId: null,
+          candidatePurchaseOrderNumber: null,
+          candidatePurchaseOrderTitle: null,
+          candidatePurchaseOrderLineItemId: null,
+          candidatePurchaseOrderLineDescription: null,
+          candidatePurchaseOrderLineAmount: null,
+          costItemId: null,
+          sourceCostItemId: null,
+          workType: null,
+          costType: null,
+          internalCostCode: null,
+          organizationCostCodeId: null,
+          organizationCostCode: null,
+          organizationCostCodeName: null,
+          accountingResolutionStatus: "pending",
+          status: "No PO line candidate" as const,
+          candidateScore: 0,
+        },
+      ];
+      const savedUnmatchedAllocation =
+        [...activeLineDraftAllocations].reverse().find(
           (allocation) =>
             allocation.allocation_status === "unmatched" && !allocation.purchase_order_line_item_id
-        ) ?? null
-      );
-    }
+        ) ?? null;
+      const previewRows =
+        savedUnmatchedAllocation &&
+        !basePreviewRows.some((previewRow) => previewRow.candidatePurchaseOrderLineItemId === null)
+          ? [
+              ...basePreviewRows,
+              {
+                candidateKey: `${line.id}:saved-unmatched`,
+                invoiceLineId: line.id,
+                invoiceLineDescription: line.description.trim() || "Untitled invoice line",
+                invoiceLineAmount: Number(line.lineTotal),
+                candidatePurchaseOrderId: null,
+                candidatePurchaseOrderNumber: null,
+                candidatePurchaseOrderTitle: null,
+                candidatePurchaseOrderLineItemId: null,
+                candidatePurchaseOrderLineDescription: null,
+                candidatePurchaseOrderLineAmount: null,
+                costItemId: null,
+                sourceCostItemId: null,
+                workType: null,
+                costType: null,
+                internalCostCode: null,
+                organizationCostCodeId: savedUnmatchedAllocation.organization_cost_code_id,
+                organizationCostCode:
+                  costCodes.find((costCode) => costCode.id === savedUnmatchedAllocation.organization_cost_code_id)
+                    ?.code ?? null,
+                organizationCostCodeName:
+                  costCodes.find((costCode) => costCode.id === savedUnmatchedAllocation.organization_cost_code_id)
+                    ?.name ?? null,
+                accountingResolutionStatus: "pending",
+                status: "Needs cost review" as const,
+                candidateScore: 0,
+              },
+            ]
+          : basePreviewRows;
+      const orderedActiveLineDraftAllocations = [...activeLineDraftAllocations].sort((left, right) => {
+        const leftSequence = left.allocation_sequence ?? 0;
+        const rightSequence = right.allocation_sequence ?? 0;
 
-    return (
-      lineDraftAllocations.find(
-        (allocation) => allocation.purchase_order_line_item_id === purchaseOrderLineItemId
-      ) ?? null
-    );
+        if (leftSequence !== rightSequence) {
+          return leftSequence - rightSequence;
+        }
+
+        return new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+      });
+      const selectedAllocation =
+        [...orderedActiveLineDraftAllocations]
+          .reverse()
+          .find((allocation) => Boolean(allocation.supersedes_allocation_id)) ??
+        [...orderedActiveLineDraftAllocations].reverse()[0] ??
+        null;
+      const selectedPreviewRow =
+        (selectedAllocation?.purchase_order_line_item_id
+          ? previewRows.find(
+              (previewRow) =>
+                previewRow.candidatePurchaseOrderLineItemId === selectedAllocation.purchase_order_line_item_id
+            )
+          : previewRows.find((previewRow) => previewRow.candidatePurchaseOrderLineItemId === null)) ??
+        previewRows[0];
+      const selectedPreviewKey = selectedPreviewRow.candidatePurchaseOrderLineItemId ?? "__unmatched__";
+      const alternateCandidateCount = new Set(
+        previewRows
+          .map((previewRow) => previewRow.candidatePurchaseOrderLineItemId)
+          .filter(
+            (candidatePurchaseOrderLineItemId) =>
+              candidatePurchaseOrderLineItemId !== null && candidatePurchaseOrderLineItemId !== selectedPreviewKey
+          )
+      ).size;
+      const hasHistoricalReversal = lineDraftAllocations.some(
+        (allocation) => allocation.edit_state === "reversed"
+      );
+      const postingEvent = selectedAllocation
+        ? postedPostingActualCostEventsByAllocationId.get(selectedAllocation.id) ?? null
+        : null;
+      const hasReversalForPosting = postingEvent
+        ? reversalActualCostEventsByOriginalEventId.has(postingEvent.id)
+        : false;
+      const operationalStatus: AllocationOperationalStatus = (() => {
+        if (!selectedAllocation) {
+          return selectedPreviewRow.status === "Ready" ? "Ready" : "Needs review";
+        }
+
+        if (postingEvent) {
+          return selectedAllocation.supersedes_allocation_id ? "Corrected" : "Posted";
+        }
+
+        if (selectedAllocation.supersedes_allocation_id) {
+          return hasHistoricalReversal ? "Needs correction" : "Approved";
+        }
+
+        if (hasReversalForPosting || selectedAllocation.edit_state === "reversed") {
+          return "Needs correction";
+        }
+
+        if (selectedAllocation.approval_status === "approved") {
+          return "Approved";
+        }
+
+        if (
+          selectedAllocation.approval_status === "disputed" ||
+          selectedAllocation.review_status === "disputed" ||
+          selectedPreviewRow.status === "Needs cost review" ||
+          selectedPreviewRow.status === "Needs accounting mapping" ||
+          selectedPreviewRow.status === "No PO line candidate"
+        ) {
+          return "Needs review";
+        }
+
+        return selectedPreviewRow.status === "Ready" ? "Ready" : "Needs review";
+      })();
+
+      return {
+        line,
+        lineDraftAllocations,
+        candidatePreviewRows: previewRows,
+        selectedAllocation,
+        selectedPreviewRow,
+        operationalStatus,
+        alternateCandidateCount,
+        lineHasServerBackedPreview: allocationPreviewRowsByInvoiceLine.has(line.id),
+        lineHasPostedActualCosts: lineDraftAllocations.some((allocation) =>
+          postedPostingActualCostEventsByAllocationId.has(allocation.id)
+        ),
+      };
+    });
+  }, [
+    allocationPreviewRowsByInvoiceLine,
+    costCodes,
+    draftAllocationsByInvoiceLine,
+    lines,
+    postedPostingActualCostEventsByAllocationId,
+    reversalActualCostEventsByOriginalEventId,
+  ]);
+
+  function openReverseActualCostDialog(params: {
+    allocation: SupplierInvoiceLineAllocationRow;
+    event: ProjectActualCostEventRow;
+  }) {
+    setReverseTarget(params);
+    setReversalReason("");
+    setReversalNote("");
+    setError(null);
+    setMessage(null);
+    setIsReverseActualCostDialogOpen(true);
   }
 
-  function hasAnyOtherSavedDraftForLine(invoiceLineId: string, purchaseOrderLineItemId: string | null) {
-    const lineDraftAllocations = getLineDraftAllocations(invoiceLineId);
-    return lineDraftAllocations.some((allocation) => {
-      if (!purchaseOrderLineItemId) {
-        return allocation.purchase_order_line_item_id !== null;
-      }
+  function closeReverseActualCostDialog(options?: { force?: boolean }) {
+    if (isReversingActualCost && !options?.force) {
+      return;
+    }
 
-      return allocation.purchase_order_line_item_id !== purchaseOrderLineItemId;
-    });
+    setIsReverseActualCostDialogOpen(false);
+    setReverseTarget(null);
+    setReversalReason("");
+    setReversalNote("");
   }
 
   useEffect(() => {
@@ -1211,6 +1386,50 @@ export function SupplierInvoiceDetailWorkspace({
     }
   }
 
+  async function reverseActualCostEvent() {
+    if (!reverseTarget || !canReverse || isReversingActualCost) {
+      return;
+    }
+
+    const normalizedReason = reversalReason.trim();
+    if (normalizedReason.length === 0) {
+      setError("Select a reversal reason before continuing.");
+      return;
+    }
+
+    setIsReversingActualCost(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await reverseSupplierInvoiceActualCostEventAction({
+        organizationId,
+        supplierInvoiceId: invoice.id,
+        eventId: reverseTarget.event.id,
+        reversalReason: normalizedReason,
+        reversalNote: reversalNote.trim() || null,
+      });
+
+      if (!result.ok || !result.reversal) {
+        throw new Error(result.error ?? "Unable to reverse the actual cost event.");
+      }
+
+      await refreshWorkflowState();
+      closeReverseActualCostDialog({ force: true });
+      setMessage(
+        "Actual cost reversed. A new correction draft allocation was created for review. This does not change invoice status or PO match approval."
+      );
+    } catch (reverseError) {
+      setError(
+        reverseError instanceof Error
+          ? reverseError.message
+          : "Unable to reverse the actual cost event."
+      );
+    } finally {
+      setIsReversingActualCost(false);
+    }
+  }
+
   async function updateMatchStatus(matchId: string, nextStatus: "rejected") {
     setError(null);
     setMessage(null);
@@ -1767,89 +1986,117 @@ export function SupplierInvoiceDetailWorkspace({
         </OperationalPanel>
 
         <OperationalPanel
-          title="Purchase Order Matching"
-          description="Match this invoice to purchase orders and monitor allocation approval."
+          title="Invoice Review"
+          description="Review this invoice against matched purchase orders, approve valid lines, and post actual costs."
           actions={
-            canWrite ? (
-              <Button type="button" variant="secondary" size="sm" onClick={openMatchDialog}>
-                Match to Purchase Orders
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {canWrite ? (
+                <Button type="button" variant="secondary" size="sm" onClick={openMatchDialog}>
+                  Match to Purchase Orders
+                </Button>
+              ) : null}
+              <div className="text-right text-xs text-[var(--text-secondary)]">
+                <div>{approvedUnpostedActualCostSummary.count} ready to post</div>
+                <div>{toMoney(approvedUnpostedActualCostSummary.amount)}</div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void postApprovedActualCosts()}
+                disabled={
+                  !canReview ||
+                  isPostingActualCosts ||
+                  approvedUnpostedActualCostSummary.count === 0
+                }
+              >
+                {isPostingActualCosts ? "Posting..." : "Post approved actual costs"}
               </Button>
-            ) : null
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void saveAllReadyDraftAllocations()}
+                disabled={!canWrite || isSavingDraftAllocations || readyDraftCandidates.length === 0}
+              >
+                {isSavingDraftAllocations ? "Saving..." : "Save all Ready rows"}
+              </Button>
+            </div>
+          }
+          toolbar={
+            <div className="flex flex-wrap gap-2 text-xs text-[var(--text-secondary)]">
+              <span>Select or confirm the right purchase orders, then validate each invoice line against the matched PO lines before approval and posting.</span>
+            </div>
           }
           contentClassName="p-0"
         >
-          <div className="grid gap-3 px-6 py-6 md:grid-cols-4">
-            {[
-              ["Matched", toMoney(matchedTotal)],
-              ["Remaining", toMoney(remainingMatchAmount)],
-              ["Approved", toMoney(approvedAllocationTotal)],
-              ["Pending / Disputed", `${toMoney(pendingAllocationTotal)} / ${toMoney(disputedAllocationTotal)}`],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
-                <p className="mt-1 font-semibold text-[var(--text-primary)]">{value}</p>
-              </div>
-            ))}
-          </div>
-          {matchesWithPurchaseOrders.length === 0 ? (
-            <div className="px-6 pb-6">
-              <OperationalEmptyState title="No purchase orders linked yet." />
+          <div className="space-y-5 px-6 py-6">
+            <div className="grid gap-3 md:grid-cols-4">
+              {[
+                ["Matched POs", String(matchesWithPurchaseOrders.length)],
+                ["Matched amount", toMoney(matchedTotal)],
+                ["Remaining", toMoney(remainingMatchAmount)],
+                ["Approved / Pending", `${toMoney(approvedAllocationTotal)} / ${toMoney(pendingAllocationTotal)}`],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
+                  <p className="mt-1 font-semibold text-[var(--text-primary)]">{value}</p>
+                </div>
+              ))}
             </div>
-          ) : (
-            <OperationalTable className="min-w-[1120px]">
-              <OperationalTableHeader>
-                <OperationalTableRow>
-                  <OperationalTableHead>Purchase Order</OperationalTableHead>
-                  <OperationalTableHead>Supplier</OperationalTableHead>
-                  <OperationalTableHead>User</OperationalTableHead>
-                  <OperationalTableHead>Amount</OperationalTableHead>
-                  <OperationalTableHead>Status</OperationalTableHead>
-                  <OperationalTableHead className="text-right">Actions</OperationalTableHead>
-                </OperationalTableRow>
-              </OperationalTableHeader>
-              <OperationalTableBody>
-                {matchesWithPurchaseOrders.map((match) => (
-                  <OperationalTableRow key={match.id} className="align-top">
-                    <OperationalTableCell className="text-[var(--text-secondary)]">
-                      <span className="block font-semibold text-[var(--text-primary)]">
-                        {match.purchaseOrder?.purchase_order_number || "Purchase Order"}
-                      </span>
-                      <span className="block leading-[1.35]">
-                        {match.purchaseOrder?.purchase_order_title || "Untitled purchase order"}
-                      </span>
-                      {match.approval_notes?.trim() ? (
-                        <span className="mt-1 block leading-[1.35]">{match.approval_notes}</span>
-                      ) : null}
-                    </OperationalTableCell>
-                    <OperationalTableCell className="text-[var(--text-secondary)]">
-                      <span className="block">
-                        {match.purchaseOrder?.issued_to_label?.trim() || "Unassigned supplier"}
-                      </span>
-                      {match.purchaseOrder?.requested_date ? (
-                        <span className="block">
-                          {toDayMonthYearLabel(match.purchaseOrder.requested_date)}
-                        </span>
-                      ) : null}
-                    </OperationalTableCell>
-                    <OperationalTableCell className="text-[var(--text-secondary)]">
-                      {match.approverName || "Unassigned"}
-                    </OperationalTableCell>
-                    <OperationalTableCell className="font-semibold text-[var(--text-primary)]">
-                      {toMoney(Number(match.matched_amount ?? 0))}
-                    </OperationalTableCell>
-                    <OperationalTableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <StatusBadge status={matchApprovalBadge(match.approval_status)}>
-                          {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
-                        </StatusBadge>
-                        <StatusBadge status={matchStatusBadge(match.match_status)}>
-                          {formatMatchStatusLabel(match.match_status)}
-                        </StatusBadge>
+
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Matched purchase orders</h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    These matched POs provide the context for the invoice-line review below.
+                  </p>
+                </div>
+              </div>
+
+              {matchesWithPurchaseOrders.length === 0 ? (
+                <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-5 py-5">
+                  <OperationalEmptyState title="No purchase orders linked yet." />
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {matchesWithPurchaseOrders.map((match) => (
+                    <div
+                      key={match.id}
+                      className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-4 py-4 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 space-y-1 text-sm text-[var(--text-secondary)]">
+                        <p className="font-semibold text-[var(--text-primary)]">
+                          {match.purchaseOrder?.purchase_order_number || "Purchase Order"}
+                        </p>
+                        <p className="leading-[1.35]">
+                          {match.purchaseOrder?.purchase_order_title || "Untitled purchase order"}
+                        </p>
+                        <p>
+                          {match.purchaseOrder?.issued_to_label?.trim() || "Unassigned supplier"}
+                          {match.purchaseOrder?.requested_date
+                            ? ` · ${toDayMonthYearLabel(match.purchaseOrder.requested_date)}`
+                            : ""}
+                        </p>
+                        {match.approval_notes?.trim() ? (
+                          <p className="text-[var(--text-muted)]">{match.approval_notes}</p>
+                        ) : null}
                       </div>
-                    </OperationalTableCell>
-                    <OperationalTableCell>
-                      {canWrite ? (
-                        <div className="flex justify-end">
+
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <p className="font-semibold text-[var(--text-primary)]">
+                          {toMoney(Number(match.matched_amount ?? 0))}
+                        </p>
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                          <StatusBadge status={matchApprovalBadge(match.approval_status)}>
+                            {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
+                          </StatusBadge>
+                          <StatusBadge status={matchStatusBadge(match.match_status)}>
+                            {formatMatchStatusLabel(match.match_status)}
+                          </StatusBadge>
+                        </div>
+                        {canWrite ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -1874,493 +2121,734 @@ export function SupplierInvoiceDetailWorkspace({
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        </div>
-                      ) : null}
-                    </OperationalTableCell>
-                  </OperationalTableRow>
-                ))}
-              </OperationalTableBody>
-            </OperationalTable>
-          )}
-        </OperationalPanel>
-
-        {matchesWithPurchaseOrders.length > 0 ? (
-          <OperationalPanel
-            title="Line allocation review"
-            description="Draft allocations can be saved and reviewed here. Saving or reviewing allocations does not change PO match approval or invoice status. Actual costs are only created when you manually post approved allocations."
-            actions={
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <StatusBadge status="draft">Draft allocation</StatusBadge>
-                <div className="text-right text-xs text-[var(--text-secondary)]">
-                  <div>{approvedUnpostedActualCostSummary.count} approved unposted</div>
-                  <div>{toMoney(approvedUnpostedActualCostSummary.amount)}</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void postApprovedActualCosts()}
-                  disabled={
-                    !canReview ||
-                    isPostingActualCosts ||
-                    approvedUnpostedActualCostSummary.count === 0
-                  }
-                >
-                  {isPostingActualCosts ? "Posting..." : "Post approved actual costs"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void saveAllReadyDraftAllocations()}
-                  disabled={!canWrite || isSavingDraftAllocations || readyDraftCandidates.length === 0}
-                >
-                  {isSavingDraftAllocations ? "Saving..." : "Save all Ready rows"}
-                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t border-[var(--border)]">
+            {matchesWithPurchaseOrders.length > 0 && lines.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Invoice lines</h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Validate each invoice line against the matched PO lines below.
+                  </p>
+                </div>
               </div>
-            }
-            toolbar={
-              <div className="flex flex-wrap gap-2 text-xs text-[var(--text-secondary)]">
-                <span>`Ready` means the candidate has inherited classification and a resolved company code.</span>
-                <span>`Needs cost review` means the TradesStack classification is incomplete or flagged for review.</span>
-                <span>`Needs accounting mapping` means classification exists but no active company mapping rule resolved.</span>
+            ) : null}
+            {matchesWithPurchaseOrders.length === 0 ? (
+              <div className="px-6 py-6">
+                <div className="space-y-3">
+                  <OperationalEmptyState title="Match purchase orders to start reviewing invoice lines against PO lines." />
+                  {canWrite ? (
+                    <div className="flex justify-center">
+                      <Button type="button" variant="secondary" size="sm" onClick={openMatchDialog}>
+                        Match to PO
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            }
-            contentClassName="p-0"
-          >
-            {lines.length === 0 ? (
+            ) : lines.length === 0 ? (
               <div className="px-6 py-6">
                 <OperationalEmptyState title="Add invoice lines to preview candidate purchase order allocations." />
               </div>
             ) : (
-              <OperationalTable className="min-w-[1320px]">
+              <OperationalTable className="min-w-[1080px]">
               <OperationalTableHeader>
                 <OperationalTableRow>
                   <OperationalTableHead>Invoice line</OperationalTableHead>
-                  <OperationalTableHead>Candidate PO line</OperationalTableHead>
+                  <OperationalTableHead>Matched PO line</OperationalTableHead>
                   <OperationalTableHead>Amount</OperationalTableHead>
-                  <OperationalTableHead>TradesStack classification</OperationalTableHead>
-                  <OperationalTableHead>Company cost code</OperationalTableHead>
                   <OperationalTableHead>Status</OperationalTableHead>
-                  <OperationalTableHead className="text-right">Actions</OperationalTableHead>
+                  <OperationalTableHead className="text-right">Action</OperationalTableHead>
                 </OperationalTableRow>
               </OperationalTableHeader>
               <OperationalTableBody>
-                {lines.flatMap((line) => {
-                  const basePreviewRows = allocationPreviewRowsByInvoiceLine.get(line.id) ?? [
-                    {
-                      candidateKey: `${line.id}:none`,
-                      invoiceLineId: line.id,
-                      invoiceLineDescription: line.description.trim() || "Untitled invoice line",
-                      invoiceLineAmount: Number(line.lineTotal),
-                      candidatePurchaseOrderId: null,
-                      candidatePurchaseOrderNumber: null,
-                      candidatePurchaseOrderTitle: null,
-                      candidatePurchaseOrderLineItemId: null,
-                      candidatePurchaseOrderLineDescription: null,
-                      candidatePurchaseOrderLineAmount: null,
-                      costItemId: null,
-                      sourceCostItemId: null,
-                      workType: null,
-                      costType: null,
-                      internalCostCode: null,
-                      organizationCostCodeId: null,
-                      organizationCostCode: null,
-                      organizationCostCodeName: null,
-                      accountingResolutionStatus: "pending",
-                      status: "No PO line candidate" as const,
-                      candidateScore: 0,
-                    },
-                  ];
-                  const savedUnmatchedAllocation = getSavedDraftForCandidate(line.id, null);
-                  const previewRows =
-                    savedUnmatchedAllocation &&
-                    !basePreviewRows.some((previewRow) => previewRow.candidatePurchaseOrderLineItemId === null)
-                      ? [
-                          ...basePreviewRows,
-                          {
-                            candidateKey: `${line.id}:saved-unmatched`,
-                            invoiceLineId: line.id,
-                            invoiceLineDescription: line.description.trim() || "Untitled invoice line",
-                            invoiceLineAmount: Number(line.lineTotal),
-                            candidatePurchaseOrderId: null,
-                            candidatePurchaseOrderNumber: null,
-                            candidatePurchaseOrderTitle: null,
-                            candidatePurchaseOrderLineItemId: null,
-                            candidatePurchaseOrderLineDescription: null,
-                            candidatePurchaseOrderLineAmount: null,
-                            costItemId: null,
-                            sourceCostItemId: null,
-                            workType: null,
-                            costType: null,
-                            internalCostCode: null,
-                            organizationCostCodeId: savedUnmatchedAllocation.organization_cost_code_id,
-                            organizationCostCode:
-                              costCodes.find((costCode) => costCode.id === savedUnmatchedAllocation.organization_cost_code_id)
-                                ?.code ?? null,
-                            organizationCostCodeName:
-                              costCodes.find((costCode) => costCode.id === savedUnmatchedAllocation.organization_cost_code_id)
-                                ?.name ?? null,
-                            accountingResolutionStatus: "pending",
-                            status: "Needs cost review" as const,
-                            candidateScore: 0,
-                          },
-                        ]
-                      : basePreviewRows;
+                {allocationReviewRows.map((row) => {
+                  const previewRow = row.selectedPreviewRow;
+                  const savedDraftAllocation = row.selectedAllocation;
+                  const isSavedDraft = Boolean(savedDraftAllocation);
+                  const isExpanded = expandedAllocationReviewRows[row.line.id] ?? false;
+                  const canSaveReadyCandidate = Boolean(
+                    previewRow.candidatePurchaseOrderLineItemId &&
+                      canWrite &&
+                      previewRow.status === "Ready"
+                  );
+                  const canSaveReviewCandidate = Boolean(
+                    previewRow.candidatePurchaseOrderLineItemId &&
+                      canWrite &&
+                      canReview &&
+                      (previewRow.status === "Needs cost review" ||
+                        previewRow.status === "Needs accounting mapping")
+                  );
+                  const canMarkUnmatched = canWrite && canReview;
+                  const approvalRequiresNote = savedDraftAllocation?.allocation_status === "unmatched";
+                  const canApproveSavedAllocation = Boolean(
+                    savedDraftAllocation &&
+                      canReview &&
+                      (savedDraftAllocation.allocation_status === "unmatched"
+                        ? true
+                        : savedDraftAllocation.review_status === "pending") &&
+                      savedDraftAllocation.approval_status !== "approved"
+                  );
+                  const reviewNoteMode =
+                    allocationReviewNoteMode?.allocationId === savedDraftAllocation?.id
+                      ? allocationReviewNoteMode?.mode ?? null
+                      : null;
+                  const postedEvent = savedDraftAllocation
+                    ? postedPostingActualCostEventsByAllocationId.get(savedDraftAllocation.id) ?? null
+                    : null;
+                  const isPostedAllocation = Boolean(postedEvent);
+                  const hasReversalForPostedEvent = Boolean(
+                    postedEvent && reversalActualCostEventsByOriginalEventId.has(postedEvent.id)
+                  );
+                  const canReversePostedActualCost = Boolean(
+                    savedDraftAllocation &&
+                      postedEvent &&
+                      canReverse &&
+                      !hasReversalForPostedEvent
+                  );
+                  const exceptionChips: Array<
+                    | "Needs classification review"
+                    | "Needs accounting mapping"
+                    | "Unmatched"
+                    | "Disputed"
+                    | "Needs correction"
+                  > = [];
 
-                  return previewRows.map((previewRow, index) => {
-                    const lineDraftAllocations = getLineDraftAllocations(previewRow.invoiceLineId);
-                    const savedDraftAllocation = getSavedDraftForCandidate(
-                      previewRow.invoiceLineId,
-                      previewRow.candidatePurchaseOrderLineItemId
-                    );
-                    const isSavedDraft = hasSavedDraftForCandidate(
-                      previewRow.invoiceLineId,
-                      previewRow.candidatePurchaseOrderLineItemId
-                    );
-                    const hasOtherSavedDraft = hasAnyOtherSavedDraftForLine(
-                      previewRow.invoiceLineId,
-                      previewRow.candidatePurchaseOrderLineItemId
-                    );
-                    const canSaveReadyCandidate = Boolean(
-                      previewRow.candidatePurchaseOrderLineItemId &&
-                        canWrite &&
-                        previewRow.status === "Ready"
-                    );
-                    const canSaveReviewCandidate = Boolean(
-                      previewRow.candidatePurchaseOrderLineItemId &&
-                        canWrite &&
-                        canReview &&
-                        (previewRow.status === "Needs cost review" ||
-                          previewRow.status === "Needs accounting mapping")
-                    );
-                    const canMarkUnmatched = canWrite && canReview && index === 0;
-                    const lineHasServerBackedPreview = allocationPreviewRowsByInvoiceLine.has(line.id);
-                    const lineHasPostedActualCosts = lineDraftAllocations.some((allocation) =>
-                      postedActualCostEventsByAllocationId.has(allocation.id)
-                    );
-                    const approvalRequiresNote =
-                      savedDraftAllocation?.allocation_status === "unmatched";
-                    const canApproveSavedAllocation = Boolean(
-                      savedDraftAllocation &&
-                        canReview &&
-                        (savedDraftAllocation.allocation_status === "unmatched"
-                          ? true
-                          : savedDraftAllocation.review_status === "pending") &&
-                        savedDraftAllocation.approval_status !== "approved"
-                    );
-                    const reviewNoteMode =
-                      allocationReviewNoteMode?.allocationId === savedDraftAllocation?.id
-                        ? allocationReviewNoteMode?.mode ?? null
-                        : null;
-                    const isPostedAllocation = Boolean(
-                      savedDraftAllocation &&
-                        postedActualCostEventsByAllocationId.has(savedDraftAllocation.id)
-                    );
-                    const reviewerName =
-                      savedDraftAllocation?.reviewed_by_user_id
-                        ? memberDirectory.get(savedDraftAllocation.reviewed_by_user_id)?.display_name ?? "Unknown reviewer"
-                        : null;
+                  if (row.operationalStatus === "Needs correction") {
+                    exceptionChips.push("Needs correction");
+                  }
 
-                    return (
-                    <OperationalTableRow key={previewRow.candidateKey} className="align-top">
-                      <OperationalTableCell className="max-w-[19rem] break-words text-[var(--text-secondary)]">
-                        {index === 0 ? (
-                          <>
-                            <span className="block font-semibold leading-[1.4] text-[var(--text-primary)]">
-                              {previewRow.invoiceLineDescription}
-                            </span>
-                            <span className="block">
-                              Qty {line.quantity || "0"} · Unit {toMoney(numberString(line.unitPrice))}
-                            </span>
-                            <span className="block">{toMoney(previewRow.invoiceLineAmount)}</span>
-                          </>
-                        ) : (
-                          <span className="block text-[var(--text-muted)]">Same invoice line</span>
-                        )}
-                      </OperationalTableCell>
-                      <OperationalTableCell className="max-w-[21rem] break-words text-[var(--text-secondary)]">
-                        {previewRow.candidatePurchaseOrderLineItemId ? (
-                          <>
-                            <span className="block font-semibold text-[var(--text-primary)]">
-                              {previewRow.candidatePurchaseOrderNumber || "Purchase Order"}
-                            </span>
-                            <span className="block leading-[1.35]">
-                              {previewRow.candidatePurchaseOrderLineDescription || "Untitled PO line"}
-                            </span>
-                            <span className="block">
-                              {previewRow.candidatePurchaseOrderTitle || "Untitled purchase order"}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="block">No matched purchase order lines available yet.</span>
-                        )}
-                      </OperationalTableCell>
-                      <OperationalTableCell className="text-[var(--text-secondary)]">
-                        <span className="block font-semibold text-[var(--text-primary)]">
-                          {toMoney(previewRow.invoiceLineAmount)}
-                        </span>
-                        {previewRow.candidatePurchaseOrderLineAmount !== null ? (
-                          <span className="block text-[var(--text-muted)]">
-                            PO line {toMoney(previewRow.candidatePurchaseOrderLineAmount)}
+                  if (
+                    savedDraftAllocation?.approval_status === "disputed" ||
+                    savedDraftAllocation?.review_status === "disputed"
+                  ) {
+                    exceptionChips.push("Disputed");
+                  } else if (savedDraftAllocation?.allocation_status === "unmatched") {
+                    exceptionChips.push("Unmatched");
+                  }
+
+                  if (
+                    previewRow.status === "Needs cost review" ||
+                    previewRow.accountingResolutionStatus === "classification_review_required"
+                  ) {
+                    exceptionChips.push("Needs classification review");
+                  } else if (previewRow.status === "Needs accounting mapping") {
+                    exceptionChips.push("Needs accounting mapping");
+                  }
+
+                  const lineAllocationIds = new Set(row.lineDraftAllocations.map((allocation) => allocation.id));
+                  const lineActualCostEvents = actualCostEvents.filter((event) => {
+                    const allocationId =
+                      event.source_invoice_allocation_id ?? event.supplier_invoice_line_allocation_id;
+                    return Boolean(allocationId && lineAllocationIds.has(allocationId));
+                  });
+                  const candidatePreviewRows = row.candidatePreviewRows.filter(
+                    (candidate) => Boolean(candidate.candidatePurchaseOrderLineItemId)
+                  );
+                  const candidatePreviewGroups = Array.from(
+                    candidatePreviewRows.reduce((groups, candidate) => {
+                      const groupKey = candidate.candidatePurchaseOrderId ?? candidate.candidateKey;
+                      const currentGroup = groups.get(groupKey);
+
+                      if (currentGroup) {
+                        currentGroup.candidates.push(candidate);
+                        return groups;
+                      }
+
+                      groups.set(groupKey, {
+                        purchaseOrderId: candidate.candidatePurchaseOrderId,
+                        purchaseOrderNumber: candidate.candidatePurchaseOrderNumber,
+                        purchaseOrderTitle: candidate.candidatePurchaseOrderTitle,
+                        candidates: [candidate],
+                      });
+
+                      return groups;
+                    }, new Map<string, {
+                      purchaseOrderId: string | null;
+                      purchaseOrderNumber: string | null;
+                      purchaseOrderTitle: string | null;
+                      candidates: SupplierInvoiceAllocationPreviewData[];
+                    }>())
+                  ).map(([, group]) => group);
+                  const reviewerName =
+                    savedDraftAllocation?.reviewed_by_user_id
+                      ? memberDirectory.get(savedDraftAllocation.reviewed_by_user_id)?.display_name ?? "Unknown reviewer"
+                      : null;
+                  const reviewSummary = (() => {
+                    switch (row.operationalStatus) {
+                      case "Ready":
+                        return {
+                          reason: "This invoice line matches a PO line and is ready for approval.",
+                          nextStep: isSavedDraft
+                            ? "Approve this line when the invoice details look right."
+                            : "Accept the suggested PO line, then approve it.",
+                        };
+                      case "Needs review":
+                        return {
+                          reason:
+                            exceptionChips[0] === "Unmatched"
+                              ? "This line is currently unmatched and needs reviewer confirmation."
+                              : exceptionChips[0] === "Disputed"
+                              ? "This line has been disputed and needs a decision."
+                              : exceptionChips[0] === "Needs accounting mapping"
+                              ? "This line inherited a PO match, but the accounting mapping still needs attention."
+                              : "This line needs review before it can be approved.",
+                          nextStep: "Review the exception details below and resolve what is blocking approval.",
+                        };
+                      case "Approved":
+                        return {
+                          reason: "This line has been approved and is waiting to be posted as an actual cost.",
+                          nextStep: "Use the invoice-level posting action when the approved lines are ready to post.",
+                        };
+                      case "Posted":
+                        return {
+                          reason: "This line has already been posted as an actual cost.",
+                          nextStep: "Only take action if the posted cost needs correction.",
+                        };
+                      case "Needs correction":
+                        return {
+                          reason: "A posted actual cost was reversed and this line needs correction before reposting.",
+                          nextStep: "Review the correction history and update or approve the active draft before reposting.",
+                        };
+                      case "Corrected":
+                        return {
+                          reason: "This line was corrected and reposted successfully.",
+                          nextStep: "No action is needed unless another correction is required.",
+                        };
+                      default:
+                        return {
+                          reason: "Review this line before continuing.",
+                          nextStep: "Open the details below to inspect the current state.",
+                        };
+                    }
+                  })();
+
+                  return (
+                    <Fragment key={row.line.id}>
+                      <OperationalTableRow className="align-top">
+                        <OperationalTableCell className="max-w-[19rem] break-words text-[var(--text-secondary)]">
+                          <span className="block font-semibold leading-[1.4] text-[var(--text-primary)]">
+                            {previewRow.invoiceLineDescription}
                           </span>
-                        ) : null}
-                      </OperationalTableCell>
-                      <OperationalTableCell className="max-w-[18rem] break-words text-[var(--text-secondary)]">
-                        {previewRow.internalCostCode || previewRow.workType || previewRow.costType ? (
-                          <>
-                            <span className="block font-semibold text-[var(--text-primary)]">
-                              {previewRow.internalCostCode || "Classification pending"}
-                            </span>
-                            <span className="block">
-                              {previewRow.workType || "No work type"} · {previewRow.costType || "No cost type"}
-                            </span>
-                            <span className="mt-1 block text-[var(--text-muted)]">
-                              Cost item {previewRow.costItemId || "—"} · Source {previewRow.sourceCostItemId || "—"}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="block">Awaiting inherited classification.</span>
-                        )}
-                      </OperationalTableCell>
-                      <OperationalTableCell className="max-w-[16rem] break-words text-[var(--text-secondary)]">
-                        {previewRow.organizationCostCode ? (
-                          <>
-                            <span className="block font-semibold text-[var(--text-primary)]">
-                              {previewRow.organizationCostCode}
-                            </span>
-                            <span className="block">
-                              {previewRow.organizationCostCodeName || "Mapped company cost code"}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="block">No company cost code resolved.</span>
-                            <span className="block text-[var(--text-muted)]">
-                              {previewRow.accountingResolutionStatus === "classification_review_required"
-                                ? "Classification review required first."
-                                : "Needs an active company mapping rule."}
-                            </span>
-                          </>
-                        )}
-                      </OperationalTableCell>
-                      <OperationalTableCell>
-                        <div className="flex flex-col items-start gap-2">
-                          <StatusBadge status={allocationPreviewStatusBadge(previewRow.status)}>
-                            {previewRow.status}
-                          </StatusBadge>
-                          {isSavedDraft ? (
+                          <span className="block">
+                            Qty {row.line.quantity || "0"} · Unit {toMoney(numberString(row.line.unitPrice))}
+                          </span>
+                        </OperationalTableCell>
+                        <OperationalTableCell className="max-w-[21rem] break-words text-[var(--text-secondary)]">
+                          {previewRow.candidatePurchaseOrderLineItemId ? (
                             <>
-                              <StatusBadge status="draft">Draft saved</StatusBadge>
-                              {savedDraftAllocation ? (
-                                <>
-                                  <StatusBadge status={allocationApprovalStatusBadge(savedDraftAllocation.approval_status)}>
-                                    {formatAllocationApprovalStatusLabel(savedDraftAllocation.approval_status)}
-                                  </StatusBadge>
-                                  <StatusBadge status={allocationReviewStatusBadge(savedDraftAllocation.review_status)}>
-                                    {formatAllocationReviewStatusLabel(savedDraftAllocation.review_status)}
-                                  </StatusBadge>
-                                  <StatusBadge
-                                    status={actualCostPostingStatusBadge(
-                                      postedActualCostEventsByAllocationId.has(savedDraftAllocation.id)
-                                        ? "Posted"
-                                        : "Not posted"
-                                    )}
-                                  >
-                                    {postedActualCostEventsByAllocationId.has(savedDraftAllocation.id)
-                                      ? "Posted"
-                                      : "Not posted"}
-                                  </StatusBadge>
-                                  {reviewerName || savedDraftAllocation.reviewed_at ? (
-                                    <span className="text-xs text-[var(--text-muted)]">
-                                      {reviewerName ? `Reviewed by ${reviewerName}` : "Reviewed"}
-                                      {savedDraftAllocation.reviewed_at
-                                        ? ` · ${formatHistoryDate(savedDraftAllocation.reviewed_at)}`
-                                        : ""}
-                                    </span>
-                                  ) : null}
-                                  {savedDraftAllocation.approval_notes.trim() ? (
-                                    <span className="max-w-[15rem] break-words text-xs text-[var(--text-muted)]">
-                                      {savedDraftAllocation.approval_notes}
-                                    </span>
-                                  ) : null}
-                                </>
+                              <span className="block font-semibold text-[var(--text-primary)]">
+                                {previewRow.candidatePurchaseOrderNumber || "Purchase Order"}
+                              </span>
+                              <span className="block leading-[1.35]">
+                                {previewRow.candidatePurchaseOrderLineDescription || "Untitled PO line"}
+                              </span>
+                              <span className="block">
+                                {previewRow.candidatePurchaseOrderTitle || "Untitled purchase order"}
+                              </span>
+                              {row.alternateCandidateCount > 0 ? (
+                                <span className="mt-1 block text-[var(--text-muted)]">
+                                  {row.alternateCandidateCount}{" "}
+                                  {row.alternateCandidateCount === 1 ? "alternative" : "alternatives"} available
+                                </span>
                               ) : null}
                             </>
-                          ) : null}
-                          {!isSavedDraft && hasOtherSavedDraft ? (
-                            <span className="text-xs text-[var(--text-muted)]">
-                              Another draft is already saved for this invoice line.
-                            </span>
-                          ) : null}
-                          {lineDraftAllocations.length > 0 && index === 0 ? (
-                            <span className="text-xs text-[var(--text-muted)]">
-                              {lineDraftAllocations.length === 1
-                                ? "1 saved draft allocation"
-                                : `${lineDraftAllocations.length} saved draft allocations`}
-                            </span>
-                          ) : null}
-                        </div>
-                      </OperationalTableCell>
-                      <OperationalTableCell>
-                        <div className="flex flex-col items-end gap-2">
-                          {!isSavedDraft && previewRow.candidatePurchaseOrderLineItemId ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() =>
-                                void saveDraftAllocation({
-                                  invoiceLineId: previewRow.invoiceLineId,
-                                  purchaseOrderLineItemId: previewRow.candidatePurchaseOrderLineItemId!,
-                                })
-                              }
-                              disabled={
-                                isSavingDraftAllocations ||
-                                !lineHasServerBackedPreview ||
-                                lineHasPostedActualCosts ||
-                                (!canSaveReadyCandidate && !canSaveReviewCandidate)
-                              }
-                            >
-                              {isSavedDraft ? "Replace draft" : "Accept candidate"}
-                            </Button>
-                          ) : null}
-                          {!isSavedDraft && index === 0 ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => void markLineUnmatched(previewRow.invoiceLineId)}
-                              disabled={
-                                isSavingDraftAllocations ||
-                                !canMarkUnmatched ||
-                                !lineHasServerBackedPreview ||
-                                lineHasPostedActualCosts
-                              }
-                            >
-                              Mark unmatched
-                            </Button>
-                          ) : null}
-                          {savedDraftAllocation ? (
+                          ) : (
                             <>
+                              <span className="block">
+                                {row.alternateCandidateCount > 0
+                                  ? "Currently unmatched."
+                                  : "No matched purchase order lines available yet."}
+                              </span>
+                              {row.alternateCandidateCount > 0 ? (
+                                <span className="mt-1 block text-[var(--text-muted)]">
+                                  {row.alternateCandidateCount}{" "}
+                                  {row.alternateCandidateCount === 1 ? "alternative" : "alternatives"} available
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-[var(--text-secondary)]">
+                          <span className="block font-semibold text-[var(--text-primary)]">
+                            {toMoney(previewRow.invoiceLineAmount)}
+                          </span>
+                          {previewRow.candidatePurchaseOrderLineAmount !== null ? (
+                            <span className="block text-[var(--text-muted)]">
+                              PO line {toMoney(previewRow.candidatePurchaseOrderLineAmount)}
+                            </span>
+                          ) : null}
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <div className="flex flex-col items-start gap-2">
+                            <StatusBadge status={allocationOperationalStatusBadge(row.operationalStatus)}>
+                              {row.operationalStatus}
+                            </StatusBadge>
+                            {exceptionChips.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {Array.from(new Set(exceptionChips)).map((chip) => (
+                                  <StatusBadge key={chip} status={allocationExceptionBadgeStatus(chip)}>
+                                    {chip}
+                                  </StatusBadge>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <div className="flex flex-col items-end gap-2">
+                            {!isSavedDraft && previewRow.candidatePurchaseOrderLineItemId ? (
                               <Button
                                 type="button"
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => {
-                                  if (approvalRequiresNote) {
-                                    setAllocationReviewNoteMode({
-                                      allocationId: savedDraftAllocation.id,
-                                      mode: "approve_unmatched",
-                                    });
-                                  } else {
-                                    void approveDraftAllocation({
-                                      allocationId: savedDraftAllocation.id,
-                                      requiresNote: false,
-                                    });
-                                  }
-                                }}
+                                onClick={() =>
+                                  void saveDraftAllocation({
+                                    invoiceLineId: previewRow.invoiceLineId,
+                                    purchaseOrderLineItemId: previewRow.candidatePurchaseOrderLineItemId!,
+                                  })
+                                }
                                 disabled={
-                                  isReviewingAllocationId !== null ||
-                                  isPostedAllocation ||
-                                  !canApproveSavedAllocation ||
-                                  (!approvalRequiresNote &&
-                                    previewRow.status !== "Ready" &&
-                                    savedDraftAllocation.allocation_status !== "unmatched")
+                                  isSavingDraftAllocations ||
+                                  !row.lineHasServerBackedPreview ||
+                                  row.lineHasPostedActualCosts ||
+                                  (!canSaveReadyCandidate && !canSaveReviewCandidate)
                                 }
                               >
-                                {isReviewingAllocationId === savedDraftAllocation.id
-                                  ? "Saving..."
-                                  : savedDraftAllocation.allocation_status === "unmatched"
-                                  ? "Approve unmatched"
-                                  : "Approve"}
+                                Accept candidate
                               </Button>
+                            ) : null}
+                            {!isSavedDraft ? (
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                onClick={() =>
-                                  setAllocationReviewNoteMode({
-                                    allocationId: savedDraftAllocation.id,
-                                    mode: "dispute",
-                                  })
+                                onClick={() => void markLineUnmatched(previewRow.invoiceLineId)}
+                                disabled={
+                                  isSavingDraftAllocations ||
+                                  !canMarkUnmatched ||
+                                  !row.lineHasServerBackedPreview ||
+                                  row.lineHasPostedActualCosts
                                 }
-                                disabled={isReviewingAllocationId !== null || !canReview || isPostedAllocation}
                               >
-                                Dispute
+                                Mark unmatched
                               </Button>
-                              {reviewNoteMode ? (
-                                <div className="w-full min-w-[16rem] space-y-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-left">
-                                  <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                                    {reviewNoteMode === "approve_unmatched"
-                                      ? "Approval note"
-                                      : "Dispute reason"}
-                                  </label>
-                                  <textarea
-                                    value={allocationReviewNotes[savedDraftAllocation.id] ?? ""}
-                                    onChange={(event) =>
-                                      setAllocationReviewNotes((current) => ({
-                                        ...current,
-                                        [savedDraftAllocation.id]: event.target.value,
-                                      }))
+                            ) : null}
+                            {savedDraftAllocation ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (approvalRequiresNote) {
+                                      setAllocationReviewNoteMode({
+                                        allocationId: savedDraftAllocation.id,
+                                        mode: "approve_unmatched",
+                                      });
+                                    } else {
+                                      void approveDraftAllocation({
+                                        allocationId: savedDraftAllocation.id,
+                                        requiresNote: false,
+                                      });
                                     }
-                                    rows={3}
-                                    className={FIELD_TEXTAREA_CLASS}
-                                    placeholder={
-                                      reviewNoteMode === "approve_unmatched"
-                                        ? "Why is this allocation intentionally unmatched?"
-                                        : "Why is this allocation disputed?"
+                                  }}
+                                  disabled={
+                                    isReviewingAllocationId !== null ||
+                                    isPostedAllocation ||
+                                    !canApproveSavedAllocation ||
+                                    (!approvalRequiresNote &&
+                                      previewRow.status !== "Ready" &&
+                                      savedDraftAllocation.allocation_status !== "unmatched")
+                                  }
+                                >
+                                  {isReviewingAllocationId === savedDraftAllocation.id
+                                    ? "Saving..."
+                                    : savedDraftAllocation.allocation_status === "unmatched"
+                                    ? "Approve unmatched"
+                                    : "Approve"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setAllocationReviewNoteMode({
+                                      allocationId: savedDraftAllocation.id,
+                                      mode: "dispute",
+                                    })
+                                  }
+                                  disabled={isReviewingAllocationId !== null || !canReview || isPostedAllocation}
+                                >
+                                  Dispute
+                                </Button>
+                                {canReversePostedActualCost && postedEvent ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      openReverseActualCostDialog({
+                                        allocation: savedDraftAllocation,
+                                        event: postedEvent,
+                                      })
                                     }
-                                  />
-                                  <div className="flex justify-end gap-2">
-                                    <Button
-                                      type="button"
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => setAllocationReviewNoteMode(null)}
-                                      disabled={isReviewingAllocationId !== null}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() =>
+                                    disabled={isReversingActualCost}
+                                  >
+                                    Correct cost
+                                  </Button>
+                                ) : null}
+                                {reviewNoteMode ? (
+                                  <div className="w-full min-w-[16rem] space-y-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-left">
+                                    <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                      {reviewNoteMode === "approve_unmatched"
+                                        ? "Approval note"
+                                        : "Dispute reason"}
+                                    </label>
+                                    <textarea
+                                      value={allocationReviewNotes[savedDraftAllocation.id] ?? ""}
+                                      onChange={(event) =>
+                                        setAllocationReviewNotes((current) => ({
+                                          ...current,
+                                          [savedDraftAllocation.id]: event.target.value,
+                                        }))
+                                      }
+                                      rows={3}
+                                      className={FIELD_TEXTAREA_CLASS}
+                                      placeholder={
                                         reviewNoteMode === "approve_unmatched"
-                                          ? void approveDraftAllocation({
-                                              allocationId: savedDraftAllocation.id,
-                                              requiresNote: true,
-                                            })
-                                          : void disputeDraftAllocation(savedDraftAllocation.id)
+                                          ? "Why is this allocation intentionally unmatched?"
+                                          : "Why is this allocation disputed?"
                                       }
-                                      disabled={
-                                        isReviewingAllocationId !== null ||
-                                        (reviewNoteMode === "approve_unmatched" || reviewNoteMode === "dispute") &&
-                                          (allocationReviewNotes[savedDraftAllocation.id]?.trim()?.length ?? 0) === 0
-                                      }
-                                    >
-                                      {isReviewingAllocationId === savedDraftAllocation.id
-                                        ? "Saving..."
-                                        : reviewNoteMode === "approve_unmatched"
-                                        ? "Confirm approval"
-                                        : "Confirm dispute"}
-                                    </Button>
+                                    />
+                                    <div className="flex justify-end gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => setAllocationReviewNoteMode(null)}
+                                        disabled={isReviewingAllocationId !== null}
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={() =>
+                                          reviewNoteMode === "approve_unmatched"
+                                            ? void approveDraftAllocation({
+                                                allocationId: savedDraftAllocation.id,
+                                                requiresNote: true,
+                                              })
+                                            : void disputeDraftAllocation(savedDraftAllocation.id)
+                                        }
+                                        disabled={
+                                          isReviewingAllocationId !== null ||
+                                          (reviewNoteMode === "approve_unmatched" || reviewNoteMode === "dispute") &&
+                                            (allocationReviewNotes[savedDraftAllocation.id]?.trim()?.length ?? 0) === 0
+                                        }
+                                      >
+                                        {isReviewingAllocationId === savedDraftAllocation.id
+                                          ? "Saving..."
+                                          : reviewNoteMode === "approve_unmatched"
+                                          ? "Confirm approval"
+                                          : "Confirm dispute"}
+                                      </Button>
+                                    </div>
                                   </div>
-                                </div>
+                                ) : null}
+                              </>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setExpandedAllocationReviewRows((current) => ({
+                                  ...current,
+                                  [row.line.id]: !isExpanded,
+                                }))
+                              }
+                            >
+                              {isExpanded ? "Hide details" : "View details"}
+                            </Button>
+                          </div>
+                        </OperationalTableCell>
+                      </OperationalTableRow>
+                      {isExpanded ? (
+                        <OperationalTableRow>
+                          <OperationalTableCell colSpan={5} className="border-t-0 bg-[var(--surface-muted)] px-5 py-4">
+                            <div className="space-y-4 text-sm text-[var(--text-secondary)]">
+                              <section className="space-y-1.5">
+                                <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                  Review summary
+                                </h4>
+                                <p>{reviewSummary.reason}</p>
+                                <p className="text-[var(--text-muted)]">{reviewSummary.nextStep}</p>
+                              </section>
+
+                              <section className="space-y-2">
+                                <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                  PO line match
+                                </h4>
+                                {matchesWithPurchaseOrders.length === 0 ? (
+                                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-3">
+                                    <p className="text-[var(--text-muted)]">No purchase orders are linked yet.</p>
+                                    {canWrite ? (
+                                      <Button type="button" variant="secondary" size="sm" onClick={openMatchDialog}>
+                                        Match to PO
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                ) : candidatePreviewGroups.length > 0 ? (
+                                  <div className="space-y-3">
+                                    {candidatePreviewGroups.map((group) => (
+                                      <div key={group.purchaseOrderId ?? group.purchaseOrderNumber ?? "po-group"} className="space-y-2">
+                                        <div className="space-y-0.5">
+                                          <p className="font-medium text-[var(--text-primary)]">
+                                            {group.purchaseOrderNumber || "Purchase Order"}
+                                          </p>
+                                          <p className="text-[var(--text-muted)]">
+                                            {group.purchaseOrderTitle || "Untitled purchase order"}
+                                          </p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          {group.candidates.map((candidate) => {
+                                            const isCurrentSelection =
+                                              candidate.candidatePurchaseOrderLineItemId ===
+                                              previewRow.candidatePurchaseOrderLineItemId;
+
+                                            return (
+                                              <div
+                                                key={candidate.candidateKey}
+                                                className={`rounded-[var(--radius-md)] border px-4 py-3 ${
+                                                  isCurrentSelection
+                                                    ? "border-[var(--brand-blue)] bg-[var(--surface-muted)]"
+                                                    : "border-[var(--border)] bg-[var(--card)]"
+                                                }`}
+                                              >
+                                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                                  <div className="space-y-1 text-sm text-[var(--text-secondary)]">
+                                                    <p className="font-medium text-[var(--text-primary)]">
+                                                      {candidate.candidatePurchaseOrderLineDescription || "Untitled PO line"}
+                                                    </p>
+                                                    <p>
+                                                      PO line amount {toMoney(candidate.candidatePurchaseOrderLineAmount ?? 0)}
+                                                    </p>
+                                                  </div>
+                                                  <div className="flex flex-col items-end gap-2">
+                                                    {isCurrentSelection ? (
+                                                      <StatusBadge status="approved">Current selection</StatusBadge>
+                                                    ) : (
+                                                      <Button
+                                                        type="button"
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                          void saveDraftAllocation({
+                                                            invoiceLineId: candidate.invoiceLineId,
+                                                            purchaseOrderLineItemId: candidate.candidatePurchaseOrderLineItemId!,
+                                                          })
+                                                        }
+                                                        disabled={
+                                                          isSavingDraftAllocations ||
+                                                          row.lineHasPostedActualCosts ||
+                                                          !row.lineHasServerBackedPreview
+                                                        }
+                                                      >
+                                                        Use this PO line
+                                                      </Button>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    <div className="flex justify-end">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => void markLineUnmatched(previewRow.invoiceLineId)}
+                                        disabled={
+                                          isSavingDraftAllocations ||
+                                          !canMarkUnmatched ||
+                                          !row.lineHasServerBackedPreview ||
+                                          row.lineHasPostedActualCosts
+                                        }
+                                      >
+                                        Mark unmatched
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-3 rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-3">
+                                    <p className="text-[var(--text-muted)]">
+                                      No suitable PO line is suggested yet for this invoice line.
+                                    </p>
+                                    <div className="flex justify-end">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => void markLineUnmatched(previewRow.invoiceLineId)}
+                                        disabled={
+                                          isSavingDraftAllocations ||
+                                          !canMarkUnmatched ||
+                                          !row.lineHasServerBackedPreview ||
+                                          row.lineHasPostedActualCosts
+                                        }
+                                      >
+                                        Mark unmatched
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </section>
+
+                              <section className="space-y-1.5">
+                                <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                  Inherited costing
+                                </h4>
+                                {previewRow.internalCostCode || previewRow.workType || previewRow.costType || previewRow.organizationCostCode ? (
+                                  <div className="grid gap-1 sm:grid-cols-2">
+                                    <p>
+                                      <span className="font-medium text-[var(--text-primary)]">TradesStack classification:</span>{" "}
+                                      {previewRow.internalCostCode || "Not set"}
+                                    </p>
+                                    <p>
+                                      <span className="font-medium text-[var(--text-primary)]">Work type / cost type:</span>{" "}
+                                      {previewRow.workType || "No work type"} · {previewRow.costType || "No cost type"}
+                                    </p>
+                                    {previewRow.sourceCostItemId ? (
+                                      <p>
+                                        <span className="font-medium text-[var(--text-primary)]">Source lineage:</span>{" "}
+                                        Inherited from the source cost item on the matched PO line
+                                      </p>
+                                    ) : null}
+                                    {previewRow.organizationCostCode ? (
+                                      <p>
+                                        <span className="font-medium text-[var(--text-primary)]">Company cost code:</span>{" "}
+                                        {previewRow.organizationCostCode}
+                                        {previewRow.organizationCostCodeName
+                                          ? ` · ${previewRow.organizationCostCodeName}`
+                                          : ""}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <p className="text-[var(--text-muted)]">
+                                    No inherited costing details are available for this line yet.
+                                  </p>
+                                )}
+                              </section>
+
+                              {previewRow.status === "Needs accounting mapping" || previewRow.accountingResolutionStatus === "classification_review_required" ? (
+                                <section className="space-y-1.5">
+                                  <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                    Accounting / mapping issue
+                                  </h4>
+                                  <p>
+                                    {previewRow.accountingResolutionStatus === "classification_review_required"
+                                      ? "Classification needs review before the accounting mapping can inherit cleanly from the PO."
+                                      : "This line still needs an active company accounting mapping before it can move through approval cleanly."}
+                                  </p>
+                                </section>
                               ) : null}
-                            </>
-                          ) : null}
-                        </div>
-                      </OperationalTableCell>
-                    </OperationalTableRow>
-                    );
-                  });
+
+                              {(savedDraftAllocation?.approval_notes?.trim() || reviewerName || savedDraftAllocation?.reviewed_at) ? (
+                                <section className="space-y-1.5">
+                                  <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                    Notes
+                                  </h4>
+                                  {savedDraftAllocation?.approval_notes?.trim() ? (
+                                    <p>{savedDraftAllocation.approval_notes.trim()}</p>
+                                  ) : null}
+                                  {reviewerName || savedDraftAllocation?.reviewed_at ? (
+                                    <p className="text-[var(--text-muted)]">
+                                      {reviewerName ? `Reviewed by ${reviewerName}` : "Reviewed"}
+                                      {savedDraftAllocation?.reviewed_at
+                                        ? ` · ${formatHistoryDate(savedDraftAllocation.reviewed_at)}`
+                                        : ""}
+                                    </p>
+                                  ) : null}
+                                </section>
+                              ) : null}
+
+                              <section className="space-y-1.5">
+                                <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                  Posting / correction history
+                                </h4>
+                                {lineActualCostEvents.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {lineActualCostEvents.map((event) => (
+                                      <div
+                                        key={event.id}
+                                        className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] pb-2 last:border-b-0 last:pb-0"
+                                      >
+                                        <div className="space-y-1">
+                                          <p className="font-medium text-[var(--text-primary)]">
+                                            {actualCostHistoryLabel(event)}
+                                          </p>
+                                          <p className="text-[var(--text-muted)]">
+                                            {formatHistoryDate(event.created_at)}
+                                          </p>
+                                          {event.event_type === "reversal" && (event.reversal_reason || event.reversal_note) ? (
+                                            <p>
+                                              {event.reversal_reason ? `Reason: ${event.reversal_reason}` : null}
+                                              {event.reversal_reason && event.reversal_note ? " · " : null}
+                                              {event.reversal_note ? event.reversal_note : null}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                        <p className="font-medium text-[var(--text-primary)]">
+                                          {toMoney(Number(event.total_amount ?? 0))}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-[var(--text-muted)]">
+                                    No posted or corrected actual-cost history exists for this line yet.
+                                  </p>
+                                )}
+                              </section>
+
+                              {savedDraftAllocation ? (
+                                <section className="space-y-1.5">
+                                  <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                    Audit detail
+                                  </h4>
+                                  <p className="text-[var(--text-muted)]">
+                                    Allocation revision {savedDraftAllocation.allocation_sequence ?? 1}
+                                    {savedDraftAllocation.supersedes_allocation_id ? " · correction draft lineage active" : ""}
+                                    {savedDraftAllocation.edit_state ? ` · ${savedDraftAllocation.edit_state.replace(/_/g, " ")}` : ""}
+                                  </p>
+                                </section>
+                              ) : null}
+                            </div>
+                          </OperationalTableCell>
+                        </OperationalTableRow>
+                      ) : null}
+                    </Fragment>
+                  );
                 })}
               </OperationalTableBody>
             </OperationalTable>
             )}
-          </OperationalPanel>
-        ) : null}
+          </div>
+        </OperationalPanel>
       </div>
 
       <OperationalPanel
@@ -2421,6 +2909,110 @@ export function SupplierInvoiceDetailWorkspace({
           </OperationalTable>
         )}
       </OperationalPanel>
+
+      <Dialog
+        open={isReverseActualCostDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeReverseActualCostDialog();
+            return;
+          }
+
+          setIsReverseActualCostDialogOpen(true);
+        }}
+      >
+        <DialogContent className="w-full max-w-[640px] p-0">
+          <div className="space-y-5 px-7 pb-7 pt-7">
+            <div className="space-y-2">
+              <h2 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
+                Correct actual cost
+              </h2>
+              <p className="text-sm leading-[1.5] text-[var(--text-secondary)]">
+                This will create a reversing actual-cost entry.
+              </p>
+              <p className="text-sm leading-[1.5] text-[var(--text-secondary)]">
+                The original posted event will remain in history.
+              </p>
+              <p className="text-sm leading-[1.5] text-[var(--text-secondary)]">
+                A new correction draft allocation will be created for review before reposting.
+              </p>
+              <p className="text-sm leading-[1.5] text-[var(--text-secondary)]">
+                This does not change invoice status or PO match approval.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Original actual cost
+                </p>
+                <p className="mt-1 font-semibold text-[var(--text-primary)]">
+                  {reverseTarget ? toMoney(Number(reverseTarget.event.total_amount ?? 0)) : "—"}
+                </p>
+              </div>
+              <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  Reversal allocation
+                </p>
+                <p className="mt-1 font-semibold text-[var(--text-primary)]">
+                  {reverseTarget ? toMoney(Number(reverseTarget.event.total_amount ?? 0) * -1) : "—"}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-[var(--text-primary)]">
+                Reversal reason
+              </label>
+              <select
+                value={reversalReason}
+                onChange={(event) => setReversalReason(event.target.value)}
+                className={FIELD_SELECT_CLASS}
+                disabled={isReversingActualCost}
+              >
+                <option value="">Select a reason</option>
+                {ACTUAL_COST_REVERSAL_REASONS.map((reason) => (
+                  <option key={reason.value} value={reason.value}>
+                    {reason.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-[var(--text-primary)]">
+                Note
+              </label>
+              <textarea
+                value={reversalNote}
+                onChange={(event) => setReversalNote(event.target.value)}
+                rows={4}
+                className={FIELD_TEXTAREA_CLASS}
+                placeholder="Optional context for the correction workflow."
+                disabled={isReversingActualCost}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => closeReverseActualCostDialog()}
+                disabled={isReversingActualCost}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void reverseActualCostEvent()}
+                disabled={isReversingActualCost || reversalReason.trim().length === 0}
+              >
+                {isReversingActualCost ? "Starting..." : "Start correction"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isMatchDialogOpen}

@@ -129,10 +129,11 @@ export default async function SupplierInvoiceDetailPage({
     return null;
   }
 
-  const [canView, canWrite, canReview] = await Promise.all([
+  const [canView, canWrite, canReview, canReverse] = await Promise.all([
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.view"),
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.write"),
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.review"),
+    hasOrganizationPermission(currentMember.organization_id, "actual_costs.reverse"),
   ]);
 
   if (!canView) {
@@ -470,6 +471,7 @@ export default async function SupplierInvoiceDetailPage({
       initialActualCostEvents={(actualCostEvents ?? []) as ProjectActualCostEventRow[]}
       canWrite={canWrite}
       canReview={canReview}
+      canReverse={canReverse}
     />
   );
 }

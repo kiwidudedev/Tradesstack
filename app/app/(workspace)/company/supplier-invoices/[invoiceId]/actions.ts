@@ -7,7 +7,9 @@ import {
   disputeSupplierInvoiceDraftAllocation,
   markSupplierInvoiceLineAllocationUnmatched,
   postApprovedSupplierInvoiceActualCosts,
+  reverseSupplierInvoiceActualCostEvent,
   saveAcceptedSupplierInvoiceDraftAllocations,
+  type SupplierInvoiceActualCostReversalResult,
   type SupplierInvoiceActualCostPostingResult,
   type SupplierInvoiceDraftAllocationCandidateInput,
 } from "@/lib/supplier-invoice-allocation-service";
@@ -18,6 +20,7 @@ export type SupplierInvoiceDraftAllocationActionResult = {
   ok: boolean;
   allocations?: SupplierInvoiceLineAllocationRow[];
   posting?: SupplierInvoiceActualCostPostingResult;
+  reversal?: SupplierInvoiceActualCostReversalResult;
   error?: string;
 };
 
@@ -58,6 +61,24 @@ async function requireSupplierInvoicePostingContext(organizationId: string) {
   return {
     currentMember,
     canReview,
+    supabase: await createServerSupabaseClient(),
+  };
+}
+
+async function requireSupplierInvoiceActualCostReversalContext(organizationId: string) {
+  const currentMember = await getCurrentOrganizationMember();
+  if (!currentMember || currentMember.organization_id !== organizationId) {
+    throw new Error("You do not have access to this organization.");
+  }
+
+  const canReverse = await hasOrganizationPermission(organizationId, "actual_costs.reverse");
+  if (!canReverse) {
+    throw new Error("You do not have permission to reverse actual costs.");
+  }
+
+  return {
+    currentMember,
+    canReverse,
     supabase: await createServerSupabaseClient(),
   };
 }
@@ -227,6 +248,34 @@ export async function postSupplierInvoiceActualCostsAction(params: {
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Unable to post actual costs.",
+    };
+  }
+}
+
+export async function reverseSupplierInvoiceActualCostEventAction(params: {
+  organizationId: string;
+  supplierInvoiceId: string;
+  eventId: string;
+  reversalReason: string;
+  reversalNote?: string | null;
+}): Promise<SupplierInvoiceDraftAllocationActionResult> {
+  try {
+    const context = await requireSupplierInvoiceActualCostReversalContext(params.organizationId);
+    const reversal = await reverseSupplierInvoiceActualCostEvent({
+      supabase: context.supabase,
+      organizationId: params.organizationId,
+      supplierInvoiceId: params.supplierInvoiceId,
+      eventId: params.eventId,
+      reversalReason: params.reversalReason,
+      reversalNote: params.reversalNote ?? null,
+      canReverse: context.canReverse,
+    });
+
+    return { ok: true, reversal };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unable to reverse the actual cost event.",
     };
   }
 }

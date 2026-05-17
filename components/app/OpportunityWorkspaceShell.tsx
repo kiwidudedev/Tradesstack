@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { buildTakeoffHref } from "@/lib/takeoff/navigation";
 
-type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "start-pricing" | "takeoff";
+type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "start-pricing" | "takeoff" | "pricing-worksheet";
 
 const TAB_BASE_CLASS =
   "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors";
@@ -95,6 +95,12 @@ export function OpportunityWorkspaceShell({
       href: `/app/leads-clients/opportunities/${opportunityId}/scope-builder`,
       icon: FileText,
       active: activeTab === "build-scope",
+    },
+    {
+      label: "Pricing Worksheet",
+      href: `/app/leads-clients/opportunities/${opportunityId}/pricing-worksheet`,
+      icon: FileText,
+      active: activeTab === "pricing-worksheet",
     },
     {
       label: "Quotation",
