@@ -17,6 +17,13 @@ import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ibmPlexSans } from "@/lib/fonts";
+import {
+  buildCostItemIntelligenceEvent,
+  logCostItemIntelligenceFailure,
+  summarizeCostCodeMapping,
+  writeCostItemCorrectionEvent,
+  writeCostItemIntelligenceEvents,
+} from "@/lib/cost-item-intelligence";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type {
   AccountingResolutionPreviewRow,
@@ -220,6 +227,39 @@ function buildReviewDefaults(rows: AccountingResolutionPreviewRow[]) {
   }, {});
 }
 
+function buildTargetCostCodeLabel(
+  costCodes: OrganizationCostCodeRow[],
+  targetCostCodeId: string
+) {
+  const match = costCodes.find((row) => row.id === targetCostCodeId);
+  return match ? `${match.code} - ${match.name}` : null;
+}
+
+function buildMappingRuleSummary(
+  costCodes: OrganizationCostCodeRow[],
+  rule: Pick<
+    OrganizationCostCodeMappingRuleRow,
+    | "rule_type"
+    | "target_cost_code_id"
+    | "intelligence_cost_code"
+    | "work_type"
+    | "cost_type"
+    | "priority"
+    | "is_active"
+  >
+) {
+  return summarizeCostCodeMapping({
+    ruleType: rule.rule_type,
+    targetCostCodeId: rule.target_cost_code_id,
+    targetCostCodeLabel: buildTargetCostCodeLabel(costCodes, rule.target_cost_code_id),
+    intelligenceCostCode: rule.intelligence_cost_code,
+    workType: rule.work_type,
+    costType: rule.cost_type,
+    priority: rule.priority,
+    isActive: rule.is_active,
+  });
+}
+
 export function CompanyCostCodesWorkspace({
   organizationId,
   canEdit,
@@ -314,6 +354,20 @@ export function CompanyCostCodesWorkspace({
       description: "",
       isDefault: false,
     });
+  };
+
+  const emitIntelligenceEvents = async (
+    events: Array<ReturnType<typeof buildCostItemIntelligenceEvent>>
+  ) => {
+    if (!supabase || events.length === 0) {
+      return;
+    }
+
+    try {
+      await writeCostItemIntelligenceEvents(supabase, events);
+    } catch (error) {
+      logCostItemIntelligenceFailure("cost-code-mappings", error);
+    }
   };
 
   const handleStartAddCostCode = () => {
@@ -482,6 +536,8 @@ export function CompanyCostCodesWorkspace({
 
     startTransition(() => {
       void (async () => {
+        const intelligenceEvents: Array<ReturnType<typeof buildCostItemIntelligenceEvent>> = [];
+
         for (const option of QUICK_SETUP_OPTIONS) {
           const selectedCostCodeId = quickSetupSelections[option.key] || "";
           const existingRule = findActiveRule(mappingRules, option.ruleType, { costType: option.costType });
@@ -497,6 +553,28 @@ export function CompanyCostCodesWorkspace({
                 setError(archiveError.message);
                 return;
               }
+
+              intelligenceEvents.push(
+                buildCostItemIntelligenceEvent({
+                  organizationId,
+                  module: "cost_code_mappings",
+                  eventFamily: "validation",
+                  eventType: "cost_item_review_reopened",
+                  action: "reopened",
+                  entityType: "organization_cost_code_mapping_rule",
+                  entityId: existingRule.id,
+                  beforeData: buildMappingRuleSummary(costCodes, existingRule),
+                  afterData: {
+                    ...buildMappingRuleSummary(costCodes, existingRule),
+                    isActive: false,
+                  },
+                  metadata: {
+                    reviewKind: "company_cost_code_mapping",
+                    ruleScope: option.key,
+                  },
+                  reason: "Quick setup mapping was cleared.",
+                })
+              );
             }
             continue;
           }
@@ -514,10 +592,40 @@ export function CompanyCostCodesWorkspace({
               setError(updateError.message);
               return;
             }
+
+            if (existingRule.target_cost_code_id !== selectedCostCodeId) {
+              intelligenceEvents.push(
+                buildCostItemIntelligenceEvent({
+                  organizationId,
+                  module: "cost_code_mappings",
+                  eventFamily: "correction",
+                  eventType: "cost_code_mapping_overridden",
+                  action: "overridden",
+                  entityType: "organization_cost_code_mapping_rule",
+                  entityId: existingRule.id,
+                  beforeData: buildMappingRuleSummary(costCodes, existingRule),
+                  afterData: summarizeCostCodeMapping({
+                    ruleType: existingRule.rule_type,
+                    targetCostCodeId: selectedCostCodeId,
+                    targetCostCodeLabel: buildTargetCostCodeLabel(costCodes, selectedCostCodeId),
+                    intelligenceCostCode: existingRule.intelligence_cost_code,
+                    workType: existingRule.work_type,
+                    costType: existingRule.cost_type,
+                    priority: existingRule.priority,
+                    isActive: true,
+                  }),
+                  metadata: {
+                    reviewKind: "company_cost_code_mapping",
+                    ruleScope: option.key,
+                  },
+                  reason: "Quick setup mapping target changed.",
+                })
+              );
+            }
             continue;
           }
 
-          const { error: insertError } = await supabase!
+          const { data: insertedRule, error: insertError } = await supabase!
             .from("organization_cost_code_mapping_rules")
             .insert({
               organization_id: organizationId,
@@ -525,14 +633,37 @@ export function CompanyCostCodesWorkspace({
               target_cost_code_id: selectedCostCodeId,
               cost_type: option.costType,
               priority: option.defaultPriority,
-            });
+            })
+            .select("*")
+            .single();
 
           if (insertError) {
             setError(insertError.message);
             return;
           }
+
+          if (insertedRule) {
+            intelligenceEvents.push(
+              buildCostItemIntelligenceEvent({
+                organizationId,
+                module: "cost_code_mappings",
+                eventFamily: "commercial_action",
+                eventType: "cost_code_mapping_confirmed",
+                action: "confirmed",
+                entityType: "organization_cost_code_mapping_rule",
+                entityId: insertedRule.id,
+                afterData: buildMappingRuleSummary(costCodes, insertedRule),
+                metadata: {
+                  reviewKind: "company_cost_code_mapping",
+                  ruleScope: option.key,
+                },
+                reason: "Quick setup mapping created.",
+              })
+            );
+          }
         }
 
+        await emitIntelligenceEvents(intelligenceEvents);
         refreshPage("Quick setup saved.");
       })();
     });
@@ -551,6 +682,8 @@ export function CompanyCostCodesWorkspace({
 
     startTransition(() => {
       void (async () => {
+        const intelligenceEvents: Array<ReturnType<typeof buildCostItemIntelligenceEvent>> = [];
+        let updatedRuleId: string | null = null;
         const existingRule = findActiveRule(mappingRules, "work_type_cost_type", {
           workType: row.workType,
           costType: row.costType,
@@ -570,8 +703,41 @@ export function CompanyCostCodesWorkspace({
             setError(updateError.message);
             return;
           }
+
+          updatedRuleId = existingRule.id;
+          if (existingRule.target_cost_code_id !== selectedCostCodeId) {
+            intelligenceEvents.push(
+              buildCostItemIntelligenceEvent({
+                organizationId,
+                projectId: row.projectId,
+                module: "cost_code_mappings",
+                eventFamily: "correction",
+                eventType: "cost_code_mapping_overridden",
+                action: "overridden",
+                entityType: "organization_cost_code_mapping_rule",
+                entityId: existingRule.id,
+                beforeData: buildMappingRuleSummary(costCodes, existingRule),
+                afterData: summarizeCostCodeMapping({
+                  ruleType: existingRule.rule_type,
+                  targetCostCodeId: selectedCostCodeId,
+                  targetCostCodeLabel: buildTargetCostCodeLabel(costCodes, selectedCostCodeId),
+                  intelligenceCostCode: existingRule.intelligence_cost_code,
+                  workType: existingRule.work_type,
+                  costType: existingRule.cost_type,
+                  priority: existingRule.priority,
+                  isActive: true,
+                }),
+                metadata: {
+                  costItemId: row.costItemId,
+                  workType: row.workType,
+                  costType: row.costType,
+                },
+                reason: "Reviewer changed the mapped company cost code.",
+              })
+            );
+          }
         } else {
-          const { error: insertError } = await supabase!
+          const { data: insertedRule, error: insertError } = await supabase!
             .from("organization_cost_code_mapping_rules")
             .insert({
               organization_id: organizationId,
@@ -580,11 +746,88 @@ export function CompanyCostCodesWorkspace({
               work_type: row.workType,
               cost_type: row.costType,
               priority: 50,
-            });
+            })
+            .select("*")
+            .single();
 
           if (insertError) {
             setError(insertError.message);
             return;
+          }
+
+          updatedRuleId = insertedRule?.id ?? null;
+          if (insertedRule) {
+            intelligenceEvents.push(
+              buildCostItemIntelligenceEvent({
+                organizationId,
+                projectId: row.projectId,
+                module: "cost_code_mappings",
+                eventFamily: "commercial_action",
+                eventType: "cost_code_mapping_confirmed",
+                action: "confirmed",
+                entityType: "organization_cost_code_mapping_rule",
+                entityId: insertedRule.id,
+                afterData: buildMappingRuleSummary(costCodes, insertedRule),
+                metadata: {
+                  costItemId: row.costItemId,
+                  workType: row.workType,
+                  costType: row.costType,
+                },
+                reason: "Reviewer confirmed a company cost code mapping.",
+              })
+            );
+          }
+        }
+
+        intelligenceEvents.push(
+          buildCostItemIntelligenceEvent({
+            organizationId,
+            projectId: row.projectId,
+            module: "cost_code_mappings",
+            eventFamily: "validation",
+            eventType: "cost_item_review_resolved",
+            action: "resolved",
+            entityType: "cost_item",
+            entityId: row.costItemId,
+            beforeData: {
+              resolutionStatus: row.resolution.status,
+              matchedRuleId: row.resolution.matchedRuleId,
+            },
+            afterData: {
+              resolutionStatus: "resolved",
+              targetCostCodeId: selectedCostCodeId,
+              targetCostCodeLabel: buildTargetCostCodeLabel(costCodes, selectedCostCodeId),
+              mappingRuleId: updatedRuleId,
+            },
+            metadata: {
+              reviewKind: "company_cost_code",
+              workType: row.workType,
+              costType: row.costType,
+              intelligenceCostCode: row.intelligenceCostCode,
+            },
+            reason: "Company cost code review queue item resolved.",
+          })
+        );
+
+        await emitIntelligenceEvents(intelligenceEvents);
+        if (existingRule && existingRule.target_cost_code_id !== selectedCostCodeId) {
+          try {
+            await writeCostItemCorrectionEvent(supabase!, {
+              organizationId,
+              projectId: row.projectId,
+              module: "cost_code_mappings",
+              targetEntityType: "organization_cost_code_mapping_rule",
+              targetEntityId: existingRule.id,
+              correctionType: "mapping_fix",
+              correctedFieldName: "target_cost_code_id",
+              incorrectValue: existingRule.target_cost_code_id,
+              correctedValue: selectedCostCodeId,
+              correctionReason: "Reviewer overrode the mapped company cost code.",
+              feedbackLabel: "mapping_overridden",
+              isTrainingEligible: true,
+            });
+          } catch (error) {
+            logCostItemIntelligenceFailure("cost-code-mapping-correction", error);
           }
         }
 
@@ -635,7 +878,7 @@ export function CompanyCostCodesWorkspace({
 
     startTransition(() => {
       void (async () => {
-        const { error: insertError } = await supabase!
+        const { data: insertedRule, error: insertError } = await supabase!
           .from("organization_cost_code_mapping_rules")
           .insert({
             organization_id: organizationId,
@@ -653,11 +896,32 @@ export function CompanyCostCodesWorkspace({
                 : null,
             priority: parsedPriority,
             notes: advancedRuleForm.notes.trim() || null,
-          });
+          })
+          .select("*")
+          .single();
 
         if (insertError) {
           setError(insertError.message);
           return;
+        }
+
+        if (insertedRule) {
+          await emitIntelligenceEvents([
+            buildCostItemIntelligenceEvent({
+              organizationId,
+              module: "cost_code_mappings",
+              eventFamily: "commercial_action",
+              eventType: "cost_code_mapping_confirmed",
+              action: "confirmed",
+              entityType: "organization_cost_code_mapping_rule",
+              entityId: insertedRule.id,
+              afterData: buildMappingRuleSummary(costCodes, insertedRule),
+              metadata: {
+                builder: "advanced",
+              },
+              reason: "Advanced company cost code mapping created.",
+            }),
+          ]);
         }
 
         setAdvancedRuleForm({
@@ -690,6 +954,32 @@ export function CompanyCostCodesWorkspace({
         if (updateError) {
           setError(updateError.message);
           return;
+        }
+
+        const existingRule = mappingRules.find((rule) => rule.id === ruleId) ?? null;
+        if (existingRule) {
+          await emitIntelligenceEvents([
+            buildCostItemIntelligenceEvent({
+              organizationId,
+              module: "cost_code_mappings",
+              eventFamily: nextActive ? "commercial_action" : "validation",
+              eventType: nextActive ? "cost_code_mapping_confirmed" : "cost_item_review_reopened",
+              action: nextActive ? "confirmed" : "reopened",
+              entityType: "organization_cost_code_mapping_rule",
+              entityId: existingRule.id,
+              beforeData: buildMappingRuleSummary(costCodes, existingRule),
+              afterData: {
+                ...buildMappingRuleSummary(costCodes, existingRule),
+                isActive: nextActive,
+              },
+              metadata: {
+                builder: "advanced",
+              },
+              reason: nextActive
+                ? "Archived company cost code mapping restored."
+                : "Company cost code mapping archived and may reopen review items.",
+            }),
+          ]);
         }
 
         refreshPage(nextActive ? "Advanced mapping restored." : "Advanced mapping archived.");

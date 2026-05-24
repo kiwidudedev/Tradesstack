@@ -23,7 +23,17 @@ import {
   createUnmatchedSupplierInvoiceLineAllocationDraft,
   type SupplierInvoiceLineAllocationRow,
 } from "@/lib/supplier-invoice-allocations";
-import type { Database } from "@/lib/supabase/types";
+import {
+  buildSupplierInvoiceIntelligenceEvent,
+  createSupplierInvoiceAiInteraction,
+  createSupplierInvoiceValidationCase,
+  hasAiSupplierInvoiceAllocationSuggestion,
+  logSupplierInvoiceIntelligenceFailure,
+  summarizeSupplierInvoiceAllocation,
+  summarizeSupplierInvoiceActualCostEvent,
+  writeSupplierInvoiceIntelligenceEvents,
+} from "@/lib/supplier-invoice-intelligence";
+import type { Database, Json } from "@/lib/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ServerSupabase = SupabaseClient<Database>;
@@ -424,6 +434,22 @@ function formatActualCostPostingSkippedMessage(params: {
     : `Skipped ${params.skippedCount} allocations during actual cost posting.`;
 }
 
+async function emitSupplierInvoiceIntelligenceEvents(params: {
+  supabase: ServerSupabase;
+  events: Array<ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>>;
+  action: string;
+}) {
+  if (params.events.length === 0) {
+    return;
+  }
+
+  try {
+    await writeSupplierInvoiceIntelligenceEvents(params.supabase, params.events);
+  } catch (error) {
+    logSupplierInvoiceIntelligenceFailure(params.action, error);
+  }
+}
+
 async function prepareAcceptedDraftContexts(params: {
   supabase: ServerSupabase;
   organizationId: string;
@@ -719,6 +745,154 @@ async function replaceDraftAllocationsForLines(params: {
       })),
     });
   }
+
+  try {
+    const refreshedAllocations = await fetchInvoiceDraftAllocations({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      supplierInvoiceId: params.supplierInvoiceId,
+    });
+    const currentAllocationByInvoiceLineId = new Map(
+      refreshedAllocations
+        .filter((allocation) => params.invoiceLineIds.includes(allocation.supplier_invoice_line_id))
+        .map((allocation) => [allocation.supplier_invoice_line_id, allocation])
+    );
+    const intelligenceEvents: Array<ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>> = [];
+
+    allocationsToReplace.forEach((previousAllocation) => {
+      const nextAllocation = currentAllocationByInvoiceLineId.get(previousAllocation.supplier_invoice_line_id) ?? null;
+      if (!nextAllocation) {
+        return;
+      }
+
+      const changedPurchaseOrderLine =
+        previousAllocation.purchase_order_line_item_id !== nextAllocation.purchase_order_line_item_id;
+      const changedAmount =
+        Number(previousAllocation.allocated_amount ?? 0) !== Number(nextAllocation.allocated_amount ?? 0);
+      const changedCostCode =
+        previousAllocation.organization_cost_code_id !== nextAllocation.organization_cost_code_id;
+
+      if (changedPurchaseOrderLine || changedAmount || changedCostCode) {
+        intelligenceEvents.push(
+          buildSupplierInvoiceIntelligenceEvent({
+            organizationId: params.organizationId,
+            projectId: nextAllocation.project_id,
+            module: "supplier_invoices",
+            eventFamily: "correction",
+            eventType: "supplier_invoice_allocation_corrected",
+            action: "corrected",
+            entityType: "supplier_invoice_line_allocation",
+            entityId: nextAllocation.id,
+            beforeData: summarizeSupplierInvoiceAllocation({
+              supplierInvoiceId: previousAllocation.supplier_invoice_id,
+              supplierInvoiceLineId: previousAllocation.supplier_invoice_line_id,
+              purchaseOrderId: previousAllocation.purchase_order_id,
+              purchaseOrderLineItemId: previousAllocation.purchase_order_line_item_id,
+              projectId: previousAllocation.project_id,
+              allocatedAmount: previousAllocation.allocated_amount,
+              allocationStatus: previousAllocation.allocation_status,
+              reviewStatus: previousAllocation.review_status,
+              approvalStatus: previousAllocation.approval_status,
+              classificationStatus: previousAllocation.classification_status,
+              accountingResolutionStatus: previousAllocation.accounting_resolution_status,
+              organizationCostCodeId: previousAllocation.organization_cost_code_id,
+              aiConfidenceScore: previousAllocation.ai_confidence_score,
+              aiSuggestedPurchaseOrderLineItemId: previousAllocation.ai_suggested_purchase_order_line_item_id,
+            }),
+            afterData: summarizeSupplierInvoiceAllocation({
+              supplierInvoiceId: nextAllocation.supplier_invoice_id,
+              supplierInvoiceLineId: nextAllocation.supplier_invoice_line_id,
+              purchaseOrderId: nextAllocation.purchase_order_id,
+              purchaseOrderLineItemId: nextAllocation.purchase_order_line_item_id,
+              projectId: nextAllocation.project_id,
+              allocatedAmount: nextAllocation.allocated_amount,
+              allocationStatus: nextAllocation.allocation_status,
+              reviewStatus: nextAllocation.review_status,
+              approvalStatus: nextAllocation.approval_status,
+              classificationStatus: nextAllocation.classification_status,
+              accountingResolutionStatus: nextAllocation.accounting_resolution_status,
+              organizationCostCodeId: nextAllocation.organization_cost_code_id,
+              aiConfidenceScore: nextAllocation.ai_confidence_score,
+              aiSuggestedPurchaseOrderLineItemId: nextAllocation.ai_suggested_purchase_order_line_item_id,
+            }),
+            metadata: {
+              supplierInvoiceLineId: nextAllocation.supplier_invoice_line_id,
+            },
+            reason: "Supplier invoice draft allocation changed after review or correction.",
+          })
+        );
+      }
+
+      if (reviewedAllocationsToReset.some((allocation) => allocation.id === previousAllocation.id)) {
+        intelligenceEvents.push(
+          buildSupplierInvoiceIntelligenceEvent({
+            organizationId: params.organizationId,
+            projectId: nextAllocation.project_id,
+            module: "supplier_invoices",
+            eventFamily: "validation",
+            eventType: "supplier_invoice_approval_requested",
+            action: "requested",
+            entityType: "supplier_invoice_line_allocation",
+            entityId: nextAllocation.id,
+            beforeData: { approvalStatus: previousAllocation.approval_status, reviewStatus: previousAllocation.review_status },
+            afterData: { approvalStatus: nextAllocation.approval_status, reviewStatus: nextAllocation.review_status },
+            metadata: {
+              supplierInvoiceLineId: nextAllocation.supplier_invoice_line_id,
+            },
+            reason: "Allocation review reopened after a material allocation change.",
+          })
+        );
+      }
+    });
+
+    currentAllocationByInvoiceLineId.forEach((allocation) => {
+      if (!hasAiSupplierInvoiceAllocationSuggestion(allocation)) {
+        return;
+      }
+
+      intelligenceEvents.push(
+        buildSupplierInvoiceIntelligenceEvent({
+          organizationId: params.organizationId,
+          projectId: allocation.project_id,
+          module: "supplier_invoices",
+          eventFamily: "ai_interaction",
+          eventType: "supplier_invoice_allocation_suggested",
+          action: "suggested",
+          entityType: "supplier_invoice_line_allocation",
+          entityId: allocation.id,
+          afterData: summarizeSupplierInvoiceAllocation({
+            supplierInvoiceId: allocation.supplier_invoice_id,
+            supplierInvoiceLineId: allocation.supplier_invoice_line_id,
+            purchaseOrderId: allocation.purchase_order_id,
+            purchaseOrderLineItemId: allocation.purchase_order_line_item_id,
+            projectId: allocation.project_id,
+            allocatedAmount: allocation.allocated_amount,
+            allocationStatus: allocation.allocation_status,
+            reviewStatus: allocation.review_status,
+            approvalStatus: allocation.approval_status,
+            classificationStatus: allocation.classification_status,
+            accountingResolutionStatus: allocation.accounting_resolution_status,
+            organizationCostCodeId: allocation.organization_cost_code_id,
+            aiConfidenceScore: allocation.ai_confidence_score,
+            aiSuggestedPurchaseOrderLineItemId: allocation.ai_suggested_purchase_order_line_item_id,
+          }),
+          metadata: {
+            supplierInvoiceLineId: allocation.supplier_invoice_line_id,
+            confidenceScore: allocation.ai_confidence_score,
+          },
+          reason: "AI-assisted supplier invoice allocation suggestion saved as the current draft.",
+        })
+      );
+    });
+
+    await emitSupplierInvoiceIntelligenceEvents({
+      supabase: params.supabase,
+      events: intelligenceEvents,
+      action: "supplier-invoice-allocation-replace",
+    });
+  } catch (error) {
+    logSupplierInvoiceIntelligenceFailure("supplier-invoice-allocation-replace", error);
+  }
 }
 
 export async function saveAcceptedSupplierInvoiceDraftAllocations(params: {
@@ -959,6 +1133,136 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
     ],
   });
 
+  const approvedAt = new Date().toISOString();
+  const updatedAllocationSummary = summarizeSupplierInvoiceAllocation({
+    supplierInvoiceId: context.allocation.supplier_invoice_id,
+    supplierInvoiceLineId: context.allocation.supplier_invoice_line_id,
+    purchaseOrderId: context.allocation.purchase_order_id,
+    purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
+    projectId: context.allocation.project_id,
+    allocatedAmount: context.allocation.allocated_amount,
+    allocationStatus: context.allocation.allocation_status,
+    reviewStatus: "reviewed",
+    approvalStatus: "approved",
+    classificationStatus: context.allocation.classification_status,
+    accountingResolutionStatus: context.allocation.accounting_resolution_status,
+    organizationCostCodeId: context.allocation.organization_cost_code_id,
+    aiConfidenceScore: context.allocation.ai_confidence_score,
+    aiSuggestedPurchaseOrderLineItemId: context.allocation.ai_suggested_purchase_order_line_item_id,
+  });
+  const approvalEvents = [
+    buildSupplierInvoiceIntelligenceEvent({
+      organizationId: params.organizationId,
+      projectId: context.allocation.project_id,
+      module: "supplier_invoices",
+      eventFamily: "approval",
+      eventType: "supplier_invoice_allocation_approved",
+      action: "approved",
+      entityType: "supplier_invoice_line_allocation",
+      entityId: context.allocation.id,
+      beforeData: summarizeSupplierInvoiceAllocation({
+        supplierInvoiceId: context.allocation.supplier_invoice_id,
+        supplierInvoiceLineId: context.allocation.supplier_invoice_line_id,
+        purchaseOrderId: context.allocation.purchase_order_id,
+        purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
+        projectId: context.allocation.project_id,
+        allocatedAmount: context.allocation.allocated_amount,
+        allocationStatus: context.allocation.allocation_status,
+        reviewStatus: context.allocation.review_status,
+        approvalStatus: context.allocation.approval_status,
+        classificationStatus: context.allocation.classification_status,
+        accountingResolutionStatus: context.allocation.accounting_resolution_status,
+        organizationCostCodeId: context.allocation.organization_cost_code_id,
+        aiConfidenceScore: context.allocation.ai_confidence_score,
+        aiSuggestedPurchaseOrderLineItemId: context.allocation.ai_suggested_purchase_order_line_item_id,
+      }),
+      afterData: updatedAllocationSummary,
+      metadata: {
+        supplierInvoiceLineId: context.invoiceLine.id,
+        notePresent: note.length > 0,
+      },
+      reason: "Supplier invoice draft allocation approved.",
+      occurredAt: approvedAt,
+    }),
+  ];
+
+  if (hasAiSupplierInvoiceAllocationSuggestion(context.allocation)) {
+    approvalEvents.push(
+      buildSupplierInvoiceIntelligenceEvent({
+        organizationId: params.organizationId,
+        projectId: context.allocation.project_id,
+        module: "supplier_invoices",
+        eventFamily: "ai_interaction",
+        eventType: "ai_supplier_invoice_match_accepted",
+        action: "accepted",
+        entityType: "supplier_invoice_line_allocation",
+        entityId: context.allocation.id,
+        beforeData: summarizeSupplierInvoiceAllocation({
+          supplierInvoiceId: context.allocation.supplier_invoice_id,
+          supplierInvoiceLineId: context.allocation.supplier_invoice_line_id,
+          purchaseOrderId: context.allocation.purchase_order_id,
+          purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
+          projectId: context.allocation.project_id,
+          allocatedAmount: context.allocation.allocated_amount,
+          allocationStatus: context.allocation.allocation_status,
+          reviewStatus: context.allocation.review_status,
+          approvalStatus: context.allocation.approval_status,
+          classificationStatus: context.allocation.classification_status,
+          accountingResolutionStatus: context.allocation.accounting_resolution_status,
+          organizationCostCodeId: context.allocation.organization_cost_code_id,
+          aiConfidenceScore: context.allocation.ai_confidence_score,
+          aiSuggestedPurchaseOrderLineItemId: context.allocation.ai_suggested_purchase_order_line_item_id,
+        }),
+        afterData: updatedAllocationSummary,
+        metadata: {
+          supplierInvoiceLineId: context.invoiceLine.id,
+          confidenceScore: context.allocation.ai_confidence_score,
+        },
+        reason: "AI-assisted allocation suggestion approved.",
+        occurredAt: approvedAt,
+      })
+    );
+  }
+
+  await emitSupplierInvoiceIntelligenceEvents({
+    supabase: params.supabase,
+    events: approvalEvents,
+    action: "supplier-invoice-allocation-approve",
+  });
+
+  if (hasAiSupplierInvoiceAllocationSuggestion(context.allocation)) {
+    try {
+      await createSupplierInvoiceAiInteraction(params.supabase, {
+        organizationId: params.organizationId,
+        projectId: context.allocation.project_id,
+        subjectEntityType: "supplier_invoice_line_allocation",
+        subjectEntityId: context.allocation.id,
+        confidence: context.allocation.ai_confidence_score,
+        humanDisposition: "accepted",
+        humanFeedbackSummary: "User approved an AI-assisted supplier invoice allocation.",
+        outputStructured: summarizeSupplierInvoiceAllocation({
+          supplierInvoiceId: context.allocation.supplier_invoice_id,
+          supplierInvoiceLineId: context.allocation.supplier_invoice_line_id,
+          purchaseOrderId: context.allocation.purchase_order_id,
+          purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
+          projectId: context.allocation.project_id,
+          allocatedAmount: context.allocation.allocated_amount,
+          allocationStatus: context.allocation.allocation_status,
+          reviewStatus: context.allocation.review_status,
+          approvalStatus: context.allocation.approval_status,
+          classificationStatus: context.allocation.classification_status,
+          accountingResolutionStatus: context.allocation.accounting_resolution_status,
+          organizationCostCodeId: context.allocation.organization_cost_code_id,
+          aiConfidenceScore: context.allocation.ai_confidence_score,
+          aiSuggestedPurchaseOrderLineItemId: context.allocation.ai_suggested_purchase_order_line_item_id,
+        }) as unknown as Json,
+        editedOutput: updatedAllocationSummary as unknown as Json,
+      });
+    } catch (error) {
+      logSupplierInvoiceIntelligenceFailure("supplier-invoice-allocation-approve-ai", error);
+    }
+  }
+
   return fetchInvoiceDraftAllocations({
     supabase: params.supabase,
     organizationId: params.organizationId,
@@ -1036,6 +1340,113 @@ export async function disputeSupplierInvoiceDraftAllocation(params: {
       },
     ],
   });
+
+  const disputedAt = new Date().toISOString();
+  const beforeAllocationSummary = summarizeSupplierInvoiceAllocation({
+    supplierInvoiceId: context.allocation.supplier_invoice_id,
+    supplierInvoiceLineId: context.allocation.supplier_invoice_line_id,
+    purchaseOrderId: context.allocation.purchase_order_id,
+    purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
+    projectId: context.allocation.project_id,
+    allocatedAmount: context.allocation.allocated_amount,
+    allocationStatus: context.allocation.allocation_status,
+    reviewStatus: context.allocation.review_status,
+    approvalStatus: context.allocation.approval_status,
+    classificationStatus: context.allocation.classification_status,
+    accountingResolutionStatus: context.allocation.accounting_resolution_status,
+    organizationCostCodeId: context.allocation.organization_cost_code_id,
+    aiConfidenceScore: context.allocation.ai_confidence_score,
+    aiSuggestedPurchaseOrderLineItemId: context.allocation.ai_suggested_purchase_order_line_item_id,
+  });
+  const afterAllocationSummary = {
+    ...beforeAllocationSummary,
+    reviewStatus: "disputed",
+    approvalStatus: "disputed",
+  };
+
+  await emitSupplierInvoiceIntelligenceEvents({
+    supabase: params.supabase,
+    events: [
+      buildSupplierInvoiceIntelligenceEvent({
+        organizationId: params.organizationId,
+        projectId: context.allocation.project_id,
+        module: "supplier_invoices",
+        eventFamily: "approval",
+        eventType: "supplier_invoice_rejected",
+        action: "rejected",
+        entityType: "supplier_invoice_line_allocation",
+        entityId: context.allocation.id,
+        beforeData: beforeAllocationSummary,
+        afterData: afterAllocationSummary,
+        metadata: {
+          supplierInvoiceLineId: context.invoiceLine.id,
+          notePresent: note.length > 0,
+        },
+        reason: "Supplier invoice draft allocation disputed.",
+        occurredAt: disputedAt,
+      }),
+      ...(hasAiSupplierInvoiceAllocationSuggestion(context.allocation)
+        ? [
+            buildSupplierInvoiceIntelligenceEvent({
+              organizationId: params.organizationId,
+              projectId: context.allocation.project_id,
+              module: "supplier_invoices",
+              eventFamily: "ai_interaction",
+              eventType: "ai_supplier_invoice_match_rejected",
+              action: "rejected",
+              entityType: "supplier_invoice_line_allocation",
+              entityId: context.allocation.id,
+              beforeData: beforeAllocationSummary,
+              afterData: afterAllocationSummary,
+              metadata: {
+                supplierInvoiceLineId: context.invoiceLine.id,
+                confidenceScore: context.allocation.ai_confidence_score,
+              },
+              reason: "AI-assisted allocation suggestion rejected during review.",
+              occurredAt: disputedAt,
+            }),
+          ]
+        : []),
+    ],
+    action: "supplier-invoice-allocation-dispute",
+  });
+
+  try {
+    await createSupplierInvoiceValidationCase(params.supabase, {
+      organizationId: params.organizationId,
+      projectId: context.allocation.project_id,
+      scopeEntityType: "supplier_invoice_line_allocation",
+      scopeEntityId: context.allocation.id,
+      ruleKey: "supplier_invoice_allocation_disputed",
+      expectedValue: { approvalStatus: "approved" },
+      observedValue: { approvalStatus: "disputed" },
+      details: {
+        supplierInvoiceLineId: context.invoiceLine.id,
+        allocationStatus: context.allocation.allocation_status,
+      },
+      approvalNote: note,
+    });
+  } catch (error) {
+    logSupplierInvoiceIntelligenceFailure("supplier-invoice-allocation-dispute-validation", error);
+  }
+
+  if (hasAiSupplierInvoiceAllocationSuggestion(context.allocation)) {
+    try {
+      await createSupplierInvoiceAiInteraction(params.supabase, {
+        organizationId: params.organizationId,
+        projectId: context.allocation.project_id,
+        subjectEntityType: "supplier_invoice_line_allocation",
+        subjectEntityId: context.allocation.id,
+        confidence: context.allocation.ai_confidence_score,
+        humanDisposition: "rejected",
+        humanFeedbackSummary: "User rejected an AI-assisted supplier invoice allocation.",
+        outputStructured: beforeAllocationSummary as unknown as Json,
+        editedOutput: afterAllocationSummary as unknown as Json,
+      });
+    } catch (error) {
+      logSupplierInvoiceIntelligenceFailure("supplier-invoice-allocation-dispute-ai", error);
+    }
+  }
 
   return fetchInvoiceDraftAllocations({
     supabase: params.supabase,
@@ -1254,6 +1665,37 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
     ],
   });
 
+  await emitSupplierInvoiceIntelligenceEvents({
+    supabase: params.supabase,
+    events: postedEvents.map((event) =>
+      buildSupplierInvoiceIntelligenceEvent({
+        organizationId: params.organizationId,
+        projectId: event.project_id,
+        module: "supplier_invoices",
+        eventFamily: "lineage",
+        eventType: "supplier_invoice_actual_cost_posted",
+        action: "posted",
+        entityType: "project_actual_cost_event",
+        entityId: event.id,
+        afterData: summarizeSupplierInvoiceActualCostEvent({
+          supplierInvoiceId: params.supplierInvoiceId,
+          allocationId:
+            event.source_invoice_allocation_id ?? event.supplier_invoice_line_allocation_id,
+          projectId: event.project_id,
+          totalAmount: Number(event.total_amount ?? 0),
+          eventType: event.event_type,
+          eventStatus: event.event_status,
+          reversesEventId: event.reverses_event_id,
+        }),
+        metadata: {
+          supplierId: invoice.supplier_id ?? null,
+        },
+        reason: "Approved supplier invoice allocation posted to actual costs.",
+      })
+    ),
+    action: "supplier-invoice-actual-cost-posted",
+  });
+
   return {
     postedEvents,
     postedCount: postedEvents.length,
@@ -1332,6 +1774,81 @@ export async function reverseSupplierInvoiceActualCostEvent(params: {
       allocationId: resultRow.successor_allocation_id,
     }),
   ]);
+
+  await emitSupplierInvoiceIntelligenceEvents({
+    supabase: params.supabase,
+    events: [
+      buildSupplierInvoiceIntelligenceEvent({
+        organizationId: params.organizationId,
+        projectId: reversalEvent.project_id,
+        module: "supplier_invoices",
+        eventFamily: "lineage",
+        eventType: "supplier_invoice_actual_cost_reversed",
+        action: "reversed",
+        entityType: "project_actual_cost_event",
+        entityId: reversalEvent.id,
+        beforeData: summarizeSupplierInvoiceActualCostEvent({
+          supplierInvoiceId: params.supplierInvoiceId,
+          allocationId:
+            originalEvent.source_invoice_allocation_id ?? originalEvent.supplier_invoice_line_allocation_id,
+          projectId: originalEvent.project_id,
+          totalAmount: Number(originalEvent.total_amount ?? 0),
+          eventType: originalEvent.event_type,
+          eventStatus: originalEvent.event_status,
+          reversesEventId: originalEvent.reverses_event_id,
+        }),
+        afterData: summarizeSupplierInvoiceActualCostEvent({
+          supplierInvoiceId: params.supplierInvoiceId,
+          allocationId:
+            reversalEvent.source_invoice_allocation_id ?? reversalEvent.supplier_invoice_line_allocation_id,
+          projectId: reversalEvent.project_id,
+          totalAmount: Number(reversalEvent.total_amount ?? 0),
+          eventType: reversalEvent.event_type,
+          eventStatus: reversalEvent.event_status,
+          reversesEventId: reversalEvent.reverses_event_id,
+        }),
+        metadata: {
+          successorAllocationId: successorAllocation.id,
+          reversalReason,
+          notePresent: reversalNote.length > 0,
+        },
+        reason: "Supplier invoice actual cost event reversed.",
+      }),
+      buildSupplierInvoiceIntelligenceEvent({
+        organizationId: params.organizationId,
+        projectId: successorAllocation.project_id,
+        module: "supplier_invoices",
+        eventFamily: "correction",
+        eventType: "supplier_invoice_allocation_corrected",
+        action: "corrected",
+        entityType: "supplier_invoice_line_allocation",
+        entityId: successorAllocation.id,
+        afterData: summarizeSupplierInvoiceAllocation({
+          supplierInvoiceId: successorAllocation.supplier_invoice_id,
+          supplierInvoiceLineId: successorAllocation.supplier_invoice_line_id,
+          purchaseOrderId: successorAllocation.purchase_order_id,
+          purchaseOrderLineItemId: successorAllocation.purchase_order_line_item_id,
+          projectId: successorAllocation.project_id,
+          allocatedAmount: successorAllocation.allocated_amount,
+          allocationStatus: successorAllocation.allocation_status,
+          reviewStatus: successorAllocation.review_status,
+          approvalStatus: successorAllocation.approval_status,
+          classificationStatus: successorAllocation.classification_status,
+          accountingResolutionStatus: successorAllocation.accounting_resolution_status,
+          organizationCostCodeId: successorAllocation.organization_cost_code_id,
+          aiConfidenceScore: successorAllocation.ai_confidence_score,
+          aiSuggestedPurchaseOrderLineItemId: successorAllocation.ai_suggested_purchase_order_line_item_id,
+        }),
+        metadata: {
+          reversalEventId: reversalEvent.id,
+          originalEventId: originalEvent.id,
+          reversalReason,
+        },
+        reason: "Actual cost reversal created a successor allocation that requires correction review.",
+      }),
+    ],
+    action: "supplier-invoice-actual-cost-reversed",
+  });
 
   return {
     originalEvent,

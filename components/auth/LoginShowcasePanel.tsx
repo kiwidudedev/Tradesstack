@@ -57,7 +57,7 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
         return;
       }
 
-      router.push(postAuthPath);
+      router.push(result.redirectPath || postAuthPath);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Unable to sign in.");
     } finally {

@@ -70,6 +70,10 @@ interface TakeoffMeasurement {
   display_unit: string | null;
   count_value: number | null;
   measured_perimeter_base?: number | null;
+  page_bbox_min_x?: number | null;
+  page_bbox_min_y?: number | null;
+  page_bbox_max_x?: number | null;
+  page_bbox_max_y?: number | null;
   metadata?: Record<string, unknown> | null;
   points: TakeoffMeasurementPoint[];
   area_shapes: TakeoffAreaShape[];

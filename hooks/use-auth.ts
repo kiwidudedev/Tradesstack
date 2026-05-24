@@ -8,6 +8,7 @@ import type { AuthSession, UserRole } from "@/lib/types";
 
 interface LoginResult {
   error: string | null;
+  redirectPath?: string | null;
 }
 
 interface RegisterResult {
@@ -24,7 +25,10 @@ type RegisterInput = {
 };
 
 type MemberRow = Database["public"]["Tables"]["organization_members"]["Row"];
-type OrganizationRow = Database["public"]["Tables"]["organizations"]["Row"];
+type OrganizationRow = Pick<
+  Database["public"]["Tables"]["organizations"]["Row"],
+  "id" | "name" | "logo_path" | "created_by" | "created_at" | "updated_at"
+>;
 
 type AuthStoreState = {
   session: AuthSession | null;
@@ -35,7 +39,7 @@ const MISSING_ENV_ERROR =
   "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.";
 
 const listeners = new Set<() => void>();
-const authStore: AuthStoreState = {
+let authStore: AuthStoreState = {
   session: null,
   isLoading: true,
 };
@@ -70,8 +74,11 @@ function updateStore(next: Partial<AuthStoreState>) {
     return;
   }
 
-  authStore.session = nextSession;
-  authStore.isLoading = nextIsLoading;
+  authStore = {
+    session: nextSession,
+    isLoading: nextIsLoading,
+  };
+
   emitStoreUpdate();
 }
 
@@ -171,6 +178,20 @@ function mapToAuthSession(user: User, member: MemberRow | null, organization: Or
   };
 }
 
+async function isPlatformAdminUser() {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return false;
+  }
+
+  const { data, error } = await supabase.rpc("is_platform_admin" as never);
+  if (error) {
+    return false;
+  }
+
+  return Boolean(data);
+}
+
 async function refreshAuthSession() {
   if (refreshInFlight) {
     return refreshInFlight;
@@ -208,10 +229,13 @@ async function refreshAuthSession() {
       let organization: OrganizationRow | null = null;
 
       if (!resolvedMember) {
-        // Tenant safety: never auto-provision org membership during session refresh.
-        // Missing membership means this user is not fully provisioned for app access.
-        updateStore({ session: null, isLoading: false });
-        return;
+        const platformAdmin = await isPlatformAdminUser();
+        if (!platformAdmin) {
+          // Tenant safety: never auto-provision org membership during session refresh.
+          // Missing membership means this user is not fully provisioned for app access.
+          updateStore({ session: null, isLoading: false });
+          return;
+        }
       }
 
       if (resolvedMember?.organization_id && !organization) {
@@ -276,13 +300,13 @@ export function useAuth() {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      return { error: toAuthMessage(error, "Unable to sign in right now.") };
+      return { error: toAuthMessage(error, "Unable to sign in right now."), redirectPath: null };
     }
 
     const userId = data.user?.id;
     if (!userId) {
       await supabase.auth.signOut();
-      return { error: "Unable to sign in right now." };
+      return { error: "Unable to sign in right now.", redirectPath: null };
     }
 
     const { data: membership } = await supabase
@@ -294,15 +318,23 @@ export function useAuth() {
       .maybeSingle();
 
     if (!membership) {
-      await supabase.auth.signOut();
-      return {
-        error:
-          "No workspace found for this account. Finish sign up or ask your admin for an invite.",
-      };
+      const { data: platformAdmin, error: platformAdminError } = await supabase.rpc("is_platform_admin" as never);
+
+      if (platformAdminError || !platformAdmin) {
+        await supabase.auth.signOut();
+        return {
+          error:
+            "No workspace found for this account. Finish sign up or ask your admin for an invite.",
+          redirectPath: null,
+        };
+      }
+
+      await refreshAuthSession();
+      return { error: null, redirectPath: "/app/internal/intelligence" };
     }
 
     await refreshAuthSession();
-    return { error: null };
+    return { error: null, redirectPath: null };
   }, []);
 
   const register = useCallback(async (input: RegisterInput): Promise<RegisterResult> => {

@@ -20,32 +20,40 @@ function columnIndexToLabel(index: number) {
   return label;
 }
 
-function parseRelativeReference(reference: string) {
-  const match = /^([A-Z]+)([1-9]\d*)$/.exec(reference);
+function parseFillReference(reference: string) {
+  const match = /^(\$?)([A-Z]+)(\$?)([1-9]\d*)$/i.exec(reference);
   if (!match) {
     return null;
   }
 
+  const columnLabel = match[2].toUpperCase();
+
   return {
-    columnLabel: match[1],
-    columnIndex: columnLabelToIndex(match[1]),
-    rowIndex: Number(match[2]) - 1,
+    isColumnAbsolute: match[1] === "$",
+    isRowAbsolute: match[3] === "$",
+    columnLabel,
+    columnIndex: columnLabelToIndex(columnLabel),
+    rowIndex: Number(match[4]) - 1,
   };
 }
 
 function shiftSingleReference(reference: string, rowDelta: number, columnDelta: number) {
-  const parsed = parseRelativeReference(reference);
+  const parsed = parseFillReference(reference);
   if (!parsed) {
     return reference;
   }
 
-  const nextColumnIndex = parsed.columnIndex + columnDelta;
-  const nextRowIndex = parsed.rowIndex + rowDelta;
+  const nextColumnIndex = parsed.isColumnAbsolute
+    ? parsed.columnIndex
+    : parsed.columnIndex + columnDelta;
+  const nextRowIndex = parsed.isRowAbsolute
+    ? parsed.rowIndex
+    : parsed.rowIndex + rowDelta;
   if (nextColumnIndex < 0 || nextRowIndex < 0) {
     return reference;
   }
 
-  return `${columnIndexToLabel(nextColumnIndex)}${nextRowIndex + 1}`;
+  return `${parsed.isColumnAbsolute ? "$" : ""}${columnIndexToLabel(nextColumnIndex)}${parsed.isRowAbsolute ? "$" : ""}${nextRowIndex + 1}`;
 }
 
 function isReferenceBoundaryCharacter(character: string | undefined) {
@@ -61,13 +69,13 @@ export function shiftFormulaForFill(
   rowDelta: number,
   columnDelta: number
 ) {
-  if (!formula.startsWith("=") || formula.includes("$")) {
+  if (!formula.startsWith("=")) {
     return formula;
   }
 
   let result = "";
   let cursor = 0;
-  const pattern = /([A-Z]+[1-9]\d*)(:([A-Z]+[1-9]\d*))?/g;
+  const pattern = /(\$?[A-Z]+\$?[1-9]\d*)(:(\$?[A-Z]+\$?[1-9]\d*))?/gi;
 
   for (const match of formula.matchAll(pattern)) {
     const matchedText = match[0];

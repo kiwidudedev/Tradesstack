@@ -141,6 +141,10 @@ interface TakeoffMeasurement {
   display_unit: string | null;
   count_value: number | null;
   measured_perimeter_base?: number | null;
+  page_bbox_min_x?: number | null;
+  page_bbox_min_y?: number | null;
+  page_bbox_max_x?: number | null;
+  page_bbox_max_y?: number | null;
   metadata?: Record<string, unknown> | null;
   points: TakeoffMeasurementPoint[];
   area_shapes: TakeoffAreaShape[];
@@ -623,6 +627,35 @@ function getCountLabelPosition(points: Point2D[]): Point2D | null {
   };
 }
 
+function getFallbackCountDocumentPoints(
+  measurement: Pick<
+    TakeoffMeasurement,
+    "page_bbox_min_x" | "page_bbox_min_y" | "page_bbox_max_x" | "page_bbox_max_y"
+  >,
+  transform: ReturnType<typeof createPdfViewportTransform>
+): Point2D[] {
+  const minX = measurement.page_bbox_min_x;
+  const minY = measurement.page_bbox_min_y;
+  const maxX = measurement.page_bbox_max_x;
+  const maxY = measurement.page_bbox_max_y;
+
+  if (
+    typeof minX !== "number" ||
+    typeof minY !== "number" ||
+    typeof maxX !== "number" ||
+    typeof maxY !== "number"
+  ) {
+    return [];
+  }
+
+  const centerPoint = {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+  };
+
+  return [transform.normalizedPointToDocumentPoint(centerPoint)];
+}
+
 function pointsAreEqual(left: Point2D, right: Point2D, tolerance = 0.01) {
   return Math.abs(left.x - right.x) <= tolerance && Math.abs(left.y - right.y) <= tolerance;
 }
@@ -948,7 +981,7 @@ function mergeMeasurementsPreservingRicherGeometry(
     currentLocalMeasurements.map((measurement) => [measurement.id, measurement] as const)
   );
 
-  return incomingMeasurements.map((incomingMeasurement) => {
+  const mergedMeasurements = incomingMeasurements.map((incomingMeasurement) => {
     const localMeasurement = localMeasurementsById.get(incomingMeasurement.id);
     if (!localMeasurement) {
       return cloneMeasurement(incomingMeasurement);
@@ -956,6 +989,23 @@ function mergeMeasurementsPreservingRicherGeometry(
 
     return mergeMeasurementPreservingRicherGeometry(localMeasurement, incomingMeasurement);
   });
+
+  const optimisticMeasurements = currentLocalMeasurements.filter((measurement) => {
+    if (!measurement.id.startsWith("temp-")) {
+      return false;
+    }
+
+    return !incomingMeasurements.some((incomingMeasurement) => incomingMeasurement.id === measurement.id);
+  });
+
+  if (optimisticMeasurements.length === 0) {
+    return mergedMeasurements;
+  }
+
+  return [
+    ...mergedMeasurements,
+    ...optimisticMeasurements.map((measurement) => cloneMeasurement(measurement)),
+  ];
 }
 
 function getPdfSourceKey(pdfUrl: string | null): string | null {
@@ -1828,7 +1878,9 @@ export function TakeoffPdfViewer({
               ? areaShapes[0]?.documentPoints ?? baseDocumentPoints
               : measurement.measurement_kind === "line"
                 ? linePaths[0]?.documentPoints ?? baseDocumentPoints
-              : baseDocumentPoints;
+              : baseDocumentPoints.length > 0
+                ? baseDocumentPoints
+                : getFallbackCountDocumentPoints(measurement, transform);
           const isPolyline = measurement.measurement_kind === "line" && (linePaths.length > 0 || documentPoints.length > 2);
           const firstPoint = documentPoints[0] ?? null;
           const labelShape =

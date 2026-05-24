@@ -16,6 +16,8 @@ type JsonObject = Record<string, unknown>;
 
 type CostItemRow = {
   id: string;
+  organization_id: string;
+  project_id: string;
   source_document_kind: CostItemDocumentKind;
   source_document_id: string;
   parent_cost_item_id: string | null;
@@ -84,6 +86,11 @@ type UntypedCostItemsSelectTable = {
 
 export type ClassifyDocumentOptions = {
   force?: boolean;
+  onPersisted?: (params: {
+    row: CostItemRow;
+    update: CostItemClassificationUpdate;
+    resolved: ResolvedClassification;
+  }) => Promise<void> | void;
 };
 
 export type ClassifiedCostItemResult = {
@@ -268,6 +275,8 @@ async function fetchCurrentCostItemsForDocument(
     .select(
       [
         "id",
+        "organization_id",
+        "project_id",
         "source_document_kind",
         "source_document_id",
         "parent_cost_item_id",
@@ -310,6 +319,8 @@ async function fetchParentCostItems(parentIds: string[]): Promise<Map<string, Co
     .select(
       [
         "id",
+        "organization_id",
+        "project_id",
         "source_document_kind",
         "source_document_id",
         "parent_cost_item_id",
@@ -386,6 +397,13 @@ export async function classifyCurrentCostItemsForDocument(
     const update = toClassificationUpdate(description, resolved);
 
     await updateCostItemClassification(row.id, update);
+    if (options.onPersisted) {
+      await options.onPersisted({
+        row,
+        update,
+        resolved,
+      });
+    }
 
     classifiedCount += 1;
     if (resolved.method === "inherited") {

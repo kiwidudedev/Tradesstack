@@ -84,7 +84,7 @@ export function AuthPanel({ compact = false, mode = "login", closeHref }: AuthPa
         return;
       }
 
-      navigateAfterAuth();
+      router.push(result.redirectPath || postAuthPath);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Authentication failed.");
     } finally {

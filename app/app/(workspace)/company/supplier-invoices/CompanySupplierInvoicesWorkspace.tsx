@@ -24,6 +24,12 @@ import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans } from "@/lib/fonts";
+import {
+  buildSupplierInvoiceIntelligenceEvent,
+  logSupplierInvoiceIntelligenceFailure,
+  summarizeSupplierInvoiceHeader,
+  writeSupplierInvoiceIntelligenceEvent,
+} from "@/lib/supplier-invoice-intelligence";
 import type { OrganizationSupplierRow } from "@/lib/suppliers";
 import {
   buildSupplierInvoiceDocumentStoragePath,
@@ -115,6 +121,15 @@ function displayStatusBadge(value: SupplierInvoiceDisplayStatus): NonNullable<St
 function numberString(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function emitSupplierInvoiceEvent(
+  supabase: ReturnType<typeof createBrowserSupabaseClient>,
+  event: ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>
+) {
+  void writeSupplierInvoiceIntelligenceEvent(supabase, event).catch((error) => {
+    logSupplierInvoiceIntelligenceFailure(event.eventType, error);
+  });
 }
 
 export function CompanySupplierInvoicesWorkspace({
@@ -331,6 +346,37 @@ export function CompanySupplierInvoicesWorkspace({
         insertedInvoice.document_mime_type = file.type || null;
         insertedInvoice.document_size_bytes = file.size;
       }
+
+      emitSupplierInvoiceEvent(
+        supabase,
+        buildSupplierInvoiceIntelligenceEvent({
+          organizationId,
+          module: "supplier_invoices",
+          eventFamily: file ? "file_lifecycle" : "commercial_action",
+          eventType: "supplier_invoice_created",
+          action: "created",
+          entityType: "supplier_invoice",
+          entityId: insertedInvoice.id,
+          afterData: summarizeSupplierInvoiceHeader({
+            supplierId: insertedInvoice.supplier_id,
+            source: insertedInvoice.source,
+            status: insertedInvoice.status,
+            invoiceNumber: insertedInvoice.invoice_number,
+            invoiceDate: insertedInvoice.invoice_date,
+            dueDate: insertedInvoice.due_date,
+            total: Number(insertedInvoice.total ?? 0),
+            hasDocument: Boolean(insertedInvoice.document_file_path),
+          }),
+          metadata: {
+            documentUploaded: Boolean(file),
+            documentMimeType: file?.type || null,
+            documentSizeBytes: file?.size ?? null,
+          },
+          reason: file
+            ? "Supplier invoice created from an uploaded document."
+            : "Supplier invoice created manually.",
+        })
+      );
 
       setInvoices((current) => [insertedInvoice, ...current]);
       closeCreateModal();

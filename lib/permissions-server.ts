@@ -49,3 +49,37 @@ export async function requirePermission(permissionKey: string, fallbackPath = "/
     redirect(fallbackPath);
   }
 }
+
+export async function isPlatformAdmin(): Promise<boolean> {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.rpc("is_platform_admin" as never);
+
+  if (error) {
+    return false;
+  }
+
+  return Boolean(data);
+}
+
+export async function hasPlatformAdminRole(requiredRole: "owner" | "admin" | "viewer" = "viewer"): Promise<boolean> {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.rpc("has_platform_admin_role" as never, {
+    required_role: requiredRole,
+  } as never);
+
+  if (error) {
+    return false;
+  }
+
+  return Boolean(data);
+}
+
+export async function requirePlatformAdmin(
+  requiredRole: "owner" | "admin" | "viewer" = "viewer",
+  fallbackPath = "/app/dashboard"
+): Promise<void> {
+  const allowed = await hasPlatformAdminRole(requiredRole);
+  if (!allowed) {
+    redirect(fallbackPath);
+  }
+}

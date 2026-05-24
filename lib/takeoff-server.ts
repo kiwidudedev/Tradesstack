@@ -11,7 +11,16 @@ import { getCurrentOrganizationMember, getProjectDrawingSetsForCurrentUser } fro
 import { getProjectWorkContextForCurrentUser } from "@/lib/project-work-context-server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
+import {
+  buildTakeoffIntelligenceEvent,
+  logTakeoffIntelligenceDebug,
+  logTakeoffIntelligenceFailure,
+  summarizeTakeoffCalibration,
+  summarizeTakeoffMeasurement,
+  writeTakeoffCorrectionEvent,
+  writeTakeoffIntelligenceEvent,
+} from "@/lib/takeoff-intelligence";
 import { isGeneratedTradePackDrawingSet } from "@/lib/trade-packs";
 
 const takeoffPageSelect =
@@ -949,6 +958,257 @@ async function writeTakeoffMeasurementEvent(params: {
 
   if (error) {
     throw new Error(error.message);
+  }
+}
+
+function buildTakeoffMeasurementIntelligenceMetadata(params: {
+  measurement: TakeoffMeasurement;
+  pointCount: number;
+  areaShapeCount?: number;
+  linePathCount?: number;
+  reason?: string;
+  childKind?: string | null;
+}) {
+  return {
+    drawingSetId: params.measurement.drawing_set_id,
+    pageId: params.measurement.page_id,
+    calibrationId: params.measurement.calibration_id,
+    groupId: params.measurement.group_id,
+    measurementKind: params.measurement.measurement_kind,
+    pointCount: params.pointCount,
+    areaShapeCount: params.areaShapeCount ?? 0,
+    linePathCount: params.linePathCount ?? 0,
+    childKind: params.childKind ?? null,
+    reason: params.reason ?? null,
+  } satisfies Record<string, Json>;
+}
+
+async function recordTakeoffMeasurementIntelligence(params: {
+  supabase: SupabaseClient<Database>;
+  organizationId: string;
+  projectId: string;
+  opportunityId: string | null;
+  measurement: TakeoffMeasurement;
+  eventType:
+    | "takeoff_measurement_created"
+    | "takeoff_measurement_updated"
+    | "takeoff_measurement_corrected"
+    | "takeoff_measurement_archived"
+    | "takeoff_measurement_deleted"
+    | "takeoff_measurement_restored";
+  eventFamily: "entity_lifecycle" | "commercial_action" | "correction";
+  action: "created" | "updated" | "corrected" | "archived" | "deleted" | "restored";
+  pointCount: number;
+  areaShapeCount?: number;
+  linePathCount?: number;
+  beforeData?: Record<string, Json | null> | null;
+  afterData?: Record<string, Json | null> | null;
+  diffData?: Record<string, Json | null>;
+  reason?: string | null;
+  childKind?: string | null;
+}) {
+  try {
+    if (!params.organizationId || !params.projectId || !params.measurement.id) {
+      logTakeoffIntelligenceDebug("measurement_context_missing", {
+        eventType: params.eventType,
+        organizationId: params.organizationId,
+        projectId: params.projectId,
+        opportunityId: params.opportunityId,
+        measurementId: params.measurement.id,
+      });
+      return null;
+    }
+
+    const intelligenceSupabase = await createServerSupabaseClient();
+    const eventPayload = buildTakeoffIntelligenceEvent({
+      organizationId: params.organizationId,
+      projectId: params.projectId,
+      opportunityId: params.opportunityId,
+      eventFamily: params.eventFamily,
+      eventType: params.eventType,
+      action: params.action,
+      entityType: "takeoff_measurement",
+      entityId: params.measurement.id,
+      beforeData: params.beforeData ?? null,
+      afterData:
+        params.afterData ??
+        summarizeTakeoffMeasurement({
+          measurement: params.measurement,
+          pointCount: params.pointCount,
+          areaShapeCount: params.areaShapeCount,
+          linePathCount: params.linePathCount,
+        }),
+      diffData: params.diffData ?? {},
+      reason: params.reason ?? null,
+      metadata: buildTakeoffMeasurementIntelligenceMetadata({
+        measurement: params.measurement,
+        pointCount: params.pointCount,
+        areaShapeCount: params.areaShapeCount,
+        linePathCount: params.linePathCount,
+        reason: params.reason ?? undefined,
+        childKind: params.childKind ?? undefined,
+      }),
+      sourceChannel: "web",
+    });
+
+    logTakeoffIntelligenceDebug("measurement_event_called", {
+      eventType: params.eventType,
+      entityId: params.measurement.id,
+      module: eventPayload.module,
+      organizationId: params.organizationId,
+      projectId: params.projectId,
+      opportunityId: params.opportunityId,
+    });
+
+    const eventId = await writeTakeoffIntelligenceEvent(
+      intelligenceSupabase,
+      eventPayload
+    );
+
+    logTakeoffIntelligenceDebug("measurement_event_written", {
+      eventType: params.eventType,
+      entityId: params.measurement.id,
+      eventId,
+    });
+
+    if (params.eventType !== "takeoff_measurement_corrected") {
+      return eventId;
+    }
+
+    await writeTakeoffCorrectionEvent(intelligenceSupabase, {
+      organizationId: params.organizationId,
+      projectId: params.projectId,
+      opportunityId: params.opportunityId,
+      correctionType: "measurement_fix",
+      targetEntityType: "takeoff_measurement",
+      targetEntityId: params.measurement.id,
+      correctedFieldName: params.childKind ? `${params.childKind}_geometry` : "measurement_geometry",
+      incorrectValue: params.beforeData ?? null,
+      correctedValue: params.afterData ??
+        summarizeTakeoffMeasurement({
+          measurement: params.measurement,
+          pointCount: params.pointCount,
+          areaShapeCount: params.areaShapeCount,
+          linePathCount: params.linePathCount,
+        }),
+      correctionReason: params.reason ?? null,
+      feedbackLabel: "takeoff_measurement_corrected",
+      linkedEventId: eventId,
+      isTrainingEligible: true,
+    });
+
+    logTakeoffIntelligenceDebug("measurement_correction_written", {
+      eventType: params.eventType,
+      entityId: params.measurement.id,
+      eventId,
+    });
+
+    return eventId;
+  } catch (error) {
+    logTakeoffIntelligenceFailure(params.eventType, error);
+    return null;
+  }
+}
+
+async function recordTakeoffCalibrationIntelligence(params: {
+  supabase: SupabaseClient<Database>;
+  organizationId: string;
+  projectId: string;
+  opportunityId: string | null;
+  calibration: TakeoffCalibration;
+  eventType: "takeoff_calibration_created" | "takeoff_calibration_corrected";
+  beforeData?: Record<string, Json | null> | null;
+  afterData?: Record<string, Json | null> | null;
+  diffData?: Record<string, Json | null>;
+  reason?: string | null;
+  writeCorrection?: boolean;
+}) {
+  try {
+    if (!params.organizationId || !params.projectId || !params.calibration.id) {
+      logTakeoffIntelligenceDebug("calibration_context_missing", {
+        eventType: params.eventType,
+        organizationId: params.organizationId,
+        projectId: params.projectId,
+        opportunityId: params.opportunityId,
+        calibrationId: params.calibration.id,
+      });
+      return null;
+    }
+
+    const intelligenceSupabase = await createServerSupabaseClient();
+    const eventPayload = buildTakeoffIntelligenceEvent({
+      organizationId: params.organizationId,
+      projectId: params.projectId,
+      opportunityId: params.opportunityId,
+      eventFamily: params.eventType === "takeoff_calibration_created" ? "entity_lifecycle" : "correction",
+      eventType: params.eventType,
+      action: params.eventType === "takeoff_calibration_created" ? "created" : "corrected",
+      entityType: "takeoff_calibration",
+      entityId: params.calibration.id,
+      beforeData: params.beforeData ?? null,
+      afterData: params.afterData ?? summarizeTakeoffCalibration(params.calibration),
+      diffData: params.diffData ?? {},
+      reason: params.reason ?? null,
+      metadata: {
+        pageId: params.calibration.page_id,
+        scaleRatio: params.calibration.scale_ratio,
+        unitSystem: params.calibration.unit_system,
+        displayUnit: params.calibration.display_unit,
+        isActive: params.calibration.is_active,
+      } satisfies Record<string, Json>,
+      sourceChannel: "web",
+    });
+
+    logTakeoffIntelligenceDebug("calibration_event_called", {
+      eventType: params.eventType,
+      entityId: params.calibration.id,
+      module: eventPayload.module,
+      organizationId: params.organizationId,
+      projectId: params.projectId,
+      opportunityId: params.opportunityId,
+    });
+
+    const eventId = await writeTakeoffIntelligenceEvent(
+      intelligenceSupabase,
+      eventPayload
+    );
+
+    logTakeoffIntelligenceDebug("calibration_event_written", {
+      eventType: params.eventType,
+      entityId: params.calibration.id,
+      eventId,
+    });
+
+    if (!params.writeCorrection) {
+      return eventId;
+    }
+
+    await writeTakeoffCorrectionEvent(intelligenceSupabase, {
+      organizationId: params.organizationId,
+      projectId: params.projectId,
+      opportunityId: params.opportunityId,
+      correctionType: "manual_override",
+      targetEntityType: "takeoff_calibration",
+      targetEntityId: params.calibration.id,
+      correctedFieldName: "scale_ratio",
+      incorrectValue: params.beforeData ?? null,
+      correctedValue: params.afterData ?? summarizeTakeoffCalibration(params.calibration),
+      correctionReason: params.reason ?? null,
+      feedbackLabel: "takeoff_calibration_corrected",
+      linkedEventId: eventId,
+      isTrainingEligible: true,
+    });
+
+    logTakeoffIntelligenceDebug("calibration_correction_written", {
+      eventType: params.eventType,
+      entityId: params.calibration.id,
+      eventId,
+    });
+
+    return eventId;
+  } catch (error) {
+    logTakeoffIntelligenceFailure(params.eventType, error);
+    return null;
   }
 }
 
@@ -2361,6 +2621,10 @@ export async function saveTakeoffCalibrationForOpportunityPage(
       throw new Error("The selected takeoff page could not be found.");
     }
 
+    const currentActiveCalibration = await perf.step("currentActiveCalibrationLookup", () =>
+      getActiveTakeoffCalibrationForPage(page.id, { supabase })
+    );
+
     const unitSystem = input.unitSystem === "imperial" ? "imperial" : "metric";
     const displayUnit = normalizeDisplayUnit(unitSystem, input.displayUnit);
     const baseUnit = baseUnitForUnitSystem(unitSystem);
@@ -2444,6 +2708,28 @@ export async function saveTakeoffCalibrationForOpportunityPage(
     if (saveResult.error || !savedCalibration) {
       throw new Error(saveResult.error?.message ?? "Unable to save the new calibration.");
     }
+
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffCalibrationIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        calibration: savedCalibration as TakeoffCalibration,
+        eventType: currentActiveCalibration ? "takeoff_calibration_corrected" : "takeoff_calibration_created",
+        beforeData: currentActiveCalibration ? summarizeTakeoffCalibration(currentActiveCalibration) : null,
+        afterData: summarizeTakeoffCalibration(savedCalibration as TakeoffCalibration),
+        diffData: {
+          previousCalibrationId: currentActiveCalibration?.id ?? null,
+          nextCalibrationId: (savedCalibration as TakeoffCalibration).id,
+          pageId: page.id,
+        },
+        reason: currentActiveCalibration
+          ? "Takeoff calibration updated with a new active scale."
+          : "Takeoff calibration created.",
+        writeCorrection: Boolean(currentActiveCalibration),
+      })
+    );
 
     return savedCalibration as TakeoffCalibration;
   } finally {
@@ -2534,6 +2820,26 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
         throw new Error(activateTargetResult.error?.message ?? "Unable to activate the selected calibration.");
       }
 
+      await perf.step("writeIntelligenceEvent", () =>
+        recordTakeoffCalibrationIntelligence({
+          supabase,
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          calibration: activateTargetResult.data,
+          eventType: "takeoff_calibration_corrected",
+          beforeData: currentActiveCalibration ? summarizeTakeoffCalibration(currentActiveCalibration) : null,
+          afterData: summarizeTakeoffCalibration(activateTargetResult.data),
+          diffData: {
+            pageId: page.id,
+            previousCalibrationId: currentActiveCalibration?.id ?? null,
+            nextCalibrationId: activateTargetResult.data.id,
+          },
+          reason: "Active takeoff calibration changed.",
+          writeCorrection: true,
+        })
+      );
+
       return activateTargetResult.data;
     }
 
@@ -2554,6 +2860,26 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
     if (deactivateCurrentResult.error) {
       throw new Error(deactivateCurrentResult.error.message);
     }
+
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffCalibrationIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        calibration: currentActiveCalibration,
+        eventType: "takeoff_calibration_corrected",
+        beforeData: summarizeTakeoffCalibration(currentActiveCalibration),
+        afterData: null,
+        diffData: {
+          pageId: page.id,
+          previousCalibrationId: currentActiveCalibration.id,
+          nextCalibrationId: null,
+        },
+        reason: "Active takeoff calibration cleared.",
+        writeCorrection: true,
+      })
+    );
 
     return null;
   } finally {
@@ -2639,7 +2965,7 @@ async function createTakeoffMeasurementForOpportunityPage(
     }
 
     if (input.measurementKind === "count") {
-      points = normalizePoints(input.points, 0);
+      points = normalizePoints(input.points, 1);
       countValue = Number(input.countValue ?? 0);
       if (!Number.isInteger(countValue) || countValue < 0) {
         throw new Error("Count value must be a whole number of 0 or more.");
@@ -2886,6 +3212,34 @@ async function createTakeoffMeasurementForOpportunityPage(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: nextMeasurement,
+        eventType: "takeoff_measurement_created",
+        eventFamily: "entity_lifecycle",
+        action: "created",
+        pointCount: savedPoints.length,
+        areaShapeCount: areaShapes.length,
+        linePathCount: linePaths.length,
+        afterData: summarizeTakeoffMeasurement({
+          measurement: nextMeasurement,
+          pointCount: savedPoints.length,
+          areaShapeCount: areaShapes.length,
+          linePathCount: linePaths.length,
+        }),
+        diffData: {
+          measurementKind: input.measurementKind,
+          pageId: page.id,
+          drawingSetId: page.drawing_set_id,
+        },
+        reason: `Manual ${input.measurementKind} takeoff measurement created.`,
+      })
+    );
+
     return {
       ...nextMeasurement,
       points: savedPoints,
@@ -3122,6 +3476,45 @@ export async function appendAreaShapeToMeasurementForOpportunity(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        eventType: "takeoff_measurement_corrected",
+        eventFamily: "correction",
+        action: "corrected",
+        pointCount: parentPoints.length,
+        areaShapeCount: nextAreaShapes.length,
+        linePathCount: 0,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: parentPoints.length,
+          areaShapeCount: measurementAreaShapes.length,
+          linePathCount: 0,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateResult.data,
+          pointCount: parentPoints.length,
+          areaShapeCount: nextAreaShapes.length,
+          linePathCount: 0,
+        }),
+        diffData: {
+          childKind: "area-shape",
+          previousChildCount: measurementAreaShapes.length,
+          nextChildCount: nextAreaShapes.length,
+          quantityDelta:
+            Number(updateResult.data.display_value ?? 0) - Number(measurement.display_value ?? 0),
+        },
+        reason: input.role === "deduction"
+          ? "Deduction area shape appended to the takeoff measurement."
+          : "Area shape appended to the takeoff measurement.",
+        childKind: "area-shape",
+      })
+    );
+
     return {
       ...updateResult.data,
       points: parentPoints,
@@ -3314,6 +3707,43 @@ export async function appendLinePathToMeasurementForOpportunity(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        eventType: "takeoff_measurement_corrected",
+        eventFamily: "correction",
+        action: "corrected",
+        pointCount: parentPoints.length,
+        areaShapeCount: 0,
+        linePathCount: nextLinePaths.length,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: parentPoints.length,
+          areaShapeCount: 0,
+          linePathCount: measurementLinePaths.length,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateResult.data,
+          pointCount: parentPoints.length,
+          areaShapeCount: 0,
+          linePathCount: nextLinePaths.length,
+        }),
+        diffData: {
+          childKind: "line-path",
+          previousChildCount: measurementLinePaths.length,
+          nextChildCount: nextLinePaths.length,
+          quantityDelta:
+            Number(updateResult.data.display_value ?? 0) - Number(measurement.display_value ?? 0),
+        },
+        reason: "Polyline path appended to the takeoff measurement.",
+        childKind: "line-path",
+      })
+    );
+
     return {
       ...updateResult.data,
       points: parentPoints,
@@ -3438,6 +3868,42 @@ export async function appendCountItemToMeasurementForOpportunity(
           count_item_value: countItemValue,
         },
         supabase,
+      })
+    );
+
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        eventType: "takeoff_measurement_corrected",
+        eventFamily: "correction",
+        action: "corrected",
+        pointCount: savedPoints.length,
+        areaShapeCount: 0,
+        linePathCount: 0,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: existingPoints.length,
+          areaShapeCount: 0,
+          linePathCount: 0,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateResult.data,
+          pointCount: savedPoints.length,
+          areaShapeCount: 0,
+          linePathCount: 0,
+        }),
+        diffData: {
+          childKind: "count-item",
+          previousChildCount: existingPoints.length,
+          nextChildCount: savedPoints.length,
+          countItemValue,
+        },
+        reason: "Count item appended to the takeoff measurement.",
+        childKind: "count-item",
       })
     );
 
@@ -3816,6 +4282,42 @@ export async function updateTakeoffMeasurementGeometryForOpportunity(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        eventType: "takeoff_measurement_corrected",
+        eventFamily: "correction",
+        action: "corrected",
+        pointCount: savedPoints.length,
+        areaShapeCount: nextAreaShapes.length,
+        linePathCount: nextLinePaths.length,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: previousPoints.length,
+          areaShapeCount: previousAreaShapes.length,
+          linePathCount: previousLinePaths.length,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateResult.data,
+          pointCount: savedPoints.length,
+          areaShapeCount: nextAreaShapes.length,
+          linePathCount: nextLinePaths.length,
+        }),
+        diffData: {
+          pageId: measurement.page_id,
+          previousCalibrationId: measurement.calibration_id,
+          nextCalibrationId: updateResult.data.calibration_id,
+          quantityDelta:
+            Number(updateResult.data.display_value ?? 0) - Number(measurement.display_value ?? 0),
+        },
+        reason: "Takeoff measurement geometry corrected.",
+      })
+    );
+
     return {
       ...updateResult.data,
       points: savedPoints,
@@ -4064,6 +4566,42 @@ export async function updateTakeoffMeasurementChildGeometryForOpportunity(
         })
       );
 
+      await perf.step("writeIntelligenceEvent", () =>
+        recordTakeoffMeasurementIntelligence({
+          supabase,
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          eventType: "takeoff_measurement_corrected",
+          eventFamily: "correction",
+          action: "corrected",
+          pointCount: nextMeasurement.points.length,
+          areaShapeCount: nextMeasurement.area_shapes.length,
+          linePathCount: 0,
+          beforeData: summarizeTakeoffMeasurement({
+            measurement,
+            pointCount: previousSnapshot.points.length,
+            areaShapeCount: previousSnapshot.area_shapes.length,
+            linePathCount: previousSnapshot.line_paths.length,
+          }),
+          afterData: summarizeTakeoffMeasurement({
+            measurement: updateMeasurementResult.data,
+            pointCount: nextMeasurement.points.length,
+            areaShapeCount: nextMeasurement.area_shapes.length,
+            linePathCount: 0,
+          }),
+          diffData: {
+            childKind: "area-shape",
+            childId: input.childId,
+            quantityDelta:
+              Number(updateMeasurementResult.data.display_value ?? 0) - Number(measurement.display_value ?? 0),
+          },
+          reason: "Takeoff area child geometry corrected.",
+          childKind: "area-shape",
+        })
+      );
+
       return nextMeasurement;
     }
 
@@ -4218,6 +4756,42 @@ export async function updateTakeoffMeasurementChildGeometryForOpportunity(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateMeasurementResult.data,
+        eventType: "takeoff_measurement_corrected",
+        eventFamily: "correction",
+        action: "corrected",
+        pointCount: nextMeasurement.points.length,
+        areaShapeCount: 0,
+        linePathCount: nextMeasurement.line_paths.length,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: previousSnapshot.points.length,
+          areaShapeCount: previousSnapshot.area_shapes.length,
+          linePathCount: previousSnapshot.line_paths.length,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateMeasurementResult.data,
+          pointCount: nextMeasurement.points.length,
+          areaShapeCount: 0,
+          linePathCount: nextMeasurement.line_paths.length,
+        }),
+        diffData: {
+          childKind: "line-path",
+          childId: input.childId,
+          quantityDelta:
+            Number(updateMeasurementResult.data.display_value ?? 0) - Number(measurement.display_value ?? 0),
+        },
+        reason: "Takeoff polyline child geometry corrected.",
+        childKind: "line-path",
+      })
+    );
+
     return nextMeasurement;
   } finally {
     perf.flush({
@@ -4325,6 +4899,41 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
               deleted_last_child: true,
             },
             supabase,
+          })
+        );
+
+        await perf.step("writeIntelligenceEvent", () =>
+          recordTakeoffMeasurementIntelligence({
+            supabase,
+            organizationId: resolved.organizationId,
+            projectId: resolved.projectId,
+            opportunityId: resolved.opportunityId,
+            measurement: updateMeasurementResult.data,
+            eventType: "takeoff_measurement_deleted",
+            eventFamily: "entity_lifecycle",
+            action: "deleted",
+            pointCount: 0,
+            areaShapeCount: 0,
+            linePathCount: 0,
+            beforeData: summarizeTakeoffMeasurement({
+              measurement,
+              pointCount: existingPoints.length,
+              areaShapeCount: 0,
+              linePathCount: 0,
+            }),
+            afterData: summarizeTakeoffMeasurement({
+              measurement: updateMeasurementResult.data,
+              pointCount: 0,
+              areaShapeCount: 0,
+              linePathCount: 0,
+            }),
+            diffData: {
+              childKind: "count-item",
+              childId: input.childId,
+              deletedLastChild: true,
+            },
+            reason: "Last count point removed, deleting the takeoff measurement.",
+            childKind: "count-item",
           })
         );
 
@@ -4436,6 +5045,42 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
         })
       );
 
+      await perf.step("writeIntelligenceEvent", () =>
+        recordTakeoffMeasurementIntelligence({
+          supabase,
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          eventType: "takeoff_measurement_corrected",
+          eventFamily: "correction",
+          action: "corrected",
+          pointCount: nextMeasurement.points.length,
+          areaShapeCount: 0,
+          linePathCount: 0,
+          beforeData: summarizeTakeoffMeasurement({
+            measurement,
+            pointCount: existingPoints.length,
+            areaShapeCount: 0,
+            linePathCount: 0,
+          }),
+          afterData: summarizeTakeoffMeasurement({
+            measurement: updateMeasurementResult.data,
+            pointCount: nextMeasurement.points.length,
+            areaShapeCount: 0,
+            linePathCount: 0,
+          }),
+          diffData: {
+            childKind: "count-item",
+            childId: input.childId,
+            previousChildCount: existingPoints.length,
+            nextChildCount: nextMeasurement.points.length,
+          },
+          reason: "Count point removed from the takeoff measurement.",
+          childKind: "count-item",
+        })
+      );
+
       return nextMeasurement;
     }
 
@@ -4489,6 +5134,41 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
               deleted_last_child: true,
             },
             supabase,
+          })
+        );
+
+        await perf.step("writeIntelligenceEvent", () =>
+          recordTakeoffMeasurementIntelligence({
+            supabase,
+            organizationId: resolved.organizationId,
+            projectId: resolved.projectId,
+            opportunityId: resolved.opportunityId,
+            measurement: updateMeasurementResult.data,
+            eventType: "takeoff_measurement_deleted",
+            eventFamily: "entity_lifecycle",
+            action: "deleted",
+            pointCount: 0,
+            areaShapeCount: 0,
+            linePathCount: 0,
+            beforeData: summarizeTakeoffMeasurement({
+              measurement,
+              pointCount: previousSnapshot.points.length,
+              areaShapeCount: existingShapes.length,
+              linePathCount: 0,
+            }),
+            afterData: summarizeTakeoffMeasurement({
+              measurement: updateMeasurementResult.data,
+              pointCount: 0,
+              areaShapeCount: 0,
+              linePathCount: 0,
+            }),
+            diffData: {
+              childKind: "area-shape",
+              childId: input.childId,
+              deletedLastChild: true,
+            },
+            reason: "Last area shape removed, deleting the takeoff measurement.",
+            childKind: "area-shape",
           })
         );
 
@@ -4593,6 +5273,41 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
               deleted_last_include_shape: true,
             },
             supabase,
+          })
+        );
+
+        await perf.step("writeIntelligenceEvent", () =>
+          recordTakeoffMeasurementIntelligence({
+            supabase,
+            organizationId: resolved.organizationId,
+            projectId: resolved.projectId,
+            opportunityId: resolved.opportunityId,
+            measurement: updateMeasurementResult.data,
+            eventType: "takeoff_measurement_deleted",
+            eventFamily: "entity_lifecycle",
+            action: "deleted",
+            pointCount: 0,
+            areaShapeCount: 0,
+            linePathCount: 0,
+            beforeData: summarizeTakeoffMeasurement({
+              measurement,
+              pointCount: previousSnapshot.points.length,
+              areaShapeCount: existingShapes.length,
+              linePathCount: 0,
+            }),
+            afterData: summarizeTakeoffMeasurement({
+              measurement: updateMeasurementResult.data,
+              pointCount: 0,
+              areaShapeCount: 0,
+              linePathCount: 0,
+            }),
+            diffData: {
+              childKind: "area-shape",
+              childId: input.childId,
+              deletedLastIncludeShape: true,
+            },
+            reason: "Area shape removed and no included shapes remain.",
+            childKind: "area-shape",
           })
         );
 
@@ -4701,6 +5416,42 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
         })
       );
 
+      await perf.step("writeIntelligenceEvent", () =>
+        recordTakeoffMeasurementIntelligence({
+          supabase,
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          eventType: "takeoff_measurement_corrected",
+          eventFamily: "correction",
+          action: "corrected",
+          pointCount: nextMeasurement.points.length,
+          areaShapeCount: nextMeasurement.area_shapes.length,
+          linePathCount: 0,
+          beforeData: summarizeTakeoffMeasurement({
+            measurement,
+            pointCount: previousSnapshot.points.length,
+            areaShapeCount: existingShapes.length,
+            linePathCount: 0,
+          }),
+          afterData: summarizeTakeoffMeasurement({
+            measurement: updateMeasurementResult.data,
+            pointCount: nextMeasurement.points.length,
+            areaShapeCount: nextMeasurement.area_shapes.length,
+            linePathCount: 0,
+          }),
+          diffData: {
+            childKind: "area-shape",
+            childId: input.childId,
+            previousChildCount: existingShapes.length,
+            nextChildCount: nextMeasurement.area_shapes.length,
+          },
+          reason: "Area shape removed from the takeoff measurement.",
+          childKind: "area-shape",
+        })
+      );
+
       return nextMeasurement;
     }
 
@@ -4753,6 +5504,41 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
             deleted_last_child: true,
           },
           supabase,
+        })
+      );
+
+      await perf.step("writeIntelligenceEvent", () =>
+        recordTakeoffMeasurementIntelligence({
+          supabase,
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updateMeasurementResult.data,
+          eventType: "takeoff_measurement_deleted",
+          eventFamily: "entity_lifecycle",
+          action: "deleted",
+          pointCount: 0,
+          areaShapeCount: 0,
+          linePathCount: 0,
+          beforeData: summarizeTakeoffMeasurement({
+            measurement,
+            pointCount: previousSnapshot.points.length,
+            areaShapeCount: 0,
+            linePathCount: existingPaths.length,
+          }),
+          afterData: summarizeTakeoffMeasurement({
+            measurement: updateMeasurementResult.data,
+            pointCount: 0,
+            areaShapeCount: 0,
+            linePathCount: 0,
+          }),
+          diffData: {
+            childKind: "line-path",
+            childId: input.childId,
+            deletedLastChild: true,
+          },
+          reason: "Last polyline path removed, deleting the takeoff measurement.",
+          childKind: "line-path",
         })
       );
 
@@ -4899,6 +5685,42 @@ export async function deleteTakeoffMeasurementChildForOpportunity(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateMeasurementResult.data,
+        eventType: "takeoff_measurement_corrected",
+        eventFamily: "correction",
+        action: "corrected",
+        pointCount: nextMeasurement.points.length,
+        areaShapeCount: 0,
+        linePathCount: nextMeasurement.line_paths.length,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: previousSnapshot.points.length,
+          areaShapeCount: 0,
+          linePathCount: existingPaths.length,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateMeasurementResult.data,
+          pointCount: nextMeasurement.points.length,
+          areaShapeCount: 0,
+          linePathCount: nextMeasurement.line_paths.length,
+        }),
+        diffData: {
+          childKind: "line-path",
+          childId: input.childId,
+          previousChildCount: existingPaths.length,
+          nextChildCount: nextMeasurement.line_paths.length,
+        },
+        reason: "Polyline path removed from the takeoff measurement.",
+        childKind: "line-path",
+      })
+    );
+
     return nextMeasurement;
   } finally {
     perf.flush({
@@ -5010,6 +5832,49 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
       })
     );
 
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updateResult.data,
+        eventType: "takeoff_measurement_updated",
+        eventFamily: "commercial_action",
+        action: "updated",
+        pointCount: points.length,
+        areaShapeCount: areaShapes.length,
+        linePathCount: linePaths.length,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: points.length,
+          areaShapeCount: areaShapes.length,
+          linePathCount: linePaths.length,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updateResult.data,
+          pointCount: points.length,
+          areaShapeCount: areaShapes.length,
+          linePathCount: linePaths.length,
+        }),
+        diffData: {
+          previousName: measurement.name,
+          nextName: updateResult.data.name,
+          previousTag:
+            typeof measurement.metadata === "object" && measurement.metadata
+              ? (() => {
+                  const rawTag = (measurement.metadata as Record<string, unknown>).tag;
+                  return typeof rawTag === "string" || typeof rawTag === "number" || typeof rawTag === "boolean"
+                    ? rawTag
+                    : null;
+                })()
+              : null,
+          nextTag: nextTag || null,
+        },
+        reason: "Takeoff measurement details updated.",
+      })
+    );
+
     return {
       ...updateResult.data,
       points,
@@ -5104,6 +5969,39 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
         });
       });
 
+      await perf.step("writeIntelligenceEvent", () =>
+        recordTakeoffMeasurementIntelligence({
+          supabase,
+          organizationId: resolved.organizationId,
+          projectId: resolved.projectId,
+          opportunityId: resolved.opportunityId,
+          measurement: updatedMeasurement,
+          eventType: "takeoff_measurement_deleted",
+          eventFamily: "entity_lifecycle",
+          action: "deleted",
+          pointCount: 0,
+          areaShapeCount: 0,
+          linePathCount: 0,
+          beforeData: summarizeTakeoffMeasurement({
+            measurement,
+            pointCount: 0,
+            areaShapeCount: 0,
+            linePathCount: 0,
+          }),
+          afterData: summarizeTakeoffMeasurement({
+            measurement: updatedMeasurement,
+            pointCount: 0,
+            areaShapeCount: 0,
+            linePathCount: 0,
+          }),
+          diffData: {
+            previousStatus: measurement.status,
+            nextStatus: updatedMeasurement.status,
+          },
+          reason: "Takeoff measurement deleted.",
+        })
+      );
+
       return {
         ...updatedMeasurement,
         points: [],
@@ -5143,6 +6041,43 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
           next_status: updatedMeasurement.status,
         },
         supabase,
+      })
+    );
+
+    await perf.step("writeIntelligenceEvent", () =>
+      recordTakeoffMeasurementIntelligence({
+        supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        opportunityId: resolved.opportunityId,
+        measurement: updatedMeasurement,
+        eventType: params.action === "archive"
+          ? "takeoff_measurement_archived"
+          : "takeoff_measurement_restored",
+        eventFamily: "entity_lifecycle",
+        action: params.action === "archive" ? "archived" : "restored",
+        pointCount: points.length,
+        areaShapeCount: areaShapes.length,
+        linePathCount: linePaths.length,
+        beforeData: summarizeTakeoffMeasurement({
+          measurement,
+          pointCount: points.length,
+          areaShapeCount: areaShapes.length,
+          linePathCount: linePaths.length,
+        }),
+        afterData: summarizeTakeoffMeasurement({
+          measurement: updatedMeasurement,
+          pointCount: points.length,
+          areaShapeCount: areaShapes.length,
+          linePathCount: linePaths.length,
+        }),
+        diffData: {
+          previousStatus: measurement.status,
+          nextStatus: updatedMeasurement.status,
+        },
+        reason: params.action === "archive"
+          ? "Takeoff measurement archived."
+          : "Takeoff measurement restored.",
       })
     );
 

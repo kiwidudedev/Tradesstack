@@ -29,6 +29,16 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { summarizeApprovedUnpostedAllocations } from "@/lib/actual-cost-events";
 import { ibmPlexSans } from "@/lib/fonts";
+import {
+  buildSupplierInvoiceIntelligenceEvent,
+  createSupplierInvoiceAiInteraction,
+  hasAiSupplierInvoiceMatchSuggestion,
+  logSupplierInvoiceIntelligenceFailure,
+  summarizeSupplierInvoiceHeader,
+  summarizeSupplierInvoiceMatch,
+  writeSupplierInvoiceCorrectionEvent,
+  writeSupplierInvoiceIntelligenceEvents,
+} from "@/lib/supplier-invoice-intelligence";
 import { getSupplierDisplayName, type OrganizationSupplierRow } from "@/lib/suppliers";
 import {
   approveSupplierInvoiceDraftAllocationAction,
@@ -65,7 +75,7 @@ import {
   type SupplierInvoiceRow,
 } from "@/lib/supplier-invoices";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
 
 type OrganizationProjectRow = Database["public"]["Tables"]["organization_projects"]["Row"];
 type OrganizationCostCodeRow = Database["public"]["Tables"]["organization_cost_codes"]["Row"];
@@ -190,6 +200,18 @@ type DocumentWithUrl = SupplierInvoiceDocumentRow & {
 function numberString(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildPurchaseOrderMatchCompactSummary(match: SupplierInvoicePurchaseOrderMatchRow) {
+  return summarizeSupplierInvoiceMatch({
+    supplierInvoiceId: match.supplier_invoice_id,
+    purchaseOrderId: match.purchase_order_id,
+    matchedAmount: Number(match.matched_amount ?? 0),
+    matchStatus: match.match_status,
+    approvalStatus: match.approval_status,
+    matchBasis: match.match_basis,
+    confidenceScore: match.confidence_score,
+  });
 }
 
 function normalizePurchaseOrderSearchValue(value: string | null | undefined) {
@@ -440,6 +462,20 @@ export function SupplierInvoiceDetailWorkspace({
   const [expandedAllocationReviewRows, setExpandedAllocationReviewRows] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const emitIntelligenceEvents = async (
+    events: Array<ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>>
+  ) => {
+    if (events.length === 0) {
+      return;
+    }
+
+    try {
+      await writeSupplierInvoiceIntelligenceEvents(supabase, events);
+    } catch (eventError) {
+      logSupplierInvoiceIntelligenceFailure("supplier-invoice-detail", eventError);
+    }
+  };
 
   const memberDirectory = useMemo(
     () => new Map(organizationMembers.map((member) => [member.user_id, member])),
@@ -1029,6 +1065,8 @@ export function SupplierInvoiceDetailWorkspace({
     setMessage(null);
 
     try {
+      const previousMatches = matches;
+      const previousMatchById = new Map(previousMatches.map((match) => [match.id, match]));
       const draftEntries = Object.entries(matchDrafts);
       const nextRows = draftEntries
         .map(([purchaseOrderId, draft]) => {
@@ -1129,8 +1167,215 @@ export function SupplierInvoiceDetailWorkspace({
             (match) => !savedPurchaseOrderIds.has(match.purchase_order_id)
           ),
         ]);
-      } else {
+        } else {
         setMatches(untouchedRejectedMatches);
+      }
+
+      try {
+        const intelligenceEvents: Array<ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>> = [];
+        let persistedMatchRows: SupplierInvoicePurchaseOrderMatchRow[] = [];
+        if (nextRows.length > 0) {
+          const { data: refreshedRows, error: refreshedRowsError } = await supabase
+            .from("supplier_invoice_purchase_order_matches")
+            .select("*")
+            .eq("organization_id", organizationId)
+            .eq("supplier_invoice_id", invoice.id)
+            .in("purchase_order_id", nextRows.map((row) => row.purchase_order_id));
+
+          if (refreshedRowsError) {
+            throw new Error(refreshedRowsError.message);
+          }
+
+          persistedMatchRows = (refreshedRows ?? []) as SupplierInvoicePurchaseOrderMatchRow[];
+        }
+
+        persistedMatchRows.forEach((match) => {
+          const previousMatch = previousMatchById.get(match.id) ?? null;
+          intelligenceEvents.push(
+            buildSupplierInvoiceIntelligenceEvent({
+              organizationId,
+              module: "supplier_invoices",
+              eventFamily: "commercial_action",
+              eventType: "supplier_invoice_match_confirmed",
+              action: "confirmed",
+              entityType: "supplier_invoice_purchase_order_match",
+              entityId: match.id,
+              beforeData: previousMatch ? buildPurchaseOrderMatchCompactSummary(previousMatch) : null,
+              afterData: buildPurchaseOrderMatchCompactSummary(match),
+              metadata: {
+                supplierInvoiceId: invoice.id,
+              },
+              reason: previousMatch
+                ? "Purchase order match updated and retained on the invoice."
+                : "Purchase order match added to the invoice.",
+            })
+          );
+
+        if (hasAiSupplierInvoiceMatchSuggestion(match)) {
+          if (!previousMatch) {
+            intelligenceEvents.push(
+              buildSupplierInvoiceIntelligenceEvent({
+                organizationId,
+                module: "supplier_invoices",
+                eventFamily: "ai_interaction",
+                eventType: "supplier_invoice_match_suggested",
+                action: "suggested",
+                entityType: "supplier_invoice_purchase_order_match",
+                entityId: match.id,
+                afterData: buildPurchaseOrderMatchCompactSummary(match),
+                metadata: {
+                  supplierInvoiceId: invoice.id,
+                  confidenceScore: match.confidence_score,
+                },
+                reason: "AI-assisted purchase order match suggestion persisted on the invoice.",
+              })
+            );
+          }
+
+          const changedAmount =
+            previousMatch && Number(previousMatch.matched_amount ?? 0) !== Number(match.matched_amount ?? 0);
+            const changedStatus = previousMatch && previousMatch.match_status !== match.match_status;
+            const aiDisposition = changedAmount || changedStatus ? "edited" : "accepted";
+
+            intelligenceEvents.push(
+              buildSupplierInvoiceIntelligenceEvent({
+                organizationId,
+                module: "supplier_invoices",
+                eventFamily: "ai_interaction",
+                eventType:
+                  aiDisposition === "edited"
+                    ? "ai_supplier_invoice_match_edited"
+                    : "ai_supplier_invoice_match_accepted",
+                action: aiDisposition,
+                entityType: "supplier_invoice_purchase_order_match",
+                entityId: match.id,
+                beforeData: previousMatch ? buildPurchaseOrderMatchCompactSummary(previousMatch) : null,
+                afterData: buildPurchaseOrderMatchCompactSummary(match),
+                metadata: {
+                  supplierInvoiceId: invoice.id,
+                  confidenceScore: match.confidence_score,
+                },
+                reason:
+                  aiDisposition === "edited"
+                    ? "AI-assisted purchase order match was edited before being retained."
+                    : "AI-assisted purchase order match was accepted.",
+              })
+            );
+          }
+        });
+
+        const rejectedMatches = previousMatches.filter((match) => matchIdsToDelete.includes(match.id));
+        rejectedMatches.forEach((match) => {
+          intelligenceEvents.push(
+            buildSupplierInvoiceIntelligenceEvent({
+              organizationId,
+              module: "supplier_invoices",
+              eventFamily: "correction",
+              eventType: "supplier_invoice_match_rejected",
+              action: "rejected",
+              entityType: "supplier_invoice_purchase_order_match",
+              entityId: match.id,
+              beforeData: buildPurchaseOrderMatchCompactSummary(match),
+              afterData: null,
+              metadata: {
+                supplierInvoiceId: invoice.id,
+              },
+              reason: "Purchase order match removed from the invoice.",
+            })
+          );
+
+          if (hasAiSupplierInvoiceMatchSuggestion(match)) {
+            intelligenceEvents.push(
+              buildSupplierInvoiceIntelligenceEvent({
+                organizationId,
+                module: "supplier_invoices",
+                eventFamily: "ai_interaction",
+                eventType: "ai_supplier_invoice_match_rejected",
+                action: "rejected",
+                entityType: "supplier_invoice_purchase_order_match",
+                entityId: match.id,
+                beforeData: buildPurchaseOrderMatchCompactSummary(match),
+                afterData: null,
+                metadata: {
+                  supplierInvoiceId: invoice.id,
+                  confidenceScore: match.confidence_score,
+                },
+                reason: "AI-assisted purchase order match was removed from the invoice.",
+              })
+            );
+          }
+        });
+
+        await emitIntelligenceEvents(intelligenceEvents);
+
+        for (const match of persistedMatchRows) {
+          if (!hasAiSupplierInvoiceMatchSuggestion(match)) {
+            continue;
+          }
+
+          const previousMatch = previousMatchById.get(match.id) ?? null;
+          const changedAmount =
+            previousMatch && Number(previousMatch.matched_amount ?? 0) !== Number(match.matched_amount ?? 0);
+          const changedStatus = previousMatch && previousMatch.match_status !== match.match_status;
+
+          try {
+            const aiInteractionId = await createSupplierInvoiceAiInteraction(supabase, {
+              organizationId,
+              subjectEntityType: "supplier_invoice_purchase_order_match",
+              subjectEntityId: match.id,
+              confidence: match.confidence_score,
+              humanDisposition: changedAmount || changedStatus ? "edited" : "accepted",
+              humanFeedbackSummary:
+                changedAmount || changedStatus
+                  ? "User edited an AI-assisted supplier invoice purchase order match."
+                  : "User accepted an AI-assisted supplier invoice purchase order match.",
+              outputStructured: (previousMatch
+                ? buildPurchaseOrderMatchCompactSummary(previousMatch)
+                : buildPurchaseOrderMatchCompactSummary(match)) as unknown as Json,
+              editedOutput: changedAmount || changedStatus ? (buildPurchaseOrderMatchCompactSummary(match) as unknown as Json) : null,
+            });
+
+            if (changedAmount || changedStatus) {
+              await writeSupplierInvoiceCorrectionEvent(supabase, {
+                organizationId,
+                targetEntityType: "supplier_invoice_purchase_order_match",
+                targetEntityId: match.id,
+                correctionType: "manual_override",
+                correctedFieldName: changedAmount ? "matched_amount" : "match_status",
+                incorrectValue: previousMatch ? (buildPurchaseOrderMatchCompactSummary(previousMatch) as unknown as Json) : null,
+                correctedValue: buildPurchaseOrderMatchCompactSummary(match) as unknown as Json,
+                correctionReason: "User edited an AI-assisted supplier invoice purchase order match.",
+                feedbackLabel: "ai_match_edited",
+                linkedAiInteractionId: aiInteractionId,
+              });
+            }
+          } catch (aiError) {
+            logSupplierInvoiceIntelligenceFailure("supplier-invoice-match-ai", aiError);
+          }
+        }
+
+        for (const match of rejectedMatches) {
+          if (!hasAiSupplierInvoiceMatchSuggestion(match)) {
+            continue;
+          }
+
+          try {
+            await createSupplierInvoiceAiInteraction(supabase, {
+              organizationId,
+              subjectEntityType: "supplier_invoice_purchase_order_match",
+              subjectEntityId: match.id,
+              confidence: match.confidence_score,
+              humanDisposition: "rejected",
+              humanFeedbackSummary: "User rejected an AI-assisted supplier invoice purchase order match.",
+              outputStructured: buildPurchaseOrderMatchCompactSummary(match) as unknown as Json,
+              editedOutput: null,
+            });
+          } catch (aiError) {
+            logSupplierInvoiceIntelligenceFailure("supplier-invoice-match-ai-rejected", aiError);
+          }
+        }
+      } catch (intelligenceError) {
+        logSupplierInvoiceIntelligenceFailure("supplier-invoice-save-matches", intelligenceError);
       }
 
       await refreshWorkflowState();
@@ -1435,6 +1680,7 @@ export function SupplierInvoiceDetailWorkspace({
     setMessage(null);
 
     try {
+      const existingMatch = matches.find((match) => match.id === matchId) ?? null;
       const { data: updatedMatch, error: updateError } = await supabase
         .from("supplier_invoice_purchase_order_matches")
         .update({ match_status: nextStatus })
@@ -1450,6 +1696,62 @@ export function SupplierInvoiceDetailWorkspace({
       setMatches((current) =>
         current.map((match) => (match.id === matchId ? (updatedMatch as SupplierInvoicePurchaseOrderMatchRow) : match))
       );
+
+      await emitIntelligenceEvents([
+        buildSupplierInvoiceIntelligenceEvent({
+          organizationId,
+          module: "supplier_invoices",
+          eventFamily: "correction",
+          eventType: "supplier_invoice_match_rejected",
+          action: "rejected",
+          entityType: "supplier_invoice_purchase_order_match",
+          entityId: updatedMatch.id,
+          beforeData: existingMatch ? buildPurchaseOrderMatchCompactSummary(existingMatch) : null,
+          afterData: buildPurchaseOrderMatchCompactSummary(updatedMatch as SupplierInvoicePurchaseOrderMatchRow),
+          metadata: {
+            supplierInvoiceId: invoice.id,
+          },
+          reason: "Purchase order match was marked rejected.",
+        }),
+        ...(hasAiSupplierInvoiceMatchSuggestion(updatedMatch as SupplierInvoicePurchaseOrderMatchRow)
+          ? [
+              buildSupplierInvoiceIntelligenceEvent({
+                organizationId,
+                module: "supplier_invoices",
+                eventFamily: "ai_interaction",
+                eventType: "ai_supplier_invoice_match_rejected",
+                action: "rejected",
+                entityType: "supplier_invoice_purchase_order_match",
+                entityId: updatedMatch.id,
+                beforeData: existingMatch ? buildPurchaseOrderMatchCompactSummary(existingMatch) : null,
+                afterData: buildPurchaseOrderMatchCompactSummary(updatedMatch as SupplierInvoicePurchaseOrderMatchRow),
+                metadata: {
+                  supplierInvoiceId: invoice.id,
+                  confidenceScore: (updatedMatch as SupplierInvoicePurchaseOrderMatchRow).confidence_score,
+                },
+                reason: "AI-assisted purchase order match was rejected.",
+              }),
+            ]
+          : []),
+      ]);
+      if (hasAiSupplierInvoiceMatchSuggestion(updatedMatch as SupplierInvoicePurchaseOrderMatchRow)) {
+        try {
+          await createSupplierInvoiceAiInteraction(supabase, {
+            organizationId,
+            subjectEntityType: "supplier_invoice_purchase_order_match",
+            subjectEntityId: updatedMatch.id,
+            confidence: (updatedMatch as SupplierInvoicePurchaseOrderMatchRow).confidence_score,
+            humanDisposition: "rejected",
+            humanFeedbackSummary: "User rejected an AI-assisted supplier invoice purchase order match.",
+            outputStructured: ((existingMatch
+              ? buildPurchaseOrderMatchCompactSummary(existingMatch)
+              : buildPurchaseOrderMatchCompactSummary(updatedMatch as SupplierInvoicePurchaseOrderMatchRow)) as unknown as Json),
+            editedOutput: buildPurchaseOrderMatchCompactSummary(updatedMatch as SupplierInvoicePurchaseOrderMatchRow) as unknown as Json,
+          });
+        } catch (aiError) {
+          logSupplierInvoiceIntelligenceFailure("supplier-invoice-update-match-ai", aiError);
+        }
+      }
       await refreshWorkflowState();
       setMessage("Purchase order match updated.");
     } catch (updateMatchError) {
@@ -1462,6 +1764,7 @@ export function SupplierInvoiceDetailWorkspace({
     setMessage(null);
 
     try {
+      const existingMatch = matches.find((match) => match.id === matchId) ?? null;
       const { error: deleteError } = await supabase
         .from("supplier_invoice_purchase_order_matches")
         .delete()
@@ -1473,6 +1776,61 @@ export function SupplierInvoiceDetailWorkspace({
       }
 
       setMatches((current) => current.filter((match) => match.id !== matchId));
+      if (existingMatch) {
+        await emitIntelligenceEvents([
+          buildSupplierInvoiceIntelligenceEvent({
+            organizationId,
+            module: "supplier_invoices",
+            eventFamily: "correction",
+            eventType: "supplier_invoice_match_rejected",
+            action: "rejected",
+            entityType: "supplier_invoice_purchase_order_match",
+            entityId: existingMatch.id,
+            beforeData: buildPurchaseOrderMatchCompactSummary(existingMatch),
+            afterData: null,
+            metadata: {
+              supplierInvoiceId: invoice.id,
+            },
+            reason: "Purchase order match removed from the invoice.",
+          }),
+          ...(hasAiSupplierInvoiceMatchSuggestion(existingMatch)
+            ? [
+                buildSupplierInvoiceIntelligenceEvent({
+                  organizationId,
+                  module: "supplier_invoices",
+                  eventFamily: "ai_interaction",
+                  eventType: "ai_supplier_invoice_match_rejected",
+                  action: "rejected",
+                  entityType: "supplier_invoice_purchase_order_match",
+                  entityId: existingMatch.id,
+                  beforeData: buildPurchaseOrderMatchCompactSummary(existingMatch),
+                  afterData: null,
+                  metadata: {
+                    supplierInvoiceId: invoice.id,
+                    confidenceScore: existingMatch.confidence_score,
+                  },
+                  reason: "AI-assisted purchase order match removed from the invoice.",
+                }),
+              ]
+            : []),
+        ]);
+        if (hasAiSupplierInvoiceMatchSuggestion(existingMatch)) {
+          try {
+            await createSupplierInvoiceAiInteraction(supabase, {
+              organizationId,
+              subjectEntityType: "supplier_invoice_purchase_order_match",
+              subjectEntityId: existingMatch.id,
+              confidence: existingMatch.confidence_score,
+              humanDisposition: "rejected",
+              humanFeedbackSummary: "User removed an AI-assisted supplier invoice purchase order match.",
+              outputStructured: buildPurchaseOrderMatchCompactSummary(existingMatch) as unknown as Json,
+              editedOutput: null,
+            });
+          } catch (aiError) {
+            logSupplierInvoiceIntelligenceFailure("supplier-invoice-remove-match-ai", aiError);
+          }
+        }
+      }
       await refreshWorkflowState();
       setMessage("Purchase order match removed.");
     } catch (deleteMatchError) {
@@ -1570,8 +1928,115 @@ export function SupplierInvoiceDetailWorkspace({
       const autoReReviewed =
         invoice.status === "Approved" && updatedInvoice.status === "Needs Review";
 
+      const invoiceEvents: Array<ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>> = [];
+      if (invoice.status !== updatedInvoice.status) {
+        if (updatedInvoice.status === "Needs Review") {
+          invoiceEvents.push(
+            buildSupplierInvoiceIntelligenceEvent({
+              organizationId,
+              module: "supplier_invoices",
+              eventFamily: "approval",
+              eventType: "supplier_invoice_approval_requested",
+              action: "requested",
+              entityType: "supplier_invoice",
+              entityId: updatedInvoice.id,
+              beforeData: summarizeSupplierInvoiceHeader({
+                supplierId: invoice.supplier_id,
+                source: invoice.source,
+                status: invoice.status,
+                invoiceNumber: invoice.invoice_number,
+                invoiceDate: invoice.invoice_date,
+                dueDate: invoice.due_date,
+                total: Number(invoice.total ?? 0),
+                hasDocument: Boolean(invoice.document_file_path),
+              }),
+              afterData: summarizeSupplierInvoiceHeader({
+                supplierId: updatedInvoice.supplier_id,
+                source: updatedInvoice.source,
+                status: updatedInvoice.status,
+                invoiceNumber: updatedInvoice.invoice_number,
+                invoiceDate: updatedInvoice.invoice_date,
+                dueDate: updatedInvoice.due_date,
+                total: Number(updatedInvoice.total ?? 0),
+                hasDocument: Boolean(updatedInvoice.document_file_path),
+              }),
+              reason: autoReReviewed
+                ? "Material invoice changes moved the invoice back into review."
+                : "Invoice submitted for review.",
+            })
+          );
+        } else if (updatedInvoice.status === "Approved") {
+          invoiceEvents.push(
+            buildSupplierInvoiceIntelligenceEvent({
+              organizationId,
+              module: "supplier_invoices",
+              eventFamily: "approval",
+              eventType: "supplier_invoice_approved",
+              action: "approved",
+              entityType: "supplier_invoice",
+              entityId: updatedInvoice.id,
+              beforeData: summarizeSupplierInvoiceHeader({
+                supplierId: invoice.supplier_id,
+                source: invoice.source,
+                status: invoice.status,
+                invoiceNumber: invoice.invoice_number,
+                invoiceDate: invoice.invoice_date,
+                dueDate: invoice.due_date,
+                total: Number(invoice.total ?? 0),
+                hasDocument: Boolean(invoice.document_file_path),
+              }),
+              afterData: summarizeSupplierInvoiceHeader({
+                supplierId: updatedInvoice.supplier_id,
+                source: updatedInvoice.source,
+                status: updatedInvoice.status,
+                invoiceNumber: updatedInvoice.invoice_number,
+                invoiceDate: updatedInvoice.invoice_date,
+                dueDate: updatedInvoice.due_date,
+                total: Number(updatedInvoice.total ?? 0),
+                hasDocument: Boolean(updatedInvoice.document_file_path),
+              }),
+              reason: "Invoice status approved.",
+            })
+          );
+        } else if (updatedInvoice.status === "Disputed") {
+          invoiceEvents.push(
+            buildSupplierInvoiceIntelligenceEvent({
+              organizationId,
+              module: "supplier_invoices",
+              eventFamily: "approval",
+              eventType: "supplier_invoice_rejected",
+              action: "rejected",
+              entityType: "supplier_invoice",
+              entityId: updatedInvoice.id,
+              beforeData: summarizeSupplierInvoiceHeader({
+                supplierId: invoice.supplier_id,
+                source: invoice.source,
+                status: invoice.status,
+                invoiceNumber: invoice.invoice_number,
+                invoiceDate: invoice.invoice_date,
+                dueDate: invoice.due_date,
+                total: Number(invoice.total ?? 0),
+                hasDocument: Boolean(invoice.document_file_path),
+              }),
+              afterData: summarizeSupplierInvoiceHeader({
+                supplierId: updatedInvoice.supplier_id,
+                source: updatedInvoice.source,
+                status: updatedInvoice.status,
+                invoiceNumber: updatedInvoice.invoice_number,
+                invoiceDate: updatedInvoice.invoice_date,
+                dueDate: updatedInvoice.due_date,
+                total: Number(updatedInvoice.total ?? 0),
+                hasDocument: Boolean(updatedInvoice.document_file_path),
+              }),
+              reason: "Invoice status disputed.",
+            })
+          );
+        }
+      }
+
       setInvoice(updatedInvoice);
       setFormState(toInvoiceFormState(updatedInvoice));
+      await emitIntelligenceEvents(invoiceEvents);
       await refreshWorkflowState();
       setMessage(
         autoReReviewed

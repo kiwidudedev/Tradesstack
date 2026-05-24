@@ -803,6 +803,7 @@ export type Database = {
       }
       opportunity_pricing_worksheets: {
         Row: {
+          archived_at: string | null
           created_at: string
           created_by: string
           extracted_pricing_data: Json
@@ -811,12 +812,15 @@ export type Database = {
           opportunity_id: string
           organization_id: string
           pricing_summary: Json
+          sort_order: number | null
+          trade_package: string | null
           updated_at: string
           updated_by: string
           version: number
           worksheet_data: Json
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           created_by: string
           extracted_pricing_data?: Json
@@ -825,12 +829,15 @@ export type Database = {
           opportunity_id: string
           organization_id: string
           pricing_summary?: Json
+          sort_order?: number | null
+          trade_package?: string | null
           updated_at?: string
           updated_by: string
           version?: number
           worksheet_data?: Json
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           created_by?: string
           extracted_pricing_data?: Json
@@ -839,6 +846,8 @@ export type Database = {
           opportunity_id?: string
           organization_id?: string
           pricing_summary?: Json
+          sort_order?: number | null
+          trade_package?: string | null
           updated_at?: string
           updated_by?: string
           version?: number

@@ -1,20 +1,36 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { Save } from "lucide-react";
+import { ChevronDown, Save, Sparkles } from "lucide-react";
+import {
+  PricingWorksheetAiAssistDialog,
+  type PricingWorksheetAiFindingDisposition,
+  type PricingWorksheetAiPreviewAssistant,
+  type PricingWorksheetAiContextSummary,
+  type PricingWorksheetAiMatchedMemory,
+  type PricingWorksheetAiPreviewSummary,
+  type PricingWorksheetAiValidationWarning,
+} from "@/components/app/PricingWorksheetAiAssistDialog";
 import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
-import { OperationalPanel } from "@/components/app/OperationalPanel";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import {
   createDefaultWorksheetData,
@@ -23,15 +39,32 @@ import {
   normalizeWorksheetCell,
   normalizeWorksheetData,
   type WorksheetCell,
+  type WorksheetColumn,
   type WorksheetData,
   type WorksheetExtractedPricingData,
   type WorksheetPricingSummary,
+  type WorksheetRow,
 } from "@/lib/opportunity-pricing-worksheet-defaults";
-import { recalculateWorksheetFormulas } from "@/lib/opportunity-pricing-worksheet-formulas";
+import {
+  buildWorksheetRedoState,
+  buildWorksheetUndoState,
+  commitWorksheetHistoryEntry,
+} from "@/lib/opportunity-pricing-worksheet-history";
+import {
+  buildPricingWorksheetAiEvidenceFeedbackData,
+  buildPricingWorksheetAiReviewSignalData,
+  buildPricingWorksheetIntelligenceEvent,
+  logPricingWorksheetIntelligenceFailure,
+  summarizeWorksheetStructure,
+  writePricingWorksheetIntelligenceEvents,
+} from "@/lib/pricing-worksheet-intelligence";
+import {
+  recalculateWorksheetFormulas,
+} from "@/lib/opportunity-pricing-worksheet-formulas";
+import { applyWorksheetMutation } from "@/lib/opportunity-pricing-worksheet-mutations";
 import {
   buildWorksheetTsvFromRange,
   extendRangeFromAnchor,
-  getWorksheetRangeEdgeFlags,
   getWorksheetSelectionRange,
   moveCellKey,
   type WorksheetSelectionRange,
@@ -46,18 +79,103 @@ import {
 } from "@/lib/opportunity-pricing-worksheet-paste";
 import { shiftFormulaForFill } from "@/lib/opportunity-pricing-worksheet-formula-shift";
 import {
+  deleteWorksheetColumns,
+  deleteWorksheetRows,
+  insertWorksheetColumn,
+  insertWorksheetRow,
+} from "@/lib/opportunity-pricing-worksheet-structure";
+import {
   applyBordersToRange,
   applyFormattingToRange,
   clearCellFill,
+  clearCellNumberFormat,
+  getFormattedCellDisplayValue,
   getCellFormat,
   hasCellFormatting,
+  type WorksheetNegativeNumberStyle,
+  type WorksheetNumberFormatKind,
   type WorksheetCellFormat,
 } from "@/lib/opportunity-pricing-worksheet-formatting";
+import {
+  getColumnOffsets,
+  getColumnVirtualizationWindow,
+} from "@/lib/opportunity-pricing-worksheet-virtual-columns";
+import {
+  countPricingWorksheetPerformance,
+  markPricingWorksheetPerformance,
+  startPricingWorksheetPerformanceMeasure,
+} from "@/lib/pricing-worksheet-performance";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { Json } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
+import { buildPricingWorksheetAiContext } from "@/lib/pricing-worksheet-ai-context";
+import type { PricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
+import type { PricingWorksheetAiFollowUpContext } from "@/lib/ai-pricing-worksheet-edit-assistant";
+import {
+  buildPricingWorksheetAiSuggestedEditSelectionResponse,
+  simulatePricingWorksheetAiEditPlan,
+  type PricingWorksheetAiAssistantResponse,
+  type PricingWorksheetAiReviewFinding,
+  type PricingWorksheetAiSuggestedEditGroup,
+} from "@/lib/pricing-worksheet-edit-plan";
+import { validateWorksheetBeforeSave } from "@/lib/opportunity-pricing-worksheet-save-validation";
 
-type PricingWorksheetRow =
-  import("@/lib/supabase/types").Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"];
+type PricingWorksheetRow = Pick<
+  Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"],
+  | "id"
+  | "name"
+  | "trade_package"
+  | "worksheet_data"
+  | "pricing_summary"
+  | "extracted_pricing_data"
+  | "version"
+  | "updated_at"
+  | "updated_by"
+>;
+type WorksheetContextMenuState =
+  | {
+      type: "cell";
+      x: number;
+      y: number;
+      cellKey: string;
+    }
+  | {
+      type: "row";
+      x: number;
+      y: number;
+      rowIndex: number;
+    }
+  | {
+      type: "column";
+      x: number;
+      y: number;
+      columnIndex: number;
+    }
+  | null;
+
+type PricingWorksheetAiPreviewResponse = {
+  aiInteractionId: string;
+  lifecycleState: string;
+  validationStatus: string;
+  preview: {
+    worksheet: WorksheetData;
+    compactOutput: PricingWorksheetAiPreviewSummary;
+    matchedMemory: PricingWorksheetAiMatchedMemory | null;
+    validationWarnings: PricingWorksheetAiValidationWarning[];
+    contextSummary: PricingWorksheetAiContextSummary;
+    classification?: PricingWorksheetConstructionIntent;
+    assistant?: PricingWorksheetAiPreviewAssistant | null;
+    generationMeta?: {
+      provider: string;
+      model: string;
+      fallbackUsed: boolean;
+      fallbackReason: string | null;
+    };
+  };
+};
+
+type WorksheetCommitResult =
+  | { committed: false; changed: boolean; message: string | null }
+  | { committed: true; changed: boolean; worksheet: WorksheetData };
 
 const CELL_INPUT_CLASS =
   "h-full w-full min-w-0 border-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]";
@@ -68,31 +186,221 @@ const MIN_COLUMN_WIDTH = 80;
 const MAX_COLUMN_WIDTH = 640;
 const MIN_ROW_HEIGHT = 28;
 const MAX_ROW_HEIGHT = 240;
+const WORKSHEET_ROW_GUTTER_WIDTH = 64;
+const WORKSHEET_ROW_OVERSCAN = 6;
+const WORKSHEET_COLUMN_OVERSCAN = 2;
+const WORKSHEET_VIEWPORT_FALLBACK_HEIGHT = 720;
+const WORKSHEET_VIEWPORT_FALLBACK_WIDTH = 1120;
 const FILL_SWATCHES = ["#FEF3C7", "#DBEAFE", "#DCFCE7", "#FCE7F3", "#F3F4F6"];
 const TEXT_SWATCHES = ["#111827", "#1D4ED8", "#047857", "#B45309", "#BE123C"];
-
-function displayCellValue(cell: WorksheetCell | undefined) {
-  if (!cell) {
-    return "";
-  }
-
-  if (typeof cell.displayValue === "string") {
-    return cell.displayValue;
-  }
-
-  if (typeof cell.value === "number") {
-    return String(cell.value);
-  }
-
-  if (typeof cell.value === "string") {
-    return cell.value;
-  }
-
-  return "";
-}
+const NUMBER_FORMAT_OPTIONS = [
+  { value: "general", label: "General" },
+  { value: "number", label: "Number" },
+  { value: "currency", label: "Currency" },
+  { value: "percent", label: "Percent" },
+] satisfies Array<{ value: WorksheetNumberFormatKind; label: string }>;
+const NEGATIVE_STYLE_OPTIONS = [
+  { value: "minus", label: "-123" },
+  { value: "parentheses", label: "(123)" },
+] satisfies Array<{ value: WorksheetNegativeNumberStyle; label: string }>;
+const MAX_NUMBER_DECIMAL_PLACES = 6;
 
 function cloneWorksheetData(worksheet: WorksheetData) {
   return JSON.parse(JSON.stringify(worksheet)) as WorksheetData;
+}
+
+function buildNextCommittedCell(
+  existingCell: WorksheetCell | undefined,
+  nextValue: string
+): WorksheetCell | null {
+  const normalizedCell = normalizeWorksheetCell(nextValue);
+
+  if (normalizedCell.type === "empty") {
+    if (!hasCellFormatting(existingCell)) {
+      return null;
+    }
+
+    return {
+      ...normalizedCell,
+      metadata: {
+        ...existingCell?.metadata,
+      },
+    };
+  }
+
+  return {
+    ...normalizedCell,
+    metadata: {
+      ...(existingCell?.metadata ?? {}),
+    },
+  };
+}
+
+function areWorksheetCellsEquivalent(
+  existingCell: WorksheetCell | undefined,
+  nextCell: WorksheetCell | null
+) {
+  if (nextCell === null) {
+    return !existingCell;
+  }
+
+  if (!existingCell) {
+    return false;
+  }
+
+  return (
+    existingCell.value === nextCell.value &&
+    existingCell.type === nextCell.type &&
+    existingCell.formula === nextCell.formula &&
+    existingCell.computedValue === nextCell.computedValue &&
+    existingCell.displayValue === nextCell.displayValue &&
+    JSON.stringify(existingCell.metadata) === JSON.stringify(nextCell.metadata)
+  );
+}
+
+function isCellCommitNoOp(existingCell: WorksheetCell | undefined, nextValue: string) {
+  return areWorksheetCellsEquivalent(existingCell, buildNextCommittedCell(existingCell, nextValue));
+}
+
+function hasWorksheetContent(worksheet: WorksheetData) {
+  const summary = summarizeWorksheetStructure(worksheet);
+  return summary.populatedCellCount > 0;
+}
+
+function buildCurrentWorksheetSummary(worksheet: WorksheetData) {
+  const summary = summarizeWorksheetStructure(worksheet);
+  return {
+    rowCount: summary.rowCount,
+    columnCount: summary.columnCount,
+    formulaCount: summary.formulaCount,
+    populatedCellCount: summary.populatedCellCount,
+    hasExistingContent: summary.populatedCellCount > 0,
+  };
+}
+
+function buildWorksheetAiEditedOutput(params: {
+  preview: PricingWorksheetAiPreviewResponse["preview"];
+  worksheetName: string;
+  tradePackage: string | null;
+}) {
+  return {
+    ...params.preview.compactOutput,
+    worksheetName: params.worksheetName,
+    tradePackage: params.tradePackage,
+    responseMode: params.preview.assistant?.mode ?? null,
+    answer: params.preview.assistant?.answer ?? null,
+    summary: params.preview.assistant?.summary ?? null,
+    operationTypes: params.preview.assistant?.operations.map((operation) => operation.type) ?? [],
+    changedCells: params.preview.assistant?.diffSummary.changedCells ?? [],
+    insertedRows: (params.preview.assistant?.diffSummary.insertedRows ?? []).map((row) => String(row)),
+    affectedSections: params.preview.assistant?.diffPreview?.affectedSections ?? [],
+    formulaChangeRefs: params.preview.assistant?.diffPreview?.formulaChanges.map((change) => change.ref) ?? [],
+    reviewFindings: params.preview.assistant?.reviewFindings ?? [],
+    reviewSummary: params.preview.assistant?.reviewSummary ?? null,
+    evidenceSources: params.preview.assistant?.evidenceSources ?? [],
+    suggestedEditGroups: (params.preview.assistant?.suggestedEditGroups ?? []).map((group) => ({
+      id: group.id,
+      title: group.title,
+      purpose: group.purpose,
+      confidence: group.confidence,
+      relatedFindingIds: group.relatedFindingIds,
+      operationCount: group.operations.length,
+    })),
+  } as Record<string, Json | null | string | number | string[]>;
+}
+
+function buildAssistantResponseFromPreview(
+  assistant: PricingWorksheetAiPreviewAssistant,
+): PricingWorksheetAiAssistantResponse {
+  return {
+    mode: assistant.mode,
+    proposalName: assistant.proposalName,
+    answer: assistant.answer,
+    summary: assistant.summary,
+    confidence: assistant.confidence,
+    operations: [],
+    assumptions: assistant.assumptions,
+    warnings: assistant.warnings,
+    evidenceSources: assistant.evidenceSources ?? [],
+    reviewFindings: assistant.reviewFindings ?? [],
+    reviewSummary: assistant.reviewSummary ?? null,
+    suggestedEditGroups: assistant.suggestedEditGroups ?? [],
+  };
+}
+
+function getFindingById(
+  findings: PricingWorksheetAiReviewFinding[] | undefined,
+  findingId: string
+) {
+  return (findings ?? []).find((finding) => finding.id === findingId) ?? null;
+}
+
+function buildFindingRevisionSummaries(params: {
+  previousFindings: PricingWorksheetAiReviewFinding[];
+  nextFindings: PricingWorksheetAiReviewFinding[];
+  previousSuggestedEditGroups: PricingWorksheetAiSuggestedEditGroup[];
+  nextSuggestedEditGroups: PricingWorksheetAiSuggestedEditGroup[];
+}) {
+  type FindingRevisionSummary = {
+    outcome: "invalidated" | "confirmed" | "revised";
+    finding: PricingWorksheetAiReviewFinding;
+    previousFinding: PricingWorksheetAiReviewFinding;
+  };
+
+  const previousFindingMap = new Map(params.previousFindings.map((finding) => [finding.id, finding]));
+  const nextSuggestedEditGroupIds = new Set(params.nextSuggestedEditGroups.map((group) => group.id));
+  const removedSuggestedEditGroupIds = params.previousSuggestedEditGroups
+    .filter((group) => !nextSuggestedEditGroupIds.has(group.id))
+    .map((group) => group.id);
+
+  const changedFindings: FindingRevisionSummary[] = params.nextFindings.flatMap((finding): FindingRevisionSummary[] => {
+    const previousFinding =
+      (finding.revisedFromFindingId ? previousFindingMap.get(finding.revisedFromFindingId) : null) ??
+      previousFindingMap.get(finding.id) ??
+      null;
+
+    if (!previousFinding) {
+      return [];
+    }
+
+    if (finding.findingStatus === "invalidated") {
+      return [{ outcome: "invalidated" as const, finding, previousFinding }];
+    }
+
+    if (finding.findingStatus === "confirmed") {
+      return [{ outcome: "confirmed" as const, finding, previousFinding }];
+    }
+
+    if (
+      finding.findingStatus === "revised" ||
+      finding.findingStatus === "downgraded" ||
+      finding.confidence !== previousFinding.confidence ||
+      finding.finding !== previousFinding.finding ||
+      finding.assumption !== previousFinding.assumption ||
+      finding.uncertainty !== previousFinding.uncertainty
+    ) {
+      return [{ outcome: "revised" as const, finding, previousFinding }];
+    }
+
+    return [];
+  });
+
+  return {
+    changedFindings,
+    removedSuggestedEditGroupIds,
+  };
+}
+
+function columnLabelFromIndex(index: number) {
+  let current = index;
+  let label = "";
+
+  do {
+    label = String.fromCharCode(65 + (current % 26)) + label;
+    current = Math.floor(current / 26) - 1;
+  } while (current >= 0);
+
+  return label;
 }
 
 function getCellPosition(worksheet: WorksheetData, cellKey: string) {
@@ -112,6 +420,47 @@ function getCellPosition(worksheet: WorksheetData, cellKey: string) {
     columnIndex,
     rowIndex,
   };
+}
+
+function isPositionInRange(
+  position: { rowIndex: number; columnIndex: number },
+  range: WorksheetSelectionRange | null
+) {
+  if (!range) {
+    return false;
+  }
+
+  return (
+    position.rowIndex >= range.startRowIndex &&
+    position.rowIndex <= range.endRowIndex &&
+    position.columnIndex >= range.startColumnIndex &&
+    position.columnIndex <= range.endColumnIndex
+  );
+}
+
+function buildFormulaReferenceText(
+  worksheet: WorksheetData,
+  anchorCellKey: string,
+  focusCellKey: string
+) {
+  if (anchorCellKey === focusCellKey) {
+    return anchorCellKey;
+  }
+
+  const range = getWorksheetSelectionRange(worksheet, anchorCellKey, focusCellKey);
+  if (!range) {
+    return focusCellKey;
+  }
+
+  const startColumn = worksheet.columns[range.startColumnIndex];
+  const startRow = worksheet.rows[range.startRowIndex];
+  const endColumn = worksheet.columns[range.endColumnIndex];
+  const endRow = worksheet.rows[range.endRowIndex];
+  if (!startColumn || !startRow || !endColumn || !endRow) {
+    return focusCellKey;
+  }
+
+  return `${buildWorksheetCellKey(startColumn.id, startRow.id)}:${buildWorksheetCellKey(endColumn.id, endRow.id)}`;
 }
 
 function buildSelectionShadow(
@@ -149,6 +498,345 @@ function buildFormattedBorderShadow(format: WorksheetCellFormat | undefined) {
     .join(", ");
 }
 
+function getRangeEdgeFlagsByIndex(
+  rowIndex: number,
+  columnIndex: number,
+  range: WorksheetSelectionRange | null
+) {
+  if (!range) {
+    return {
+      isInRange: false,
+      isTopEdge: false,
+      isBottomEdge: false,
+      isLeftEdge: false,
+      isRightEdge: false,
+    };
+  }
+
+  const isInRange =
+    rowIndex >= range.startRowIndex &&
+    rowIndex <= range.endRowIndex &&
+    columnIndex >= range.startColumnIndex &&
+    columnIndex <= range.endColumnIndex;
+
+  return {
+    isInRange,
+    isTopEdge: isInRange && rowIndex === range.startRowIndex,
+    isBottomEdge: isInRange && rowIndex === range.endRowIndex,
+    isLeftEdge: isInRange && columnIndex === range.startColumnIndex,
+    isRightEdge: isInRange && columnIndex === range.endColumnIndex,
+  };
+}
+
+type WorksheetCellViewProps = {
+  activeCellKey: string | null;
+  activeEditor: "cell" | "formulaBar" | null;
+  canWriteWorksheet: boolean;
+  cell: WorksheetCell | undefined;
+  cellKey: string;
+  columnIndex: number;
+  editingCellValue: string;
+  fillPreviewRange: WorksheetSelectionRange | null;
+  rowHeight: number;
+  rowIndex: number;
+  selectedRange: WorksheetSelectionRange | null;
+  onBeginCellEdit: (cellKey: string, cell: WorksheetCell | undefined) => void;
+  onBeginFillDrag: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onCellClick: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCellContextMenu: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCellMouseDown: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCellMouseEnter: (cellKey: string) => void;
+  onInputBlur: (cellKey: string) => void;
+  onInputChange: (value: string) => void;
+  onInputKeyDown: (cellKey: string, event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  setInputRef: (cellKey: string, node: HTMLInputElement | null) => void;
+};
+
+const WorksheetCellView = memo(function WorksheetCellView({
+  activeCellKey,
+  activeEditor,
+  canWriteWorksheet,
+  cell,
+  cellKey,
+  columnIndex,
+  editingCellValue,
+  fillPreviewRange,
+  rowHeight,
+  rowIndex,
+  selectedRange,
+  onBeginCellEdit,
+  onBeginFillDrag,
+  onCellClick,
+  onCellContextMenu,
+  onCellMouseDown,
+  onCellMouseEnter,
+  onInputBlur,
+  onInputChange,
+  onInputKeyDown,
+  setInputRef,
+}: WorksheetCellViewProps) {
+  const cellFormat = getCellFormat(cell);
+  const isEditing = activeCellKey === cellKey && activeEditor === "cell";
+  const inputValue = isEditing ? editingCellValue : getFormattedCellDisplayValue(cell);
+  const edgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, selectedRange);
+  const fillPreviewEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, fillPreviewRange);
+  const selectionShadow = edgeFlags.isInRange
+    ? buildSelectionShadow(edgeFlags, SELECTION_OUTLINE_COLOR)
+    : undefined;
+  const fillPreviewShadow = fillPreviewEdgeFlags.isInRange
+    ? buildSelectionShadow(fillPreviewEdgeFlags, FILL_PREVIEW_OUTLINE_COLOR)
+    : undefined;
+  const formatBorderShadow = buildFormattedBorderShadow(cellFormat);
+  const isSelectedRangeCorner =
+    Boolean(selectedRange) &&
+    edgeFlags.isBottomEdge &&
+    edgeFlags.isRightEdge &&
+    !activeCellKey;
+  const cellTextAlign = cellFormat.text?.align ?? "left";
+  const cellFillColor =
+    edgeFlags.isInRange || fillPreviewEdgeFlags.isInRange ? undefined : cellFormat.fill?.color;
+
+  return (
+    <div
+      className={`relative border-r border-[var(--border)] last:border-r-0 ${
+        edgeFlags.isInRange ? "bg-blue-50/50" : fillPreviewEdgeFlags.isInRange ? "bg-blue-100/50" : ""
+      }`}
+      style={{
+        backgroundColor: cellFillColor,
+        height: `${rowHeight}px`,
+        boxShadow: [formatBorderShadow, selectionShadow, fillPreviewShadow]
+          .filter(Boolean)
+          .join(", ") || undefined,
+      }}
+      onMouseDown={(event) => onCellMouseDown(cellKey, event)}
+      onContextMenu={(event) => onCellContextMenu(cellKey, event)}
+      onMouseEnter={() => onCellMouseEnter(cellKey)}
+      onDoubleClick={() => onBeginCellEdit(cellKey, cell)}
+    >
+      {isEditing ? (
+        <input
+          ref={(node) => setInputRef(cellKey, node)}
+          type="text"
+          value={inputValue}
+          onChange={(event) => onInputChange(event.target.value)}
+          onBlur={() => onInputBlur(cellKey)}
+          onKeyDown={(event) => onInputKeyDown(cellKey, event)}
+          className={CELL_INPUT_CLASS}
+          style={{
+            height: `${rowHeight}px`,
+            textAlign: cellTextAlign,
+            fontWeight: cellFormat.text?.bold ? 700 : undefined,
+            color: cellFormat.text?.color,
+          }}
+          placeholder=""
+          disabled={!canWriteWorksheet}
+          inputMode={cell?.type === "number" ? "decimal" : undefined}
+        />
+      ) : (
+        <div
+          className="flex h-full min-w-0 items-center overflow-hidden px-2.5 text-sm text-[var(--text-primary)]"
+          style={{
+            justifyContent:
+              cellTextAlign === "center"
+                ? "center"
+                : cellTextAlign === "right"
+                ? "flex-end"
+                : "flex-start",
+            fontWeight: cellFormat.text?.bold ? 700 : undefined,
+            color: cellFormat.text?.color,
+            textAlign: cellTextAlign,
+          }}
+          onClick={(event) => onCellClick(cellKey, event)}
+        >
+          {getFormattedCellDisplayValue(cell)}
+        </div>
+      )}
+      {isSelectedRangeCorner ? (
+        <button
+          type="button"
+          aria-label="Fill handle"
+          className="absolute bottom-0 right-0 z-20 h-2.5 w-2.5 translate-x-1/2 translate-y-1/2 rounded-full border border-white bg-blue-600 shadow-sm"
+          onMouseDown={onBeginFillDrag}
+        />
+      ) : null}
+    </div>
+  );
+});
+
+type WorksheetRowViewProps = {
+  activeCellKey: string | null;
+  activeEditor: "cell" | "formulaBar" | null;
+  canWriteWorksheet: boolean;
+  editingCellValue: string;
+  fillPreviewRange: WorksheetSelectionRange | null;
+  gridTemplateColumns: string;
+  leftSpacerWidth: number;
+  rowCells: Array<WorksheetCell | undefined>;
+  row: WorksheetRow;
+  rowIndex: number;
+  rightSpacerWidth: number;
+  selectedRange: WorksheetSelectionRange | null;
+  visibleColumnStartIndex: number;
+  visibleColumns: WorksheetColumn[];
+  onBeginCellEdit: (cellKey: string, cell: WorksheetCell | undefined) => void;
+  onBeginFillDrag: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onBeginRowResize: (event: ReactMouseEvent<HTMLButtonElement>, rowId: string, height: number) => void;
+  onCellClick: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCellContextMenu: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCellMouseDown: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCellMouseEnter: (cellKey: string) => void;
+  onInputBlur: (cellKey: string) => void;
+  onInputChange: (value: string) => void;
+  onInputKeyDown: (cellKey: string, event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onRowContextMenu: (event: ReactMouseEvent<HTMLDivElement>, rowIndex: number) => void;
+  setInputRef: (cellKey: string, node: HTMLInputElement | null) => void;
+};
+
+const WorksheetRowView = memo(function WorksheetRowView({
+  activeCellKey,
+  activeEditor,
+  canWriteWorksheet,
+  editingCellValue,
+  fillPreviewRange,
+  gridTemplateColumns,
+  leftSpacerWidth,
+  rowCells,
+  row,
+  rowIndex,
+  rightSpacerWidth,
+  selectedRange,
+  visibleColumnStartIndex,
+  visibleColumns,
+  onBeginCellEdit,
+  onBeginFillDrag,
+  onBeginRowResize,
+  onCellClick,
+  onCellContextMenu,
+  onCellMouseDown,
+  onCellMouseEnter,
+  onInputBlur,
+  onInputChange,
+  onInputKeyDown,
+  onRowContextMenu,
+  setInputRef,
+}: WorksheetRowViewProps) {
+  return (
+    <div
+      className="grid border-b border-[var(--border)] last:border-b-0"
+      style={{
+        gridTemplateColumns,
+        minHeight: `${row.height}px`,
+      }}
+    >
+      <div
+        className="sticky left-0 z-10 border-r border-[var(--border)] bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] relative"
+        style={{ height: `${row.height}px` }}
+        onContextMenu={(event) => onRowContextMenu(event, rowIndex)}
+      >
+        {row.id}
+        <button
+          type="button"
+          aria-label={`Resize row ${row.id}`}
+          className="absolute bottom-0 left-0 h-2 w-full translate-y-1/2 cursor-row-resize"
+          onMouseDown={(event) => onBeginRowResize(event, row.id, row.height)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        />
+      </div>
+      <div
+        aria-hidden="true"
+        className="border-r border-[var(--border)] bg-white"
+        style={{ height: `${row.height}px`, width: `${leftSpacerWidth}px` }}
+      />
+      {visibleColumns.map((column, columnOffset) => {
+        const cellKey = buildWorksheetCellKey(column.id, row.id);
+        const cell = rowCells[columnOffset];
+        return (
+          <WorksheetCellView
+            key={cellKey}
+            activeCellKey={activeCellKey}
+            activeEditor={activeEditor}
+            canWriteWorksheet={canWriteWorksheet}
+            cell={cell}
+            cellKey={cellKey}
+            columnIndex={visibleColumnStartIndex + columnOffset}
+            editingCellValue={editingCellValue}
+            fillPreviewRange={fillPreviewRange}
+            rowHeight={row.height}
+            rowIndex={rowIndex}
+            selectedRange={selectedRange}
+            onBeginCellEdit={onBeginCellEdit}
+            onBeginFillDrag={onBeginFillDrag}
+            onCellClick={onCellClick}
+            onCellContextMenu={onCellContextMenu}
+            onCellMouseDown={onCellMouseDown}
+            onCellMouseEnter={onCellMouseEnter}
+            onInputBlur={onInputBlur}
+            onInputChange={onInputChange}
+            onInputKeyDown={onInputKeyDown}
+            setInputRef={setInputRef}
+          />
+        );
+      })}
+      <div
+        aria-hidden="true"
+        className="bg-white"
+        style={{ height: `${row.height}px`, width: `${rightSpacerWidth}px` }}
+      />
+    </div>
+  );
+}, (previousProps, nextProps) => {
+  if (
+    previousProps.activeCellKey !== nextProps.activeCellKey ||
+    previousProps.activeEditor !== nextProps.activeEditor ||
+    previousProps.canWriteWorksheet !== nextProps.canWriteWorksheet ||
+    previousProps.editingCellValue !== nextProps.editingCellValue ||
+    previousProps.fillPreviewRange !== nextProps.fillPreviewRange ||
+    previousProps.gridTemplateColumns !== nextProps.gridTemplateColumns ||
+    previousProps.leftSpacerWidth !== nextProps.leftSpacerWidth ||
+    previousProps.row !== nextProps.row ||
+    previousProps.rowIndex !== nextProps.rowIndex ||
+    previousProps.rightSpacerWidth !== nextProps.rightSpacerWidth ||
+    previousProps.selectedRange !== nextProps.selectedRange
+  ) {
+    return false;
+  }
+
+  if (
+    previousProps.visibleColumnStartIndex !== nextProps.visibleColumnStartIndex ||
+    previousProps.visibleColumns !== nextProps.visibleColumns
+  ) {
+    return false;
+  }
+
+  if (previousProps.rowCells.length !== nextProps.rowCells.length) {
+    return false;
+  }
+
+  for (let index = 0; index < previousProps.rowCells.length; index += 1) {
+    if (previousProps.rowCells[index] !== nextProps.rowCells[index]) {
+      return false;
+    }
+  }
+
+  return (
+    previousProps.onBeginCellEdit === nextProps.onBeginCellEdit &&
+    previousProps.onBeginFillDrag === nextProps.onBeginFillDrag &&
+    previousProps.onBeginRowResize === nextProps.onBeginRowResize &&
+    previousProps.onCellClick === nextProps.onCellClick &&
+    previousProps.onCellContextMenu === nextProps.onCellContextMenu &&
+    previousProps.onCellMouseDown === nextProps.onCellMouseDown &&
+    previousProps.onCellMouseEnter === nextProps.onCellMouseEnter &&
+    previousProps.onInputBlur === nextProps.onInputBlur &&
+    previousProps.onInputChange === nextProps.onInputChange &&
+    previousProps.onInputKeyDown === nextProps.onInputKeyDown &&
+    previousProps.onRowContextMenu === nextProps.onRowContextMenu &&
+    previousProps.setInputRef === nextProps.setInputRef
+  );
+});
+
 function getRawCellInput(cell: WorksheetCell | undefined) {
   if (!cell) {
     return "";
@@ -179,6 +867,22 @@ function getNumericCellValue(cell: WorksheetCell | undefined) {
   }
 
   return null;
+}
+
+function getDefaultDecimalPlaces(kind: WorksheetNumberFormatKind) {
+  if (kind === "currency") {
+    return 2;
+  }
+
+  if (kind === "number") {
+    return 2;
+  }
+
+  return 0;
+}
+
+function clampNumberDecimalPlaces(value: number) {
+  return Math.max(0, Math.min(MAX_NUMBER_DECIMAL_PLACES, value));
 }
 
 function isZeroStepSeries(values: number[]) {
@@ -235,10 +939,90 @@ function getFillPreview(
   return null;
 }
 
-export function OpportunityPricingWorksheetBoard() {
+function getRowVirtualizationWindow(
+  rows: WorksheetRow[],
+  offsets: number[],
+  scrollTop: number,
+  viewportHeight: number,
+  overscan: number
+) {
+  const totalHeight = offsets[rows.length] ?? 0;
+  if (rows.length === 0) {
+    return {
+      offsets,
+      totalHeight,
+      startIndex: 0,
+      endIndex: -1,
+      topSpacerHeight: 0,
+      bottomSpacerHeight: 0,
+      virtualRows: [] as Array<{ row: WorksheetRow; rowIndex: number }>,
+    };
+  }
+
+  const viewportBottom = scrollTop + viewportHeight;
+  let low = 0;
+  let high = rows.length - 1;
+  let firstVisibleIndex = 0;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (offsets[middle + 1] < scrollTop) {
+      low = middle + 1;
+    } else {
+      firstVisibleIndex = middle;
+      high = middle - 1;
+    }
+  }
+
+  let lastVisibleIndex = firstVisibleIndex;
+  while (
+    lastVisibleIndex < rows.length - 1 &&
+    offsets[lastVisibleIndex] <= viewportBottom
+  ) {
+    lastVisibleIndex += 1;
+  }
+
+  const startIndex = Math.max(0, firstVisibleIndex - overscan);
+  const endIndex = Math.min(rows.length - 1, lastVisibleIndex + overscan);
+  const virtualRows = rows.slice(startIndex, endIndex + 1).map((row, offset) => ({
+    row,
+    rowIndex: startIndex + offset,
+  }));
+
+  return {
+    offsets,
+    totalHeight,
+    startIndex,
+    endIndex,
+    topSpacerHeight: offsets[startIndex] ?? 0,
+    bottomSpacerHeight: Math.max(0, totalHeight - (offsets[endIndex + 1] ?? totalHeight)),
+    virtualRows,
+  };
+}
+
+function getRowOffsets(rows: WorksheetRow[]) {
+  const offsets: number[] = new Array(rows.length + 1);
+  offsets[0] = 0;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    offsets[index + 1] = offsets[index] + rows[index].height;
+  }
+
+  return offsets;
+}
+
+export function OpportunityPricingWorksheetBoard({
+  worksheetId: explicitWorksheetId,
+  onDirtyStateChange,
+}: {
+  worksheetId?: string;
+  onDirtyStateChange?: (isDirty: boolean) => void;
+}) {
   const sharedOpportunity = useOpportunityWorkspaceData();
   const { session, isLoading: isAuthLoading } = useAuth();
   const [worksheetId, setWorksheetId] = useState<string | null>(null);
+  const [worksheetName, setWorksheetName] = useState<string | null>(null);
+  const [worksheetTradePackage, setWorksheetTradePackage] = useState<string | null>(null);
   const [worksheet, setWorksheet] = useState<WorksheetData>(() => createDefaultWorksheetData());
   const worksheetRef = useRef<WorksheetData>(worksheet);
   const [pricingSummary, setPricingSummary] = useState<WorksheetPricingSummary>(() =>
@@ -253,6 +1037,18 @@ export function OpportunityPricingWorksheetBoard() {
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isGeneratingAiPreview, setIsGeneratingAiPreview] = useState(false);
+  const [isSubmittingAiReview, setIsSubmittingAiReview] = useState(false);
+  const [aiPreviewResponse, setAiPreviewResponse] = useState<PricingWorksheetAiPreviewResponse | null>(null);
+  const [aiPreviewWorksheetName, setAiPreviewWorksheetName] = useState("");
+  const [aiPreviewTradePackage, setAiPreviewTradePackage] = useState("");
+  const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
+  const [aiFindingStates, setAiFindingStates] = useState<Record<string, PricingWorksheetAiFindingDisposition>>({});
+  const [aiAppliedSuggestedEditGroupIds, setAiAppliedSuggestedEditGroupIds] = useState<string[]>([]);
+  const [aiFollowUpPrompt, setAiFollowUpPrompt] = useState("");
+  const [isSubmittingAiFollowUp, setIsSubmittingAiFollowUp] = useState(false);
   const [historyPast, setHistoryPast] = useState<WorksheetData[]>([]);
   const [historyFuture, setHistoryFuture] = useState<WorksheetData[]>([]);
   const historyPastRef = useRef<WorksheetData[]>([]);
@@ -274,15 +1070,61 @@ export function OpportunityPricingWorksheetBoard() {
   const [rowResizeStartY, setRowResizeStartY] = useState(0);
   const [rowResizeStartHeight, setRowResizeStartHeight] = useState(0);
   const [rowResizePreviewHeight, setRowResizePreviewHeight] = useState<number | null>(null);
+  const [worksheetViewportScrollLeft, setWorksheetViewportScrollLeft] = useState(0);
+  const [worksheetViewportScrollTop, setWorksheetViewportScrollTop] = useState(0);
+  const [worksheetViewportHeight, setWorksheetViewportHeight] = useState(WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
+  const [worksheetViewportWidth, setWorksheetViewportWidth] = useState(WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const worksheetSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const worksheetViewportRef = useRef<HTMLDivElement | null>(null);
   const formulaBarRef = useRef<HTMLTextAreaElement | null>(null);
+  const formattingToolbarRef = useRef<HTMLDivElement | null>(null);
+  const didCountBoardMountRef = useRef(false);
+  const isWorksheetBoardMountedRef = useRef(false);
+  const activeWorksheetLoadScopeKeyRef = useRef<string | null>(null);
   const loadedWorksheetScopeKeyRef = useRef<string | null>(null);
+  const loadingWorksheetScopeKeyRef = useRef<string | null>(null);
+  const firstGridRenderScopeKeyRef = useRef<string | null>(null);
   const suppressBlurCommitCellKeyRef = useRef<string | null>(null);
+  const suppressFormulaBarBlurCommitRef = useRef(false);
+  const editingCellValueRef = useRef("");
+  const isDraggingSelectionRef = useRef(false);
+  const rangeDragAnchorCellKeyRef = useRef<string | null>(null);
+  const formulaReferenceDragAnchorCellKeyRef = useRef<string | null>(null);
+  const formulaReferenceDragBaseValueRef = useRef<string | null>(null);
   const didDragSelectionRef = useRef(false);
   const handledFormulaReferenceMouseDownRef = useRef(false);
   const fillSourceRangeRef = useRef<WorksheetSelectionRange | null>(null);
   const fillPreviewFocusCellKeyRef = useRef<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<WorksheetContextMenuState>(null);
+  const locationHrefRef = useRef("");
+
+  useEffect(() => {
+    if (didCountBoardMountRef.current) {
+      markPricingWorksheetPerformance("board-mount-effect-replay", {
+        worksheetId: explicitWorksheetId ?? "legacy",
+      });
+      return;
+    }
+
+    didCountBoardMountRef.current = true;
+    countPricingWorksheetPerformance("board-mount-count", {
+      worksheetId: explicitWorksheetId ?? "legacy",
+    });
+  }, [explicitWorksheetId]);
+
+  useEffect(() => {
+    isWorksheetBoardMountedRef.current = true;
+    locationHrefRef.current = window.location.href;
+
+    return () => {
+      isWorksheetBoardMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    onDirtyStateChange?.(isDirty);
+  }, [isDirty, onDirtyStateChange]);
 
   const canWriteWorksheet = useMemo(() => {
     return (
@@ -300,6 +1142,72 @@ export function OpportunityPricingWorksheetBoard() {
       return null;
     }
   }, []);
+
+  const logAiReviewIntelligenceEvents = useCallback((params: Array<{
+    eventType:
+      | "worksheet_ai_review_generated"
+      | "worksheet_ai_followup_submitted"
+      | "worksheet_ai_finding_accepted"
+      | "worksheet_ai_finding_rejected"
+      | "worksheet_ai_finding_invalidated"
+      | "worksheet_ai_finding_revised"
+      | "worksheet_ai_finding_confirmed"
+      | "worksheet_ai_suggested_edit_applied";
+    action: "reviewed" | "revised" | "accepted" | "rejected" | "invalidated" | "confirmed" | "applied";
+    reason?: string | null;
+    diffData?: Record<string, Json | null>;
+  }>) => {
+    const organizationId = session?.organizationId;
+    const opportunityId = sharedOpportunity.opportunityId;
+    const currentWorksheetId = worksheetId;
+
+    if (!supabase || !organizationId || !opportunityId || !currentWorksheetId) {
+      return;
+    }
+
+    void writePricingWorksheetIntelligenceEvents(supabase, params.map((entry) =>
+      buildPricingWorksheetIntelligenceEvent({
+        organizationId,
+        opportunityId,
+        entityId: currentWorksheetId,
+        worksheetName: worksheetName?.trim() || worksheet.sheetName || "Pricing Worksheet",
+        tradePackage: worksheetTradePackage,
+        worksheet: worksheetRef.current,
+        eventType: entry.eventType,
+        eventFamily: "ai_review",
+        action: entry.action,
+        reason: entry.reason ?? null,
+        diffData: entry.diffData,
+      }),
+    )).catch((eventWriteError) => {
+      logPricingWorksheetIntelligenceFailure(params[0]?.eventType ?? "worksheet_ai_review_generated", eventWriteError);
+    });
+  }, [
+    session?.organizationId,
+    sharedOpportunity.opportunityId,
+    supabase,
+    worksheet.sheetName,
+    worksheetId,
+    worksheetName,
+    worksheetTradePackage,
+  ]);
+
+  const logAiReviewIntelligenceEvent = useCallback((params: {
+    eventType:
+      | "worksheet_ai_review_generated"
+      | "worksheet_ai_followup_submitted"
+      | "worksheet_ai_finding_accepted"
+      | "worksheet_ai_finding_rejected"
+      | "worksheet_ai_finding_invalidated"
+      | "worksheet_ai_finding_revised"
+      | "worksheet_ai_finding_confirmed"
+      | "worksheet_ai_suggested_edit_applied";
+    action: "reviewed" | "revised" | "accepted" | "rejected" | "invalidated" | "confirmed" | "applied";
+    reason?: string | null;
+    diffData?: Record<string, Json | null>;
+  }) => {
+    logAiReviewIntelligenceEvents([params]);
+  }, [logAiReviewIntelligenceEvents]);
 
   const selectedRange = useMemo(
     () =>
@@ -329,6 +1237,178 @@ export function OpportunityPricingWorksheetBoard() {
     activeCellKey === formulaBarCellKey
       ? editingCellValue
       : getRawCellInput(formulaBarCell);
+  const worksheetDisplayName =
+    worksheetName?.trim() || worksheet.sheetName.trim() || "Pricing Worksheet";
+  const selectedNumberFormat = getCellFormat(worksheet.cells[selectedWorksheetCellKey]).number;
+  const selectedNumberFormatKind = selectedNumberFormat?.kind ?? "general";
+  const selectedNegativeStyle = selectedNumberFormat?.negativeStyle ?? "minus";
+
+  const resetAiPreviewState = useCallback(() => {
+    setAiPreviewResponse(null);
+    setAiPreviewError(null);
+    setIsGeneratingAiPreview(false);
+    setIsSubmittingAiReview(false);
+    setIsSubmittingAiFollowUp(false);
+    setAiFindingStates({});
+    setAiAppliedSuggestedEditGroupIds([]);
+    setAiFollowUpPrompt("");
+  }, []);
+
+  const openAiDialog = useCallback(() => {
+    setAiPreviewError(null);
+    setAiPreviewResponse(null);
+    setAiPrompt("");
+    setAiPreviewWorksheetName(worksheetDisplayName);
+    setAiPreviewTradePackage(worksheetTradePackage ?? "");
+    setAiFindingStates({});
+    setAiAppliedSuggestedEditGroupIds([]);
+    setAiFollowUpPrompt("");
+    setIsAiDialogOpen(true);
+  }, [worksheetDisplayName, worksheetTradePackage]);
+
+  const handleAiDialogOpenChange = useCallback((nextOpen: boolean) => {
+    if (isGeneratingAiPreview || isSubmittingAiReview) {
+      return;
+    }
+
+    if (!nextOpen) {
+      resetAiPreviewState();
+    }
+
+    setIsAiDialogOpen(nextOpen);
+  }, [isGeneratingAiPreview, isSubmittingAiReview, resetAiPreviewState]);
+
+  const confirmDiscardUnsavedChanges = useCallback(() => {
+    if (!isDirty) {
+      return true;
+    }
+
+    return window.confirm(
+      "You have unsaved pricing worksheet changes. Leave this page and discard those local edits?"
+    );
+  }, [isDirty]);
+
+  const handleAiPromptChange = useCallback((value: string) => {
+    setAiPrompt(value);
+    setAiPreviewResponse(null);
+    setAiPreviewError(null);
+  }, []);
+
+  const handleAiPreviewWorksheetNameChange = useCallback((event: ChangeEvent<HTMLInputElement> | string) => {
+    setAiPreviewWorksheetName(typeof event === "string" ? event : event.target.value);
+  }, []);
+
+  const handleAiPreviewTradePackageChange = useCallback((event: ChangeEvent<HTMLInputElement> | string) => {
+    setAiPreviewTradePackage(typeof event === "string" ? event : event.target.value);
+  }, []);
+
+  const buildAiFollowUpContext = useCallback((): PricingWorksheetAiFollowUpContext | null => {
+    if (!aiPreviewResponse?.preview.assistant) {
+      return null;
+    }
+
+    return {
+      previousReviewFindings: aiPreviewResponse.preview.assistant.reviewFindings ?? [],
+      previousReviewSummary: aiPreviewResponse.preview.assistant.reviewSummary ?? null,
+      previousSuggestedEditGroups: aiPreviewResponse.preview.assistant.suggestedEditGroups ?? [],
+      acceptedFindingIds: Object.entries(aiFindingStates)
+        .filter(([, disposition]) => disposition === "accepted")
+        .map(([findingId]) => findingId),
+      rejectedFindingIds: Object.entries(aiFindingStates)
+        .filter(([, disposition]) => disposition === "rejected")
+        .map(([findingId]) => findingId),
+      appliedEditGroupIds: aiAppliedSuggestedEditGroupIds,
+      userCorrection: aiFollowUpPrompt.trim() || null,
+    };
+  }, [aiAppliedSuggestedEditGroupIds, aiFindingStates, aiFollowUpPrompt, aiPreviewResponse]);
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
+
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!isDirty || event.defaultPrevented) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+
+      if (
+        anchor.target === "_blank" ||
+        anchor.hasAttribute("download") ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const href = anchor.href;
+      if (!href || href === window.location.href) {
+        return;
+      }
+
+      if (!confirmDiscardUnsavedChanges()) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, [confirmDiscardUnsavedChanges, isDirty]);
+
+  useEffect(() => {
+    if (onDirtyStateChange) {
+      return;
+    }
+
+    const handlePopState = () => {
+      const previousHref = locationHrefRef.current || window.location.href;
+      const nextHref = window.location.href;
+      locationHrefRef.current = nextHref;
+
+      if (!isDirty) {
+        return;
+      }
+
+      if (confirmDiscardUnsavedChanges()) {
+        return;
+      }
+
+      window.history.pushState(window.history.state, "", previousHref);
+      locationHrefRef.current = previousHref;
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [confirmDiscardUnsavedChanges, isDirty, onDirtyStateChange]);
 
   const effectiveColumns = useMemo(
     () =>
@@ -354,15 +1434,95 @@ export function OpportunityPricingWorksheetBoard() {
     [resizingRowId, rowResizePreviewHeight, worksheet.rows]
   );
 
-  const gridTemplateColumns = useMemo(
-    () => `64px ${effectiveColumns.map((column) => `${column.width}px`).join(" ")}`,
-    [effectiveColumns]
+  const columnOffsets = useMemo(() => getColumnOffsets(effectiveColumns), [effectiveColumns]);
+
+  const virtualColumns = useMemo(
+    () =>
+      getColumnVirtualizationWindow(
+        effectiveColumns,
+        columnOffsets,
+        worksheetViewportScrollLeft,
+        Math.max(0, worksheetViewportWidth - WORKSHEET_ROW_GUTTER_WIDTH),
+        WORKSHEET_COLUMN_OVERSCAN
+      ),
+    [columnOffsets, effectiveColumns, worksheetViewportScrollLeft, worksheetViewportWidth]
+  );
+
+  const virtualGridTemplateColumns = useMemo(
+    () =>
+      [
+        `${WORKSHEET_ROW_GUTTER_WIDTH}px`,
+        `${virtualColumns.leftSpacerWidth}px`,
+        ...virtualColumns.visibleColumns.map((column) => `${column.width}px`),
+        `${virtualColumns.rightSpacerWidth}px`,
+      ].join(" "),
+    [virtualColumns.leftSpacerWidth, virtualColumns.rightSpacerWidth, virtualColumns.visibleColumns]
   );
 
   const fillPreview = useMemo(
     () => getFillPreview(worksheet, fillSourceRange, fillPreviewFocusCellKey),
     [fillPreviewFocusCellKey, fillSourceRange, worksheet]
   );
+
+  const rowOffsets = useMemo(() => getRowOffsets(effectiveRows), [effectiveRows]);
+
+  const virtualRows = useMemo(
+    () =>
+      getRowVirtualizationWindow(
+        effectiveRows,
+        rowOffsets,
+        worksheetViewportScrollTop,
+        worksheetViewportHeight,
+      WORKSHEET_ROW_OVERSCAN
+    ),
+    [effectiveRows, rowOffsets, worksheetViewportHeight, worksheetViewportScrollTop]
+  );
+
+  const visibleRowCells = useMemo(() => {
+    return new Map(
+      virtualRows.virtualRows.map(({ row }) => [
+        row.id,
+        virtualColumns.visibleColumns.map((column) => worksheet.cells[buildWorksheetCellKey(column.id, row.id)]),
+      ])
+    );
+  }, [virtualColumns.visibleColumns, virtualRows.virtualRows, worksheet.cells]);
+
+  useEffect(() => {
+    if (isLoadingWorksheet) {
+      return;
+    }
+
+    const scopeKey = `${session?.organizationId ?? "unknown"}:${sharedOpportunity.opportunityId}:${explicitWorksheetId ?? "legacy"}`;
+    if (firstGridRenderScopeKeyRef.current === scopeKey) {
+      return;
+    }
+
+    firstGridRenderScopeKeyRef.current = scopeKey;
+    markPricingWorksheetPerformance("first-grid-render", {
+      scopeKey,
+      worksheetId: explicitWorksheetId ?? worksheetId ?? "legacy",
+      virtualRowCount: virtualRows.virtualRows.length,
+      virtualColumnCount: virtualColumns.visibleColumns.length,
+      totalRowCount: worksheet.rows.length,
+      columnCount: worksheet.columns.length,
+      cellCount: Object.keys(worksheet.cells).length,
+      viewportHeight: worksheetViewportHeight,
+      viewportWidth: worksheetViewportWidth,
+    });
+  }, [
+    explicitWorksheetId,
+    isLoadingWorksheet,
+    session?.organizationId,
+    sharedOpportunity.opportunityId,
+    virtualColumns.visibleColumns.length,
+    virtualRows.virtualRows.length,
+    worksheet.cells,
+    worksheet.columns.length,
+    worksheet.rows.length,
+    worksheetId,
+    worksheetViewportHeight,
+    worksheetViewportWidth,
+  ]);
 
   useEffect(() => {
     worksheetRef.current = worksheet;
@@ -385,6 +1545,137 @@ export function OpportunityPricingWorksheetBoard() {
   }, [fillPreviewFocusCellKey]);
 
   useEffect(() => {
+    editingCellValueRef.current = editingCellValue;
+  }, [editingCellValue]);
+
+  useEffect(() => {
+    const clearSelectionDragRefs = () => {
+      if (
+        !isDraggingSelectionRef.current &&
+        !rangeDragAnchorCellKeyRef.current &&
+        !formulaReferenceDragAnchorCellKeyRef.current
+      ) {
+        return;
+      }
+
+      isDraggingSelectionRef.current = false;
+      rangeDragAnchorCellKeyRef.current = null;
+      formulaReferenceDragAnchorCellKeyRef.current = null;
+      formulaReferenceDragBaseValueRef.current = null;
+      setIsDraggingSelection(false);
+    };
+
+    window.addEventListener("mouseup", clearSelectionDragRefs);
+    return () => {
+      window.removeEventListener("mouseup", clearSelectionDragRefs);
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewport = worksheetViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const measureViewport = () => {
+      setWorksheetViewportHeight(viewport.clientHeight || WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
+      setWorksheetViewportWidth(viewport.clientWidth || WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
+      setWorksheetViewportScrollLeft(viewport.scrollLeft);
+      setWorksheetViewportScrollTop(viewport.scrollTop);
+    };
+
+    measureViewport();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            measureViewport();
+          });
+    resizeObserver?.observe(viewport);
+    window.addEventListener("resize", measureViewport);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureViewport);
+    };
+  }, [isLoadingWorksheet]);
+
+  useEffect(() => {
+    const viewport = worksheetViewportRef.current;
+    const focusCellKey = selectionFocusCellKey ?? selectionAnchorCellKey;
+    if (!viewport || !focusCellKey || activeCellKey) {
+      return;
+    }
+
+    const position = getCellPosition(worksheet, focusCellKey);
+    if (!position) {
+      return;
+    }
+
+    const rowTop = rowOffsets[position.rowIndex] ?? 0;
+    const rowBottom = rowOffsets[position.rowIndex + 1] ?? rowTop;
+    const viewportTop = viewport.scrollTop;
+    const viewportBottom = viewportTop + viewport.clientHeight;
+    const viewportLeft = viewport.scrollLeft;
+    const effectiveViewportWidth = Math.max(0, viewport.clientWidth - WORKSHEET_ROW_GUTTER_WIDTH);
+    const viewportRight = viewportLeft + effectiveViewportWidth;
+    const columnLeft = columnOffsets[position.columnIndex] ?? 0;
+    const columnRight = columnOffsets[position.columnIndex + 1] ?? columnLeft;
+
+    if (rowTop < viewportTop) {
+      viewport.scrollTop = rowTop;
+      setWorksheetViewportScrollTop(rowTop);
+    } else if (rowBottom > viewportBottom) {
+      const nextScrollTop = Math.max(0, rowBottom - viewport.clientHeight);
+      viewport.scrollTop = nextScrollTop;
+      setWorksheetViewportScrollTop(nextScrollTop);
+    }
+
+    if (columnLeft < viewportLeft) {
+      viewport.scrollLeft = columnLeft;
+      setWorksheetViewportScrollLeft(columnLeft);
+      return;
+    }
+
+    if (columnRight > viewportRight) {
+      const nextScrollLeft = Math.max(0, columnRight - effectiveViewportWidth);
+      viewport.scrollLeft = nextScrollLeft;
+      setWorksheetViewportScrollLeft(nextScrollLeft);
+    }
+  }, [
+    activeCellKey,
+    columnOffsets,
+    rowOffsets,
+    selectionAnchorCellKey,
+    selectionFocusCellKey,
+    worksheet,
+  ]);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const closeMenu = () => {
+      setContextMenu(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    };
+
+    window.addEventListener("mousedown", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
     if (isAuthLoading) {
       return;
     }
@@ -395,12 +1686,17 @@ export function OpportunityPricingWorksheetBoard() {
       return;
     }
 
-    const scopeKey = `${session.organizationId}:${sharedOpportunity.opportunityId}`;
+    const scopeKey = `${session.organizationId}:${sharedOpportunity.opportunityId}:${explicitWorksheetId ?? "legacy"}`;
+    activeWorksheetLoadScopeKeyRef.current = scopeKey;
     if (loadedWorksheetScopeKeyRef.current === scopeKey) {
+      setIsLoadingWorksheet(false);
+      setError(null);
       return;
     }
 
-    let cancelled = false;
+    if (loadingWorksheetScopeKeyRef.current === scopeKey) {
+      return;
+    }
 
     const loadWorksheet = async () => {
       const organizationId = session.organizationId;
@@ -412,25 +1708,67 @@ export function OpportunityPricingWorksheetBoard() {
       setError(null);
 
       try {
-        const { data, error: loadError } = await supabase
+        loadingWorksheetScopeKeyRef.current = scopeKey;
+        countPricingWorksheetPerformance("worksheet-query-count", {
+          scopeKey,
+          worksheetId: explicitWorksheetId ?? "legacy",
+        });
+        const endSupabaseQueryMeasure = startPricingWorksheetPerformanceMeasure(
+          "worksheet-supabase-query",
+          {
+            scopeKey,
+            worksheetId: explicitWorksheetId ?? "legacy",
+          }
+        );
+        const loadQuery = supabase
           .from("opportunity_pricing_worksheets")
-          .select("*")
+          .select(
+            "id, name, trade_package, worksheet_data, pricing_summary, extracted_pricing_data, version, updated_at, updated_by"
+          )
           .eq("organization_id", organizationId)
-          .eq("opportunity_id", sharedOpportunity.opportunityId)
-          .maybeSingle();
+          .eq("opportunity_id", sharedOpportunity.opportunityId);
+
+        const { data, error: loadError } = explicitWorksheetId
+          ? await loadQuery.eq("id", explicitWorksheetId).single()
+          : await loadQuery.maybeSingle();
+        endSupabaseQueryMeasure({
+          foundWorksheet: Boolean(data),
+          hasError: Boolean(loadError),
+        });
 
         if (loadError) {
           throw new Error(loadError.message);
         }
 
-        if (cancelled) {
+        if (
+          !isWorksheetBoardMountedRef.current ||
+          activeWorksheetLoadScopeKeyRef.current !== scopeKey
+        ) {
           return;
         }
 
         const worksheetRow = data as PricingWorksheetRow | null;
         if (!worksheetRow) {
+          if (explicitWorksheetId) {
+            throw new Error("Pricing worksheet not found.");
+          }
+
+          const endFormulaMeasure = startPricingWorksheetPerformanceMeasure(
+            "recalculateWorksheetFormulas",
+            {
+              scopeKey,
+              worksheetId: "blank",
+            }
+          );
           const blankWorksheet = recalculateWorksheetFormulas(createDefaultWorksheetData());
+          endFormulaMeasure({
+            cellCount: Object.keys(blankWorksheet.cells).length,
+            rowCount: blankWorksheet.rows.length,
+            columnCount: blankWorksheet.columns.length,
+          });
           setWorksheetId(null);
+          setWorksheetName(null);
+          setWorksheetTradePackage(null);
           setWorksheet(blankWorksheet);
           worksheetRef.current = blankWorksheet;
           loadedWorksheetScopeKeyRef.current = scopeKey;
@@ -449,9 +1787,34 @@ export function OpportunityPricingWorksheetBoard() {
         }
 
         setWorksheetId(worksheetRow.id);
-        const loadedWorksheet = recalculateWorksheetFormulas(
-          normalizeWorksheetData(worksheetRow.worksheet_data)
+        setWorksheetName(worksheetRow.name);
+        setWorksheetTradePackage(typeof worksheetRow.trade_package === "string" ? worksheetRow.trade_package : null);
+        const endNormalizeMeasure = startPricingWorksheetPerformanceMeasure(
+          "normalizeWorksheetData",
+          {
+            scopeKey,
+            worksheetId: worksheetRow.id,
+          }
         );
+        const normalizedWorksheet = normalizeWorksheetData(worksheetRow.worksheet_data);
+        endNormalizeMeasure({
+          cellCount: Object.keys(normalizedWorksheet.cells).length,
+          rowCount: normalizedWorksheet.rows.length,
+          columnCount: normalizedWorksheet.columns.length,
+        });
+        const endFormulaMeasure = startPricingWorksheetPerformanceMeasure(
+          "recalculateWorksheetFormulas",
+          {
+            scopeKey,
+            worksheetId: worksheetRow.id,
+          }
+        );
+        const loadedWorksheet = recalculateWorksheetFormulas(normalizedWorksheet);
+        endFormulaMeasure({
+          cellCount: Object.keys(loadedWorksheet.cells).length,
+          rowCount: loadedWorksheet.rows.length,
+          columnCount: loadedWorksheet.columns.length,
+        });
         setWorksheet(loadedWorksheet);
         worksheetRef.current = loadedWorksheet;
         loadedWorksheetScopeKeyRef.current = scopeKey;
@@ -473,7 +1836,10 @@ export function OpportunityPricingWorksheetBoard() {
         setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
         setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
       } catch (loadWorksheetError) {
-        if (!cancelled) {
+        if (
+          isWorksheetBoardMountedRef.current &&
+          activeWorksheetLoadScopeKeyRef.current === scopeKey
+        ) {
           setError(
             loadWorksheetError instanceof Error
               ? loadWorksheetError.message
@@ -481,65 +1847,120 @@ export function OpportunityPricingWorksheetBoard() {
           );
         }
       } finally {
-        if (!cancelled) {
+        if (loadingWorksheetScopeKeyRef.current === scopeKey) {
+          loadingWorksheetScopeKeyRef.current = null;
+        }
+
+        if (
+          isWorksheetBoardMountedRef.current &&
+          activeWorksheetLoadScopeKeyRef.current === scopeKey
+        ) {
           setIsLoadingWorksheet(false);
         }
       }
     };
 
     void loadWorksheet();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthLoading, session?.organizationId, sharedOpportunity.opportunityId, supabase]);
+  }, [explicitWorksheetId, isAuthLoading, session?.organizationId, sharedOpportunity.opportunityId, supabase]);
 
   const applyCommittedWorksheetChange = useCallback((
-    mutator: (current: WorksheetData) => WorksheetData
+    mutator: (current: WorksheetData) => WorksheetData,
+    options?: { recalculateFormulas?: boolean; validateFormulaOutputs?: boolean }
   ) => {
-    const previousWorksheet = cloneWorksheetData(worksheetRef.current);
-    const nextWorksheet = recalculateWorksheetFormulas(
-      mutator(cloneWorksheetData(worksheetRef.current))
-    );
-
-    worksheetRef.current = nextWorksheet;
-    setWorksheet(nextWorksheet);
-    setHistoryPast((current) => {
-      const nextHistory = [...current, previousWorksheet];
-      return nextHistory.length > WORKSHEET_HISTORY_LIMIT
-        ? nextHistory.slice(nextHistory.length - WORKSHEET_HISTORY_LIMIT)
-        : nextHistory;
+    const endMutationMeasure = startPricingWorksheetPerformanceMeasure("committed-change", {
+      recalculateFormulas: options?.recalculateFormulas !== false,
+      validateFormulaOutputs: options?.validateFormulaOutputs === true,
+      worksheetId: explicitWorksheetId ?? worksheetId ?? "legacy",
     });
-    setHistoryFuture([]);
+    const mutationResult = applyWorksheetMutation(worksheetRef.current, mutator, {
+      recalculateFormulas: options?.recalculateFormulas,
+      validateFormulaOutputs: options?.validateFormulaOutputs,
+    });
+
+    if (!mutationResult.validation.ok) {
+      endMutationMeasure({
+        changed: mutationResult.changed,
+        committed: false,
+        formulaErrorCount: mutationResult.formulaErrors.length,
+      });
+      setError(mutationResult.validation.message);
+      setMessage(null);
+      return {
+        committed: false,
+        changed: mutationResult.changed,
+        message: mutationResult.validation.message,
+      } satisfies WorksheetCommitResult;
+    }
+
+    if (!mutationResult.changed) {
+      endMutationMeasure({
+        changed: false,
+        committed: true,
+        formulaErrorCount: 0,
+      });
+      return {
+        committed: true,
+        changed: false,
+        worksheet: mutationResult.nextWorksheet,
+      } satisfies WorksheetCommitResult;
+    }
+
+    const nextHistory = commitWorksheetHistoryEntry({
+      changed: true,
+      future: historyFutureRef.current,
+      historyLimit: WORKSHEET_HISTORY_LIMIT,
+      past: historyPastRef.current,
+      previousWorksheet: mutationResult.previousWorksheet,
+    });
+
+    historyPastRef.current = nextHistory.past;
+    historyFutureRef.current = nextHistory.future;
+    worksheetRef.current = mutationResult.nextWorksheet;
+    setWorksheet(mutationResult.nextWorksheet);
+    setHistoryPast(nextHistory.past);
+    setHistoryFuture(nextHistory.future);
     setIsDirty(true);
     setError(null);
     setMessage(null);
-  }, []);
+    endMutationMeasure({
+      changed: true,
+      committed: true,
+      formulaErrorCount: 0,
+      historyPastLength: nextHistory.past.length,
+    });
+    return {
+      committed: true,
+      changed: true,
+      worksheet: mutationResult.nextWorksheet,
+    } satisfies WorksheetCommitResult;
+  }, [explicitWorksheetId, worksheetId]);
 
-  const updateCell = (cellKey: string, nextValue: string) => {
-    applyCommittedWorksheetChange((current) => {
+  const updateCell = useCallback((cellKey: string, nextValue: string) => {
+    if (isCellCommitNoOp(worksheetRef.current.cells[cellKey], nextValue)) {
+      return {
+        committed: true,
+        changed: false,
+        worksheet: worksheetRef.current,
+      } satisfies WorksheetCommitResult;
+    }
+
+    return applyCommittedWorksheetChange((current) => {
       const nextCells = { ...current.cells };
       const existingCell = current.cells[cellKey];
-      const normalizedCell = normalizeWorksheetCell(nextValue);
+      const nextCell = buildNextCommittedCell(existingCell, nextValue);
 
-      if (normalizedCell.type === "empty") {
-        if (hasCellFormatting(existingCell)) {
-          nextCells[cellKey] = {
-            ...normalizedCell,
-            metadata: {
-              ...existingCell?.metadata,
-            },
-          };
-        } else {
-          delete nextCells[cellKey];
+      if (nextCell === null) {
+        if (!existingCell) {
+          return current;
         }
+
+        delete nextCells[cellKey];
       } else {
-        nextCells[cellKey] = {
-          ...normalizedCell,
-          metadata: {
-            ...(existingCell?.metadata ?? {}),
-          },
-        };
+        if (areWorksheetCellsEquivalent(existingCell, nextCell)) {
+          return current;
+        }
+
+        nextCells[cellKey] = nextCell;
       }
 
       return {
@@ -547,15 +1968,43 @@ export function OpportunityPricingWorksheetBoard() {
         cells: nextCells,
       };
     });
-  };
+  }, [applyCommittedWorksheetChange]);
 
-  const focusWorksheetSurface = () => {
-    requestAnimationFrame(() => {
+  const focusWorksheetSurface = useCallback((options?: { immediate?: boolean }) => {
+    const focus = () => {
       worksheetSurfaceRef.current?.focus();
-    });
-  };
+    };
 
-  const focusFormulaBar = (options?: { selectAll?: boolean }) => {
+    if (options?.immediate) {
+      focus();
+      return;
+    }
+
+    requestAnimationFrame(focus);
+  }, []);
+
+  const restoreWorksheetSnapshot = useCallback((
+    restoredWorksheet: WorksheetData,
+    nextPast: WorksheetData[],
+    nextFuture: WorksheetData[],
+  ) => {
+    historyPastRef.current = nextPast;
+    historyFutureRef.current = nextFuture;
+    worksheetRef.current = restoredWorksheet;
+
+    setHistoryPast(nextPast);
+    setHistoryFuture(nextFuture);
+    setWorksheet(restoredWorksheet);
+    setIsDirty(true);
+    setError(null);
+    setMessage(null);
+    setActiveCellKey(null);
+    setActiveEditor(null);
+    setEditingCellValue("");
+    focusWorksheetSurface();
+  }, [focusWorksheetSurface]);
+
+  const focusFormulaBar = useCallback((options?: { selectAll?: boolean }) => {
     requestAnimationFrame(() => {
       const input = formulaBarRef.current;
       if (!input) {
@@ -571,9 +2020,9 @@ export function OpportunityPricingWorksheetBoard() {
         input.setSelectionRange(end, end);
       }
     });
-  };
+  }, []);
 
-  const focusInputCell = (cellKey: string | null, options?: { selectAll?: boolean }) => {
+  const focusInputCell = useCallback((cellKey: string | null, options?: { selectAll?: boolean }) => {
     if (!cellKey) {
       return;
     }
@@ -594,9 +2043,9 @@ export function OpportunityPricingWorksheetBoard() {
 
       input.select();
     });
-  };
+  }, []);
 
-  const getAdjacentCellKey = (
+  const getAdjacentCellKey = useCallback((
     cellKey: string,
     movement: { columnDelta?: number; rowDelta?: number }
   ) => {
@@ -621,7 +2070,7 @@ export function OpportunityPricingWorksheetBoard() {
     }
 
     return buildWorksheetCellKey(nextColumn.id, nextRow.id);
-  };
+  }, [worksheet.columns, worksheet.rows]);
 
   const isFormulaEditing =
     activeCellKey !== null && editingCellValue.trim().startsWith("=");
@@ -664,15 +2113,28 @@ export function OpportunityPricingWorksheetBoard() {
     focusInputCell(cellKey);
   };
 
-  const commitCellEdit = (cellKey: string, nextValue: string, nextSelectedCellKey?: string | null) => {
-    updateCell(cellKey, nextValue);
+  const commitCellEdit = useCallback((cellKey: string, nextValue: string, nextSelectedCellKey?: string | null) => {
+    if (formulaBarRef.current === document.activeElement) {
+      suppressFormulaBarBlurCommitRef.current = true;
+      formulaBarRef.current.blur();
+    }
+
+    const activeInput = inputRefs.current[cellKey];
+    if (activeInput === document.activeElement) {
+      suppressBlurCommitCellKeyRef.current = cellKey;
+      activeInput.blur();
+    }
+
+    if (!isCellCommitNoOp(worksheetRef.current.cells[cellKey], nextValue)) {
+      updateCell(cellKey, nextValue);
+    }
     setActiveCellKey((current) => (current === cellKey ? null : current));
     setActiveEditor(null);
     setEditingCellValue("");
     setSelectionAnchorCellKey(nextSelectedCellKey ?? cellKey);
     setSelectionFocusCellKey(nextSelectedCellKey ?? cellKey);
-    focusWorksheetSurface();
-  };
+    focusWorksheetSurface({ immediate: true });
+  }, [focusWorksheetSurface, updateCell]);
 
   const handleWorksheetPaste = (event: ReactClipboardEvent<HTMLElement>) => {
     if (!canWriteWorksheet) {
@@ -743,15 +2205,20 @@ export function OpportunityPricingWorksheetBoard() {
     focusWorksheetSurface();
   };
 
-  const appendCellReferenceToFormula = (cellReference: string) => {
+  const appendCellReferenceToFormula = useCallback((cellReference: string) => {
     if (!isFormulaReferenceMode || !activeCellKey) {
       return;
     }
 
     handledFormulaReferenceMouseDownRef.current = true;
     didDragSelectionRef.current = false;
-    setIsDraggingSelection(false);
-    setEditingCellValue((current) => `${current}${cellReference}`);
+    isDraggingSelectionRef.current = true;
+    rangeDragAnchorCellKeyRef.current = cellReference;
+    formulaReferenceDragAnchorCellKeyRef.current = cellReference;
+    formulaReferenceDragBaseValueRef.current = editingCellValueRef.current;
+    setIsDraggingSelection(true);
+    setEditingCellValue(`${editingCellValueRef.current}${cellReference}`);
+    setSelectionAnchorCellKey(cellReference);
     setSelectionFocusCellKey(cellReference);
 
     if (activeEditor === "formulaBar") {
@@ -760,7 +2227,13 @@ export function OpportunityPricingWorksheetBoard() {
     }
 
     focusInputCell(activeCellKey, { selectAll: false });
-  };
+  }, [
+    activeCellKey,
+    activeEditor,
+    focusFormulaBar,
+    focusInputCell,
+    isFormulaReferenceMode,
+  ]);
 
   const handleCellBlur = (cellKey: string) => {
     if (suppressBlurCommitCellKeyRef.current === cellKey) {
@@ -806,8 +2279,90 @@ export function OpportunityPricingWorksheetBoard() {
       return;
     }
 
+    if (applyFormattingToRange(worksheetRef.current, selectedRange, patch) === worksheetRef.current) {
+      return;
+    }
+
     commitActiveEditIfNeeded();
-    applyCommittedWorksheetChange((current) => applyFormattingToRange(current, selectedRange, patch));
+    applyCommittedWorksheetChange(
+      (current) => applyFormattingToRange(current, selectedRange, patch),
+      { recalculateFormulas: false }
+    );
+  };
+
+  const applyNumberFormatKindToSelection = (kind: WorksheetNumberFormatKind) => {
+    applyFormattingPatchToSelection((format) => {
+      const currentNumberFormat = format.number ?? {};
+      const decimalPlaces =
+        kind === "general"
+          ? undefined
+          : typeof currentNumberFormat.decimalPlaces === "number"
+          ? currentNumberFormat.decimalPlaces
+          : getDefaultDecimalPlaces(kind);
+
+      return {
+        ...format,
+        number: {
+          ...currentNumberFormat,
+          kind,
+          decimalPlaces,
+          negativeStyle: currentNumberFormat.negativeStyle ?? "minus",
+          currencyCode: kind === "currency" ? "NZD" : currentNumberFormat.currencyCode,
+          useGrouping: kind === "general" ? false : currentNumberFormat.useGrouping ?? true,
+        },
+      };
+    });
+  };
+
+  const adjustNumberDecimalPlacesForSelection = (direction: "decrease" | "increase") => {
+    applyFormattingPatchToSelection((format) => {
+      const currentNumberFormat = format.number ?? {};
+      const kind = currentNumberFormat.kind ?? "number";
+      const currentDecimalPlaces =
+        typeof currentNumberFormat.decimalPlaces === "number"
+          ? currentNumberFormat.decimalPlaces
+          : getDefaultDecimalPlaces(kind);
+      const nextDecimalPlaces = clampNumberDecimalPlaces(
+        currentDecimalPlaces + (direction === "increase" ? 1 : -1)
+      );
+
+      return {
+        ...format,
+        number: {
+          ...currentNumberFormat,
+          kind,
+          decimalPlaces: nextDecimalPlaces,
+          negativeStyle: currentNumberFormat.negativeStyle ?? "minus",
+          currencyCode: kind === "currency" ? "NZD" : currentNumberFormat.currencyCode,
+          useGrouping: kind === "general" ? false : currentNumberFormat.useGrouping ?? true,
+        },
+      };
+    });
+  };
+
+  const applyNegativeNumberStyleToSelection = (negativeStyle: WorksheetNegativeNumberStyle) => {
+    applyFormattingPatchToSelection((format) => {
+      const currentNumberFormat = format.number ?? {};
+      const kind = currentNumberFormat.kind ?? "number";
+      return {
+        ...format,
+        number: {
+          ...currentNumberFormat,
+          kind,
+          decimalPlaces:
+            typeof currentNumberFormat.decimalPlaces === "number"
+              ? currentNumberFormat.decimalPlaces
+              : getDefaultDecimalPlaces(kind),
+          negativeStyle,
+          currencyCode: kind === "currency" ? "NZD" : currentNumberFormat.currencyCode,
+          useGrouping: kind === "general" ? false : currentNumberFormat.useGrouping ?? true,
+        },
+      };
+    });
+  };
+
+  const clearNumberFormatForSelection = () => {
+    applyFormattingPatchToSelection((format) => clearCellNumberFormat(format));
   };
 
   const applyBorderModeToSelection = (mode: "all" | "outer" | "clear") => {
@@ -815,11 +2370,410 @@ export function OpportunityPricingWorksheetBoard() {
       return;
     }
 
+    if (applyBordersToRange(worksheetRef.current, selectedRange, mode) === worksheetRef.current) {
+      return;
+    }
+
     commitActiveEditIfNeeded();
-    applyCommittedWorksheetChange((current) => applyBordersToRange(current, selectedRange, mode));
+    applyCommittedWorksheetChange(
+      (current) => applyBordersToRange(current, selectedRange, mode),
+      { recalculateFormulas: false }
+    );
   };
 
-  const selectSingleCell = (cellKey: string) => {
+  const clearContentsInRange = (range: WorksheetSelectionRange) => {
+    commitActiveEditIfNeeded();
+    applyCommittedWorksheetChange((current) => {
+      const nextCells = { ...current.cells };
+
+      for (
+        let rowIndex = range.startRowIndex;
+        rowIndex <= range.endRowIndex;
+        rowIndex += 1
+      ) {
+        for (
+          let columnIndex = range.startColumnIndex;
+          columnIndex <= range.endColumnIndex;
+          columnIndex += 1
+        ) {
+          const row = current.rows[rowIndex];
+          const column = current.columns[columnIndex];
+
+          if (!row || !column) {
+            continue;
+          }
+
+          const cellKey = buildWorksheetCellKey(column.id, row.id);
+          const existingCell = current.cells[cellKey];
+          if (hasCellFormatting(existingCell)) {
+            nextCells[cellKey] = {
+              value: null,
+              type: "empty",
+              formula: null,
+              computedValue: null,
+              displayValue: "",
+              metadata: {
+                ...(existingCell?.metadata ?? {}),
+              },
+            };
+          } else {
+            delete nextCells[cellKey];
+          }
+        }
+      }
+
+      return {
+        ...current,
+        cells: nextCells,
+      };
+    });
+  };
+
+  const getRowRange = (rowIndex: number): WorksheetSelectionRange => ({
+    startRowIndex: rowIndex,
+    endRowIndex: rowIndex,
+    startColumnIndex: 0,
+    endColumnIndex: Math.max(0, worksheetRef.current.columnCount - 1),
+  });
+
+  const getColumnRange = (columnIndex: number): WorksheetSelectionRange => ({
+    startRowIndex: 0,
+    endRowIndex: Math.max(0, worksheetRef.current.rowCount - 1),
+    startColumnIndex: columnIndex,
+    endColumnIndex: columnIndex,
+  });
+
+  const selectRange = (range: WorksheetSelectionRange) => {
+    const currentWorksheet = worksheetRef.current;
+    const anchorColumn = currentWorksheet.columns[range.startColumnIndex];
+    const anchorRow = currentWorksheet.rows[range.startRowIndex];
+    const focusColumn = currentWorksheet.columns[range.endColumnIndex];
+    const focusRow = currentWorksheet.rows[range.endRowIndex];
+
+    if (!anchorColumn || !anchorRow || !focusColumn || !focusRow) {
+      return;
+    }
+
+    setSelectionAnchorCellKey(buildWorksheetCellKey(anchorColumn.id, anchorRow.id));
+    setSelectionFocusCellKey(buildWorksheetCellKey(focusColumn.id, focusRow.id));
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  const getStructuralEditAnchorPosition = () => {
+    const anchorCellKey =
+      selectionAnchorCellKey ??
+      selectionFocusCellKey ??
+      selectedWorksheetCellKey ??
+      buildWorksheetCellKey("A", "1");
+
+    return getCellPosition(worksheetRef.current, anchorCellKey) ?? {
+      columnIndex: 0,
+      rowIndex: 0,
+    };
+  };
+
+  const insertRowAtSelection = (position: "above" | "below") => {
+    if (!canWriteWorksheet) {
+      return;
+    }
+
+    commitActiveEditIfNeeded();
+    const anchorPosition = getStructuralEditAnchorPosition();
+    const insertRowIndex =
+      position === "above" ? anchorPosition.rowIndex : anchorPosition.rowIndex + 1;
+    insertRowAtIndex(insertRowIndex, anchorPosition.columnIndex);
+  };
+
+  const insertRowAtIndex = (insertRowIndex: number, columnIndex = 0) => {
+    const anchorColumn =
+      worksheetRef.current.columns[columnIndex] ??
+      worksheetRef.current.columns[0];
+
+    applyCommittedWorksheetChange((current) => insertWorksheetRow(current, insertRowIndex));
+
+    if (anchorColumn) {
+      const nextCellKey = buildWorksheetCellKey(anchorColumn.id, String(insertRowIndex + 1));
+      setSelectionAnchorCellKey(nextCellKey);
+      setSelectionFocusCellKey(nextCellKey);
+    }
+  };
+
+  const insertColumnAtSelection = (position: "left" | "right") => {
+    if (!canWriteWorksheet) {
+      return;
+    }
+
+    commitActiveEditIfNeeded();
+    const anchorPosition = getStructuralEditAnchorPosition();
+    const insertColumnIndex =
+      position === "left" ? anchorPosition.columnIndex : anchorPosition.columnIndex + 1;
+    insertColumnAtIndex(insertColumnIndex, anchorPosition.rowIndex);
+  };
+
+  const insertColumnAtIndex = (insertColumnIndex: number, rowIndex = 0) => {
+    const anchorRow =
+      worksheetRef.current.rows[rowIndex] ??
+      worksheetRef.current.rows[0];
+
+    applyCommittedWorksheetChange((current) => insertWorksheetColumn(current, insertColumnIndex));
+
+    if (anchorRow) {
+      const nextCellKey = buildWorksheetCellKey(columnLabelFromIndex(insertColumnIndex), anchorRow.id);
+      setSelectionAnchorCellKey(nextCellKey);
+      setSelectionFocusCellKey(nextCellKey);
+    }
+  };
+
+  const isFullRowRange = (range: WorksheetSelectionRange | null) =>
+    range !== null &&
+    range.startColumnIndex === 0 &&
+    range.endColumnIndex >= worksheetRef.current.columnCount - 1;
+
+  const isFullColumnRange = (range: WorksheetSelectionRange | null) =>
+    range !== null &&
+    range.startRowIndex === 0 &&
+    range.endRowIndex >= worksheetRef.current.rowCount - 1;
+
+  const getContextRowDeleteRange = (rowIndex: number) => {
+    if (
+      isFullRowRange(selectedRange) &&
+      selectedRange &&
+      rowIndex >= selectedRange.startRowIndex &&
+      rowIndex <= selectedRange.endRowIndex
+    ) {
+      return {
+        startRowIndex: selectedRange.startRowIndex,
+        endRowIndex: selectedRange.endRowIndex,
+      };
+    }
+
+    return {
+      startRowIndex: rowIndex,
+      endRowIndex: rowIndex,
+    };
+  };
+
+  const getContextColumnDeleteRange = (columnIndex: number) => {
+    if (
+      isFullColumnRange(selectedRange) &&
+      selectedRange &&
+      columnIndex >= selectedRange.startColumnIndex &&
+      columnIndex <= selectedRange.endColumnIndex
+    ) {
+      return {
+        startColumnIndex: selectedRange.startColumnIndex,
+        endColumnIndex: selectedRange.endColumnIndex,
+      };
+    }
+
+    return {
+      startColumnIndex: columnIndex,
+      endColumnIndex: columnIndex,
+    };
+  };
+
+  const canDeleteRowRange = (startRowIndex: number, endRowIndex: number) =>
+    canWriteWorksheet &&
+    worksheetRef.current.rowCount > 1 &&
+    endRowIndex - startRowIndex + 1 < worksheetRef.current.rowCount;
+
+  const canDeleteColumnRange = (startColumnIndex: number, endColumnIndex: number) =>
+    canWriteWorksheet &&
+    worksheetRef.current.columnCount > 1 &&
+    endColumnIndex - startColumnIndex + 1 < worksheetRef.current.columnCount;
+
+  const getRowDeleteLabel = (rowIndex: number) => {
+    const range = getContextRowDeleteRange(rowIndex);
+    return range.endRowIndex > range.startRowIndex ? "Delete selected rows" : "Delete row";
+  };
+
+  const getColumnDeleteLabel = (columnIndex: number) => {
+    const range = getContextColumnDeleteRange(columnIndex);
+    return range.endColumnIndex > range.startColumnIndex
+      ? "Delete selected columns"
+      : "Delete column";
+  };
+
+  const deleteRowsAtRange = (startRowIndex: number, endRowIndex: number) => {
+    if (!canDeleteRowRange(startRowIndex, endRowIndex)) {
+      return;
+    }
+
+    commitActiveEditIfNeeded();
+    const nextSelectedRowIndex = Math.max(
+      0,
+      Math.min(startRowIndex, worksheetRef.current.rowCount - (endRowIndex - startRowIndex + 1) - 1)
+    );
+    const anchorColumn = worksheetRef.current.columns[0];
+
+    applyCommittedWorksheetChange((current) =>
+      deleteWorksheetRows(current, startRowIndex, endRowIndex)
+    );
+
+    if (anchorColumn) {
+      const nextCellKey = buildWorksheetCellKey(anchorColumn.id, String(nextSelectedRowIndex + 1));
+      setSelectionAnchorCellKey(nextCellKey);
+      setSelectionFocusCellKey(nextCellKey);
+    }
+  };
+
+  const deleteColumnsAtRange = (startColumnIndex: number, endColumnIndex: number) => {
+    if (!canDeleteColumnRange(startColumnIndex, endColumnIndex)) {
+      return;
+    }
+
+    commitActiveEditIfNeeded();
+    const nextSelectedColumnIndex = Math.max(
+      0,
+      Math.min(
+        startColumnIndex,
+        worksheetRef.current.columnCount - (endColumnIndex - startColumnIndex + 1) - 1
+      )
+    );
+    const anchorRow = worksheetRef.current.rows[0];
+
+    applyCommittedWorksheetChange((current) =>
+      deleteWorksheetColumns(current, startColumnIndex, endColumnIndex)
+    );
+
+    if (anchorRow) {
+      const nextCellKey = buildWorksheetCellKey(columnLabelFromIndex(nextSelectedColumnIndex), anchorRow.id);
+      setSelectionAnchorCellKey(nextCellKey);
+      setSelectionFocusCellKey(nextCellKey);
+    }
+  };
+
+  const getContextMenuRange = (menu: WorksheetContextMenuState): WorksheetSelectionRange | null => {
+    if (!menu) {
+      return selectedRange;
+    }
+
+    if (menu.type === "row") {
+      return getRowRange(menu.rowIndex);
+    }
+
+    if (menu.type === "column") {
+      return getColumnRange(menu.columnIndex);
+    }
+
+    const position = getCellPosition(worksheetRef.current, menu.cellKey);
+    if (!position) {
+      return selectedRange;
+    }
+
+    if (isPositionInRange(position, selectedRange)) {
+      return selectedRange;
+    }
+
+    return {
+      startRowIndex: position.rowIndex,
+      endRowIndex: position.rowIndex,
+      startColumnIndex: position.columnIndex,
+      endColumnIndex: position.columnIndex,
+    };
+  };
+
+  const copyRangeToClipboard = async (range: WorksheetSelectionRange | null) => {
+    if (!range) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildWorksheetTsvFromRange(worksheetRef.current, range));
+    } catch {
+      setError("Unable to copy from the context menu. Use keyboard copy instead.");
+    }
+  };
+
+  const focusFormattingToolbar = () => {
+    formattingToolbarRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    formattingToolbarRef.current?.focus();
+  };
+
+  const openCellContextMenu = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    cellKey: string
+  ) => {
+    if (isFormulaReferenceMode || activeCellKey) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const position = getCellPosition(worksheetRef.current, cellKey);
+    if (!position) {
+      return;
+    }
+
+    if (!isPositionInRange(position, selectedRange)) {
+      setSelectionAnchorCellKey(cellKey);
+      setSelectionFocusCellKey(cellKey);
+    }
+
+    setContextMenu({
+      type: "cell",
+      x: event.clientX,
+      y: event.clientY,
+      cellKey,
+    });
+  };
+
+  const openRowContextMenu = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    rowIndex: number
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (
+      !isFullRowRange(selectedRange) ||
+      !selectedRange ||
+      rowIndex < selectedRange.startRowIndex ||
+      rowIndex > selectedRange.endRowIndex
+    ) {
+      selectRange(getRowRange(rowIndex));
+    }
+    setContextMenu({
+      type: "row",
+      x: event.clientX,
+      y: event.clientY,
+      rowIndex,
+    });
+  };
+
+  const openColumnContextMenu = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    columnIndex: number
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (
+      !isFullColumnRange(selectedRange) ||
+      !selectedRange ||
+      columnIndex < selectedRange.startColumnIndex ||
+      columnIndex > selectedRange.endColumnIndex
+    ) {
+      selectRange(getColumnRange(columnIndex));
+    }
+    setContextMenu({
+      type: "column",
+      x: event.clientX,
+      y: event.clientY,
+      columnIndex,
+    });
+  };
+
+  const runContextMenuAction = (action: () => void | Promise<void>) => {
+    closeContextMenu();
+    void action();
+  };
+
+  const selectSingleCell = useCallback((cellKey: string) => {
     if (isFormulaReferenceMode) {
       appendCellReferenceToFormula(cellKey);
       return;
@@ -829,23 +2783,49 @@ export function OpportunityPricingWorksheetBoard() {
     setSelectionFocusCellKey(cellKey);
     setIsDraggingSelection(false);
     focusWorksheetSurface();
-  };
+  }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode]);
 
-  const startRangeSelection = (cellKey: string) => {
+  const startRangeSelection = useCallback((cellKey: string) => {
     if (isFormulaReferenceMode) {
       appendCellReferenceToFormula(cellKey);
       return;
     }
 
+    isDraggingSelectionRef.current = true;
+    rangeDragAnchorCellKeyRef.current = cellKey;
+    formulaReferenceDragAnchorCellKeyRef.current = null;
+    formulaReferenceDragBaseValueRef.current = null;
+    didDragSelectionRef.current = false;
     setSelectionAnchorCellKey(cellKey);
     setSelectionFocusCellKey(cellKey);
     setIsDraggingSelection(true);
-    didDragSelectionRef.current = false;
     focusWorksheetSurface();
-  };
+  }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode]);
 
   const updateRangeSelection = (cellKey: string) => {
     if (isFormulaReferenceMode) {
+      const formulaReferenceAnchorCellKey = formulaReferenceDragAnchorCellKeyRef.current;
+      const formulaReferenceBaseValue = formulaReferenceDragBaseValueRef.current;
+      if (
+        !isDraggingSelectionRef.current ||
+        !formulaReferenceAnchorCellKey ||
+        formulaReferenceBaseValue === null
+      ) {
+        return;
+      }
+
+      if (formulaReferenceAnchorCellKey !== cellKey) {
+        didDragSelectionRef.current = true;
+      }
+
+      const nextReference = buildFormulaReferenceText(
+        worksheetRef.current,
+        formulaReferenceAnchorCellKey,
+        cellKey
+      );
+      setSelectionAnchorCellKey(formulaReferenceAnchorCellKey);
+      setSelectionFocusCellKey(cellKey);
+      setEditingCellValue(`${formulaReferenceBaseValue}${nextReference}`);
       return;
     }
 
@@ -854,11 +2834,13 @@ export function OpportunityPricingWorksheetBoard() {
       return;
     }
 
-    if (!isDraggingSelection || isFormulaEditing) {
+    const isRangeDragActive = isDraggingSelectionRef.current || isDraggingSelection;
+    if (!isRangeDragActive || isFormulaEditing) {
       return;
     }
 
-    if (selectionAnchorCellKey && selectionAnchorCellKey !== cellKey) {
+    const anchorCellKey = rangeDragAnchorCellKeyRef.current ?? selectionAnchorCellKey;
+    if (anchorCellKey && anchorCellKey !== cellKey) {
       didDragSelectionRef.current = true;
     }
     setSelectionFocusCellKey(cellKey);
@@ -1031,62 +3013,31 @@ export function OpportunityPricingWorksheetBoard() {
   };
 
   const handleUndo = () => {
-    const previousWorksheet = historyPastRef.current.at(-1);
-    if (!previousWorksheet) {
+    const undoState = buildWorksheetUndoState({
+      currentWorksheet: worksheetRef.current,
+      future: historyFutureRef.current,
+      historyLimit: WORKSHEET_HISTORY_LIMIT,
+      past: historyPastRef.current,
+    });
+    if (!undoState) {
       return;
     }
 
-    const currentWorksheet = cloneWorksheetData(worksheetRef.current);
-    const restoredWorksheet = cloneWorksheetData(previousWorksheet);
-    const nextPast = historyPastRef.current.slice(0, -1);
-    const nextFuture = [currentWorksheet, ...historyFutureRef.current].slice(
-      0,
-      WORKSHEET_HISTORY_LIMIT
-    );
-
-    historyPastRef.current = nextPast;
-    historyFutureRef.current = nextFuture;
-    worksheetRef.current = restoredWorksheet;
-
-    setHistoryPast(nextPast);
-    setHistoryFuture(nextFuture);
-    setWorksheet(restoredWorksheet);
-    setIsDirty(true);
-    setError(null);
-    setMessage(null);
-    setActiveCellKey(null);
-    setActiveEditor(null);
-    setEditingCellValue("");
-    focusWorksheetSurface();
+    restoreWorksheetSnapshot(undoState.worksheet, undoState.past, undoState.future);
   };
 
   const handleRedo = () => {
-    const nextWorksheet = historyFutureRef.current[0];
-    if (!nextWorksheet) {
+    const redoState = buildWorksheetRedoState({
+      currentWorksheet: worksheetRef.current,
+      future: historyFutureRef.current,
+      historyLimit: WORKSHEET_HISTORY_LIMIT,
+      past: historyPastRef.current,
+    });
+    if (!redoState) {
       return;
     }
 
-    const currentWorksheet = cloneWorksheetData(worksheetRef.current);
-    const restoredWorksheet = cloneWorksheetData(nextWorksheet);
-    const nextPast = [...historyPastRef.current, currentWorksheet].slice(
-      -WORKSHEET_HISTORY_LIMIT
-    );
-    const nextFuture = historyFutureRef.current.slice(1);
-
-    historyPastRef.current = nextPast;
-    historyFutureRef.current = nextFuture;
-    worksheetRef.current = restoredWorksheet;
-
-    setHistoryPast(nextPast);
-    setHistoryFuture(nextFuture);
-    setWorksheet(restoredWorksheet);
-    setIsDirty(true);
-    setError(null);
-    setMessage(null);
-    setActiveCellKey(null);
-    setActiveEditor(null);
-    setEditingCellValue("");
-    focusWorksheetSurface();
+    restoreWorksheetSnapshot(redoState.worksheet, redoState.past, redoState.future);
   };
 
   const handleWorksheetKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1127,49 +3078,7 @@ export function OpportunityPricingWorksheetBoard() {
 
     if ((event.key === "Delete" || event.key === "Backspace") && selectedRange) {
       event.preventDefault();
-      applyCommittedWorksheetChange((current) => {
-        const nextCells = { ...current.cells };
-
-        for (
-          let rowIndex = selectedRange.startRowIndex;
-          rowIndex <= selectedRange.endRowIndex;
-          rowIndex += 1
-        ) {
-          for (
-            let columnIndex = selectedRange.startColumnIndex;
-            columnIndex <= selectedRange.endColumnIndex;
-            columnIndex += 1
-          ) {
-            const row = current.rows[rowIndex];
-            const column = current.columns[columnIndex];
-
-            if (!row || !column) {
-              continue;
-            }
-            const cellKey = buildWorksheetCellKey(column.id, row.id);
-            const existingCell = current.cells[cellKey];
-            if (hasCellFormatting(existingCell)) {
-              nextCells[cellKey] = {
-                value: null,
-                type: "empty",
-                formula: null,
-                computedValue: null,
-                displayValue: "",
-                metadata: {
-                  ...(existingCell?.metadata ?? {}),
-                },
-              };
-            } else {
-              delete nextCells[cellKey];
-            }
-          }
-        }
-
-        return {
-          ...current,
-          cells: nextCells,
-        };
-      });
+      clearContentsInRange(selectedRange);
       return;
     }
 
@@ -1253,21 +3162,6 @@ export function OpportunityPricingWorksheetBoard() {
   };
 
   useEffect(() => {
-    if (!isDraggingSelection) {
-      return;
-    }
-
-    const handleMouseUp = () => {
-      setIsDraggingSelection(false);
-    };
-
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDraggingSelection]);
-
-  useEffect(() => {
     if (!isDraggingFill) {
       return;
     }
@@ -1325,7 +3219,7 @@ export function OpportunityPricingWorksheetBoard() {
               ? { ...column, width: columnResizePreviewWidth }
               : column
           ),
-        }));
+        }), { recalculateFormulas: false });
       }
 
       setResizingColumnId(null);
@@ -1371,7 +3265,7 @@ export function OpportunityPricingWorksheetBoard() {
           rows: current.rows.map((row) =>
             row.id === resizingRowId ? { ...row, height: rowResizePreviewHeight } : row
           ),
-        }));
+        }), { recalculateFormulas: false });
       }
 
       setResizingRowId(null);
@@ -1414,57 +3308,143 @@ export function OpportunityPricingWorksheetBoard() {
       if (!organizationId || !userId) {
         throw new Error("Could not resolve your organization or user.");
       }
-      const worksheetJson = worksheet as unknown as Json;
+      const endSaveValidationMeasure = startPricingWorksheetPerformanceMeasure("worksheet-save-validation", {
+        worksheetId: explicitWorksheetId ?? worksheetId ?? "legacy",
+      });
+      const worksheetValidation = validateWorksheetBeforeSave({
+        ...worksheetRef.current,
+        sheetName: worksheetDisplayName,
+      });
+      endSaveValidationMeasure({
+        ok: worksheetValidation.ok,
+      });
+      if (!worksheetValidation.ok) {
+        throw new Error(worksheetValidation.message);
+      }
+
+      const syncedWorksheet = worksheetValidation.worksheet;
+      const worksheetJson = syncedWorksheet as unknown as Json;
       const pricingSummaryJson = pricingSummary as unknown as Json;
       const extractedPricingDataJson = extractedPricingData as unknown as Json;
 
-      if (worksheetId) {
-        const { data, error: updateError } = await supabase
-          .from("opportunity_pricing_worksheets")
-          .update({
-            name: worksheet.sheetName.trim() || "Pricing Worksheet",
-            worksheet_data: worksheetJson,
-            pricing_summary: pricingSummaryJson,
-            extracted_pricing_data: extractedPricingDataJson,
-            version: worksheet.version,
-            updated_by: userId,
-          })
-          .eq("organization_id", organizationId)
-          .eq("id", worksheetId)
-          .select("id, updated_at")
-          .single();
+      const targetWorksheetId = explicitWorksheetId ?? worksheetId;
+
+      if (targetWorksheetId) {
+        const endSaveRequestMeasure = startPricingWorksheetPerformanceMeasure("worksheet-save-request", {
+          action: "update",
+          worksheetId: targetWorksheetId,
+        });
+        let updateError: { message: string } | null = null;
+        let data: { id: string; updated_at: string | null } | null = null;
+        try {
+          const result = await supabase
+            .from("opportunity_pricing_worksheets")
+            .update({
+              worksheet_data: worksheetJson,
+              pricing_summary: pricingSummaryJson,
+              extracted_pricing_data: extractedPricingDataJson,
+              version: worksheet.version,
+              updated_by: userId,
+            })
+            .eq("organization_id", organizationId)
+            .eq("opportunity_id", sharedOpportunity.opportunityId)
+            .eq("id", targetWorksheetId)
+            .select("id, updated_at")
+            .single();
+          data = result.data;
+          updateError = result.error;
+        } finally {
+          endSaveRequestMeasure({
+            ok: !updateError,
+          });
+        }
 
         if (updateError) {
           throw new Error(updateError.message);
         }
 
+        if (!data) {
+          throw new Error("Worksheet save response was empty.");
+        }
+
         setWorksheetId(data.id);
         setLastSavedAt(data.updated_at ?? null);
+        void writePricingWorksheetIntelligenceEvents(supabase, [
+          buildPricingWorksheetIntelligenceEvent({
+            organizationId,
+            opportunityId: sharedOpportunity.opportunityId,
+            entityId: data.id,
+            worksheetName: worksheetDisplayName,
+            tradePackage: worksheetTradePackage,
+            worksheet: syncedWorksheet,
+            eventType: "worksheet_saved",
+            eventFamily: "commercial_action",
+            action: "saved",
+          }),
+        ]).catch((eventWriteError) => {
+          logPricingWorksheetIntelligenceFailure("worksheet_saved", eventWriteError);
+        });
       } else {
-        const { data, error: insertError } = await supabase
-          .from("opportunity_pricing_worksheets")
-          .insert({
-            organization_id: organizationId,
-            opportunity_id: sharedOpportunity.opportunityId,
-            name: worksheet.sheetName.trim() || "Pricing Worksheet",
-            worksheet_data: worksheetJson,
-            pricing_summary: pricingSummaryJson,
-            extracted_pricing_data: extractedPricingDataJson,
-            version: worksheet.version,
-            created_by: userId,
-            updated_by: userId,
-          })
-          .select("id, updated_at")
-          .single();
+        const endSaveRequestMeasure = startPricingWorksheetPerformanceMeasure("worksheet-save-request", {
+          action: "insert",
+          worksheetId: "new",
+        });
+        let insertError: { message: string } | null = null;
+        let data: { id: string; updated_at: string | null } | null = null;
+        try {
+          const result = await supabase
+            .from("opportunity_pricing_worksheets")
+            .insert({
+              organization_id: organizationId,
+              opportunity_id: sharedOpportunity.opportunityId,
+              name: worksheetDisplayName,
+              worksheet_data: worksheetJson,
+              pricing_summary: pricingSummaryJson,
+              extracted_pricing_data: extractedPricingDataJson,
+              version: worksheet.version,
+              created_by: userId,
+              updated_by: userId,
+            })
+            .select("id, updated_at")
+            .single();
+          data = result.data;
+          insertError = result.error;
+        } finally {
+          endSaveRequestMeasure({
+            ok: !insertError,
+          });
+        }
 
         if (insertError) {
           throw new Error(insertError.message);
         }
 
+        if (!data) {
+          throw new Error("Worksheet save response was empty.");
+        }
+
         setWorksheetId(data.id);
+        setWorksheetName(worksheetDisplayName);
         setLastSavedAt(data.updated_at ?? null);
+        void writePricingWorksheetIntelligenceEvents(supabase, [
+          buildPricingWorksheetIntelligenceEvent({
+            organizationId,
+            opportunityId: sharedOpportunity.opportunityId,
+            entityId: data.id,
+            worksheetName: worksheetDisplayName,
+            tradePackage: worksheetTradePackage,
+            worksheet: syncedWorksheet,
+            eventType: "worksheet_saved",
+            eventFamily: "commercial_action",
+            action: "saved",
+          }),
+        ]).catch((eventWriteError) => {
+          logPricingWorksheetIntelligenceFailure("worksheet_saved", eventWriteError);
+        });
       }
 
+      setWorksheet(syncedWorksheet);
+      worksheetRef.current = syncedWorksheet;
       setIsDirty(false);
       setMessage("Pricing worksheet saved.");
     } catch (saveWorksheetError) {
@@ -1478,38 +3458,682 @@ export function OpportunityPricingWorksheetBoard() {
     }
   };
 
+  const generateAiWorksheetPreview = useCallback(async (options?: {
+    promptOverride?: string | null;
+    followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  }) => {
+    if (!session?.organizationId) {
+      setAiPreviewError("AI worksheet preview is not ready. Please refresh and try again.");
+      return;
+    }
+
+    setIsGeneratingAiPreview(true);
+    setAiPreviewError(null);
+    setAiPreviewResponse(null);
+
+    try {
+      const worksheetSnapshot = cloneWorksheetData(worksheetRef.current);
+      const endAiContextMeasure = startPricingWorksheetPerformanceMeasure("ai-context-build", {
+        worksheetId: worksheetId ?? "unsaved",
+      });
+      const worksheetContext = buildPricingWorksheetAiContext(worksheetSnapshot, {
+        worksheetId,
+        worksheetName: aiPreviewWorksheetName.trim() || worksheetDisplayName,
+        tradePackage: aiPreviewTradePackage.trim() || worksheetTradePackage || null,
+        selection: {
+          activeCellKey,
+          anchorCellKey: selectionAnchorCellKey,
+          focusCellKey: selectionFocusCellKey,
+        },
+      });
+      endAiContextMeasure({
+        contextRowCount: worksheetContext.rows.length,
+        nearbyRowCount: worksheetContext.nearbyRows.length,
+        contextBytes: JSON.stringify(worksheetContext).length,
+      });
+
+      const endAiPreviewRequestMeasure = startPricingWorksheetPerformanceMeasure("ai-preview-request", {
+        worksheetId: worksheetId ?? "unsaved",
+      });
+      const requestPrompt = options?.promptOverride ?? aiPrompt;
+      let response: Response | null = null;
+      try {
+        response = await fetch("/api/ai/pricing-worksheets/edit-assistant", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            organizationId: session.organizationId,
+            opportunityId: sharedOpportunity.opportunityId,
+            worksheetId,
+            worksheetName: aiPreviewWorksheetName.trim() || worksheetDisplayName,
+            tradePackage: aiPreviewTradePackage.trim() || null,
+            prompt: requestPrompt,
+            currentWorksheetSummary: buildCurrentWorksheetSummary(worksheetSnapshot),
+            worksheetData: worksheetSnapshot,
+            worksheetContext,
+            followUpContext: options?.followUpContext ?? null,
+          }),
+        });
+      } finally {
+        endAiPreviewRequestMeasure({
+          ok: response?.ok ?? false,
+        });
+      }
+
+      if (!response) {
+        throw new Error("Unable to get an AI worksheet assistant response.");
+      }
+
+      const payload = (await response.json()) as PricingWorksheetAiPreviewResponse | { error?: string };
+      if (!response.ok || !("preview" in payload)) {
+        throw new Error(
+          typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Unable to get an AI worksheet assistant response."
+        );
+      }
+
+      setAiPreviewResponse(payload);
+      setAiPreviewWorksheetName(payload.preview.compactOutput.worksheetName);
+      setAiPreviewTradePackage(payload.preview.compactOutput.tradePackage ?? "");
+      const nextFindingStateEntries = (payload.preview.assistant?.reviewFindings ?? []).flatMap((finding) => {
+        if (
+          options?.followUpContext?.acceptedFindingIds?.includes(finding.id) ||
+          (finding.revisedFromFindingId
+            ? options?.followUpContext?.acceptedFindingIds?.includes(finding.revisedFromFindingId)
+            : false)
+        ) {
+          return [[finding.id, "accepted" as const]];
+        }
+
+        if (
+          options?.followUpContext?.rejectedFindingIds?.includes(finding.id) ||
+          (finding.revisedFromFindingId
+            ? options?.followUpContext?.rejectedFindingIds?.includes(finding.revisedFromFindingId)
+            : false)
+        ) {
+          return [[finding.id, "rejected" as const]];
+        }
+
+        return [];
+      });
+      setAiFindingStates(Object.fromEntries(nextFindingStateEntries));
+      const followUpContext = options?.followUpContext ?? null;
+      const revisionSummary = followUpContext
+        ? buildFindingRevisionSummaries({
+            previousFindings: followUpContext.previousReviewFindings ?? [],
+            nextFindings: payload.preview.assistant?.reviewFindings ?? [],
+            previousSuggestedEditGroups: followUpContext.previousSuggestedEditGroups ?? [],
+            nextSuggestedEditGroups: payload.preview.assistant?.suggestedEditGroups ?? [],
+          })
+        : null;
+
+      const reviewEvents: Array<{
+        eventType:
+          | "worksheet_ai_review_generated"
+          | "worksheet_ai_followup_submitted"
+          | "worksheet_ai_finding_invalidated"
+          | "worksheet_ai_finding_revised"
+          | "worksheet_ai_finding_confirmed";
+        action: "reviewed" | "revised" | "invalidated" | "confirmed";
+        reason: string;
+        diffData: Record<string, Json | null>;
+      }> = [
+        {
+          eventType: followUpContext
+            ? "worksheet_ai_followup_submitted"
+            : "worksheet_ai_review_generated",
+          action: followUpContext ? "revised" : "reviewed",
+          reason: followUpContext ? "AI worksheet review revised from user follow-up." : "AI worksheet review generated.",
+          diffData: buildPricingWorksheetAiReviewSignalData({
+            polarity: followUpContext ? "mixed" : "neutral",
+            weight:
+              followUpContext
+                ? -0.15 *
+                  (payload.preview.assistant?.reviewFindings?.filter((finding) => finding.findingStatus === "invalidated").length ?? 0)
+                : 0,
+            detail: {
+              prompt: (options?.promptOverride ?? aiPrompt) || null,
+              classification: payload.preview.classification ?? null,
+              reviewFindingCount: payload.preview.assistant?.reviewFindings?.length ?? 0,
+              evidenceSourceCount: payload.preview.assistant?.evidenceSources?.length ?? 0,
+              invalidatedFindingCount:
+                payload.preview.assistant?.reviewFindings?.filter((finding) => finding.findingStatus === "invalidated").length ?? 0,
+              downgradedFindingCount:
+                payload.preview.assistant?.reviewFindings?.filter((finding) => finding.findingStatus === "downgraded").length ?? 0,
+              suggestedEditGroupCount: payload.preview.assistant?.suggestedEditGroups?.length ?? 0,
+              affectedFindingIds: revisionSummary?.changedFindings.map((entry) => entry.finding.id) ?? [],
+              affectedEvidenceSourceIds:
+                revisionSummary?.changedFindings.flatMap((entry) => entry.finding.evidenceSourceIds ?? []) ?? [],
+              removedSuggestedEditGroupIds: revisionSummary?.removedSuggestedEditGroupIds ?? [],
+              userCorrectionSummary: followUpContext?.userCorrection ?? null,
+            },
+          }),
+        },
+      ];
+
+      if (followUpContext && payload.preview.assistant) {
+        for (const entry of revisionSummary?.changedFindings ?? []) {
+          reviewEvents.push({
+            eventType:
+              entry.outcome === "invalidated"
+                ? "worksheet_ai_finding_invalidated"
+                : entry.outcome === "confirmed"
+                  ? "worksheet_ai_finding_confirmed"
+                  : "worksheet_ai_finding_revised",
+            action:
+              entry.outcome === "invalidated"
+                ? "invalidated"
+                : entry.outcome === "confirmed"
+                  ? "confirmed"
+                  : "revised",
+            reason:
+              entry.outcome === "invalidated"
+                ? "AI worksheet review finding invalidated after user clarification."
+                : entry.outcome === "confirmed"
+                  ? "AI worksheet review finding confirmed after user clarification."
+                  : "AI worksheet review finding revised after user clarification.",
+            diffData: buildPricingWorksheetAiEvidenceFeedbackData({
+              outcome: entry.outcome,
+              interactionId: payload.aiInteractionId,
+              finding: entry.finding,
+              previousFinding: entry.previousFinding,
+              evidenceSources: payload.preview.assistant.evidenceSources ?? [],
+              classification: payload.preview.classification ?? null,
+              userCorrectionSummary: followUpContext.userCorrection ?? null,
+              removedSuggestedEditGroupIds: revisionSummary?.removedSuggestedEditGroupIds ?? [],
+            }),
+          });
+        }
+      }
+
+      logAiReviewIntelligenceEvents(reviewEvents);
+      return payload;
+    } catch (aiPreviewGenerationError) {
+      setAiPreviewError(
+        aiPreviewGenerationError instanceof Error
+          ? aiPreviewGenerationError.message
+          : "Unable to get an AI worksheet assistant response."
+      );
+    } finally {
+      setIsGeneratingAiPreview(false);
+    }
+  }, [
+    activeCellKey,
+    aiPreviewTradePackage,
+    aiPreviewWorksheetName,
+    aiPrompt,
+    selectionAnchorCellKey,
+    selectionFocusCellKey,
+    session?.organizationId,
+    sharedOpportunity.opportunityId,
+    worksheetId,
+    worksheetDisplayName,
+    worksheetTradePackage,
+    sharedOpportunity.opportunityId,
+    logAiReviewIntelligenceEvent,
+  ]);
+
+  const submitAiWorksheetReview = useCallback(async (
+    action: "accepted" | "edited" | "rejected",
+    editedOutput?: Record<string, Json | null | string | number | string[]>
+  ) => {
+    if (!session?.organizationId || !aiPreviewResponse) {
+      throw new Error("The AI worksheet preview is no longer available.");
+    }
+
+    const responseMode = aiPreviewResponse.preview.assistant?.mode ?? null;
+    const response = await fetch("/api/ai/interactions/review", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        organizationId: session.organizationId,
+        aiInteractionId: aiPreviewResponse.aiInteractionId,
+        action,
+        editedOutput,
+        feedbackSummary:
+          action === "accepted"
+            ? responseMode === "answer_only"
+              ? "Worksheet assistant answer accepted."
+              : "Worksheet assistant response accepted."
+            : action === "edited"
+              ? "Worksheet assistant response applied after manual preview edits."
+              : "Worksheet assistant response rejected before apply.",
+      }),
+    });
+
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Unable to record the AI worksheet review.");
+    }
+  }, [aiPreviewResponse, session?.organizationId]);
+
+  const handleAiFindingDispositionChange = useCallback((findingId: string, disposition: PricingWorksheetAiFindingDisposition) => {
+    setAiFindingStates((current) => ({
+      ...current,
+      [findingId]: disposition,
+    }));
+    const finding = getFindingById(aiPreviewResponse?.preview.assistant?.reviewFindings, findingId);
+    logAiReviewIntelligenceEvent({
+      eventType:
+        disposition === "accepted" ? "worksheet_ai_finding_accepted" : "worksheet_ai_finding_rejected",
+      action: disposition,
+      reason: `AI worksheet review finding ${disposition}.`,
+      diffData: buildPricingWorksheetAiEvidenceFeedbackData({
+        outcome: disposition,
+        interactionId: aiPreviewResponse?.aiInteractionId ?? null,
+        finding,
+        evidenceSources: aiPreviewResponse?.preview.assistant?.evidenceSources ?? [],
+        classification: aiPreviewResponse?.preview.classification ?? null,
+      }),
+    });
+  }, [aiPreviewResponse, logAiReviewIntelligenceEvent]);
+
+  const submitAiFollowUp = useCallback(async () => {
+    if (!aiPreviewResponse || !session?.organizationId) {
+      setAiPreviewError("Ask AI for a review before sending a follow-up.");
+      return;
+    }
+
+    const nextPrompt = aiFollowUpPrompt.trim();
+    if (!nextPrompt) {
+      return;
+    }
+
+    setIsSubmittingAiFollowUp(true);
+    setAiPreviewError(null);
+
+    try {
+      const previousInteractionId = aiPreviewResponse.aiInteractionId;
+      const followUpContext = buildAiFollowUpContext();
+      setAiPrompt(nextPrompt);
+      const nextPreviewResponse = await generateAiWorksheetPreview({
+        promptOverride: nextPrompt,
+        followUpContext,
+      });
+      setAiFollowUpPrompt("");
+      if (nextPreviewResponse?.aiInteractionId && nextPreviewResponse.aiInteractionId !== previousInteractionId) {
+        await fetch("/api/ai/interactions/review", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            organizationId: session.organizationId,
+            aiInteractionId: previousInteractionId,
+            action: "superseded",
+            supersededByInteractionId: nextPreviewResponse.aiInteractionId,
+            feedbackSummary: "Worksheet AI review superseded by follow-up revision.",
+          }),
+        });
+      }
+    } catch (followUpError) {
+      setAiPreviewError(
+        followUpError instanceof Error ? followUpError.message : "Unable to revise the AI worksheet review."
+      );
+    } finally {
+      setIsSubmittingAiFollowUp(false);
+    }
+  }, [
+    aiFollowUpPrompt,
+    aiPreviewResponse,
+    buildAiFollowUpContext,
+    generateAiWorksheetPreview,
+    session?.organizationId,
+  ]);
+
+  const rejectAiWorksheetPreview = useCallback(async () => {
+    if (!aiPreviewResponse) {
+      handleAiDialogOpenChange(false);
+      return;
+    }
+
+    setIsSubmittingAiReview(true);
+    setAiPreviewError(null);
+
+    try {
+      await submitAiWorksheetReview("rejected");
+      setMessage("AI worksheet assistant response rejected.");
+      handleAiDialogOpenChange(false);
+    } catch (aiReviewError) {
+      setAiPreviewError(
+        aiReviewError instanceof Error ? aiReviewError.message : "Unable to reject the AI worksheet response."
+      );
+    } finally {
+      setIsSubmittingAiReview(false);
+    }
+  }, [aiPreviewResponse, handleAiDialogOpenChange, submitAiWorksheetReview]);
+
+  const applyAiSuggestedEditGroup = useCallback(async (groupId: string) => {
+    if (!aiPreviewResponse?.preview.assistant) {
+      setAiPreviewError("Ask AI for a review before applying a suggested edit.");
+      return;
+    }
+
+    if (!canWriteWorksheet) {
+      setAiPreviewError("You can review this AI suggestion, but applying worksheet edits requires write permission.");
+      return;
+    }
+
+    const assistantResponse = buildAssistantResponseFromPreview(aiPreviewResponse.preview.assistant);
+    const selectedResponse = buildPricingWorksheetAiSuggestedEditSelectionResponse(assistantResponse, [groupId]);
+    const simulation = simulatePricingWorksheetAiEditPlan(worksheetRef.current, selectedResponse);
+    const hasBlockingIssue = simulation.validationIssues.some((issue) => issue.severity === "error");
+    if (hasBlockingIssue) {
+      setAiPreviewError(simulation.validationIssues[0]?.message ?? "Unable to apply the selected suggested edit.");
+      return;
+    }
+
+    setIsSubmittingAiReview(true);
+    setAiPreviewError(null);
+
+    try {
+      const normalizedTradePackage = aiPreviewTradePackage.trim() || null;
+      const nextWorksheet = cloneWorksheetData(simulation.worksheet);
+      nextWorksheet.sheetName =
+        aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName || nextWorksheet.sheetName;
+
+      await submitAiWorksheetReview("edited", {
+        ...buildWorksheetAiEditedOutput({
+          preview: aiPreviewResponse.preview,
+          worksheetName: nextWorksheet.sheetName,
+          tradePackage: normalizedTradePackage,
+        }),
+        appliedSuggestedEditGroupIds: [groupId],
+        selectedOperationTypes: selectedResponse.operations.map((operation) => operation.type),
+      });
+
+      const commitResult = applyCommittedWorksheetChange(() => nextWorksheet, {
+        validateFormulaOutputs: true,
+      });
+      if (!commitResult.committed) {
+        setAiPreviewError(commitResult.message ?? "Unable to apply the selected suggested edit.");
+        return;
+      }
+
+      setWorksheetName(nextWorksheet.sheetName);
+      setWorksheetTradePackage(normalizedTradePackage);
+      setAiAppliedSuggestedEditGroupIds((current) => (current.includes(groupId) ? current : [...current, groupId]));
+      setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
+      setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+      setActiveCellKey(null);
+      setActiveEditor(null);
+      setEditingCellValue("");
+      setMessage("Selected AI worksheet edit applied locally. Review the sheet and save when ready.");
+      logAiReviewIntelligenceEvent({
+        eventType: "worksheet_ai_suggested_edit_applied",
+        action: "applied",
+        reason: "AI worksheet suggested edit group applied locally.",
+        diffData: buildPricingWorksheetAiEvidenceFeedbackData({
+          outcome: "applied",
+          interactionId: aiPreviewResponse.aiInteractionId,
+          evidenceSources: aiPreviewResponse.preview.assistant?.evidenceSources ?? [],
+          classification: aiPreviewResponse.preview.classification ?? null,
+          affectedSuggestedEditGroupIds: [groupId],
+          affectedFindingIds:
+            aiPreviewResponse.preview.assistant?.suggestedEditGroups
+              ?.find((group) => group.id === groupId)
+              ?.relatedFindingIds ?? [],
+          evidenceSourceIds:
+            aiPreviewResponse.preview.assistant?.suggestedEditGroups
+              ?.find((group) => group.id === groupId)
+              ?.relatedFindingIds.flatMap((findingId) =>
+                getFindingById(aiPreviewResponse.preview.assistant?.reviewFindings, findingId)?.evidenceSourceIds ?? []
+              ) ?? [],
+        }),
+      });
+    } catch (applyGroupError) {
+      setAiPreviewError(
+        applyGroupError instanceof Error ? applyGroupError.message : "Unable to apply the selected suggested edit."
+      );
+    } finally {
+      setIsSubmittingAiReview(false);
+    }
+  }, [
+    aiPreviewResponse,
+    aiPreviewTradePackage,
+    aiPreviewWorksheetName,
+    applyCommittedWorksheetChange,
+    canWriteWorksheet,
+    submitAiWorksheetReview,
+  ]);
+
+  const applyAiWorksheetPreview = useCallback(async () => {
+    if (!aiPreviewResponse) {
+      setAiPreviewError("Ask AI for a worksheet response before applying it.");
+      return;
+    }
+
+    const hasMutatingOperations =
+      (aiPreviewResponse.preview.assistant?.operations ?? []).some((operation) => operation.type !== "explain_formula") ?? false;
+    if (hasMutatingOperations && !canWriteWorksheet) {
+      setAiPreviewError("You can review this AI suggestion, but applying worksheet edits requires write permission.");
+      return;
+    }
+    const hasExistingContent = hasWorksheetContent(worksheetRef.current);
+    if (hasMutatingOperations && hasExistingContent) {
+      const confirmed = window.confirm(
+        "This will apply the AI worksheet changes to your current sheet locally. Your worksheet is not auto-saved. Continue?"
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setIsSubmittingAiReview(true);
+    setAiPreviewError(null);
+
+    try {
+      const normalizedTradePackage = aiPreviewTradePackage.trim() || null;
+      const editedOutput = buildWorksheetAiEditedOutput({
+        preview: aiPreviewResponse.preview,
+        worksheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName,
+        tradePackage: normalizedTradePackage,
+      });
+      editedOutput.acceptedFindingIds = Object.entries(aiFindingStates)
+        .filter(([, disposition]) => disposition === "accepted")
+        .map(([findingId]) => findingId);
+      editedOutput.rejectedFindingIds = Object.entries(aiFindingStates)
+        .filter(([, disposition]) => disposition === "rejected")
+        .map(([findingId]) => findingId);
+      editedOutput.appliedSuggestedEditGroupIds = aiAppliedSuggestedEditGroupIds;
+      const isEdited =
+        (aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName) !==
+          aiPreviewResponse.preview.compactOutput.worksheetName ||
+        normalizedTradePackage !== (aiPreviewResponse.preview.compactOutput.tradePackage ?? null) ||
+        aiAppliedSuggestedEditGroupIds.length > 0 ||
+        Object.keys(aiFindingStates).length > 0;
+
+      await submitAiWorksheetReview(isEdited ? "edited" : "accepted", editedOutput);
+
+      if (hasMutatingOperations) {
+        const nextWorksheet = cloneWorksheetData(aiPreviewResponse.preview.worksheet);
+        nextWorksheet.sheetName =
+          aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName || nextWorksheet.sheetName;
+
+        const commitResult = applyCommittedWorksheetChange(() => nextWorksheet, {
+          validateFormulaOutputs: true,
+        });
+        if (!commitResult.committed) {
+          setAiPreviewError(commitResult.message ?? "Unable to apply the AI worksheet response.");
+          return;
+        }
+
+        setWorksheetName(nextWorksheet.sheetName);
+        setWorksheetTradePackage(normalizedTradePackage);
+        setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
+        setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+        setActiveCellKey(null);
+        setActiveEditor(null);
+        setEditingCellValue("");
+        setMessage("AI worksheet changes applied locally. Review the sheet and save when ready.");
+      } else {
+        setMessage("AI answer accepted.");
+      }
+
+      handleAiDialogOpenChange(false);
+    } catch (aiApplyError) {
+      setAiPreviewError(
+        aiApplyError instanceof Error ? aiApplyError.message : "Unable to apply the AI worksheet response."
+      );
+    } finally {
+      setIsSubmittingAiReview(false);
+    }
+  }, [
+    aiPreviewResponse,
+    aiPreviewTradePackage,
+    aiPreviewWorksheetName,
+    aiAppliedSuggestedEditGroupIds,
+    aiFindingStates,
+    applyCommittedWorksheetChange,
+    canWriteWorksheet,
+    handleAiDialogOpenChange,
+    submitAiWorksheetReview,
+  ]);
+
+  const setWorksheetInputRef = useCallback((cellKey: string, node: HTMLInputElement | null) => {
+    inputRefs.current[cellKey] = node;
+  }, []);
+
+  const handleGridCellMouseDown = useCallback((
+    cellKey: string,
+    event: ReactMouseEvent<HTMLDivElement>
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (
+      isFormulaReferenceMode &&
+      activeCellKey &&
+      activeCellKey !== cellKey
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      appendCellReferenceToFormula(cellKey);
+      return;
+    }
+
+    event.preventDefault();
+    startRangeSelection(cellKey);
+  }, [activeCellKey, appendCellReferenceToFormula, isFormulaReferenceMode, startRangeSelection]);
+
+  const handleGridCellClick = useCallback((
+    cellKey: string,
+    event: ReactMouseEvent<HTMLDivElement>
+  ) => {
+    if (handledFormulaReferenceMouseDownRef.current) {
+      handledFormulaReferenceMouseDownRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (isFormulaReferenceMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      appendCellReferenceToFormula(cellKey);
+      return;
+    }
+
+    if (didDragSelectionRef.current) {
+      didDragSelectionRef.current = false;
+      return;
+    }
+
+    if (event.detail === 1) {
+      selectSingleCell(cellKey);
+    }
+  }, [appendCellReferenceToFormula, isFormulaReferenceMode, selectSingleCell]);
+
+  const handleGridCellKeyDown = useCallback((
+    cellKey: string,
+    event: ReactKeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      suppressBlurCommitCellKeyRef.current = cellKey;
+      setActiveCellKey(null);
+      setActiveEditor(null);
+      setEditingCellValue("");
+      focusWorksheetSurface();
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const nextCellKey = getAdjacentCellKey(cellKey, {
+        rowDelta: event.shiftKey ? -1 : 1,
+      });
+      suppressBlurCommitCellKeyRef.current = cellKey;
+      commitCellEdit(cellKey, editingCellValue, nextCellKey);
+      return;
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      const nextCellKey = getAdjacentCellKey(cellKey, {
+        columnDelta: event.shiftKey ? -1 : 1,
+      });
+      suppressBlurCommitCellKeyRef.current = cellKey;
+      commitCellEdit(cellKey, editingCellValue, nextCellKey);
+    }
+  }, [commitCellEdit, editingCellValue, focusWorksheetSurface, getAdjacentCellKey]);
+
   return (
     <div className="min-w-0 flex-1">
-      <OperationalPanel
-        title="Pricing Worksheet"
-        description="Build your pricing in a flexible worksheet and save it against this opportunity."
-        actions={
-          <div className="flex items-center gap-3">
-            <div className="text-right text-xs text-[var(--text-secondary)]">
-              <div>{isDirty ? "Unsaved changes" : "Saved"}</div>
-              <div>{lastSavedAt ? new Date(lastSavedAt).toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit" }) : "Not saved yet"}</div>
+      <div className="overflow-hidden rounded-[6px] border border-[var(--border)] bg-white shadow-none">
+        <div className="border-b border-[var(--border)] bg-white">
+          <div className="flex flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)]">
+                {worksheetDisplayName}
+              </h1>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                <span>{isDirty ? "Unsaved changes" : "Saved"}</span>
+                <span aria-hidden="true">/</span>
+                <span>
+                  {lastSavedAt
+                    ? `Last saved ${new Date(lastSavedAt).toLocaleTimeString("en-NZ", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}`
+                    : "Not saved yet"}
+                </span>
+              </div>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void saveWorksheet()}
-              disabled={!canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty}
-            >
-              <Save className="h-4 w-4" />
-              {isSavingWorksheet ? "Saving..." : "Save worksheet"}
-            </Button>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={openAiDialog}
+                disabled={isSavingWorksheet || isLoadingWorksheet}
+                className="h-8 rounded-[6px] px-2.5 text-xs font-medium shadow-none"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Ask AI
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveWorksheet()}
+                disabled={!canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty}
+                className="h-8 rounded-[6px] px-2.5 text-xs font-medium shadow-none"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {isSavingWorksheet ? "Saving..." : "Save worksheet"}
+              </Button>
+            </div>
           </div>
-        }
-        toolbar={
-          <div className="flex flex-wrap gap-2 text-xs text-[var(--text-secondary)]">
-            <span>Start with a blank worksheet. Formula support, templates, supplier pricing, and takeoff links can be added later.</span>
-          </div>
-        }
-        contentClassName="p-0"
-      >
+        </div>
         <div
           ref={worksheetSurfaceRef}
-          className="space-y-4 px-6 py-6 outline-none"
+          className="space-y-0 outline-none"
           tabIndex={0}
           onPasteCapture={handleWorksheetPaste}
           onCopy={handleWorksheetCopy}
@@ -1518,11 +4142,115 @@ export function OpportunityPricingWorksheetBoard() {
           {error ? <OperationalAlert variant="error">{error}</OperationalAlert> : null}
           {message ? <OperationalAlert variant="success">{message}</OperationalAlert> : null}
 
-          <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] p-3">
-            <div className="flex flex-wrap gap-2">
+          <div
+            ref={formattingToolbarRef}
+            tabIndex={-1}
+            className="border-b border-[var(--border)] bg-[#F8FAFC] px-2 py-1 outline-none"
+          >
+            <div className="flex flex-wrap items-center gap-0.5">
+              <div className="flex flex-wrap items-center gap-0.5">
+                <select
+                  value={selectedNumberFormatKind}
+                  onChange={(event) =>
+                    applyNumberFormatKindToSelection(event.target.value as WorksheetNumberFormatKind)
+                  }
+                  onKeyDown={(event) => event.stopPropagation()}
+                  disabled={!canWriteWorksheet || !selectedRange}
+                  aria-label="Number format"
+                  className="h-6 rounded-[4px] border border-[var(--border)] bg-white px-1.5 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                >
+                  {NUMBER_FORMAT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                  aria-label="Decrease decimal places"
+                  onClick={() => adjustNumberDecimalPlacesForSelection("decrease")}
+                  disabled={!canWriteWorksheet || !selectedRange}
+                >
+                  -.0
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                  aria-label="Increase decimal places"
+                  onClick={() => adjustNumberDecimalPlacesForSelection("increase")}
+                  disabled={!canWriteWorksheet || !selectedRange}
+                >
+                  +.0
+                </Button>
+                <select
+                  value={selectedNegativeStyle}
+                  onChange={(event) =>
+                    applyNegativeNumberStyleToSelection(event.target.value as WorksheetNegativeNumberStyle)
+                  }
+                  onKeyDown={(event) => event.stopPropagation()}
+                  disabled={!canWriteWorksheet || !selectedRange}
+                  aria-label="Negative number style"
+                  className="h-6 rounded-[4px] border border-[var(--border)] bg-white px-1.5 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                >
+                  {NEGATIVE_STYLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                    disabled={!canWriteWorksheet || !selectedRange}
+                  >
+                    Insert
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[6px] p-1">
+                  <DropdownMenuItem
+                    onSelect={() => insertRowAtSelection("above")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Row above
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => insertRowAtSelection("below")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Row below
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => insertColumnAtSelection("left")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Column left
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => insertColumnAtSelection("right")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Column right
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
               <Button
                 variant="secondary"
                 size="sm"
+                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
                 onClick={() =>
                   applyFormattingPatchToSelection((format) => ({
                     ...format,
@@ -1539,6 +4267,7 @@ export function OpportunityPricingWorksheetBoard() {
               <Button
                 variant="secondary"
                 size="sm"
+                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
                 onClick={() => applyFormattingPatchToSelection({ text: { align: "left" } })}
                 disabled={!canWriteWorksheet || !selectedRange}
               >
@@ -1547,6 +4276,7 @@ export function OpportunityPricingWorksheetBoard() {
               <Button
                 variant="secondary"
                 size="sm"
+                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
                 onClick={() => applyFormattingPatchToSelection({ text: { align: "center" } })}
                 disabled={!canWriteWorksheet || !selectedRange}
               >
@@ -1555,41 +4285,33 @@ export function OpportunityPricingWorksheetBoard() {
               <Button
                 variant="secondary"
                 size="sm"
+                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
                 onClick={() => applyFormattingPatchToSelection({ text: { align: "right" } })}
                 disabled={!canWriteWorksheet || !selectedRange}
               >
                 Right
               </Button>
-              <div className="flex items-center gap-1">
+              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
+              <div className="flex items-center gap-0.5">
                 {FILL_SWATCHES.map((color) => (
                   <button
                     key={`fill-${color}`}
                     type="button"
                     aria-label={`Set fill color ${color}`}
-                    className="h-8 w-8 rounded-[var(--radius-sm)] border border-[var(--border)]"
+                    className="h-5 w-5 rounded-[4px] border border-[var(--border)]"
                     style={{ backgroundColor: color }}
                     onClick={() => applyFormattingPatchToSelection({ fill: { color } })}
                     disabled={!canWriteWorksheet || !selectedRange}
                   />
                 ))}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() =>
-                    applyFormattingPatchToSelection((format) => clearCellFill(format))
-                  }
-                  disabled={!canWriteWorksheet || !selectedRange}
-                >
-                  Clear fill
-                </Button>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 {TEXT_SWATCHES.map((color) => (
                   <button
                     key={`text-${color}`}
                     type="button"
                     aria-label={`Set text color ${color}`}
-                    className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-white text-sm font-semibold"
+                    className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[var(--border)] bg-white text-[10px] font-semibold"
                     style={{ color }}
                     onClick={() => applyFormattingPatchToSelection({ text: { color } })}
                     disabled={!canWriteWorksheet || !selectedRange}
@@ -1598,124 +4320,200 @@ export function OpportunityPricingWorksheetBoard() {
                   </button>
                 ))}
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => applyBorderModeToSelection("all")}
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                All borders
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => applyBorderModeToSelection("outer")}
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                Outer border
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => applyBorderModeToSelection("clear")}
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                Clear borders
-              </Button>
+              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                    disabled={!canWriteWorksheet || !selectedRange}
+                  >
+                    Borders
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[6px] p-1">
+                  <DropdownMenuItem
+                    onSelect={() => applyBorderModeToSelection("all")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    All borders
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => applyBorderModeToSelection("outer")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Outer border
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => applyBorderModeToSelection("clear")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Clear borders
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                    disabled={!canWriteWorksheet || !selectedRange}
+                  >
+                    Clear
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[6px] p-1">
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      applyFormattingPatchToSelection((format) => clearCellFill(format))
+                    }
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Clear fill
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={clearNumberFormatForSelection}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Clear number format
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => applyBorderModeToSelection("clear")}
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                  >
+                    Clear borders
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
-          <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] p-3">
-            <div className="grid gap-3 md:grid-cols-[80px_minmax(0,1fr)] md:items-start">
-              <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)]">
-                {formulaBarCellKey}
-              </div>
-              <textarea
-                ref={formulaBarRef}
-                value={formulaBarValue}
-                rows={2}
-                onFocus={() => {
-                  if (!formulaBarCellKey || !canWriteWorksheet) {
-                    return;
-                  }
+          <div className="flex items-center gap-1.5 border-b border-[var(--border)] bg-white px-2 py-1">
+            <div className="flex h-6 w-14 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border)] bg-[#F8FAFC] px-1.5 text-[11px] font-medium text-[var(--text-secondary)]">
+              {formulaBarCellKey}
+            </div>
+            <div className="shrink-0 text-[11px] font-medium italic text-[var(--text-muted)]">fx</div>
+            <textarea
+              ref={formulaBarRef}
+              value={formulaBarValue}
+              rows={1}
+              onFocus={() => {
+                if (!formulaBarCellKey || !canWriteWorksheet) {
+                  return;
+                }
 
-                  beginCellEdit(formulaBarCellKey, formulaBarCell, {
-                    editor: "formulaBar",
-                    focus: false,
-                  });
-                }}
-                onChange={(event) => {
-                  if (!formulaBarCellKey || !canWriteWorksheet) {
-                    return;
-                  }
+                beginCellEdit(formulaBarCellKey, formulaBarCell, {
+                  editor: "formulaBar",
+                  focus: false,
+                });
+              }}
+              onChange={(event) => {
+                if (!formulaBarCellKey || !canWriteWorksheet) {
+                  return;
+                }
 
-                  if (activeCellKey !== formulaBarCellKey || activeEditor !== "formulaBar") {
-                    setActiveCellKey(formulaBarCellKey);
-                    setActiveEditor("formulaBar");
-                    setSelectionAnchorCellKey(formulaBarCellKey);
-                    setSelectionFocusCellKey(formulaBarCellKey);
-                  }
+                if (activeCellKey !== formulaBarCellKey || activeEditor !== "formulaBar") {
+                  setActiveCellKey(formulaBarCellKey);
+                  setActiveEditor("formulaBar");
+                  setSelectionAnchorCellKey(formulaBarCellKey);
+                  setSelectionFocusCellKey(formulaBarCellKey);
+                }
 
-                  setEditingCellValue(event.target.value);
-                }}
-                onBlur={() => {
-                  if (!formulaBarCellKey || activeEditor !== "formulaBar") {
-                    return;
-                  }
+                setEditingCellValue(event.target.value);
+              }}
+              onBlur={() => {
+                if (suppressFormulaBarBlurCommitRef.current) {
+                  suppressFormulaBarBlurCommitRef.current = false;
+                  return;
+                }
 
+                if (!formulaBarCellKey || activeEditor !== "formulaBar") {
+                  return;
+                }
+
+                commitCellEdit(formulaBarCellKey, editingCellValue);
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+
+                if (!formulaBarCellKey) {
+                  return;
+                }
+
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setActiveCellKey(null);
+                  setActiveEditor(null);
+                  setEditingCellValue("");
+                  focusWorksheetSurface();
+                  return;
+                }
+
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
                   commitCellEdit(formulaBarCellKey, editingCellValue);
-                }}
-                onKeyDown={(event) => {
-                  event.stopPropagation();
-
-                  if (!formulaBarCellKey) {
-                    return;
-                  }
-
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setActiveCellKey(null);
-                    setActiveEditor(null);
-                    setEditingCellValue("");
-                    focusWorksheetSurface();
-                    return;
-                  }
-
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    commitCellEdit(formulaBarCellKey, editingCellValue);
-                  }
-                }}
-                className="min-h-[72px] w-full resize-none rounded-[var(--radius-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)] outline-none"
-                placeholder="Enter a value or formula"
-                disabled={!canWriteWorksheet}
-                spellCheck={false}
-              />
-            </div>
+                }
+              }}
+              className="min-h-6 w-full resize-none rounded-[4px] border border-[var(--border)] bg-white px-2 py-1 text-[13px] leading-[18px] text-[var(--text-primary)] outline-none"
+              placeholder="Enter a value or formula"
+              disabled={!canWriteWorksheet}
+              spellCheck={false}
+            />
           </div>
 
-          <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)]">
-            <div className="overflow-x-auto">
+          <div className="overflow-hidden border-t-0 border-[var(--border)] bg-white">
+            <div
+              ref={worksheetViewportRef}
+              className="max-h-[70vh] overflow-auto"
+              onScroll={(event) => {
+                setWorksheetViewportScrollLeft(event.currentTarget.scrollLeft);
+                setWorksheetViewportScrollTop(event.currentTarget.scrollTop);
+                setWorksheetViewportHeight(
+                  event.currentTarget.clientHeight || WORKSHEET_VIEWPORT_FALLBACK_HEIGHT
+                );
+                setWorksheetViewportWidth(
+                  event.currentTarget.clientWidth || WORKSHEET_VIEWPORT_FALLBACK_WIDTH
+                );
+              }}
+            >
               <div
                 style={{
-                  minWidth: `max(1120px, ${
-                    64 + effectiveColumns.reduce((sum, column) => sum + column.width, 0)
+                  minWidth: `max(${WORKSHEET_VIEWPORT_FALLBACK_WIDTH}px, ${
+                    WORKSHEET_ROW_GUTTER_WIDTH + effectiveColumns.reduce((sum, column) => sum + column.width, 0)
                   }px)`,
                 }}
               >
                 <div
-                  className="sticky top-0 z-20 grid border-b border-[var(--border)] bg-[var(--surface-muted)]"
+                  className="sticky top-0 z-20 grid border-b border-[var(--border)] bg-[#F8FAFC]"
                   style={{
-                    gridTemplateColumns,
+                    gridTemplateColumns: virtualGridTemplateColumns,
                   }}
                 >
-                  <div className="sticky left-0 z-30 border-r border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                  <div className="sticky left-0 z-30 border-r border-[var(--border)] bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)]">
                     #
                   </div>
-                  {effectiveColumns.map((column) => (
+                  <div
+                    aria-hidden="true"
+                    className="border-r border-[var(--border)] bg-[#F8FAFC]"
+                    style={{ width: `${virtualColumns.leftSpacerWidth}px` }}
+                  />
+                  {virtualColumns.visibleColumns.map((column, columnOffset) => (
                     <div
                       key={column.id}
-                      className="relative border-r border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] last:border-r-0"
+                      className="relative border-r border-[var(--border)] bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] last:border-r-0"
+                      onContextMenu={(event) =>
+                        openColumnContextMenu(event, virtualColumns.startIndex + columnOffset)
+                      }
                     >
                       {column.label}
                       <button
@@ -1723,220 +4521,354 @@ export function OpportunityPricingWorksheetBoard() {
                         aria-label={`Resize column ${column.label}`}
                         className="absolute right-0 top-0 h-full w-2 translate-x-1/2 cursor-col-resize"
                         onMouseDown={(event) => beginColumnResize(event, column.id, column.width)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
                       />
                     </div>
                   ))}
+                  <div
+                    aria-hidden="true"
+                    className="bg-[#F8FAFC]"
+                    style={{ width: `${virtualColumns.rightSpacerWidth}px` }}
+                  />
                 </div>
 
                 {isLoadingWorksheet ? (
                   <div className="px-4 py-6 text-sm text-[var(--text-secondary)]">Loading worksheet...</div>
                 ) : (
                   <div>
-                    {effectiveRows.map((row) => (
-                      <div
+                    {virtualRows.topSpacerHeight > 0 ? (
+                      <div style={{ height: `${virtualRows.topSpacerHeight}px` }} />
+                    ) : null}
+                    {virtualRows.virtualRows.map(({ row, rowIndex }) => (
+                      <WorksheetRowView
                         key={row.id}
-                        className="grid border-b border-[var(--border)] last:border-b-0"
-                        style={{
-                          gridTemplateColumns,
-                          minHeight: `${row.height}px`,
-                        }}
-                      >
-                        <div
-                          className="sticky left-0 z-10 border-r border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)] relative"
-                          style={{ height: `${row.height}px` }}
-                        >
-                          {row.id}
-                          <button
-                            type="button"
-                            aria-label={`Resize row ${row.id}`}
-                            className="absolute bottom-0 left-0 h-2 w-full translate-y-1/2 cursor-row-resize"
-                            onMouseDown={(event) => beginRowResize(event, row.id, row.height)}
-                          />
-                        </div>
-                        {effectiveColumns.map((column) => {
-                          const cellKey = buildWorksheetCellKey(column.id, row.id);
-                          const cell = worksheet.cells[cellKey];
-                          const cellFormat = getCellFormat(cell);
-                          const isEditing = activeCellKey === cellKey && activeEditor === "cell";
-                          const inputValue = isEditing ? editingCellValue : displayCellValue(cell);
-                          const edgeFlags = getWorksheetRangeEdgeFlags(
-                            worksheet,
-                            cellKey,
-                            selectedRange
-                          );
-                          const selectionShadow = edgeFlags.isInRange
-                            ? buildSelectionShadow(edgeFlags, SELECTION_OUTLINE_COLOR)
-                            : undefined;
-                          const fillPreviewEdgeFlags = getWorksheetRangeEdgeFlags(
-                            worksheet,
-                            cellKey,
-                            fillPreview?.range ?? null
-                          );
-                          const fillPreviewShadow = fillPreviewEdgeFlags.isInRange
-                            ? buildSelectionShadow(fillPreviewEdgeFlags, FILL_PREVIEW_OUTLINE_COLOR)
-                            : undefined;
-                          const formatBorderShadow = buildFormattedBorderShadow(cellFormat);
-                          const isSelectedRangeCorner =
-                            Boolean(selectedRange) &&
-                            edgeFlags.isBottomEdge &&
-                            edgeFlags.isRightEdge &&
-                            !activeCellKey;
-                          const cellTextAlign = cellFormat.text?.align ?? "left";
-                          const cellFillColor =
-                            edgeFlags.isInRange || fillPreviewEdgeFlags.isInRange
-                              ? undefined
-                              : cellFormat.fill?.color;
-
-                          return (
-                            <div
-                              key={cellKey}
-                              className={`relative border-r border-[var(--border)] last:border-r-0 ${
-                                edgeFlags.isInRange
-                                  ? "bg-blue-50/50"
-                                  : fillPreviewEdgeFlags.isInRange
-                                  ? "bg-blue-100/50"
-                                  : ""
-                              }`}
-                              style={{
-                                backgroundColor: cellFillColor,
-                                height: `${row.height}px`,
-                                boxShadow: [formatBorderShadow, selectionShadow, fillPreviewShadow]
-                                  .filter(Boolean)
-                                  .join(", ") || undefined,
-                              }}
-                              onMouseDown={(event) => {
-                                if (
-                                  isFormulaReferenceMode &&
-                                  activeCellKey &&
-                                  activeCellKey !== cellKey
-                                ) {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  appendCellReferenceToFormula(cellKey);
-                                  return;
-                                }
-
-                                startRangeSelection(cellKey);
-                              }}
-                              onMouseEnter={() => {
-                                updateRangeSelection(cellKey);
-                              }}
-                              onDoubleClick={() =>
-                                beginCellEdit(cellKey, cell, { editor: "cell" })
-                              }
-                            >
-                              {isEditing ? (
-                                <input
-                                  ref={(node) => {
-                                    inputRefs.current[cellKey] = node;
-                                  }}
-                                  type="text"
-                                  value={inputValue}
-                                  onChange={(event) => setEditingCellValue(event.target.value)}
-                                  onBlur={() => handleCellBlur(cellKey)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Escape") {
-                                      event.preventDefault();
-                                      suppressBlurCommitCellKeyRef.current = cellKey;
-                                      setActiveCellKey(null);
-                                      setActiveEditor(null);
-                                      setEditingCellValue("");
-                                      focusWorksheetSurface();
-                                      return;
-                                    }
-
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      const nextCellKey = getAdjacentCellKey(cellKey, {
-                                        rowDelta: event.shiftKey ? -1 : 1,
-                                      });
-                                      suppressBlurCommitCellKeyRef.current = cellKey;
-                                      commitCellEdit(cellKey, editingCellValue, nextCellKey);
-                                      return;
-                                    }
-
-                                    if (event.key === "Tab") {
-                                      event.preventDefault();
-                                      const nextCellKey = getAdjacentCellKey(cellKey, {
-                                        columnDelta: event.shiftKey ? -1 : 1,
-                                      });
-                                      suppressBlurCommitCellKeyRef.current = cellKey;
-                                      commitCellEdit(cellKey, editingCellValue, nextCellKey);
-                                    }
-                                  }}
-                                  className={CELL_INPUT_CLASS}
-                                  style={{
-                                    height: `${row.height}px`,
-                                    textAlign: cellTextAlign,
-                                    fontWeight: cellFormat.text?.bold ? 700 : undefined,
-                                    color: cellFormat.text?.color,
-                                  }}
-                                  placeholder=""
-                                  disabled={!canWriteWorksheet}
-                                  inputMode={cell?.type === "number" ? "decimal" : undefined}
-                                />
-                              ) : (
-                                <div
-                                  className="flex h-full min-w-0 items-center overflow-hidden px-2.5 text-sm text-[var(--text-primary)]"
-                                  style={{
-                                    justifyContent:
-                                      cellTextAlign === "center"
-                                        ? "center"
-                                        : cellTextAlign === "right"
-                                        ? "flex-end"
-                                        : "flex-start",
-                                    fontWeight: cellFormat.text?.bold ? 700 : undefined,
-                                    color: cellFormat.text?.color,
-                                    textAlign: cellTextAlign,
-                                  }}
-                                  onClick={(event) => {
-                                    if (handledFormulaReferenceMouseDownRef.current) {
-                                      handledFormulaReferenceMouseDownRef.current = false;
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      return;
-                                    }
-
-                                    if (isFormulaReferenceMode) {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      appendCellReferenceToFormula(cellKey);
-                                      return;
-                                    }
-
-                                    if (didDragSelectionRef.current) {
-                                      didDragSelectionRef.current = false;
-                                      return;
-                                    }
-
-                                    if (event.detail === 1) {
-                                      selectSingleCell(cellKey);
-                                    }
-                                  }}
-                                >
-                                  {displayCellValue(cell)}
-                                </div>
-                              )}
-                              {isSelectedRangeCorner ? (
-                                <button
-                                  type="button"
-                                  aria-label="Fill handle"
-                                  className="absolute bottom-0 right-0 z-20 h-2.5 w-2.5 translate-x-1/2 translate-y-1/2 rounded-full border border-white bg-blue-600 shadow-sm"
-                                  onMouseDown={beginFillDrag}
-                                />
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
+                        activeCellKey={activeCellKey}
+                        activeEditor={activeEditor}
+                        canWriteWorksheet={canWriteWorksheet}
+                        editingCellValue={editingCellValue}
+                        fillPreviewRange={fillPreview?.range ?? null}
+                        gridTemplateColumns={virtualGridTemplateColumns}
+                        leftSpacerWidth={virtualColumns.leftSpacerWidth}
+                        rowCells={visibleRowCells.get(row.id) ?? []}
+                        row={row}
+                        rowIndex={rowIndex}
+                        rightSpacerWidth={virtualColumns.rightSpacerWidth}
+                        selectedRange={selectedRange}
+                        visibleColumnStartIndex={virtualColumns.startIndex}
+                        visibleColumns={virtualColumns.visibleColumns}
+                        onBeginCellEdit={(cellKey, cell) => beginCellEdit(cellKey, cell, { editor: "cell" })}
+                        onBeginFillDrag={beginFillDrag}
+                        onBeginRowResize={beginRowResize}
+                        onCellClick={handleGridCellClick}
+                        onCellContextMenu={(cellKey, event) => openCellContextMenu(event, cellKey)}
+                        onCellMouseDown={handleGridCellMouseDown}
+                        onCellMouseEnter={updateRangeSelection}
+                        onInputBlur={handleCellBlur}
+                        onInputChange={setEditingCellValue}
+                        onInputKeyDown={handleGridCellKeyDown}
+                        onRowContextMenu={openRowContextMenu}
+                        setInputRef={setWorksheetInputRef}
+                      />
                     ))}
+                    {virtualRows.bottomSpacerHeight > 0 ? (
+                      <div style={{ height: `${virtualRows.bottomSpacerHeight}px` }} />
+                    ) : null}
                   </div>
                 )}
               </div>
             </div>
           </div>
+
+          {contextMenu ? (
+            <div
+              role="menu"
+              className="fixed z-[500] min-w-[210px] rounded-[var(--radius-md)] border border-[var(--border)] bg-white p-1.5 text-sm shadow-[var(--shadow-lg)]"
+              style={{
+                left: contextMenu.x,
+                top: contextMenu.y,
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              {contextMenu.type === "cell" ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
+                    onClick={() =>
+                      runContextMenuAction(() => copyRangeToClipboard(getContextMenuRange(contextMenu)))
+                    }
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextMenuRange(contextMenu);
+                        if (range) {
+                          clearContentsInRange(range);
+                        }
+                      })
+                    }
+                  >
+                    Clear contents
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextMenuRange(contextMenu);
+                        insertRowAtIndex(range?.startRowIndex ?? 0, range?.startColumnIndex ?? 0);
+                      })
+                    }
+                  >
+                    Insert row above
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextMenuRange(contextMenu);
+                        insertRowAtIndex((range?.endRowIndex ?? 0) + 1, range?.startColumnIndex ?? 0);
+                      })
+                    }
+                  >
+                    Insert row below
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextMenuRange(contextMenu);
+                        insertColumnAtIndex(range?.startColumnIndex ?? 0, range?.startRowIndex ?? 0);
+                      })
+                    }
+                  >
+                    Insert column left
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextMenuRange(contextMenu);
+                        insertColumnAtIndex((range?.endColumnIndex ?? 0) + 1, range?.startRowIndex ?? 0);
+                      })
+                    }
+                  >
+                    Insert column right
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
+                    onClick={() => runContextMenuAction(focusFormattingToolbar)}
+                  >
+                    Format cells
+                  </button>
+                </>
+              ) : null}
+
+              {contextMenu.type === "row" ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        commitActiveEditIfNeeded();
+                        insertRowAtIndex(contextMenu.rowIndex, 0);
+                      })
+                    }
+                  >
+                    Insert row above
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        commitActiveEditIfNeeded();
+                        insertRowAtIndex(contextMenu.rowIndex + 1, 0);
+                      })
+                    }
+                  >
+                    Insert row below
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => clearContentsInRange(getRowRange(contextMenu.rowIndex)))
+                    }
+                  >
+                    Clear row contents
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={
+                      !canDeleteRowRange(
+                        getContextRowDeleteRange(contextMenu.rowIndex).startRowIndex,
+                        getContextRowDeleteRange(contextMenu.rowIndex).endRowIndex
+                      )
+                    }
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextRowDeleteRange(contextMenu.rowIndex);
+                        deleteRowsAtRange(range.startRowIndex, range.endRowIndex);
+                      })
+                    }
+                  >
+                    {getRowDeleteLabel(contextMenu.rowIndex)}
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full cursor-not-allowed items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-muted)] opacity-60"
+                    disabled
+                  >
+                    Row height
+                  </button>
+                </>
+              ) : null}
+
+              {contextMenu.type === "column" ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        commitActiveEditIfNeeded();
+                        insertColumnAtIndex(contextMenu.columnIndex, 0);
+                      })
+                    }
+                  >
+                    Insert column left
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        commitActiveEditIfNeeded();
+                        insertColumnAtIndex(contextMenu.columnIndex + 1, 0);
+                      })
+                    }
+                  >
+                    Insert column right
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet}
+                    onClick={() =>
+                      runContextMenuAction(() => clearContentsInRange(getColumnRange(contextMenu.columnIndex)))
+                    }
+                  >
+                    Clear column contents
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={
+                      !canDeleteColumnRange(
+                        getContextColumnDeleteRange(contextMenu.columnIndex).startColumnIndex,
+                        getContextColumnDeleteRange(contextMenu.columnIndex).endColumnIndex
+                      )
+                    }
+                    onClick={() =>
+                      runContextMenuAction(() => {
+                        const range = getContextColumnDeleteRange(contextMenu.columnIndex);
+                        deleteColumnsAtRange(range.startColumnIndex, range.endColumnIndex);
+                      })
+                    }
+                  >
+                    {getColumnDeleteLabel(contextMenu.columnIndex)}
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full cursor-not-allowed items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-muted)] opacity-60"
+                    disabled
+                  >
+                    Column width
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-      </OperationalPanel>
+      </div>
+      <PricingWorksheetAiAssistDialog
+        open={isAiDialogOpen}
+        canApply={
+          canWriteWorksheet ||
+          aiPreviewResponse?.preview.assistant?.mode === "answer_only"
+        }
+        prompt={aiPrompt}
+        previewWorksheetName={aiPreviewWorksheetName}
+        previewTradePackage={aiPreviewTradePackage}
+        isGenerating={isGeneratingAiPreview}
+        isSubmittingReview={isSubmittingAiReview}
+        preview={aiPreviewResponse?.preview ?? null}
+        error={aiPreviewError}
+        onOpenChange={handleAiDialogOpenChange}
+        onPromptChange={handleAiPromptChange}
+        onPreviewWorksheetNameChange={handleAiPreviewWorksheetNameChange}
+        onPreviewTradePackageChange={handleAiPreviewTradePackageChange}
+        onGenerate={() => void generateAiWorksheetPreview()}
+        onReject={() => void rejectAiWorksheetPreview()}
+        onApply={() => void applyAiWorksheetPreview()}
+        onApplySuggestedEditGroup={(groupId) => void applyAiSuggestedEditGroup(groupId)}
+        findingStates={aiFindingStates}
+        appliedSuggestedEditGroupIds={aiAppliedSuggestedEditGroupIds}
+        followUpPrompt={aiFollowUpPrompt}
+        isSubmittingFollowUp={isSubmittingAiFollowUp}
+        onFollowUpPromptChange={setAiFollowUpPrompt}
+        onSubmitFollowUp={() => void submitAiFollowUp()}
+        onFindingDispositionChange={handleAiFindingDispositionChange}
+      />
     </div>
   );
 }

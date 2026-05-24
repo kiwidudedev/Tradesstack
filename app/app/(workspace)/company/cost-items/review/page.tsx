@@ -19,6 +19,15 @@ import { ibmPlexSans } from "@/lib/fonts";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import type { Json } from "@/lib/supabase/types";
+import {
+  buildCostItemIntelligenceEvent,
+  createCostItemAiInteraction,
+  logCostItemIntelligenceFailure,
+  summarizeCostItemClassification,
+  writeCostItemCorrectionEvent,
+  writeCostItemIntelligenceEvents,
+} from "@/lib/cost-item-intelligence";
 import { WORK_TYPE_KEYWORDS } from "@/lib/cost-items/classification/workTypeKeywords.enriched";
 import { ReviewEditorForm, type ReviewWorkTypeOption } from "./ReviewEditorForm";
 
@@ -167,6 +176,169 @@ function buildConfirmedClassification(
   };
 }
 
+function didClassificationChange(
+  before: ReturnType<typeof summarizeCostItemClassification>,
+  after: ReturnType<typeof summarizeCostItemClassification>
+) {
+  return (
+    before.workType !== after.workType ||
+    before.costType !== after.costType ||
+    before.costCode !== after.costCode
+  );
+}
+
+async function emitReviewedCostItemIntelligence(params: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  row: CostItemReviewRow;
+  nextClassification: ReturnType<typeof summarizeCostItemClassification>;
+  reviewMode: "confirm" | "edit";
+  occurredAt: string;
+}) {
+  const beforeClassification = summarizeCostItemClassification({
+    workType: params.row.work_type,
+    costType: params.row.cost_type,
+    costCode: params.row.cost_code,
+    confidence: params.row.classification_confidence,
+    needsReview: params.row.needs_review,
+    classificationSource: params.row.classification_source,
+  });
+  const classificationChanged = didClassificationChange(beforeClassification, params.nextClassification);
+  const reviewReason = params.reviewMode === "edit" ? "reviewed_with_edits" : "confirmed_as_suggested";
+  const reviewEvents = [
+    buildCostItemIntelligenceEvent({
+      organizationId: params.row.organization_id,
+      projectId: params.row.project_id,
+      module: "cost_items",
+      eventFamily: classificationChanged ? "correction" : "commercial_action",
+      eventType: classificationChanged
+        ? "cost_item_classification_corrected"
+        : "cost_item_classification_assigned",
+      action: classificationChanged ? "corrected" : "assigned",
+      entityType: "cost_item",
+      entityId: params.row.id,
+      beforeData: beforeClassification as unknown as Record<string, Json | null>,
+      afterData: params.nextClassification as unknown as Record<string, Json | null>,
+      diffData: {
+        workTypeChanged: beforeClassification.workType !== params.nextClassification.workType,
+        costTypeChanged: beforeClassification.costType !== params.nextClassification.costType,
+        costCodeChanged: beforeClassification.costCode !== params.nextClassification.costCode,
+      },
+      metadata: {
+        sourceDocumentKind: params.row.source_document_kind,
+        reviewMode: params.reviewMode,
+        title: params.row.title,
+      },
+      reason: reviewReason,
+      occurredAt: params.occurredAt,
+    }),
+    buildCostItemIntelligenceEvent({
+      organizationId: params.row.organization_id,
+      projectId: params.row.project_id,
+      module: "cost_items",
+      eventFamily: "validation",
+      eventType: "cost_item_review_resolved",
+      action: "resolved",
+      entityType: "cost_item",
+      entityId: params.row.id,
+      beforeData: { needsReview: true },
+      afterData: { needsReview: false },
+      metadata: {
+        sourceDocumentKind: params.row.source_document_kind,
+        reviewMode: params.reviewMode,
+      },
+      reason: reviewReason,
+      occurredAt: params.occurredAt,
+    }),
+  ];
+
+  const aiSource =
+    params.row.classification_source === "ai" ||
+    (isObject(params.row.original_classification) && params.row.original_classification.method === "ai");
+
+  if (aiSource) {
+    reviewEvents.push(
+      buildCostItemIntelligenceEvent({
+        organizationId: params.row.organization_id,
+        projectId: params.row.project_id,
+        module: "cost_items",
+        eventFamily: "ai_interaction",
+        eventType: classificationChanged ? "ai_cost_classification_rejected" : "ai_cost_classification_accepted",
+        action: classificationChanged ? "rejected" : "accepted",
+        entityType: "cost_item",
+        entityId: params.row.id,
+        beforeData: beforeClassification as unknown as Record<string, Json | null>,
+        afterData: params.nextClassification as unknown as Record<string, Json | null>,
+        metadata: {
+          sourceDocumentKind: params.row.source_document_kind,
+          confidence: params.row.classification_confidence,
+        },
+        reason: classificationChanged ? "ai_suggestion_changed_before_approval" : "ai_suggestion_confirmed",
+        occurredAt: params.occurredAt,
+      })
+    );
+
+    if (classificationChanged) {
+      reviewEvents.push(
+        buildCostItemIntelligenceEvent({
+          organizationId: params.row.organization_id,
+          projectId: params.row.project_id,
+          module: "cost_items",
+          eventFamily: "ai_interaction",
+          eventType: "ai_cost_classification_edited",
+          action: "edited",
+          entityType: "cost_item",
+          entityId: params.row.id,
+          beforeData: beforeClassification as unknown as Record<string, Json | null>,
+          afterData: params.nextClassification as unknown as Record<string, Json | null>,
+          metadata: {
+            sourceDocumentKind: params.row.source_document_kind,
+            confidence: params.row.classification_confidence,
+          },
+          reason: "ai_suggestion_edited_before_approval",
+          occurredAt: params.occurredAt,
+        })
+      );
+    }
+  }
+
+  try {
+    await writeCostItemIntelligenceEvents(params.supabase, reviewEvents);
+
+    let aiInteractionId: string | null = null;
+    if (aiSource) {
+      aiInteractionId = await createCostItemAiInteraction(params.supabase, {
+        organizationId: params.row.organization_id,
+        projectId: params.row.project_id,
+        subjectEntityId: params.row.id,
+        confidence: params.row.classification_confidence,
+        humanDisposition: classificationChanged ? "edited" : "accepted",
+        humanFeedbackSummary: classificationChanged
+          ? "User edited the AI cost classification before confirming."
+          : "User accepted the AI cost classification suggestion.",
+        outputStructured: beforeClassification as unknown as Json,
+        editedOutput: classificationChanged ? (params.nextClassification as unknown as Json) : null,
+      });
+    }
+
+    if (classificationChanged) {
+      await writeCostItemCorrectionEvent(params.supabase, {
+        organizationId: params.row.organization_id,
+        projectId: params.row.project_id,
+        targetEntityId: params.row.id,
+        correctionType: "classification_fix",
+        correctedFieldName: "classification",
+        incorrectValue: beforeClassification as unknown as Json,
+        correctedValue: params.nextClassification as unknown as Json,
+        correctionReason: "User adjusted cost item classification during review.",
+        feedbackLabel: "classification_corrected",
+        linkedAiInteractionId: aiInteractionId,
+      });
+    }
+  } catch (error) {
+    logCostItemIntelligenceFailure(`cost-item-review:${params.reviewMode}`, error);
+  }
+}
+
 async function fetchReviewRows(organizationId: string): Promise<CostItemReviewRow[]> {
   const supabase = await createServerSupabaseClient();
   const table = supabase.from("cost_items") as unknown as CostItemsTable;
@@ -299,6 +471,21 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
       throw new Error(updateError.message);
     }
 
+    await emitReviewedCostItemIntelligence({
+      supabase,
+      row,
+      nextClassification: summarizeCostItemClassification({
+        workType: row.work_type,
+        costType: row.cost_type,
+        costCode: row.cost_code,
+        confidence: row.classification_confidence,
+        needsReview: false,
+        classificationSource: "user_confirmed",
+      }),
+      reviewMode: "confirm",
+      occurredAt: confirmedAt,
+    });
+
     revalidatePath(PAGE_PATH);
     redirect(PAGE_PATH);
   }
@@ -394,6 +581,21 @@ export default async function CostItemsReviewPage({ searchParams }: CostItemsRev
     if (updateError) {
       throw new Error(updateError.message);
     }
+
+    await emitReviewedCostItemIntelligence({
+      supabase,
+      row,
+      nextClassification: summarizeCostItemClassification({
+        workType: workType || null,
+        costType: costType || null,
+        costCode,
+        confidence: row.classification_confidence,
+        needsReview: false,
+        classificationSource: "user_confirmed",
+      }),
+      reviewMode: "edit",
+      occurredAt: confirmedAt,
+    });
 
     revalidatePath(PAGE_PATH);
     redirect(PAGE_PATH);
