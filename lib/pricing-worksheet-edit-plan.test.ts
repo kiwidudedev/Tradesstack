@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorksheetData, type WorksheetData } from "./opportunity-pricing-worksheet-defaults";
+import { getCellFormat } from "./opportunity-pricing-worksheet-formatting";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
 import {
   buildPricingWorksheetAiAssistantSchema,
@@ -342,10 +343,354 @@ describe("simulatePricingWorksheetAiEditPlan", () => {
     expect(getCell(result.worksheet, "E2")?.displayValue).toBe("5");
   });
 
+  it("allows AND formulas that the worksheet engine supports", () => {
+    const worksheet = buildBaseWorksheet();
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Guard multiplication with AND",
+      answer: "",
+      summary: "Use AND in a safe AI formula edit.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "fix_formula",
+          target: {
+            cell: "E2",
+          },
+          values: {
+            cells: [],
+          },
+          formulas: {
+            cells: [{ ref: "E2", formula: '=IF(AND(C2<>"",D2<>""),C2*D2,"")' }],
+          },
+          rationale: "Only calculate when both inputs are present.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "E2")?.formula).toBe('=IF(AND(C2<>"",D2<>""),C2*D2,"")');
+    expect(getCell(result.worksheet, "E2")?.displayValue).toBe("20");
+  });
+
+  it("allows MAX and MIN formulas that the worksheet engine already supports", () => {
+    const worksheet = buildBaseWorksheet();
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Clamp formula values",
+      answer: "",
+      summary: "Use MAX and MIN in safe AI formulas.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "fix_formula",
+          target: {
+            cell: "E2",
+          },
+          values: {
+            cells: [],
+          },
+          formulas: {
+            cells: [
+              { ref: "E2", formula: "=MAX(1,C2/20)" },
+              { ref: "E3", formula: "=MIN(C2,D2)" },
+            ],
+          },
+          rationale: "Clamp derived values using supported runtime functions.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "E2")?.formula).toBe("=MAX(1,C2/20)");
+    expect(getCell(result.worksheet, "E3")?.formula).toBe("=MIN(C2,D2)");
+  });
+
+  it("allows IFS formulas that the worksheet engine supports", () => {
+    const worksheet = buildBaseWorksheet();
+    setCell(worksheet, "C2", { value: "USG" });
+    setCell(worksheet, "D2", { value: 24 });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Classify with IFS",
+      answer: "",
+      summary: "Use IFS in a safe AI formula.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "fix_formula",
+          target: {
+            cell: "E2",
+          },
+          values: {
+            cells: [],
+          },
+          formulas: {
+            cells: [{ ref: "E2", formula: '=IFS(C2="USG",10,D2>=0,MAX(1,D2/20))' }],
+          },
+          rationale: "Choose the first matching estimating rule.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "E2")?.formula).toBe('=IFS(C2="USG",10,D2>=0,MAX(1,D2/20))');
+  });
+
+  it("allows deterministic helper formulas that the worksheet engine supports", () => {
+    const worksheet = buildBaseWorksheet();
+    setCell(worksheet, "C2", { value: 2 });
+    setCell(worksheet, "D2", { value: 5 });
+    setCell(worksheet, "C3", { value: 0.1 });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Use helper formulas",
+      answer: "",
+      summary: "Use deterministic worksheet helper formulas.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "fix_formula",
+          target: {
+            cell: "E2",
+          },
+          values: {
+            cells: [],
+          },
+          formulas: {
+            cells: [
+              { ref: "E2", formula: "=QTY(C2,D2,F2,F3)" },
+              { ref: "E3", formula: "=UNIT(D2,F2,F3)" },
+              { ref: "E4", formula: "=WASTE(D2,C3)" },
+              { ref: "E5", formula: "=PACKS(D2,20)" },
+            ],
+          },
+          rationale: "Use local deterministic helper functions only.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "E2")?.formula).toBe("=QTY(C2,D2,F2,F3)");
+    expect(getCell(result.worksheet, "E3")?.formula).toBe("=UNIT(D2,F2,F3)");
+    expect(getCell(result.worksheet, "E4")?.formula).toBe("=WASTE(D2,C3)");
+    expect(getCell(result.worksheet, "E5")?.formula).toBe("=PACKS(D2,20)");
+  });
+
+  it("allows formulas using percentage and exponent syntax that the runtime supports", () => {
+    const worksheet = buildBaseWorksheet();
+    setCell(worksheet, "C3", { value: 100 });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Use percent and exponent syntax",
+      answer: "",
+      summary: "Use supported arithmetic syntax safely.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "fix_formula",
+          target: {
+            cell: "E2",
+          },
+          values: {
+            cells: [],
+          },
+          formulas: {
+            cells: [
+              { ref: "E2", formula: "=C2*10%" },
+              { ref: "E3", formula: "=WASTE(C3,10%)" },
+              { ref: "E4", formula: "=D2^2" },
+            ],
+          },
+          rationale: "Keep manual and AI formula syntax aligned.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "E2")?.formula).toBe("=C2*10%");
+    expect(getCell(result.worksheet, "E3")?.formula).toBe("=WASTE(C3,10%)");
+    expect(getCell(result.worksheet, "E4")?.formula).toBe("=D2^2");
+  });
+
+  it("applies formatting-only operations without changing values or formulas", () => {
+    const worksheet = buildBaseWorksheet();
+    const originalQtyValue = getCell(worksheet, "C2")?.value;
+    const originalRateValue = getCell(worksheet, "D2")?.value;
+    const originalFormula = getCell(worksheet, "E2")?.formula;
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Highlight inputs",
+      answer: "Highlighted the manual inputs.",
+      summary: "Manual inputs are blue and formula outputs stay neutral.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "format_cells",
+          target: {
+            cells: ["C2", "D2", "E2"],
+          },
+          values: { cells: [] },
+          formulas: { cells: [] },
+          format: {
+            backgroundColor: "blue",
+            bold: true,
+          },
+          rationale: "Highlight the manual input cells clearly.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(result.diffSummary.formattingCells).toEqual(["C2", "D2", "E2"]);
+    expect(getCell(result.worksheet, "C2")?.value).toBe(originalQtyValue);
+    expect(getCell(result.worksheet, "D2")?.value).toBe(originalRateValue);
+    expect(getCell(result.worksheet, "E2")?.formula).toBe(originalFormula);
+    expect(getCellFormat(getCell(result.worksheet, "C2") ?? undefined).fill?.color).toBe("#DBEAFE");
+    expect(getCellFormat(getCell(result.worksheet, "D2") ?? undefined).fill?.color).toBe("#DBEAFE");
+    expect(getCellFormat(getCell(result.worksheet, "E2") ?? undefined).fill?.color).toBe("#F3F4F6");
+  });
+
+  it("normalizes unsupported formatting colours to safe worksheet colours", () => {
+    const response = normalizePricingWorksheetAiAssistantResponse({
+      mode: "propose_edit",
+      proposalName: "Format inputs",
+      answer: "",
+      summary: "",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      reviewFindings: [],
+      reviewSummary: null,
+      suggestedEditGroups: [],
+      evidenceSources: [],
+      operations: [
+        {
+          type: "format_cell",
+          target: {
+            cell: "C2",
+            cells: [],
+            row: null,
+            sourceRow: null,
+            insertAfterRow: null,
+            insertBeforeRow: null,
+            startRow: null,
+            endRow: null,
+            sectionName: null,
+            totalColumn: null,
+            labelColumn: null,
+          },
+          values: { cells: [] },
+          formulas: { cells: [] },
+          format: {
+            backgroundColor: "#123456",
+            textColor: "#abcdef",
+            bold: true,
+            italic: true,
+            border: true,
+          },
+          rationale: "Highlight the inputs.",
+        },
+      ],
+    });
+
+    expect(response.operations[0]?.format).toEqual({
+      backgroundColor: "#DBEAFE",
+      textColor: "#111827",
+      bold: true,
+      italic: true,
+      border: true,
+    });
+  });
+
+  it("salvages formatting operations that include legacy values scaffolding", () => {
+    const response = normalizePricingWorksheetAiAssistantResponse({
+      mode: "propose_edit",
+      proposalName: "Highlight inputs",
+      answer: "",
+      summary: "",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      reviewFindings: [],
+      reviewSummary: null,
+      suggestedEditGroups: [],
+      evidenceSources: [],
+      operations: [
+        {
+          type: "format_cells",
+          target: {
+            cell: null,
+            cells: [],
+            row: null,
+            sourceRow: null,
+            insertAfterRow: null,
+            insertBeforeRow: null,
+            startRow: null,
+            endRow: null,
+            sectionName: null,
+            totalColumn: null,
+            labelColumn: null,
+          },
+          values: {
+            cells: [
+              { ref: "C2", value: "manual quantity" },
+              { ref: "D2", value: "rate input" },
+            ],
+          },
+          formulas: {
+            cells: [
+              { ref: "E2", formula: "=C2*D2" },
+            ],
+          },
+          format: {
+            backgroundColor: "blue",
+            bold: true,
+          },
+          rationale: "Highlight the input cells only.",
+        },
+      ],
+    });
+
+    expect(response.operations[0]?.target?.cells).toEqual(["C2", "D2", "E2"]);
+    expect(response.operations[0]?.values).toBeNull();
+    expect(response.operations[0]?.formulas).toBeNull();
+  });
+
   it("allows absolute-reference formulas with $ anchors", () => {
     const worksheet = buildBaseWorksheet();
-    setCell(worksheet, "C2", { value: 4, type: "number" });
-    setCell(worksheet, "D2", { value: 5, type: "number" });
+    setCell(worksheet, "C2", { value: 4 });
+    setCell(worksheet, "D2", { value: 5 });
 
     const response: PricingWorksheetAiAssistantResponse = {
       mode: "propose_edit",
@@ -896,6 +1241,172 @@ describe("bounded worksheet generation validation", () => {
       proposalName: "Rewrite worksheet",
       answer: "",
       summary: "Rewrite many cells.",
+      confidence: "low",
+      assumptions: [],
+      warnings: [],
+      operations,
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues.some((issue) => issue.code === "too_many_operations")).toBe(true);
+  });
+
+  it("allows a large formula-only batch when validation and simulation succeed", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Formula Batch",
+      rowCount: 20,
+      columnCount: 12,
+    });
+
+    for (let row = 2; row <= 15; row += 1) {
+      setCell(worksheet, `E${row}`, { value: row });
+      setCell(worksheet, `F${row}`, { value: 2 });
+      setCell(worksheet, `J${row}`, { value: null });
+    }
+
+    const operations = new Array(14).fill(null).map((_, index) => {
+      const row = index + 2;
+      return {
+        type: "fix_formula" as const,
+        target: { cell: `J${row}`, row },
+        values: { cells: [] },
+        formulas: {
+          cells: [{ ref: `J${row}`, formula: `=E${row}*F${row}` }],
+        },
+        rationale: "Apply total formula.",
+      };
+    });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Add formulas",
+      answer: "",
+      summary: "Apply formulas to visible rows.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations,
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(result.diffSummary.formulaCells.length).toBe(14);
+  });
+
+  it("still blocks a large formula-only batch when formula validation fails", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Formula Errors",
+      rowCount: 20,
+      columnCount: 12,
+    });
+
+    for (let row = 2; row <= 15; row += 1) {
+      setCell(worksheet, `E${row}`, { value: row });
+      setCell(worksheet, `F${row}`, { value: 2 });
+    }
+
+    const operations = new Array(14).fill(null).map((_, index) => {
+      const row = index + 2;
+      return {
+        type: "fix_formula" as const,
+        target: { cell: `J${row}`, row },
+        values: { cells: [] },
+        formulas: {
+          cells: [{ ref: `J${row}`, formula: `=BADFUNC(E${row},F${row})` }],
+        },
+        rationale: "Apply broken formula.",
+      };
+    });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Broken formulas",
+      answer: "",
+      summary: "Apply formulas to visible rows.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations,
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues.some((issue) => issue.code === "formula_unsupported_function")).toBe(true);
+  });
+
+  it("allows a large formatting-only batch when all refs are valid", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Formatting Batch",
+      rowCount: 20,
+      columnCount: 12,
+    });
+
+    const operations = new Array(14).fill(null).map((_, index) => {
+      const row = index + 2;
+      return {
+        type: "format_cell" as const,
+        target: { cell: `E${row}` },
+        values: { cells: [] },
+        formulas: { cells: [] },
+        format: {
+          backgroundColor: "blue",
+          bold: true,
+        },
+        rationale: "Highlight estimator inputs.",
+      };
+    });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Highlight inputs",
+      answer: "",
+      summary: "Format input cells.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations,
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(result.diffSummary.formattingCells.length).toBe(14);
+  });
+
+  it("still blocks a mixed batch with many value edits even when formula count is high", () => {
+    const worksheet = buildBaseWorksheet();
+    const operations = new Array(14).fill(null).map((_, index) => {
+      const row = (index % 4) + 2;
+      if (index < 7) {
+        return {
+          type: "update_cell" as const,
+          target: { cell: `B${row}`, row },
+          values: {
+            cells: [{ ref: `B${row}`, value: `Rewrite ${index}` }],
+          },
+          formulas: { cells: [] },
+          rationale: "Bulk value rewrite.",
+        };
+      }
+
+      return {
+        type: "fix_formula" as const,
+        target: { cell: `E${row}`, row },
+        values: { cells: [] },
+        formulas: {
+          cells: [{ ref: `E${row}`, formula: `=C${row}*D${row}` }],
+        },
+        rationale: "Bulk formula rewrite.",
+      };
+    });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Mixed rewrite",
+      answer: "",
+      summary: "Bulk rewrite values and formulas.",
       confidence: "low",
       assumptions: [],
       warnings: [],

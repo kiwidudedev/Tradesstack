@@ -309,6 +309,8 @@ export async function transitionAiLifecycleInteraction(
     usageOutputTokens?: number | null;
     usageTotalTokens?: number | null;
     latencyMs?: number | null;
+    provider?: string | null;
+    model?: string | null;
     humanDisposition?: "accepted" | "rejected" | "edited" | "partially_accepted" | "ignored" | null;
     humanFeedbackSummary?: string | null;
     editedOutput?: Json | null;
@@ -332,6 +334,8 @@ export async function transitionAiLifecycleInteraction(
       usageOutputTokens: input.usageOutputTokens ?? null,
       usageTotalTokens: input.usageTotalTokens ?? null,
       latencyMs: input.latencyMs ?? null,
+      provider: input.provider ?? null,
+      model: input.model ?? null,
       humanDisposition: input.humanDisposition ?? null,
       humanFeedbackSummary: input.humanFeedbackSummary ?? null,
       editedOutput: input.editedOutput ?? null,

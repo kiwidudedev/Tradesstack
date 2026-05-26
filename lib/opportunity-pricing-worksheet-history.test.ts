@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorksheetData, type WorksheetData } from "./opportunity-pricing-worksheet-defaults";
+import { applyFormattingToRange, getCellFormat } from "./opportunity-pricing-worksheet-formatting";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
 import {
   buildWorksheetRedoState,
@@ -7,6 +8,7 @@ import {
   commitWorksheetHistoryEntry,
 } from "./opportunity-pricing-worksheet-history";
 import { recalculateWorksheetFormulas } from "./opportunity-pricing-worksheet-formulas";
+import { applyWorksheetMutation } from "./opportunity-pricing-worksheet-mutations";
 
 function setCellValue(worksheet: WorksheetData, ref: string, value: string | number | null) {
   const match = ref.match(/^([A-Z]+)(\d+)$/);
@@ -141,5 +143,58 @@ describe("worksheet history helpers", () => {
     });
 
     expect(undoState).toBeNull();
+  });
+
+  it("undoes and redoes formatting-only worksheet changes", () => {
+    const originalWorksheet = buildWorksheet();
+    const mutationResult = applyWorksheetMutation(originalWorksheet, (current) =>
+      applyFormattingToRange(
+        current,
+        {
+          startRowIndex: 3,
+          endRowIndex: 3,
+          startColumnIndex: 0,
+          endColumnIndex: 0,
+        },
+        {
+          fill: { color: "#DBEAFE" },
+          text: { bold: true, italic: true },
+        }
+      ),
+      {
+        recalculateFormulas: false,
+      }
+    );
+
+    expect(mutationResult.changed).toBe(true);
+
+    const history = commitWorksheetHistoryEntry({
+      changed: true,
+      future: [],
+      historyLimit: 50,
+      past: [],
+      previousWorksheet: mutationResult.previousWorksheet,
+    });
+
+    const undoState = buildWorksheetUndoState({
+      currentWorksheet: mutationResult.nextWorksheet,
+      future: history.future,
+      historyLimit: 50,
+      past: history.past,
+    });
+
+    expect(undoState).not.toBeNull();
+    expect(getCellFormat(undoState?.worksheet.cells.A4).fill?.color).toBeUndefined();
+
+    const redoState = buildWorksheetRedoState({
+      currentWorksheet: undoState!.worksheet,
+      future: undoState!.future,
+      historyLimit: 50,
+      past: undoState!.past,
+    });
+
+    expect(redoState).not.toBeNull();
+    expect(getCellFormat(redoState?.worksheet.cells.A4).fill?.color).toBe("#DBEAFE");
+    expect(getCellFormat(redoState?.worksheet.cells.A4).text?.italic).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ export type PricingWorksheetConstructionPrimaryIntent =
   | "quantity_update"
   | "labour_adjustment"
   | "wastage_adjustment"
+  | "margin_adjustment"
   | "quote_prepare"
   | "takeoff_bind"
   | "unknown";
@@ -66,6 +67,16 @@ type IntentSignalSet = {
   priority: number;
   strong: WeightedSignal[];
   weak?: WeightedSignal[];
+};
+
+type IntentPatternBoost = {
+  intent: PricingWorksheetConstructionPrimaryIntent;
+  priority: number;
+  scoreBoost: number;
+  patterns: Array<{
+    label: string;
+    regex: RegExp;
+  }>;
 };
 
 type TradeSignalSet = {
@@ -264,6 +275,23 @@ const INTENT_SIGNAL_SETS: IntentSignalSet[] = [
     ],
   },
   {
+    intent: "margin_adjustment",
+    priority: 67,
+    strong: [
+      { phrase: "adjust margin", weight: 8 },
+      { phrase: "change margin", weight: 8 },
+      { phrase: "update margin", weight: 8 },
+      { phrase: "adjust markup", weight: 8 },
+      { phrase: "change markup", weight: 8 },
+      { phrase: "update markup", weight: 8 },
+    ],
+    weak: [
+      { phrase: "margin", weight: 4 },
+      { phrase: "markup", weight: 4 },
+      { phrase: "mark up", weight: 4 },
+    ],
+  },
+  {
     intent: "worksheet_edit",
     priority: 60,
     strong: [
@@ -274,12 +302,23 @@ const INTENT_SIGNAL_SETS: IntentSignalSet[] = [
       { phrase: "update this estimate", weight: 8 },
       { phrase: "amend", weight: 5 },
       { phrase: "adjust", weight: 4 },
+      { phrase: "highlight input cells", weight: 10 },
+      { phrase: "highlight fillable cells", weight: 10 },
+      { phrase: "identify input cells", weight: 9 },
+      { phrase: "show cells to fill in", weight: 9 },
+      { phrase: "color input cells", weight: 9 },
+      { phrase: "colour input cells", weight: 9 },
     ],
     weak: [
       { phrase: "add", weight: 2 },
       { phrase: "update", weight: 3 },
       { phrase: "change", weight: 3 },
       { phrase: "insert", weight: 3 },
+      { phrase: "highlight", weight: 4 },
+      { phrase: "color", weight: 3 },
+      { phrase: "colour", weight: 3 },
+      { phrase: "mark", weight: 3 },
+      { phrase: "shade", weight: 3 },
     ],
   },
   {
@@ -295,6 +334,87 @@ const INTENT_SIGNAL_SETS: IntentSignalSet[] = [
       { phrase: "summarise", weight: 2 },
       { phrase: "summarize", weight: 2 },
       { phrase: "why", weight: 2 },
+    ],
+  },
+];
+
+const INTENT_PATTERN_BOOSTS: IntentPatternBoost[] = [
+  {
+    intent: "worksheet_generation",
+    priority: 160,
+    scoreBoost: 20,
+    patterns: [
+      {
+        label: "action:create_build_generate_worksheet",
+        regex:
+          /\b(?:create|build|generate)\b[\s\S]{0,60}\b(?:pricing worksheet|estimate worksheet|estimate template|pricing template|pricing sheet|worksheet|template|spreadsheet|calculator)\b/,
+      },
+      {
+        label: "action:full_pricing_template",
+        regex: /\b(?:create|build|generate)\b[\s\S]{0,60}\b(?:full|starter|commercial)?[\s\S]{0,20}\b(?:pricing|estimate)\b[\s\S]{0,20}\b(?:template|worksheet|sheet)\b/,
+      },
+    ],
+  },
+  {
+    intent: "review_estimate",
+    priority: 150,
+    scoreBoost: 18,
+    patterns: [
+      {
+        label: "action:review_audit_worksheet",
+        regex:
+          /\b(?:review|audit|check|inspect)\b[\s\S]{0,60}\b(?:worksheet|estimate|pricing|formula|formulas|totals?|risks?)\b/,
+      },
+      {
+        label: "action:find_missing_review",
+        regex: /\bfind\b[\s\S]{0,20}\bmissing\b[\s\S]{0,40}\b(?:items?|rows?|labou?r|materials?|scope|formulas?|totals?)\b/,
+      },
+    ],
+  },
+  {
+    intent: "worksheet_edit",
+    priority: 140,
+    scoreBoost: 16,
+    patterns: [
+      {
+        label: "action:edit_worksheet_structure",
+        regex:
+          /\b(?:add|insert|update|modify|adjust|change|remove|fix|fill|apply)\b[\s\S]{0,60}\b(?:worksheet|sheet|row|rows|cell|cells|section|sections|totals?|subtotal|template)\b/,
+      },
+      {
+        label: "action:edit_formula_in_worksheet",
+        regex:
+          /\b(?:add|insert|update|apply|write|fix)\b[\s\S]{0,30}\bformula\b[\s\S]{0,40}\b(?:worksheet|sheet|cell|cells|row|rows|totals?|section)\b/,
+      },
+      {
+        label: "action:update_allowances",
+        regex:
+          /\b(?:add|insert|update|modify|adjust|change)\b[\s\S]{0,30}\b(?:labou?r|wastage|waste|margin|markup|mark up|materials?)\b[\s\S]{0,20}\ballowances?\b/,
+      },
+      {
+        label: "action:insert_missing_rows",
+        regex: /\b(?:insert|add)\b[\s\S]{0,20}\bmissing\b[\s\S]{0,20}\b(?:rows?|materials?|items?)\b/,
+      },
+      {
+        label: "action:highlight_or_color_inputs",
+        regex:
+          /\b(?:highlight|colour|color|mark|shade|identify|show)\b[\s\S]{0,60}\b(?:input|fillable|fill in|manual input|cells?|areas?)\b/,
+      },
+    ],
+  },
+  {
+    intent: "answer_only",
+    priority: 130,
+    scoreBoost: 15,
+    patterns: [
+      {
+        label: "action:formula_question",
+        regex: /\b(?:what formula should i use|how do i calculate|how to calculate|difference between|vs\.?|versus)\b/,
+      },
+      {
+        label: "action:pricing_question",
+        regex: /\b(?:what is|how do i|how should i|when should i|why does)\b/,
+      },
     ],
   },
 ];
@@ -465,6 +585,24 @@ function scoreIntent(promptText: string) {
     };
   });
 
+  for (const boost of INTENT_PATTERN_BOOSTS) {
+    const matchedBoostSignals = boost.patterns
+      .filter((pattern) => pattern.regex.test(promptText))
+      .map((pattern) => pattern.label);
+    if (matchedBoostSignals.length === 0) {
+      continue;
+    }
+
+    const existing = scored.find((entry) => entry.intent === boost.intent);
+    if (!existing) {
+      continue;
+    }
+
+    existing.score += boost.scoreBoost;
+    existing.priority = Math.max(existing.priority, boost.priority);
+    existing.matchedSignals = unique([...existing.matchedSignals, ...matchedBoostSignals]);
+  }
+
   const top = [...scored].sort((left, right) => {
     if (right.score !== left.score) {
       return right.score - left.score;
@@ -583,6 +721,7 @@ function determineRequiresConstructionReasoning(params: {
     params.primaryIntent === "worksheet_generation" ||
     params.primaryIntent === "quantity_update" ||
     params.primaryIntent === "labour_adjustment" ||
+    params.primaryIntent === "margin_adjustment" ||
     params.primaryIntent === "wastage_adjustment" ||
     params.primaryIntent === "quote_prepare" ||
     params.primaryIntent === "takeoff_bind"
@@ -683,6 +822,7 @@ function determineRiskLevel(params: {
     params.primaryIntent === "formula_fix" ||
     params.primaryIntent === "quantity_update" ||
     params.primaryIntent === "labour_adjustment" ||
+    params.primaryIntent === "margin_adjustment" ||
     params.primaryIntent === "wastage_adjustment" ||
     params.primaryIntent === "review_estimate" ||
     params.retrievalReasons.length > 0
@@ -774,6 +914,7 @@ function mapRecommendedPromptPath(
     primaryIntent === "formula_fix" ||
     primaryIntent === "quantity_update" ||
     primaryIntent === "labour_adjustment" ||
+    primaryIntent === "margin_adjustment" ||
     primaryIntent === "wastage_adjustment"
   ) {
     return "edit";

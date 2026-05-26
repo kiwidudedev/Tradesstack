@@ -16,6 +16,7 @@ export interface WorksheetCellBorderStyle {
 export interface WorksheetCellFormat {
   text?: {
     bold?: boolean;
+    italic?: boolean;
     color?: string;
     align?: WorksheetTextAlign;
   };
@@ -63,6 +64,7 @@ function isEmptyFormat(format: WorksheetCellFormat | undefined) {
   const hasText =
     Boolean(format.text) &&
     (format.text?.bold !== undefined ||
+      format.text?.italic !== undefined ||
       Boolean(format.text?.color) ||
       Boolean(format.text?.align));
   const hasFill = Boolean(format.fill?.color);
@@ -259,6 +261,7 @@ export function getCellFormat(cell: WorksheetCell | undefined): WorksheetCellFor
   const text: WorksheetCellFormat["text"] = isObject(rawFormat.text)
     ? {
         bold: typeof rawFormat.text.bold === "boolean" ? rawFormat.text.bold : undefined,
+        italic: typeof rawFormat.text.italic === "boolean" ? rawFormat.text.italic : undefined,
         color: typeof rawFormat.text.color === "string" ? rawFormat.text.color : undefined,
         align:
           rawFormat.text.align === "left" ||

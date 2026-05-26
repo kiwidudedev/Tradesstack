@@ -84,6 +84,14 @@ function buildWorksheet() {
   return worksheet;
 }
 
+function buildHelperWorksheet() {
+  return createDefaultWorksheetData({
+    sheetName: "Helper Formula Test",
+    rowCount: 14,
+    columnCount: 8,
+  });
+}
+
 describe("recalculateWorksheetFormulas", () => {
   it("keeps computedValue and displayValue in sync after referenced cell edits", () => {
     const worksheet = buildWorksheet();
@@ -154,6 +162,10 @@ describe("recalculateWorksheetFormulas", () => {
     setCell(worksheet, "E6", { formula: '=SUMIFS(C2:C5,B2:B5,"Timber",D2:D5,">0")' });
     setCell(worksheet, "E7", { formula: '=COUNTIF(B2:B5,"Timber")' });
     setCell(worksheet, "E8", { formula: '=COUNTIFS(B2:B5,"Timber",D2:D5,">0")' });
+    setCell(worksheet, "F1", { formula: "=AND(C2>0,D2>0)" });
+    setCell(worksheet, "F2", { formula: '=AND(B2<>"",B3<>"")' });
+    setCell(worksheet, "F3", { formula: '=IF(AND(B2<>"",C2<>""),C2*2,"")' });
+    setCell(worksheet, "F4", { formula: '=IF(C2="", "", IF(AND(C2>0,D2>0), C2*2, "Error"))' });
 
     const recalculated = recalculateWorksheetFormulas(worksheet);
 
@@ -165,6 +177,189 @@ describe("recalculateWorksheetFormulas", () => {
     expect(getCell(recalculated, "E6")?.displayValue).toBe("18");
     expect(getCell(recalculated, "E7")?.displayValue).toBe("3");
     expect(getCell(recalculated, "E8")?.displayValue).toBe("2");
+    expect(getCell(recalculated, "F1")?.displayValue).toBe("1");
+    expect(getCell(recalculated, "F2")?.displayValue).toBe("1");
+    expect(getCell(recalculated, "F3")?.displayValue).toBe("20");
+    expect(getCell(recalculated, "F4")?.displayValue).toBe("20");
+  });
+
+  it("supports AND formulas in nested conditions and returns false when any condition fails", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "E2", { formula: '=AND(C2>0,D2>0)' });
+    setCell(worksheet, "E3", { formula: '=AND(C2<>"",B2<>"")' });
+    setCell(worksheet, "E4", { formula: '=IF(AND(C2<>"",D3<>""),C2*D3,"")' });
+    setCell(worksheet, "E5", { formula: '=IF(AND(C2>0,D2>0,C4>0),C2*C4,"Error")' });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "E2")?.displayValue).toBe("1");
+    expect(getCell(recalculated, "E3")?.displayValue).toBe("1");
+    expect(getCell(recalculated, "E4")?.displayValue).toBe("0");
+    expect(getCell(recalculated, "E5")?.displayValue).toBe("60");
+  });
+
+  it("supports IFS formulas and returns the first matching branch", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "A1", { value: "USG" });
+    setCell(worksheet, "A2", { value: "Rondo" });
+    setCell(worksheet, "A3", { value: "USG 22mm" });
+    setCell(worksheet, "A4", { value: "Rondo Keylock 28mm" });
+    setCell(worksheet, "E2", { formula: '=IFS(A1="USG",10,A1="Rondo",20)' });
+    setCell(worksheet, "E3", { formula: '=IFS(A1="USG",10,A1="Rondo",20)' });
+    setCell(worksheet, "E4", { formula: '=IFS(A3="USG 22mm","C-S/B",A3="Rondo Keylock 28mm","TCR S/B")' });
+    setCell(worksheet, "E5", { formula: '=IFS(A4="USG 22mm","C-S/B",A4="Rondo Keylock 28mm","TCR S/B")' });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "E2")?.displayValue).toBe("10");
+    expect(getCell(recalculated, "E3")?.displayValue).toBe("10");
+    expect(getCell(recalculated, "E4")?.displayValue).toBe("C-S/B");
+    expect(getCell(recalculated, "E5")?.displayValue).toBe("TCR S/B");
+  });
+
+  it("supports nested MAX inside IFS and returns an error when no conditions match", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "A1", { value: 24 });
+    setCell(worksheet, "A2", { value: -5 });
+    setCell(worksheet, "E2", { formula: '=IFS(A1=0,0,A1>=0,MAX(1,A1/20))' });
+    setCell(worksheet, "E3", { formula: '=IFS(A2=0,0,A2>=0,MAX(1,A2/20))' });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "E2")?.displayValue).toBe("1.2");
+    expect(getCell(recalculated, "E3")?.displayValue).toBe("#ERROR!");
+  });
+
+  it("rejects IFS formulas with invalid arity", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "E2", { formula: "=IFS()" });
+    setCell(worksheet, "E3", { formula: '=IFS(A1="USG",10,A1="Rondo")' });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "E2")?.displayValue).toBe("#ERROR!");
+    expect(getCell(recalculated, "E3")?.displayValue).toBe("#ERROR!");
+  });
+
+  it("supports QTY for linear, area, and volume calculations", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "C8", { value: 2 });
+    setCell(worksheet, "E8", { value: 5 });
+    setCell(worksheet, "F8", { value: null });
+    setCell(worksheet, "G8", { value: null });
+    setCell(worksheet, "H8", { formula: "=QTY(C8,E8,F8,G8)" });
+    setCell(worksheet, "F9", { value: 3 });
+    setCell(worksheet, "G9", { value: null });
+    setCell(worksheet, "C9", { value: 2 });
+    setCell(worksheet, "E9", { value: 5 });
+    setCell(worksheet, "H9", { formula: "=QTY(C9,E9,F9,G9)" });
+    setCell(worksheet, "C10", { value: 2 });
+    setCell(worksheet, "E10", { value: 5 });
+    setCell(worksheet, "F10", { value: 3 });
+    setCell(worksheet, "G10", { value: 4 });
+    setCell(worksheet, "H10", { formula: "=QTY(C10,E10,F10,G10)" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "H8")?.displayValue).toBe("10");
+    expect(getCell(recalculated, "H9")?.displayValue).toBe("30");
+    expect(getCell(recalculated, "H10")?.displayValue).toBe("120");
+  });
+
+  it("returns blank for blank QTY inputs and errors for incomplete QTY inputs", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "H8", { formula: "=QTY(C8,E8,F8,G8)" });
+    setCell(worksheet, "C9", { value: 2 });
+    setCell(worksheet, "F9", { value: 3 });
+    setCell(worksheet, "H9", { formula: "=QTY(C9,E9,F9,G9)" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "H8")?.displayValue).toBe("");
+    expect(getCell(recalculated, "H9")?.displayValue).toBe("#ERROR!");
+  });
+
+  it("supports UNIT for linear, area, and volume unit inference", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "E8", { value: 5 });
+    setCell(worksheet, "F8", { value: null });
+    setCell(worksheet, "G8", { value: null });
+    setCell(worksheet, "H8", { formula: "=UNIT(E8,F8,G8)" });
+    setCell(worksheet, "E9", { value: 5 });
+    setCell(worksheet, "F9", { value: 3 });
+    setCell(worksheet, "G9", { value: null });
+    setCell(worksheet, "H9", { formula: "=UNIT(E9,F9,G9)" });
+    setCell(worksheet, "E10", { value: 5 });
+    setCell(worksheet, "F10", { value: 3 });
+    setCell(worksheet, "G10", { value: 4 });
+    setCell(worksheet, "H10", { formula: "=UNIT(E10,F10,G10)" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "H8")?.displayValue).toBe("m/No");
+    expect(getCell(recalculated, "H9")?.displayValue).toBe("m2");
+    expect(getCell(recalculated, "H10")?.displayValue).toBe("m3");
+  });
+
+  it("supports WASTE with decimal percentages", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "E14", { value: 100 });
+    setCell(worksheet, "F14", { value: 0.1 });
+    setCell(worksheet, "H14", { formula: "=WASTE(E14,F14)" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "H14")?.displayValue).toBe("110");
+  });
+
+  it("supports percentage syntax in arithmetic and WASTE formulas", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "A1", { value: 10 });
+    setCell(worksheet, "A2", { value: 100 });
+    setCell(worksheet, "B1", { formula: "=A1*10%" });
+    setCell(worksheet, "B2", { formula: "=WASTE(A2,10%)" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "B1")?.displayValue).toBe("1");
+    expect(getCell(recalculated, "B2")?.displayValue).toBe("110");
+  });
+
+  it("supports PACKS and handles zero and invalid pack size", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "G12", { value: 24 });
+    setCell(worksheet, "H12", { formula: "=PACKS(G12,20)" });
+    setCell(worksheet, "G13", { value: 0 });
+    setCell(worksheet, "H13", { formula: "=PACKS(G13,20)" });
+    setCell(worksheet, "G14", { value: 24 });
+    setCell(worksheet, "H14", { formula: "=PACKS(G14,0)" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "H12")?.displayValue).toBe("1.2");
+    expect(getCell(recalculated, "H13")?.displayValue).toBe("0");
+    expect(getCell(recalculated, "H14")?.displayValue).toBe("#ERROR!");
+  });
+
+  it("supports exponent syntax in arithmetic formulas", () => {
+    const worksheet = buildHelperWorksheet();
+    setCell(worksheet, "A1", { value: 3 });
+    setCell(worksheet, "B1", { formula: "=A1^2" });
+    setCell(worksheet, "B2", { formula: "=2^3" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "B1")?.displayValue).toBe("9");
+    expect(getCell(recalculated, "B2")?.displayValue).toBe("8");
+  });
+
+  it("rejects AND formulas with no arguments", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "E2", { formula: "=AND()" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+
+    expect(getCell(recalculated, "E2")?.displayValue).toBe("#ERROR!");
   });
 
   it("surfaces divide-by-zero, value, and circular reference errors", () => {

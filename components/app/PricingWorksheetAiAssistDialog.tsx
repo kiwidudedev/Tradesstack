@@ -80,6 +80,7 @@ export type PricingWorksheetAiPreviewAssistant = {
   diffSummary: {
     changedCells: string[];
     formulaCells: string[];
+    formattingCells: string[];
     insertedRows: number[];
     affectedRows: number[];
   };
@@ -92,6 +93,8 @@ export type PricingWorksheetAiPreviewAssistant = {
       afterValue: string;
       beforeFormula: string | null;
       afterFormula: string | null;
+      beforeFormattingSummary: string | null;
+      afterFormattingSummary: string | null;
     }>;
     insertedRows: Array<{
       row: number;
@@ -105,6 +108,13 @@ export type PricingWorksheetAiPreviewAssistant = {
       beforeFormula: string | null;
       afterFormula: string | null;
     }>;
+    formattingChanges: Array<{
+      ref: string;
+      row: number;
+      sectionName: string | null;
+      beforeFormattingSummary: string | null;
+      afterFormattingSummary: string | null;
+    }>;
   };
 };
 
@@ -117,6 +127,13 @@ type Props = {
   previewWorksheetName: string;
   previewTradePackage: string;
   isGenerating: boolean;
+  jobStatus?: "queued" | "running" | "researching" | "generating" | "validating" | "ready" | "failed" | "cancelled" | null;
+  jobProgressLabel?: string | null;
+  jobError?: {
+    code: string;
+    message: string;
+    retryable: boolean;
+  } | null;
   isSubmittingReview: boolean;
   preview: {
     compactOutput: PricingWorksheetAiPreviewSummary;
@@ -289,6 +306,9 @@ export function PricingWorksheetAiAssistDialog({
   previewWorksheetName,
   previewTradePackage,
   isGenerating,
+  jobStatus,
+  jobProgressLabel,
+  jobError,
   isSubmittingReview,
   preview,
   error,
@@ -318,6 +338,7 @@ export function PricingWorksheetAiAssistDialog({
   const reviewFindings = preview?.assistant?.reviewFindings ?? [];
   const suggestedEditGroups = preview?.assistant?.suggestedEditGroups ?? [];
   const evidenceSources = preview?.assistant?.evidenceSources ?? [];
+  const inProgress = Boolean(jobStatus && !["ready", "failed", "cancelled"].includes(jobStatus));
   const applyLabel =
     isAnswerOnly
       ? "Done"
@@ -347,6 +368,12 @@ export function PricingWorksheetAiAssistDialog({
 
         <div className="space-y-5 px-6 py-5">
           {error ? <OperationalAlert variant="error">{error}</OperationalAlert> : null}
+          {inProgress && jobProgressLabel ? <OperationalAlert variant="info">{jobProgressLabel}</OperationalAlert> : null}
+          {!error && jobError?.message && (jobStatus === "failed" || jobStatus === "cancelled") ? (
+            <OperationalAlert variant={jobError.retryable ? "warning" : "error"}>
+              {jobError.message}
+            </OperationalAlert>
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.9fr)]">
             <div className="space-y-4">
@@ -397,7 +424,7 @@ export function PricingWorksheetAiAssistDialog({
                   className="h-10 rounded-[8px] px-4 text-sm font-medium"
                 >
                   {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  {isGenerating ? "Preparing response..." : "Ask AI"}
+                  {isGenerating ? (jobProgressLabel ?? "Preparing response...") : jobError?.retryable ? "Retry Ask AI" : "Ask AI"}
                 </Button>
                 <p className="text-xs text-[var(--text-secondary)]">
                   Ask AI uses compact worksheet context only. Any worksheet edits stay local until you apply them, and nothing saves until you save normally.
@@ -982,6 +1009,9 @@ export function PricingWorksheetAiAssistDialog({
                         <div className="rounded-[8px] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text-primary)]">
                           Formula changes: {preview.assistant?.diffSummary.formulaCells.length ?? 0}
                         </div>
+                        <div className="rounded-[8px] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text-primary)]">
+                          Formatting changes: {preview.assistant?.diffSummary.formattingCells.length ?? 0}
+                        </div>
                       </div>
                     </div>
                   ) : null}
@@ -999,9 +1029,31 @@ export function PricingWorksheetAiAssistDialog({
                               {change.sectionName ? ` • ${change.sectionName}` : ""}
                             </div>
                             <div className="mt-1 text-[var(--text-secondary)]">
-                              {change.beforeValue || change.beforeFormula ? `"${change.beforeValue || change.beforeFormula}"` : "blank"}{" "}
-                              to{" "}
-                              {change.afterValue || change.afterFormula ? `"${change.afterValue || change.afterFormula}"` : "blank"}
+                              {change.beforeFormattingSummary !== change.afterFormattingSummary &&
+                              (change.beforeFormattingSummary || change.afterFormattingSummary)
+                                ? `${change.beforeFormattingSummary ?? "no formatting"} to ${change.afterFormattingSummary ?? "no formatting"}`
+                                : `${change.beforeValue || change.beforeFormula ? `"${change.beforeValue || change.beforeFormula}"` : "blank"} to ${change.afterValue || change.afterFormula ? `"${change.afterValue || change.afterFormula}"` : "blank"}`}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(preview.assistant?.diffPreview?.formattingChanges ?? []).length > 0 ? (
+                    <div className="space-y-2 rounded-[10px] border border-[var(--border)] bg-white p-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">
+                        Formatting changes
+                      </div>
+                      <div className="space-y-2">
+                        {(preview.assistant?.diffPreview?.formattingChanges ?? []).map((change) => (
+                          <div key={`format-${change.ref}`} className="rounded-[8px] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text-primary)]">
+                            <div className="font-semibold">
+                              {change.ref}
+                              {change.sectionName ? ` • ${change.sectionName}` : ""}
+                            </div>
+                            <div className="mt-1 text-[var(--text-secondary)]">
+                              {change.beforeFormattingSummary ?? "no formatting"} to {change.afterFormattingSummary ?? "no formatting"}
                             </div>
                           </div>
                         ))}

@@ -1,6 +1,35 @@
-import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 import type { WorksheetData } from "@/lib/opportunity-pricing-worksheet-defaults";
+import { getCellFormat } from "@/lib/opportunity-pricing-worksheet-formatting";
 import { buildWorksheetCellKey } from "@/lib/opportunity-pricing-worksheet-paste";
+import {
+  extractBalancedJsonObject,
+  extractPricingWorksheetAssistantPayload,
+  type PricingWorksheetAssistantPayloadDiagnostics,
+  type PricingWorksheetAssistantPayloadExtraction,
+} from "@/lib/ai/providers/pricing-worksheet/openai-provider";
+import {
+  getPricingWorksheetAiProvider,
+  getPricingWorksheetAiProviderName,
+  getPricingWorksheetAnthropicModel,
+  getPricingWorksheetOpenAiModel,
+} from "@/lib/ai/providers/pricing-worksheet/registry";
+import {
+  convertAnthropicWorksheetDraftToOperations,
+  isAnthropicWorksheetDraftResponse,
+} from "@/lib/ai/providers/pricing-worksheet/anthropic-draft-to-operations";
+import { buildPricingWorksheetAiContext } from "@/lib/pricing-worksheet-ai-context";
+import {
+  buildPricingWorksheetAiStructureSnapshot,
+  detectPricingWorksheetState,
+  summarizePricingWorksheetStructureSnapshot,
+  type PricingWorksheetState,
+  type PricingWorksheetStructureSnapshot,
+} from "@/lib/pricing-worksheet-ai-structure-snapshot";
+import { compileAiWorksheetFormula } from "@/lib/pricing-worksheet-ai-formula-compiler";
+import {
+  isPricingWorksheetProviderError,
+  type PricingWorksheetProviderError,
+} from "@/lib/ai/providers/pricing-worksheet/types";
 import type { AiMemoryItem } from "@/lib/ai-lifecycle-server";
 import {
   classifyPricingWorksheetConstructionIntent,
@@ -12,8 +41,10 @@ import type {
 } from "@/lib/pricing-worksheet-ai-context";
 import type { PricingWorksheetOrganizationGuidance } from "@/lib/pricing-worksheet-organization-guidance";
 import {
+  getPricingWorksheetAiFormulaCompatibility,
   buildPricingWorksheetAiAssistantSchema,
   buildPricingWorksheetAiSuggestedEditSelectionResponse,
+  inspectPricingWorksheetAiOperationNormalization,
   normalizePricingWorksheetAiAssistantResponse,
   simulatePricingWorksheetAiEditPlan,
   type PricingWorksheetAiCellValueEntry,
@@ -31,21 +62,114 @@ import {
 } from "@/lib/pricing-worksheet-edit-plan";
 import { startPricingWorksheetPerformanceMeasure } from "@/lib/pricing-worksheet-performance";
 
-const OPENAI_API_URL = "https://api.openai.com/v1/responses";
-const DEFAULT_ASSISTANT_MODEL = "gpt-5.5";
+export {
+  extractBalancedJsonObject,
+  extractPricingWorksheetAssistantPayload,
+};
+export type {
+  PricingWorksheetAssistantPayloadDiagnostics,
+  PricingWorksheetAssistantPayloadExtraction,
+};
+
 const WORKSHEET_AI_TIMEOUT_MS = 75_000;
 const WORKSHEET_AI_DEFAULT_TIMEOUT_MS = 45_000;
-const WORKSHEET_AI_GENERATION_TIMEOUT_MS = 35_000;
+const WORKSHEET_AI_GENERATION_TIMEOUT_MS = 60_000;
+const WORKSHEET_AI_RETRIEVAL_GENERATION_TIMEOUT_MS = 90_000;
 const WORKSHEET_AI_MAX_OUTPUT_TOKENS = 5000;
 const WORKSHEET_AI_GENERATION_MAX_OUTPUT_TOKENS = 6500;
 const WORKSHEET_AI_GENERATION_COMPACT_RETRY_MAX_OUTPUT_TOKENS = 4500;
 const WORKSHEET_AI_TRUNCATION_RETRY_MAX_OUTPUT_TOKENS = 10000;
 const WORKSHEET_AI_MAX_PROVIDER_ATTEMPTS = 3;
 const WORKSHEET_AI_MAX_GENERATION_PROVIDER_ATTEMPTS = 1;
-const RETRYABLE_PROVIDER_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504, 520, 522, 524]);
-const WORKSHEET_AI_WEB_SEARCH_TOOL = {
-  type: "web_search",
-} as const;
+const WORKSHEET_AI_STAGE_MAX_PROVIDER_CALLS = 2;
+const WORKSHEET_AI_ANTHROPIC_STAGE_A_MAX_OUTPUT_TOKENS = 2800;
+const WORKSHEET_AI_FORMULA_STAGE_MAX_OUTPUT_TOKENS = 3000;
+const WORKSHEET_AI_FORMULA_STAGE_MAX_SUGGESTIONS = 16;
+const WORKSHEET_AI_FORMULA_STAGE_MAX_INPUT_TOKENS = 7000;
+const WORKSHEET_AI_FORMULA_STAGE_OVERSIZE_WARNING =
+  "Formula generation was skipped because the worksheet formula context was too large. Try selecting a smaller section or asking for formulas for one section at a time.";
+
+type PricingWorksheetAiFormulaSuggestion = {
+  targetRowNumber: number;
+  targetColumn: string;
+  expression: string;
+  rationale: string;
+};
+
+type PricingWorksheetAiFormattingSuggestion = {
+  type: "format_cell" | "format_cells";
+  targetCells: string[];
+  backgroundColor: string | null;
+  textColor: string | null;
+  bold: boolean | null;
+  italic: boolean | null;
+  rationale: string;
+};
+
+type PricingWorksheetAiReviewStageFinding = {
+  title: string;
+  finding: string;
+  category: string;
+  severity: "low" | "medium" | "high";
+  confidence: "high" | "medium" | "low";
+  assumption?: string;
+  needsConfirmation?: string;
+  suggestedAction?: string;
+  relatedCells?: string[];
+  relatedRows?: number[];
+};
+
+type PricingWorksheetAiEditIntentSuggestion = {
+  action: "set_cell_value" | "set_cells_value" | "insert_row_after" | "insert_subtotal";
+  targetCell: string | null;
+  targetCells: string[];
+  values: Array<{
+    ref: string | null;
+    column: string | null;
+    value: string;
+  }>;
+  afterRowNumber: number | null;
+  subtotalLabel: string | null;
+  rationale: string;
+};
+
+type AnthropicWorkflow =
+  | "staged_generation"
+  | "formula_suggestions"
+  | "formatting"
+  | "review"
+  | "compact_edit_intent"
+  | "answer_only"
+  | "safe_unknown_fallback";
+
+type FormulaStageContextBudgetLevel = 0 | 1 | 2 | 3 | 4;
+
+type FormulaStageContextBudget = {
+  snapshot: PricingWorksheetStructureSnapshot;
+  constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+  assumptionRows: ReturnType<typeof buildAnthropicAssumptionRowSummary>;
+  stageAssumptions: string[];
+  stageWarnings: string[];
+  userPrompt: string;
+  compactionLevel: FormulaStageContextBudgetLevel;
+  tokenBreakdown: {
+    systemPromptTokens: number;
+    userPromptTokens: number;
+    snapshotTokens: number;
+    constructionSummaryTokens: number;
+    assumptionRowsTokens: number;
+    totalEstimatedTokens: number;
+    maxAllowedTokens: number;
+    budgetTier: PricingWorksheetStructureSnapshot["budgetTier"];
+    formulaTargetRowCount: number;
+    compactionLevel: FormulaStageContextBudgetLevel;
+  };
+  blockedMessage?: string;
+};
+
+function isAnthropicEmptyOperationRetryEnabled() {
+  return process.env.PRICING_WORKSHEET_ANTHROPIC_EMPTY_OPERATION_RETRY === "true";
+}
 
 type PricingWorksheetProviderResponseFailureReason =
   | "missing_structured_output"
@@ -57,21 +181,11 @@ type PricingWorksheetProviderResponseFailureReason =
   | "provider_tool_only_response"
   | "provider_returned_empty_response";
 
-export type PricingWorksheetAssistantPayloadDiagnostics = {
-  sourcePath: string;
-  outputItemTypes: string[];
-  contentItemTypes: string[];
-  rawTextLength: number;
-  structuredObjectFound: boolean;
-  parseError?: string;
-  possibleTruncatedJson?: boolean;
-};
-
-export type PricingWorksheetAssistantPayloadExtraction = {
-  structuredObject: Record<string, unknown> | null;
-  rawText: string;
-  providerSources: PricingWorksheetAiEvidenceSource[];
-  diagnostics: PricingWorksheetAssistantPayloadDiagnostics;
+export type PricingWorksheetAiProviderSettings = {
+  timeoutMs: number;
+  maxProviderAttempts: number;
+  maxOutputTokens: number;
+  webSearchEnabled: boolean;
 };
 
 function logEditAssistantDebug(action: string, payload: Record<string, unknown>) {
@@ -111,10 +225,6 @@ async function waitForRetry(delayMs: number) {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-function isRetryableProviderStatus(status: number) {
-  return RETRYABLE_PROVIDER_STATUS_CODES.has(status);
-}
-
 type BuildPricingWorksheetEditAssistantParams = {
   prompt: string;
   worksheet: WorksheetData;
@@ -123,6 +233,13 @@ type BuildPricingWorksheetEditAssistantParams = {
   classification?: PricingWorksheetConstructionIntent;
   organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
   followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  providerOptions?: {
+    webSearchEnabled?: boolean;
+  };
+  internalFlags?: {
+    anthropicWorkflowOverride?: AnthropicWorkflow | null;
+    formattingToGenerationFallbackUsed?: boolean;
+  };
 };
 
 export type PricingWorksheetAiFollowUpContext = {
@@ -136,10 +253,18 @@ export type PricingWorksheetAiFollowUpContext = {
 };
 
 export type PricingWorksheetAiAssistantGenerationMeta = {
-  provider: "openai" | "tradesstack";
+  provider: "openai" | "anthropic" | "tradesstack";
   model: string;
   fallbackUsed: boolean;
   fallbackReason: string | null;
+};
+
+export type PricingWorksheetAiAssistantProviderAudit = {
+  requestedProvider: "openai" | "anthropic";
+  requestedModel: string;
+  actualProvider: "openai" | "anthropic" | null;
+  actualModel: string | null;
+  webSearchEnabled: boolean;
 };
 
 export type PricingWorksheetAiAssistantPreview = {
@@ -159,6 +284,7 @@ export type PricingWorksheetAiAssistantPreview = {
   diffSummary: {
     changedCells: string[];
     formulaCells: string[];
+    formattingCells: string[];
     insertedRows: number[];
     affectedRows: number[];
   };
@@ -171,6 +297,8 @@ export type PricingWorksheetAiAssistantPreview = {
       afterValue: string;
       beforeFormula: string | null;
       afterFormula: string | null;
+      beforeFormattingSummary: string | null;
+      afterFormattingSummary: string | null;
     }>;
     insertedRows: Array<{
       row: number;
@@ -183,6 +311,13 @@ export type PricingWorksheetAiAssistantPreview = {
       ref: string;
       beforeFormula: string | null;
       afterFormula: string | null;
+    }>;
+    formattingChanges: Array<{
+      ref: string;
+      row: number;
+      sectionName: string | null;
+      beforeFormattingSummary: string | null;
+      afterFormattingSummary: string | null;
     }>;
   };
   storageSummary: {
@@ -207,6 +342,11 @@ export type PricingWorksheetAiAssistantPreview = {
       ref: string;
       beforeFormula: string | null;
       afterFormula: string | null;
+    }>;
+    formattingChangeSummary: Array<{
+      ref: string;
+      beforeFormattingSummary: string | null;
+      afterFormattingSummary: string | null;
     }>;
     insertedRowSummary: Array<{
       row: number;
@@ -331,6 +471,30 @@ function getCellDisplayValue(worksheet: WorksheetData, ref: string) {
   };
 }
 
+function getCellFormattingSummary(worksheet: WorksheetData, ref: string) {
+  const cell = getCellAtRef(worksheet, ref);
+  const format = getCellFormat(cell ?? undefined);
+  const parts: string[] = [];
+
+  if (format.fill?.color) {
+    parts.push(`fill ${format.fill.color}`);
+  }
+  if (format.text?.color) {
+    parts.push(`text ${format.text.color}`);
+  }
+  if (format.text?.bold) {
+    parts.push("bold");
+  }
+  if (format.text?.italic) {
+    parts.push("italic");
+  }
+  if (format.border?.top || format.border?.right || format.border?.bottom || format.border?.left) {
+    parts.push("border");
+  }
+
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 function findSectionNameForRow(
   contextRows: PricingWorksheetAiContextRowSummary[],
   rowNumber: number,
@@ -360,6 +524,7 @@ function sanitizeOperation(operation: PricingWorksheetAiOperation) {
     type: operation.type,
     target: {
       cell: operation.target?.cell ?? null,
+      cells: operation.target?.cells ?? null,
       row: operation.target?.row ?? null,
       sourceRow: operation.target?.sourceRow ?? null,
       insertAfterRow: operation.target?.insertAfterRow ?? null,
@@ -380,6 +545,15 @@ function sanitizeOperation(operation: PricingWorksheetAiOperation) {
       column: entry.column ?? null,
       formula: entry.formula,
     })),
+    format: operation.format
+      ? {
+          backgroundColor: operation.format.backgroundColor ?? null,
+          textColor: operation.format.textColor ?? null,
+          bold: operation.format.bold ?? null,
+          italic: operation.format.italic ?? null,
+          border: operation.format.border ?? null,
+        }
+      : null,
     rationale: operation.rationale?.trim() ?? "",
   };
 }
@@ -407,6 +581,8 @@ function buildDiffPreview(
       afterValue: after.value,
       beforeFormula: before.formula,
       afterFormula: after.formula,
+      beforeFormattingSummary: getCellFormattingSummary(originalWorksheet, ref),
+      afterFormattingSummary: getCellFormattingSummary(nextWorksheet, ref),
     };
   });
 
@@ -458,365 +634,36 @@ function buildDiffPreview(
     ),
   ).slice(0, 12);
 
+  const formattingChanges = changedCells
+    .filter(
+      (entry) =>
+        entry.beforeFormattingSummary !== entry.afterFormattingSummary &&
+        (entry.beforeFormattingSummary || entry.afterFormattingSummary),
+    )
+    .slice(0, 24)
+    .map((entry) => ({
+      ref: entry.ref,
+      row: entry.row,
+      sectionName: entry.sectionName,
+      beforeFormattingSummary: entry.beforeFormattingSummary,
+      afterFormattingSummary: entry.afterFormattingSummary,
+    }));
+
   return {
     changedCells,
     insertedRows,
     affectedSections,
     formulaChanges,
+    formattingChanges,
   };
 }
 
 export function getPricingWorksheetEditAssistantModelConfig() {
+  const provider = getPricingWorksheetAiProviderName();
   return {
-    provider: "openai" as const,
-    model: process.env.OPENAI_PRICING_WORKSHEET_MODEL?.trim() || DEFAULT_ASSISTANT_MODEL,
+    provider,
+    model: provider === "anthropic" ? getPricingWorksheetAnthropicModel() : getPricingWorksheetOpenAiModel(),
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function collectOpenAiOutputItemTypes(responseJson: unknown): string[] {
-  if (!isRecord(responseJson) || !Array.isArray(responseJson.output)) {
-    return [];
-  }
-
-  return responseJson.output
-    .map((outputItem) => (isRecord(outputItem) && typeof outputItem.type === "string" ? outputItem.type : null))
-    .filter((value): value is string => Boolean(value));
-}
-
-function collectOpenAiContentItemTypes(responseJson: unknown): string[] {
-  if (!isRecord(responseJson) || !Array.isArray(responseJson.output)) {
-    return [];
-  }
-
-  const contentTypes: string[] = [];
-  for (const outputItem of responseJson.output) {
-    if (!isRecord(outputItem) || !Array.isArray(outputItem.content)) {
-      continue;
-    }
-
-    for (const contentItem of outputItem.content) {
-      if (isRecord(contentItem) && typeof contentItem.type === "string") {
-        contentTypes.push(contentItem.type);
-      }
-    }
-  }
-
-  return contentTypes;
-}
-
-function extractOpenAiResponseTextChunks(responseJson: unknown): string[] {
-  if (!isRecord(responseJson)) {
-    return [];
-  }
-
-  const chunks: string[] = [];
-  if (typeof responseJson.output_text === "string" && responseJson.output_text.trim().length > 0) {
-    chunks.push(responseJson.output_text.trim());
-  }
-
-  const output = responseJson.output;
-  if (!Array.isArray(output)) {
-    return chunks;
-  }
-
-  for (const outputItem of output) {
-    if (!isRecord(outputItem) || !Array.isArray(outputItem.content)) {
-      continue;
-    }
-
-    for (const contentItem of outputItem.content) {
-      if (
-        isRecord(contentItem) &&
-        (contentItem.type === "output_text" || contentItem.type === "text") &&
-        typeof contentItem.text === "string" &&
-        contentItem.text.trim().length > 0
-      ) {
-        chunks.push(contentItem.text);
-      }
-    }
-  }
-
-  return chunks;
-}
-
-function extractOpenAiResponseText(responseJson: unknown): string {
-  return extractOpenAiResponseTextChunks(responseJson).join("\n").trim();
-}
-
-function extractOpenAiStructuredObject(responseJson: unknown): Record<string, unknown> | null {
-  if (!isRecord(responseJson)) {
-    return null;
-  }
-
-  if (isRecord(responseJson.output_parsed)) {
-    return responseJson.output_parsed;
-  }
-
-  const output = responseJson.output;
-  if (!Array.isArray(output)) {
-    return null;
-  }
-
-  for (const outputItem of output) {
-    if (!isRecord(outputItem) || !Array.isArray(outputItem.content)) {
-      continue;
-    }
-
-    for (const contentItem of outputItem.content) {
-      if (!isRecord(contentItem)) {
-        continue;
-      }
-
-      if (isRecord(contentItem.json)) {
-        return contentItem.json;
-      }
-
-      if (isRecord(contentItem.parsed)) {
-        return contentItem.parsed;
-      }
-    }
-  }
-
-  return null;
-}
-
-function buildProviderResponseDiagnostics(
-  responseJson: unknown,
-  overrides?: Partial<PricingWorksheetAssistantPayloadDiagnostics>,
-): PricingWorksheetAssistantPayloadDiagnostics {
-  return {
-    sourcePath: overrides?.sourcePath ?? "none",
-    outputItemTypes: overrides?.outputItemTypes ?? collectOpenAiOutputItemTypes(responseJson),
-    contentItemTypes: overrides?.contentItemTypes ?? collectOpenAiContentItemTypes(responseJson),
-    rawTextLength: overrides?.rawTextLength ?? 0,
-    structuredObjectFound: overrides?.structuredObjectFound ?? false,
-    parseError: overrides?.parseError,
-    possibleTruncatedJson: overrides?.possibleTruncatedJson ?? false,
-  };
-}
-
-export function extractBalancedJsonObject(text: string): {
-  jsonText: string | null;
-  possibleTruncatedJson: boolean;
-} {
-  const source = text.trim();
-  if (!source) {
-    return { jsonText: null, possibleTruncatedJson: false };
-  }
-
-  let startIndex = -1;
-  let depth = 0;
-  let inString = false;
-  let isEscaped = false;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index];
-
-    if (inString) {
-      if (isEscaped) {
-        isEscaped = false;
-        continue;
-      }
-
-      if (char === "\\") {
-        isEscaped = true;
-        continue;
-      }
-
-      if (char === "\"") {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === "\"") {
-      inString = true;
-      continue;
-    }
-
-    if (char === "{") {
-      if (depth === 0) {
-        startIndex = index;
-      }
-      depth += 1;
-      continue;
-    }
-
-    if (char === "}" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && startIndex >= 0) {
-        return {
-          jsonText: source.slice(startIndex, index + 1),
-          possibleTruncatedJson: false,
-        };
-      }
-    }
-  }
-
-  return {
-    jsonText: null,
-    possibleTruncatedJson: startIndex >= 0 && depth > 0,
-  };
-}
-
-function stripMarkdownCodeFence(text: string): string {
-  const trimmed = text.trim();
-  const fencedMatch = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
-  return fencedMatch?.[1]?.trim() ?? trimmed;
-}
-
-function parseJsonObjectCandidate(payload: string): {
-  structuredObject: Record<string, unknown> | null;
-  parseError?: string;
-  possibleTruncatedJson?: boolean;
-} {
-  const trimmed = stripMarkdownCodeFence(payload);
-  if (!trimmed) {
-    return { structuredObject: null };
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    return {
-      structuredObject: isRecord(parsed) ? parsed : null,
-      parseError: isRecord(parsed) ? undefined : "parsed_value_was_not_an_object",
-    };
-  } catch (error) {
-    const balanced = extractBalancedJsonObject(trimmed);
-    if (!balanced.jsonText) {
-      return {
-        structuredObject: null,
-        parseError: error instanceof Error ? error.message : "json_parse_failed",
-        possibleTruncatedJson: balanced.possibleTruncatedJson,
-      };
-    }
-
-    try {
-      const parsed = JSON.parse(balanced.jsonText);
-      return {
-        structuredObject: isRecord(parsed) ? parsed : null,
-        parseError: isRecord(parsed) ? undefined : "parsed_balanced_json_was_not_an_object",
-        possibleTruncatedJson: false,
-      };
-    } catch (balancedError) {
-      return {
-        structuredObject: null,
-        parseError: balancedError instanceof Error ? balancedError.message : "balanced_json_parse_failed",
-        possibleTruncatedJson: balanced.possibleTruncatedJson,
-      };
-    }
-  }
-}
-
-function inferEvidenceSourceType(params: { title?: string; url?: string }): PricingWorksheetAiEvidenceSource["sourceType"] {
-  const haystack = `${params.title ?? ""} ${params.url ?? ""}`.toLowerCase();
-  if (
-    haystack.includes("ncc") ||
-    haystack.includes("nzbc") ||
-    haystack.includes("as/nzs") ||
-    haystack.includes("building code") ||
-    haystack.includes("standards")
-  ) {
-    return "standard_or_code";
-  }
-
-  if (
-    haystack.includes("rondo") ||
-    haystack.includes("gib") ||
-    haystack.includes("knauf") ||
-    haystack.includes("sika") ||
-    haystack.includes("csr") ||
-    haystack.includes("bostik")
-  ) {
-    return "manufacturer";
-  }
-
-  if (haystack.includes("supplier") || haystack.includes("mitre10") || haystack.includes("bunnings") || haystack.includes("placemakers")) {
-    return "supplier";
-  }
-
-  if (haystack.includes("guide") || haystack.includes("manual") || haystack.includes("technical") || haystack.includes("guidance")) {
-    return "industry_guidance";
-  }
-
-  return params.url ? "web" : "unknown";
-}
-
-function inferEvidenceJurisdiction(params: { title?: string; url?: string }): PricingWorksheetAiEvidenceSource["jurisdiction"] {
-  const haystack = `${params.title ?? ""} ${params.url ?? ""}`.toLowerCase();
-  if (
-    haystack.includes(".au") ||
-    haystack.includes("australia") ||
-    haystack.includes("ncc") ||
-    haystack.includes("au/")
-  ) {
-    return "AU";
-  }
-
-  if (
-    haystack.includes(".nz") ||
-    haystack.includes("new zealand") ||
-    haystack.includes("nzbc") ||
-    haystack.includes("nz/")
-  ) {
-    return "NZ";
-  }
-
-  if (haystack.includes("as/nzs") || (haystack.includes(".au") && haystack.includes(".nz"))) {
-    return "AUS_NZ";
-  }
-
-  return "unknown";
-}
-
-function inferEvidenceConfidence(sourceType: PricingWorksheetAiEvidenceSource["sourceType"]): PricingWorksheetAiConfidence {
-  if (sourceType === "standard_or_code") {
-    return "high";
-  }
-
-  if (sourceType === "manufacturer" || sourceType === "industry_guidance" || sourceType === "project_document") {
-    return "medium";
-  }
-
-  if (sourceType === "supplier" || sourceType === "unknown") {
-    return "low";
-  }
-
-  return "medium";
-}
-
-function sanitizeEvidenceSourceText(value: unknown, maxLength: number): string {
-  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, maxLength) : "";
-}
-
-function sanitizeEvidenceSourceUrl(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim().slice(0, 280);
-  if (!/^https?:\/\//i.test(trimmed)) {
-    return undefined;
-  }
-
-  try {
-    return new URL(trimmed).toString();
-  } catch {
-    return undefined;
-  }
-}
-
-function buildEvidenceSourceId(index: number, title?: string, url?: string): string {
-  const seed = (url || title || `source-${index + 1}`)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return seed.length > 0 ? seed : `source-${index + 1}`;
 }
 
 function buildEvidenceSourceDedupKey(source: Pick<PricingWorksheetAiEvidenceSource, "title" | "url">): string {
@@ -864,152 +711,12 @@ function mergeEvidenceSources(
   return merged.slice(0, 16);
 }
 
-function extractOpenAiEvidenceSources(responseJson: unknown): PricingWorksheetAiEvidenceSource[] {
-  if (!isRecord(responseJson)) {
-    return [];
-  }
-
-  const collected: PricingWorksheetAiEvidenceSource[] = [];
-  const output = Array.isArray(responseJson.output) ? responseJson.output : [];
-  const retrievedAt = new Date().toISOString();
-
-  for (const outputItem of output) {
-    if (!isRecord(outputItem)) {
-      continue;
-    }
-
-    if (
-      outputItem.type === "web_search_call" &&
-      isRecord(outputItem.action) &&
-      Array.isArray(outputItem.action.sources)
-    ) {
-      for (const [index, sourceEntry] of outputItem.action.sources.entries()) {
-        if (!isRecord(sourceEntry)) {
-          continue;
-        }
-
-        const title = sanitizeEvidenceSourceText(sourceEntry.title, 120);
-        const url = sanitizeEvidenceSourceUrl(sourceEntry.url);
-        if (!title && !url) {
-          continue;
-        }
-        const sourceType = inferEvidenceSourceType({ title, url });
-        collected.push({
-          id: buildEvidenceSourceId(index, title, url),
-          title: title || (url ?? `Source ${index + 1}`),
-          url,
-          sourceType,
-          jurisdiction: inferEvidenceJurisdiction({ title, url }),
-          confidence: inferEvidenceConfidence(sourceType),
-          retrievedAt,
-          supportedClaims: [],
-        });
-      }
-    }
-
-    if (!Array.isArray(outputItem.content)) {
-      continue;
-    }
-
-    for (const contentItem of outputItem.content) {
-      if (!isRecord(contentItem) || !Array.isArray(contentItem.annotations)) {
-        continue;
-      }
-
-      for (const [index, annotation] of contentItem.annotations.entries()) {
-        if (!isRecord(annotation) || annotation.type !== "url_citation") {
-          continue;
-        }
-
-        const title = sanitizeEvidenceSourceText(annotation.title, 120);
-        const url = sanitizeEvidenceSourceUrl(annotation.url);
-        if (!title && !url) {
-          continue;
-        }
-
-        const sourceType = inferEvidenceSourceType({ title, url });
-        collected.push({
-          id: buildEvidenceSourceId(index, title, url),
-          title: title || (url ?? `Citation ${index + 1}`),
-          url,
-          sourceType,
-          jurisdiction: inferEvidenceJurisdiction({ title, url }),
-          confidence: inferEvidenceConfidence(sourceType),
-          retrievedAt,
-          supportedClaims: [],
-        });
-      }
-    }
-  }
-
-  return mergeEvidenceSources([], collected);
-}
-
-function hasIncompleteProviderSignal(responseJson: unknown): boolean {
-  if (!isRecord(responseJson)) {
-    return false;
-  }
-
-  if (responseJson.status === "incomplete") {
-    return true;
-  }
-
-  if (isRecord(responseJson.incomplete_details)) {
-    return true;
-  }
-
-  if (!Array.isArray(responseJson.output)) {
-    return false;
-  }
-
-  return responseJson.output.some((outputItem) => isRecord(outputItem) && outputItem.status === "incomplete");
-}
-
-function classifyProviderResponseFailureReason(
-  responseJson: unknown,
-  extraction: PricingWorksheetAssistantPayloadExtraction,
-): PricingWorksheetProviderResponseFailureReason {
-  const { diagnostics, rawText } = extraction;
-  const hasOutputItems = diagnostics.outputItemTypes.length > 0;
-  const hasMessageOutput = diagnostics.outputItemTypes.includes("message");
-  const hasToolOnlyOutput =
-    hasOutputItems &&
-    diagnostics.outputItemTypes.every((type) => type !== "message") &&
-    diagnostics.outputItemTypes.some((type) => type.includes("tool") || type.includes("search"));
-
-  if (!hasOutputItems && !rawText.trim()) {
-    return "provider_returned_empty_response";
-  }
-
-  if (hasToolOnlyOutput && !rawText.trim()) {
-    return "provider_tool_only_response";
-  }
-
-  if (!hasMessageOutput && !rawText.trim()) {
-    return "no_assistant_message";
-  }
-
-  if (diagnostics.possibleTruncatedJson || hasIncompleteProviderSignal(responseJson)) {
-    return "truncated_json";
-  }
-
-  if (diagnostics.parseError) {
-    return rawText.trim() ? "malformed_json" : "missing_structured_output";
-  }
-
-  if (rawText.trim()) {
-    return "missing_structured_output";
-  }
-
-  return "unsupported_provider_shape";
-}
-
 function buildTruncationRetryPrompt(prompt: string): string {
-  return `${prompt}\n\nIf returning a larger worksheet-generation or calculator scaffold, keep the response compact: include only essential rows, concise assumptions, and bounded operations so the JSON response fits fully in one reply.`;
+  return `${prompt}\n\nIf returning a larger worksheet-generation scaffold, keep it compact and estimator-style so the JSON response fits fully in one reply. Use dense commercial workbook structure with only essential grouped sections, adjacent calculation flow, visible inputs, key pricing rows, practical subtotals, and a compact output summary. Prefer concise row names, minimal notes, editable assumptions, and visible formulas over hidden logic, repeated descriptions, giant worksheet layouts, or calculator sprawl.`;
 }
 
 function buildCompactGenerationRetryPrompt(prompt: string): string {
-  return `${prompt}\n\nRetry instruction: return only the smallest useful starter worksheet for this request. Keep it compact and previewable. Use essential input rows, key formula rows, and a simple subtotal only. Avoid long explanations, extra review findings, and non-essential rows.`;
+  return `${prompt}\n\nRetry instruction: return only the smallest useful estimator-style starter worksheet for this request. Keep it compact, previewable, and reversible. Use a tight commercial workbook flow with dense pricing blocks, adjacent quantity and pricing calculations, a structured subtotal, and a compact output or sell-price row where relevant. Prefer concise row labels, fewer note-style rows, tighter material and labour grouping, editable input assumptions, and visible formulas. Avoid long explanations, repeated descriptions, hidden logic, giant worksheet layouts, and non-essential rows.`;
 }
 
 function getWorksheetAiMaxOutputTokens(
@@ -1037,8 +744,12 @@ function getWorksheetAiTimeoutMs(
   providerRecoveryRetryCount: number,
 ): number {
   if (classification.primaryIntent === "worksheet_generation") {
+    if (classification.requiresRetrieval) {
+      return WORKSHEET_AI_RETRIEVAL_GENERATION_TIMEOUT_MS;
+    }
+
     return providerRecoveryRetryCount > 0
-      ? Math.min(WORKSHEET_AI_GENERATION_TIMEOUT_MS, WORKSHEET_AI_DEFAULT_TIMEOUT_MS)
+      ? Math.max(WORKSHEET_AI_GENERATION_TIMEOUT_MS, WORKSHEET_AI_DEFAULT_TIMEOUT_MS)
       : WORKSHEET_AI_GENERATION_TIMEOUT_MS;
   }
 
@@ -1060,130 +771,57 @@ function getWorksheetAiMaxProviderAttempts(
   return WORKSHEET_AI_MAX_PROVIDER_ATTEMPTS;
 }
 
-export function extractPricingWorksheetAssistantPayload(
-  responseJson: unknown,
-): PricingWorksheetAssistantPayloadExtraction {
-  const providerSources = extractOpenAiEvidenceSources(responseJson);
-  const outputItemTypes = collectOpenAiOutputItemTypes(responseJson);
-  const contentItemTypes = collectOpenAiContentItemTypes(responseJson);
+export function getPricingWorksheetAiProviderSettings(
+  classification: PricingWorksheetConstructionIntent,
+  options?: {
+    truncationRetryCount?: number;
+    providerRecoveryRetryCount?: number;
+  },
+): PricingWorksheetAiProviderSettings {
+  const truncationRetryCount = options?.truncationRetryCount ?? 0;
+  const providerRecoveryRetryCount = options?.providerRecoveryRetryCount ?? 0;
 
-  if (!isRecord(responseJson)) {
-    return {
-      structuredObject: null,
-      rawText: "",
-      providerSources,
-      diagnostics: buildProviderResponseDiagnostics(responseJson, {
-        outputItemTypes,
-        contentItemTypes,
-      }),
-    };
-  }
-
-  if (isRecord(responseJson.output_parsed)) {
-    return {
-      structuredObject: responseJson.output_parsed,
-      rawText: extractOpenAiResponseText(responseJson),
-      providerSources,
-      diagnostics: buildProviderResponseDiagnostics(responseJson, {
-        sourcePath: "output_parsed",
-        outputItemTypes,
-        contentItemTypes,
-        rawTextLength: extractOpenAiResponseText(responseJson).length,
-        structuredObjectFound: true,
-      }),
-    };
-  }
-
-  const output = Array.isArray(responseJson.output) ? responseJson.output : [];
-  for (const [outputIndex, outputItem] of output.entries()) {
-    if (!isRecord(outputItem) || !Array.isArray(outputItem.content)) {
-      continue;
-    }
-
-    for (const [contentIndex, contentItem] of outputItem.content.entries()) {
-      if (!isRecord(contentItem)) {
-        continue;
-      }
-
-      if (isRecord(contentItem.parsed)) {
-        return {
-          structuredObject: contentItem.parsed,
-          rawText: extractOpenAiResponseText(responseJson),
-          providerSources,
-          diagnostics: buildProviderResponseDiagnostics(responseJson, {
-            sourcePath: `output[${outputIndex}].content[${contentIndex}].parsed`,
-            outputItemTypes,
-            contentItemTypes,
-            rawTextLength: extractOpenAiResponseText(responseJson).length,
-            structuredObjectFound: true,
-          }),
-        };
-      }
-
-      if (isRecord(contentItem.json)) {
-        return {
-          structuredObject: contentItem.json,
-          rawText: extractOpenAiResponseText(responseJson),
-          providerSources,
-          diagnostics: buildProviderResponseDiagnostics(responseJson, {
-            sourcePath: `output[${outputIndex}].content[${contentIndex}].json`,
-            outputItemTypes,
-            contentItemTypes,
-            rawTextLength: extractOpenAiResponseText(responseJson).length,
-            structuredObjectFound: true,
-          }),
-        };
-      }
-    }
-  }
-
-  const rawChunks = extractOpenAiResponseTextChunks(responseJson);
-  const rawText = rawChunks.join("\n").trim();
-  const topLevelOutputText = typeof responseJson.output_text === "string" ? responseJson.output_text.trim() : "";
-  const candidates = [
-    { label: "output_text", value: topLevelOutputText },
-    ...rawChunks.map((chunk, index) => ({ label: `output_text_chunk_${index + 1}`, value: chunk })),
-    { label: "joined_output_text", value: rawText },
-  ].filter((candidate, index, array) => {
-    if (!candidate.value) {
-      return false;
-    }
-    return array.findIndex((entry) => entry.value === candidate.value) === index;
-  });
-
-  for (const candidate of candidates) {
-    const parsedCandidate = parseJsonObjectCandidate(candidate.value);
-    if (parsedCandidate.structuredObject) {
-      return {
-        structuredObject: parsedCandidate.structuredObject,
-        rawText,
-        providerSources,
-        diagnostics: buildProviderResponseDiagnostics(responseJson, {
-          sourcePath: candidate.label,
-          outputItemTypes,
-          contentItemTypes,
-          rawTextLength: rawText.length,
-          structuredObjectFound: true,
-        }),
-      };
-    }
-  }
-
-  const finalCandidate = candidates[0]?.value ?? rawText;
-  const parseAttempt = parseJsonObjectCandidate(finalCandidate);
   return {
-    structuredObject: null,
-    rawText,
-    providerSources,
-    diagnostics: buildProviderResponseDiagnostics(responseJson, {
-      sourcePath: candidates[0]?.label ?? "none",
-      outputItemTypes,
-      contentItemTypes,
-      rawTextLength: rawText.length,
-      structuredObjectFound: false,
-      parseError: parseAttempt.parseError,
-      possibleTruncatedJson: parseAttempt.possibleTruncatedJson || hasIncompleteProviderSignal(responseJson),
-    }),
+    timeoutMs: getWorksheetAiTimeoutMs(classification, providerRecoveryRetryCount),
+    maxProviderAttempts: getWorksheetAiMaxProviderAttempts(classification, providerRecoveryRetryCount),
+    maxOutputTokens: getWorksheetAiMaxOutputTokens(
+      classification,
+      truncationRetryCount,
+      providerRecoveryRetryCount,
+    ),
+    webSearchEnabled: true,
+  };
+}
+
+function isProviderTimeoutError(error: unknown): boolean {
+  return (
+    isPricingWorksheetProviderError(error) && error.code === "provider_timeout"
+  ) || (error instanceof Error && error.message.includes("Upstream request timed out"));
+}
+
+function getProviderParseFailureReason(error: PricingWorksheetProviderError): PricingWorksheetProviderResponseFailureReason | null {
+  if (!error.rawError || typeof error.rawError !== "object" || Array.isArray(error.rawError)) {
+    return null;
+  }
+
+  const parseFailureReason = (error.rawError as Record<string, unknown>).parseFailureReason;
+  return typeof parseFailureReason === "string"
+    ? (parseFailureReason as PricingWorksheetProviderResponseFailureReason)
+    : null;
+}
+
+function buildProviderErrorLogPayload(error: PricingWorksheetProviderError) {
+  const rawError =
+    error.rawError && typeof error.rawError === "object" && !Array.isArray(error.rawError)
+      ? (error.rawError as Record<string, unknown>)
+      : null;
+
+  return {
+    provider: error.provider,
+    model: error.model,
+    status: error.status,
+    retryable: error.retryable,
+    ...(rawError ? rawError : {}),
   };
 }
 
@@ -1221,6 +859,74 @@ function formatOrganizationGuidanceSummary(
       return `${index + 1}. ${title}${guidance ? ` - ${guidance}` : ""}`;
     })
     .join("\n");
+}
+
+function buildCompactFollowUpContextSummary(
+  context?: PricingWorksheetAiFollowUpContext | null,
+): Record<string, unknown> | null {
+  if (!context) {
+    return null;
+  }
+
+  const userCorrection = typeof context.userCorrection === "string" ? sanitizeText(context.userCorrection, 160) : null;
+  const previousSummary = context.previousReviewSummary?.summary
+    ? sanitizeText(context.previousReviewSummary.summary, 180)
+    : null;
+
+  return {
+    userCorrection,
+    previousSummary,
+    acceptedFindingCount: context.acceptedFindingIds?.length ?? 0,
+    rejectedFindingCount: context.rejectedFindingIds?.length ?? 0,
+    appliedEditGroupCount: context.appliedEditGroupIds?.length ?? 0,
+  };
+}
+
+function buildAnthropicConstructionSummary(params: {
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  memoryItems: AiMemoryItem[];
+  organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
+  followUpContext?: PricingWorksheetAiFollowUpContext | null;
+}) {
+  return {
+    worksheetName: params.worksheetContext.worksheetName,
+    tradePackage: params.worksheetContext.tradePackage ?? null,
+    primaryIntent: params.classification.primaryIntent,
+    recommendedPromptPath: params.classification.recommendedPromptPath,
+    tradeHints: params.classification.tradeHints.slice(0, 6),
+    systemHints: params.classification.systemHints.slice(0, 6),
+    riskLevel: params.classification.riskLevel,
+    requiresRetrieval: params.classification.requiresRetrieval,
+    retrievalReasons: params.classification.retrievalReasons.slice(0, 6),
+    organizationMemorySummary: formatMemorySummary(params.memoryItems),
+    organizationGuidanceSummary: formatOrganizationGuidanceSummary(params.organizationGuidance),
+    followUpContextSummary: buildCompactFollowUpContextSummary(params.followUpContext),
+    assumptionCautionRules: [
+      "Treat trade, manufacturer, and system logic as assumptions unless the worksheet or organization guidance confirms them.",
+      "Prefer editable input rows for area, spacing, wastage, productivity, and margin assumptions when formulas depend on them.",
+      "If assumptions are missing, explain the gap or suggest input rows instead of inventing hidden constants.",
+    ],
+  };
+}
+
+function buildAnthropicAssumptionRowSummary(snapshot: PricingWorksheetStructureSnapshot) {
+  return snapshot.formulaTargets.rows
+    .filter((row) => row.isLikelyInputRow || row.isLikelyAssumptionRow || row.rowPurposeHint === "assumption_input")
+    .slice(0, 16)
+    .map((row) => ({
+      rowNumber: row.rowNumber,
+      label: row.label,
+      sectionName: row.sectionName,
+      rowPurposeHint: row.rowPurposeHint,
+      quantityRef: row.cells.quantity,
+      materialRateRef: row.cells.materialRate,
+      labourHoursRef: row.cells.labourHours,
+      labourRateRef: row.cells.labourRate,
+      marginRef: row.cells.margin,
+      totalRef: row.cells.total,
+      notesPreview: row.notesPreview,
+    }));
 }
 
 function buildFollowUpContextSummary(context?: PricingWorksheetAiFollowUpContext | null): string {
@@ -1582,7 +1288,7 @@ function buildCommonWorksheetRules() {
     "You are a construction intelligence assistant inside TradesStack, not a generic spreadsheet chatbot.",
     "Choose exactly one mode: answer_only, propose_edit, or answer_and_propose_edit.",
     "Never return a replacement worksheet.",
-    "Only propose the supported operations: update_cell, update_cells, insert_row, copy_row_variant, fix_formula, explain_formula, insert_subtotal.",
+    "Only propose the supported operations: update_cell, update_cells, insert_row, copy_row_variant, fix_formula, explain_formula, insert_subtotal, format_cell, format_cells.",
     "Selection context is optional. If no selection is provided, infer the safest location from headings, row labels, formulas, totals, and worksheet structure.",
     "Default to Australia/New Zealand construction estimating context and terminology.",
     "Web search is available for all worksheet assistant requests.",
@@ -1605,6 +1311,7 @@ function buildCommonWorksheetRules() {
     "Only suggest changes that are defensible from worksheet context plus clearly stated assumptions.",
     "For commercial outputs, prioritize conservative review and user confirmation.",
     "Formula edits must be mathematically valid and compatible with the worksheet engine.",
+    "Formatting edits must stay previewable, reversible, and value-neutral. Never change formulas or literal values when using format_cell or format_cells.",
     "Never silently mutate the worksheet. Any mutation must be surfaced as explicit operations only.",
     "Any proposed worksheet edits must remain previewable, bounded, and reversible.",
   ];
@@ -1669,13 +1376,26 @@ function buildPathSpecificPromptInstructions(classification: PricingWorksheetCon
       return [
         "You are an AUS/NZ construction estimator generating worksheet structures cautiously inside TradesStack.",
         "Generate starter structures only, not a full autonomous estimate.",
+        "Generate compact estimator-style pricing workbook scaffolds, not generic spreadsheets or tiny standalone calculators.",
         "Generate practical rows, formulas, and worksheet structure in a bounded way.",
-        "Group rows logically and keep the output auditable.",
-        "Where appropriate, include input rows, formula rows, subtotal rows, and assumption rows.",
-        "Keep formulas simple and auditable.",
+        "Structure the worksheet like a real estimator-built pricing module with clear grouped sections for inputs, calculations, subtotals, and outputs.",
+        "Use a practical calculation flow with visible quantity transformations, editable assumptions, auditable formulas, structured subtotals, and final pricing outputs where relevant.",
+        "Prefer dense commercial workbook layouts with compact grouped pricing blocks rather than long linear walkthroughs.",
+        "Keep related inputs, quantity calculations, pricing rows, and subtotals close together so the worksheet reads like a practical pricing workbook.",
+        "Use concise estimator-style row naming and avoid repeated descriptions, unnecessary note rows, and row-by-row explanation behaviour.",
+        "Keep material, labour, waste, allowance, margin, and sell-price logic tightly grouped where relevant instead of spreading them across verbose sections.",
+        "Where relevant, include material, labour, waste, allowance, margin, markup, and sell-price logic as visible worksheet rows rather than hidden reasoning.",
+        "Prefer editable input or assumption rows when information is missing instead of blocking generation, unless the missing information would materially change the worksheet structure.",
+        "Ask follow-up questions only when missing information would materially change the worksheet structure or make the starter layout unsafe.",
+        "Group rows logically and keep the output auditable, transparent, previewable, reversible, and compact.",
+        "Keep formulas simple, visible, and auditable.",
+        "Separate inputs from calculations and outputs clearly so an estimator can review and edit the worksheet easily.",
+        "Do not create database sheets, hidden pricing libraries, lookup-driven assemblies, autonomous estimating engines, or opaque formula chains.",
         "Explain assumptions and do not pretend construction requirements are verified.",
         "If trade, system, scope, or required inputs are unclear, ask follow-up questions instead of overcommitting.",
+        "Do not invent compliance-driven, specification-driven, fire-rated, acoustic-rated, seismic, or manufacturer-specific requirements unless they were explicitly provided.",
         "Do not invent spec-driven, rating-driven, or manufacturer-driven requirements.",
+        "Do not hardcode trade-specific workflows, systems, assemblies, or estimating patterns into the generated structure.",
         "Prefer compact starter structures over large uncontrolled worksheet generation.",
         ...cautionInstructions,
       ];
@@ -1718,6 +1438,10 @@ function buildWorksheetAssistantPrompts(params: {
     "If the user explicitly asks you to add or create a formula in the worksheet, do not return a mutating edit proposal that has no formulas.",
     "For explain_formula, do not mutate the worksheet.",
     "For answer_only, do not include mutating operations.",
+    "If the user asks to color, colour, highlight, mark, or identify worksheet input cells, prefer format_cells operations over answer_only whenever formatting is possible.",
+    "Use clear formatting groups when highlighting worksheet roles: manual quantity inputs use blue fill, assumption or system-factor inputs use amber fill, pricing or rate inputs use green fill, and outputs or formula cells use grey fill.",
+    "Do not highlight formula or output cells as manual inputs unless the user explicitly asks for output highlighting.",
+    "Prefer formatting manual input cells, assumption cells, rate cells, and user-entered quantity cells before outputs.",
     "For review_estimate requests, return structured reviewFindings whenever you can identify distinct findings.",
     "reviewFindings should explain worksheet evidence, assumptions, uncertainty, confidence, and any needed confirmation.",
     "If web search was used and you have usable source evidence, include evidenceSources and link findings with evidenceSourceIds where possible.",
@@ -1840,6 +1564,14 @@ function countWorksheetPopulatedCells(worksheet: WorksheetData) {
 }
 
 function summarizeOperation(operation: PricingWorksheetAiOperation): string {
+  if (operation.type === "format_cell") {
+    return `Format cell${operation.target?.cell ? ` ${operation.target.cell}` : ""}`;
+  }
+
+  if (operation.type === "format_cells") {
+    return `Format ${operation.target?.cells?.length ?? 0} cell(s)`;
+  }
+
   if (operation.type === "copy_row_variant") {
     const sourceRow = operation.target?.sourceRow ?? operation.target?.row ?? "?";
     return `Copy row ${sourceRow} as a variant`;
@@ -2045,30 +1777,1659 @@ function shouldRetryForLowQualityProposal(
   return responseUsesZeroPlaceholderValues(response) || response.operations.length > 0;
 }
 
-function buildFallbackResponse(prompt: string): PricingWorksheetAiAssistantResponse {
+function isWorksheetMutationRequest(
+  prompt: string,
+  classification: PricingWorksheetConstructionIntent,
+) {
+  if (classification.recommendedPromptPath === "generation" || classification.primaryIntent === "worksheet_generation") {
+    return true;
+  }
+
+  if (classification.recommendedPromptPath !== "edit") {
+    return false;
+  }
+
+  return (
+    /(?:create|build|generate)\b[\s\S]{0,60}\b(?:worksheet|sheet|row|rows|section|sections|subtotal|totals?)\b/i.test(
+      prompt,
+    ) ||
+    /(?:add|insert|update|modify|adjust|change|fill|apply)\b[\s\S]{0,60}\b(?:worksheet|sheet|row|rows|cell|cells|section|sections|subtotal|totals?)\b/i.test(
+      prompt,
+    ) ||
+    /(?:add|insert|update|apply|write)\b[\s\S]{0,30}\bformula\b[\s\S]{0,30}\b(?:into|to|in)\b[\s\S]{0,20}\b(?:cell|cells|row|rows|worksheet|sheet)\b/i.test(
+      prompt,
+    )
+  );
+}
+
+function shouldRetryForMissingMutationOperations(
+  prompt: string,
+  classification: PricingWorksheetConstructionIntent,
+  response: PricingWorksheetAiAssistantResponse,
+) {
+  return isWorksheetMutationRequest(prompt, classification) && response.operations.length === 0;
+}
+
+function buildMissingMutationOperationsRetryPrompt(prompt: string) {
+  return `${prompt}
+
+Correction: return a real worksheet edit plan, not an explanation. The JSON must include at least one supported worksheet operation. If you claim you created, added, updated, or adjusted the worksheet, operations cannot be empty. For worksheet creation, use supported insert_row, update_cell, update_cells, insert_subtotal, format_cell, or format_cells operations to build a bounded starter structure. For formula requests, include supported update_cell, update_cells, or fix_formula operations with real formula targets.`;
+}
+
+function sanitizeDisplayedNoOperationMutationResponse(
+  response: PricingWorksheetAiAssistantResponse,
+  prompt: string,
+  classification: PricingWorksheetConstructionIntent,
+): PricingWorksheetAiAssistantResponse {
+  if (!shouldRetryForMissingMutationOperations(prompt, classification, response)) {
+    return response;
+  }
+
+  const blockedMessage = "The AI returned an explanation but no worksheet changes. Please retry or adjust the prompt.";
+  return {
+    ...response,
+    proposalName: "Worksheet changes required",
+    answer: blockedMessage,
+    summary: blockedMessage,
+    warnings: Array.from(new Set([...(response.warnings ?? []), "ai_returned_no_worksheet_changes"])),
+  };
+}
+
+function buildMutationIntentValidationIssues(
+  response: PricingWorksheetAiAssistantResponse,
+  prompt: string,
+  classification: PricingWorksheetConstructionIntent,
+) {
+  if (!shouldRetryForMissingMutationOperations(prompt, classification, response)) {
+    return [];
+  }
+
+  return [
+    {
+      code: "mutation_intent_missing_operations",
+      message: "The AI returned an explanation but no worksheet changes. Please retry or adjust the prompt.",
+      severity: "error" as const,
+    },
+  ];
+}
+
+function estimateWorksheetAiTokenSize(values: unknown[]) {
+  return Math.ceil(
+    values.reduce((total, value) => total + JSON.stringify(value).length, 0) / 4,
+  );
+}
+
+function compactWorksheetAiText(value: string | null | undefined, maxLength: number) {
+  const normalized = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function getPromptKeywordTokens(prompt: string) {
+  return prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3)
+    .slice(0, 24);
+}
+
+function getSelectedWorksheetRowNumbers(worksheetContext: PricingWorksheetAiCompactContext) {
+  const rows = new Set<number>();
+  for (const key of [
+    worksheetContext.visibleSelection.activeCellKey,
+    worksheetContext.visibleSelection.focusCellKey,
+    worksheetContext.visibleSelection.anchorCellKey,
+  ]) {
+    if (typeof key !== "string") {
+      continue;
+    }
+    const parsed = /^([A-Z]+)(\d+)$/i.exec(key.trim());
+    if (parsed) {
+      rows.add(Number(parsed[2]));
+    }
+  }
+  return rows;
+}
+
+function buildCompactedConstructionSummary(
+  summary: ReturnType<typeof buildAnthropicConstructionSummary>,
+  level: FormulaStageContextBudgetLevel,
+) {
+  const maxMemoryLength = level === 0 ? 420 : level === 1 ? 260 : 180;
+  const maxGuidanceLength = level === 0 ? 420 : level === 1 ? 260 : 180;
+  const maxRules = level <= 1 ? 3 : 2;
+  return {
+    ...summary,
+    organizationMemorySummary: compactWorksheetAiText(summary.organizationMemorySummary, maxMemoryLength),
+    organizationGuidanceSummary: compactWorksheetAiText(summary.organizationGuidanceSummary, maxGuidanceLength),
+    tradeHints: summary.tradeHints.slice(0, level <= 1 ? 6 : 4),
+    systemHints: summary.systemHints.slice(0, level <= 1 ? 6 : 4),
+    retrievalReasons: summary.retrievalReasons.slice(0, level <= 1 ? 6 : 4),
+    assumptionCautionRules: summary.assumptionCautionRules.slice(0, maxRules),
+    followUpContextSummary: summary.followUpContextSummary
+      ? {
+          ...summary.followUpContextSummary,
+          userCorrection: compactWorksheetAiText(
+            typeof summary.followUpContextSummary.userCorrection === "string"
+              ? summary.followUpContextSummary.userCorrection
+              : "",
+            level <= 1 ? 120 : 80,
+          ),
+          previousSummary: compactWorksheetAiText(
+            typeof summary.followUpContextSummary.previousSummary === "string"
+              ? summary.followUpContextSummary.previousSummary
+              : "",
+            level <= 1 ? 140 : 90,
+          ),
+        }
+      : null,
+  };
+}
+
+function scoreWorksheetSnapshotRows(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  workflow: "formula" | "formatting";
+  classification: PricingWorksheetConstructionIntent;
+}) {
+  const tokens = getPromptKeywordTokens(params.prompt);
+  const selectedRows = getSelectedWorksheetRowNumbers(params.worksheetContext);
+  const matchingSectionNames = new Set<string>();
+  const scores = new Map<number, number>();
+
+  for (const row of params.snapshot.rows) {
+    const text = [
+      row.label ?? "",
+      row.sectionName ?? "",
+      row.notesPreview ?? "",
+      ...row.valuesPreview,
+      ...row.formulaRefs,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    let score = 0;
+    if (selectedRows.has(row.rowNumber)) {
+      score += 100;
+    }
+    if (tokens.some((token) => text.includes(token))) {
+      score += 40;
+      if (row.sectionName) {
+        matchingSectionNames.add(row.sectionName);
+      }
+    }
+    if (params.workflow === "formula") {
+      if (row.formulaRefs.length > 0 || row.rowPurposeHint === "formula_target") {
+        score += 30;
+      }
+      if (
+        params.classification.primaryIntent === "formula_fix" &&
+        (row.formulaRefs.length > 0 || row.rowTypeHint === "formula" || row.rowTypeHint === "subtotal")
+      ) {
+        score += 35;
+      }
+      if (row.isLikelyInputRow || row.isLikelyAssumptionRow) {
+        score += 25;
+      }
+    } else {
+      if (row.isLikelyInputRow) {
+        score += 35;
+      }
+      if (row.isLikelyAssumptionRow) {
+        score += 30;
+      }
+      if (row.rowPurposeHint === "formula_target" || row.formulaRefs.length > 0) {
+        score += 25;
+      }
+    }
+    if (row.rowTypeHint === "subtotal") {
+      score += 20;
+    }
+    scores.set(row.rowNumber, score);
+  }
+
+  return {
+    rowScores: scores,
+    matchingSectionNames,
+    selectedRows,
+  };
+}
+
+function buildCompactedSnapshot(params: {
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  prompt: string;
+  classification: PricingWorksheetConstructionIntent;
+  workflow: "formula" | "formatting";
+  level: Exclude<FormulaStageContextBudgetLevel, 4>;
+}) {
+  if (params.level === 0) {
+    return params.snapshot;
+  }
+
+  const trimRow = (
+    row: PricingWorksheetStructureSnapshot["rows"][number],
+    aggressive: boolean,
+  ): PricingWorksheetStructureSnapshot["rows"][number] => ({
+    ...row,
+    label: row.label ? compactWorksheetAiText(row.label, aggressive ? 36 : 60) : row.label,
+    sectionName: row.sectionName ? compactWorksheetAiText(row.sectionName, aggressive ? 32 : 48) : row.sectionName,
+    valuesPreview: aggressive ? row.valuesPreview.slice(0, 2) : row.valuesPreview.slice(0, 4),
+    formulaRefs: row.formulaRefs.slice(0, aggressive ? 2 : 4),
+    notesPreview: aggressive ? null : row.notesPreview ? compactWorksheetAiText(row.notesPreview, 60) : null,
+  });
+  const trimTargetRow = (
+    row: PricingWorksheetStructureSnapshot["formulaTargets"]["rows"][number],
+    aggressive: boolean,
+  ): PricingWorksheetStructureSnapshot["formulaTargets"]["rows"][number] => ({
+    ...row,
+    label: row.label ? compactWorksheetAiText(row.label, aggressive ? 36 : 60) : row.label,
+    sectionName: row.sectionName ? compactWorksheetAiText(row.sectionName, aggressive ? 32 : 48) : row.sectionName,
+    notesPreview: aggressive ? null : row.notesPreview ? compactWorksheetAiText(row.notesPreview, 60) : null,
+  });
+
+  let rows = params.snapshot.rows;
+  let targetRows = params.snapshot.formulaTargets.rows;
+  let sections = params.snapshot.sections;
+  let totals = params.snapshot.totals;
+  let namedRefs = params.snapshot.formulaTargets.namedRefs;
+  let sectionTotals = params.snapshot.formulaTargets.sectionTotals;
+  let sectionTotalRanges = params.snapshot.formulaTargets.sectionTotalRanges;
+
+  if (params.level >= 2) {
+    const { rowScores, matchingSectionNames, selectedRows } = scoreWorksheetSnapshotRows({
+      prompt: params.prompt,
+      snapshot: params.snapshot,
+      worksheetContext: params.worksheetContext,
+      workflow: params.workflow,
+      classification: params.classification,
+    });
+    const maxRows = params.level === 2 ? 16 : 10;
+    const rankedRows = [...params.snapshot.rows]
+      .map((row) => ({ row, score: rowScores.get(row.rowNumber) ?? 0 }))
+      .sort((left, right) => right.score - left.score || left.row.rowNumber - right.row.rowNumber);
+    const keptRowNumbers = new Set<number>();
+    const keepRowNumber = (rowNumber: number) => {
+      if (rowNumber >= 1) {
+        keptRowNumbers.add(rowNumber);
+      }
+    };
+
+    for (const row of rankedRows) {
+      if (
+        keptRowNumbers.size >= maxRows &&
+        !(row.row.isLikelyInputRow || row.row.isLikelyAssumptionRow || row.row.rowTypeHint === "subtotal")
+      ) {
+        continue;
+      }
+      if (
+        row.score > 0 ||
+        row.row.isLikelyInputRow ||
+        row.row.isLikelyAssumptionRow ||
+        row.row.rowTypeHint === "subtotal" ||
+        selectedRows.has(row.row.rowNumber)
+      ) {
+        keepRowNumber(row.row.rowNumber);
+        keepRowNumber(row.row.rowNumber - 1);
+        keepRowNumber(row.row.rowNumber + 1);
+      }
+    }
+
+    for (const targetRow of params.snapshot.formulaTargets.rows) {
+      if (targetRow.isLikelyInputRow || targetRow.isLikelyAssumptionRow) {
+        keepRowNumber(targetRow.rowNumber);
+      }
+    }
+
+    rows = params.snapshot.rows.filter((row) => keptRowNumbers.has(row.rowNumber));
+    const keptSectionNames = new Set(
+      rows
+        .map((row) => row.sectionName)
+        .filter((name): name is string => typeof name === "string" && name.length > 0),
+    );
+    for (const sectionName of matchingSectionNames) {
+      keptSectionNames.add(sectionName);
+    }
+    sections = params.snapshot.sections
+      .filter((section) => keptSectionNames.has(section.title) || [...keptRowNumbers].some((rowNumber) => rowNumber >= section.startRow && rowNumber <= section.endRow))
+      .slice(0, params.level === 2 ? 4 : 2);
+    const allowedSectionTitles = new Set(sections.map((section) => section.title));
+    rows = rows.filter((row) => !row.sectionName || allowedSectionTitles.has(row.sectionName));
+    targetRows = params.snapshot.formulaTargets.rows.filter(
+      (row) =>
+        keptRowNumbers.has(row.rowNumber) ||
+        row.isLikelyInputRow ||
+        row.isLikelyAssumptionRow ||
+        (!!row.sectionName && allowedSectionTitles.has(row.sectionName)),
+    );
+    totals = params.snapshot.totals
+      .filter((total) =>
+        [...sections].some((section) => total.rowNumber >= section.startRow && total.rowNumber <= section.endRow + 2),
+      )
+      .slice(0, params.level === 2 ? 6 : 4);
+    const normalizeKey = (value: string | null | undefined) => (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const allowedSectionKeys = new Set([...allowedSectionTitles].map((section) => normalizeKey(section)));
+    sectionTotals = Object.fromEntries(
+      Object.entries(params.snapshot.formulaTargets.sectionTotals).filter(([key]) => allowedSectionKeys.has(key)),
+    );
+    sectionTotalRanges = Object.fromEntries(
+      Object.entries(params.snapshot.formulaTargets.sectionTotalRanges).filter(([key]) => allowedSectionKeys.has(key)),
+    );
+    const allowedRefs = new Set<string>(
+      targetRows.flatMap((row) =>
+        [
+          row.primaryRef,
+          row.cells.quantity,
+          row.cells.materialRate,
+          row.cells.labourHours,
+          row.cells.labourRate,
+          row.cells.margin,
+          row.cells.total,
+          row.cells.notes,
+        ].filter((ref): ref is string => typeof ref === "string" && ref.length > 0),
+      ),
+    );
+    namedRefs = Object.fromEntries(
+      Object.entries(params.snapshot.formulaTargets.namedRefs).filter(([, ref]) => allowedRefs.has(ref)),
+    );
+  }
+
+  const aggressive = params.level >= 3;
+  const compactedSnapshotWithoutEstimate = {
+    ...params.snapshot,
+    rows: rows.map((row) => trimRow(row, aggressive)),
+    sections: sections.map((section) => ({
+      ...section,
+      title: compactWorksheetAiText(section.title, aggressive ? 28 : 44),
+    })),
+    totals: totals.map((total) => ({
+      ...total,
+      label: compactWorksheetAiText(total.label, aggressive ? 28 : 44),
+      formulaPattern: aggressive ? total.formulaPattern : total.formulaPattern,
+    })),
+    formulaTargets: {
+      rows: targetRows.map((row) => trimTargetRow(row, aggressive)),
+      namedRefs,
+      sectionTotals,
+      sectionTotalRanges,
+    },
+  };
+
+  return {
+    ...compactedSnapshotWithoutEstimate,
+    estimatedTokenSize: estimateWorksheetAiTokenSize([compactedSnapshotWithoutEstimate]),
+  };
+}
+
+function buildFormulaStageContextBudget(params: {
+  workflow: "formula" | "formatting";
+  prompt: string;
+  systemPrompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+  assumptionRows: ReturnType<typeof buildAnthropicAssumptionRowSummary>;
+  stageAssumptions?: string[];
+  stageWarnings?: string[];
+  promptBuilder: (input: {
+    snapshot: PricingWorksheetStructureSnapshot;
+    constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+    assumptionRows: ReturnType<typeof buildAnthropicAssumptionRowSummary>;
+    stageAssumptions: string[];
+    stageWarnings: string[];
+  }) => string;
+}): FormulaStageContextBudget {
+  const baseStageAssumptions = (params.stageAssumptions ?? []).slice(0, 12);
+  const baseStageWarnings = (params.stageWarnings ?? []).slice(0, 12);
+  for (const level of [0, 1, 2, 3] as const) {
+    const snapshot = buildCompactedSnapshot({
+      snapshot: params.snapshot,
+      worksheetContext: params.worksheetContext,
+      prompt: params.prompt,
+      classification: params.classification,
+      workflow: params.workflow,
+      level,
+    });
+    const constructionSummary = buildCompactedConstructionSummary(params.constructionSummary, level);
+    const assumptionRows = buildAnthropicAssumptionRowSummary(snapshot).slice(0, level <= 1 ? 16 : 10);
+    const stageAssumptions = baseStageAssumptions.map((entry) =>
+      compactWorksheetAiText(entry, level <= 1 ? 100 : 60),
+    );
+    const stageWarnings = baseStageWarnings.map((entry) =>
+      compactWorksheetAiText(entry, level <= 1 ? 100 : 60),
+    );
+    const userPrompt = params.promptBuilder({
+      snapshot,
+      constructionSummary,
+      assumptionRows,
+      stageAssumptions,
+      stageWarnings,
+    });
+    const tokenBreakdown = {
+      systemPromptTokens: estimateWorksheetAiTokenSize([params.systemPrompt]),
+      userPromptTokens: estimateWorksheetAiTokenSize([userPrompt]),
+      snapshotTokens: estimateWorksheetAiTokenSize([snapshot]),
+      constructionSummaryTokens: estimateWorksheetAiTokenSize([constructionSummary]),
+      assumptionRowsTokens: estimateWorksheetAiTokenSize([assumptionRows]),
+      totalEstimatedTokens: estimateWorksheetAiTokenSize([params.systemPrompt, userPrompt]),
+      maxAllowedTokens: WORKSHEET_AI_FORMULA_STAGE_MAX_INPUT_TOKENS,
+      budgetTier: snapshot.budgetTier,
+      formulaTargetRowCount: snapshot.formulaTargets.rows.length,
+      compactionLevel: level,
+    };
+    if (tokenBreakdown.totalEstimatedTokens <= WORKSHEET_AI_FORMULA_STAGE_MAX_INPUT_TOKENS) {
+      return {
+        snapshot,
+        constructionSummary,
+        assumptionRows,
+        stageAssumptions,
+        stageWarnings,
+        userPrompt,
+        compactionLevel: level,
+        tokenBreakdown,
+      };
+    }
+  }
+
+  const finalSnapshot = buildCompactedSnapshot({
+    snapshot: params.snapshot,
+    worksheetContext: params.worksheetContext,
+    prompt: params.prompt,
+    classification: params.classification,
+    workflow: params.workflow,
+    level: 3,
+  });
+  const finalConstructionSummary = buildCompactedConstructionSummary(params.constructionSummary, 3);
+  const finalAssumptionRows = buildAnthropicAssumptionRowSummary(finalSnapshot).slice(0, 10);
+  const finalStageAssumptions = baseStageAssumptions.map((entry) => compactWorksheetAiText(entry, 60));
+  const finalStageWarnings = baseStageWarnings.map((entry) => compactWorksheetAiText(entry, 60));
+  const finalUserPrompt = params.promptBuilder({
+    snapshot: finalSnapshot,
+    constructionSummary: finalConstructionSummary,
+    assumptionRows: finalAssumptionRows,
+    stageAssumptions: finalStageAssumptions,
+    stageWarnings: finalStageWarnings,
+  });
+
+  return {
+    snapshot: finalSnapshot,
+    constructionSummary: finalConstructionSummary,
+    assumptionRows: finalAssumptionRows,
+    stageAssumptions: finalStageAssumptions,
+    stageWarnings: finalStageWarnings,
+    userPrompt: finalUserPrompt,
+    compactionLevel: 4,
+    tokenBreakdown: {
+      systemPromptTokens: estimateWorksheetAiTokenSize([params.systemPrompt]),
+      userPromptTokens: estimateWorksheetAiTokenSize([finalUserPrompt]),
+      snapshotTokens: estimateWorksheetAiTokenSize([finalSnapshot]),
+      constructionSummaryTokens: estimateWorksheetAiTokenSize([finalConstructionSummary]),
+      assumptionRowsTokens: estimateWorksheetAiTokenSize([finalAssumptionRows]),
+      totalEstimatedTokens: estimateWorksheetAiTokenSize([params.systemPrompt, finalUserPrompt]),
+      maxAllowedTokens: WORKSHEET_AI_FORMULA_STAGE_MAX_INPUT_TOKENS,
+      budgetTier: finalSnapshot.budgetTier,
+      formulaTargetRowCount: finalSnapshot.formulaTargets.rows.length,
+      compactionLevel: 4,
+    },
+    blockedMessage:
+      "This formula request needs a smaller target area. Please select a section or ask for one section at a time.",
+  };
+}
+
+export function buildFormulaStageContextBudgetForTest(params: {
+  workflow: "formula" | "formatting";
+  prompt: string;
+  systemPrompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+  assumptionRows: ReturnType<typeof buildAnthropicAssumptionRowSummary>;
+  promptBuilder: (input: {
+    snapshot: PricingWorksheetStructureSnapshot;
+    constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+    assumptionRows: ReturnType<typeof buildAnthropicAssumptionRowSummary>;
+    stageAssumptions: string[];
+    stageWarnings: string[];
+  }) => string;
+}) {
+  return buildFormulaStageContextBudget({
+    ...params,
+    stageAssumptions: [],
+    stageWarnings: [],
+  });
+}
+
+function createFormulaStageOversizeError(payload: Record<string, unknown>) {
+  const error = new Error("Formula-stage worksheet context exceeds the safe token budget.") as Error & {
+    code?: string;
+    diagnostics?: Record<string, unknown>;
+  };
+  error.code = "formula_stage_context_too_large";
+  error.diagnostics = payload;
+  return error;
+}
+
+function isFormulaStageOversizeError(error: unknown): error is Error & {
+  code: "formula_stage_context_too_large";
+  diagnostics?: Record<string, unknown>;
+} {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as Error & { code?: string }).code === "formula_stage_context_too_large"
+  );
+}
+
+function shouldUseAnthropicStagedGeneration(params: {
+  provider: "openai" | "anthropic";
+  classification: PricingWorksheetConstructionIntent;
+  worksheetState: PricingWorksheetState;
+}) {
+  return (
+    params.provider === "anthropic" &&
+    params.classification.primaryIntent === "worksheet_generation" &&
+    (params.worksheetState === "blank" || params.worksheetState === "starter_generated")
+  );
+}
+
+function stripFormulaChangesFromResponse(
+  response: PricingWorksheetAiAssistantResponse,
+): PricingWorksheetAiAssistantResponse {
+  return {
+    ...response,
+    operations: response.operations.map((operation) => ({
+      ...operation,
+      formulas: {
+        cells: [],
+      },
+    })),
+    warnings: Array.from(new Set([...(response.warnings ?? []), "ai_formula_generation_deferred_to_stage_b"])),
+  };
+}
+
+function buildAnthropicFormulaStageSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "answer", "suggestions", "assumptions", "warnings"],
+    properties: {
+      mode: {
+        type: "string",
+        enum: ["formula_suggestions", "answer_only"],
+      },
+      answer: { type: "string" },
+      suggestions: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["targetRowNumber", "targetColumn", "expression", "rationale"],
+          properties: {
+            targetRowNumber: { type: "number" },
+            targetColumn: { type: "string" },
+            expression: { type: "string" },
+            rationale: { type: "string" },
+          },
+        },
+      },
+      assumptions: {
+        type: "array",
+        items: { type: "string" },
+      },
+      warnings: {
+        type: "array",
+        items: { type: "string" },
+      },
+    },
+  } as const;
+}
+
+function isFormattingWorksheetPrompt(prompt: string) {
+  return /\b(?:highlight|colour|color|mark|shade|identify|show)\b[\s\S]{0,80}\b(?:input|fillable|fill in|manual input|cells?|areas?)\b/i.test(
+    prompt,
+  );
+}
+
+function shouldPrioritizeGenerationWorkflow(params: {
+  classification: PricingWorksheetConstructionIntent;
+  worksheetState: PricingWorksheetState;
+}) {
+  return (
+    params.classification.primaryIntent === "worksheet_generation" &&
+    (params.worksheetState === "blank" || params.worksheetState === "starter_generated")
+  );
+}
+
+function routeAnthropicWorkflow(params: {
+  provider: "openai" | "anthropic";
+  prompt: string;
+  classification: PricingWorksheetConstructionIntent;
+  worksheetState: PricingWorksheetState;
+  selection?: PricingWorksheetAiCompactContext["visibleSelection"] | null;
+}) {
+  if (params.provider !== "anthropic") {
+    return null;
+  }
+
+  if (
+    shouldPrioritizeGenerationWorkflow({
+      classification: params.classification,
+      worksheetState: params.worksheetState,
+    })
+  ) {
+    return "staged_generation" as AnthropicWorkflow;
+  }
+
+  if (isFormattingWorksheetPrompt(params.prompt)) {
+    return "formatting" as AnthropicWorkflow;
+  }
+
+  if (
+    (params.classification.primaryIntent === "formula_generate" ||
+      params.classification.primaryIntent === "formula_fix") &&
+    params.worksheetState !== "blank"
+  ) {
+    return "formula_suggestions" as AnthropicWorkflow;
+  }
+
+  if (
+    params.classification.primaryIntent === "review_estimate" ||
+    params.classification.recommendedPromptPath === "review"
+  ) {
+    return "review" as AnthropicWorkflow;
+  }
+
+  if (
+    params.classification.primaryIntent === "unknown" ||
+    params.classification.recommendedPromptPath === "unknown"
+  ) {
+    return "safe_unknown_fallback" as AnthropicWorkflow;
+  }
+
+  if (
+    params.classification.recommendedPromptPath === "edit" ||
+    params.classification.primaryIntent === "worksheet_edit" ||
+    params.classification.primaryIntent === "quantity_update" ||
+    params.classification.primaryIntent === "labour_adjustment" ||
+    params.classification.primaryIntent === "wastage_adjustment" ||
+    params.classification.primaryIntent === "margin_adjustment"
+  ) {
+    return "compact_edit_intent" as AnthropicWorkflow;
+  }
+
+  if (
+    params.classification.recommendedPromptPath === "answer" ||
+    params.classification.primaryIntent === "answer_only" ||
+    params.classification.primaryIntent === "formula_explain"
+  ) {
+    return "answer_only" as AnthropicWorkflow;
+  }
+
+  return "safe_unknown_fallback" as AnthropicWorkflow;
+}
+
+function buildAnthropicFormattingStageSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "answer", "operations", "assumptions", "warnings"],
+    properties: {
+      mode: {
+        type: "string",
+        enum: ["formatting_suggestions", "answer_only"],
+      },
+      answer: { type: "string" },
+      operations: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["type", "targetCells", "rationale"],
+          properties: {
+            type: {
+              type: "string",
+              enum: ["format_cell", "format_cells"],
+            },
+            targetCells: {
+              type: "array",
+              items: { type: "string" },
+            },
+            backgroundColor: { type: "string" },
+            textColor: { type: "string" },
+            bold: { type: "boolean" },
+            italic: { type: "boolean" },
+            rationale: { type: "string" },
+          },
+        },
+      },
+      assumptions: {
+        type: "array",
+        items: { type: "string" },
+      },
+      warnings: {
+        type: "array",
+        items: { type: "string" },
+      },
+    },
+  } as const;
+}
+
+function normalizeFormulaSuggestionsPayload(value: unknown): {
+  mode: "formula_suggestions" | "answer_only";
+  answer: string;
+  assumptions: string[];
+  warnings: string[];
+  suggestions: PricingWorksheetAiFormulaSuggestion[];
+} {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const suggestions = Array.isArray(candidate.suggestions)
+    ? candidate.suggestions
+        .map((entry) => {
+          const suggestion = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null;
+          if (!suggestion) {
+            return null;
+          }
+          if (
+            typeof suggestion.targetRowNumber !== "number" ||
+            !Number.isInteger(suggestion.targetRowNumber) ||
+            suggestion.targetRowNumber < 1 ||
+            typeof suggestion.targetColumn !== "string" ||
+            suggestion.targetColumn.trim().length === 0 ||
+            typeof suggestion.expression !== "string" ||
+            suggestion.expression.trim().length === 0
+          ) {
+            return null;
+          }
+
+          return {
+            targetRowNumber: suggestion.targetRowNumber,
+            targetColumn: suggestion.targetColumn.trim().toUpperCase(),
+            expression: suggestion.expression.trim(),
+            rationale:
+              typeof suggestion.rationale === "string" && suggestion.rationale.trim().length > 0
+                ? suggestion.rationale.trim()
+                : "Apply worksheet-aware formula logic to the generated structure.",
+          } satisfies PricingWorksheetAiFormulaSuggestion;
+        })
+        .filter((entry): entry is PricingWorksheetAiFormulaSuggestion => Boolean(entry))
+        .slice(0, WORKSHEET_AI_FORMULA_STAGE_MAX_SUGGESTIONS)
+    : [];
+
+  return {
+    mode: candidate.mode === "formula_suggestions" ? "formula_suggestions" : "answer_only",
+    answer: typeof candidate.answer === "string" ? candidate.answer.trim() : "",
+    assumptions:
+      Array.isArray(candidate.assumptions)
+        ? candidate.assumptions
+            .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+            .filter((entry) => entry.length > 0)
+            .slice(0, 12)
+        : [],
+    warnings:
+      Array.isArray(candidate.warnings)
+        ? candidate.warnings
+            .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+            .filter((entry) => entry.length > 0)
+            .slice(0, 12)
+        : [],
+    suggestions,
+  };
+}
+
+function normalizeFormattingSuggestionsPayload(value: unknown): {
+  mode: "formatting_suggestions" | "answer_only";
+  answer: string;
+  assumptions: string[];
+  warnings: string[];
+  operations: PricingWorksheetAiFormattingSuggestion[];
+} {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const operations = Array.isArray(candidate.operations)
+    ? candidate.operations
+        .map((entry) => {
+          const operation = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null;
+          if (!operation) {
+            return null;
+          }
+          const targetCells = Array.isArray(operation.targetCells)
+            ? operation.targetCells
+                .map((cell) => (typeof cell === "string" ? cell.trim().toUpperCase() : ""))
+                .filter((cell) => /^[A-Z]+\d+$/.test(cell))
+                .slice(0, 48)
+            : [];
+          const type =
+            operation.type === "format_cell" || operation.type === "format_cells"
+              ? operation.type
+              : targetCells.length <= 1
+                ? "format_cell"
+                : "format_cells";
+          if (targetCells.length === 0) {
+            return null;
+          }
+          return {
+            type,
+            targetCells,
+            backgroundColor:
+              typeof operation.backgroundColor === "string" && operation.backgroundColor.trim().length > 0
+                ? operation.backgroundColor.trim()
+                : null,
+            textColor:
+              typeof operation.textColor === "string" && operation.textColor.trim().length > 0
+                ? operation.textColor.trim()
+                : null,
+            bold: typeof operation.bold === "boolean" ? operation.bold : null,
+            italic: typeof operation.italic === "boolean" ? operation.italic : null,
+            rationale:
+              typeof operation.rationale === "string" && operation.rationale.trim().length > 0
+                ? operation.rationale.trim()
+                : "Apply worksheet formatting guidance to the selected cells.",
+          } satisfies PricingWorksheetAiFormattingSuggestion;
+        })
+        .filter((entry): entry is PricingWorksheetAiFormattingSuggestion => Boolean(entry))
+        .slice(0, 16)
+    : [];
+
+  return {
+    mode: candidate.mode === "formatting_suggestions" ? "formatting_suggestions" : "answer_only",
+    answer: typeof candidate.answer === "string" ? candidate.answer.trim() : "",
+    assumptions: Array.isArray(candidate.assumptions)
+      ? candidate.assumptions
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0)
+          .slice(0, 12)
+      : [],
+    warnings: Array.isArray(candidate.warnings)
+      ? candidate.warnings
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0)
+          .slice(0, 12)
+      : [],
+    operations,
+  };
+}
+
+function buildAnthropicFormattingCandidateSummary(snapshot: PricingWorksheetStructureSnapshot) {
+  const uniqueRefs = (refs: Array<string | null | undefined>) =>
+    Array.from(new Set(refs.filter((ref): ref is string => typeof ref === "string" && ref.trim().length > 0)));
+
+  const manualQuantityInputRefs = uniqueRefs(
+    snapshot.formulaTargets.rows.flatMap((row) =>
+      row.rowPurposeHint !== "subtotal" && row.rowPurposeHint !== "section_heading" ? [row.cells.quantity] : [],
+    ),
+  ).slice(0, 20);
+
+  const assumptionInputRefs = uniqueRefs(
+    snapshot.formulaTargets.rows.flatMap((row) =>
+      row.isLikelyInputRow || row.isLikelyAssumptionRow || row.rowPurposeHint === "assumption_input"
+        ? [row.cells.quantity, row.cells.materialRate, row.cells.labourHours, row.cells.labourRate, row.cells.margin]
+        : [],
+    ),
+  ).slice(0, 24);
+
+  const ratePricingInputRefs = uniqueRefs(
+    snapshot.formulaTargets.rows.flatMap((row) =>
+      row.rowPurposeHint !== "subtotal" ? [row.cells.materialRate, row.cells.labourRate, row.cells.margin] : [],
+    ),
+  ).slice(0, 24);
+
+  const outputFormulaRefs = uniqueRefs(
+    snapshot.rows.flatMap((row) => row.formulaRefs).concat(
+      snapshot.formulaTargets.rows.flatMap((row) => [row.cells.total]),
+    ),
+  ).slice(0, 24);
+
+  return {
+    manualQuantityInputs: {
+      refs: manualQuantityInputRefs,
+      preferredBackgroundColor: "#DBEAFE",
+      preferredTextColor: "#1D4ED8",
+    },
+    assumptionOrSystemInputs: {
+      refs: assumptionInputRefs,
+      preferredBackgroundColor: "#FEF3C7",
+      preferredTextColor: "#B45309",
+    },
+    rateOrPricingInputs: {
+      refs: ratePricingInputRefs,
+      preferredBackgroundColor: "#DCFCE7",
+      preferredTextColor: "#15803D",
+    },
+    formulaOrOutputCells: {
+      refs: outputFormulaRefs,
+      preferredBackgroundColor: "#E5E7EB",
+      preferredTextColor: "#4B5563",
+    },
+  };
+}
+
+function buildAnthropicFormattingStagePrompt(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+  candidates: ReturnType<typeof buildAnthropicFormattingCandidateSummary>;
+}) {
+  return [
+    `User request: ${params.prompt}`,
+    `Construction intelligence summary: ${JSON.stringify(params.constructionSummary)}`,
+    "This is a worksheet formatting-only task. Suggest highlighting or colouring using only real worksheet refs from the snapshot.",
+    "Do not change worksheet values, formulas, or structure.",
+    "Prefer format_cells when several cells share the same purpose or colour.",
+    "Manual quantity inputs should generally use blue fill, assumption or system inputs amber fill, rate or pricing inputs green fill, and formula or output cells grey fill.",
+    "If the worksheet does not clearly expose input cells, return warnings rather than inventing targets.",
+    `Formatting candidate refs: ${JSON.stringify(params.candidates)}`,
+    `Worksheet structure snapshot: ${JSON.stringify(params.snapshot)}`,
+  ].join("\n\n");
+}
+
+function buildFormattingOperationsFromSuggestions(params: {
+  suggestions: PricingWorksheetAiFormattingSuggestion[];
+}) {
+  const operations: PricingWorksheetAiOperation[] = [];
+  const warnings: string[] = [];
+
+  for (const suggestion of params.suggestions) {
+    if (suggestion.targetCells.length === 0) {
+      continue;
+    }
+
+    const format: PricingWorksheetAiOperation["format"] = {
+      ...(suggestion.backgroundColor ? { backgroundColor: suggestion.backgroundColor } : {}),
+      ...(suggestion.textColor ? { textColor: suggestion.textColor } : {}),
+      ...(typeof suggestion.bold === "boolean" ? { bold: suggestion.bold } : {}),
+      ...(typeof suggestion.italic === "boolean" ? { italic: suggestion.italic } : {}),
+    };
+
+    if (!format || Object.keys(format).length === 0) {
+      warnings.push(`Skipped formatting suggestion for ${suggestion.targetCells.join(", ")} because it had no supported style fields.`);
+      continue;
+    }
+
+    operations.push({
+      type: suggestion.targetCells.length === 1 || suggestion.type === "format_cell" ? "format_cell" : "format_cells",
+      target: {
+        cell: suggestion.targetCells.length === 1 ? suggestion.targetCells[0] : null,
+        cells: suggestion.targetCells,
+      },
+      values: {
+        cells: [],
+      },
+      formulas: {
+        cells: [],
+      },
+      format,
+      rationale: suggestion.rationale,
+    });
+  }
+
+  return {
+    operations,
+    warnings: Array.from(new Set(warnings)),
+  };
+}
+
+function buildAnthropicAnswerOnlyStageSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "proposalName", "answer", "summary", "confidence", "assumptions", "warnings"],
+    properties: {
+      mode: {
+        type: "string",
+        enum: ["answer_only"],
+      },
+      proposalName: { type: "string" },
+      answer: { type: "string" },
+      summary: { type: "string" },
+      confidence: { type: "string", enum: ["high", "medium", "low"] },
+      assumptions: { type: "array", items: { type: "string" } },
+      warnings: { type: "array", items: { type: "string" } },
+    },
+  } as const;
+}
+
+function normalizeAnthropicAnswerOnlyPayload(value: unknown): PricingWorksheetAiAssistantResponse {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    mode: "answer_only",
+    proposalName:
+      typeof candidate.proposalName === "string" && candidate.proposalName.trim().length > 0
+        ? candidate.proposalName.trim()
+        : "Worksheet assistant response",
+    answer:
+      typeof candidate.answer === "string" && candidate.answer.trim().length > 0
+        ? candidate.answer.trim()
+        : "No safe worksheet changes could be proposed.",
+    summary:
+      typeof candidate.summary === "string" && candidate.summary.trim().length > 0
+        ? candidate.summary.trim()
+        : "No safe worksheet changes could be proposed.",
+    confidence:
+      candidate.confidence === "high" || candidate.confidence === "medium" || candidate.confidence === "low"
+        ? candidate.confidence
+        : "low",
+    operations: [],
+    assumptions: Array.isArray(candidate.assumptions)
+      ? candidate.assumptions.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean).slice(0, 12)
+      : [],
+    warnings: Array.isArray(candidate.warnings)
+      ? candidate.warnings.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean).slice(0, 12)
+      : [],
+  };
+}
+
+function buildAnthropicReviewStageSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "answer", "reviewFindings", "reviewSummary", "assumptions", "warnings"],
+    properties: {
+      mode: { type: "string", enum: ["review_summary", "answer_only"] },
+      answer: { type: "string" },
+      reviewFindings: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "finding", "category", "severity", "confidence"],
+          properties: {
+            title: { type: "string" },
+            finding: { type: "string" },
+            category: { type: "string" },
+            severity: { type: "string", enum: ["low", "medium", "high"] },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
+            assumption: { type: "string" },
+            needsConfirmation: { type: "string" },
+            suggestedAction: { type: "string" },
+            relatedCells: { type: "array", items: { type: "string" } },
+            relatedRows: { type: "array", items: { type: "number" } },
+          },
+        },
+      },
+      reviewSummary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["presentItems", "possibleMissingItems", "keyRisks", "assumptions", "confirmationsNeeded"],
+        properties: {
+          presentItems: { type: "array", items: { type: "string" } },
+          possibleMissingItems: { type: "array", items: { type: "string" } },
+          keyRisks: { type: "array", items: { type: "string" } },
+          assumptions: { type: "array", items: { type: "string" } },
+          confirmationsNeeded: { type: "array", items: { type: "string" } },
+        },
+      },
+      assumptions: { type: "array", items: { type: "string" } },
+      warnings: { type: "array", items: { type: "string" } },
+    },
+  } as const;
+}
+
+function normalizeAnthropicReviewPayload(value: unknown): {
+  answer: string;
+  assumptions: string[];
+  warnings: string[];
+  reviewFindings: PricingWorksheetAiReviewFinding[];
+  reviewSummary: PricingWorksheetAiReviewSummary | null;
+} {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const reviewFindings: PricingWorksheetAiReviewFinding[] = Array.isArray(candidate.reviewFindings)
+    ? candidate.reviewFindings.flatMap((entry, index) => {
+        const finding = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null;
+        if (!finding || typeof finding.title !== "string" || typeof finding.finding !== "string") {
+          return [];
+        }
+        return [
+          {
+            id: `review-finding-${index + 1}`,
+            category:
+              typeof finding.category === "string" &&
+              [
+                "missing_scope",
+                "formula_risk",
+                "quantity_risk",
+                "labour_risk",
+                "wastage_risk",
+                "specification_uncertainty",
+                "quote_readiness",
+                "takeoff_readiness",
+                "general_review",
+              ].includes(finding.category)
+                ? (finding.category as PricingWorksheetAiReviewFinding["category"])
+                : "general_review",
+            severity:
+              finding.severity === "high" || finding.severity === "medium" || finding.severity === "low"
+                ? finding.severity
+                : "medium",
+            confidence:
+              finding.confidence === "high" || finding.confidence === "medium" || finding.confidence === "low"
+                ? finding.confidence
+                : "medium",
+            title: finding.title.trim(),
+            finding: finding.finding.trim(),
+            assumption: typeof finding.assumption === "string" ? finding.assumption.trim() : undefined,
+            needsConfirmation:
+              typeof finding.needsConfirmation === "string" ? finding.needsConfirmation.trim() : undefined,
+            suggestedAction: typeof finding.suggestedAction === "string" ? finding.suggestedAction.trim() : undefined,
+            relatedCells: Array.isArray(finding.relatedCells)
+              ? finding.relatedCells
+                  .map((cell) => (typeof cell === "string" ? cell.trim().toUpperCase() : ""))
+                  .filter((cell) => /^[A-Z]+\d+$/.test(cell))
+              : [],
+            relatedRows: Array.isArray(finding.relatedRows)
+              ? finding.relatedRows.filter((row): row is number => typeof row === "number" && Number.isInteger(row))
+              : [],
+          },
+        ];
+      })
+    : [];
+
+  const reviewSummaryCandidate =
+    candidate.reviewSummary && typeof candidate.reviewSummary === "object" && !Array.isArray(candidate.reviewSummary)
+      ? (candidate.reviewSummary as Record<string, unknown>)
+      : null;
+  const toStringArray = (value: unknown) =>
+    Array.isArray(value)
+      ? value.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean).slice(0, 12)
+      : [];
+
+  return {
+    answer: typeof candidate.answer === "string" ? candidate.answer.trim() : "",
+    assumptions: toStringArray(candidate.assumptions),
+    warnings: toStringArray(candidate.warnings),
+    reviewFindings,
+    reviewSummary: reviewSummaryCandidate
+      ? {
+          presentItems: toStringArray(reviewSummaryCandidate.presentItems),
+          possibleMissingItems: toStringArray(reviewSummaryCandidate.possibleMissingItems),
+          keyRisks: toStringArray(reviewSummaryCandidate.keyRisks),
+          assumptions: toStringArray(reviewSummaryCandidate.assumptions),
+          confirmationsNeeded: toStringArray(reviewSummaryCandidate.confirmationsNeeded),
+        }
+      : null,
+  };
+}
+
+function buildAnthropicCompactEditIntentStageSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["mode", "answer", "editIntents", "assumptions", "warnings"],
+    properties: {
+      mode: { type: "string", enum: ["edit_intent", "answer_only"] },
+      answer: { type: "string" },
+      editIntents: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["action", "rationale"],
+          properties: {
+            action: { type: "string", enum: ["set_cell_value", "set_cells_value", "insert_row_after", "insert_subtotal"] },
+            targetCell: { type: "string" },
+            targetCells: { type: "array", items: { type: "string" } },
+            values: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value"],
+                properties: {
+                  ref: { type: "string" },
+                  column: { type: "string" },
+                  value: { type: "string" },
+                },
+              },
+            },
+            afterRowNumber: { type: "number" },
+            subtotalLabel: { type: "string" },
+            rationale: { type: "string" },
+          },
+        },
+      },
+      assumptions: { type: "array", items: { type: "string" } },
+      warnings: { type: "array", items: { type: "string" } },
+    },
+  } as const;
+}
+
+function normalizeAnthropicCompactEditIntentPayload(value: unknown): {
+  answer: string;
+  assumptions: string[];
+  warnings: string[];
+  editIntents: PricingWorksheetAiEditIntentSuggestion[];
+} {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const editIntents = Array.isArray(candidate.editIntents)
+    ? candidate.editIntents.flatMap((entry) => {
+        const intent = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null;
+        if (!intent || typeof intent.action !== "string" || typeof intent.rationale !== "string") {
+          return [];
+        }
+        if (!["set_cell_value", "set_cells_value", "insert_row_after", "insert_subtotal"].includes(intent.action)) {
+          return [];
+        }
+        return [
+          {
+            action: intent.action as PricingWorksheetAiEditIntentSuggestion["action"],
+            targetCell: typeof intent.targetCell === "string" ? intent.targetCell.trim().toUpperCase() : null,
+            targetCells: Array.isArray(intent.targetCells)
+              ? intent.targetCells
+                  .map((cell) => (typeof cell === "string" ? cell.trim().toUpperCase() : ""))
+                  .filter((cell) => /^[A-Z]+\d+$/.test(cell))
+              : [],
+            values: Array.isArray(intent.values)
+              ? intent.values.flatMap((valueEntry) => {
+                  const valueRecord =
+                    valueEntry && typeof valueEntry === "object" ? (valueEntry as Record<string, unknown>) : null;
+                  if (!valueRecord || typeof valueRecord.value !== "string") {
+                    return [];
+                  }
+                  return [
+                    {
+                      ref: typeof valueRecord.ref === "string" ? valueRecord.ref.trim().toUpperCase() : null,
+                      column: typeof valueRecord.column === "string" ? valueRecord.column.trim().toUpperCase() : null,
+                      value: valueRecord.value.trim(),
+                    },
+                  ];
+                })
+              : [],
+            afterRowNumber:
+              typeof intent.afterRowNumber === "number" && Number.isInteger(intent.afterRowNumber)
+                ? intent.afterRowNumber
+                : null,
+            subtotalLabel: typeof intent.subtotalLabel === "string" ? intent.subtotalLabel.trim() : null,
+            rationale: intent.rationale.trim(),
+          } satisfies PricingWorksheetAiEditIntentSuggestion,
+        ];
+      })
+    : [];
+
+  const toStringArray = (input: unknown) =>
+    Array.isArray(input)
+      ? input.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean).slice(0, 12)
+      : [];
+
+  return {
+    answer: typeof candidate.answer === "string" ? candidate.answer.trim() : "",
+    assumptions: toStringArray(candidate.assumptions),
+    warnings: toStringArray(candidate.warnings),
+    editIntents,
+  };
+}
+
+function buildCompactEditOperations(params: {
+  intents: PricingWorksheetAiEditIntentSuggestion[];
+}) {
+  const operations: PricingWorksheetAiOperation[] = [];
+  const warnings: string[] = [];
+
+  for (const intent of params.intents) {
+    if (intent.action === "set_cell_value" && intent.targetCell && intent.values[0]?.value) {
+      operations.push({
+        type: "update_cell",
+        target: {
+          cell: intent.targetCell,
+          cells: [intent.targetCell],
+          row: Number.parseInt(intent.targetCell.replace(/^[A-Z]+/, ""), 10),
+        },
+        values: {
+          cells: [
+            {
+              ref: intent.targetCell,
+              value: intent.values[0].value,
+            },
+          ],
+        },
+        formulas: { cells: [] },
+        rationale: intent.rationale,
+      });
+      continue;
+    }
+
+    if (intent.action === "set_cells_value" && intent.targetCells.length > 0 && intent.values.length > 0) {
+      operations.push({
+        type: "update_cells",
+        target: {
+          cells: intent.targetCells,
+        },
+        values: {
+          cells: intent.values.map((entry, index) => ({
+            ref: entry.ref ?? intent.targetCells[index] ?? null,
+            column: entry.column,
+            value: entry.value,
+          })),
+        },
+        formulas: { cells: [] },
+        rationale: intent.rationale,
+      });
+      continue;
+    }
+
+    if (intent.action === "insert_row_after" && intent.afterRowNumber && intent.values.length > 0) {
+      operations.push({
+        type: "insert_row",
+        target: {
+          insertAfterRow: intent.afterRowNumber,
+          row: intent.afterRowNumber + 1,
+        },
+        values: {
+          cells: intent.values.map((entry) => ({
+            column: entry.column,
+            value: entry.value,
+          })),
+        },
+        formulas: { cells: [] },
+        rationale: intent.rationale,
+      });
+      continue;
+    }
+
+    if (intent.action === "insert_subtotal" && intent.afterRowNumber) {
+      operations.push({
+        type: "insert_subtotal",
+        target: {
+          insertAfterRow: intent.afterRowNumber,
+          row: intent.afterRowNumber + 1,
+        },
+        values: {
+          cells: intent.subtotalLabel
+            ? [
+                {
+                  column: "B",
+                  value: intent.subtotalLabel,
+                },
+              ]
+            : [],
+        },
+        formulas: { cells: [] },
+        rationale: intent.rationale,
+      });
+      continue;
+    }
+
+    warnings.push(`Skipped compact edit intent "${intent.action}" because it could not be converted safely.`);
+  }
+
+  return {
+    operations,
+    warnings: Array.from(new Set(warnings)),
+  };
+}
+
+function buildAnthropicFormulaStagePrompt(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  constructionSummary: ReturnType<typeof buildAnthropicConstructionSummary>;
+  assumptionRows: ReturnType<typeof buildAnthropicAssumptionRowSummary>;
+  stageAssumptions?: string[];
+  stageWarnings?: string[];
+}) {
+  const compatibility = getPricingWorksheetAiFormulaCompatibility();
+  return [
+    `User request: ${params.prompt}`,
+    `Construction intelligence summary: ${JSON.stringify(params.constructionSummary)}`,
+    "The worksheet structure is now real. Suggest formulas only for rows that clearly need formulas.",
+    "Use the construction intelligence summary for estimating logic, and use the worksheet snapshot only for real cell and row references.",
+    "Use editable input and assumption rows where possible so component quantities are driven by visible worksheet assumptions rather than hidden constants.",
+    "If trade or system assumptions are missing, prefer warnings or identify the input rows that should drive the formulas. Do not invent hidden constants or fake placeholders.",
+    "Use only actual row numbers, actual column letters, and worksheet-compatible formula syntax.",
+    "Return mode=\"formula_suggestions\" when you can add formulas safely, otherwise answer_only.",
+    "Each suggestion must target a real row number and a real column letter from the structure snapshot.",
+    "The expression must compile to a spreadsheet formula using only supported syntax.",
+    "You may reference actual cells like E8, F8, J14, or use worksheet-aware helper expressions such as currentRow.quantity, currentRow.materialRate, row(\"Ceiling Area\").quantity, section(\"Materials\").rows.total, section(\"Materials\").total.",
+    "Do not use curly braces, fake refs like 8_Qty, named placeholders, or imaginary rows.",
+    "If the worksheet is missing required inputs or assumptions, do not invent placeholders. Return warnings explaining what is missing, or answer_only if no safe formulas can be suggested.",
+    `Allowed functions: ${compatibility.allowedFunctions.join(", ")}`,
+    `Assumption and input row summary: ${JSON.stringify(params.assumptionRows)}`,
+    `Stage assumptions carried forward: ${JSON.stringify(params.stageAssumptions ?? [])}`,
+    `Stage warnings carried forward: ${JSON.stringify(params.stageWarnings ?? [])}`,
+    `Worksheet structure snapshot: ${JSON.stringify(params.snapshot)}`,
+  ].join("\n\n");
+}
+
+function buildCompiledFormulaOperations(params: {
+  suggestions: PricingWorksheetAiFormulaSuggestion[];
+  snapshot: PricingWorksheetStructureSnapshot;
+}) {
+  const patches: Array<{
+    rowNumber: number;
+    column: string;
+    formula: string;
+    rationale: string;
+  }> = [];
+  const warnings: string[] = [];
+  let successCount = 0;
+  let failureCount = 0;
+  let unresolvedReferenceCount = 0;
+
+  for (const suggestion of params.suggestions) {
+    const targetCell = `${suggestion.targetColumn}${suggestion.targetRowNumber}`;
+    const rowTarget = params.snapshot.formulaTargets.rows.find((row) => row.rowNumber === suggestion.targetRowNumber) ?? null;
+    const compileResult = compileAiWorksheetFormula({
+      expression: suggestion.expression,
+      targetCell,
+      currentRowNumber: suggestion.targetRowNumber,
+      currentSectionName: rowTarget?.sectionName ?? null,
+      snapshot: params.snapshot,
+    });
+
+    if (!compileResult.success || !compileResult.formula) {
+      failureCount += 1;
+      unresolvedReferenceCount += compileResult.unresolvedReferences.length;
+      warnings.push(
+        compileResult.blockedReason === "formula_unresolved_reference"
+          ? `Skipped formula for ${targetCell} because it referenced worksheet items that could not be resolved safely.`
+          : `Skipped formula for ${targetCell} because it was not compatible with the worksheet formula rules.`,
+      );
+      continue;
+    }
+
+    successCount += 1;
+    patches.push({
+      rowNumber: suggestion.targetRowNumber,
+      column: suggestion.targetColumn,
+      formula: compileResult.formula,
+      rationale: suggestion.rationale,
+    });
+    warnings.push(...compileResult.warnings);
+  }
+
+  return {
+    patches,
+    warnings: Array.from(new Set(warnings)),
+    successCount,
+    failureCount,
+    unresolvedReferenceCount,
+  };
+}
+
+function mergeFormulaPatchesIntoStructureOperations(params: {
+  baseResponse: PricingWorksheetAiAssistantResponse;
+  patches: Array<{
+    rowNumber: number;
+    column: string;
+    formula: string;
+    rationale: string;
+  }>;
+}): PricingWorksheetAiAssistantResponse {
+  const patchesByRow = new Map<number, Array<{ column: string; formula: string; rationale: string }>>();
+  for (const patch of params.patches) {
+    const existing = patchesByRow.get(patch.rowNumber) ?? [];
+    existing.push({
+      column: patch.column,
+      formula: patch.formula,
+      rationale: patch.rationale,
+    });
+    patchesByRow.set(patch.rowNumber, existing);
+  }
+
+  return {
+    ...params.baseResponse,
+    operations: params.baseResponse.operations.map((operation) => {
+      if (operation.type !== "insert_row") {
+        return operation;
+      }
+
+      const rowNumber = operation.target?.insertBeforeRow ?? operation.target?.row ?? null;
+      if (!rowNumber) {
+        return operation;
+      }
+
+      const rowPatches = patchesByRow.get(rowNumber);
+      if (!rowPatches || rowPatches.length === 0) {
+        return operation;
+      }
+
+      const existingFormulaEntries = Array.isArray(operation.formulas?.cells) ? operation.formulas?.cells : [];
+      const mergedFormulas = [...existingFormulaEntries];
+      for (const patch of rowPatches) {
+        const existingIndex = mergedFormulas.findIndex((entry) => entry.column === patch.column);
+        const nextEntry = {
+          column: patch.column,
+          formula: patch.formula,
+        };
+        if (existingIndex >= 0) {
+          mergedFormulas[existingIndex] = nextEntry;
+        } else {
+          mergedFormulas.push(nextEntry);
+        }
+      }
+
+      return {
+        ...operation,
+        formulas: {
+          cells: mergedFormulas,
+        },
+        rationale: rowPatches[0]?.rationale ?? operation.rationale,
+      };
+    }),
+  };
+}
+
+function buildCompiledFormulaUpdateOperations(params: {
+  suggestions: PricingWorksheetAiFormulaSuggestion[];
+  snapshot: PricingWorksheetStructureSnapshot;
+}) {
+  const operations: PricingWorksheetAiOperation[] = [];
+  const warnings: string[] = [];
+  let successCount = 0;
+  let failureCount = 0;
+  let unresolvedReferenceCount = 0;
+
+  for (const suggestion of params.suggestions) {
+    const targetCell = `${suggestion.targetColumn}${suggestion.targetRowNumber}`;
+    const rowTarget = params.snapshot.formulaTargets.rows.find((row) => row.rowNumber === suggestion.targetRowNumber) ?? null;
+    const compileResult = compileAiWorksheetFormula({
+      expression: suggestion.expression,
+      targetCell,
+      currentRowNumber: suggestion.targetRowNumber,
+      currentSectionName: rowTarget?.sectionName ?? null,
+      snapshot: params.snapshot,
+    });
+
+    if (!compileResult.success || !compileResult.formula) {
+      failureCount += 1;
+      unresolvedReferenceCount += compileResult.unresolvedReferences.length;
+      warnings.push(
+        compileResult.blockedReason === "formula_unresolved_reference"
+          ? `Skipped formula for ${targetCell} because it referenced worksheet items that could not be resolved safely.`
+          : `Skipped formula for ${targetCell} because it was not compatible with the worksheet formula rules.`,
+      );
+      continue;
+    }
+
+    successCount += 1;
+    operations.push({
+      type: "update_cell",
+      target: {
+        cell: targetCell,
+        cells: [targetCell],
+        row: suggestion.targetRowNumber,
+      },
+      values: {
+        cells: [],
+      },
+      formulas: {
+        cells: [
+          {
+            ref: targetCell,
+            formula: compileResult.formula,
+          },
+        ],
+      },
+      rationale: suggestion.rationale,
+    });
+    warnings.push(...compileResult.warnings);
+  }
+
+  return {
+    operations,
+    warnings: Array.from(new Set(warnings)),
+    successCount,
+    failureCount,
+    unresolvedReferenceCount,
+  };
+}
+
+function appendUniqueWarnings(
+  response: PricingWorksheetAiAssistantResponse,
+  warnings: Array<string | null | undefined>,
+): PricingWorksheetAiAssistantResponse {
+  const nextWarnings = warnings
+    .map((warning) => (typeof warning === "string" ? warning.trim() : ""))
+    .filter((warning) => warning.length > 0);
+
+  if (nextWarnings.length === 0) {
+    return response;
+  }
+
+  return {
+    ...response,
+    warnings: Array.from(new Set([...(response.warnings ?? []), ...nextWarnings])),
+  };
+}
+
+function buildFallbackResponse(prompt: string, fallbackReason?: string | null): PricingWorksheetAiAssistantResponse {
   const advicePrompt = isAdvicePrompt(prompt);
+  const timeoutFailure = typeof fallbackReason === "string" && fallbackReason.includes("timed out");
+  const failureAnswer = timeoutFailure
+    ? advicePrompt
+      ? "The AI request timed out while running web search and structured worksheet generation, so I couldn't answer that request. Please try again."
+      : "The AI request timed out while running web search and structured worksheet generation, so no worksheet changes were proposed."
+    : advicePrompt
+      ? "AI provider connection failed, so I couldn't answer that request. Please check the AI configuration or try again."
+      : "AI provider connection failed, so no worksheet changes were proposed.";
+  const failureSummary = timeoutFailure
+    ? advicePrompt
+      ? "AI worksheet assistance timed out before an answer could be generated."
+      : "AI worksheet generation timed out before worksheet changes could be proposed."
+    : advicePrompt
+      ? "AI provider connection failed before an answer could be generated."
+      : "AI provider connection failed before worksheet changes could be proposed.";
+  const failureWarning = timeoutFailure
+    ? "AI worksheet generation timed out during web search and structured output."
+    : advicePrompt
+      ? "AI provider connection failed while trying to answer this request."
+      : "AI provider connection failed, so no worksheet changes were generated.";
+
   return {
     mode: "answer_only",
     proposalName: "Worksheet assistant response",
-    answer: advicePrompt
-      ? "AI provider connection failed, so I couldn't answer that request. Please check the AI configuration or try again."
-      : "AI provider connection failed, so no worksheet changes were proposed.",
-    summary: advicePrompt
-      ? "AI provider connection failed before an answer could be generated."
-      : "AI provider connection failed before worksheet changes could be proposed.",
+    answer: failureAnswer,
+    summary: failureSummary,
     confidence: "low",
     operations: [],
     assumptions: [],
-    warnings: [
-      advicePrompt
-        ? "AI provider connection failed while trying to answer this request."
-        : "AI provider connection failed, so no worksheet changes were generated.",
-    ],
+    warnings: [failureWarning],
   };
 }
 
 async function callWorksheetAssistantModel(
   prompt: string,
+  worksheet: WorksheetData,
   worksheetContext: PricingWorksheetAiCompactContext,
   memoryItems: AiMemoryItem[],
   classification: PricingWorksheetConstructionIntent,
@@ -2077,38 +3438,60 @@ async function callWorksheetAssistantModel(
   qualityRetryCount = 0,
   truncationRetryCount = 0,
   providerRecoveryRetryCount = 0,
-): Promise<{ response: PricingWorksheetAiAssistantResponse; rawText: string }> {
+  providerOptions?: {
+    webSearchEnabled?: boolean;
+  },
+  executionOptions?: {
+    disableGenerationRecoveryRetry?: boolean;
+    disableQualityRetries?: boolean;
+    formattingToGenerationFallbackUsed?: boolean;
+    workflowStage?: "structure_generation" | "formula_generation" | "formatting_generation" | "default";
+  },
+): Promise<{
+  response: PricingWorksheetAiAssistantResponse;
+  rawText: string;
+  provider: "openai" | "anthropic";
+  model: string;
+  effectiveWebSearchEnabled: boolean;
+}> {
+  const webSearchEnabled = providerOptions?.webSearchEnabled !== false;
+  const providerSettings = getPricingWorksheetAiProviderSettings(classification, {
+    truncationRetryCount,
+    providerRecoveryRetryCount,
+  });
+  const provider = getPricingWorksheetAiProvider();
+  const modelConfig = getPricingWorksheetEditAssistantModelConfig();
+  const effectiveWorkflowStage = executionOptions?.workflowStage ?? "default";
+  const effectiveMaxOutputTokens =
+    provider.name === "anthropic" && effectiveWorkflowStage === "structure_generation"
+      ? Math.min(providerSettings.maxOutputTokens, WORKSHEET_AI_ANTHROPIC_STAGE_A_MAX_OUTPUT_TOKENS)
+      : providerSettings.maxOutputTokens;
   logEditAssistantDebug("provider_request_started", {
     promptLength: prompt.length,
     memoryCount: memoryItems.length,
     worksheetName: worksheetContext.worksheetName,
-    hasApiKey: Boolean(process.env.OPENAI_API_KEY?.trim()),
-    classification,
-    webSearchEnabled: true,
-  });
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    logEditAssistantDebug("provider_error", {
-      reason: "missing_api_key",
-    });
-    throw new Error("OPENAI_API_KEY is not configured.");
-  }
-
-  const modelConfig = getPricingWorksheetEditAssistantModelConfig();
-  const requestTimeoutMs = getWorksheetAiTimeoutMs(classification, providerRecoveryRetryCount);
-  const maxProviderAttempts = getWorksheetAiMaxProviderAttempts(classification, providerRecoveryRetryCount);
-  const maxOutputTokens = getWorksheetAiMaxOutputTokens(
-    classification,
-    truncationRetryCount,
-    providerRecoveryRetryCount,
-  );
-  logEditAssistantDebug("provider_model", {
-    provider: "openai",
+    provider: provider.name,
     model: modelConfig.model,
-    requestTimeoutMs,
+    classification,
+    timeoutMs: providerSettings.timeoutMs,
+    requiresRetrieval: classification.requiresRetrieval,
+    recommendedPromptPath: classification.recommendedPromptPath,
+    webSearchEnabled,
+    workflowStage: effectiveWorkflowStage,
+  });
+  const requestTimeoutMs = providerSettings.timeoutMs;
+  const maxProviderAttempts = providerSettings.maxProviderAttempts;
+  logEditAssistantDebug("provider_model", {
+    provider: provider.name,
+    model: modelConfig.model,
+    timeoutMs: requestTimeoutMs,
     maxProviderAttempts,
-    maxOutputTokens,
+    maxOutputTokens: effectiveMaxOutputTokens,
     providerRecoveryRetryCount,
+    requiresRetrieval: classification.requiresRetrieval,
+    recommendedPromptPath: classification.recommendedPromptPath,
+    webSearchEnabled,
+    workflowStage: effectiveWorkflowStage,
   });
   const { systemPrompt, userPrompt } = buildWorksheetAssistantPrompts({
     prompt,
@@ -2119,79 +3502,267 @@ async function callWorksheetAssistantModel(
     followUpContext,
   });
 
-  const requestBody = JSON.stringify({
-    model: modelConfig.model,
-    max_output_tokens: maxOutputTokens,
-    tools: [WORKSHEET_AI_WEB_SEARCH_TOOL],
-    tool_choice: "auto",
-    include: ["web_search_call.action.sources"],
-    input: [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: systemPrompt }],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: userPrompt }],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "pricing_worksheet_edit_assistant",
-        schema: buildPricingWorksheetAiAssistantSchema(),
-        strict: true,
-      },
-    },
-  });
-
-  let response: Response | null = null;
   let lastError: Error | null = null;
+  const providerRequestStartedAt = Date.now();
 
   for (let attemptNumber = 1; attemptNumber <= maxProviderAttempts; attemptNumber += 1) {
+    const attemptStartedAt = Date.now();
     try {
-      response = await fetchWithTimeout(
-        OPENAI_API_URL,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: requestBody,
+      const providerResult = await provider.generateEditPlan({
+        systemPrompt,
+        userPrompt,
+        schema: buildPricingWorksheetAiAssistantSchema(),
+        model: modelConfig.model,
+        timeoutMs: requestTimeoutMs,
+        maxOutputTokens: effectiveMaxOutputTokens,
+        enableWebSearch: webSearchEnabled,
+        metadata: {
+          classification,
+          recommendedPromptPath: classification.recommendedPromptPath,
+          requiresRetrieval: classification.requiresRetrieval,
+          attemptNumber,
+          workflowStage: effectiveWorkflowStage,
         },
-        requestTimeoutMs,
+      });
+
+      const providerDurationMs = Date.now() - providerRequestStartedAt;
+      logEditAssistantDebug("provider_response_received", {
+        hasOutputText: providerResult.outputText.length > 0,
+        hasStructuredObject: Boolean(providerResult.parsedJson),
+        timeoutMs: requestTimeoutMs,
+        requiresRetrieval: classification.requiresRetrieval,
+        recommendedPromptPath: classification.recommendedPromptPath,
+        webSearchEnabled,
+        workflowStage: effectiveWorkflowStage,
+        providerDurationMs,
+        provider: providerResult.provider,
+        model: providerResult.model,
+      });
+      logEditAssistantDebug("provider_response_snippet", {
+        snippet: providerResult.outputText.slice(0, 400),
+      });
+
+      const providerAssistantPayload =
+        providerResult.provider === "anthropic" &&
+        isAnthropicWorksheetDraftResponse(providerResult.parsedJson)
+          ? convertAnthropicWorksheetDraftToOperations({
+              draft: providerResult.parsedJson,
+              worksheet,
+              worksheetContext,
+              classification,
+            })
+          : providerResult.parsedJson;
+
+      if (
+        providerResult.provider === "anthropic" &&
+        isAnthropicWorksheetDraftResponse(providerResult.parsedJson)
+      ) {
+        logEditAssistantDebug("anthropic_draft_converted", {
+          draftMode: providerResult.parsedJson.mode,
+          sectionCount: Array.isArray(providerResult.parsedJson.sections) ? providerResult.parsedJson.sections.length : 0,
+          convertedOperationCount: providerAssistantPayload.operations.length,
+          primaryIntent: classification.primaryIntent,
+          recommendedPromptPath: classification.recommendedPromptPath,
+        });
+      }
+
+      let normalized: PricingWorksheetAiAssistantResponse;
+      const operationNormalizationDiagnostics = inspectPricingWorksheetAiOperationNormalization(
+        providerAssistantPayload,
       );
+      try {
+        normalized = coerceExplicitFormulaWriteResponse(
+          normalizePricingWorksheetAiAssistantResponse(providerAssistantPayload),
+          prompt,
+          worksheetContext,
+        );
+      } catch (error) {
+        logEditAssistantDebug("schema_validation_error", {
+          reason: "schema_normalization_failed",
+          ...serializeError(error),
+        });
+        throw createPricingWorksheetProviderError({
+          code: "provider_schema_validation_failed",
+          provider: providerResult.provider,
+          model: providerResult.model,
+          retryable: false,
+          message: "AI assistant returned an invalid structured response (schema_normalization_failed).",
+          rawError: error,
+        });
+      }
+
+      const withEvidenceSources = {
+        ...normalized,
+        warnings: Array.from(new Set([...(normalized.warnings ?? []), ...providerResult.warnings])),
+        evidenceSources: mergeEvidenceSources(
+          normalized.evidenceSources ?? [],
+          providerResult.evidence,
+        ),
+      };
+      const disciplined = applyEvidenceDiscipline(applyReviewRevisionDiscipline({
+        response: withEvidenceSources,
+        followUpContext,
+      }));
+      logEditAssistantDebug("parsed_response_mode", {
+        mode: disciplined.mode,
+        operationCount: disciplined.operations.length,
+        rawOperationsPresent: operationNormalizationDiagnostics.rawOperationsPresent,
+        rawOperationCount: operationNormalizationDiagnostics.rawOperationCount,
+        normalizedOperationCount: operationNormalizationDiagnostics.normalizedOperationCount,
+        droppedOperationCount: operationNormalizationDiagnostics.droppedOperationCount,
+        droppedOperationReasons: operationNormalizationDiagnostics.droppedOperationReasons,
+        invalidOperationTypes: operationNormalizationDiagnostics.invalidOperationTypes,
+        provider: providerResult.provider,
+        model: providerResult.model,
+        primaryIntent: classification.primaryIntent,
+        recommendedPromptPath: classification.recommendedPromptPath,
+      });
+
+      if (
+        providerResult.provider === "anthropic" &&
+        executionOptions?.disableQualityRetries !== true &&
+        isAnthropicEmptyOperationRetryEnabled() &&
+        qualityRetryCount < 1 &&
+        shouldRetryForMissingMutationOperations(prompt, classification, disciplined)
+      ) {
+        logEditAssistantDebug("quality_retry_scheduled", {
+          reason: "missing_mutation_operations",
+          responseMode: disciplined.mode,
+          recommendedPromptPath: classification.recommendedPromptPath,
+          primaryIntent: classification.primaryIntent,
+        });
+
+        return callWorksheetAssistantModel(
+          buildMissingMutationOperationsRetryPrompt(prompt),
+          worksheet,
+          worksheetContext,
+          memoryItems,
+          classification,
+          organizationGuidance,
+          followUpContext,
+          qualityRetryCount + 1,
+          truncationRetryCount,
+          providerRecoveryRetryCount,
+          providerOptions,
+          executionOptions,
+        );
+      }
+
+      if (
+        executionOptions?.disableQualityRetries !== true &&
+        qualityRetryCount < 1 &&
+        shouldRetryForLowQualityProposal(prompt, worksheetContext, disciplined)
+      ) {
+        logEditAssistantDebug("quality_retry_scheduled", {
+          reason: "low_quality_formula_proposal",
+          worksheetPopulatedCellCount: worksheetContext.populatedCellCount,
+          operationCount: normalized.operations.length,
+          responseMode: normalized.mode,
+        });
+
+        return callWorksheetAssistantModel(
+          `${prompt}\n\nCorrection: create a real worksheet formula edit. Do not use zero placeholders. If inputs are missing, leave those input cells blank and add the formula in a separate cell using IFERROR where appropriate.`,
+          worksheet,
+          worksheetContext,
+          memoryItems,
+          classification,
+          organizationGuidance,
+          followUpContext,
+          qualityRetryCount + 1,
+          truncationRetryCount,
+          providerRecoveryRetryCount,
+          providerOptions,
+          executionOptions,
+        );
+      }
+
+      return {
+        response: disciplined,
+        rawText: providerResult.outputText,
+        provider: providerResult.provider,
+        model: providerResult.model,
+        effectiveWebSearchEnabled: providerResult.effectiveWebSearchEnabled,
+      };
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      if (!isPricingWorksheetProviderError(error)) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        throw lastError;
+      }
+
+      lastError = error;
+      const providerDurationMs = Date.now() - attemptStartedAt;
+      const providerFailureReason = getProviderParseFailureReason(error);
+      const logReason = error.status === null ? "provider_request_failed" : "provider_http_error";
       logEditAssistantDebug("provider_error", {
-        reason: "provider_request_failed",
+        reason: logReason,
         attemptNumber,
         maxAttempts: maxProviderAttempts,
+        timeoutMs: requestTimeoutMs,
+        requiresRetrieval: classification.requiresRetrieval,
+        recommendedPromptPath: classification.recommendedPromptPath,
+        webSearchEnabled,
+        workflowStage: effectiveWorkflowStage,
+        providerDurationMs,
         ...serializeError(error),
-        baseUrl: OPENAI_API_URL,
-        model: modelConfig.model,
+        ...buildProviderErrorLogPayload(error),
       });
-      if (attemptNumber < maxProviderAttempts) {
+      if (error.retryable && attemptNumber < maxProviderAttempts) {
         logEditAssistantDebug("provider_retry_scheduled", {
           attemptNumber,
           nextAttemptNumber: attemptNumber + 1,
-          retryReason: "request_failure",
+          retryReason: error.status === null ? "request_failure" : `http_${error.status}`,
         });
         await waitForRetry(350 * attemptNumber);
         continue;
       }
 
+      if (providerFailureReason) {
+        logEditAssistantDebug("schema_validation_error", {
+          reason: providerFailureReason,
+          diagnostics:
+            error.rawError && typeof error.rawError === "object" && !Array.isArray(error.rawError)
+              ? (error.rawError as Record<string, unknown>).diagnostics
+              : null,
+        });
+
+        if (providerFailureReason === "truncated_json" && truncationRetryCount < 1) {
+          logEditAssistantDebug("provider_retry_scheduled", {
+            retryReason: providerFailureReason,
+            retryStrategy: "compact_retry",
+            truncationRetryCount,
+          });
+          return callWorksheetAssistantModel(
+            buildTruncationRetryPrompt(prompt),
+            worksheet,
+            worksheetContext,
+            memoryItems,
+            classification,
+            organizationGuidance,
+            followUpContext,
+            qualityRetryCount,
+            truncationRetryCount + 1,
+            providerRecoveryRetryCount,
+            providerOptions,
+          );
+        }
+      }
+
       if (
         classification.primaryIntent === "worksheet_generation" &&
-        providerRecoveryRetryCount < 1
+        isProviderTimeoutError(lastError) &&
+        providerRecoveryRetryCount < 1 &&
+        executionOptions?.disableGenerationRecoveryRetry !== true
       ) {
         logEditAssistantDebug("provider_retry_scheduled", {
           retryReason: "compact_generation_recovery",
           providerRecoveryRetryCount,
+          timeoutMs: requestTimeoutMs,
+          requiresRetrieval: classification.requiresRetrieval,
+          recommendedPromptPath: classification.recommendedPromptPath,
         });
         return callWorksheetAssistantModel(
           buildCompactGenerationRetryPrompt(prompt),
+          worksheet,
           worksheetContext,
           memoryItems,
           classification,
@@ -2200,161 +3771,416 @@ async function callWorksheetAssistantModel(
           qualityRetryCount,
           truncationRetryCount,
           providerRecoveryRetryCount + 1,
+          providerOptions,
+          executionOptions,
         );
       }
       throw lastError;
     }
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      const retryable = isRetryableProviderStatus(response.status);
-      logEditAssistantDebug("provider_error", {
-        reason: "provider_http_error",
-        attemptNumber,
-        maxAttempts: maxProviderAttempts,
-        status: response.status,
-        statusText: response.statusText,
-        retryable,
-        responseBodySnippet: errorBody.slice(0, 1200),
-      });
-
-      if (retryable && attemptNumber < maxProviderAttempts) {
-        logEditAssistantDebug("provider_retry_scheduled", {
-          attemptNumber,
-          nextAttemptNumber: attemptNumber + 1,
-          retryReason: `http_${response.status}`,
-        });
-        await waitForRetry(350 * attemptNumber);
-        continue;
-      }
-
-      if (
-        retryable &&
-        classification.primaryIntent === "worksheet_generation" &&
-        providerRecoveryRetryCount < 1
-      ) {
-        logEditAssistantDebug("provider_retry_scheduled", {
-          retryReason: `compact_generation_recovery_http_${response.status}`,
-          providerRecoveryRetryCount,
-        });
-        return callWorksheetAssistantModel(
-          buildCompactGenerationRetryPrompt(prompt),
-          worksheetContext,
-          memoryItems,
-          classification,
-          organizationGuidance,
-          followUpContext,
-          qualityRetryCount,
-          truncationRetryCount,
-          providerRecoveryRetryCount + 1,
-        );
-      }
-
-      throw new Error(`OpenAI request failed with status ${response.status}.`);
-    }
-
-    break;
   }
+  throw lastError ?? new Error("OpenAI request failed before a response was received.");
+}
 
-  if (!response) {
-    throw lastError ?? new Error("OpenAI request failed before a response was received.");
-  }
-
-  const responseJson = (await response.json()) as unknown;
-  const extraction = extractPricingWorksheetAssistantPayload(responseJson);
-  logEditAssistantDebug("provider_response_received", {
-    hasOutputText: extraction.rawText.length > 0,
-    hasStructuredObject: extraction.diagnostics.structuredObjectFound,
-    webSearchEnabled: true,
-    extractionDiagnostics: extraction.diagnostics,
-  });
-  logEditAssistantDebug("provider_response_snippet", {
-    snippet: extraction.rawText.slice(0, 400),
-  });
-  if (!extraction.structuredObject) {
-    const failureReason = classifyProviderResponseFailureReason(responseJson, extraction);
-    logEditAssistantDebug("schema_validation_error", {
-      reason: failureReason,
-      diagnostics: extraction.diagnostics,
-    });
-
-    if (failureReason === "truncated_json" && truncationRetryCount < 1) {
-      logEditAssistantDebug("provider_retry_scheduled", {
-        retryReason: failureReason,
-        retryStrategy: "compact_retry",
-        truncationRetryCount,
-      });
-      return callWorksheetAssistantModel(
-        buildTruncationRetryPrompt(prompt),
-        worksheetContext,
-        memoryItems,
-        classification,
-        organizationGuidance,
-        followUpContext,
-        qualityRetryCount,
-        truncationRetryCount + 1,
-        providerRecoveryRetryCount,
-      );
-    }
-
-    throw new Error(`AI assistant returned an unreadable response (${failureReason}).`);
-  }
-
-  let normalized: PricingWorksheetAiAssistantResponse;
-  try {
-    normalized = coerceExplicitFormulaWriteResponse(
-      normalizePricingWorksheetAiAssistantResponse(extraction.structuredObject),
-      prompt,
-      worksheetContext,
-    );
-  } catch (error) {
-    logEditAssistantDebug("schema_validation_error", {
-      reason: "schema_normalization_failed",
-      diagnostics: extraction.diagnostics,
-      ...serializeError(error),
-    });
-    throw new Error("AI assistant returned an invalid structured response (schema_normalization_failed).");
-  }
-  const withEvidenceSources = {
-    ...normalized,
-    evidenceSources: mergeEvidenceSources(
-      normalized.evidenceSources ?? [],
-      extraction.providerSources,
-    ),
+async function callAnthropicFormulaStage(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  memoryItems: AiMemoryItem[];
+  organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
+  followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  stageAssumptions?: string[];
+  stageWarnings?: string[];
+  model: string;
+  providerOptions?: {
+    webSearchEnabled?: boolean;
   };
-  const disciplined = applyEvidenceDiscipline(applyReviewRevisionDiscipline({
-    response: withEvidenceSources,
-    followUpContext,
-  }));
-  logEditAssistantDebug("parsed_response_mode", {
-    mode: disciplined.mode,
-    operationCount: disciplined.operations.length,
+}): Promise<{
+  suggestions: PricingWorksheetAiFormulaSuggestion[];
+  assumptions: string[];
+  warnings: string[];
+  answer: string;
+  provider: "anthropic";
+  model: string;
+  effectiveWebSearchEnabled: boolean;
+}> {
+  const provider = getPricingWorksheetAiProvider("anthropic");
+  const systemPrompt = [
+    "You are TradesStack's worksheet-aware formula assistant.",
+    "Return JSON only.",
+    "Do not modify worksheet structure.",
+    "Suggest formulas only for real target rows and columns from the provided worksheet snapshot.",
+  ].join(" ");
+  const constructionSummary = buildAnthropicConstructionSummary({
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    memoryItems: params.memoryItems,
+    organizationGuidance: params.organizationGuidance,
+    followUpContext: params.followUpContext,
+  });
+  const contextBudget = buildFormulaStageContextBudget({
+    workflow: "formula",
+    prompt: params.prompt,
+    systemPrompt,
+    snapshot: params.snapshot,
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    constructionSummary,
+    assumptionRows: buildAnthropicAssumptionRowSummary(params.snapshot),
+    stageAssumptions: params.stageAssumptions,
+    stageWarnings: params.stageWarnings,
+    promptBuilder: ({ snapshot, constructionSummary, assumptionRows, stageAssumptions, stageWarnings }) =>
+      buildAnthropicFormulaStagePrompt({
+        prompt: params.prompt,
+        snapshot,
+        constructionSummary,
+        assumptionRows,
+        stageAssumptions,
+        stageWarnings,
+      }),
+  });
+  if (contextBudget.blockedMessage) {
+    const diagnostics = {
+      estimatedTokenSize: contextBudget.tokenBreakdown.totalEstimatedTokens,
+      maxAllowedTokens: contextBudget.tokenBreakdown.maxAllowedTokens,
+      snapshotEstimatedTokenSize: contextBudget.snapshot.estimatedTokenSize,
+      systemPromptTokenEstimate: contextBudget.tokenBreakdown.systemPromptTokens,
+      userPromptTokenEstimate: contextBudget.tokenBreakdown.userPromptTokens,
+      constructionSummaryTokenEstimate: contextBudget.tokenBreakdown.constructionSummaryTokens,
+      assumptionRowsTokenEstimate: contextBudget.tokenBreakdown.assumptionRowsTokens,
+      worksheetSnapshotTokenEstimate: contextBudget.tokenBreakdown.snapshotTokens,
+      budgetTier: contextBudget.tokenBreakdown.budgetTier,
+      formulaTargetRowCount: contextBudget.tokenBreakdown.formulaTargetRowCount,
+      compactionLevel: contextBudget.tokenBreakdown.compactionLevel,
+      blockedMessage: contextBudget.blockedMessage,
+    };
+    logEditAssistantDebug("formula_stage_token_budget_exceeded", diagnostics);
+    throw createFormulaStageOversizeError(diagnostics);
+  }
+
+  logEditAssistantDebug("formula_stage_request_started", {
+    provider: provider.name,
+    model: params.model,
+    worksheetState: contextBudget.snapshot.worksheetState,
+    budgetTier: contextBudget.snapshot.budgetTier,
+    estimatedTokenSize: contextBudget.tokenBreakdown.totalEstimatedTokens,
+    snapshotSize: contextBudget.snapshot.estimatedTokenSize,
+    promptPath: params.classification.recommendedPromptPath,
+    maxAllowedTokens: WORKSHEET_AI_FORMULA_STAGE_MAX_INPUT_TOKENS,
+    systemPromptTokenEstimate: contextBudget.tokenBreakdown.systemPromptTokens,
+    userPromptTokenEstimate: contextBudget.tokenBreakdown.userPromptTokens,
+    constructionSummaryTokenEstimate: contextBudget.tokenBreakdown.constructionSummaryTokens,
+    assumptionRowsTokenEstimate: contextBudget.tokenBreakdown.assumptionRowsTokens,
+    worksheetSnapshotTokenEstimate: contextBudget.tokenBreakdown.snapshotTokens,
+    constructionSummarySize: contextBudget.tokenBreakdown.constructionSummaryTokens,
+    formulaTargetRowCount: contextBudget.tokenBreakdown.formulaTargetRowCount,
+    assumptionRowCount: contextBudget.assumptionRows.length,
+    stageAssumptionCount: contextBudget.stageAssumptions.length,
+    stageWarningCount: contextBudget.stageWarnings.length,
+    compactionLevel: contextBudget.compactionLevel,
   });
 
-  if (qualityRetryCount < 1 && shouldRetryForLowQualityProposal(prompt, worksheetContext, disciplined)) {
-    logEditAssistantDebug("quality_retry_scheduled", {
-      reason: "low_quality_formula_proposal",
-      worksheetPopulatedCellCount: worksheetContext.populatedCellCount,
-      operationCount: normalized.operations.length,
-      responseMode: normalized.mode,
-    });
+  const startedAt = Date.now();
+  const providerResult = await provider.generateEditPlan({
+    systemPrompt,
+    userPrompt: contextBudget.userPrompt,
+    schema: buildAnthropicFormulaStageSchema(),
+    model: params.model,
+    timeoutMs: WORKSHEET_AI_DEFAULT_TIMEOUT_MS,
+    maxOutputTokens: WORKSHEET_AI_FORMULA_STAGE_MAX_OUTPUT_TOKENS,
+    enableWebSearch: params.providerOptions?.webSearchEnabled === true,
+    metadata: {
+      classification: params.classification,
+      recommendedPromptPath: params.classification.recommendedPromptPath,
+      requiresRetrieval: false,
+      workflowStage: "formula_generation",
+      attemptNumber: 1,
+    },
+  });
 
-    return callWorksheetAssistantModel(
-      `${prompt}\n\nCorrection: create a real worksheet formula edit. Do not use zero placeholders. If inputs are missing, leave those input cells blank and add the formula in a separate cell using IFERROR where appropriate.`,
-      worksheetContext,
-      memoryItems,
-      classification,
-      organizationGuidance,
-      followUpContext,
-      qualityRetryCount + 1,
-      truncationRetryCount,
-      providerRecoveryRetryCount,
-    );
-  }
+  const parsed = normalizeFormulaSuggestionsPayload(providerResult.parsedJson);
+  logEditAssistantDebug("formula_stage_response_received", {
+    provider: providerResult.provider,
+    model: providerResult.model,
+    durationMs: Date.now() - startedAt,
+    suggestionCount: parsed.suggestions.length,
+    responseMode: parsed.mode,
+  });
 
   return {
-    response: disciplined,
-    rawText: extraction.rawText,
+    suggestions: parsed.suggestions,
+    assumptions: parsed.assumptions,
+    warnings: Array.from(new Set([...(parsed.warnings ?? []), ...providerResult.warnings])),
+    answer: parsed.answer,
+    provider: providerResult.provider,
+    model: providerResult.model,
+    effectiveWebSearchEnabled: providerResult.effectiveWebSearchEnabled,
+  };
+}
+
+async function callAnthropicFormattingStage(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  memoryItems: AiMemoryItem[];
+  organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
+  followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  model: string;
+}): Promise<{
+  operations: PricingWorksheetAiFormattingSuggestion[];
+  assumptions: string[];
+  warnings: string[];
+  answer: string;
+  provider: "anthropic";
+  model: string;
+  effectiveWebSearchEnabled: boolean;
+}> {
+  const provider = getPricingWorksheetAiProvider("anthropic");
+  const systemPrompt = [
+    "You are TradesStack's worksheet formatting assistant.",
+    "Return JSON only.",
+    "Do not modify worksheet values, formulas, or structure.",
+    "Suggest formatting only for real worksheet refs from the provided worksheet snapshot.",
+  ].join(" ");
+  const constructionSummary = buildAnthropicConstructionSummary({
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    memoryItems: params.memoryItems,
+    organizationGuidance: params.organizationGuidance,
+    followUpContext: params.followUpContext,
+  });
+  const contextBudget = buildFormulaStageContextBudget({
+    workflow: "formatting",
+    prompt: params.prompt,
+    systemPrompt,
+    snapshot: params.snapshot,
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    constructionSummary,
+    assumptionRows: buildAnthropicAssumptionRowSummary(params.snapshot),
+    promptBuilder: ({ snapshot, constructionSummary }) =>
+      buildAnthropicFormattingStagePrompt({
+        prompt: params.prompt,
+        snapshot,
+        constructionSummary,
+        candidates: buildAnthropicFormattingCandidateSummary(snapshot),
+      }),
+  });
+  if (contextBudget.blockedMessage) {
+    logEditAssistantDebug("formatting_stage_token_budget_exceeded", {
+      estimatedTokenSize: contextBudget.tokenBreakdown.totalEstimatedTokens,
+      maxAllowedTokens: contextBudget.tokenBreakdown.maxAllowedTokens,
+      snapshotEstimatedTokenSize: contextBudget.snapshot.estimatedTokenSize,
+      systemPromptTokenEstimate: contextBudget.tokenBreakdown.systemPromptTokens,
+      userPromptTokenEstimate: contextBudget.tokenBreakdown.userPromptTokens,
+      constructionSummaryTokenEstimate: contextBudget.tokenBreakdown.constructionSummaryTokens,
+      assumptionRowsTokenEstimate: contextBudget.tokenBreakdown.assumptionRowsTokens,
+      worksheetSnapshotTokenEstimate: contextBudget.tokenBreakdown.snapshotTokens,
+      budgetTier: contextBudget.tokenBreakdown.budgetTier,
+      formulaTargetRowCount: contextBudget.tokenBreakdown.formulaTargetRowCount,
+      compactionLevel: contextBudget.tokenBreakdown.compactionLevel,
+    });
+    throw new Error("Formatting-stage worksheet context exceeds the safe token budget.");
+  }
+
+  logEditAssistantDebug("formatting_stage_request_started", {
+    provider: provider.name,
+    model: params.model,
+    worksheetState: contextBudget.snapshot.worksheetState,
+    budgetTier: contextBudget.snapshot.budgetTier,
+    estimatedTokenSize: contextBudget.tokenBreakdown.totalEstimatedTokens,
+    snapshotSize: contextBudget.snapshot.estimatedTokenSize,
+    promptPath: params.classification.recommendedPromptPath,
+    maxAllowedTokens: WORKSHEET_AI_FORMULA_STAGE_MAX_INPUT_TOKENS,
+    systemPromptTokenEstimate: contextBudget.tokenBreakdown.systemPromptTokens,
+    userPromptTokenEstimate: contextBudget.tokenBreakdown.userPromptTokens,
+    constructionSummaryTokenEstimate: contextBudget.tokenBreakdown.constructionSummaryTokens,
+    assumptionRowsTokenEstimate: contextBudget.tokenBreakdown.assumptionRowsTokens,
+    worksheetSnapshotTokenEstimate: contextBudget.tokenBreakdown.snapshotTokens,
+    compactionLevel: contextBudget.compactionLevel,
+  });
+
+  const startedAt = Date.now();
+  const providerResult = await provider.generateEditPlan({
+    systemPrompt,
+    userPrompt: contextBudget.userPrompt,
+    schema: buildAnthropicFormattingStageSchema(),
+    model: params.model,
+    timeoutMs: WORKSHEET_AI_DEFAULT_TIMEOUT_MS,
+    maxOutputTokens: 2200,
+    enableWebSearch: false,
+    metadata: {
+      classification: params.classification,
+      recommendedPromptPath: params.classification.recommendedPromptPath,
+      requiresRetrieval: false,
+      workflowStage: "formatting_generation",
+      attemptNumber: 1,
+    },
+  });
+
+  const parsed = normalizeFormattingSuggestionsPayload(providerResult.parsedJson);
+  logEditAssistantDebug("formatting_stage_response_received", {
+    provider: providerResult.provider,
+    model: providerResult.model,
+    durationMs: Date.now() - startedAt,
+    operationCount: parsed.operations.length,
+    responseMode: parsed.mode,
+  });
+
+  return {
+    operations: parsed.operations,
+    assumptions: parsed.assumptions,
+    warnings: Array.from(new Set([...(parsed.warnings ?? []), ...providerResult.warnings])),
+    answer: parsed.answer,
+    provider: providerResult.provider,
+    model: providerResult.model,
+    effectiveWebSearchEnabled: providerResult.effectiveWebSearchEnabled,
+  };
+}
+
+async function callAnthropicReviewStage(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  memoryItems: AiMemoryItem[];
+  organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
+  followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  model: string;
+}) {
+  const provider = getPricingWorksheetAiProvider("anthropic");
+  const constructionSummary = buildAnthropicConstructionSummary({
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    memoryItems: params.memoryItems,
+    organizationGuidance: params.organizationGuidance,
+    followUpContext: params.followUpContext,
+  });
+  const systemPrompt = "You are TradesStack's worksheet review assistant. Return JSON only. Do not create worksheet operations.";
+  const userPrompt = [
+    `User request: ${params.prompt}`,
+    `Construction intelligence summary: ${JSON.stringify(constructionSummary)}`,
+    `Worksheet structure snapshot: ${JSON.stringify(params.snapshot)}`,
+  ].join("\n\n");
+  const providerResult = await provider.generateEditPlan({
+    systemPrompt,
+    userPrompt,
+    schema: buildAnthropicReviewStageSchema(),
+    model: params.model,
+    timeoutMs: WORKSHEET_AI_DEFAULT_TIMEOUT_MS,
+    maxOutputTokens: 2600,
+    enableWebSearch: false,
+    metadata: {
+      classification: params.classification,
+      recommendedPromptPath: params.classification.recommendedPromptPath,
+      requiresRetrieval: false,
+      workflowStage: "review_generation",
+      attemptNumber: 1,
+    },
+  });
+
+  return {
+    parsed: normalizeAnthropicReviewPayload(providerResult.parsedJson),
+    provider: providerResult.provider,
+    model: providerResult.model,
+    effectiveWebSearchEnabled: providerResult.effectiveWebSearchEnabled,
+  };
+}
+
+async function callAnthropicCompactEditIntentStage(params: {
+  prompt: string;
+  snapshot: PricingWorksheetStructureSnapshot;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  memoryItems: AiMemoryItem[];
+  organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
+  followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  model: string;
+}) {
+  const provider = getPricingWorksheetAiProvider("anthropic");
+  const constructionSummary = buildAnthropicConstructionSummary({
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    memoryItems: params.memoryItems,
+    organizationGuidance: params.organizationGuidance,
+    followUpContext: params.followUpContext,
+  });
+  const userPrompt = [
+    `User request: ${params.prompt}`,
+    `Construction intelligence summary: ${JSON.stringify(constructionSummary)}`,
+    "Return compact edit intents only. Use real worksheet refs or rows from the snapshot when possible.",
+    `Worksheet structure snapshot: ${JSON.stringify(params.snapshot)}`,
+  ].join("\n\n");
+  const providerResult = await provider.generateEditPlan({
+    systemPrompt: "You are TradesStack's compact worksheet edit planner. Return JSON only. Do not emit low-level worksheet operations.",
+    userPrompt,
+    schema: buildAnthropicCompactEditIntentStageSchema(),
+    model: params.model,
+    timeoutMs: WORKSHEET_AI_DEFAULT_TIMEOUT_MS,
+    maxOutputTokens: 2600,
+    enableWebSearch: false,
+    metadata: {
+      classification: params.classification,
+      recommendedPromptPath: params.classification.recommendedPromptPath,
+      requiresRetrieval: false,
+      workflowStage: "edit_intent_generation",
+      attemptNumber: 1,
+    },
+  });
+
+  return {
+    parsed: normalizeAnthropicCompactEditIntentPayload(providerResult.parsedJson),
+    provider: providerResult.provider,
+    model: providerResult.model,
+    effectiveWebSearchEnabled: providerResult.effectiveWebSearchEnabled,
+  };
+}
+
+async function callAnthropicAnswerOnlyStage(params: {
+  prompt: string;
+  worksheetContext: PricingWorksheetAiCompactContext;
+  classification: PricingWorksheetConstructionIntent;
+  memoryItems: AiMemoryItem[];
+  organizationGuidance?: PricingWorksheetOrganizationGuidance | null;
+  followUpContext?: PricingWorksheetAiFollowUpContext | null;
+  model: string;
+}) {
+  const provider = getPricingWorksheetAiProvider("anthropic");
+  const constructionSummary = buildAnthropicConstructionSummary({
+    worksheetContext: params.worksheetContext,
+    classification: params.classification,
+    memoryItems: params.memoryItems,
+    organizationGuidance: params.organizationGuidance,
+    followUpContext: params.followUpContext,
+  });
+  const userPrompt = [
+    `User request: ${params.prompt}`,
+    `Construction intelligence summary: ${JSON.stringify(constructionSummary)}`,
+    "Return a safe compact answer-only response if no worksheet-specific compact workflow applies.",
+  ].join("\n\n");
+  const providerResult = await provider.generateEditPlan({
+    systemPrompt: "You are TradesStack's worksheet assistant. Return JSON only. Provide a safe answer-only response.",
+    userPrompt,
+    schema: buildAnthropicAnswerOnlyStageSchema(),
+    model: params.model,
+    timeoutMs: WORKSHEET_AI_DEFAULT_TIMEOUT_MS,
+    maxOutputTokens: 1800,
+    enableWebSearch: false,
+    metadata: {
+      classification: params.classification,
+      recommendedPromptPath: params.classification.recommendedPromptPath,
+      requiresRetrieval: false,
+      workflowStage: "answer_only_generation",
+      attemptNumber: 1,
+    },
+  });
+
+  return {
+    response: normalizeAnthropicAnswerOnlyPayload(providerResult.parsedJson),
+    provider: providerResult.provider,
+    model: providerResult.model,
+    effectiveWebSearchEnabled: providerResult.effectiveWebSearchEnabled,
   };
 }
 
@@ -2363,6 +4189,7 @@ export async function buildPricingWorksheetEditAssistantPreview(
 ): Promise<{
   preview: PricingWorksheetAiAssistantPreview;
   generationMeta: PricingWorksheetAiAssistantGenerationMeta;
+  providerAudit: PricingWorksheetAiAssistantProviderAudit;
 }> {
   const worksheetSummary = buildCurrentWorksheetSummary(params.worksheet);
   const matchedMemory = params.memoryItems[0]
@@ -2373,11 +4200,20 @@ export async function buildPricingWorksheetEditAssistantPreview(
       }
     : null;
 
+  const modelConfig = getPricingWorksheetEditAssistantModelConfig();
+  const webSearchEnabled = params.providerOptions?.webSearchEnabled !== false;
   let generationMeta: PricingWorksheetAiAssistantGenerationMeta = {
-    provider: "openai",
-    model: getPricingWorksheetEditAssistantModelConfig().model,
+    provider: modelConfig.provider,
+    model: modelConfig.model,
     fallbackUsed: false,
     fallbackReason: null,
+  };
+  let providerAudit: PricingWorksheetAiAssistantProviderAudit = {
+    requestedProvider: modelConfig.provider,
+    requestedModel: modelConfig.model,
+    actualProvider: null,
+    actualModel: null,
+    webSearchEnabled,
   };
 
   let aiResponse: PricingWorksheetAiAssistantResponse;
@@ -2390,6 +4226,23 @@ export async function buildPricingWorksheetEditAssistantPreview(
       worksheetContext: params.worksheetContext,
       selection: params.worksheetContext.visibleSelection,
     });
+  const worksheetState = detectPricingWorksheetState({
+    worksheet: params.worksheet,
+    worksheetContext: params.worksheetContext,
+    currentWorksheetSummary: worksheetSummary,
+  });
+  const anthropicWorkflow =
+    params.internalFlags?.anthropicWorkflowOverride ??
+    routeAnthropicWorkflow({
+      provider: modelConfig.provider,
+      prompt: params.prompt,
+      classification,
+      worksheetState,
+      selection: params.worksheetContext.visibleSelection,
+    });
+  const stagedAnthropicGeneration = anthropicWorkflow === "staged_generation";
+  const anthropicFormattingStage = anthropicWorkflow === "formatting";
+  const anthropicFormulaSuggestionStage = anthropicWorkflow === "formula_suggestions";
 
   try {
     logEditAssistantDebug("edit_assistant_request_received", {
@@ -2398,27 +4251,544 @@ export async function buildPricingWorksheetEditAssistantPreview(
       sectionCount: params.worksheetContext.sections.length,
       rowSummaryCount: params.worksheetContext.rows.length,
       classification,
+      worksheetState,
+      anthropicWorkflow,
+      stagedAnthropicGeneration,
+      anthropicFormattingStage,
+      anthropicFormulaSuggestionStage,
     });
-    const modelResult = await callWorksheetAssistantModel(
-      params.prompt,
-      params.worksheetContext,
-      params.memoryItems,
-      classification,
-      params.organizationGuidance,
-      params.followUpContext,
-    );
-    aiResponse = modelResult.response;
+    if (anthropicFormattingStage) {
+      const structureSnapshot = buildPricingWorksheetAiStructureSnapshot({
+        worksheet: params.worksheet,
+        worksheetContext: params.worksheetContext,
+        classification,
+        prompt: params.prompt,
+      });
+      logEditAssistantDebug("worksheet_snapshot_built", {
+        worksheetState,
+        ...summarizePricingWorksheetStructureSnapshot(structureSnapshot),
+      });
+      const formattingStageResult = await callAnthropicFormattingStage({
+        prompt: params.prompt,
+        snapshot: structureSnapshot,
+        worksheetContext: params.worksheetContext,
+        classification,
+        memoryItems: params.memoryItems,
+        organizationGuidance: params.organizationGuidance,
+        followUpContext: params.followUpContext,
+        model: modelConfig.model,
+      });
+      const compiledFormattingOperations = buildFormattingOperationsFromSuggestions({
+        suggestions: formattingStageResult.operations,
+      });
+
+      if (
+        compiledFormattingOperations.operations.length === 0 &&
+        shouldPrioritizeGenerationWorkflow({
+          classification,
+          worksheetState,
+        }) &&
+        params.internalFlags?.formattingToGenerationFallbackUsed !== true
+      ) {
+        logEditAssistantDebug("formatting_to_generation_fallback", {
+          worksheetState,
+          primaryIntent: classification.primaryIntent,
+          recommendedPromptPath: classification.recommendedPromptPath,
+          responseMode: formattingStageResult.answer.length > 0 ? "answer_only" : "empty",
+        });
+        return buildPricingWorksheetEditAssistantPreview({
+          ...params,
+          internalFlags: {
+            ...params.internalFlags,
+            anthropicWorkflowOverride: null,
+            formattingToGenerationFallbackUsed: true,
+          },
+        });
+      }
+
+      generationMeta = {
+        provider: formattingStageResult.provider,
+        model: formattingStageResult.model,
+        fallbackUsed: false,
+        fallbackReason: null,
+      };
+      providerAudit = {
+        requestedProvider: modelConfig.provider,
+        requestedModel: modelConfig.model,
+        actualProvider: formattingStageResult.provider,
+        actualModel: formattingStageResult.model,
+        webSearchEnabled: formattingStageResult.effectiveWebSearchEnabled,
+      };
+      aiResponse = sanitizeDisplayedNoOperationMutationResponse(
+        {
+          mode: compiledFormattingOperations.operations.length > 0 ? "propose_edit" : "answer_only",
+          proposalName: "Worksheet formatting suggestions",
+          answer:
+            compiledFormattingOperations.operations.length > 0
+              ? formattingStageResult.answer || "Suggested worksheet formatting to highlight editable areas."
+              : formattingStageResult.answer || "No safe worksheet formatting suggestions could be generated.",
+          summary:
+            compiledFormattingOperations.operations.length > 0
+              ? "Prepared worksheet formatting suggestions for the current worksheet."
+              : "No safe worksheet formatting changes could be prepared for the current worksheet.",
+          confidence: compiledFormattingOperations.operations.length > 0 ? "medium" : "low",
+          operations: compiledFormattingOperations.operations,
+          assumptions: formattingStageResult.assumptions,
+          warnings: Array.from(
+            new Set([
+              ...formattingStageResult.warnings,
+              ...compiledFormattingOperations.warnings,
+              ...(compiledFormattingOperations.operations.length === 0
+                ? ["No safe worksheet formatting suggestions could be generated for the current worksheet state."]
+                : []),
+            ]),
+          ),
+        },
+        params.prompt,
+        classification,
+      );
+    } else if (anthropicFormulaSuggestionStage) {
+      const structureSnapshot = buildPricingWorksheetAiStructureSnapshot({
+        worksheet: params.worksheet,
+        worksheetContext: params.worksheetContext,
+        classification,
+        prompt: params.prompt,
+      });
+      logEditAssistantDebug("worksheet_snapshot_built", {
+        worksheetState,
+        ...summarizePricingWorksheetStructureSnapshot(structureSnapshot),
+      });
+      try {
+        const formulaStageResult = await callAnthropicFormulaStage({
+          prompt: params.prompt,
+          snapshot: structureSnapshot,
+          worksheetContext: params.worksheetContext,
+          classification,
+          memoryItems: params.memoryItems,
+          organizationGuidance: params.organizationGuidance,
+          followUpContext: params.followUpContext,
+          model: modelConfig.model,
+          providerOptions: {
+            webSearchEnabled: false,
+          },
+        });
+        const compiledFormulaOperations = buildCompiledFormulaUpdateOperations({
+          suggestions: formulaStageResult.suggestions,
+          snapshot: structureSnapshot,
+        });
+
+        logEditAssistantDebug("formula_stage_compiled", {
+          provider: formulaStageResult.provider,
+          model: formulaStageResult.model,
+          worksheetState,
+          structureStageSuccess: null,
+          formulaStageSuccess: compiledFormulaOperations.successCount > 0,
+          formulaSuggestionCount: formulaStageResult.suggestions.length,
+          aiFormulaCompileAttemptCount: formulaStageResult.suggestions.length,
+          aiFormulaCompileSuccessCount: compiledFormulaOperations.successCount,
+          aiFormulaCompileFailureCount: compiledFormulaOperations.failureCount,
+          unresolvedReferenceCount: compiledFormulaOperations.unresolvedReferenceCount,
+          skippedFormulaCount: compiledFormulaOperations.failureCount,
+          providerCallCount: 1,
+          snapshotSize: structureSnapshot.estimatedTokenSize,
+        });
+
+        generationMeta = {
+          provider: formulaStageResult.provider,
+          model: formulaStageResult.model,
+          fallbackUsed: false,
+          fallbackReason: null,
+        };
+        providerAudit = {
+          requestedProvider: modelConfig.provider,
+          requestedModel: modelConfig.model,
+          actualProvider: formulaStageResult.provider,
+          actualModel: formulaStageResult.model,
+          webSearchEnabled: formulaStageResult.effectiveWebSearchEnabled,
+        };
+        aiResponse = sanitizeDisplayedNoOperationMutationResponse(
+          {
+            mode: compiledFormulaOperations.operations.length > 0 ? "propose_edit" : "answer_only",
+            proposalName: "Worksheet formula suggestions",
+            answer:
+              compiledFormulaOperations.operations.length > 0
+                ? formulaStageResult.answer || "Suggested worksheet-aware formulas for the existing worksheet."
+                : formulaStageResult.answer ||
+                  "No safe worksheet-aware formulas could be generated for the existing worksheet.",
+            summary:
+              compiledFormulaOperations.operations.length > 0
+                ? "Compiled worksheet-aware formula suggestions for the existing worksheet."
+                : "No safe worksheet-aware formulas could be compiled for the existing worksheet.",
+            confidence: compiledFormulaOperations.operations.length > 0 ? "medium" : "low",
+            operations: compiledFormulaOperations.operations,
+            assumptions: formulaStageResult.assumptions,
+            warnings: Array.from(
+              new Set([
+                ...formulaStageResult.warnings,
+                ...compiledFormulaOperations.warnings,
+                ...(compiledFormulaOperations.operations.length === 0
+                  ? ["No safe worksheet-aware formulas could be generated for the current worksheet state."]
+                  : []),
+              ]),
+            ),
+          },
+          params.prompt,
+          classification,
+        );
+      } catch (error) {
+        if (!isFormulaStageOversizeError(error)) {
+          throw error;
+        }
+
+        logEditAssistantDebug("formula_stage_failed", {
+          worksheetState,
+          providerCallCount: 0,
+          ...serializeError(error),
+          diagnostics: error.diagnostics ?? null,
+        });
+        aiResponse = {
+          mode: "answer_only",
+          proposalName: "Worksheet formula suggestions",
+          answer: WORKSHEET_AI_FORMULA_STAGE_OVERSIZE_WARNING,
+          summary: WORKSHEET_AI_FORMULA_STAGE_OVERSIZE_WARNING,
+          confidence: "low",
+          operations: [],
+          assumptions: [],
+          warnings: [WORKSHEET_AI_FORMULA_STAGE_OVERSIZE_WARNING],
+        };
+      }
+    } else if (anthropicWorkflow === "review") {
+      const structureSnapshot = buildPricingWorksheetAiStructureSnapshot({
+        worksheet: params.worksheet,
+        worksheetContext: params.worksheetContext,
+        classification,
+        prompt: params.prompt,
+      });
+      const reviewResult = await callAnthropicReviewStage({
+        prompt: params.prompt,
+        snapshot: structureSnapshot,
+        worksheetContext: params.worksheetContext,
+        classification,
+        memoryItems: params.memoryItems,
+        organizationGuidance: params.organizationGuidance,
+        followUpContext: params.followUpContext,
+        model: modelConfig.model,
+      });
+      generationMeta = {
+        provider: reviewResult.provider,
+        model: reviewResult.model,
+        fallbackUsed: false,
+        fallbackReason: null,
+      };
+      providerAudit = {
+        requestedProvider: modelConfig.provider,
+        requestedModel: modelConfig.model,
+        actualProvider: reviewResult.provider,
+        actualModel: reviewResult.model,
+        webSearchEnabled: reviewResult.effectiveWebSearchEnabled,
+      };
+      aiResponse = {
+        mode: "answer_only",
+        proposalName: "Worksheet review summary",
+        answer: reviewResult.parsed.answer || "Reviewed the worksheet and summarized the key risks.",
+        summary: "Reviewed the worksheet for risks and follow-up items.",
+        confidence: reviewResult.parsed.reviewFindings.length > 0 ? "medium" : "low",
+        operations: [],
+        assumptions: reviewResult.parsed.assumptions,
+        warnings: reviewResult.parsed.warnings,
+        reviewFindings: reviewResult.parsed.reviewFindings,
+        reviewSummary: reviewResult.parsed.reviewSummary,
+        suggestedEditGroups: [],
+        evidenceSources: [],
+      };
+    } else if (anthropicWorkflow === "compact_edit_intent") {
+      const structureSnapshot = buildPricingWorksheetAiStructureSnapshot({
+        worksheet: params.worksheet,
+        worksheetContext: params.worksheetContext,
+        classification,
+        prompt: params.prompt,
+      });
+      const editIntentResult = await callAnthropicCompactEditIntentStage({
+        prompt: params.prompt,
+        snapshot: structureSnapshot,
+        worksheetContext: params.worksheetContext,
+        classification,
+        memoryItems: params.memoryItems,
+        organizationGuidance: params.organizationGuidance,
+        followUpContext: params.followUpContext,
+        model: modelConfig.model,
+      });
+      const compiledEditOperations = buildCompactEditOperations({
+        intents: editIntentResult.parsed.editIntents,
+      });
+      generationMeta = {
+        provider: editIntentResult.provider,
+        model: editIntentResult.model,
+        fallbackUsed: false,
+        fallbackReason: null,
+      };
+      providerAudit = {
+        requestedProvider: modelConfig.provider,
+        requestedModel: modelConfig.model,
+        actualProvider: editIntentResult.provider,
+        actualModel: editIntentResult.model,
+        webSearchEnabled: editIntentResult.effectiveWebSearchEnabled,
+      };
+      aiResponse = sanitizeDisplayedNoOperationMutationResponse(
+        {
+          mode: compiledEditOperations.operations.length > 0 ? "propose_edit" : "answer_only",
+          proposalName: "Worksheet edit suggestions",
+          answer:
+            compiledEditOperations.operations.length > 0
+              ? editIntentResult.parsed.answer || "Prepared compact worksheet edit suggestions."
+              : editIntentResult.parsed.answer || "No safe worksheet edits could be converted from the request.",
+          summary:
+            compiledEditOperations.operations.length > 0
+              ? "Prepared compact worksheet edit suggestions."
+              : "No safe worksheet edits could be prepared.",
+          confidence: compiledEditOperations.operations.length > 0 ? "medium" : "low",
+          operations: compiledEditOperations.operations,
+          assumptions: editIntentResult.parsed.assumptions,
+          warnings: Array.from(new Set([...editIntentResult.parsed.warnings, ...compiledEditOperations.warnings])),
+        },
+        params.prompt,
+        classification,
+      );
+    } else if (anthropicWorkflow === "answer_only" || anthropicWorkflow === "safe_unknown_fallback") {
+      const answerOnlyResult = await callAnthropicAnswerOnlyStage({
+        prompt: params.prompt,
+        worksheetContext: params.worksheetContext,
+        classification,
+        memoryItems: params.memoryItems,
+        organizationGuidance: params.organizationGuidance,
+        followUpContext: params.followUpContext,
+        model: modelConfig.model,
+      });
+      generationMeta = {
+        provider: answerOnlyResult.provider,
+        model: answerOnlyResult.model,
+        fallbackUsed: anthropicWorkflow === "safe_unknown_fallback",
+        fallbackReason: anthropicWorkflow === "safe_unknown_fallback" ? "anthropic_safe_unknown_fallback" : null,
+      };
+      providerAudit = {
+        requestedProvider: modelConfig.provider,
+        requestedModel: modelConfig.model,
+        actualProvider: answerOnlyResult.provider,
+        actualModel: answerOnlyResult.model,
+        webSearchEnabled: answerOnlyResult.effectiveWebSearchEnabled,
+      };
+      aiResponse = answerOnlyResult.response;
+    } else {
+      const modelResult = await callWorksheetAssistantModel(
+        params.prompt,
+        params.worksheet,
+        params.worksheetContext,
+        params.memoryItems,
+        classification,
+        params.organizationGuidance,
+        params.followUpContext,
+        0,
+        0,
+        0,
+        params.providerOptions,
+        {
+          disableGenerationRecoveryRetry: stagedAnthropicGeneration,
+          disableQualityRetries: stagedAnthropicGeneration,
+          workflowStage: stagedAnthropicGeneration ? "structure_generation" : "default",
+        },
+      );
+      generationMeta = {
+        provider: modelResult.provider,
+        model: modelResult.model,
+        fallbackUsed: false,
+        fallbackReason: null,
+      };
+      providerAudit = {
+        requestedProvider: modelConfig.provider,
+        requestedModel: modelConfig.model,
+        actualProvider: modelResult.provider,
+        actualModel: modelResult.model,
+        webSearchEnabled: modelResult.effectiveWebSearchEnabled,
+      };
+      aiResponse = sanitizeDisplayedNoOperationMutationResponse(
+        modelResult.response,
+        params.prompt,
+        classification,
+      );
+
+      if (stagedAnthropicGeneration && aiResponse.mode !== "answer_only") {
+      let stagedResponse = stripFormulaChangesFromResponse(aiResponse);
+      const structureSimulation = simulatePricingWorksheetAiEditPlan(params.worksheet, stagedResponse);
+      const structureValidationIssues = [
+        ...buildMutationIntentValidationIssues(stagedResponse, params.prompt, classification),
+        ...structureSimulation.validationIssues.filter((issue) => issue.code !== "mode_missing_operations"),
+      ];
+      const structureStageHasError = structureValidationIssues.some((issue) => issue.severity === "error");
+
+      logEditAssistantDebug("structure_stage_evaluated", {
+        provider: modelResult.provider,
+        model: modelResult.model,
+        worksheetState,
+        structureStageSuccess: !structureStageHasError,
+        operationCount: stagedResponse.operations.length,
+        validationIssueCount: structureValidationIssues.length,
+        providerCallCount: 1,
+      });
+
+      aiResponse = stagedResponse;
+
+      if (!structureStageHasError && modelResult.provider === "anthropic") {
+        const generatedWorksheetContext = buildPricingWorksheetAiContext(structureSimulation.worksheet, {
+          worksheetId: params.worksheetContext.worksheetId,
+          worksheetName: params.worksheetContext.worksheetName,
+          tradePackage: params.worksheetContext.tradePackage,
+          selection: params.worksheetContext.visibleSelection,
+          maxRows: Math.max(params.worksheetContext.rows.length, 40),
+        });
+        const generatedWorksheetState = detectPricingWorksheetState({
+          worksheet: structureSimulation.worksheet,
+          worksheetContext: generatedWorksheetContext,
+        });
+        const structureSnapshot = buildPricingWorksheetAiStructureSnapshot({
+          worksheet: structureSimulation.worksheet,
+          worksheetContext: generatedWorksheetContext,
+          classification,
+          prompt: params.prompt,
+        });
+        const structureSnapshotSummary = summarizePricingWorksheetStructureSnapshot(structureSnapshot);
+
+        logEditAssistantDebug("worksheet_snapshot_built", {
+          worksheetState: generatedWorksheetState,
+          ...structureSnapshotSummary,
+        });
+
+        try {
+          const formulaStageResult = await callAnthropicFormulaStage({
+            prompt: params.prompt,
+            snapshot: structureSnapshot,
+            worksheetContext: generatedWorksheetContext,
+            classification,
+            memoryItems: params.memoryItems,
+            organizationGuidance: params.organizationGuidance,
+            followUpContext: params.followUpContext,
+            stageAssumptions: stagedResponse.assumptions,
+            stageWarnings: stagedResponse.warnings,
+            model: modelResult.model,
+            providerOptions: {
+              webSearchEnabled: false,
+            },
+          });
+          const compiledPatches = buildCompiledFormulaOperations({
+            suggestions: formulaStageResult.suggestions,
+            snapshot: structureSnapshot,
+          });
+
+          logEditAssistantDebug("formula_stage_compiled", {
+            provider: formulaStageResult.provider,
+            model: formulaStageResult.model,
+            worksheetState: generatedWorksheetState,
+            structureStageSuccess: true,
+            formulaStageSuccess: compiledPatches.successCount > 0,
+            formulaSuggestionCount: formulaStageResult.suggestions.length,
+            aiFormulaCompileAttemptCount: formulaStageResult.suggestions.length,
+            aiFormulaCompileSuccessCount: compiledPatches.successCount,
+            aiFormulaCompileFailureCount: compiledPatches.failureCount,
+            unresolvedReferenceCount: compiledPatches.unresolvedReferenceCount,
+            skippedFormulaCount: compiledPatches.failureCount,
+            providerCallCount: WORKSHEET_AI_STAGE_MAX_PROVIDER_CALLS,
+            snapshotSize: structureSnapshot.estimatedTokenSize,
+          });
+
+          aiResponse = appendUniqueWarnings(
+            mergeFormulaPatchesIntoStructureOperations({
+              baseResponse: stagedResponse,
+              patches: compiledPatches.patches,
+            }),
+            [
+              ...formulaStageResult.warnings,
+              ...compiledPatches.warnings,
+              ...(formulaStageResult.suggestions.length === 0
+                ? [
+                    formulaStageResult.answer.length > 0
+                      ? "Formulas could not be generated safely, so the preview contains structure only."
+                      : "No safe worksheet-aware formulas were generated, so the preview contains structure only.",
+                  ]
+                : []),
+              ...(compiledPatches.successCount === 0 && formulaStageResult.suggestions.length > 0
+                ? [
+                    "Formula suggestions could not be compiled safely against the generated worksheet structure, so the preview contains structure only.",
+                  ]
+                : []),
+            ],
+          );
+
+          if (formulaStageResult.assumptions.length > 0) {
+            aiResponse = {
+              ...aiResponse,
+              assumptions: Array.from(
+                new Set([...(aiResponse.assumptions ?? []), ...formulaStageResult.assumptions]),
+              ),
+            };
+          }
+          providerAudit = {
+            ...providerAudit,
+            actualProvider: formulaStageResult.provider,
+            actualModel: formulaStageResult.model,
+            webSearchEnabled: formulaStageResult.effectiveWebSearchEnabled,
+          };
+        } catch (error) {
+          const warning = isFormulaStageOversizeError(error)
+            ? WORKSHEET_AI_FORMULA_STAGE_OVERSIZE_WARNING
+            : isPricingWorksheetProviderError(error)
+              ? error.code === "provider_rate_limited"
+                ? "Formula generation was rate limited, so the preview contains structure only."
+                : error.code === "provider_timeout"
+                  ? "Formula generation timed out, so the preview contains structure only."
+                  : "Formula generation could not complete safely, so the preview contains structure only."
+              : error instanceof Error
+                ? error.message
+                : "Formula generation could not complete safely, so the preview contains structure only.";
+          logEditAssistantDebug("formula_stage_failed", {
+            worksheetState: generatedWorksheetState,
+            providerCallCount: 2,
+            ...serializeError(error),
+            ...(isFormulaStageOversizeError(error) ? { diagnostics: error.diagnostics ?? null } : {}),
+            ...(isPricingWorksheetProviderError(error) ? buildProviderErrorLogPayload(error) : {}),
+          });
+          aiResponse = appendUniqueWarnings(stagedResponse, [warning]);
+          if (isPricingWorksheetProviderError(error)) {
+            providerAudit = {
+              ...providerAudit,
+              actualProvider: error.provider,
+              actualModel: error.model,
+              webSearchEnabled: false,
+            };
+          }
+        }
+      }
+    }
+    }
   } catch (error) {
+    const fallbackReason = error instanceof Error ? error.message : "Unknown AI assistant failure.";
     logEditAssistantDebug("fallback_reason", {
-      reason: error instanceof Error ? error.message : "Unknown AI assistant failure.",
+      reason: fallbackReason,
+      requiresRetrieval: classification.requiresRetrieval,
+      recommendedPromptPath: classification.recommendedPromptPath,
     });
     generationMeta = {
       provider: "tradesstack",
       model: "assistant-fallback",
       fallbackUsed: true,
-      fallbackReason: error instanceof Error ? error.message : "Unknown AI assistant failure.",
+      fallbackReason,
     };
-    aiResponse = buildFallbackResponse(params.prompt);
+    providerAudit = {
+      requestedProvider: modelConfig.provider,
+      requestedModel: modelConfig.model,
+      actualProvider: isPricingWorksheetProviderError(error) ? error.provider : null,
+      actualModel: isPricingWorksheetProviderError(error) ? error.model : null,
+      webSearchEnabled: isPricingWorksheetProviderError(error) && error.provider === "anthropic" ? false : webSearchEnabled,
+    };
+    aiResponse = buildFallbackResponse(params.prompt, fallbackReason);
   }
 
   const endSimulationMeasure = startPricingWorksheetPerformanceMeasure("ai-preview-local-simulation", {
@@ -2433,7 +4803,15 @@ export async function buildPricingWorksheetEditAssistantPreview(
     insertedRowCount: simulation.diffSummary.insertedRows.length,
     validationIssueCount: simulation.validationIssues.length,
   });
-  const validationIssues = simulation.validationIssues;
+  const mutationIntentValidationIssues = buildMutationIntentValidationIssues(
+    aiResponse,
+    params.prompt,
+    classification,
+  );
+  const validationIssues = [
+    ...mutationIntentValidationIssues,
+    ...simulation.validationIssues.filter((issue) => issue.code !== "mode_missing_operations"),
+  ];
   const previewWorksheet =
     aiResponse.mode === "answer_only" ? params.worksheet : simulation.worksheet;
   const hasError = validationIssues.some((issue) => issue.severity === "error");
@@ -2448,6 +4826,11 @@ export async function buildPricingWorksheetEditAssistantPreview(
     sanitizedOperations: aiResponse.operations.map((operation) => sanitizeOperation(operation)).slice(0, 20),
     affectedCellRefs: simulation.diffSummary.changedCells.slice(0, 40),
     formulaChangeSummary: diffPreview.formulaChanges,
+    formattingChangeSummary: diffPreview.formattingChanges.map((change) => ({
+      ref: change.ref,
+      beforeFormattingSummary: change.beforeFormattingSummary,
+      afterFormattingSummary: change.afterFormattingSummary,
+    })),
     insertedRowSummary: diffPreview.insertedRows.map((row) => ({
       row: row.row,
       sectionName: row.sectionName,
@@ -2468,7 +4851,7 @@ export async function buildPricingWorksheetEditAssistantPreview(
         }
       : undefined,
     evidenceSources: aiResponse.evidenceSources ?? [],
-    webSearchEnabled: true,
+    webSearchEnabled: providerAudit.webSearchEnabled,
     requiresRetrieval: classification.requiresRetrieval,
     recommendedPromptPath: classification.recommendedPromptPath,
     retrievalReasons: classification.retrievalReasons ?? [],
@@ -2513,7 +4896,8 @@ export async function buildPricingWorksheetEditAssistantPreview(
 
   return {
     generationMeta,
-      preview: {
+    providerAudit,
+    preview: {
       mode: aiResponse.mode,
       proposalName: aiResponse.proposalName,
       answer: aiResponse.answer,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorksheetData, type WorksheetData } from "./opportunity-pricing-worksheet-defaults";
+import { getCellFormat } from "./opportunity-pricing-worksheet-formatting";
 import { recalculateWorksheetFormulas } from "./opportunity-pricing-worksheet-formulas";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
 import { validateWorksheetBeforeSave } from "./opportunity-pricing-worksheet-save-validation";
@@ -71,6 +72,28 @@ describe("validateWorksheetBeforeSave", () => {
     if (!result.ok) {
       expect(result.message).toContain("Save blocked");
       expect(result.message).toContain("#DIV/0!");
+    }
+  });
+
+  it("preserves formatting metadata through save validation", () => {
+    const worksheet = buildWorksheet();
+    const inputCell = worksheet.cells.A2;
+    if (!inputCell) {
+      throw new Error("Expected A2 to exist.");
+    }
+
+    inputCell.metadata.format = {
+      fill: { color: "#DBEAFE" },
+      text: { bold: true },
+    };
+
+    const result = validateWorksheetBeforeSave(worksheet);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(getCellFormat(result.worksheet.cells.A2).fill?.color).toBe("#DBEAFE");
+      expect(getCellFormat(result.worksheet.cells.A2).text?.bold).toBe(true);
+      expect(result.worksheet.cells.C2?.displayValue).toBe("200");
     }
   });
 });

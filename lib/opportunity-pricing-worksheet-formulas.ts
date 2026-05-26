@@ -35,6 +35,8 @@ type Token =
         | "minus"
         | "multiply"
         | "divide"
+        | "power"
+        | "percent"
         | "lparen"
         | "rparen"
         | "colon"
@@ -325,6 +327,15 @@ function isFormulaValueBlank(value: FormulaValue) {
   return value.kind === "blank" || (value.kind === "string" && value.value.length === 0);
 }
 
+function roundFormulaNumber(value: number, decimalPlaces: number) {
+  const factor = 10 ** decimalPlaces;
+  if (!Number.isFinite(factor) || factor === 0) {
+    return value;
+  }
+
+  return Math.round(value * factor) / factor;
+}
+
 function matchesFormulaCriteria(value: FormulaValue, criteria: FormulaValue) {
   if (!value.ok) {
     return false;
@@ -533,6 +544,12 @@ function tokenizeFormula(input: string): Token[] {
       case "/":
         tokens.push({ type: "divide" });
         break;
+      case "^":
+        tokens.push({ type: "power" });
+        break;
+      case "%":
+        tokens.push({ type: "percent" });
+        break;
       case "(":
         tokens.push({ type: "lparen" });
         break;
@@ -642,7 +659,7 @@ class FormulaParser {
   }
 
   private parseComparison(): FormulaValue {
-    let left = this.parseExpression();
+    let left = this.parseAdditive();
 
     while (
       this.current().type === "equal" ||
@@ -654,7 +671,7 @@ class FormulaParser {
     ) {
       const operator = this.current().type;
       this.next();
-      const right = this.parseExpression();
+      const right = this.parseAdditive();
 
       left = compareFormulaValues(left, right, operator);
     }
@@ -662,13 +679,13 @@ class FormulaParser {
     return left;
   }
 
-  private parseExpression(): FormulaValue {
-    let left = this.parseTerm();
+  private parseAdditive(): FormulaValue {
+    let left = this.parseMultiplicative();
 
     while (this.current().type === "plus" || this.current().type === "minus") {
       const operator = this.current().type;
       this.next();
-      const right = this.parseTerm();
+      const right = this.parseMultiplicative();
 
       const numericLeft = coerceFormulaValueToNumber(left);
       if (!numericLeft.ok) {
@@ -689,13 +706,13 @@ class FormulaParser {
     return left;
   }
 
-  private parseTerm(): FormulaValue {
-    let left = this.parseFactor();
+  private parseMultiplicative(): FormulaValue {
+    let left = this.parsePower();
 
     while (this.current().type === "multiply" || this.current().type === "divide") {
       const operator = this.current().type;
       this.next();
-      const right = this.parseFactor();
+      const right = this.parsePower();
 
       const numericLeft = coerceFormulaValueToNumber(left);
       if (!numericLeft.ok) {
@@ -720,17 +737,39 @@ class FormulaParser {
     return left;
   }
 
-  private parseFactor(): FormulaValue {
+  private parsePower(): FormulaValue {
+    let left = this.parseUnary();
+
+    while (this.current().type === "power") {
+      this.next();
+      const right = this.parseUnary();
+
+      const numericLeft = coerceFormulaValueToNumber(left);
+      if (!numericLeft.ok) {
+        return numericLeft;
+      }
+      const numericRight = coerceFormulaValueToNumber(right);
+      if (!numericRight.ok) {
+        return numericRight;
+      }
+
+      left = createNumberValue(numericLeft.value ** numericRight.value);
+    }
+
+    return left;
+  }
+
+  private parseUnary(): FormulaValue {
     const token = this.current();
 
     if (token.type === "plus") {
       this.next();
-      return this.parseFactor();
+      return this.parseUnary();
     }
 
     if (token.type === "minus") {
       this.next();
-      const value = this.parseFactor();
+      const value = this.parseUnary();
       if (!value.ok) {
         return value;
       }
@@ -741,7 +780,23 @@ class FormulaParser {
       return createNumberValue(numericValue.value * -1);
     }
 
-    return this.parsePrimary();
+    return this.parsePostfix();
+  }
+
+  private parsePostfix(): FormulaValue {
+    let value = this.parsePrimary();
+
+    while (this.current().type === "percent") {
+      this.next();
+      const numericValue = coerceFormulaValueToNumber(value);
+      if (!numericValue.ok) {
+        return numericValue;
+      }
+
+      value = createNumberValue(numericValue.value / 100);
+    }
+
+    return value;
   }
 
   private parsePrimary(): FormulaValue {
@@ -845,8 +900,16 @@ class FormulaParser {
       return this.evaluateIfError(args);
     }
 
+    if (identifier === "IFS") {
+      return this.evaluateIfs(args);
+    }
+
     if (identifier === "OR") {
       return this.evaluateOr(args);
+    }
+
+    if (identifier === "AND") {
+      return this.evaluateAnd(args);
     }
 
     if (identifier === "SUM") {
@@ -909,6 +972,22 @@ class FormulaParser {
       return this.evaluateCountIfs(args);
     }
 
+    if (identifier === "QTY") {
+      return this.evaluateQty(args);
+    }
+
+    if (identifier === "UNIT") {
+      return this.evaluateUnit(args);
+    }
+
+    if (identifier === "WASTE") {
+      return this.evaluateWaste(args);
+    }
+
+    if (identifier === "PACKS") {
+      return this.evaluatePacks(args);
+    }
+
     return { ok: false, error: FORMULA_ERROR };
   }
 
@@ -939,6 +1018,30 @@ class FormulaParser {
     return value.ok ? value : this.evaluateTokenExpression(args[1]);
   }
 
+  private evaluateIfs(args: Token[][]): FormulaValue {
+    if (args.length < 2 || args.length % 2 !== 0) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    for (let index = 0; index < args.length; index += 2) {
+      const condition = this.evaluateTokenExpression(args[index]);
+      if (!condition.ok) {
+        return condition;
+      }
+
+      const booleanCondition = coerceFormulaValueToBoolean(condition);
+      if (!booleanCondition.ok) {
+        return booleanCondition;
+      }
+
+      if (booleanCondition.value) {
+        return this.evaluateTokenExpression(args[index + 1]);
+      }
+    }
+
+    return { ok: false, error: FORMULA_ERROR };
+  }
+
   private evaluateOr(args: Token[][]): FormulaValue {
     if (args.length === 0) {
       return { ok: false, error: FORMULA_ERROR };
@@ -963,6 +1066,178 @@ class FormulaParser {
     }
 
     return createBooleanValue(false);
+  }
+
+  private evaluateAnd(args: Token[][]): FormulaValue {
+    if (args.length === 0) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    for (const arg of args) {
+      const values = this.evaluateArgumentValues(arg);
+      if (!values.ok) {
+        return { ok: false, error: values.error };
+      }
+
+      for (const value of values.values) {
+        const booleanValue = coerceFormulaValueToBoolean(value);
+        if (!booleanValue.ok) {
+          return booleanValue;
+        }
+
+        if (!booleanValue.value) {
+          return createBooleanValue(false);
+        }
+      }
+    }
+
+    return createBooleanValue(true);
+  }
+
+  private evaluateHelperNumberArg(arg: Token[]): FormulaNumberValue | { ok: true; kind: "blank"; value: null } | { ok: false; error: string } {
+    const value = this.evaluateTokenExpression(arg);
+    if (!value.ok) {
+      return value;
+    }
+
+    if (isFormulaValueBlank(value)) {
+      return createBlankValue();
+    }
+
+    return coerceFormulaValueToNumber(value);
+  }
+
+  private evaluateQty(args: Token[][]): FormulaValue {
+    if (args.length !== 4) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    const qty = this.evaluateHelperNumberArg(args[0]);
+    const length = this.evaluateHelperNumberArg(args[1]);
+    const width = this.evaluateHelperNumberArg(args[2]);
+    const height = this.evaluateHelperNumberArg(args[3]);
+    if (!qty.ok) {
+      return qty;
+    }
+    if (!length.ok) {
+      return length;
+    }
+    if (!width.ok) {
+      return width;
+    }
+    if (!height.ok) {
+      return height;
+    }
+
+    const values = [qty, length, width, height];
+    if (values.every((value) => value.kind === "blank")) {
+      return createBlankValue();
+    }
+
+    if (qty.kind === "number" && length.kind === "number" && width.kind === "blank" && height.kind === "blank") {
+      return createNumberValue(roundFormulaNumber(qty.value * length.value, 2));
+    }
+
+    if (qty.kind === "number" && length.kind === "number" && width.kind === "number" && height.kind === "blank") {
+      return createNumberValue(roundFormulaNumber(qty.value * length.value * width.value, 2));
+    }
+
+    if (qty.kind === "number" && length.kind === "number" && width.kind === "number" && height.kind === "number") {
+      return createNumberValue(roundFormulaNumber(qty.value * length.value * width.value * height.value, 2));
+    }
+
+    return { ok: false, error: FORMULA_ERROR };
+  }
+
+  private evaluateUnit(args: Token[][]): FormulaValue {
+    if (args.length !== 3) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    const length = this.evaluateHelperNumberArg(args[0]);
+    const width = this.evaluateHelperNumberArg(args[1]);
+    const height = this.evaluateHelperNumberArg(args[2]);
+    if (!length.ok) {
+      return length;
+    }
+    if (!width.ok) {
+      return width;
+    }
+    if (!height.ok) {
+      return height;
+    }
+
+    if (length.kind === "blank" && width.kind === "blank" && height.kind === "blank") {
+      return createBlankValue();
+    }
+
+    if (length.kind === "number" && width.kind === "blank" && height.kind === "blank") {
+      return createStringValue("m/No");
+    }
+
+    if (length.kind === "number" && width.kind === "number" && height.kind === "blank") {
+      return createStringValue("m2");
+    }
+
+    if (length.kind === "number" && width.kind === "number" && height.kind === "number") {
+      return createStringValue("m3");
+    }
+
+    return { ok: false, error: FORMULA_ERROR };
+  }
+
+  private evaluateWaste(args: Token[][]): FormulaValue {
+    if (args.length !== 2) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    const quantity = this.evaluateHelperNumberArg(args[0]);
+    const percentage = this.evaluateHelperNumberArg(args[1]);
+    if (!quantity.ok) {
+      return quantity;
+    }
+    if (!percentage.ok) {
+      return percentage;
+    }
+
+    if (quantity.kind === "blank") {
+      return createBlankValue();
+    }
+
+    if (percentage.kind !== "number") {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    return createNumberValue(roundFormulaNumber(quantity.value * (1 + percentage.value), 2));
+  }
+
+  private evaluatePacks(args: Token[][]): FormulaValue {
+    if (args.length !== 2) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    const quantity = this.evaluateHelperNumberArg(args[0]);
+    const packSize = this.evaluateHelperNumberArg(args[1]);
+    if (!quantity.ok) {
+      return quantity;
+    }
+    if (!packSize.ok) {
+      return packSize;
+    }
+
+    if (quantity.kind === "blank") {
+      return createBlankValue();
+    }
+
+    if (quantity.value === 0) {
+      return createNumberValue(0);
+    }
+
+    if (packSize.kind !== "number" || packSize.value <= 0) {
+      return { ok: false, error: FORMULA_ERROR };
+    }
+
+    return createNumberValue(roundFormulaNumber(Math.max(1, quantity.value / packSize.value), 2));
   }
 
   private evaluateRoundFunction(identifier: string, args: Token[][]): FormulaValue {

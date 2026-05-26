@@ -56,6 +56,11 @@ export interface WorksheetExtractedPricingData {
   sourceWorksheetVersion: number;
 }
 
+export const DEFAULT_WORKSHEET_ROW_COUNT = 500;
+export const DEFAULT_WORKSHEET_COLUMN_COUNT = 26;
+const DEFAULT_WORKSHEET_COLUMN_WIDTH = 140;
+const DEFAULT_WORKSHEET_ROW_HEIGHT = 36;
+
 function columnLabelFromIndex(index: number) {
   let current = index;
   let label = "";
@@ -73,8 +78,8 @@ export function createDefaultWorksheetData(params?: {
   rowCount?: number;
   columnCount?: number;
 }): WorksheetData {
-  const rowCount = params?.rowCount ?? 50;
-  const columnCount = params?.columnCount ?? 12;
+  const rowCount = params?.rowCount ?? DEFAULT_WORKSHEET_ROW_COUNT;
+  const columnCount = params?.columnCount ?? DEFAULT_WORKSHEET_COLUMN_COUNT;
 
   return {
     version: 1,
@@ -85,12 +90,12 @@ export function createDefaultWorksheetData(params?: {
       id: columnLabelFromIndex(index),
       index,
       label: columnLabelFromIndex(index),
-      width: 140,
+      width: DEFAULT_WORKSHEET_COLUMN_WIDTH,
     })),
     rows: Array.from({ length: rowCount }, (_, index) => ({
       id: String(index + 1),
       index,
-      height: 36,
+      height: DEFAULT_WORKSHEET_ROW_HEIGHT,
     })),
     cells: {},
     metadata: {
@@ -174,23 +179,95 @@ export function normalizeWorksheetCell(input: string): WorksheetCell {
   };
 }
 
+function createDefaultWorksheetColumn(index: number): WorksheetColumn {
+  return {
+    id: columnLabelFromIndex(index),
+    index,
+    label: columnLabelFromIndex(index),
+    width: DEFAULT_WORKSHEET_COLUMN_WIDTH,
+  };
+}
+
+function createDefaultWorksheetRow(index: number): WorksheetRow {
+  return {
+    id: String(index + 1),
+    index,
+    height: DEFAULT_WORKSHEET_ROW_HEIGHT,
+  };
+}
+
+function normalizeWorksheetColumns(input: Json | undefined, columnCount: number): WorksheetColumn[] {
+  const source = Array.isArray(input) ? input : [];
+
+  return Array.from({ length: columnCount }, (_, index) => {
+    const fallback = createDefaultWorksheetColumn(index);
+    const rawValue = source[index];
+
+    if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+      return fallback;
+    }
+
+    const columnRecord = rawValue as Record<string, Json | undefined>;
+
+    return {
+      id: typeof columnRecord.id === "string" && columnRecord.id.trim() ? columnRecord.id : fallback.id,
+      index,
+      label:
+        typeof columnRecord.label === "string" && columnRecord.label.trim() ? columnRecord.label : fallback.label,
+      width:
+        typeof columnRecord.width === "number" && Number.isFinite(columnRecord.width)
+          ? columnRecord.width
+          : fallback.width,
+    };
+  });
+}
+
+function normalizeWorksheetRows(input: Json | undefined, rowCount: number): WorksheetRow[] {
+  const source = Array.isArray(input) ? input : [];
+
+  return Array.from({ length: rowCount }, (_, index) => {
+    const fallback = createDefaultWorksheetRow(index);
+    const rawValue = source[index];
+
+    if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+      return fallback;
+    }
+
+    const rowRecord = rawValue as Record<string, Json | undefined>;
+
+    return {
+      id: typeof rowRecord.id === "string" && rowRecord.id.trim() ? rowRecord.id : fallback.id,
+      index,
+      height:
+        typeof rowRecord.height === "number" && Number.isFinite(rowRecord.height)
+          ? rowRecord.height
+          : fallback.height,
+    };
+  });
+}
+
 export function normalizeWorksheetData(input: Json | null | undefined): WorksheetData {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return createDefaultWorksheetData();
   }
 
   const record = input as Record<string, Json | undefined>;
-  const rowCount = typeof record.rowCount === "number" && Number.isFinite(record.rowCount) ? record.rowCount : 50;
-  const columnCount =
-    typeof record.columnCount === "number" && Number.isFinite(record.columnCount) ? record.columnCount : 12;
+  const rawRows = Array.isArray(record.rows) ? record.rows : [];
+  const rawColumns = Array.isArray(record.columns) ? record.columns : [];
+  const declaredRowCount =
+    typeof record.rowCount === "number" && Number.isFinite(record.rowCount) ? record.rowCount : rawRows.length;
+  const declaredColumnCount =
+    typeof record.columnCount === "number" && Number.isFinite(record.columnCount) ? record.columnCount : rawColumns.length;
+  const rowCount = Math.max(DEFAULT_WORKSHEET_ROW_COUNT, declaredRowCount, rawRows.length);
+  const columnCount = Math.max(DEFAULT_WORKSHEET_COLUMN_COUNT, declaredColumnCount, rawColumns.length);
   const fallback = createDefaultWorksheetData({
     sheetName: typeof record.sheetName === "string" ? record.sheetName : "Pricing Worksheet",
     rowCount,
     columnCount,
   });
 
-  const columns = Array.isArray(record.columns) ? record.columns : fallback.columns;
-  const rows = Array.isArray(record.rows) ? record.rows : fallback.rows;
+  const columns = normalizeWorksheetColumns(record.columns, columnCount);
+  const rows = normalizeWorksheetRows(record.rows, rowCount);
   const rawCells =
     record.cells && typeof record.cells === "object" && !Array.isArray(record.cells)
       ? (record.cells as Record<string, Json | undefined>)
@@ -242,8 +319,8 @@ export function normalizeWorksheetData(input: Json | null | undefined): Workshee
     sheetName: typeof record.sheetName === "string" && record.sheetName.trim() ? record.sheetName : fallback.sheetName,
     rowCount,
     columnCount,
-    columns: columns as WorksheetColumn[],
-    rows: rows as WorksheetRow[],
+    columns,
+    rows,
     cells,
     metadata:
       record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)

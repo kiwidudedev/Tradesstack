@@ -3,9 +3,14 @@ import {
   findWorksheetFormulaErrors,
   recalculateWorksheetFormulas,
 } from "@/lib/opportunity-pricing-worksheet-formulas";
+import {
+  applyFormattingToRange,
+  type WorksheetCellFormat,
+} from "@/lib/opportunity-pricing-worksheet-formatting";
 import { shiftFormulaForFill } from "@/lib/opportunity-pricing-worksheet-formula-shift";
 import { insertWorksheetRow } from "@/lib/opportunity-pricing-worksheet-structure";
 import { buildWorksheetCellKey } from "@/lib/opportunity-pricing-worksheet-paste";
+import { parsePricingWorksheetFormula } from "@/lib/pricing-worksheet-formula-parser";
 
 export type PricingWorksheetAiAssistantMode =
   | "answer_only"
@@ -60,7 +65,17 @@ export type PricingWorksheetAiOperationType =
   | "copy_row_variant"
   | "fix_formula"
   | "explain_formula"
-  | "insert_subtotal";
+  | "insert_subtotal"
+  | "format_cell"
+  | "format_cells";
+
+export type PricingWorksheetAiFormatInstruction = {
+  backgroundColor?: string | null;
+  textColor?: string | null;
+  bold?: boolean | null;
+  italic?: boolean | null;
+  border?: boolean | null;
+};
 
 export type PricingWorksheetAiCellValueEntry = {
   ref?: string | null;
@@ -78,6 +93,7 @@ export type PricingWorksheetAiOperation = {
   type: PricingWorksheetAiOperationType;
   target?: {
     cell?: string | null;
+    cells?: string[] | null;
     row?: number | null;
     sourceRow?: number | null;
     insertAfterRow?: number | null;
@@ -94,6 +110,7 @@ export type PricingWorksheetAiOperation = {
   formulas?: {
     cells?: PricingWorksheetAiFormulaEntry[] | null;
   } | null;
+  format?: PricingWorksheetAiFormatInstruction | null;
   rationale?: string | null;
 };
 
@@ -160,9 +177,19 @@ export type PricingWorksheetAiValidationIssue = {
   severity: "warning" | "error";
 };
 
+export type PricingWorksheetAiOperationNormalizationDiagnostics = {
+  rawOperationsPresent: boolean;
+  rawOperationCount: number;
+  normalizedOperationCount: number;
+  droppedOperationCount: number;
+  droppedOperationReasons: string[];
+  invalidOperationTypes: string[];
+};
+
 export type PricingWorksheetAiDiffSummary = {
   changedCells: string[];
   formulaCells: string[];
+  formattingCells: string[];
   insertedRows: number[];
   affectedRows: number[];
 };
@@ -173,7 +200,25 @@ export type PricingWorksheetAiSimulationResult = {
   validationIssues: PricingWorksheetAiValidationIssue[];
 };
 
-const ALLOWED_FUNCTIONS = new Set(["SUM", "ROUND", "ROUNDUP", "ROUNDDOWN", "IF", "IFERROR", "OR", "CEILING"]);
+const ALLOWED_FUNCTIONS = new Set([
+  "SUM",
+  "MIN",
+  "MAX",
+  "ROUND",
+  "ROUNDUP",
+  "ROUNDDOWN",
+  "IF",
+  "IFERROR",
+  "IFS",
+  "AND",
+  "OR",
+  "CEILING",
+  "QTY",
+  "UNIT",
+  "WASTE",
+  "PACKS",
+]);
+const ALLOWED_OPERATORS = ["+", "-", "*", "/", "^", "%", "(", ")", ".", ",", ":", "<", ">", "=", "$", "\"", "_"] as const;
 const MAX_MUTATING_OPERATIONS = 12;
 const MAX_CHANGED_CELLS = 60;
 const MAX_BOUNDED_GENERATION_OPERATIONS = 32;
@@ -189,6 +234,51 @@ const MAX_RELATED_ROWS = 8;
 const MAX_RELATED_CELLS = 10;
 const MAX_SUPPORTED_CLAIMS = 4;
 const MAX_URL_LENGTH = 280;
+const AI_FILL_COLOR_ALIASES = new Map<string, string>([
+  ["#fef3c7", "#FEF3C7"],
+  ["#fde68a", "#FEF3C7"],
+  ["#ffeb99", "#FEF3C7"],
+  ["yellow", "#FEF3C7"],
+  ["amber", "#FEF3C7"],
+  ["orange", "#FEF3C7"],
+  ["#dbeafe", "#DBEAFE"],
+  ["#bfdbfe", "#DBEAFE"],
+  ["#93c5fd", "#DBEAFE"],
+  ["blue", "#DBEAFE"],
+  ["light blue", "#DBEAFE"],
+  ["#dcfce7", "#DCFCE7"],
+  ["#bbf7d0", "#DCFCE7"],
+  ["green", "#DCFCE7"],
+  ["light green", "#DCFCE7"],
+  ["#fce7f3", "#FCE7F3"],
+  ["pink", "#FCE7F3"],
+  ["#f3f4f6", "#F3F4F6"],
+  ["#e5e7eb", "#F3F4F6"],
+  ["gray", "#F3F4F6"],
+  ["grey", "#F3F4F6"],
+]);
+const AI_TEXT_COLOR_ALIASES = new Map<string, string>([
+  ["#111827", "#111827"],
+  ["black", "#111827"],
+  ["dark", "#111827"],
+  ["#1d4ed8", "#1D4ED8"],
+  ["blue", "#1D4ED8"],
+  ["#047857", "#047857"],
+  ["green", "#047857"],
+  ["#b45309", "#B45309"],
+  ["amber", "#B45309"],
+  ["orange", "#B45309"],
+  ["#be123c", "#BE123C"],
+  ["red", "#BE123C"],
+  ["pink", "#BE123C"],
+]);
+const OUTPUT_FORMAT_FILL_COLOR = "#F3F4F6";
+const DEFAULT_AI_INPUT_FILL_COLOR = "#DBEAFE";
+const DEFAULT_AI_TEXT_COLOR = "#111827";
+const DEFAULT_AI_BORDER = {
+  color: "#94A3B8",
+  style: "solid",
+} as const;
 const FINDING_CATEGORY_SET: Set<PricingWorksheetAiFindingCategory> = new Set([
   "missing_scope",
   "formula_risk",
@@ -275,6 +365,26 @@ function ensureCell(worksheet: WorksheetData, rowIndex: number, columnIndex: num
   return worksheet.cells[cellKey] as WorksheetCell;
 }
 
+export function getPricingWorksheetAiAllowedFunctions(): string[] {
+  return Array.from(ALLOWED_FUNCTIONS);
+}
+
+export function getPricingWorksheetAiFormulaCompatibility() {
+  return {
+    allowedFunctions: getPricingWorksheetAiAllowedFunctions(),
+    allowedOperators: [...ALLOWED_OPERATORS],
+    supportedCellReferenceFormat: "A1",
+    supportedRangeFormat: "A1:B10",
+    unsupportedSyntaxWarnings: [
+      "Do not use named references.",
+      "Do not use curly-brace placeholders.",
+      "Do not use symbolic refs like 8_Qty.",
+      "Do not use external or cross-sheet references.",
+    ],
+    allowedCharactersPattern: "[A-Z0-9+\\-*/^%().,:<>=\\s_\\\"$]",
+  } as const;
+}
+
 function setCellLiteral(cell: WorksheetCell, value: string | number | boolean | null | undefined): void {
   const nextValue = typeof value === "boolean" ? String(value) : value ?? null;
   cell.formula = null;
@@ -322,60 +432,23 @@ function validateFormulaAllowlist(
   formula: string,
   worksheet: WorksheetData,
 ): PricingWorksheetAiValidationIssue[] {
-  const issues: PricingWorksheetAiValidationIssue[] = [];
-  const normalized = formula.trim();
-  if (normalized.length === 0) {
-    issues.push({
-      code: "formula_empty",
-      message: "Formula cannot be empty.",
+  const parseResult = parsePricingWorksheetFormula(formula, {
+    allowedFunctions: getPricingWorksheetAiAllowedFunctions(),
+    maxRowCount: worksheet.rows.length,
+    maxColumnCount: worksheet.columns.length,
+  });
+
+  if (parseResult.success) {
+    return [];
+  }
+
+  return [
+    {
+      code: parseResult.issue.code,
+      message: parseResult.issue.message,
       severity: "error",
-    });
-    return issues;
-  }
-
-  const disallowedCharacterMatch = normalized.match(/[^A-Z0-9+\-*/().,:<>=\s_\"$]/i);
-  if (disallowedCharacterMatch) {
-    issues.push({
-      code: "formula_invalid_character",
-      message: `Formula contains unsupported character "${disallowedCharacterMatch[0]}".`,
-      severity: "error",
-    });
-  }
-
-  const identifierMatches = normalized.match(/[A-Z_]+(?=\s*\()/gi) ?? [];
-  for (const identifier of identifierMatches) {
-    const upper = identifier.toUpperCase();
-    if (!ALLOWED_FUNCTIONS.has(upper)) {
-      issues.push({
-        code: "formula_unsupported_function",
-        message: `Formula function "${upper}" is not supported for AI-generated edits.`,
-        severity: "error",
-      });
-    }
-  }
-
-  const cellRefMatches = normalized.match(/\$?[A-Z]+\$?[0-9]+/gi) ?? [];
-  for (const ref of cellRefMatches) {
-    const parsed = parseCellRef(ref.replace(/\$/g, ""));
-    if (!parsed) {
-      issues.push({
-        code: "formula_invalid_reference",
-        message: `Formula reference "${ref}" is invalid.`,
-        severity: "error",
-      });
-      continue;
-    }
-
-    if (parsed.rowNumber > worksheet.rows.length || parsed.columnIndex >= worksheet.columns.length) {
-      issues.push({
-        code: "formula_ref_out_of_bounds",
-        message: `Formula reference "${ref}" is outside the worksheet bounds.`,
-        severity: "error",
-      });
-    }
-  }
-
-  return issues;
+    },
+  ];
 }
 
 function collectMutatingCellCount(operations: PricingWorksheetAiOperation[]): number {
@@ -385,6 +458,69 @@ function collectMutatingCellCount(operations: PricingWorksheetAiOperation[]): nu
     count += getFormulaEntries(operation).length;
   }
   return count;
+}
+
+type PricingWorksheetAiOperationBatchRisk =
+  | "none"
+  | "formula_only"
+  | "formatting_only"
+  | "value_edits"
+  | "structural_edits"
+  | "mixed_edits";
+
+function classifyOperationBatchRisk(operations: PricingWorksheetAiOperation[]): PricingWorksheetAiOperationBatchRisk {
+  let hasStructuralEdits = false;
+  let hasValueEdits = false;
+  let hasFormulaEdits = false;
+  let hasFormattingEdits = false;
+
+  for (const operation of operations) {
+    if (operation.type === "explain_formula") {
+      continue;
+    }
+
+    if (
+      operation.type === "insert_row" ||
+      operation.type === "copy_row_variant" ||
+      operation.type === "insert_subtotal"
+    ) {
+      hasStructuralEdits = true;
+    }
+
+    if (operation.type === "format_cell" || operation.type === "format_cells") {
+      hasFormattingEdits = true;
+    }
+
+    if (getValueEntries(operation).length > 0) {
+      hasValueEdits = true;
+    }
+
+    if (getFormulaEntries(operation).length > 0 || operation.type === "fix_formula") {
+      hasFormulaEdits = true;
+    }
+  }
+
+  if (!hasStructuralEdits && !hasValueEdits && !hasFormulaEdits && !hasFormattingEdits) {
+    return "none";
+  }
+
+  if (!hasStructuralEdits && !hasValueEdits && hasFormulaEdits && !hasFormattingEdits) {
+    return "formula_only";
+  }
+
+  if (!hasStructuralEdits && !hasValueEdits && !hasFormulaEdits && hasFormattingEdits) {
+    return "formatting_only";
+  }
+
+  if (!hasStructuralEdits && hasValueEdits && !hasFormulaEdits && !hasFormattingEdits) {
+    return "value_edits";
+  }
+
+  if (hasStructuralEdits && !hasValueEdits && !hasFormattingEdits) {
+    return "structural_edits";
+  }
+
+  return "mixed_edits";
 }
 
 function countWorksheetPopulatedCells(worksheet: WorksheetData): number {
@@ -502,6 +638,17 @@ function normalizeCellRefArray(value: unknown): string[] {
     .slice(0, MAX_RELATED_CELLS);
 }
 
+function normalizeOptionalCellRefArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim().toUpperCase() : ""))
+    .filter((entry, index, array) => Boolean(parseCellRef(entry)) && array.indexOf(entry) === index)
+    .slice(0, MAX_RELATED_CELLS);
+}
+
 function normalizeRowNumberArray(value: unknown): number[] {
   if (!Array.isArray(value)) {
     return [];
@@ -605,6 +752,68 @@ function buildFormulaEntryIdentity(entry: Pick<PricingWorksheetAiFormulaEntry, "
   return `${entry.ref?.trim().toUpperCase() ?? ""}::${entry.column?.trim().toUpperCase() ?? ""}`;
 }
 
+function normalizeAiColor(
+  value: unknown,
+  palette: Map<string, string>,
+  fallbackColor: string
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (palette.has(normalized)) {
+    return palette.get(normalized);
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(normalized)) {
+    return palette.get(normalized) ?? fallbackColor;
+  }
+
+  return fallbackColor;
+}
+
+function normalizeFormatInstruction(value: unknown): PricingWorksheetAiFormatInstruction | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const normalized: PricingWorksheetAiFormatInstruction = {};
+  const backgroundColor = normalizeAiColor(
+    candidate.backgroundColor,
+    AI_FILL_COLOR_ALIASES,
+    DEFAULT_AI_INPUT_FILL_COLOR,
+  );
+  const textColor = normalizeAiColor(
+    candidate.textColor,
+    AI_TEXT_COLOR_ALIASES,
+    DEFAULT_AI_TEXT_COLOR,
+  );
+
+  if (backgroundColor) {
+    normalized.backgroundColor = backgroundColor;
+  }
+  if (textColor) {
+    normalized.textColor = textColor;
+  }
+  if (typeof candidate.bold === "boolean") {
+    normalized.bold = candidate.bold;
+  }
+  if (typeof candidate.italic === "boolean") {
+    normalized.italic = candidate.italic;
+  }
+  if (typeof candidate.border === "boolean") {
+    normalized.border = candidate.border;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
 function normalizeOperation(value: unknown): PricingWorksheetAiOperation | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -687,36 +896,139 @@ function normalizeOperation(value: unknown): PricingWorksheetAiOperation | null 
     }),
   ];
   const normalizedLiteralValueCells = normalizedValueCells.filter((entry) => !isFormulaLikeValue(entry.value));
+  const isFormattingOperation = type === "format_cell" || type === "format_cells";
+  const targetCellRefsFromPayload = Array.from(
+    new Set(
+      [
+        ...(normalizeOptionalCellRefArray(targetSource?.cells)),
+        ...(typeof targetSource?.cell === "string" ? normalizeOptionalCellRefArray([targetSource.cell]) : []),
+        ...normalizedLiteralValueCells
+          .map((entry) => (typeof entry.ref === "string" ? entry.ref.trim().toUpperCase() : ""))
+          .filter((entry) => Boolean(parseCellRef(entry))),
+        ...normalizedFormulaCells
+          .map((entry) => (typeof entry.ref === "string" ? entry.ref.trim().toUpperCase() : ""))
+          .filter((entry) => Boolean(parseCellRef(entry))),
+      ].filter((entry) => entry.length > 0),
+    ),
+  );
+  const normalizedTarget =
+    targetSource || isFormattingOperation
+      ? {
+          cell:
+            typeof targetSource?.cell === "string"
+              ? targetSource.cell
+              : isFormattingOperation && type === "format_cell"
+                ? targetCellRefsFromPayload[0] ?? null
+                : null,
+          cells:
+            isFormattingOperation
+              ? targetCellRefsFromPayload
+              : normalizeOptionalCellRefArray(targetSource?.cells),
+          row: typeof targetSource?.row === "number" ? targetSource.row : null,
+          sourceRow: typeof targetSource?.sourceRow === "number" ? targetSource.sourceRow : null,
+          insertAfterRow:
+            typeof targetSource?.insertAfterRow === "number" ? targetSource.insertAfterRow : null,
+          insertBeforeRow:
+            typeof targetSource?.insertBeforeRow === "number" ? targetSource.insertBeforeRow : null,
+          startRow: typeof targetSource?.startRow === "number" ? targetSource.startRow : null,
+          endRow: typeof targetSource?.endRow === "number" ? targetSource.endRow : null,
+          sectionName: typeof targetSource?.sectionName === "string" ? targetSource.sectionName : null,
+          totalColumn: typeof targetSource?.totalColumn === "string" ? targetSource.totalColumn : null,
+          labelColumn: typeof targetSource?.labelColumn === "string" ? targetSource.labelColumn : null,
+        }
+      : null;
 
   return {
     type: type as PricingWorksheetAiOperationType,
-    target: targetSource
-      ? {
-          cell: typeof targetSource.cell === "string" ? targetSource.cell : null,
-          row: typeof targetSource.row === "number" ? targetSource.row : null,
-          sourceRow: typeof targetSource.sourceRow === "number" ? targetSource.sourceRow : null,
-          insertAfterRow:
-            typeof targetSource.insertAfterRow === "number" ? targetSource.insertAfterRow : null,
-          insertBeforeRow:
-            typeof targetSource.insertBeforeRow === "number" ? targetSource.insertBeforeRow : null,
-          startRow: typeof targetSource.startRow === "number" ? targetSource.startRow : null,
-          endRow: typeof targetSource.endRow === "number" ? targetSource.endRow : null,
-          sectionName: typeof targetSource.sectionName === "string" ? targetSource.sectionName : null,
-          totalColumn: typeof targetSource.totalColumn === "string" ? targetSource.totalColumn : null,
-          labelColumn: typeof targetSource.labelColumn === "string" ? targetSource.labelColumn : null,
-        }
-      : null,
-    values: valuesSource
+    target: normalizedTarget,
+    values: valuesSource && !isFormattingOperation
       ? {
           cells: normalizedLiteralValueCells,
         }
       : null,
-    formulas: formulasSource
+    formulas: formulasSource && !isFormattingOperation
       ? {
           cells: normalizedFormulaCells,
         }
       : null,
+    format: normalizeFormatInstruction(candidate.format),
     rationale: typeof candidate.rationale === "string" ? candidate.rationale.trim() : "",
+  };
+}
+
+function inspectOperationNormalizationCandidate(value: unknown): {
+  normalized: PricingWorksheetAiOperation | null;
+  droppedReason: string | null;
+  invalidOperationType: string | null;
+} {
+  if (!value || typeof value !== "object") {
+    return {
+      normalized: null,
+      droppedReason: "operation_not_object",
+      invalidOperationType: null,
+    };
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const type = typeof candidate.type === "string" ? candidate.type.trim() : "";
+  if (!type) {
+    return {
+      normalized: null,
+      droppedReason: "operation_missing_type",
+      invalidOperationType: null,
+    };
+  }
+
+  const normalized = normalizeOperation(value);
+  const invalidOperationType =
+    type !== "update_cell" &&
+    type !== "update_cells" &&
+    type !== "insert_row" &&
+    type !== "copy_row_variant" &&
+    type !== "fix_formula" &&
+    type !== "explain_formula" &&
+    type !== "insert_subtotal" &&
+    type !== "format_cell" &&
+    type !== "format_cells"
+      ? type
+      : null;
+
+  return {
+    normalized,
+    droppedReason: normalized ? null : "operation_failed_normalization",
+    invalidOperationType,
+  };
+}
+
+export function inspectPricingWorksheetAiOperationNormalization(
+  value: unknown,
+): PricingWorksheetAiOperationNormalizationDiagnostics {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const rawOperations = Array.isArray(candidate.operations) ? candidate.operations : [];
+  const inspections = rawOperations.map((entry) => inspectOperationNormalizationCandidate(entry));
+  const normalizedOperations = inspections
+    .map((entry) => entry.normalized)
+    .filter((entry): entry is PricingWorksheetAiOperation => Boolean(entry));
+
+  return {
+    rawOperationsPresent: Array.isArray(candidate.operations),
+    rawOperationCount: rawOperations.length,
+    normalizedOperationCount: normalizedOperations.length,
+    droppedOperationCount: rawOperations.length - normalizedOperations.length,
+    droppedOperationReasons: Array.from(
+      new Set(
+        inspections
+          .map((entry) => entry.droppedReason)
+          .filter((entry): entry is string => typeof entry === "string" && entry.length > 0),
+      ),
+    ).slice(0, 8),
+    invalidOperationTypes: Array.from(
+      new Set(
+        inspections
+          .map((entry) => entry.invalidOperationType)
+          .filter((entry): entry is string => typeof entry === "string" && entry.length > 0),
+      ),
+    ).slice(0, 8),
   };
 }
 
@@ -830,7 +1142,7 @@ export function buildPricingWorksheetAiAssistantSchema(): Record<string, unknown
   const operationSchema = {
     type: "object",
     additionalProperties: false,
-    required: ["type", "target", "values", "formulas", "rationale"],
+    required: ["type", "target", "values", "formulas", "format", "rationale"],
     properties: {
       type: {
         type: "string",
@@ -842,6 +1154,8 @@ export function buildPricingWorksheetAiAssistantSchema(): Record<string, unknown
           "fix_formula",
           "explain_formula",
           "insert_subtotal",
+          "format_cell",
+          "format_cells",
         ],
       },
       target: {
@@ -849,6 +1163,7 @@ export function buildPricingWorksheetAiAssistantSchema(): Record<string, unknown
         additionalProperties: false,
         required: [
           "cell",
+          "cells",
           "row",
           "sourceRow",
           "insertAfterRow",
@@ -861,6 +1176,10 @@ export function buildPricingWorksheetAiAssistantSchema(): Record<string, unknown
         ],
         properties: {
           cell: { type: ["string", "null"] },
+          cells: {
+            type: ["array", "null"],
+            items: { type: "string" },
+          },
           row: { type: ["number", "null"] },
           sourceRow: { type: ["number", "null"] },
           insertAfterRow: { type: ["number", "null"] },
@@ -912,6 +1231,18 @@ export function buildPricingWorksheetAiAssistantSchema(): Record<string, unknown
               },
             },
           },
+        },
+      },
+      format: {
+        type: ["object", "null"],
+        additionalProperties: false,
+        required: ["backgroundColor", "textColor", "bold", "italic", "border"],
+        properties: {
+          backgroundColor: { type: ["string", "null"] },
+          textColor: { type: ["string", "null"] },
+          bold: { type: ["boolean", "null"] },
+          italic: { type: ["boolean", "null"] },
+          border: { type: ["boolean", "null"] },
         },
       },
       rationale: { type: "string" },
@@ -1206,6 +1537,8 @@ export function validatePricingWorksheetAiAssistantResponse(
     group.operations.filter((operation) => operation.type !== "explain_formula"),
   );
   const allowsBoundedGeneration = isBoundedWorksheetGenerationCandidate(worksheet, mutatingOperations);
+  const batchRisk = classifyOperationBatchRisk(mutatingOperations);
+  const allowLowRiskBatchByCount = batchRisk === "formula_only" || batchRisk === "formatting_only";
 
   if (response.mode === "answer_only" && mutatingOperations.length > 0) {
     issues.push({
@@ -1223,7 +1556,10 @@ export function validatePricingWorksheetAiAssistantResponse(
     });
   }
 
-  if (mutatingOperations.length > (allowsBoundedGeneration ? MAX_BOUNDED_GENERATION_OPERATIONS : MAX_MUTATING_OPERATIONS)) {
+  if (
+    !allowLowRiskBatchByCount &&
+    mutatingOperations.length > (allowsBoundedGeneration ? MAX_BOUNDED_GENERATION_OPERATIONS : MAX_MUTATING_OPERATIONS)
+  ) {
     issues.push({
       code: "too_many_operations",
       message: allowsBoundedGeneration
@@ -1233,7 +1569,11 @@ export function validatePricingWorksheetAiAssistantResponse(
     });
   }
 
-  if (!allowsBoundedGeneration && collectMutatingCellCount(mutatingOperations) > MAX_CHANGED_CELLS) {
+  if (
+    !allowLowRiskBatchByCount &&
+    !allowsBoundedGeneration &&
+    collectMutatingCellCount(mutatingOperations) > MAX_CHANGED_CELLS
+  ) {
     issues.push({
       code: "too_many_cells_changed",
       message: "AI proposed too many cell changes for a single safe preview.",
@@ -1252,8 +1592,13 @@ export function validatePricingWorksheetAiAssistantResponse(
   for (const group of response.suggestedEditGroups ?? []) {
     const groupMutatingOperations = group.operations.filter((operation) => operation.type !== "explain_formula");
     const allowsBoundedGenerationGroup = isBoundedWorksheetGenerationCandidate(worksheet, groupMutatingOperations);
+    const groupBatchRisk = classifyOperationBatchRisk(groupMutatingOperations);
+    const allowLowRiskGroupByCount = groupBatchRisk === "formula_only" || groupBatchRisk === "formatting_only";
 
-    if (group.operations.length > (allowsBoundedGenerationGroup ? MAX_BOUNDED_GENERATION_OPERATIONS : MAX_MUTATING_OPERATIONS)) {
+    if (
+      !allowLowRiskGroupByCount &&
+      group.operations.length > (allowsBoundedGenerationGroup ? MAX_BOUNDED_GENERATION_OPERATIONS : MAX_MUTATING_OPERATIONS)
+    ) {
       issues.push({
         code: "suggested_edit_group_too_many_operations",
         message: `Suggested edit group "${group.title}" contains too many operations.`,
@@ -1262,6 +1607,7 @@ export function validatePricingWorksheetAiAssistantResponse(
     }
 
     if (
+      !allowLowRiskGroupByCount &&
       !allowsBoundedGenerationGroup &&
       collectMutatingCellCount(groupMutatingOperations) > MAX_CHANGED_CELLS
     ) {
@@ -1281,7 +1627,9 @@ export function validatePricingWorksheetAiAssistantResponse(
       operation.type !== "copy_row_variant" &&
       operation.type !== "fix_formula" &&
       operation.type !== "explain_formula" &&
-      operation.type !== "insert_subtotal"
+      operation.type !== "insert_subtotal" &&
+      operation.type !== "format_cell" &&
+      operation.type !== "format_cells"
     ) {
       issues.push({
         code: "unsupported_operation",
@@ -1304,6 +1652,63 @@ export function validatePricingWorksheetAiAssistantResponse(
         message: "Fix-formula operations must include a replacement formula.",
         severity: "error",
       });
+    }
+
+    if ((operation.type === "format_cell" || operation.type === "format_cells") && operation.format === null) {
+      issues.push({
+        code: "format_operation_missing_format",
+        message: "Formatting operations must include a supported formatting patch.",
+        severity: "error",
+      });
+    }
+
+    if ((operation.type === "format_cell" || operation.type === "format_cells") &&
+      (getValueEntries(operation).length > 0 || getFormulaEntries(operation).length > 0)) {
+      issues.push({
+        code: "format_operation_mutation",
+        message: "Formatting operations cannot change worksheet values or formulas.",
+        severity: "error",
+      });
+    }
+
+    if (operation.type === "format_cell" && !operation.target?.cell) {
+      issues.push({
+        code: "format_cell_missing_target",
+        message: "Format-cell operations must target a specific cell reference.",
+        severity: "error",
+      });
+    }
+
+    if (operation.type === "format_cells" && (operation.target?.cells?.length ?? 0) === 0) {
+      issues.push({
+        code: "format_cells_missing_targets",
+        message: "Format-cells operations must target one or more explicit cell references.",
+        severity: "error",
+      });
+    }
+
+    const formattingTargetRefs = operation.type === "format_cell"
+      ? [operation.target?.cell ?? ""]
+      : operation.target?.cells ?? [];
+
+    for (const ref of formattingTargetRefs) {
+      const parsed = parseCellRef(ref);
+      if (!parsed) {
+        issues.push({
+          code: "invalid_format_target",
+          message: `Format target "${ref}" is invalid.`,
+          severity: "error",
+        });
+        continue;
+      }
+
+      if (parsed.rowNumber > worksheet.rows.length || parsed.columnIndex >= worksheet.columns.length) {
+        issues.push({
+          code: "format_target_out_of_bounds",
+          message: `Format target "${ref}" is outside the worksheet bounds.`,
+          severity: "error",
+        });
+      }
     }
 
     for (const entry of getValueEntries(operation)) {
@@ -1384,6 +1789,96 @@ function resolveColumnIndex(entry: PricingWorksheetAiCellValueEntry | PricingWor
   }
 
   return null;
+}
+
+function buildSingleCellRange(parsed: { columnIndex: number; rowNumber: number }) {
+  return {
+    startRowIndex: parsed.rowNumber - 1,
+    endRowIndex: parsed.rowNumber - 1,
+    startColumnIndex: parsed.columnIndex,
+    endColumnIndex: parsed.columnIndex,
+  };
+}
+
+function shouldKeepNonOutputInputHighlight(
+  cell: WorksheetCell | undefined,
+  operation: PricingWorksheetAiOperation,
+) {
+  if (!cell?.formula) {
+    return true;
+  }
+
+  const rationale = operation.rationale?.toLowerCase() ?? "";
+  return ["output", "formula", "result", "explicit"].some((token) => rationale.includes(token));
+}
+
+function buildWorksheetFormatPatch(
+  instruction: PricingWorksheetAiFormatInstruction | null,
+  cell: WorksheetCell | undefined,
+  operation: PricingWorksheetAiOperation,
+): WorksheetCellFormat | null {
+  if (!instruction) {
+    return null;
+  }
+
+  let backgroundColor = normalizeAiColor(
+    instruction.backgroundColor,
+    AI_FILL_COLOR_ALIASES,
+    DEFAULT_AI_INPUT_FILL_COLOR,
+  );
+  if (
+    backgroundColor &&
+    backgroundColor !== OUTPUT_FORMAT_FILL_COLOR &&
+    !shouldKeepNonOutputInputHighlight(cell, operation)
+  ) {
+    backgroundColor = OUTPUT_FORMAT_FILL_COLOR;
+  }
+
+  const patch: WorksheetCellFormat = {
+    ...(backgroundColor ? { fill: { color: backgroundColor } } : {}),
+    ...(
+      instruction.textColor !== undefined ||
+      instruction.bold !== undefined ||
+      instruction.italic !== undefined
+        ? {
+            text: {
+              ...(instruction.textColor !== undefined
+                ? {
+                    color: normalizeAiColor(
+                      instruction.textColor,
+                      AI_TEXT_COLOR_ALIASES,
+                      DEFAULT_AI_TEXT_COLOR,
+                    ),
+                  }
+                : {}),
+              ...(instruction.bold !== undefined ? { bold: instruction.bold ?? undefined } : {}),
+              ...(instruction.italic !== undefined ? { italic: instruction.italic ?? undefined } : {}),
+            },
+          }
+        : {}
+    ),
+    ...(instruction.border === true
+      ? {
+          border: {
+            top: DEFAULT_AI_BORDER,
+            right: DEFAULT_AI_BORDER,
+            bottom: DEFAULT_AI_BORDER,
+            left: DEFAULT_AI_BORDER,
+          },
+        }
+      : instruction.border === false
+        ? {
+            border: {
+              top: undefined,
+              right: undefined,
+              bottom: undefined,
+              left: undefined,
+            },
+          }
+        : {}),
+  };
+
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 function applyInsertedRowEntries(
@@ -1477,6 +1972,7 @@ export function simulatePricingWorksheetAiEditPlan(
   const diffSummary: PricingWorksheetAiDiffSummary = {
     changedCells: [],
     formulaCells: [],
+    formattingCells: [],
     insertedRows: [],
     affectedRows: [],
   };
@@ -1541,6 +2037,40 @@ export function simulatePricingWorksheetAiEditPlan(
         setCellFormula(cell, entry.formula);
         diffSummary.changedCells.push(entry.ref.toUpperCase());
         diffSummary.formulaCells.push(entry.ref.toUpperCase());
+        diffSummary.affectedRows.push(parsed.rowNumber);
+      }
+    }
+
+    if (operation.type === "format_cell" || operation.type === "format_cells") {
+      const refs = operation.type === "format_cell"
+        ? [operation.target?.cell ?? ""]
+        : operation.target?.cells ?? [];
+
+      for (const ref of refs) {
+        const parsed = parseCellRef(ref);
+        if (!parsed) {
+          continue;
+        }
+
+        const cell = ensureCell(worksheet, parsed.rowNumber - 1, parsed.columnIndex);
+        const patch = buildWorksheetFormatPatch(operation.format ?? null, cell, operation);
+        if (!patch) {
+          validationIssues.push({
+            code: "format_operation_empty_patch",
+            message: `Formatting operation for ${ref.toUpperCase()} did not include any supported formatting fields.`,
+            severity: "error",
+          });
+          continue;
+        }
+
+        const nextWorksheet = applyFormattingToRange(worksheet, buildSingleCellRange(parsed), patch);
+        if (nextWorksheet === worksheet) {
+          continue;
+        }
+
+        worksheet = nextWorksheet;
+        diffSummary.changedCells.push(ref.toUpperCase());
+        diffSummary.formattingCells.push(ref.toUpperCase());
         diffSummary.affectedRows.push(parsed.rowNumber);
       }
     }
@@ -1680,6 +2210,7 @@ export function simulatePricingWorksheetAiEditPlan(
     diffSummary: {
       changedCells: Array.from(new Set(diffSummary.changedCells)),
       formulaCells: Array.from(new Set(diffSummary.formulaCells)),
+      formattingCells: Array.from(new Set(diffSummary.formattingCells)),
       insertedRows: Array.from(new Set(diffSummary.insertedRows)).sort((left, right) => left - right),
       affectedRows: Array.from(new Set(diffSummary.affectedRows)).sort((left, right) => left - right),
     },

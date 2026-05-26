@@ -244,6 +244,111 @@ describe("classifyPricingWorksheetConstructionIntent", () => {
     expect(classification.recommendedPromptPath).toBe("generation");
   });
 
+  it("treats broad create/build pricing worksheet prompts as worksheet generation even with competing pricing keywords", () => {
+    const prompts = [
+      "Create a suspended ceilings pricing worksheet with materials, labour, wastage, margins, formulas and totals.",
+      "Create a partitions pricing worksheet.",
+      "Build a flooring pricing worksheet with labour and materials.",
+      "Generate a fire stopping pricing template.",
+      "Create a commercial interiors estimate worksheet.",
+      "Build a full pricing template for seismic ceilings.",
+    ];
+
+    for (const prompt of prompts) {
+      const classification = classifyPricingWorksheetConstructionIntent({
+        userPrompt: prompt,
+        worksheetName: "Blank worksheet",
+        worksheetTradePackage: "Commercial",
+        worksheetContext: buildContext({ worksheetName: "Blank worksheet", tradePackage: "Commercial" }),
+      });
+
+      expect(classification.primaryIntent, prompt).toBe("worksheet_generation");
+      expect(classification.recommendedPromptPath, prompt).toBe("generation");
+    }
+  });
+
+  it("classifies worksheet edit prompts by primary action before secondary pricing keywords", () => {
+    const cases = [
+      "Add formulas to this worksheet.",
+      "Insert missing material rows.",
+      "Update labour allowances by 15%.",
+      "Add wastage calculations to the totals section.",
+    ];
+
+    for (const prompt of cases) {
+      const classification = classifyPricingWorksheetConstructionIntent({
+        userPrompt: prompt,
+        worksheetName: "Pricing worksheet",
+        worksheetTradePackage: "Fitout",
+        worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+      });
+
+      expect(classification.primaryIntent, prompt).toBe("worksheet_edit");
+      expect(classification.recommendedPromptPath, prompt).toBe("edit");
+    }
+  });
+
+  it("classifies highlight and colour prompts as worksheet edits instead of unknown", () => {
+    const cases = [
+      "Highlight the input cells in this worksheet.",
+      "Colour the fillable cells so the team knows what to enter.",
+      "Mark the areas to fill in for pricing inputs.",
+      "Shade the assumption cells and identify input cells.",
+    ];
+
+    for (const prompt of cases) {
+      const classification = classifyPricingWorksheetConstructionIntent({
+        userPrompt: prompt,
+        worksheetName: "Pricing worksheet",
+        worksheetTradePackage: "Fitout",
+        worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+      });
+
+      expect(classification.primaryIntent, prompt).toBe("worksheet_edit");
+      expect(classification.recommendedPromptPath, prompt).toBe("edit");
+    }
+  });
+
+  it("classifies worksheet review prompts separately from generation and mutation requests", () => {
+    const cases = [
+      "Review this worksheet for pricing risks.",
+      "Audit formulas and totals.",
+      "Find missing labour items.",
+    ];
+
+    for (const prompt of cases) {
+      const classification = classifyPricingWorksheetConstructionIntent({
+        userPrompt: prompt,
+        worksheetName: "Pricing worksheet",
+        worksheetTradePackage: "Fitout",
+        worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+      });
+
+      expect(classification.primaryIntent, prompt).toBe("review_estimate");
+      expect(classification.recommendedPromptPath, prompt).toBe("review");
+    }
+  });
+
+  it("keeps formula and pricing advice prompts on the answer path", () => {
+    const cases = [
+      "What formula should I use for wastage?",
+      "How do I calculate labour burden?",
+      "Explain markup vs margin.",
+    ];
+
+    for (const prompt of cases) {
+      const classification = classifyPricingWorksheetConstructionIntent({
+        userPrompt: prompt,
+        worksheetName: "Pricing worksheet",
+        worksheetTradePackage: "Fitout",
+        worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+      });
+
+      expect(["answer_only", "formula_explain", "formula_generate"]).toContain(classification.primaryIntent);
+      expect(classification.recommendedPromptPath, prompt).toBe("answer");
+    }
+  });
+
   it("detects trade-agnostic signals across multiple trades", () => {
     const cases = [
       {
