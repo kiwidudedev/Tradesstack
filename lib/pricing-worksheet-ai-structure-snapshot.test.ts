@@ -197,4 +197,123 @@ describe("pricing worksheet AI structure snapshot", () => {
       notesPreview: "Input row for area and spacing assumptions",
     });
   });
+
+  it("includes non-contiguous meaningful rows after blank gaps when they fit within the compact limit", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Gapped Worksheet",
+      rowCount: 60,
+      columnCount: 12,
+    });
+    setTextCell(worksheet, "A1", "Inputs");
+    setTextCell(worksheet, "B2", "Roof Area");
+    setTextCell(worksheet, "B24", "Material Takeoff");
+    setTextCell(worksheet, "B30", "Long-run sheets");
+    setTextCell(worksheet, "B36", "Roofing subtotal");
+    setFormulaCell(worksheet, "J36", "SUM(J30:J35)");
+
+    const context = buildPricingWorksheetAiContext(worksheet, {
+      worksheetName: worksheet.sheetName,
+      worksheetId: "gapped-worksheet",
+      tradePackage: "Roofing",
+    });
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet,
+      worksheetContext: context,
+      classification: buildClassification("review"),
+      prompt: "Review the roofing calculator rows after the takeoff section.",
+    });
+
+    expect(snapshot.rows.map((row) => row.rowNumber)).toEqual(expect.arrayContaining([24, 30, 36]));
+    expect(snapshot.rowCoverage.omittedRowRanges).toEqual([]);
+  });
+
+  it("includes row 24 and following meaningful rows when the prompt references rows from row 24", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Row Reference Worksheet",
+      rowCount: 60,
+      columnCount: 12,
+    });
+    for (let rowNumber = 20; rowNumber <= 32; rowNumber += 1) {
+      setTextCell(worksheet, `B${rowNumber}`, `Line ${rowNumber}`);
+      setFormulaCell(worksheet, `J${rowNumber}`, `E${rowNumber}*F${rowNumber}`);
+    }
+
+    const context = buildPricingWorksheetAiContext(worksheet, {
+      worksheetName: worksheet.sheetName,
+      worksheetId: "row-reference-worksheet",
+      tradePackage: "Roofing",
+    });
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet,
+      worksheetContext: context,
+      classification: buildClassification("edit"),
+      prompt: "The formulas from row 24 are not there. Check rows from row 24 onward.",
+    });
+
+    expect(snapshot.rowCoverage.promptReferencedRows).toContain(24);
+    expect(snapshot.rows.map((row) => row.rowNumber)).toEqual(
+      expect.arrayContaining([22, 24, 25, 30]),
+    );
+  });
+
+  it("includes all meaningful rows for small generated worksheets that fit the compact context budget", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Small Generated Worksheet",
+      rowCount: 50,
+      columnCount: 12,
+    });
+    for (let rowNumber = 1; rowNumber <= 36; rowNumber += 1) {
+      setTextCell(worksheet, `B${rowNumber}`, `Generated row ${rowNumber}`);
+      if (rowNumber % 3 === 0) {
+        setFormulaCell(worksheet, `J${rowNumber}`, `SUM(E${rowNumber}:I${rowNumber})`);
+      }
+    }
+
+    const context = buildPricingWorksheetAiContext(worksheet, {
+      worksheetName: worksheet.sheetName,
+      worksheetId: "small-generated-worksheet",
+      tradePackage: "Estimating",
+    });
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet,
+      worksheetContext: context,
+      classification: buildClassification("review"),
+      prompt: "Review the generated estimating worksheet.",
+    });
+
+    expect(snapshot.rowCoverage.meaningfulRowCount).toBe(36);
+    expect(snapshot.rowCoverage.includedRowCount).toBe(36);
+    expect(snapshot.rowCoverage.omittedRowRanges).toEqual([]);
+    expect(snapshot.rows.at(-1)?.rowNumber).toBe(36);
+  });
+
+  it("trims huge worksheets safely and discloses omitted row ranges", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Huge Worksheet",
+      rowCount: 120,
+      columnCount: 12,
+    });
+    for (let rowNumber = 1; rowNumber <= 70; rowNumber += 1) {
+      setTextCell(worksheet, `B${rowNumber}`, `Line ${rowNumber}`);
+      setFormulaCell(worksheet, `J${rowNumber}`, `E${rowNumber}*F${rowNumber}`);
+    }
+
+    const context = buildPricingWorksheetAiContext(worksheet, {
+      worksheetName: worksheet.sheetName,
+      worksheetId: "huge-worksheet",
+      tradePackage: "Estimating",
+    });
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet,
+      worksheetContext: context,
+      classification: buildClassification("review"),
+      prompt: "Check formulas from row 24 onward in this large worksheet.",
+    });
+
+    expect(snapshot.rowCoverage.meaningfulRowCount).toBe(70);
+    expect(snapshot.rowCoverage.includedRowCount).toBeLessThan(snapshot.rowCoverage.meaningfulRowCount);
+    expect(snapshot.rowCoverage.omittedRowRanges.length).toBeGreaterThan(0);
+    expect(snapshot.rowCoverage.note).toContain("Do not infer hidden formulas or values for omitted rows.");
+    expect(snapshot.rowCoverage.promptReferencedRows).toContain(24);
+  });
 });

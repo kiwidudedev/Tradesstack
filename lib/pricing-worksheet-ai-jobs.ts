@@ -74,6 +74,7 @@ type PricingWorksheetAiPreviewResponse = {
     validationWarnings: Array<Record<string, Json | undefined>>;
     contextSummary: Record<string, Json | undefined>;
     classification?: Record<string, Json | undefined>;
+    continuation?: Record<string, Json | undefined> | null;
     assistant?: Record<string, Json | undefined> | null;
     generationMeta?: {
       provider: string;
@@ -316,6 +317,7 @@ function buildPreviewResponse(params: {
       validationWarnings: params.preview.validationWarnings as unknown as Array<Record<string, Json | undefined>>,
       contextSummary: params.preview.contextSummary as unknown as Record<string, Json | undefined>,
       classification: params.preview.classification as unknown as Record<string, Json | undefined>,
+      continuation: params.preview.continuation as unknown as Record<string, Json | undefined> | null,
       generationMeta: params.generationMeta,
       assistant: {
         mode: params.preview.mode,

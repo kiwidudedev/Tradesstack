@@ -20,6 +20,7 @@ export const PricingWorksheetOverlayDialog = memo(function PricingWorksheetOverl
   return (
     <Dialog open onOpenChange={() => undefined}>
       <DialogContent
+        align="top"
         hideClose
         className="relative h-[90vh] w-[94vw] max-h-[92vh] max-w-none overflow-visible rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]"
         onEscapeKeyDown={(event) => event.preventDefault()}
@@ -36,7 +37,7 @@ export const PricingWorksheetOverlayDialog = memo(function PricingWorksheetOverl
           <X className="h-4 w-4" strokeWidth={2.2} />
         </button>
         <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-lg)]">
-          <div className="min-h-0 flex-1 overflow-hidden p-4 pr-5 pt-5">
+          <div className="min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-4 sm:px-3 sm:pb-3 sm:pt-4">
             <OpportunityPricingWorksheetBoard
               worksheetId={worksheetId}
               onDirtyStateChange={onDirtyStateChange}

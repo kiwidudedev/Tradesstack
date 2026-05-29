@@ -47,10 +47,23 @@ type BuildContextOptions = {
   tradePackage?: string | null;
   selection?: PricingWorksheetAiSelectionContext;
   maxRows?: number;
+  prompt?: string;
 };
 
 const DEFAULT_MAX_ROWS = 40;
 const MAX_COLUMNS = 10;
+const PROMPT_ROW_CONTEXT_BEFORE = 2;
+const PROMPT_ROW_CONTEXT_AFTER = 16;
+
+export type PricingWorksheetAiPromptRowReferences = {
+  exactRows: number[];
+  rangedRows: Array<{
+    startRow: number;
+    endRow: number;
+  }>;
+  openEndedRows: number[];
+  allReferencedRows: number[];
+};
 
 function normalizeCellValue(cell: WorksheetCell | undefined): CompactCellValue {
   if (!cell) {
@@ -159,6 +172,129 @@ function buildFormulaRef(columnIndex: number, rowIndex: number): string {
   return `${buildColumnLabel(columnIndex)}${rowIndex + 1}`;
 }
 
+export function extractPricingWorksheetPromptRowReferences(
+  prompt: string | null | undefined,
+): PricingWorksheetAiPromptRowReferences {
+  const normalizedPrompt = typeof prompt === "string" ? prompt : "";
+  const exactRows = new Set<number>();
+  const openEndedRows = new Set<number>();
+  const rangedRows: Array<{ startRow: number; endRow: number }> = [];
+
+  for (const match of normalizedPrompt.matchAll(/\brows?\s+(\d+)\s*(?:-|to|through|thru)\s*(\d+)\b/gi)) {
+    const startRow = Number(match[1]);
+    const endRow = Number(match[2]);
+    if (!Number.isInteger(startRow) || !Number.isInteger(endRow) || startRow < 1 || endRow < 1) {
+      continue;
+    }
+    rangedRows.push({
+      startRow: Math.min(startRow, endRow),
+      endRow: Math.max(startRow, endRow),
+    });
+  }
+
+  for (const match of normalizedPrompt.matchAll(/\bfrom\s+rows?\s+(\d+)\b/gi)) {
+    const rowNumber = Number(match[1]);
+    if (Number.isInteger(rowNumber) && rowNumber >= 1) {
+      openEndedRows.add(rowNumber);
+    }
+  }
+
+  for (const match of normalizedPrompt.matchAll(/\brows?\s+(\d+)\b/gi)) {
+    const rowNumber = Number(match[1]);
+    if (!Number.isInteger(rowNumber) || rowNumber < 1) {
+      continue;
+    }
+    const isRangeEndpoint = rangedRows.some(
+      (range) => rowNumber >= range.startRow && rowNumber <= range.endRow,
+    );
+    if (openEndedRows.has(rowNumber) || isRangeEndpoint) {
+      continue;
+    }
+    exactRows.add(rowNumber);
+  }
+
+  const allReferencedRows = Array.from(
+    new Set([
+      ...exactRows,
+      ...openEndedRows,
+      ...rangedRows.flatMap((range) => [range.startRow, range.endRow]),
+    ]),
+  ).sort((left, right) => left - right);
+
+  return {
+    exactRows: Array.from(exactRows).sort((left, right) => left - right),
+    rangedRows: rangedRows.sort((left, right) => left.startRow - right.startRow),
+    openEndedRows: Array.from(openEndedRows).sort((left, right) => left - right),
+    allReferencedRows,
+  };
+}
+
+function selectRowsForCompactContext(params: {
+  rowSummaries: PricingWorksheetAiContextRowSummary[];
+  maxRows: number;
+  selectionRows: Set<number>;
+  prompt?: string;
+}) {
+  if (params.rowSummaries.length <= params.maxRows) {
+    return params.rowSummaries;
+  }
+
+  const promptRowRefs = extractPricingWorksheetPromptRowReferences(params.prompt);
+  const selectedRows = new Map<number, PricingWorksheetAiContextRowSummary>();
+  const prioritizedRows: PricingWorksheetAiContextRowSummary[] = [];
+  const addRow = (row: PricingWorksheetAiContextRowSummary | undefined) => {
+    if (!row || selectedRows.has(row.row)) {
+      return;
+    }
+    selectedRows.set(row.row, row);
+    prioritizedRows.push(row);
+  };
+  const addRows = (rows: PricingWorksheetAiContextRowSummary[]) => {
+    for (const row of rows) {
+      addRow(row);
+      if (selectedRows.size >= params.maxRows) {
+        return;
+      }
+    }
+  };
+  const addRowWindow = (startRow: number, endRow: number) => {
+    addRows(
+      params.rowSummaries.filter((row) => row.row >= startRow && row.row <= endRow),
+    );
+  };
+
+  for (const rowNumber of promptRowRefs.exactRows) {
+    addRowWindow(rowNumber - PROMPT_ROW_CONTEXT_BEFORE, rowNumber + PROMPT_ROW_CONTEXT_BEFORE);
+  }
+  for (const range of promptRowRefs.rangedRows) {
+    addRowWindow(range.startRow - 1, range.endRow + 1);
+  }
+  for (const rowNumber of promptRowRefs.openEndedRows) {
+    addRowWindow(rowNumber - PROMPT_ROW_CONTEXT_BEFORE, rowNumber + PROMPT_ROW_CONTEXT_AFTER);
+  }
+
+  if (params.selectionRows.size > 0) {
+    addRows(
+      params.rowSummaries.filter((summary) =>
+        [...params.selectionRows].some((selectedRow) => Math.abs(summary.row - selectedRow) <= 8),
+      ),
+    );
+  }
+
+  addRows(params.rowSummaries.filter((summary) => summary.isSubtotalLike));
+  addRows(params.rowSummaries.filter((summary) => summary.formulaRefs.length > 0));
+  addRows(params.rowSummaries.slice(0, 12));
+  addRows(params.rowSummaries.slice(-12));
+
+  if (selectedRows.size < params.maxRows) {
+    addRows(params.rowSummaries);
+  }
+
+  return prioritizedRows
+    .slice(0, params.maxRows)
+    .sort((left, right) => left.row - right.row);
+}
+
 export function buildPricingWorksheetAiContext(
   worksheet: WorksheetData,
   options: BuildContextOptions,
@@ -259,18 +395,49 @@ export function buildPricingWorksheetAiContext(
     }
   }
 
+  const promptRowRefs = extractPricingWorksheetPromptRowReferences(options.prompt);
   const nearbyRows = rowSummaries.filter((summary) => {
-    if (selectionRows.size === 0) {
-      return summary.row <= 20;
+    if (selectionRows.size > 0) {
+      for (const selectedRow of selectionRows) {
+        if (Math.abs(summary.row - selectedRow) <= 8) {
+          return true;
+        }
+      }
+      return false;
     }
 
-    for (const selectedRow of selectionRows) {
-      if (Math.abs(summary.row - selectedRow) <= 8) {
+    if (promptRowRefs.openEndedRows.length > 0 || promptRowRefs.rangedRows.length > 0 || promptRowRefs.exactRows.length > 0) {
+      if (
+        promptRowRefs.exactRows.some((rowNumber) => Math.abs(summary.row - rowNumber) <= PROMPT_ROW_CONTEXT_BEFORE)
+      ) {
         return true;
       }
+      if (
+        promptRowRefs.rangedRows.some(
+          (range) => summary.row >= range.startRow - 1 && summary.row <= range.endRow + 1,
+        )
+      ) {
+        return true;
+      }
+      if (
+        promptRowRefs.openEndedRows.some(
+          (rowNumber) =>
+            summary.row >= Math.max(1, rowNumber - PROMPT_ROW_CONTEXT_BEFORE) &&
+            summary.row <= rowNumber + PROMPT_ROW_CONTEXT_AFTER,
+        )
+      ) {
+        return true;
+      }
+      return false;
     }
 
-    return false;
+    return summary.row <= 20;
+  });
+  const selectedRows = selectRowsForCompactContext({
+    rowSummaries,
+    maxRows,
+    selectionRows,
+    prompt: options.prompt,
   });
 
   return {
@@ -290,7 +457,7 @@ export function buildPricingWorksheetAiContext(
       focusCellKey: options.selection?.focusCellKey ?? null,
     },
     nearbyRows: nearbyRows.slice(0, maxRows),
-    rows: rowSummaries.slice(0, maxRows),
+    rows: selectedRows,
     totals: totals.slice(0, 12),
     formulaPatterns: Array.from(formulaPatterns).slice(0, 12),
   };

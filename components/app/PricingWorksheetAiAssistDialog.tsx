@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import type { PricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
 import type {
+  PricingWorksheetAiContinuationPlan,
   PricingWorksheetAiEvidenceSource,
   PricingWorksheetAiOperation,
   PricingWorksheetAiReviewFinding,
@@ -118,6 +119,8 @@ export type PricingWorksheetAiPreviewAssistant = {
   };
 };
 
+export type PricingWorksheetAiPreviewContinuation = PricingWorksheetAiContinuationPlan;
+
 export type PricingWorksheetAiFindingDisposition = "accepted" | "rejected";
 
 type Props = {
@@ -141,6 +144,7 @@ type Props = {
     validationWarnings: PricingWorksheetAiValidationWarning[];
     contextSummary: PricingWorksheetAiContextSummary;
     classification?: PricingWorksheetConstructionIntent;
+    continuation?: PricingWorksheetAiPreviewContinuation | null;
     assistant?: PricingWorksheetAiPreviewAssistant | null;
     generationMeta?: {
       provider: string;
@@ -342,7 +346,11 @@ export function PricingWorksheetAiAssistDialog({
   const applyLabel =
     isAnswerOnly
       ? "Done"
-      : hasMutatingOperations
+      : preview?.continuation && preview.continuation.remainingBatchCount === 0
+        ? "Apply final batch"
+        : preview?.continuation
+        ? "Apply next batch"
+        : hasMutatingOperations
         ? "Apply changes"
         : "Accept response";
 

@@ -200,6 +200,23 @@ export type PricingWorksheetAiSimulationResult = {
   validationIssues: PricingWorksheetAiValidationIssue[];
 };
 
+export type PricingWorksheetAiSafePreviewBatch = {
+  operations: PricingWorksheetAiOperation[];
+  diffSummary: PricingWorksheetAiDiffSummary;
+  worksheet: WorksheetData;
+  changedCellCount: number;
+};
+
+export type PricingWorksheetAiSafePreviewBatchingResult =
+  | {
+      ok: true;
+      batches: PricingWorksheetAiSafePreviewBatch[];
+    }
+  | {
+      ok: false;
+      issue: PricingWorksheetAiValidationIssue | null;
+    };
+
 const ALLOWED_FUNCTIONS = new Set([
   "SUM",
   "MIN",
@@ -2230,5 +2247,97 @@ export function buildPricingWorksheetAiSuggestedEditSelectionResponse(
     mode: selectedGroups.length > 0 ? "propose_edit" : "answer_only",
     operations: selectedGroups.flatMap((group) => group.operations),
     suggestedEditGroups: selectedGroups,
+  };
+}
+
+function isSafePreviewOverflowIssue(issue: PricingWorksheetAiValidationIssue) {
+  return issue.code === "too_many_operations" || issue.code === "too_many_cells_changed";
+}
+
+export function batchPricingWorksheetAiOperationsForSafePreview(params: {
+  worksheet: WorksheetData;
+  response: PricingWorksheetAiAssistantResponse;
+}): PricingWorksheetAiSafePreviewBatchingResult {
+  const sourceOperations = params.response.operations;
+  if (sourceOperations.length <= 1) {
+    const simulation = simulatePricingWorksheetAiEditPlan(params.worksheet, params.response);
+    const blockingIssue =
+      simulation.validationIssues.find((issue) => issue.severity === "error") ?? null;
+    if (blockingIssue) {
+      return {
+        ok: false,
+        issue: blockingIssue,
+      };
+    }
+
+    return {
+      ok: true,
+      batches: [
+        {
+          operations: sourceOperations,
+          diffSummary: simulation.diffSummary,
+          worksheet: simulation.worksheet,
+          changedCellCount: simulation.diffSummary.changedCells.length,
+        },
+      ],
+    };
+  }
+
+  const batches: PricingWorksheetAiSafePreviewBatch[] = [];
+  let workingWorksheet = params.worksheet;
+  let operationIndex = 0;
+
+  while (operationIndex < sourceOperations.length) {
+    let batchOperations: PricingWorksheetAiOperation[] = [];
+    let batchSimulation: PricingWorksheetAiSimulationResult | null = null;
+    let candidateIssue: PricingWorksheetAiValidationIssue | null = null;
+
+    for (let candidateIndex = operationIndex; candidateIndex < sourceOperations.length; candidateIndex += 1) {
+      const nextBatchOperations = [...batchOperations, sourceOperations[candidateIndex]];
+      const candidateResponse: PricingWorksheetAiAssistantResponse = {
+        ...params.response,
+        operations: nextBatchOperations,
+        suggestedEditGroups: [],
+      };
+      const simulation = simulatePricingWorksheetAiEditPlan(workingWorksheet, candidateResponse);
+      const blockingIssues = simulation.validationIssues.filter((issue) => issue.severity === "error");
+      if (blockingIssues.length === 0) {
+        batchOperations = nextBatchOperations;
+        batchSimulation = simulation;
+        candidateIssue = null;
+        continue;
+      }
+
+      candidateIssue = blockingIssues[0] ?? null;
+      if (batchOperations.length > 0 && blockingIssues.every(isSafePreviewOverflowIssue)) {
+        break;
+      }
+
+      return {
+        ok: false,
+        issue: candidateIssue,
+      };
+    }
+
+    if (batchOperations.length === 0 || !batchSimulation) {
+      return {
+        ok: false,
+        issue: candidateIssue,
+      };
+    }
+
+    batches.push({
+      operations: batchOperations,
+      diffSummary: batchSimulation.diffSummary,
+      worksheet: batchSimulation.worksheet,
+      changedCellCount: batchSimulation.diffSummary.changedCells.length,
+    });
+    workingWorksheet = batchSimulation.worksheet;
+    operationIndex += batchOperations.length;
+  }
+
+  return {
+    ok: true,
+    batches,
   };
 }

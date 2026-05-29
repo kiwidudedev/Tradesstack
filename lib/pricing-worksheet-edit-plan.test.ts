@@ -3,6 +3,7 @@ import { createDefaultWorksheetData, type WorksheetData } from "./opportunity-pr
 import { getCellFormat } from "./opportunity-pricing-worksheet-formatting";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
 import {
+  batchPricingWorksheetAiOperationsForSafePreview,
   buildPricingWorksheetAiAssistantSchema,
   buildPricingWorksheetAiSuggestedEditSelectionResponse,
   normalizePricingWorksheetAiAssistantResponse,
@@ -1250,6 +1251,67 @@ describe("bounded worksheet generation validation", () => {
     const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
 
     expect(result.validationIssues.some((issue) => issue.code === "too_many_operations")).toBe(true);
+  });
+
+  it("splits large starter worksheet generation into validator-safe preview batches", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Blank worksheet",
+      rowCount: 20,
+      columnCount: 12,
+    });
+
+    const operations: PricingWorksheetAiAssistantResponse["operations"] = [];
+    for (let rowNumber = 1; rowNumber <= 37; rowNumber += 1) {
+      operations.push({
+        type: "insert_row",
+        target: { insertBeforeRow: rowNumber },
+        values: {
+          cells: [
+            { column: "A", value: rowNumber === 1 ? "Inputs" : rowNumber <= 12 ? `Input ${rowNumber}` : `Line ${rowNumber}` },
+            { column: "B", value: `Row ${rowNumber}` },
+            { column: "D", value: rowNumber <= 12 ? "m2" : "ea" },
+            { column: "F", value: rowNumber <= 12 ? null : 12.5 },
+            { column: "K", value: rowNumber <= 12 ? "editable input row" : "quantity times rate" },
+          ],
+        },
+        formulas: { cells: [] },
+        rationale: "Large staged worksheet generation row.",
+      });
+    }
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Large calculator",
+      answer: "Created a large calculator.",
+      summary: "Creates a large estimator worksheet.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations,
+      suggestedEditGroups: [],
+    };
+
+    const batched = batchPricingWorksheetAiOperationsForSafePreview({
+      worksheet,
+      response,
+    });
+
+    expect(batched.ok).toBe(true);
+    if (!batched.ok) {
+      throw new Error(batched.issue?.message ?? "Expected batching to succeed.");
+    }
+
+    expect(batched.batches.length).toBeGreaterThan(1);
+    let workingWorksheet = worksheet;
+    for (const batch of batched.batches) {
+      const simulation = simulatePricingWorksheetAiEditPlan(workingWorksheet, {
+        ...response,
+        operations: batch.operations,
+        suggestedEditGroups: [],
+      });
+      expect(simulation.validationIssues).toEqual([]);
+      workingWorksheet = simulation.worksheet;
+    }
   });
 
   it("allows a large formula-only batch when validation and simulation succeed", () => {

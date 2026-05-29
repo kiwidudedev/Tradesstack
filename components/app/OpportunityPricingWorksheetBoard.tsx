@@ -19,6 +19,7 @@ import {
   type PricingWorksheetAiPreviewAssistant,
   type PricingWorksheetAiContextSummary,
   type PricingWorksheetAiMatchedMemory,
+  type PricingWorksheetAiPreviewContinuation,
   type PricingWorksheetAiPreviewSummary,
   type PricingWorksheetAiValidationWarning,
 } from "@/components/app/PricingWorksheetAiAssistDialog";
@@ -29,6 +30,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -121,7 +124,10 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
 import { buildPricingWorksheetAiContext } from "@/lib/pricing-worksheet-ai-context";
 import type { PricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
-import type { PricingWorksheetAiFollowUpContext } from "@/lib/ai-pricing-worksheet-edit-assistant";
+import {
+  buildPricingWorksheetContinuationPreview,
+  type PricingWorksheetAiFollowUpContext,
+} from "@/lib/ai-pricing-worksheet-edit-assistant";
 import {
   buildPricingWorksheetAiSuggestedEditSelectionResponse,
   simulatePricingWorksheetAiEditPlan,
@@ -184,6 +190,7 @@ type PricingWorksheetAiPreviewResponse = {
     validationWarnings: PricingWorksheetAiValidationWarning[];
     contextSummary: PricingWorksheetAiContextSummary;
     classification?: PricingWorksheetConstructionIntent;
+    continuation?: PricingWorksheetAiPreviewContinuation | null;
     assistant?: PricingWorksheetAiPreviewAssistant | null;
     generationMeta?: {
       provider: string;
@@ -249,6 +256,33 @@ const WORKSHEET_VIEWPORT_FALLBACK_WIDTH = 1120;
 const WORKSHEET_ZOOM_LEVELS = [0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5] as const;
 const FILL_SWATCHES = ["#FEF3C7", "#DBEAFE", "#DCFCE7", "#FCE7F3", "#F3F4F6"];
 const TEXT_SWATCHES = ["#111827", "#1D4ED8", "#047857", "#B45309", "#BE123C"];
+const TEXT_COLOR_PALETTE = [
+  "#111827",
+  "#374151",
+  "#6B7280",
+  "#9CA3AF",
+  "#D1D5DB",
+  "#1D4ED8",
+  "#2563EB",
+  "#0EA5E9",
+  "#0891B2",
+  "#06B6D4",
+  "#047857",
+  "#059669",
+  "#10B981",
+  "#65A30D",
+  "#84CC16",
+  "#B45309",
+  "#D97706",
+  "#F59E0B",
+  "#EA580C",
+  "#F97316",
+  "#BE123C",
+  "#E11D48",
+  "#DB2777",
+  "#7C3AED",
+  "#9333EA",
+];
 const FORMULA_REFERENCE_HIGHLIGHT_STYLES = [
   {
     outlineColor: "rgb(59 130 246 / 0.95)",
@@ -400,7 +434,25 @@ function buildWorksheetAiEditedOutput(params: {
       relatedFindingIds: group.relatedFindingIds,
       operationCount: group.operations.length,
     })),
+    continuation: params.preview.continuation
+      ? {
+          currentBatchIndex: params.preview.continuation.currentBatchIndex,
+          totalBatchCount: params.preview.continuation.totalBatchCount,
+          remainingBatchCount: params.preview.continuation.remainingBatchCount,
+        }
+      : null,
   } as Record<string, Json | null | string | number | string[]>;
+}
+
+function logWorksheetAiContinuation(action: string, payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  console.info("[pricing-worksheet-ai-continuation]", {
+    action,
+    ...payload,
+  });
 }
 
 function buildAssistantResponseFromPreview(
@@ -592,6 +644,18 @@ function buildSelectionShadow(
     .join(", ");
 }
 
+function focusElementWithoutScroll(element: HTMLElement | null) {
+  if (!element) {
+    return;
+  }
+
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+}
+
 function getRangeEdgeFlagsByIndex(
   rowIndex: number,
   columnIndex: number,
@@ -726,8 +790,12 @@ const WorksheetCellView = memo(function WorksheetCellView({
 
   return (
     <div
-      className={`relative border-r border-[var(--border)] last:border-r-0 ${
-        edgeFlags.isInRange ? "bg-blue-50/50" : fillPreviewEdgeFlags.isInRange ? "bg-blue-100/50" : ""
+      className={`relative border-r border-[var(--border-subtle)] last:border-r-0 ${
+        edgeFlags.isInRange
+          ? "bg-[rgba(49,91,255,0.07)]"
+          : fillPreviewEdgeFlags.isInRange
+            ? "bg-[rgba(244,93,34,0.08)]"
+            : ""
       }`}
       style={{
         backgroundColor: cellFillColor,
@@ -790,7 +858,7 @@ const WorksheetCellView = memo(function WorksheetCellView({
         <button
           type="button"
           aria-label="Fill handle"
-          className="absolute bottom-0.5 right-0.5 z-20 h-2 w-2 rounded-full border border-white bg-blue-600 shadow-sm"
+          className="absolute bottom-0.5 right-0.5 z-20 h-2.5 w-2.5 rounded-full border border-white bg-[var(--brand-blue)] shadow-[0_1px_2px_rgba(15,23,42,0.2)]"
           onMouseDown={onBeginFillDrag}
         />
       ) : null}
@@ -863,14 +931,14 @@ const WorksheetRowView = memo(function WorksheetRowView({
 }: WorksheetRowViewProps) {
   return (
     <div
-      className="grid border-b border-[var(--border)] last:border-b-0"
+      className="grid border-b border-[var(--border-subtle)] last:border-b-0"
       style={{
         gridTemplateColumns,
         minHeight: `${row.height}px`,
       }}
     >
       <div
-        className="sticky left-0 z-10 border-r border-[var(--border)] bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] relative"
+        className="relative sticky left-0 z-10 border-r border-[var(--border)] bg-[linear-gradient(180deg,#F8FAFD_0%,#F2F6FB_100%)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-secondary)]"
         style={{ height: `${row.height}px` }}
         onContextMenu={(event) => onRowContextMenu(event, rowIndex)}
       >
@@ -889,7 +957,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
       </div>
       <div
         aria-hidden="true"
-        className="border-r border-[var(--border)] bg-white"
+        className="border-r border-[var(--border-subtle)] bg-white"
         style={{ height: `${row.height}px`, width: `${leftSpacerWidth}px` }}
       />
       {visibleColumns.map((column, columnOffset) => {
@@ -1454,9 +1522,12 @@ export function OpportunityPricingWorksheetBoard({
   }, [formulaBarValue]);
   const worksheetDisplayName =
     worksheetName?.trim() || worksheet.sheetName.trim() || "Pricing Worksheet";
-  const selectedNumberFormat = getCellFormat(worksheet.cells[selectedWorksheetCellKey]).number;
+  const selectedCellFormat = getCellFormat(worksheet.cells[selectedWorksheetCellKey]);
+  const selectedNumberFormat = selectedCellFormat.number;
   const selectedNumberFormatKind = selectedNumberFormat?.kind ?? "general";
   const selectedNegativeStyle = selectedNumberFormat?.negativeStyle ?? "minus";
+  const selectedFillColor = selectedCellFormat.fill?.color;
+  const selectedTextColor = selectedCellFormat.text?.color;
 
   const resetAiPreviewState = useCallback(() => {
     if (aiJobPollTimeoutRef.current) {
@@ -2251,7 +2322,7 @@ export function OpportunityPricingWorksheetBoard({
 
   const focusWorksheetSurface = useCallback((options?: { immediate?: boolean }) => {
     const focus = () => {
-      worksheetSurfaceRef.current?.focus();
+      focusElementWithoutScroll(worksheetSurfaceRef.current);
     };
 
     if (options?.immediate) {
@@ -2290,7 +2361,7 @@ export function OpportunityPricingWorksheetBoard({
         return;
       }
 
-      input.focus();
+      focusElementWithoutScroll(input);
 
       if (options?.selectAll) {
         input.select();
@@ -2312,7 +2383,7 @@ export function OpportunityPricingWorksheetBoard({
         return;
       }
 
-      input.focus();
+      focusElementWithoutScroll(input);
 
       if (options?.selectAll === false) {
         const end = input.value.length;
@@ -2800,6 +2871,26 @@ export function OpportunityPricingWorksheetBoard({
 
   const clearNumberFormatForSelection = () => {
     applyFormattingPatchToSelection((format) => clearCellNumberFormat(format));
+  };
+
+  const clearTextColorForSelection = () => {
+    applyFormattingPatchToSelection((format) => {
+      if (!format.text?.color) {
+        return format;
+      }
+
+      const nextFormat: WorksheetCellFormat = { ...format };
+      const remainingText = { ...format.text };
+      delete remainingText.color;
+
+      if (Object.keys(remainingText).length === 0) {
+        delete nextFormat.text;
+      } else {
+        nextFormat.text = remainingText;
+      }
+
+      return nextFormat;
+    });
   };
 
   const applyBorderModeToSelection = (mode: "all" | "outer" | "clear") => {
@@ -4265,6 +4356,7 @@ export function OpportunityPricingWorksheetBoard({
     setAiJobProgressLabel("Queued");
 
     try {
+      const requestPrompt = options?.promptOverride ?? aiPrompt;
       const worksheetSnapshot = cloneWorksheetData(worksheetRef.current);
       const endAiContextMeasure = startPricingWorksheetPerformanceMeasure("ai-context-build", {
         worksheetId: worksheetId ?? "unsaved",
@@ -4278,6 +4370,7 @@ export function OpportunityPricingWorksheetBoard({
           anchorCellKey: selectionAnchorCellKey,
           focusCellKey: selectionFocusCellKey,
         },
+        prompt: requestPrompt,
       });
       endAiContextMeasure({
         contextRowCount: worksheetContext.rows.length,
@@ -4288,7 +4381,6 @@ export function OpportunityPricingWorksheetBoard({
       const endAiPreviewRequestMeasure = startPricingWorksheetPerformanceMeasure("ai-preview-request", {
         worksheetId: worksheetId ?? "unsaved",
       });
-      const requestPrompt = options?.promptOverride ?? aiPrompt;
       let response: Response | null = null;
       try {
         response = await fetch("/api/ai/pricing-worksheets/edit-assistant/jobs", {
@@ -4635,6 +4727,12 @@ export function OpportunityPricingWorksheetBoard({
       await submitAiWorksheetReview(isEdited ? "edited" : "accepted", editedOutput);
 
       if (hasMutatingOperations) {
+        logWorksheetAiContinuation("apply_batch_started", {
+          currentBatchIndex: aiPreviewResponse.preview.continuation?.currentBatchIndex ?? 1,
+          remainingBatchCountBeforeApply: aiPreviewResponse.preview.continuation?.remainingBatchCount ?? 0,
+          totalBatchCount: aiPreviewResponse.preview.continuation?.totalBatchCount ?? 1,
+          operationCount: aiPreviewResponse.preview.assistant?.operations.length ?? 0,
+        });
         let nextWorksheet = cloneWorksheetData(aiPreviewResponse.preview.worksheet);
         nextWorksheet = autoLayoutWorksheet(nextWorksheet, aiPreviewResponse.preview.assistant?.diffSummary);
         nextWorksheet.sheetName =
@@ -4655,6 +4753,149 @@ export function OpportunityPricingWorksheetBoard({
         setActiveCellKey(null);
         setActiveEditor(null);
         setEditingCellValue("");
+        const nextContinuationAssistantPreview =
+          aiPreviewResponse.preview.continuation && aiPreviewResponse.preview.assistant
+            ? buildPricingWorksheetContinuationPreview({
+                preview: {
+                  mode: aiPreviewResponse.preview.assistant.mode,
+                  proposalName: aiPreviewResponse.preview.assistant.proposalName,
+                  answer: aiPreviewResponse.preview.assistant.answer,
+                  summary: aiPreviewResponse.preview.assistant.summary,
+                  confidence: aiPreviewResponse.preview.assistant.confidence,
+                  operations:
+                    aiPreviewResponse.preview.continuation.remainingBatches[0]?.operations ??
+                    [],
+                  assumptions: aiPreviewResponse.preview.assistant.assumptions,
+                  warnings: aiPreviewResponse.preview.assistant.warnings,
+                  reviewFindings: aiPreviewResponse.preview.assistant.reviewFindings ?? [],
+                  reviewSummary: aiPreviewResponse.preview.assistant.reviewSummary ?? null,
+                  suggestedEditGroups: aiPreviewResponse.preview.assistant.suggestedEditGroups ?? [],
+                  evidenceSources: aiPreviewResponse.preview.assistant.evidenceSources ?? [],
+                  worksheet: aiPreviewResponse.preview.worksheet,
+                  diffSummary: aiPreviewResponse.preview.assistant.diffSummary,
+                  diffPreview: aiPreviewResponse.preview.assistant.diffPreview ?? {
+                    changedCells: [],
+                    insertedRows: [],
+                    affectedSections: [],
+                    formulaChanges: [],
+                    formattingChanges: [],
+                  },
+                  storageSummary: {
+                    responseMode: aiPreviewResponse.preview.assistant.mode,
+                    sanitizedOperations: [],
+                    affectedCellRefs: aiPreviewResponse.preview.assistant.diffSummary.changedCells,
+                    formulaChangeSummary: aiPreviewResponse.preview.assistant.diffPreview?.formulaChanges ?? [],
+                    formattingChangeSummary:
+                      aiPreviewResponse.preview.assistant.diffPreview?.formattingChanges.map((change) => ({
+                        ref: change.ref,
+                        beforeFormattingSummary: change.beforeFormattingSummary,
+                        afterFormattingSummary: change.afterFormattingSummary,
+                      })) ?? [],
+                    insertedRowSummary:
+                      aiPreviewResponse.preview.assistant.diffPreview?.insertedRows.map((row) => ({
+                        row: row.row,
+                        sectionName: row.sectionName,
+                      })) ?? [],
+                    affectedSections: aiPreviewResponse.preview.assistant.diffPreview?.affectedSections ?? [],
+                    assumptions: aiPreviewResponse.preview.assistant.assumptions,
+                    warnings: aiPreviewResponse.preview.assistant.warnings,
+                    evidenceSources: aiPreviewResponse.preview.assistant.evidenceSources ?? [],
+                    reviewFindings: aiPreviewResponse.preview.assistant.reviewFindings ?? [],
+                    reviewSummary: aiPreviewResponse.preview.assistant.reviewSummary ?? null,
+                    suggestedEditGroups:
+                      (aiPreviewResponse.preview.assistant.suggestedEditGroups ?? []).map((group) => ({
+                        id: group.id,
+                        title: group.title,
+                        purpose: group.purpose,
+                        confidence: group.confidence,
+                        relatedFindingIds: group.relatedFindingIds,
+                        operationTypes: group.operations.map((operation) => operation.type),
+                      })),
+                    continuation: aiPreviewResponse.preview.continuation
+                      ? {
+                          strategy: aiPreviewResponse.preview.continuation.strategy,
+                          currentBatchIndex: aiPreviewResponse.preview.continuation.currentBatchIndex,
+                          totalBatchCount: aiPreviewResponse.preview.continuation.totalBatchCount,
+                          remainingBatchCount: aiPreviewResponse.preview.continuation.remainingBatchCount,
+                          remainingOperationCount: aiPreviewResponse.preview.continuation.remainingOperationCount,
+                        }
+                      : null,
+                  },
+                  validationIssues: [],
+                  validationWarnings: aiPreviewResponse.preview.validationWarnings,
+                  compactOutput: aiPreviewResponse.preview.compactOutput,
+                  matchedMemory: aiPreviewResponse.preview.matchedMemory,
+                  contextSummary: aiPreviewResponse.preview.contextSummary,
+                  classification: aiPreviewResponse.preview.classification ?? {
+                    primaryIntent: "worksheet_generation",
+                    defaultJurisdiction: "AUS_NZ",
+                    requiresConstructionReasoning: true,
+                    requiresRetrieval: false,
+                    tradeHints: [],
+                    systemHints: [],
+                    confidence: "medium",
+                    riskLevel: "medium",
+                    shouldAskFollowUp: false,
+                    reason: "Continuation preview",
+                    recommendedPromptPath: "generation",
+                  },
+                  continuation: aiPreviewResponse.preview.continuation,
+                },
+                worksheet: nextWorksheet,
+              })
+            : null;
+
+        if (nextContinuationAssistantPreview) {
+          const nextContinuationPreview: PricingWorksheetAiPreviewResponse = {
+            ...aiPreviewResponse,
+            preview: {
+              ...aiPreviewResponse.preview,
+              worksheet: nextContinuationAssistantPreview.worksheet,
+              compactOutput: nextContinuationAssistantPreview.compactOutput,
+              matchedMemory: nextContinuationAssistantPreview.matchedMemory,
+              validationWarnings: nextContinuationAssistantPreview.validationWarnings,
+              contextSummary: nextContinuationAssistantPreview.contextSummary,
+              classification: nextContinuationAssistantPreview.classification,
+              continuation: nextContinuationAssistantPreview.continuation,
+              assistant: {
+                mode: nextContinuationAssistantPreview.mode,
+                proposalName: nextContinuationAssistantPreview.proposalName,
+                answer: nextContinuationAssistantPreview.answer,
+                summary: nextContinuationAssistantPreview.summary,
+                confidence: nextContinuationAssistantPreview.confidence,
+                operations: nextContinuationAssistantPreview.operations.map((operation) => ({
+                  type: operation.type,
+                  rationale: operation.rationale ?? "",
+                })),
+                assumptions: nextContinuationAssistantPreview.assumptions,
+                warnings: nextContinuationAssistantPreview.warnings,
+                evidenceSources: nextContinuationAssistantPreview.evidenceSources,
+                reviewFindings: nextContinuationAssistantPreview.reviewFindings,
+                reviewSummary: nextContinuationAssistantPreview.reviewSummary,
+                suggestedEditGroups: nextContinuationAssistantPreview.suggestedEditGroups,
+                diffSummary: nextContinuationAssistantPreview.diffSummary,
+                diffPreview: nextContinuationAssistantPreview.diffPreview,
+              },
+            },
+          };
+          logWorksheetAiContinuation("apply_batch_advanced", {
+            currentBatchIndex: nextContinuationPreview.continuation?.currentBatchIndex ?? null,
+            remainingBatchCountAfterApply: nextContinuationPreview.continuation?.remainingBatchCount ?? 0,
+            totalBatchCount: nextContinuationPreview.continuation?.totalBatchCount ?? 1,
+            nextOperationCount: nextContinuationPreview.preview.assistant?.operations.length ?? 0,
+          });
+          applyAiPreviewPayload(nextContinuationPreview);
+          setMessage("Applied the next safe worksheet batch. TradesStack queued the following batch for review.");
+          return;
+        }
+
+        logWorksheetAiContinuation("apply_batch_completed", {
+          currentBatchIndex: aiPreviewResponse.preview.continuation?.currentBatchIndex ?? 1,
+          remainingBatchCountAfterApply: 0,
+          totalBatchCount: aiPreviewResponse.preview.continuation?.totalBatchCount ?? 1,
+          continuationCleared: true,
+        });
+
         setMessage("AI worksheet changes applied locally. Review the sheet and save when ready.");
       } else {
         setMessage("AI answer accepted.");
@@ -4675,6 +4916,7 @@ export function OpportunityPricingWorksheetBoard({
     aiAppliedSuggestedEditGroupIds,
     aiFindingStates,
     autoLayoutWorksheet,
+    applyAiPreviewPayload,
     applyCommittedWorksheetChange,
     canWriteWorksheet,
     handleAiDialogOpenChange,
@@ -4772,42 +5014,52 @@ export function OpportunityPricingWorksheetBoard({
 
   return (
     <div className="min-w-0 flex-1">
-      <div className="overflow-hidden rounded-[6px] border border-[var(--border)] bg-white shadow-none">
-        <div className="border-b border-[var(--border)] bg-white">
-          <div className="flex flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)]">
-                {worksheetDisplayName}
-              </h1>
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-                <span>{isDirty ? "Unsaved changes" : "Saved"}</span>
-                <span aria-hidden="true">/</span>
-                <span>
-                  {lastSavedAt
-                    ? `Last saved ${new Date(lastSavedAt).toLocaleTimeString("en-NZ", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}`
-                    : "Not saved yet"}
-                </span>
+      <div className="overflow-hidden rounded-[16px] border border-[var(--border)] bg-white shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+        <div className="border-b border-[var(--border-subtle)] bg-white px-3 py-3 sm:px-4 sm:py-3.5">
+          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] border border-[var(--border)] bg-[var(--surface-subtle)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                <div className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-[var(--success-light)] text-[var(--success)]">
+                  <Save className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <h1 className="truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)] sm:text-[16px]">
+                  {worksheetDisplayName}
+                </h1>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                  <span>{isDirty ? "Unsaved changes" : "Saved"}</span>
+                  <span
+                    aria-hidden="true"
+                    className={`inline-block h-2 w-2 rounded-full ${isDirty ? "bg-[var(--orange-primary)]" : "bg-[var(--success)]"}`}
+                  />
+                  <span>
+                    {lastSavedAt
+                      ? `Last saved ${new Date(lastSavedAt).toLocaleTimeString("en-NZ", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}`
+                      : "Not saved yet"}
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1 rounded-[6px] border border-[var(--border)] bg-white px-1 py-1">
+              <div className="flex items-center rounded-[10px] border border-[var(--border)] bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
                 <Button
                   type="button"
                   size="sm"
                   variant="secondary"
                   onClick={() => adjustWorksheetZoom("out")}
                   disabled={worksheetZoom <= WORKSHEET_ZOOM_LEVELS[0]}
-                  className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                  className="h-8 min-w-8 rounded-[7px] border-0 px-0 text-[15px] font-medium shadow-none"
                 >
                   -
                 </Button>
                 <select
                   value={String(worksheetZoom)}
                   onChange={(event) => setWorksheetZoom(clampWorksheetZoom(Number(event.target.value) || 1))}
-                  className="h-6 rounded-[4px] border border-[var(--border)] bg-white px-1.5 text-[11px] text-[var(--text-primary)] outline-none"
+                  className="h-8 rounded-[7px] border border-[var(--border)] bg-white px-2.5 text-[12px] font-medium text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
                   aria-label="Worksheet zoom"
                 >
                   {WORKSHEET_ZOOM_LEVELS.map((level) => (
@@ -4822,7 +5074,7 @@ export function OpportunityPricingWorksheetBoard({
                   variant="secondary"
                   onClick={() => adjustWorksheetZoom("in")}
                   disabled={worksheetZoom >= WORKSHEET_ZOOM_LEVELS[WORKSHEET_ZOOM_LEVELS.length - 1]}
-                  className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                  className="h-8 min-w-8 rounded-[7px] border-0 px-0 text-[15px] font-medium shadow-none"
                 >
                   +
                 </Button>
@@ -4833,7 +5085,7 @@ export function OpportunityPricingWorksheetBoard({
                 variant="outline"
                 onClick={openAiDialog}
                 disabled={isSavingWorksheet || isLoadingWorksheet}
-                className="h-8 rounded-[6px] px-2.5 text-xs font-medium shadow-none"
+                className="h-9 rounded-[10px] border-[var(--border)] bg-white px-3.5 text-[12px] font-medium shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
               >
                 <Sparkles className="h-3.5 w-3.5" />
                 Ask AI
@@ -4843,7 +5095,7 @@ export function OpportunityPricingWorksheetBoard({
                 size="sm"
                 onClick={() => void saveWorksheet()}
                 disabled={!canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty}
-                className="h-8 rounded-[6px] px-2.5 text-xs font-medium shadow-none"
+                className="h-9 rounded-[10px] bg-[var(--orange-primary)] px-3.5 text-[12px] font-medium text-white shadow-[0_8px_18px_rgba(244,93,34,0.18)] hover:bg-[var(--orange-hover)]"
               >
                 <Save className="h-3.5 w-3.5" />
                 {isSavingWorksheet ? "Saving..." : "Save worksheet"}
@@ -4853,22 +5105,23 @@ export function OpportunityPricingWorksheetBoard({
         </div>
         <div
           ref={worksheetSurfaceRef}
-          className="space-y-0 outline-none"
+          className="space-y-0 bg-white outline-none"
           tabIndex={0}
           onPasteCapture={handleWorksheetPaste}
           onCopy={handleWorksheetCopy}
           onKeyDown={handleWorksheetKeyDown}
         >
-          {error ? <OperationalAlert variant="error">{error}</OperationalAlert> : null}
-          {message ? <OperationalAlert variant="success">{message}</OperationalAlert> : null}
+          {error ? <OperationalAlert variant="error" className="mx-3 mt-3">{error}</OperationalAlert> : null}
+          {message ? <OperationalAlert variant="success" className="mx-3 mt-3">{message}</OperationalAlert> : null}
 
           <div
             ref={formattingToolbarRef}
             tabIndex={-1}
-            className="border-b border-[var(--border)] bg-[#F8FAFC] px-2 py-1 outline-none"
+            className="mx-3 mt-2.5 overflow-x-auto rounded-[12px] border border-[var(--border-subtle)] bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFDFE_100%)] px-3 py-2 shadow-[0_3px_10px_rgba(15,23,42,0.03)] outline-none"
           >
-            <div className="flex flex-wrap items-center gap-0.5">
-              <div className="flex flex-wrap items-center gap-0.5">
+            <div className="flex min-w-max items-center gap-2">
+              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Format</div>
+              <div className="flex items-center gap-1">
                 <select
                   value={selectedNumberFormatKind}
                   onChange={(event) =>
@@ -4877,7 +5130,7 @@ export function OpportunityPricingWorksheetBoard({
                   onKeyDown={(event) => event.stopPropagation()}
                   disabled={!canWriteWorksheet || !selectedRange}
                   aria-label="Number format"
-                  className="h-6 rounded-[4px] border border-[var(--border)] bg-white px-1.5 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                  className="h-8 min-w-[108px] rounded-[8px] border border-[var(--border)] bg-white px-2.5 text-[12px] text-[var(--text-primary)] outline-none disabled:opacity-50"
                 >
                   {NUMBER_FORMAT_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -4888,7 +5141,7 @@ export function OpportunityPricingWorksheetBoard({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                  className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                   aria-label="Decrease decimal places"
                   onClick={() => adjustNumberDecimalPlacesForSelection("decrease")}
                   disabled={!canWriteWorksheet || !selectedRange}
@@ -4898,7 +5151,7 @@ export function OpportunityPricingWorksheetBoard({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                  className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                   aria-label="Increase decimal places"
                   onClick={() => adjustNumberDecimalPlacesForSelection("increase")}
                   disabled={!canWriteWorksheet || !selectedRange}
@@ -4913,7 +5166,7 @@ export function OpportunityPricingWorksheetBoard({
                   onKeyDown={(event) => event.stopPropagation()}
                   disabled={!canWriteWorksheet || !selectedRange}
                   aria-label="Negative number style"
-                  className="h-6 rounded-[4px] border border-[var(--border)] bg-white px-1.5 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                  className="h-8 min-w-[96px] rounded-[8px] border border-[var(--border)] bg-white px-2.5 text-[12px] text-[var(--text-primary)] outline-none disabled:opacity-50"
                 >
                   {NEGATIVE_STYLE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -4922,20 +5175,22 @@ export function OpportunityPricingWorksheetBoard({
                   ))}
                 </select>
               </div>
-              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
-              <DropdownMenu>
+              <div className="h-6 w-px bg-[var(--border-subtle)]" />
+              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Insert</div>
+              <div className="flex items-center gap-1">
+                <DropdownMenu>
                 <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                    className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                     disabled={!canWriteWorksheet || !selectedRange}
                   >
                     Insert
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[6px] p-1">
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
                   <DropdownMenuItem
                     onSelect={() => insertRowAtSelection("above")}
                     disabled={!canWriteWorksheet || !selectedRange}
@@ -4966,11 +5221,14 @@ export function OpportunityPricingWorksheetBoard({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
+              </div>
+              <div className="h-6 w-px bg-[var(--border-subtle)]" />
+              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Text</div>
+              <div className="flex items-center gap-1">
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                 onClick={() =>
                   applyFormattingPatchToSelection((format) => ({
                     ...format,
@@ -4987,7 +5245,7 @@ export function OpportunityPricingWorksheetBoard({
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                 onClick={() => applyFormattingPatchToSelection({ text: { align: "left" } })}
                 disabled={!canWriteWorksheet || !selectedRange}
               >
@@ -4996,7 +5254,7 @@ export function OpportunityPricingWorksheetBoard({
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                 onClick={() => applyFormattingPatchToSelection({ text: { align: "center" } })}
                 disabled={!canWriteWorksheet || !selectedRange}
               >
@@ -5005,55 +5263,145 @@ export function OpportunityPricingWorksheetBoard({
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                 onClick={() => applyFormattingPatchToSelection({ text: { align: "right" } })}
                 disabled={!canWriteWorksheet || !selectedRange}
               >
                 Right
               </Button>
-              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
-              <div className="flex items-center gap-0.5">
-                {FILL_SWATCHES.map((color) => (
-                  <button
-                    key={`fill-${color}`}
-                    type="button"
-                    aria-label={`Set fill color ${color}`}
-                    className="h-5 w-5 rounded-[4px] border border-[var(--border)]"
-                    style={{ backgroundColor: color }}
-                    onClick={() => applyFormattingPatchToSelection({ fill: { color } })}
-                    disabled={!canWriteWorksheet || !selectedRange}
-                  />
-                ))}
               </div>
-              <div className="flex items-center gap-0.5">
-                {TEXT_SWATCHES.map((color) => (
-                  <button
-                    key={`text-${color}`}
-                    type="button"
-                    aria-label={`Set text color ${color}`}
-                    className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[var(--border)] bg-white text-[10px] font-semibold"
-                    style={{ color }}
-                    onClick={() => applyFormattingPatchToSelection({ text: { color } })}
-                    disabled={!canWriteWorksheet || !selectedRange}
-                  >
-                    A
-                  </button>
-                ))}
+              <div className="h-6 w-px bg-[var(--border-subtle)]" />
+              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Fill</div>
+              <div className="flex items-center gap-1">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                      disabled={!canWriteWorksheet || !selectedRange}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`h-3.5 w-3.5 rounded-[4px] border border-[var(--border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${selectedFillColor ? "" : "bg-[var(--surface-subtle)]"}`}
+                        style={selectedFillColor ? { backgroundColor: selectedFillColor } : undefined}
+                      />
+                      Fill
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-[12rem] rounded-[10px] p-1.5">
+                    <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                      Fill color
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      onSelect={() => applyFormattingPatchToSelection((format) => clearCellFill(format))}
+                      disabled={!canWriteWorksheet || !selectedRange}
+                      className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
+                    >
+                      Reset fill
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <div className="grid grid-cols-5 gap-1 p-1">
+                      {FILL_SWATCHES.map((color) => (
+                        <DropdownMenuItem
+                          key={`fill-${color}`}
+                          onSelect={() => applyFormattingPatchToSelection({ fill: { color } })}
+                          disabled={!canWriteWorksheet || !selectedRange}
+                          className="flex h-8 w-8 items-center justify-center rounded-[8px] p-0 focus:bg-transparent"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`block h-5 w-5 rounded-[6px] border border-[var(--border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${
+                              selectedFillColor === color
+                                ? "ring-2 ring-[var(--brand-blue)] ring-offset-1 ring-offset-white"
+                                : ""
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                          <span className="sr-only">{`Set fill color ${color}`}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-              <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
-              <DropdownMenu>
+              <div className="h-6 w-px bg-[var(--border-subtle)]" />
+              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Text color</div>
+              <div className="flex items-center gap-1">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                      disabled={!canWriteWorksheet || !selectedRange}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="flex h-4 w-4 items-center justify-center rounded-[4px] border border-[var(--border)] bg-white text-[10px] font-semibold"
+                        style={{ color: selectedTextColor ?? "#111827" }}
+                      >
+                        A
+                      </span>
+                      Text
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-[12rem] rounded-[10px] p-1.5">
+                    <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
+                      Text color
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      onSelect={clearTextColorForSelection}
+                      disabled={!canWriteWorksheet || !selectedRange}
+                      className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
+                    >
+                      Reset text color
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <div className="grid grid-cols-5 gap-1 p-1">
+                      {TEXT_COLOR_PALETTE.map((color) => (
+                        <DropdownMenuItem
+                          key={`text-${color}`}
+                          onSelect={() => applyFormattingPatchToSelection({ text: { color } })}
+                          disabled={!canWriteWorksheet || !selectedRange}
+                          className="flex h-8 w-8 items-center justify-center rounded-[8px] p-0 focus:bg-transparent"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`flex h-5 w-5 items-center justify-center rounded-[6px] border border-[var(--border)] bg-white text-[10px] font-semibold ${
+                              selectedTextColor === color
+                                ? "ring-2 ring-[var(--brand-blue)] ring-offset-1 ring-offset-white"
+                                : ""
+                            }`}
+                            style={{ color }}
+                          >
+                            A
+                          </span>
+                          <span className="sr-only">{`Set text color ${color}`}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="h-6 w-px bg-[var(--border-subtle)]" />
+              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Actions</div>
+              <div className="flex items-center gap-1">
+                <DropdownMenu>
                 <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                    className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                     disabled={!canWriteWorksheet || !selectedRange}
                   >
                     Borders
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[6px] p-1">
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
                   <DropdownMenuItem
                     onSelect={() => applyBorderModeToSelection("all")}
                     disabled={!canWriteWorksheet || !selectedRange}
@@ -5082,14 +5430,14 @@ export function OpportunityPricingWorksheetBoard({
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-6 rounded-[4px] px-1.5 text-[11px] font-medium shadow-none"
+                    className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
                     disabled={!canWriteWorksheet || !selectedRange}
                   >
                     Clear
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[6px] p-1">
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
                   <DropdownMenuItem
                     onSelect={() =>
                       applyFormattingPatchToSelection((format) => clearCellFill(format))
@@ -5115,14 +5463,17 @@ export function OpportunityPricingWorksheetBoard({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 border-b border-[var(--border)] bg-white px-2 py-1">
-            <div className="flex h-6 w-14 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border)] bg-[#F8FAFC] px-1.5 text-[11px] font-medium text-[var(--text-secondary)]">
+          <div className="mx-3 mt-2 flex items-center gap-1.5 rounded-[10px] border border-[var(--border)] bg-white px-2 py-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
+            <div className="flex h-8 w-14 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--surface-subtle)] px-2 text-[11px] font-medium text-[var(--text-primary)]">
               {formulaBarCellKey}
             </div>
-            <div className="shrink-0 text-[11px] font-medium italic text-[var(--text-muted)]">fx</div>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[12px] font-medium italic text-[var(--text-muted)]">
+              fx
+            </div>
             <textarea
               ref={formulaBarRef}
               value={formulaBarValue}
@@ -5184,7 +5535,7 @@ export function OpportunityPricingWorksheetBoard({
                   commitCellEdit(formulaBarCellKey, editingCellValue);
                 }
               }}
-              className="min-h-6 w-full resize-none rounded-[4px] border border-[var(--border)] bg-white px-2 py-1 text-[13px] leading-[18px] text-[var(--text-primary)] outline-none"
+              className="min-h-8 w-full resize-none rounded-[8px] border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12px] leading-[18px] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
               placeholder="Enter a value or formula"
               disabled={!canWriteWorksheet}
               spellCheck={false}
@@ -5215,23 +5566,23 @@ export function OpportunityPricingWorksheetBoard({
                 }}
               >
                 <div
-                  className="sticky top-0 z-20 grid border-b border-[var(--border)] bg-[#F8FAFC]"
+                  className="sticky top-0 z-20 grid border-b border-[var(--border)] bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)]"
                   style={{
                     gridTemplateColumns: virtualGridTemplateColumns,
                   }}
                 >
-                  <div className="sticky left-0 z-30 border-r border-[var(--border)] bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+                  <div className="sticky left-0 z-30 border-r border-[var(--border)] bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)] px-3 py-2 text-[11px] font-medium text-[var(--text-secondary)]">
                     #
                   </div>
                   <div
                     aria-hidden="true"
-                    className="border-r border-[var(--border)] bg-[#F8FAFC]"
+                    className="border-r border-[var(--border)] bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)]"
                     style={{ width: `${virtualColumns.leftSpacerWidth}px` }}
                   />
                   {virtualColumns.visibleColumns.map((column, columnOffset) => (
                     <div
                       key={column.id}
-                      className="relative border-r border-[var(--border)] bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] last:border-r-0"
+                      className="relative border-r border-[var(--border)] bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)] px-3 py-2 text-[11px] font-medium text-[var(--text-secondary)] last:border-r-0"
                       onContextMenu={(event) => openColumnContextMenu(event, virtualColumns.startIndex + columnOffset)}
                     >
                       {column.label}
@@ -5250,7 +5601,7 @@ export function OpportunityPricingWorksheetBoard({
                   ))}
                   <div
                     aria-hidden="true"
-                    className="bg-[#F8FAFC]"
+                    className="bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)]"
                     style={{ width: `${virtualColumns.rightSpacerWidth}px` }}
                   />
                 </div>

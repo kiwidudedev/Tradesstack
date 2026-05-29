@@ -3,6 +3,10 @@ import type {
   PricingWorksheetAiCompactContext,
   PricingWorksheetAiContextRowSummary,
 } from "@/lib/pricing-worksheet-ai-context";
+import {
+  buildPricingWorksheetAiContext,
+  extractPricingWorksheetPromptRowReferences,
+} from "@/lib/pricing-worksheet-ai-context";
 import type {
   PricingWorksheetConstructionIntent,
   PricingWorksheetConstructionPromptPath,
@@ -103,6 +107,20 @@ export type PricingWorksheetStructureSnapshot = {
     sectionTotals: Record<string, string>;
     sectionTotalRanges: Record<string, string>;
   };
+  rowCoverage: {
+    meaningfulRowCount: number;
+    includedRowCount: number;
+    includedRowRanges: Array<{
+      startRow: number;
+      endRow: number;
+    }>;
+    omittedRowRanges: Array<{
+      startRow: number;
+      endRow: number;
+    }>;
+    promptReferencedRows: number[];
+    note: string | null;
+  };
   formulaCompatibility: ReturnType<typeof getPricingWorksheetAiFormulaCompatibility>;
 };
 
@@ -119,6 +137,8 @@ const LARGE_ROW_LIMIT = 18;
 const MEDIUM_ROW_LIMIT = 24;
 const SMALL_ROW_LIMIT = 40;
 const MAX_SECTION_COUNT = 12;
+const PROMPT_ROW_WINDOW_BEFORE = 2;
+const PROMPT_ROW_WINDOW_AFTER = 16;
 
 function normalizeText(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
@@ -334,6 +354,30 @@ function rowMatchesPrompt(row: PricingWorksheetAiContextRowSummary, prompt: stri
   return keywords.some((keyword) => haystack.includes(keyword));
 }
 
+function buildRowRanges(rowNumbers: number[]) {
+  const sortedRowNumbers = [...new Set(rowNumbers)].sort((left, right) => left - right);
+  if (sortedRowNumbers.length === 0) {
+    return [] as Array<{ startRow: number; endRow: number }>;
+  }
+
+  const ranges: Array<{ startRow: number; endRow: number }> = [];
+  let startRow = sortedRowNumbers[0];
+  let previousRow = sortedRowNumbers[0];
+
+  for (let index = 1; index < sortedRowNumbers.length; index += 1) {
+    const rowNumber = sortedRowNumbers[index];
+    if (rowNumber === previousRow + 1) {
+      previousRow = rowNumber;
+      continue;
+    }
+    ranges.push({ startRow, endRow: previousRow });
+    startRow = rowNumber;
+    previousRow = rowNumber;
+  }
+  ranges.push({ startRow, endRow: previousRow });
+  return ranges;
+}
+
 function selectRowsForSnapshot(params: {
   worksheetContext: PricingWorksheetAiCompactContext;
   classification: PricingWorksheetConstructionIntent;
@@ -344,6 +388,7 @@ function selectRowsForSnapshot(params: {
   const allRows = params.worksheetContext.rows;
   const nearbyRows = params.worksheetContext.nearbyRows;
   const prompt = params.prompt ?? "";
+  const promptRowRefs = extractPricingWorksheetPromptRowReferences(prompt);
   const requestedLimit =
     params.budgetTier === "small"
       ? SMALL_ROW_LIMIT
@@ -355,12 +400,37 @@ function selectRowsForSnapshot(params: {
     return [];
   }
 
-  const priorityRows = new Map<number, PricingWorksheetAiContextRowSummary>();
+  if (allRows.length <= SMALL_ROW_LIMIT) {
+    return allRows;
+  }
+
+  const priorityRows: PricingWorksheetAiContextRowSummary[] = [];
+  const seenRows = new Set<number>();
   const addRows = (rows: PricingWorksheetAiContextRowSummary[]) => {
     for (const row of rows) {
-      priorityRows.set(row.row, row);
+      if (seenRows.has(row.row)) {
+        continue;
+      }
+      seenRows.add(row.row);
+      priorityRows.push(row);
+      if (priorityRows.length >= requestedLimit) {
+        return;
+      }
     }
   };
+  const addRowWindow = (startRow: number, endRow: number) => {
+    addRows(allRows.filter((row) => row.row >= Math.max(1, startRow) && row.row <= endRow));
+  };
+
+  for (const rowNumber of promptRowRefs.exactRows) {
+    addRowWindow(rowNumber - PROMPT_ROW_WINDOW_BEFORE, rowNumber + PROMPT_ROW_WINDOW_BEFORE);
+  }
+  for (const range of promptRowRefs.rangedRows) {
+    addRowWindow(range.startRow - 1, range.endRow + 1);
+  }
+  for (const rowNumber of promptRowRefs.openEndedRows) {
+    addRowWindow(rowNumber - PROMPT_ROW_WINDOW_BEFORE, rowNumber + PROMPT_ROW_WINDOW_AFTER);
+  }
 
   if (params.classification.recommendedPromptPath === "edit") {
     addRows(nearbyRows);
@@ -376,11 +446,13 @@ function selectRowsForSnapshot(params: {
     addRows(nearbyRows);
   }
 
-  if (priorityRows.size < requestedLimit) {
+  addRows(allRows.slice(-8));
+
+  if (priorityRows.length < requestedLimit) {
     addRows(allRows.slice(0, requestedLimit));
   }
 
-  return Array.from(priorityRows.values())
+  return priorityRows
     .sort((left, right) => left.row - right.row)
     .slice(0, requestedLimit);
 }
@@ -490,13 +562,21 @@ function buildNamedRefs(rows: PricingWorksheetFormulaTargetRowMap[], sections: P
 export function buildPricingWorksheetAiStructureSnapshot(
   params: BuildSnapshotParams,
 ): PricingWorksheetStructureSnapshot {
+  const fullWorksheetContext = buildPricingWorksheetAiContext(params.worksheet, {
+    worksheetId: params.worksheetContext.worksheetId,
+    worksheetName: params.worksheetContext.worksheetName,
+    tradePackage: params.worksheetContext.tradePackage,
+    selection: params.worksheetContext.visibleSelection,
+    maxRows: Math.max(params.worksheet.rows.length, 1),
+    prompt: params.prompt,
+  });
   const worksheetState = detectPricingWorksheetState({
     worksheet: params.worksheet,
-    worksheetContext: params.worksheetContext,
+    worksheetContext: fullWorksheetContext,
   });
-  const budgetTier = determineBudgetTier(params.worksheetContext);
+  const budgetTier = determineBudgetTier(fullWorksheetContext);
   const rows = selectRowsForSnapshot({
-    worksheetContext: params.worksheetContext,
+    worksheetContext: fullWorksheetContext,
     classification: params.classification,
     prompt: params.prompt,
     worksheetState,
@@ -518,6 +598,18 @@ export function buildPricingWorksheetAiStructureSnapshot(
   const sections = buildSectionsFromRows(rows);
   const formulaTargetRows = buildFormulaTargetRows(rows, params.worksheet);
   const namedRefs = buildNamedRefs(formulaTargetRows, sections);
+  const allMeaningfulRowNumbers = fullWorksheetContext.rows.map((row) => row.row);
+  const includedRowNumbers = rows.map((row) => row.row);
+  const includedRowSet = new Set(includedRowNumbers);
+  const omittedRowNumbers = allMeaningfulRowNumbers.filter((rowNumber) => !includedRowSet.has(rowNumber));
+  const promptReferencedRows = extractPricingWorksheetPromptRowReferences(params.prompt).allReferencedRows;
+  const omittedRowRanges = buildRowRanges(omittedRowNumbers);
+  const rowCoverageNote =
+    omittedRowRanges.length > 0
+      ? `Snapshot omits meaningful row ranges ${omittedRowRanges
+          .map((range) => (range.startRow === range.endRow ? `${range.startRow}` : `${range.startRow}-${range.endRow}`))
+          .join(", ")} due to context limits. Do not infer hidden formulas or values for omitted rows.`
+      : null;
 
   const snapshotWithoutEstimate = {
     worksheetState,
@@ -542,6 +634,14 @@ export function buildPricingWorksheetAiStructureSnapshot(
       rows: formulaTargetRows,
       ...namedRefs,
     },
+    rowCoverage: {
+      meaningfulRowCount: allMeaningfulRowNumbers.length,
+      includedRowCount: includedRowNumbers.length,
+      includedRowRanges: buildRowRanges(includedRowNumbers),
+      omittedRowRanges,
+      promptReferencedRows,
+      note: rowCoverageNote,
+    },
     formulaCompatibility: getPricingWorksheetAiFormulaCompatibility(),
   };
 
@@ -557,6 +657,14 @@ export function summarizePricingWorksheetStructureSnapshot(snapshot: PricingWork
     budgetTier: snapshot.budgetTier,
     estimatedTokenSize: snapshot.estimatedTokenSize,
     rowCount: snapshot.rows.length,
+    meaningfulRowCount: snapshot.rowCoverage.meaningfulRowCount,
+    includedRowRanges: snapshot.rowCoverage.includedRowRanges
+      .map((range) => (range.startRow === range.endRow ? `${range.startRow}` : `${range.startRow}-${range.endRow}`))
+      .join(", "),
+    omittedRowRanges: snapshot.rowCoverage.omittedRowRanges
+      .map((range) => (range.startRow === range.endRow ? `${range.startRow}` : `${range.startRow}-${range.endRow}`))
+      .join(", "),
+    promptReferencedRows: snapshot.rowCoverage.promptReferencedRows,
     sectionCount: snapshot.sections.length,
     formulaTargetRowCount: snapshot.formulaTargets.rows.length,
     allowedFunctions: getPricingWorksheetAiAllowedFunctions(),

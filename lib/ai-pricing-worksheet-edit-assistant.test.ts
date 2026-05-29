@@ -6,6 +6,7 @@ import { validateWorksheetBeforeSave } from "./opportunity-pricing-worksheet-sav
 import { buildPricingWorksheetAiContext } from "./pricing-worksheet-ai-context";
 import { buildPricingWorksheetAiStructureSnapshot } from "./pricing-worksheet-ai-structure-snapshot";
 import {
+  buildPricingWorksheetContinuationPreview,
   buildPricingWorksheetEditAssistantPreview,
   buildFormulaStageContextBudgetForTest,
   extractBalancedJsonObject,
@@ -14,6 +15,11 @@ import {
 } from "./ai-pricing-worksheet-edit-assistant";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
 import type { PricingWorksheetConstructionIntent } from "./pricing-worksheet-construction-intent";
+import type { PricingWorksheetAiAssistantPreview } from "./ai-pricing-worksheet-edit-assistant";
+import {
+  simulatePricingWorksheetAiEditPlan,
+  type PricingWorksheetAiOperation,
+} from "./pricing-worksheet-edit-plan";
 
 function buildFixture() {
   const worksheet = createDefaultWorksheetData({
@@ -160,6 +166,149 @@ function buildLargeFormulaBudgetFixture() {
   });
 
   return { worksheet, context };
+}
+
+function buildMixedFormulaScopeFixture() {
+  const worksheet = createDefaultWorksheetData({
+    sheetName: "Mixed Formula Scope Worksheet",
+    rowCount: 48,
+    columnCount: 12,
+  });
+
+  setCellValue(worksheet, "A1", "Materials");
+  setCellValue(worksheet, "B2", "Roof Area");
+  setCellValue(worksheet, "E2", 240);
+  setCellValue(worksheet, "B3", "Wastage");
+  setCellValue(worksheet, "E3", 0.08);
+  setCellValue(worksheet, "B4", "Long-run sheets");
+  setCellValue(worksheet, "J4", 0);
+  setCellFormula(worksheet, "J4", "E2*(1+E3)");
+  setCellValue(worksheet, "B5", "Flashings");
+  setCellFormula(worksheet, "J5", "J4*0.12");
+  setCellValue(worksheet, "B6", "Materials subtotal");
+  setCellFormula(worksheet, "J6", "SUM(J4:J5)");
+
+  setCellValue(worksheet, "A16", "Labour");
+  setCellValue(worksheet, "B17", "Crew Hours");
+  setCellFormula(worksheet, "J17", "E2*0.14");
+  setCellValue(worksheet, "B18", "Labour subtotal");
+  setCellFormula(worksheet, "J18", "SUM(J17)");
+
+  setCellValue(worksheet, "A28", "Dashboard");
+  setCellValue(worksheet, "B29", "Gross Margin");
+  setCellFormula(worksheet, "J29", "J6+J18");
+  setCellValue(worksheet, "B30", "Margin %");
+  setCellFormula(worksheet, "J30", "J29/1000");
+
+  const context = buildPricingWorksheetAiContext(worksheet, {
+    worksheetId: "worksheet-formula-mixed-123",
+    worksheetName: worksheet.sheetName,
+    tradePackage: "Roofing",
+  });
+
+  return { worksheet, context };
+}
+
+function buildContinuationPreviewFixture(params: {
+  worksheet: ReturnType<typeof createDefaultWorksheetData>;
+  operations: PricingWorksheetAiOperation[];
+  continuation: PricingWorksheetAiAssistantPreview["continuation"];
+}): PricingWorksheetAiAssistantPreview {
+  return {
+    mode: "propose_edit",
+    proposalName: "Safe worksheet build batch",
+    answer: "This is a large worksheet, so TradesStack is building it safely in stages.",
+    summary: "Prepared the next safe worksheet build batch.",
+    confidence: "medium",
+    operations: params.operations,
+    assumptions: [],
+    warnings: [],
+    reviewFindings: [],
+    reviewSummary: null,
+    suggestedEditGroups: [],
+    evidenceSources: [],
+    worksheet: params.worksheet,
+    diffSummary: {
+      changedCells: [],
+      formulaCells: [],
+      formattingCells: [],
+      insertedRows: [],
+      affectedRows: [],
+    },
+    diffPreview: {
+      changedCells: [],
+      insertedRows: [],
+      affectedSections: [],
+      formulaChanges: [],
+      formattingChanges: [],
+    },
+    storageSummary: {
+      responseMode: "propose_edit",
+      sanitizedOperations: [],
+      affectedCellRefs: [],
+      formulaChangeSummary: [],
+      formattingChangeSummary: [],
+      insertedRowSummary: [],
+      affectedSections: [],
+      assumptions: [],
+      warnings: [],
+      evidenceSources: [],
+      reviewFindings: [],
+      reviewSummary: null,
+      suggestedEditGroups: [],
+      continuation: params.continuation
+        ? {
+            strategy: params.continuation.strategy,
+            currentBatchIndex: params.continuation.currentBatchIndex,
+            totalBatchCount: params.continuation.totalBatchCount,
+            remainingBatchCount: params.continuation.remainingBatchCount,
+            remainingOperationCount: params.continuation.remainingOperationCount,
+          }
+        : null,
+    },
+    validationIssues: [],
+    validationWarnings: [],
+    compactOutput: {
+      worksheetName: params.worksheet.sheetName,
+      tradePackage: "Ceilings",
+      suggestionSource: "default",
+      confidence: "medium",
+      rowCount: params.worksheet.rows.length,
+      columnCount: params.worksheet.columns.length,
+      formulaCount: 0,
+      populatedCellCount: 0,
+      sectionCounts: {
+        sections: 0,
+        rows: 0,
+        operations: params.operations.length,
+      },
+      headers: params.worksheet.columns.map((column) => column.id),
+      sections: [],
+      assumptions: [],
+      warnings: [],
+      promptHighlights: [],
+      sampleLineItems: [],
+    },
+    matchedMemory: null,
+    contextSummary: {
+      matchedMemoryCount: 0,
+      summary: "Continuation preview test",
+    },
+    classification: {
+      primaryIntent: "worksheet_generation",
+      defaultJurisdiction: "AUS_NZ",
+      requiresConstructionReasoning: true,
+      requiresRetrieval: false,
+      tradeHints: ["ceilings"],
+      systemHints: [],
+      confidence: "high",
+      riskLevel: "high",
+      shouldAskFollowUp: false,
+      reason: "Continuation preview test",
+      recommendedPromptPath: "generation",
+    },
+    continuation: params.continuation,
+  };
 }
 
 function setCellValue(worksheet: ReturnType<typeof createDefaultWorksheetData>, ref: string, value: string | number) {
@@ -1178,15 +1327,17 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
       workflow: "formula",
       prompt: "Add formulas for the labour, wastage, and total rows in the affected sections.",
       systemPrompt: "You are TradesStack's worksheet-aware formula assistant.",
+      worksheet,
       snapshot,
       worksheetContext: context,
       classification,
       constructionSummary,
       assumptionRows: [],
-      promptBuilder: ({ snapshot: nextSnapshot, constructionSummary, assumptionRows, stageAssumptions, stageWarnings }) =>
+      promptBuilder: ({ snapshot: nextSnapshot, constructionSummary, assumptionRows, formulaContextSummary, stageAssumptions, stageWarnings }) =>
         [
           `Construction intelligence summary: ${JSON.stringify(constructionSummary)}`,
           `Assumption and input row summary: ${JSON.stringify(assumptionRows)}`,
+          `Relevant existing formula context: ${JSON.stringify(formulaContextSummary)}`,
           `Stage assumptions carried forward: ${JSON.stringify(stageAssumptions)}`,
           `Stage warnings carried forward: ${JSON.stringify(stageWarnings)}`,
           `Worksheet structure snapshot: ${JSON.stringify(nextSnapshot)}`,
@@ -1228,6 +1379,7 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
       workflow: "formula",
       prompt: "Fix the formulas in the selected subtotal area and the nearby total rows.",
       systemPrompt: "You are TradesStack's worksheet-aware formula assistant.",
+      worksheet,
       snapshot,
       worksheetContext: context,
       classification,
@@ -1239,7 +1391,8 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
       promptBuilder: ({ snapshot: nextSnapshot }) => `Worksheet structure snapshot: ${JSON.stringify(nextSnapshot)}`,
     });
 
-    expect(budget.compactionLevel).toBeGreaterThan(0);
+    expect(budget.compactionLevel).toBeLessThan(4);
+    expect(budget.tokenBreakdown.totalEstimatedTokens).toBeLessThanOrEqual(7000);
     expect(
       budget.snapshot.rows.some(
         (row) => row.rowTypeHint === "subtotal" || row.formulaRefs.length > 0 || row.rowPurposeHint === "formula_target",
@@ -1269,6 +1422,7 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
       workflow: "formatting",
       prompt: "Highlight the cells users need to fill in and shade formulas grey.",
       systemPrompt: "You are TradesStack's worksheet formatting assistant.",
+      worksheet,
       snapshot,
       worksheetContext: context,
       classification,
@@ -1293,6 +1447,96 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
         (row) => row.rowPurposeHint === "formula_target" || row.rowTypeHint === "subtotal" || row.formulaRefs.length > 0,
       ),
     ).toBe(true);
+  });
+
+  it("targets formula-stage context to relevant material quantity regions instead of unrelated sections", () => {
+    const { worksheet, context } = buildMixedFormulaScopeFixture();
+    const classification = buildClassification({
+      primaryIntent: "formula_generate",
+      recommendedPromptPath: "edit",
+      tradeHints: ["roofing"],
+      systemHints: ["long-run roofing"],
+      riskLevel: "high",
+    });
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet,
+      worksheetContext: context,
+      classification,
+      prompt: "The formulas for calculating material quantities are wrong.",
+    });
+
+    const budget = buildFormulaStageContextBudgetForTest({
+      workflow: "formula",
+      prompt: "The formulas for calculating material quantities are wrong.",
+      systemPrompt: "You are TradesStack's worksheet-aware formula assistant.",
+      worksheet,
+      snapshot,
+      worksheetContext: context,
+      classification,
+      constructionSummary: buildBudgetConstructionSummary(),
+      assumptionRows: [],
+      promptBuilder: ({ snapshot: nextSnapshot, formulaContextSummary }) =>
+        [
+          `Relevant existing formula context: ${JSON.stringify(formulaContextSummary)}`,
+          `Worksheet structure snapshot: ${JSON.stringify(nextSnapshot)}`,
+        ].join("\n\n"),
+    });
+
+    const scopedLabels = budget.snapshot.rows.map((row) => row.label ?? "");
+    expect(scopedLabels).toContain("Long-run sheets");
+    expect(scopedLabels).toContain("Materials subtotal");
+    expect(scopedLabels).not.toContain("Crew Hours");
+    expect(scopedLabels).not.toContain("Gross Margin");
+    expect(
+      budget.formulaContextSummary?.existingFormulaRows.some((row) => row.label === "Long-run sheets"),
+    ).toBe(true);
+    expect(
+      budget.formulaContextSummary?.existingFormulaRows.some((row) => row.label === "Crew Hours"),
+    ).toBe(false);
+  });
+
+  it("progressively narrows formula context and discloses omitted formula regions on large worksheets", () => {
+    const { worksheet, context } = buildLargeFormulaBudgetFixture();
+    const classification = buildClassification({
+      primaryIntent: "formula_generate",
+      recommendedPromptPath: "edit",
+      tradeHints: ["ceilings"],
+      riskLevel: "high",
+    });
+    const snapshot = inflateSnapshotForBudgetTest(
+      buildPricingWorksheetAiStructureSnapshot({
+        worksheet,
+        worksheetContext: context,
+        classification,
+        prompt: "Check the formulas for the selected quantity rows and nearby subtotals.",
+      }),
+      4,
+    );
+
+    const budget = buildFormulaStageContextBudgetForTest({
+      workflow: "formula",
+      prompt: "Check the formulas for the selected quantity rows and nearby subtotals.",
+      systemPrompt: "You are TradesStack's worksheet-aware formula assistant.",
+      worksheet,
+      snapshot,
+      worksheetContext: context,
+      classification,
+      constructionSummary: {
+        ...buildBudgetConstructionSummary(),
+        organizationMemorySummary: `${buildBudgetConstructionSummary().organizationMemorySummary} `.repeat(10),
+      },
+      assumptionRows: [],
+      promptBuilder: ({ snapshot: nextSnapshot, formulaContextSummary }) =>
+        [
+          `Relevant existing formula context: ${JSON.stringify(formulaContextSummary)}`,
+          `Worksheet structure snapshot: ${JSON.stringify(nextSnapshot)}`,
+        ].join("\n\n"),
+    });
+
+    expect(budget.tokenBreakdown.totalEstimatedTokens).toBeLessThanOrEqual(7000);
+    expect(budget.formulaContextSummary?.omittedFormulaRowRanges.length ?? 0).toBeGreaterThan(0);
+    expect(budget.formulaContextSummary?.note).toContain("Omitted formula row ranges");
+    expect(budget.snapshot.rowCoverage.note).toContain("Formula context is scoped");
   });
 
   it("blocks genuinely oversized Anthropic formula-stage prompts locally with a clear warning and token breakdown", async () => {
@@ -3441,6 +3685,394 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
     expect(result.preview.validationIssues).toEqual([]);
     expect(result.preview.diffSummary.changedCells.length).toBeGreaterThan(60);
     expect(result.preview.diffSummary.insertedRows.length).toBe(12);
+  });
+
+  it("batches a large NZ roofing calculator into safe staged-generation previews", async () => {
+    const { worksheet, context } = buildGenerationFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const largeSections = new Array(6).fill(null).map((_, sectionIndex) => ({
+      title: sectionIndex === 0 ? "Inputs" : sectionIndex === 5 ? "Summary Dashboard" : `Section ${sectionIndex + 1}`,
+      rows: new Array(5).fill(null).map((__, rowIndex) => ({
+        label: `Roofing row ${sectionIndex + 1}-${rowIndex + 1}`,
+        description: "NZ roofing calculator row",
+        unit: sectionIndex === 0 ? "m2" : rowIndex % 2 === 0 ? "lm" : "ea",
+        rowPurpose: sectionIndex === 0 ? "input" : rowIndex === 4 ? "subtotal" : "line_item",
+        quantityValue: null,
+        materialRate: rowIndex % 2 === 0 ? 18.5 : null,
+        labourRate: rowIndex % 2 === 1 ? 72 : null,
+        formulaIntent: rowIndex === 4 ? "section subtotal" : "quantity times material rate plus labour and margin",
+      })),
+    }));
+
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_roofing_large_draft",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "worksheet_draft",
+                proposalName: "NZ roofing calculator",
+                answer: "Built a large NZ roofing calculator.",
+                sections: largeSections,
+                assumptions: ["NZD pricing inputs will be provided by the estimator."],
+                warnings: [],
+              }),
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_roofing_large_formula",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "formula_suggestions",
+                answer: "Added worksheet-aware formulas for the first safe batch.",
+                suggestions: [
+                  {
+                    targetRowNumber: 4,
+                    targetColumn: "J",
+                    expression: "quantity times material rate",
+                    rationale: "Calculate the material total for the current row.",
+                  },
+                ],
+                assumptions: [],
+                warnings: [],
+              }),
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt:
+        "Create a large multi-tab NZ QS-style corrugated long-run roofing calculator with Inputs, Material Takeoff, Material Rates, Labour Calculator, Summary Dashboard, Benchmarks, formulas, dropdowns, formatting, and NZD styling.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+    });
+
+    expect(result.preview.validationIssues).toEqual([]);
+    expect(result.preview.continuation).not.toBeNull();
+    expect(result.preview.continuation?.totalBatchCount).toBeGreaterThan(1);
+    expect(result.preview.answer).toContain("building it safely in stages");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.preview.operations.length).toBeLessThan(37);
+  });
+
+  it("batches a large suspended ceiling calculator even on the direct provider path", async () => {
+    const { worksheet, context } = buildGenerationFixture();
+    delete process.env.PRICING_WORKSHEET_AI_PROVIDER;
+
+    const operations = new Array(37).fill(null).map((_, index) => {
+      const rowNumber = index + 1;
+      return {
+        type: "insert_row",
+        target: { insertBeforeRow: rowNumber },
+        values: {
+          cells: [
+            { column: "A", value: rowNumber === 1 ? "Inputs" : rowNumber <= 8 ? "Ceiling inputs" : "Ceiling pricing" },
+            { column: "B", value: `Ceiling row ${rowNumber}` },
+            { column: "D", value: rowNumber <= 8 ? "m2" : rowNumber % 2 === 0 ? "lm" : "ea" },
+            { column: "F", value: rowNumber <= 8 ? null : 14.25 },
+            { column: "K", value: rowNumber <= 8 ? "editable input row" : "quantity times rate" },
+          ],
+        },
+        formulas: { cells: [] },
+        rationale: "Large ceiling worksheet row.",
+      };
+    });
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          mode: "propose_edit",
+          proposalName: "Suspended ceiling calculator",
+          answer: "Created a suspended ceiling calculator.",
+          summary: "Adds a large ceiling estimator worksheet.",
+          confidence: "medium",
+          operations,
+          assumptions: [],
+          warnings: [],
+        }),
+      }),
+    } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt: "Create a large suspended ceiling calculator with inputs, rates, labour, summaries, formulas, and styling.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+    });
+
+    expect(result.preview.validationIssues).toEqual([]);
+    expect(result.preview.continuation).not.toBeNull();
+    expect(result.preview.continuation?.remainingBatchCount).toBeGreaterThan(0);
+    expect(result.preview.operations.length).toBeLessThan(37);
+  });
+
+  it("keeps small worksheet generation in a single preview batch", async () => {
+    const { worksheet, context } = buildFixture();
+    const operations = new Array(6).fill(null).map((_, index) => ({
+      type: "insert_row",
+      target: { insertBeforeRow: index + 1 },
+      values: {
+        cells: [
+          { column: "A", value: index === 0 ? "Inputs" : "Pricing" },
+          { column: "B", value: `Simple row ${index + 1}` },
+          { column: "D", value: index <= 1 ? "m2" : "ea" },
+        ],
+      },
+      formulas: { cells: [] },
+      rationale: "Simple calculator row.",
+    }));
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          mode: "propose_edit",
+          proposalName: "Simple calculator",
+          answer: "Created a simple calculator.",
+          summary: "Adds a small estimator worksheet.",
+          confidence: "medium",
+          operations,
+          assumptions: [],
+          warnings: [],
+        }),
+      }),
+    } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt: "Create a simple labour calculator.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+    });
+
+    expect(result.preview.validationIssues).toEqual([]);
+    expect(result.preview.continuation).toBeNull();
+    expect(result.preview.operations).toHaveLength(6);
+  });
+
+  it("advances continuation from batch 1 to batch 2 and mutates the worksheet snapshot", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Continuation worksheet",
+      rowCount: 20,
+      columnCount: 12,
+    });
+    const batch1Operations: PricingWorksheetAiOperation[] = [
+      {
+        type: "insert_row",
+        target: { insertBeforeRow: 1 },
+        values: { cells: [{ column: "A", value: "Batch 1 row" }] },
+        formulas: { cells: [] },
+        rationale: "Batch 1",
+      },
+    ];
+    const batch2Operations: PricingWorksheetAiOperation[] = [
+      {
+        type: "insert_row",
+        target: { insertBeforeRow: 2 },
+        values: { cells: [{ column: "A", value: "Batch 2 row" }] },
+        formulas: { cells: [] },
+        rationale: "Batch 2",
+      },
+    ];
+    const batch3Operations: PricingWorksheetAiOperation[] = [
+      {
+        type: "insert_row",
+        target: { insertBeforeRow: 3 },
+        values: { cells: [{ column: "A", value: "Batch 3 row" }] },
+        formulas: { cells: [] },
+        rationale: "Batch 3",
+      },
+    ];
+
+    const batch1Worksheet = simulatePricingWorksheetAiEditPlan(worksheet, {
+      mode: "propose_edit",
+      proposalName: "Batch 1 preview",
+      answer: "Batch 1 ready.",
+      summary: "Batch 1 ready.",
+      confidence: "medium",
+      operations: batch1Operations,
+      assumptions: [],
+      warnings: [],
+      suggestedEditGroups: [],
+    }).worksheet;
+    const batch1Preview = buildContinuationPreviewFixture({
+      worksheet: batch1Worksheet,
+      operations: batch1Operations,
+      continuation: {
+        strategy: "safe_generation_batches",
+        currentBatchIndex: 1,
+        totalBatchCount: 3,
+        remainingBatchCount: 2,
+        remainingOperationCount: 2,
+        message: "Review and apply batch 1 of 3 to continue.",
+        remainingBatches: [
+          {
+            id: "batch-2",
+            title: "Safe worksheet build batch 2 of 3",
+            purpose: "Continue building the generated worksheet with the next validator-safe batch.",
+            operations: batch2Operations,
+            changedCellCount: 1,
+          },
+          {
+            id: "batch-3",
+            title: "Safe worksheet build batch 3 of 3",
+            purpose: "Continue building the generated worksheet with the next validator-safe batch.",
+            operations: batch3Operations,
+            changedCellCount: 1,
+          },
+        ],
+      },
+    });
+
+    const batch2Preview = buildPricingWorksheetContinuationPreview({
+      preview: batch1Preview,
+      worksheet: batch1Preview.worksheet,
+    });
+
+    expect(batch2Preview).not.toBeNull();
+    expect(batch2Preview?.continuation?.currentBatchIndex).toBe(2);
+    expect(batch2Preview?.continuation?.remainingBatchCount).toBe(1);
+    expect(batch2Preview?.operations[0]?.rationale).toBe("Batch 2");
+    expect(Object.values(batch2Preview?.worksheet.cells ?? {}).some((cell) => cell?.value === "Batch 2 row")).toBe(true);
+
+    const batch3Preview = buildPricingWorksheetContinuationPreview({
+      preview: batch2Preview!,
+      worksheet: batch2Preview!.worksheet,
+    });
+
+    expect(batch3Preview).not.toBeNull();
+    expect(batch3Preview?.continuation?.currentBatchIndex).toBe(3);
+    expect(batch3Preview?.continuation?.remainingBatchCount).toBe(0);
+    expect(Object.values(batch3Preview?.worksheet.cells ?? {}).some((cell) => cell?.value === "Batch 3 row")).toBe(true);
+
+    const completionPreview = buildPricingWorksheetContinuationPreview({
+      preview: batch3Preview!,
+      worksheet: batch3Preview!.worksheet,
+    });
+    expect(completionPreview).toBeNull();
+  });
+
+  it("includes continuation-generated rows in later worksheet snapshots after staged apply", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Continuation snapshot worksheet",
+      rowCount: 60,
+      columnCount: 12,
+    });
+    setCellValue(worksheet, "A1", "Inputs");
+    setCellValue(worksheet, "B24", "Original row 24");
+
+    const batch1Operations: PricingWorksheetAiOperation[] = [
+      {
+        type: "insert_row",
+        target: { insertBeforeRow: 25 },
+        values: { cells: [{ column: "B", value: "Batch 1 generated row" }] },
+        formulas: { cells: [] },
+        rationale: "Batch 1",
+      },
+    ];
+    const batch2Operations: PricingWorksheetAiOperation[] = [
+      {
+        type: "insert_row",
+        target: { insertBeforeRow: 31 },
+        values: { cells: [{ column: "B", value: "Batch 2 generated row" }] },
+        formulas: { cells: [{ ref: "J31", formula: "=E31*F31" }] },
+        rationale: "Batch 2",
+      },
+    ];
+
+    const batch1Worksheet = simulatePricingWorksheetAiEditPlan(worksheet, {
+      mode: "propose_edit",
+      proposalName: "Batch 1 preview",
+      answer: "Batch 1 ready.",
+      summary: "Batch 1 ready.",
+      confidence: "medium",
+      operations: batch1Operations,
+      assumptions: [],
+      warnings: [],
+      suggestedEditGroups: [],
+    }).worksheet;
+    const batch1Preview = buildContinuationPreviewFixture({
+      worksheet: batch1Worksheet,
+      operations: batch1Operations,
+      continuation: {
+        strategy: "safe_generation_batches",
+        currentBatchIndex: 1,
+        totalBatchCount: 2,
+        remainingBatchCount: 1,
+        remainingOperationCount: 1,
+        message: "Review and apply batch 1 of 2 to continue.",
+        remainingBatches: [
+          {
+            id: "batch-2",
+            title: "Safe worksheet build batch 2 of 2",
+            purpose: "Continue building the generated worksheet with the next validator-safe batch.",
+            operations: batch2Operations,
+            changedCellCount: 2,
+          },
+        ],
+      },
+    });
+
+    const batch2Preview = buildPricingWorksheetContinuationPreview({
+      preview: batch1Preview,
+      worksheet: batch1Preview.worksheet,
+    });
+
+    expect(batch2Preview).not.toBeNull();
+
+    const context = buildPricingWorksheetAiContext(batch2Preview!.worksheet, {
+      worksheetId: "continuation-snapshot-worksheet",
+      worksheetName: batch2Preview!.worksheet.sheetName,
+      tradePackage: "Roofing",
+      prompt: "The formulas from row 24 are not there. Check rows from row 24 onward.",
+    });
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet: batch2Preview!.worksheet,
+      worksheetContext: context,
+      classification: {
+        primaryIntent: "formula_fix",
+        defaultJurisdiction: "AUS_NZ",
+        requiresConstructionReasoning: true,
+        requiresRetrieval: false,
+        tradeHints: ["roofing"],
+        systemHints: [],
+        confidence: "high",
+        riskLevel: "high",
+        shouldAskFollowUp: false,
+        reason: "Continuation snapshot test",
+        matchedIntentSignals: [],
+        matchedTradeSignals: [],
+        matchedSystemSignals: [],
+        matchedRiskSignals: [],
+        retrievalReasons: [],
+        recommendedPromptPath: "edit",
+      },
+      prompt: "The formulas from row 24 are not there. Check rows from row 24 onward.",
+    });
+
+    expect(snapshot.rows.map((row) => row.rowNumber)).toEqual(expect.arrayContaining([24, 25, 31]));
+    expect(snapshot.formulaTargets.rows.some((row) => row.rowNumber === 31)).toBe(true);
   });
 
   it("extracts a structured object directly from output_parsed", () => {

@@ -363,6 +363,170 @@ describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
     });
   });
 
+  it("returns continuation metadata in the direct API preview response", async () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Roofing",
+      rowCount: 20,
+      columnCount: 12,
+    });
+    const worksheetContext = buildPricingWorksheetAiContext(worksheet, {
+      worksheetId: "worksheet-123",
+      worksheetName: "Roofing",
+      tradePackage: "Roofing",
+    });
+
+    buildPricingWorksheetEditAssistantPreview.mockResolvedValue({
+      generationMeta: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        fallbackUsed: false,
+        fallbackReason: null,
+      },
+      providerAudit: {
+        requestedProvider: "anthropic",
+        requestedModel: "claude-sonnet-4-6",
+        actualProvider: "anthropic",
+        actualModel: "claude-sonnet-4-6",
+        webSearchEnabled: true,
+      },
+      preview: {
+        mode: "propose_edit",
+        proposalName: "Roofing batch 1",
+        answer: "Batch 1 ready.",
+        summary: "Batch 1 ready.",
+        confidence: "medium",
+        operations: [],
+        assumptions: [],
+        warnings: [],
+        reviewFindings: [],
+        reviewSummary: null,
+        suggestedEditGroups: [],
+        evidenceSources: [],
+        worksheet,
+        diffSummary: {
+          changedCells: [],
+          formulaCells: [],
+          formattingCells: [],
+          insertedRows: [],
+          affectedRows: [],
+        },
+        diffPreview: {
+          changedCells: [],
+          insertedRows: [],
+          affectedSections: [],
+          formulaChanges: [],
+          formattingChanges: [],
+        },
+        storageSummary: {
+          responseMode: "propose_edit",
+          sanitizedOperations: [],
+          affectedCellRefs: [],
+          formulaChangeSummary: [],
+          formattingChangeSummary: [],
+          insertedRowSummary: [],
+          affectedSections: [],
+          assumptions: [],
+          warnings: [],
+        },
+        validationIssues: [],
+        validationWarnings: [],
+        compactOutput: {
+          worksheetName: "Roofing",
+          tradePackage: "Roofing",
+          suggestionSource: "default",
+          confidence: "medium",
+          rowCount: worksheet.rows.length,
+          columnCount: worksheet.columns.length,
+          formulaCount: 0,
+          populatedCellCount: 0,
+          sectionCounts: {
+            sections: 0,
+            rows: 0,
+            operations: 0,
+          },
+          headers: worksheet.columns.map((column) => column.id),
+          sections: [],
+          assumptions: [],
+          warnings: [],
+          promptHighlights: ["roofing"],
+          sampleLineItems: [],
+        },
+        matchedMemory: null,
+        contextSummary: {
+          matchedMemoryCount: 0,
+          summary: "Continuation test",
+        },
+        classification: {
+          primaryIntent: "worksheet_generation",
+          defaultJurisdiction: "AUS_NZ",
+          requiresConstructionReasoning: true,
+          requiresRetrieval: false,
+          tradeHints: ["roofing"],
+          systemHints: [],
+          confidence: "high",
+          riskLevel: "high",
+          shouldAskFollowUp: false,
+          reason: "Large generation",
+          recommendedPromptPath: "generation",
+        },
+        continuation: {
+          strategy: "safe_generation_batches",
+          currentBatchIndex: 1,
+          totalBatchCount: 3,
+          remainingBatchCount: 2,
+          remainingOperationCount: 12,
+          message: "This is a large worksheet, so TradesStack is building it safely in stages.",
+          remainingBatches: [
+            {
+              id: "continuation-batch-2",
+              title: "Safe worksheet build batch 2 of 3",
+              purpose: "Continue building safely.",
+              operations: [],
+              changedCellCount: 0,
+            },
+          ],
+        },
+      },
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/ai/pricing-worksheets/edit-assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          organizationId: "org-123",
+          opportunityId: "opp-123",
+          worksheetId: "worksheet-123",
+          worksheetName: "Roofing",
+          tradePackage: "Roofing",
+          prompt: "Create a large roofing worksheet",
+          currentWorksheetSummary: {
+            rowCount: worksheet.rows.length,
+            columnCount: worksheet.columns.length,
+            formulaCount: 0,
+            populatedCellCount: 0,
+            hasExistingContent: false,
+          },
+          worksheetData: worksheet,
+          worksheetContext,
+        }),
+      }),
+    );
+
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.preview.continuation).toMatchObject({
+      currentBatchIndex: 1,
+      totalBatchCount: 3,
+      remainingBatchCount: 2,
+    });
+    expect(payload.preview.continuation.remainingBatches[0].id).toBe("continuation-batch-2");
+  });
+
   it("returns evidence sources in the preview assistant payload when available", async () => {
     const worksheet = createDefaultWorksheetData({
       sheetName: "Wall Framing",

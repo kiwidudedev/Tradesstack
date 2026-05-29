@@ -348,6 +348,57 @@ describe("pricing worksheet ai jobs", () => {
     expect(job.preview?.assistant?.mode).toBe("propose_edit");
   });
 
+  it("preserves continuation through job serialization and polling", async () => {
+    const { createPricingWorksheetEditAssistantJob, getPricingWorksheetEditAssistantJob } = await import("./pricing-worksheet-ai-jobs");
+    const { request } = buildFixture();
+
+    const previewResult = buildPreviewResult();
+    previewResult.preview.continuation = {
+      strategy: "safe_generation_batches",
+      currentBatchIndex: 1,
+      totalBatchCount: 3,
+      remainingBatchCount: 2,
+      remainingOperationCount: 5,
+      message: "This is a large worksheet, so TradesStack is building it safely in stages.",
+      remainingBatches: [
+        {
+          id: "continuation-batch-2",
+          title: "Safe worksheet build batch 2 of 3",
+          purpose: "Continue building the generated worksheet with the next validator-safe batch.",
+          operations: [
+            {
+              type: "insert_row",
+              target: { insertBeforeRow: 4 },
+              values: { cells: [{ column: "A", value: "Batch 2" }] },
+              formulas: { cells: [] },
+              rationale: "Batch 2 op",
+            },
+          ],
+          changedCellCount: 1,
+        },
+      ],
+    };
+    buildPricingWorksheetEditAssistantPreview.mockResolvedValue(previewResult);
+
+    await createPricingWorksheetEditAssistantJob(request);
+    await vi.runAllTimersAsync();
+
+    const job = await getPricingWorksheetEditAssistantJob({
+      organizationId: request.organizationId,
+      aiInteractionId: interactionId,
+    });
+
+    expect(job.status).toBe("ready");
+    expect(job.preview?.continuation).toMatchObject({
+      currentBatchIndex: 1,
+      totalBatchCount: 3,
+      remainingBatchCount: 2,
+    });
+    expect((job.preview?.continuation as { remainingBatches?: Array<{ id: string }> } | null)?.remainingBatches?.[0]?.id).toBe(
+      "continuation-batch-2",
+    );
+  });
+
   it("records requested and actual provider metadata on successful jobs", async () => {
     const { createPricingWorksheetEditAssistantJob, getPricingWorksheetEditAssistantJob } = await import("./pricing-worksheet-ai-jobs");
     const { request } = buildFixture();

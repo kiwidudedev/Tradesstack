@@ -422,6 +422,7 @@ export async function POST(request: Request) {
         contextSummary: preview.contextSummary,
         classification: preview.classification,
         generationMeta,
+        continuation: preview.continuation,
         assistant: {
           mode: preview.mode,
           proposalName: preview.proposalName,
