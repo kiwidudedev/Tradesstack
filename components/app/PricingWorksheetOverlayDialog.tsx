@@ -1,7 +1,6 @@
 "use client";
 
 import { memo } from "react";
-import { X } from "lucide-react";
 import { OpportunityPricingWorksheetBoard } from "@/components/app/OpportunityPricingWorksheetBoard";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countPricingWorksheetPerformance } from "@/lib/pricing-worksheet-performance";
@@ -22,24 +21,17 @@ export const PricingWorksheetOverlayDialog = memo(function PricingWorksheetOverl
       <DialogContent
         align="top"
         hideClose
-        className="relative h-[90vh] w-[94vw] max-h-[92vh] max-w-none overflow-visible rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]"
+        className="fixed inset-0 h-dvh w-dvw max-h-none max-w-none overflow-hidden rounded-none border-0 bg-[var(--surface)] p-0 shadow-none"
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogTitle className="sr-only">Pricing worksheet editor</DialogTitle>
-        <button
-          type="button"
-          aria-label="Close pricing worksheet overlay"
-          onClick={onClose}
-          className="absolute -right-4 -top-4 z-[80] inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] shadow-[var(--shadow-lg)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 disabled:pointer-events-none"
-        >
-          <X className="h-4 w-4" strokeWidth={2.2} />
-        </button>
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-lg)]">
-          <div className="min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-4 sm:px-3 sm:pb-3 sm:pt-4">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <OpportunityPricingWorksheetBoard
               worksheetId={worksheetId}
+              onClose={onClose}
               onDirtyStateChange={onDirtyStateChange}
             />
           </div>

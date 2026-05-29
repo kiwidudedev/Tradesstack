@@ -8,11 +8,30 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ChevronDown, Save, Sparkles } from "lucide-react";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold as BoldIcon,
+  Check,
+  ChevronDown,
+  Eraser,
+  FileSpreadsheet,
+  Grid2X2,
+  Italic as ItalicIcon,
+  Minus,
+  PaintBucket,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Strikethrough,
+  Underline as UnderlineIcon,
+} from "lucide-react";
 import {
   PricingWorksheetAiAssistDialog,
   type PricingWorksheetAiFindingDisposition,
@@ -107,9 +126,10 @@ import {
   getFormattedCellDisplayValue,
   getCellFormat,
   hasCellFormatting,
-  type WorksheetNegativeNumberStyle,
   type WorksheetNumberFormatKind,
+  type WorksheetTextAlign,
   type WorksheetCellFormat,
+  type WorksheetBorderMode,
 } from "@/lib/opportunity-pricing-worksheet-formatting";
 import {
   getColumnOffsets,
@@ -254,34 +274,48 @@ const WORKSHEET_COLUMN_OVERSCAN = 2;
 const WORKSHEET_VIEWPORT_FALLBACK_HEIGHT = 720;
 const WORKSHEET_VIEWPORT_FALLBACK_WIDTH = 1120;
 const WORKSHEET_ZOOM_LEVELS = [0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5] as const;
-const FILL_SWATCHES = ["#FEF3C7", "#DBEAFE", "#DCFCE7", "#FCE7F3", "#F3F4F6"];
-const TEXT_SWATCHES = ["#111827", "#1D4ED8", "#047857", "#B45309", "#BE123C"];
-const TEXT_COLOR_PALETTE = [
-  "#111827",
-  "#374151",
-  "#6B7280",
-  "#9CA3AF",
-  "#D1D5DB",
-  "#1D4ED8",
-  "#2563EB",
-  "#0EA5E9",
-  "#0891B2",
-  "#06B6D4",
-  "#047857",
-  "#059669",
-  "#10B981",
-  "#65A30D",
-  "#84CC16",
-  "#B45309",
-  "#D97706",
-  "#F59E0B",
-  "#EA580C",
+const DEFAULT_WORKSHEET_FONT_SIZE = 14;
+const MIN_WORKSHEET_FONT_SIZE = 6;
+const MAX_WORKSHEET_FONT_SIZE = 96;
+const FILL_SWATCHES = [
+  // light / pastel row — slate, blue, green, orange, violet
+  "#F1F5F9",
+  "#DBEAFE",
+  "#DCFCE7",
+  "#FFEDD5",
+  "#EDE9FE",
+  // medium row
+  "#CBD5E1",
+  "#93C5FD",
+  "#86EFAC",
+  "#FDBA74",
+  "#C4B5FD",
+  // strong row
+  "#64748B",
+  "#3B82F6",
+  "#22C55E",
   "#F97316",
-  "#BE123C",
-  "#E11D48",
-  "#DB2777",
+  "#8B5CF6",
+];
+const TEXT_COLOR_PALETTE = [
+  // light / pastel row — slate, blue, green, orange, violet
+  "#94A3B8",
+  "#60A5FA",
+  "#34D399",
+  "#FB923C",
+  "#A78BFA",
+  // mid row
+  "#475569",
+  "#2563EB",
+  "#059669",
+  "#EA580C",
   "#7C3AED",
-  "#9333EA",
+  // dark row
+  "#0F172A",
+  "#1E3A8A",
+  "#065F46",
+  "#C2410C",
+  "#5B21B6",
 ];
 const FORMULA_REFERENCE_HIGHLIGHT_STYLES = [
   {
@@ -315,16 +349,11 @@ const WORKSHEET_CELL_FONT_SIZE = 14;
 const WORKSHEET_CELL_LINE_HEIGHT = 20;
 const SELECTION_OUTLINE_COLOR = "rgb(37 99 235)";
 const FILL_PREVIEW_OUTLINE_COLOR = "rgb(59 130 246)";
-const NUMBER_FORMAT_OPTIONS = [
-  { value: "general", label: "General" },
-  { value: "number", label: "Number" },
-  { value: "currency", label: "Currency" },
-  { value: "percent", label: "Percent" },
-] satisfies Array<{ value: WorksheetNumberFormatKind; label: string }>;
-const NEGATIVE_STYLE_OPTIONS = [
-  { value: "minus", label: "-123" },
-  { value: "parentheses", label: "(123)" },
-] satisfies Array<{ value: WorksheetNegativeNumberStyle; label: string }>;
+const TEXT_ALIGN_OPTIONS = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+] satisfies Array<{ value: WorksheetTextAlign; label: string }>;
 const MAX_NUMBER_DECIMAL_PLACES = 6;
 
 function cloneWorksheetData(worksheet: WorksheetData) {
@@ -335,6 +364,21 @@ function clampWorksheetZoom(nextZoom: number) {
   const minZoom = WORKSHEET_ZOOM_LEVELS[0];
   const maxZoom = WORKSHEET_ZOOM_LEVELS[WORKSHEET_ZOOM_LEVELS.length - 1];
   return Math.min(maxZoom, Math.max(minZoom, nextZoom));
+}
+
+function normalizeHexColorInput(value: string) {
+  const trimmed = value.trim();
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+
+  if (/^[0-9A-Fa-f]{3}$/.test(hex)) {
+    return `#${hex.split("").map((character) => `${character}${character}`).join("")}`.toUpperCase();
+  }
+
+  if (/^[0-9A-Fa-f]{6}$/.test(hex)) {
+    return `#${hex}`.toUpperCase();
+  }
+
+  return null;
 }
 
 function buildNextCommittedCell(
@@ -584,6 +628,39 @@ function isPositionInRange(
   );
 }
 
+type WorksheetBorderEdge = "top" | "right" | "bottom" | "left" | "hMid" | "vMid";
+
+const BORDER_MODE_EDGES: Record<
+  Exclude<WorksheetBorderMode, "clear">,
+  WorksheetBorderEdge[]
+> = {
+  all: ["top", "right", "bottom", "left", "hMid", "vMid"],
+  outer: ["top", "right", "bottom", "left"],
+  inner: ["hMid", "vMid"],
+  horizontal: ["hMid"],
+  vertical: ["vMid"],
+  top: ["top"],
+  bottom: ["bottom"],
+  left: ["left"],
+  right: ["right"],
+};
+
+function BorderModeIcon({ mode }: { mode: Exclude<WorksheetBorderMode, "clear"> }) {
+  const active = new Set(BORDER_MODE_EDGES[mode]);
+  const edgeColor = (edge: WorksheetBorderEdge) =>
+    active.has(edge) ? "var(--text-primary)" : "#E2E8F0";
+  return (
+    <span aria-hidden="true" className="relative block h-[18px] w-[18px]">
+      <span className="absolute left-0 right-0 top-0 h-[1.5px] rounded-full" style={{ backgroundColor: edgeColor("top") }} />
+      <span className="absolute bottom-0 left-0 right-0 h-[1.5px] rounded-full" style={{ backgroundColor: edgeColor("bottom") }} />
+      <span className="absolute bottom-0 left-0 top-0 w-[1.5px] rounded-full" style={{ backgroundColor: edgeColor("left") }} />
+      <span className="absolute bottom-0 right-0 top-0 w-[1.5px] rounded-full" style={{ backgroundColor: edgeColor("right") }} />
+      <span className="absolute left-0 right-0 top-1/2 h-[1.5px] -translate-y-1/2 rounded-full" style={{ backgroundColor: edgeColor("hMid") }} />
+      <span className="absolute bottom-0 left-1/2 top-0 w-[1.5px] -translate-x-1/2 rounded-full" style={{ backgroundColor: edgeColor("vMid") }} />
+    </span>
+  );
+}
+
 function buildFormulaReferenceText(
   worksheet: WorksheetData,
   anchorCellKey: string,
@@ -827,6 +904,14 @@ const WorksheetCellView = memo(function WorksheetCellView({
             textAlign: cellTextAlign,
             fontWeight: cellFormat.text?.bold ? 700 : undefined,
             fontStyle: cellFormat.text?.italic ? "italic" : undefined,
+            textDecoration:
+              [
+                cellFormat.text?.underline ? "underline" : null,
+                cellFormat.text?.strikethrough ? "line-through" : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined,
+            fontSize: cellFormat.text?.fontSize ? `${cellFormat.text.fontSize}px` : undefined,
             color: cellFormat.text?.color,
           }}
           placeholder=""
@@ -846,6 +931,14 @@ const WorksheetCellView = memo(function WorksheetCellView({
             style={{
               fontWeight: cellFormat.text?.bold ? 700 : undefined,
               fontStyle: cellFormat.text?.italic ? "italic" : undefined,
+              textDecoration:
+                [
+                  cellFormat.text?.underline ? "underline" : null,
+                  cellFormat.text?.strikethrough ? "line-through" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined,
+              fontSize: cellFormat.text?.fontSize ? `${cellFormat.text.fontSize}px` : undefined,
               color: cellFormat.text?.color,
               textAlign: cellTextAlign,
             }}
@@ -1227,15 +1320,19 @@ function getRowVirtualizationWindow(
 
 export function OpportunityPricingWorksheetBoard({
   worksheetId: explicitWorksheetId,
+  onClose,
   onDirtyStateChange,
 }: {
   worksheetId?: string;
+  onClose?: () => void;
   onDirtyStateChange?: (isDirty: boolean) => void;
 }) {
   const sharedOpportunity = useOpportunityWorkspaceData();
   const { session, isLoading: isAuthLoading } = useAuth();
   const [worksheetId, setWorksheetId] = useState<string | null>(null);
   const [worksheetName, setWorksheetName] = useState<string | null>(null);
+  const [isWorksheetNameEditorOpen, setIsWorksheetNameEditorOpen] = useState(false);
+  const [worksheetNameDraft, setWorksheetNameDraft] = useState("");
   const [worksheetTradePackage, setWorksheetTradePackage] = useState<string | null>(null);
   const [worksheet, setWorksheet] = useState<WorksheetData>(() => createDefaultWorksheetData());
   const worksheetRef = useRef<WorksheetData>(worksheet);
@@ -1274,6 +1371,7 @@ export function OpportunityPricingWorksheetBoard({
   const historyFutureRef = useRef<WorksheetData[]>([]);
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
   const [activeEditor, setActiveEditor] = useState<"cell" | "formulaBar" | null>(null);
+  const [showGridlines, setShowGridlines] = useState(true);
   const [editingCellValue, setEditingCellValue] = useState("");
   const [selectionAnchorCellKey, setSelectionAnchorCellKey] = useState<string | null>(null);
   const [selectionFocusCellKey, setSelectionFocusCellKey] = useState<string | null>(null);
@@ -1294,12 +1392,17 @@ export function OpportunityPricingWorksheetBoard({
   const [worksheetViewportHeight, setWorksheetViewportHeight] = useState(WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
   const [worksheetViewportWidth, setWorksheetViewportWidth] = useState(WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
   const [worksheetZoom, setWorksheetZoom] = useState(1);
+  const [customTextColorInput, setCustomTextColorInput] = useState("");
+  const [customFillColorInput, setCustomFillColorInput] = useState("");
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const worksheetTextMeasureRef = useRef<HTMLDivElement | null>(null);
   const worksheetSurfaceRef = useRef<HTMLDivElement | null>(null);
   const worksheetViewportRef = useRef<HTMLDivElement | null>(null);
+  const suppressSelectionAutoScrollRef = useRef(false);
+  const saveWorksheetRef = useRef<((options?: { silent?: boolean }) => Promise<boolean>) | null>(null);
   const formulaBarRef = useRef<HTMLTextAreaElement | null>(null);
   const formattingToolbarRef = useRef<HTMLDivElement | null>(null);
+  const worksheetNameEditorRef = useRef<HTMLDivElement | null>(null);
   const didCountBoardMountRef = useRef(false);
   const isWorksheetBoardMountedRef = useRef(false);
   const activeWorksheetLoadScopeKeyRef = useRef<string | null>(null);
@@ -1525,9 +1628,16 @@ export function OpportunityPricingWorksheetBoard({
   const selectedCellFormat = getCellFormat(worksheet.cells[selectedWorksheetCellKey]);
   const selectedNumberFormat = selectedCellFormat.number;
   const selectedNumberFormatKind = selectedNumberFormat?.kind ?? "general";
-  const selectedNegativeStyle = selectedNumberFormat?.negativeStyle ?? "minus";
   const selectedFillColor = selectedCellFormat.fill?.color;
   const selectedTextColor = selectedCellFormat.text?.color;
+  const selectedTextAlign = selectedCellFormat.text?.align ?? "left";
+  const selectedTextBold = Boolean(selectedCellFormat.text?.bold);
+  const selectedTextItalic = Boolean(selectedCellFormat.text?.italic);
+  const selectedTextUnderline = Boolean(selectedCellFormat.text?.underline);
+  const selectedTextStrikethrough = Boolean(selectedCellFormat.text?.strikethrough);
+  const selectedFontSize = selectedCellFormat.text?.fontSize ?? DEFAULT_WORKSHEET_FONT_SIZE;
+  const normalizedCustomTextColor = normalizeHexColorInput(customTextColorInput);
+  const normalizedCustomFillColor = normalizeHexColorInput(customFillColorInput);
 
   const resetAiPreviewState = useCallback(() => {
     if (aiJobPollTimeoutRef.current) {
@@ -1849,6 +1959,26 @@ export function OpportunityPricingWorksheetBoard({
     editingCellValueRef.current = editingCellValue;
   }, [editingCellValue]);
 
+  useEffect(() => {
+    if (!isWorksheetNameEditorOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || worksheetNameEditorRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsWorksheetNameEditorOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isWorksheetNameEditorOpen]);
+
   const clearSelectionDragState = useCallback(() => {
     if (
       !isDraggingSelectionRef.current &&
@@ -1896,6 +2026,31 @@ export function OpportunityPricingWorksheetBoard({
     setResizingRowId(null);
     setRowResizePreviewHeight(null);
   }, [resizingRowId, rowResizePreviewHeight]);
+
+  const preserveWorksheetViewportScroll = useCallback(() => {
+    const viewport = worksheetViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const scrollLeft = viewport.scrollLeft;
+    const scrollTop = viewport.scrollTop;
+    suppressSelectionAutoScrollRef.current = true;
+
+    requestAnimationFrame(() => {
+      const nextViewport = worksheetViewportRef.current;
+      if (nextViewport) {
+        nextViewport.scrollLeft = scrollLeft;
+        nextViewport.scrollTop = scrollTop;
+        setWorksheetViewportScrollLeft(scrollLeft);
+        setWorksheetViewportScrollTop(scrollTop);
+      }
+
+      requestAnimationFrame(() => {
+        suppressSelectionAutoScrollRef.current = false;
+      });
+    });
+  }, []);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -1947,7 +2102,16 @@ export function OpportunityPricingWorksheetBoard({
   useEffect(() => {
     const viewport = worksheetViewportRef.current;
     const focusCellKey = selectionFocusCellKey ?? selectionAnchorCellKey;
-    if (!viewport || !focusCellKey || activeCellKey) {
+    if (
+      !viewport ||
+      !focusCellKey ||
+      activeCellKey ||
+      suppressSelectionAutoScrollRef.current ||
+      resizingColumnId ||
+      resizingRowId ||
+      columnResizePreviewWidth !== null ||
+      rowResizePreviewHeight !== null
+    ) {
       return;
     }
 
@@ -1991,8 +2155,12 @@ export function OpportunityPricingWorksheetBoard({
   }, [
     activeCellKey,
     columnOffsets,
+    columnResizePreviewWidth,
     normalizedWorksheetZoom,
+    resizingColumnId,
+    resizingRowId,
     rowOffsets,
+    rowResizePreviewHeight,
     selectionAnchorCellKey,
     selectionFocusCellKey,
     worksheet,
@@ -2673,6 +2841,9 @@ export function OpportunityPricingWorksheetBoard({
 
     measureNode.style.fontWeight = cellFormat.text?.bold ? "700" : "400";
     measureNode.style.fontStyle = cellFormat.text?.italic ? "italic" : "normal";
+    measureNode.style.fontSize = cellFormat.text?.fontSize
+      ? `${cellFormat.text.fontSize}px`
+      : "";
     measureNode.style.textAlign = cellFormat.text?.align ?? "left";
     measureNode.textContent = normalizedValue;
 
@@ -2716,6 +2887,7 @@ export function OpportunityPricingWorksheetBoard({
   const autoFitColumn = useCallback((event: ReactMouseEvent<HTMLButtonElement>, columnId: string) => {
     event.preventDefault();
     event.stopPropagation();
+    preserveWorksheetViewportScroll();
     setResizingColumnId(null);
     setColumnResizePreviewWidth(null);
 
@@ -2732,11 +2904,12 @@ export function OpportunityPricingWorksheetBoard({
       resizeColumns: true,
       resizeRows: false,
     }), { recalculateFormulas: false });
-  }, [applyCommittedWorksheetChange, measureWorksheetCellLayout]);
+  }, [applyCommittedWorksheetChange, measureWorksheetCellLayout, preserveWorksheetViewportScroll]);
 
   const autoFitRow = useCallback((event: ReactMouseEvent<HTMLButtonElement>, rowId: string) => {
     event.preventDefault();
     event.stopPropagation();
+    preserveWorksheetViewportScroll();
     setResizingRowId(null);
     setRowResizePreviewHeight(null);
 
@@ -2753,11 +2926,41 @@ export function OpportunityPricingWorksheetBoard({
       resizeColumns: false,
       resizeRows: true,
     }), { recalculateFormulas: false });
-  }, [applyCommittedWorksheetChange, measureWorksheetCellLayout]);
+  }, [applyCommittedWorksheetChange, measureWorksheetCellLayout, preserveWorksheetViewportScroll]);
+
+  const openWorksheetNameEditor = () => {
+    setWorksheetNameDraft(worksheetDisplayName);
+    setIsWorksheetNameEditorOpen(true);
+  };
+
+  const applyWorksheetNameDraft = () => {
+    const nextName = worksheetNameDraft.trim();
+    if (!nextName || nextName === worksheetDisplayName) {
+      setIsWorksheetNameEditorOpen(false);
+      setWorksheetNameDraft(worksheetDisplayName);
+      return;
+    }
+
+    const commitResult = applyCommittedWorksheetChange(
+      (current) => ({
+        ...current,
+        sheetName: nextName,
+      }),
+      { recalculateFormulas: false }
+    );
+
+    if (commitResult.committed) {
+      setWorksheetName(nextName);
+      setMessage(null);
+    }
+
+    setIsWorksheetNameEditorOpen(false);
+  };
 
   const beginColumnResize = (event: ReactMouseEvent<HTMLButtonElement>, columnId: string, width: number) => {
     event.preventDefault();
     event.stopPropagation();
+    preserveWorksheetViewportScroll();
     setResizingColumnId(columnId);
     setColumnResizeStartX(event.clientX);
     setColumnResizeStartWidth(width);
@@ -2767,11 +2970,12 @@ export function OpportunityPricingWorksheetBoard({
   const beginRowResize = useCallback((event: ReactMouseEvent<HTMLButtonElement>, rowId: string, height: number) => {
     event.preventDefault();
     event.stopPropagation();
+    preserveWorksheetViewportScroll();
     setResizingRowId(rowId);
     setRowResizeStartY(event.clientY);
     setRowResizeStartHeight(height);
     setRowResizePreviewHeight(height);
-  }, []);
+  }, [preserveWorksheetViewportScroll]);
 
   const commitActiveEditIfNeeded = () => {
     if (!activeCellKey) {
@@ -2796,6 +3000,34 @@ export function OpportunityPricingWorksheetBoard({
       (current) => applyFormattingToRange(current, selectedRange, patch),
       { recalculateFormulas: false }
     );
+  };
+
+  const toggleTextStyle = (key: "bold" | "italic" | "underline" | "strikethrough") => {
+    applyFormattingPatchToSelection((format) => ({
+      ...format,
+      text: {
+        ...(format.text ?? {}),
+        [key]: format.text?.[key] ? undefined : true,
+      },
+    }));
+  };
+
+  const setFontSizeForSelection = (size: number) => {
+    const clamped = Math.min(
+      MAX_WORKSHEET_FONT_SIZE,
+      Math.max(MIN_WORKSHEET_FONT_SIZE, Math.round(size))
+    );
+    applyFormattingPatchToSelection((format) => ({
+      ...format,
+      text: {
+        ...(format.text ?? {}),
+        fontSize: clamped === DEFAULT_WORKSHEET_FONT_SIZE ? undefined : clamped,
+      },
+    }));
+  };
+
+  const adjustFontSizeForSelection = (delta: number) => {
+    setFontSizeForSelection(selectedFontSize + delta);
   };
 
   const applyNumberFormatKindToSelection = (kind: WorksheetNumberFormatKind) => {
@@ -2848,27 +3080,6 @@ export function OpportunityPricingWorksheetBoard({
     });
   };
 
-  const applyNegativeNumberStyleToSelection = (negativeStyle: WorksheetNegativeNumberStyle) => {
-    applyFormattingPatchToSelection((format) => {
-      const currentNumberFormat = format.number ?? {};
-      const kind = currentNumberFormat.kind ?? "number";
-      return {
-        ...format,
-        number: {
-          ...currentNumberFormat,
-          kind,
-          decimalPlaces:
-            typeof currentNumberFormat.decimalPlaces === "number"
-              ? currentNumberFormat.decimalPlaces
-              : getDefaultDecimalPlaces(kind),
-          negativeStyle,
-          currencyCode: kind === "currency" ? "NZD" : currentNumberFormat.currencyCode,
-          useGrouping: kind === "general" ? false : currentNumberFormat.useGrouping ?? true,
-        },
-      };
-    });
-  };
-
   const clearNumberFormatForSelection = () => {
     applyFormattingPatchToSelection((format) => clearCellNumberFormat(format));
   };
@@ -2893,7 +3104,27 @@ export function OpportunityPricingWorksheetBoard({
     });
   };
 
-  const applyBorderModeToSelection = (mode: "all" | "outer" | "clear") => {
+  const applyCustomTextColorForSelection = () => {
+    const normalizedColor = normalizeHexColorInput(customTextColorInput);
+    if (!normalizedColor) {
+      return;
+    }
+
+    applyFormattingPatchToSelection({ text: { color: normalizedColor } });
+    setCustomTextColorInput(normalizedColor);
+  };
+
+  const applyCustomFillColorForSelection = () => {
+    const normalizedColor = normalizeHexColorInput(customFillColorInput);
+    if (!normalizedColor) {
+      return;
+    }
+
+    applyFormattingPatchToSelection({ fill: { color: normalizedColor } });
+    setCustomFillColorInput(normalizedColor);
+  };
+
+  const applyBorderModeToSelection = (mode: WorksheetBorderMode) => {
     if (!selectedRange) {
       return;
     }
@@ -3849,6 +4080,8 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     const handleMouseUp = () => {
+      preserveWorksheetViewportScroll();
+
       if (
         resizingColumnId &&
         columnResizePreviewWidth !== null &&
@@ -3916,6 +4149,7 @@ export function OpportunityPricingWorksheetBoard({
     applyCommittedWorksheetChange,
     clearColumnResizeState,
     measureWorksheetCellLayout,
+    preserveWorksheetViewportScroll,
     columnResizePreviewWidth,
     columnResizeStartWidth,
     columnResizeStartX,
@@ -3943,6 +4177,8 @@ export function OpportunityPricingWorksheetBoard({
     };
 
     const handleMouseUp = () => {
+      preserveWorksheetViewportScroll();
+
       if (
         resizingRowId &&
         rowResizePreviewHeight !== null &&
@@ -3974,6 +4210,7 @@ export function OpportunityPricingWorksheetBoard({
   }, [
     applyCommittedWorksheetChange,
     clearRowResizeState,
+    preserveWorksheetViewportScroll,
     resizingRowId,
     rowResizePreviewHeight,
     rowResizeStartHeight,
@@ -3981,15 +4218,15 @@ export function OpportunityPricingWorksheetBoard({
     worksheet.rows,
   ]);
 
-  const saveWorksheet = async () => {
+  const saveWorksheet = async (options?: { silent?: boolean }) => {
     if (!supabase || !session?.organizationId || !session?.id) {
       setError("Pricing worksheet save is not ready. Please refresh and try again.");
-      return;
+      return false;
     }
 
     if (!canWriteWorksheet) {
       setError("You do not have permission to edit pricing worksheets.");
-      return;
+      return false;
     }
 
     setIsSavingWorksheet(true);
@@ -4034,6 +4271,7 @@ export function OpportunityPricingWorksheetBoard({
           const result = await supabase
             .from("opportunity_pricing_worksheets")
             .update({
+              name: worksheetDisplayName,
               worksheet_data: worksheetJson,
               pricing_summary: pricingSummaryJson,
               extracted_pricing_data: extractedPricingDataJson,
@@ -4062,6 +4300,7 @@ export function OpportunityPricingWorksheetBoard({
         }
 
         setWorksheetId(data.id);
+        setWorksheetName(worksheetDisplayName);
         setLastSavedAt(data.updated_at ?? null);
         void writePricingWorksheetIntelligenceEvents(supabase, [
           buildPricingWorksheetIntelligenceEvent({
@@ -4140,17 +4379,64 @@ export function OpportunityPricingWorksheetBoard({
       setWorksheet(syncedWorksheet);
       worksheetRef.current = syncedWorksheet;
       setIsDirty(false);
-      setMessage("Pricing worksheet saved.");
+      if (!options?.silent) {
+        setMessage("Pricing worksheet saved.");
+      }
+      return true;
     } catch (saveWorksheetError) {
       setError(
         saveWorksheetError instanceof Error
           ? saveWorksheetError.message
           : "Unable to save the pricing worksheet."
       );
+      return false;
     } finally {
       setIsSavingWorksheet(false);
     }
   };
+
+  const closeWorksheet = async () => {
+    if (isSavingWorksheet) {
+      return;
+    }
+
+    if (isDirty) {
+      const didSave = await saveWorksheet({ silent: true });
+      if (!didSave) {
+        return;
+      }
+    }
+
+    onClose?.();
+  };
+
+  saveWorksheetRef.current = saveWorksheet;
+
+  useEffect(() => {
+    if (
+      !isDirty ||
+      isSavingWorksheet ||
+      isLoadingWorksheet ||
+      !canWriteWorksheet ||
+      isWorksheetNameEditorOpen
+    ) {
+      return;
+    }
+
+    const autosaveTimeout = window.setTimeout(() => {
+      void saveWorksheetRef.current?.({ silent: true });
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(autosaveTimeout);
+    };
+  }, [
+    canWriteWorksheet,
+    isDirty,
+    isLoadingWorksheet,
+    isSavingWorksheet,
+    isWorksheetNameEditorOpen,
+  ]);
 
   const applyAiPreviewPayload = useCallback((payload: PricingWorksheetAiPreviewResponse, options?: {
     promptOverride?: string | null;
@@ -5013,22 +5299,26 @@ export function OpportunityPricingWorksheetBoard({
   }, [commitCellEdit, editingCellValue, focusWorksheetSurface, getAdjacentCellKey]);
 
   return (
-    <div className="min-w-0 flex-1">
-      <div className="overflow-hidden rounded-[16px] border border-[var(--border)] bg-white shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
-        <div className="border-b border-[var(--border-subtle)] bg-white px-3 py-3 sm:px-4 sm:py-3.5">
-          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] border border-[var(--border)] bg-[var(--surface-subtle)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-                <div className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-[var(--success-light)] text-[var(--success)]">
-                  <Save className="h-4 w-4" />
+    <div className="flex h-full min-h-0 min-w-0 flex-1">
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-white">
+        <div className="shrink-0 border-b border-[color-mix(in_srgb,var(--topbar)_82%,white_18%)] bg-[var(--topbar)] px-4 py-2.5 text-white">
+          <div className="flex min-h-12 items-center justify-between gap-4">
+            <div ref={worksheetNameEditorRef} className="relative flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-white/15 text-white">
+                  <FileSpreadsheet className="h-4.5 w-4.5" strokeWidth={1.75} />
                 </div>
               </div>
-              <div className="min-w-0">
-                <h1 className="truncate text-[15px] font-semibold leading-5 text-[var(--text-primary)] sm:text-[16px]">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <button
+                  type="button"
+                  onClick={openWorksheetNameEditor}
+                  className="min-w-0 truncate rounded-[6px] px-1 py-0.5 text-left text-[14px] font-medium leading-5 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 sm:text-[16px]"
+                  aria-label="Edit worksheet name"
+                >
                   {worksheetDisplayName}
-                </h1>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                  <span>{isDirty ? "Unsaved changes" : "Saved"}</span>
+                </button>
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-white/75">
                   <span
                     aria-hidden="true"
                     className={`inline-block h-2 w-2 rounded-full ${isDirty ? "bg-[var(--orange-primary)]" : "bg-[var(--success)]"}`}
@@ -5042,70 +5332,107 @@ export function OpportunityPricingWorksheetBoard({
                       : "Not saved yet"}
                   </span>
                 </div>
+                {isWorksheetNameEditorOpen ? (
+                  <div className="absolute left-12 top-[calc(100%+0.5rem)] z-[90] w-[min(360px,calc(100vw-2rem))] rounded-[12px] border border-[var(--border)] bg-white p-3 text-[var(--text-primary)] shadow-[var(--shadow-overlay)]">
+                    <form
+                      className="space-y-2.5"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        applyWorksheetNameDraft();
+                      }}
+                    >
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+                        Worksheet name
+                      </label>
+                      <input
+                        value={worksheetNameDraft}
+                        onChange={(event) => setWorksheetNameDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setIsWorksheetNameEditorOpen(false);
+                            setWorksheetNameDraft(worksheetDisplayName);
+                          }
+                        }}
+                        autoFocus
+                        className="h-10 w-full rounded-[9px] border border-[var(--border)] bg-white px-3 text-[14px] font-medium text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-8 rounded-[8px] px-3 text-[12px] font-medium"
+                          onClick={() => {
+                            setIsWorksheetNameEditorOpen(false);
+                            setWorksheetNameDraft(worksheetDisplayName);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          className="h-8 rounded-[8px] bg-[var(--orange-primary)] px-3 text-[12px] font-medium text-white hover:bg-[var(--orange-hover)]"
+                          disabled={!worksheetNameDraft.trim()}
+                        >
+                          Apply
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
               </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-[10px] border border-[var(--border)] bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => adjustWorksheetZoom("out")}
-                  disabled={worksheetZoom <= WORKSHEET_ZOOM_LEVELS[0]}
-                  className="h-8 min-w-8 rounded-[7px] border-0 px-0 text-[15px] font-medium shadow-none"
-                >
-                  -
-                </Button>
-                <select
-                  value={String(worksheetZoom)}
-                  onChange={(event) => setWorksheetZoom(clampWorksheetZoom(Number(event.target.value) || 1))}
-                  className="h-8 rounded-[7px] border border-[var(--border)] bg-white px-2.5 text-[12px] font-medium text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
-                  aria-label="Worksheet zoom"
-                >
-                  {WORKSHEET_ZOOM_LEVELS.map((level) => (
-                    <option key={level} value={level}>
-                      {Math.round(level * 100)}%
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => adjustWorksheetZoom("in")}
-                  disabled={worksheetZoom >= WORKSHEET_ZOOM_LEVELS[WORKSHEET_ZOOM_LEVELS.length - 1]}
-                  className="h-8 min-w-8 rounded-[7px] border-0 px-0 text-[15px] font-medium shadow-none"
-                >
-                  +
-                </Button>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pr-14">
+              <div className="flex h-9 items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-9 rounded-[9px] border-0 bg-white/10 px-2.5 text-[18px] font-medium text-white shadow-none hover:bg-white/15"
+                      aria-label="Worksheet zoom"
+                    >
+                      {Math.round(worksheetZoom * 100)}%
+                      <ChevronDown className="h-4 w-4 text-white/75" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[7rem] rounded-[10px] p-1">
+                    {WORKSHEET_ZOOM_LEVELS.map((level) => (
+                      <DropdownMenuItem
+                        key={level}
+                        onSelect={() => setWorksheetZoom(level)}
+                        className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
+                      >
+                        {Math.round(level * 100)}%
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="h-6 w-px bg-white/20" />
               </div>
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
-                onClick={openAiDialog}
-                disabled={isSavingWorksheet || isLoadingWorksheet}
-                className="h-9 rounded-[10px] border-[var(--border)] bg-white px-3.5 text-[12px] font-medium shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                onClick={() => void (onClose ? closeWorksheet() : saveWorksheet())}
+                disabled={
+                  onClose
+                    ? isSavingWorksheet || isLoadingWorksheet
+                    : !canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty
+                }
+                className="h-9 rounded-[10px] bg-white px-4 text-[12px] font-semibold text-[var(--navy-primary)] shadow-[0_8px_20px_rgba(15,23,42,0.18)] hover:bg-[var(--surface-subtle)] disabled:bg-white/60 disabled:text-[var(--text-secondary)]"
               >
-                <Sparkles className="h-3.5 w-3.5" />
-                Ask AI
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void saveWorksheet()}
-                disabled={!canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty}
-                className="h-9 rounded-[10px] bg-[var(--orange-primary)] px-3.5 text-[12px] font-medium text-white shadow-[0_8px_18px_rgba(244,93,34,0.18)] hover:bg-[var(--orange-hover)]"
-              >
-                <Save className="h-3.5 w-3.5" />
-                {isSavingWorksheet ? "Saving..." : "Save worksheet"}
+                {isSavingWorksheet ? "Saving..." : onClose ? "Close" : "Save worksheet"}
               </Button>
             </div>
           </div>
         </div>
         <div
           ref={worksheetSurfaceRef}
-          className="space-y-0 bg-white outline-none"
+          className="flex min-h-0 flex-1 flex-col space-y-0 bg-[var(--surface-muted)] outline-none"
           tabIndex={0}
           onPasteCapture={handleWorksheetPaste}
           onCopy={handleWorksheetCopy}
@@ -5117,77 +5444,93 @@ export function OpportunityPricingWorksheetBoard({
           <div
             ref={formattingToolbarRef}
             tabIndex={-1}
-            className="mx-3 mt-2.5 overflow-x-auto rounded-[12px] border border-[var(--border-subtle)] bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFDFE_100%)] px-3 py-2 shadow-[0_3px_10px_rgba(15,23,42,0.03)] outline-none"
+            style={{ zoom: 1.2 }}
+            className="ml-[60px] mt-2.5 w-fit max-w-[calc(100%-72px)] overflow-x-auto rounded-[14px] border border-[var(--border)] bg-white px-2.5 py-1.5 shadow-[var(--shadow-card-elevated)] outline-none"
           >
             <div className="flex min-w-max items-center gap-2">
-              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Format</div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={openAiDialog}
+                disabled={isSavingWorksheet || isLoadingWorksheet}
+                className="h-8 shrink-0 rounded-[8px] border border-[var(--brand-blue)]/25 bg-[var(--brand-blue)]/10 px-3 text-[12px] font-semibold text-[var(--brand-blue)] shadow-none hover:bg-[var(--brand-blue)]/15"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Ask AI
+              </Button>
+              <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
-                <select
-                  value={selectedNumberFormatKind}
-                  onChange={(event) =>
-                    applyNumberFormatKindToSelection(event.target.value as WorksheetNumberFormatKind)
-                  }
-                  onKeyDown={(event) => event.stopPropagation()}
-                  disabled={!canWriteWorksheet || !selectedRange}
-                  aria-label="Number format"
-                  className="h-8 min-w-[108px] rounded-[8px] border border-[var(--border)] bg-white px-2.5 text-[12px] text-[var(--text-primary)] outline-none disabled:opacity-50"
-                >
-                  {NUMBER_FORMAT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                  className={`h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[16px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                    selectedNumberFormatKind === "currency" ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                  }`}
+                  aria-label="Currency format"
+                  onClick={() => applyNumberFormatKindToSelection("currency")}
+                  disabled={!canWriteWorksheet || !selectedRange}
+                >
+                  $
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className={`h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[16px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                    selectedNumberFormatKind === "percent" ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                  }`}
+                  aria-label="Percent format"
+                  onClick={() => applyNumberFormatKindToSelection("percent")}
+                  disabled={!canWriteWorksheet || !selectedRange}
+                >
+                  %
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex h-8 w-[46px] items-center justify-center gap-1 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                   aria-label="Decrease decimal places"
                   onClick={() => adjustNumberDecimalPlacesForSelection("decrease")}
                   disabled={!canWriteWorksheet || !selectedRange}
                 >
-                  -.0
+                  <span className="text-[14px] font-medium leading-none">.0</span>
+                  <span className="text-[12px] leading-none text-[var(--text-secondary)]">←</span>
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                  className="flex h-8 w-[54px] items-center justify-center gap-1 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                   aria-label="Increase decimal places"
                   onClick={() => adjustNumberDecimalPlacesForSelection("increase")}
                   disabled={!canWriteWorksheet || !selectedRange}
                 >
-                  +.0
+                  <span className="text-[14px] font-medium leading-none">.00</span>
+                  <span className="text-[12px] leading-none text-[var(--text-secondary)]">→</span>
                 </Button>
-                <select
-                  value={selectedNegativeStyle}
-                  onChange={(event) =>
-                    applyNegativeNumberStyleToSelection(event.target.value as WorksheetNegativeNumberStyle)
-                  }
-                  onKeyDown={(event) => event.stopPropagation()}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className={`h-8 rounded-[8px] border-0 bg-transparent px-2 text-[14px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                    selectedNumberFormatKind === "number" ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                  }`}
+                  aria-label="Number format"
+                  onClick={() => applyNumberFormatKindToSelection("number")}
                   disabled={!canWriteWorksheet || !selectedRange}
-                  aria-label="Negative number style"
-                  className="h-8 min-w-[96px] rounded-[8px] border border-[var(--border)] bg-white px-2.5 text-[12px] text-[var(--text-primary)] outline-none disabled:opacity-50"
                 >
-                  {NEGATIVE_STYLE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  123
+                </Button>
               </div>
-              <div className="h-6 w-px bg-[var(--border-subtle)]" />
-              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Insert</div>
+              <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
                 <DropdownMenu>
                 <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                    className="h-8 rounded-[8px] border-0 bg-transparent px-2 text-[13px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                     disabled={!canWriteWorksheet || !selectedRange}
                   >
+                    <Grid2X2 className="h-[18px] w-[18px]" strokeWidth={1.75} />
                     Insert
-                    <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
@@ -5222,97 +5565,39 @@ export function OpportunityPricingWorksheetBoard({
                 </DropdownMenuContent>
               </DropdownMenu>
               </div>
-              <div className="h-6 w-px bg-[var(--border-subtle)]" />
-              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Text</div>
-              <div className="flex items-center gap-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
-                onClick={() =>
-                  applyFormattingPatchToSelection((format) => ({
-                    ...format,
-                    text: {
-                      ...(format.text ?? {}),
-                      bold: format.text?.bold ? undefined : true,
-                    },
-                  }))
-                }
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                Bold
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
-                onClick={() => applyFormattingPatchToSelection({ text: { align: "left" } })}
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                Left
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
-                onClick={() => applyFormattingPatchToSelection({ text: { align: "center" } })}
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                Center
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
-                onClick={() => applyFormattingPatchToSelection({ text: { align: "right" } })}
-                disabled={!canWriteWorksheet || !selectedRange}
-              >
-                Right
-              </Button>
-              </div>
-              <div className="h-6 w-px bg-[var(--border-subtle)]" />
-              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Fill</div>
+              <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                      className="h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                       disabled={!canWriteWorksheet || !selectedRange}
+                      aria-label="Fill color"
                     >
-                      <span
-                        aria-hidden="true"
-                        className={`h-3.5 w-3.5 rounded-[4px] border border-[var(--border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${selectedFillColor ? "" : "bg-[var(--surface-subtle)]"}`}
-                        style={selectedFillColor ? { backgroundColor: selectedFillColor } : undefined}
-                      />
-                      Fill
-                      <ChevronDown className="h-3 w-3" />
+                      <span className="relative flex h-5 w-5 items-center justify-center">
+                        <PaintBucket className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                        <span
+                          aria-hidden="true"
+                          className="absolute bottom-0 h-0.5 w-[18px] rounded-full bg-[var(--surface-subtle)]"
+                          style={selectedFillColor ? { backgroundColor: selectedFillColor } : undefined}
+                        />
+                      </span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-[12rem] rounded-[10px] p-1.5">
-                    <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                      Fill color
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem
-                      onSelect={() => applyFormattingPatchToSelection((format) => clearCellFill(format))}
-                      disabled={!canWriteWorksheet || !selectedRange}
-                      className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
-                    >
-                      Reset fill
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <div className="grid grid-cols-5 gap-1 p-1">
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-[14rem] rounded-[10px] p-2">
+                    <div className="grid w-fit grid-cols-5 gap-2 px-1.5 py-0.5">
                       {FILL_SWATCHES.map((color) => (
                         <DropdownMenuItem
                           key={`fill-${color}`}
                           onSelect={() => applyFormattingPatchToSelection({ fill: { color } })}
                           disabled={!canWriteWorksheet || !selectedRange}
-                          className="flex h-8 w-8 items-center justify-center rounded-[8px] p-0 focus:bg-transparent"
+                          className="flex h-6 w-6 items-center justify-center rounded-full p-0 focus:bg-transparent"
                         >
                           <span
                             aria-hidden="true"
-                            className={`block h-5 w-5 rounded-[6px] border border-[var(--border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${
+                            className={`flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-subtle)] ${
                               selectedFillColor === color
                                 ? "ring-2 ring-[var(--brand-blue)] ring-offset-1 ring-offset-white"
                                 : ""
@@ -5323,118 +5608,356 @@ export function OpportunityPricingWorksheetBoard({
                         </DropdownMenuItem>
                       ))}
                     </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="px-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+                      Custom
+                    </DropdownMenuLabel>
+                    <div className="flex items-center gap-2 px-1.5 pb-1 pt-1.5">
+                      <span
+                        aria-hidden="true"
+                        className="h-7 w-7 shrink-0 rounded-full border border-[var(--border)]"
+                        style={{ backgroundColor: normalizedCustomFillColor ?? selectedFillColor ?? "#FFFFFF" }}
+                      />
+                      <input
+                        value={customFillColorInput}
+                        onChange={(event) => setCustomFillColorInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applyCustomFillColorForSelection();
+                          }
+                        }}
+                        onClick={(event) => event.stopPropagation()}
+                        placeholder="#DBEAFE"
+                        disabled={!canWriteWorksheet || !selectedRange}
+                        aria-label="Custom fill colour hex"
+                        className="h-8 min-w-0 flex-1 rounded-[8px] border border-[var(--border)] bg-white px-2 text-[12px] font-medium text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] disabled:opacity-50"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={!canWriteWorksheet || !selectedRange || !normalizedCustomFillColor}
+                        onClick={applyCustomFillColorForSelection}
+                        className="h-8 rounded-[8px] border-[var(--border)] px-2 text-[12px] font-medium shadow-none"
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => applyFormattingPatchToSelection((format) => clearCellFill(format))}
+                      disabled={!canWriteWorksheet || !selectedRange}
+                      className="flex h-9 items-center gap-2 rounded-[6px] px-2 text-[13px] font-medium"
+                    >
+                      <Eraser className="h-4 w-4" />
+                      Reset
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    aria-label="Borders"
+                  >
+                    <Grid2X2 className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-auto rounded-[12px] p-2">
+                  <div className="flex items-stretch gap-2">
+                    <div className="grid grid-cols-3 gap-1">
+                      {(
+                        [
+                          "all",
+                          "outer",
+                          "inner",
+                          "top",
+                          "horizontal",
+                          "bottom",
+                          "left",
+                          "vertical",
+                          "right",
+                        ] as const
+                      ).map((mode) => (
+                        <DropdownMenuItem
+                          key={mode}
+                          onSelect={() => applyBorderModeToSelection(mode)}
+                          disabled={!canWriteWorksheet || !selectedRange}
+                          aria-label={`${mode} border`}
+                          className="flex h-9 w-9 items-center justify-center rounded-[8px] p-0 focus:bg-[var(--surface-muted)] data-[highlighted]:bg-[var(--surface-muted)]"
+                        >
+                          <BorderModeIcon mode={mode} />
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                    <div className="w-px self-stretch bg-[var(--border)]" />
+                    <DropdownMenuItem
+                      onSelect={() => applyBorderModeToSelection("clear")}
+                      disabled={!canWriteWorksheet || !selectedRange}
+                      aria-label="Clear borders"
+                      className="flex h-9 w-9 items-center justify-center self-start rounded-[8px] p-0 text-[var(--text-primary)] focus:bg-[var(--surface-muted)] data-[highlighted]:bg-[var(--surface-muted)]"
+                    >
+                      <RotateCcw className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                    </DropdownMenuItem>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <button
+                    type="button"
+                    onClick={() => setShowGridlines((value) => !value)}
+                    className="flex w-full items-center justify-between gap-6 rounded-[8px] px-2 py-1.5 text-[13px] font-medium text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
+                  >
+                    Show gridlines
+                    <span
+                      className={`relative inline-flex h-[18px] w-[30px] shrink-0 items-center rounded-full transition-colors ${
+                        showGridlines ? "bg-[var(--brand-blue)]" : "bg-[var(--border)]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute flex h-[14px] w-[14px] items-center justify-center rounded-full bg-white shadow-sm transition-transform ${
+                          showGridlines ? "translate-x-[14px]" : "translate-x-[2px]"
+                        }`}
+                      >
+                        {showGridlines ? (
+                          <Check className="h-2.5 w-2.5 text-[var(--brand-blue)]" strokeWidth={3} />
+                        ) : null}
+                      </span>
+                    </span>
+                  </button>
+                </DropdownMenuContent>
+              </DropdownMenu>
               </div>
-              <div className="h-6 w-px bg-[var(--border-subtle)]" />
-              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Text color</div>
+              <div className="h-5 w-px bg-[var(--border)]" />
+              <div className="flex items-center gap-0.5 rounded-[8px] border border-[var(--border)] px-0.5">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 w-7 rounded-[6px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
+                  onClick={() => adjustFontSizeForSelection(-1)}
+                  disabled={!canWriteWorksheet || !selectedRange || selectedFontSize <= MIN_WORKSHEET_FONT_SIZE}
+                  aria-label="Decrease font size"
+                >
+                  <Minus className="h-4 w-4" strokeWidth={1.75} />
+                </Button>
+                <span className="min-w-[1.75rem] text-center text-[13px] font-medium tabular-nums text-[var(--text-primary)]">
+                  {selectedFontSize}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 w-7 rounded-[6px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
+                  onClick={() => adjustFontSizeForSelection(1)}
+                  disabled={!canWriteWorksheet || !selectedRange || selectedFontSize >= MAX_WORKSHEET_FONT_SIZE}
+                  aria-label="Increase font size"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={1.75} />
+                </Button>
+              </div>
+              <div className="flex items-center gap-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                className={`h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                  selectedTextBold
+                    ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]"
+                    : ""
+                }`}
+                onClick={() => toggleTextStyle("bold")}
+                disabled={!canWriteWorksheet || !selectedRange}
+                aria-label="Bold"
+              >
+                <BoldIcon className="h-[18px] w-[18px]" strokeWidth={2.1} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className={`h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                  selectedTextItalic ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                }`}
+                onClick={() => toggleTextStyle("italic")}
+                disabled={!canWriteWorksheet || !selectedRange}
+                aria-label="Italic"
+              >
+                <ItalicIcon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className={`h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                  selectedTextUnderline ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                }`}
+                onClick={() => toggleTextStyle("underline")}
+                disabled={!canWriteWorksheet || !selectedRange}
+                aria-label="Underline"
+              >
+                <UnderlineIcon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className={`h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                  selectedTextStrikethrough ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                }`}
+                onClick={() => toggleTextStyle("strikethrough")}
+                disabled={!canWriteWorksheet || !selectedRange}
+                aria-label="Strikethrough"
+              >
+                <Strikethrough className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
+                    disabled={!canWriteWorksheet || !selectedRange}
+                    aria-label="Text alignment"
+                  >
+                    {selectedTextAlign === "center" ? (
+                      <AlignCenter className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                    ) : selectedTextAlign === "right" ? (
+                      <AlignRight className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                    ) : (
+                      <AlignLeft className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
+                  {TEXT_ALIGN_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onSelect={() => applyFormattingPatchToSelection({ text: { align: option.value } })}
+                      disabled={!canWriteWorksheet || !selectedRange}
+                      className="flex h-8 items-center gap-2 rounded-[4px] px-2 text-[12px] font-medium"
+                    >
+                      {option.value === "center" ? (
+                        <AlignCenter className="h-3.5 w-3.5" />
+                      ) : option.value === "right" ? (
+                        <AlignRight className="h-3.5 w-3.5" />
+                      ) : (
+                        <AlignLeft className="h-3.5 w-3.5" />
+                      )}
+                      {option.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              </div>
+              <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                      className="h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                       disabled={!canWriteWorksheet || !selectedRange}
+                      aria-label="Text color"
                     >
-                      <span
-                        aria-hidden="true"
-                        className="flex h-4 w-4 items-center justify-center rounded-[4px] border border-[var(--border)] bg-white text-[10px] font-semibold"
-                        style={{ color: selectedTextColor ?? "#111827" }}
-                      >
-                        A
+                      <span className="relative flex h-5 w-5 flex-col items-center justify-center">
+                        <span
+                          aria-hidden="true"
+                          className="text-[16px] font-semibold leading-none text-[var(--text-primary)]"
+                        >
+                          A
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="absolute bottom-[-1px] h-[3px] w-[15px] rounded-full"
+                          style={{ backgroundColor: selectedTextColor ?? "#1E293B" }}
+                        />
                       </span>
-                      Text
-                      <ChevronDown className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-[12rem] rounded-[10px] p-1.5">
-                    <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                      Text color
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem
-                      onSelect={clearTextColorForSelection}
-                      disabled={!canWriteWorksheet || !selectedRange}
-                      className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
-                    >
-                      Reset text color
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <div className="grid grid-cols-5 gap-1 p-1">
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-[14rem] rounded-[10px] p-2">
+                    <div className="grid w-fit grid-cols-5 gap-2 px-1.5 py-0.5">
                       {TEXT_COLOR_PALETTE.map((color) => (
                         <DropdownMenuItem
                           key={`text-${color}`}
                           onSelect={() => applyFormattingPatchToSelection({ text: { color } })}
                           disabled={!canWriteWorksheet || !selectedRange}
-                          className="flex h-8 w-8 items-center justify-center rounded-[8px] p-0 focus:bg-transparent"
+                          className="flex h-6 w-6 items-center justify-center rounded-full p-0 focus:bg-transparent"
                         >
                           <span
                             aria-hidden="true"
-                            className={`flex h-5 w-5 items-center justify-center rounded-[6px] border border-[var(--border)] bg-white text-[10px] font-semibold ${
+                            className={`flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-subtle)] ${
                               selectedTextColor === color
                                 ? "ring-2 ring-[var(--brand-blue)] ring-offset-1 ring-offset-white"
                                 : ""
                             }`}
-                            style={{ color }}
+                            style={{ backgroundColor: color }}
                           >
-                            A
+                            {selectedTextColor === color ? <Check className="h-3.5 w-3.5 text-white" /> : null}
                           </span>
                           <span className="sr-only">{`Set text color ${color}`}</span>
                         </DropdownMenuItem>
                       ))}
                     </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="px-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+                      Custom
+                    </DropdownMenuLabel>
+                    <div className="flex items-center gap-2 px-1.5 pb-1 pt-1.5">
+                      <span
+                        aria-hidden="true"
+                        className="h-7 w-7 shrink-0 rounded-full border border-[var(--border)]"
+                        style={{ backgroundColor: normalizedCustomTextColor ?? selectedTextColor ?? "#111827" }}
+                      />
+                      <input
+                        value={customTextColorInput}
+                        onChange={(event) => setCustomTextColorInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applyCustomTextColorForSelection();
+                          }
+                        }}
+                        onClick={(event) => event.stopPropagation()}
+                        placeholder="#1F2937"
+                        disabled={!canWriteWorksheet || !selectedRange}
+                        aria-label="Custom text colour hex"
+                        className="h-8 min-w-0 flex-1 rounded-[8px] border border-[var(--border)] bg-white px-2 text-[12px] font-medium text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] disabled:opacity-50"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={!canWriteWorksheet || !selectedRange || !normalizedCustomTextColor}
+                        onClick={applyCustomTextColorForSelection}
+                        className="h-8 rounded-[8px] border-[var(--border)] px-2 text-[12px] font-medium shadow-none"
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={clearTextColorForSelection}
+                      disabled={!canWriteWorksheet || !selectedRange}
+                      className="flex h-9 items-center gap-2 rounded-[6px] px-2 text-[13px] font-medium"
+                    >
+                      <Eraser className="h-4 w-4" />
+                      Reset
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <div className="h-6 w-px bg-[var(--border-subtle)]" />
-              <div className="text-[11px] font-medium text-[var(--text-secondary)]">Actions</div>
+              <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
-                <DropdownMenu>
-                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
-                    disabled={!canWriteWorksheet || !selectedRange}
-                  >
-                    Borders
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
-                  <DropdownMenuItem
-                    onSelect={() => applyBorderModeToSelection("all")}
-                    disabled={!canWriteWorksheet || !selectedRange}
-                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
-                  >
-                    All borders
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => applyBorderModeToSelection("outer")}
-                    disabled={!canWriteWorksheet || !selectedRange}
-                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
-                  >
-                    Outer border
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => applyBorderModeToSelection("clear")}
-                    disabled={!canWriteWorksheet || !selectedRange}
-                    className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
-                  >
-                    Clear borders
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-8 rounded-[8px] border-[var(--border)] px-2.5 text-[12px] font-medium shadow-none"
+                    className="h-8 w-8 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                     disabled={!canWriteWorksheet || !selectedRange}
+                    aria-label="Clear formatting"
                   >
-                    Clear
-                    <ChevronDown className="h-3 w-3" />
+                    <Eraser className="h-[18px] w-[18px]" strokeWidth={1.75} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
@@ -5467,11 +5990,11 @@ export function OpportunityPricingWorksheetBoard({
             </div>
           </div>
 
-          <div className="mx-3 mt-2 flex items-center gap-1.5 rounded-[10px] border border-[var(--border)] bg-white px-2 py-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
-            <div className="flex h-8 w-14 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--surface-subtle)] px-2 text-[11px] font-medium text-[var(--text-primary)]">
+          <div className="mx-3 mt-2 flex shrink-0 items-center gap-1.5 px-0.5 py-1">
+            <div className="flex h-8 w-12 shrink-0 items-center justify-center text-[13px] font-medium text-[var(--text-primary)]">
               {formulaBarCellKey}
             </div>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[12px] font-medium italic text-[var(--text-muted)]">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center text-[14px] font-medium italic text-[var(--text-muted)]">
               fx
             </div>
             <textarea
@@ -5535,17 +6058,17 @@ export function OpportunityPricingWorksheetBoard({
                   commitCellEdit(formulaBarCellKey, editingCellValue);
                 }
               }}
-              className="min-h-8 w-full resize-none rounded-[8px] border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12px] leading-[18px] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+              className="min-h-8 w-full resize-none rounded-[8px] border border-[var(--border)] bg-white px-2.5 py-1.5 text-[14px] leading-[20px] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
               placeholder="Enter a value or formula"
               disabled={!canWriteWorksheet}
               spellCheck={false}
             />
           </div>
 
-          <div className="overflow-hidden border-t-0 border-[var(--border)] bg-white">
+          <div className="mx-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-[var(--border)] bg-white shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
             <div
               ref={worksheetViewportRef}
-              className="max-h-[70vh] overflow-auto"
+              className="h-full overflow-auto"
               onScroll={(event) => {
                 setWorksheetViewportScrollLeft(event.currentTarget.scrollLeft);
                 setWorksheetViewportScrollTop(event.currentTarget.scrollTop);
@@ -5563,6 +6086,9 @@ export function OpportunityPricingWorksheetBoard({
                     WORKSHEET_ROW_GUTTER_WIDTH + effectiveColumns.reduce((sum, column) => sum + column.width, 0)
                   }px)`,
                   zoom: worksheetZoom,
+                  ...(showGridlines
+                    ? {}
+                    : ({ "--border-subtle": "transparent" } as CSSProperties)),
                 }}
               >
                 <div

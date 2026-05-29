@@ -17,6 +17,9 @@ export interface WorksheetCellFormat {
   text?: {
     bold?: boolean;
     italic?: boolean;
+    underline?: boolean;
+    strikethrough?: boolean;
+    fontSize?: number;
     color?: string;
     align?: WorksheetTextAlign;
   };
@@ -39,7 +42,17 @@ export interface WorksheetCellFormat {
 }
 
 export type WorksheetCellFormatPatch = WorksheetCellFormat;
-export type WorksheetBorderMode = "all" | "outer" | "clear";
+export type WorksheetBorderMode =
+  | "all"
+  | "outer"
+  | "inner"
+  | "horizontal"
+  | "vertical"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+  | "clear";
 
 const DEFAULT_BORDER: WorksheetCellBorderStyle = {
   color: "#94A3B8",
@@ -65,6 +78,9 @@ function isEmptyFormat(format: WorksheetCellFormat | undefined) {
     Boolean(format.text) &&
     (format.text?.bold !== undefined ||
       format.text?.italic !== undefined ||
+      format.text?.underline !== undefined ||
+      format.text?.strikethrough !== undefined ||
+      format.text?.fontSize !== undefined ||
       Boolean(format.text?.color) ||
       Boolean(format.text?.align));
   const hasFill = Boolean(format.fill?.color);
@@ -262,6 +278,16 @@ export function getCellFormat(cell: WorksheetCell | undefined): WorksheetCellFor
     ? {
         bold: typeof rawFormat.text.bold === "boolean" ? rawFormat.text.bold : undefined,
         italic: typeof rawFormat.text.italic === "boolean" ? rawFormat.text.italic : undefined,
+        underline:
+          typeof rawFormat.text.underline === "boolean" ? rawFormat.text.underline : undefined,
+        strikethrough:
+          typeof rawFormat.text.strikethrough === "boolean"
+            ? rawFormat.text.strikethrough
+            : undefined,
+        fontSize:
+          typeof rawFormat.text.fontSize === "number" && Number.isFinite(rawFormat.text.fontSize)
+            ? rawFormat.text.fontSize
+            : undefined,
         color: typeof rawFormat.text.color === "string" ? rawFormat.text.color : undefined,
         align:
           rawFormat.text.align === "left" ||
@@ -579,6 +605,11 @@ export function applyBordersToRange(
       const currentFormat = getCellFormat(existingCell);
       const workingCell = ensureEditableCell(existingCell);
 
+      const isTopEdge = rowIndex === range.startRowIndex;
+      const isBottomEdge = rowIndex === range.endRowIndex;
+      const isLeftEdge = columnIndex === range.startColumnIndex;
+      const isRightEdge = columnIndex === range.endColumnIndex;
+
       let nextFormat: WorksheetCellFormat;
       if (mode === "clear") {
         nextFormat = clearCellBorders(currentFormat);
@@ -592,21 +623,31 @@ export function applyBordersToRange(
           },
         });
       } else {
-        nextFormat = mergeCellFormat(currentFormat, {
-          border: {
-            top: rowIndex === range.startRowIndex ? DEFAULT_BORDER : undefined,
-            right: columnIndex === range.endColumnIndex ? DEFAULT_BORDER : undefined,
-            bottom: rowIndex === range.endRowIndex ? DEFAULT_BORDER : undefined,
-            left: columnIndex === range.startColumnIndex ? DEFAULT_BORDER : undefined,
-          },
-        });
+        const borderPatch: NonNullable<WorksheetCellFormatPatch["border"]> = {};
 
-        nextFormat.border = {
-          top: rowIndex === range.startRowIndex ? DEFAULT_BORDER : undefined,
-          right: columnIndex === range.endColumnIndex ? DEFAULT_BORDER : undefined,
-          bottom: rowIndex === range.endRowIndex ? DEFAULT_BORDER : undefined,
-          left: columnIndex === range.startColumnIndex ? DEFAULT_BORDER : undefined,
-        };
+        if (mode === "outer") {
+          if (isTopEdge) borderPatch.top = DEFAULT_BORDER;
+          if (isBottomEdge) borderPatch.bottom = DEFAULT_BORDER;
+          if (isLeftEdge) borderPatch.left = DEFAULT_BORDER;
+          if (isRightEdge) borderPatch.right = DEFAULT_BORDER;
+        } else if (mode === "inner") {
+          if (!isBottomEdge) borderPatch.bottom = DEFAULT_BORDER;
+          if (!isRightEdge) borderPatch.right = DEFAULT_BORDER;
+        } else if (mode === "horizontal") {
+          if (!isBottomEdge) borderPatch.bottom = DEFAULT_BORDER;
+        } else if (mode === "vertical") {
+          if (!isRightEdge) borderPatch.right = DEFAULT_BORDER;
+        } else if (mode === "top") {
+          if (isTopEdge) borderPatch.top = DEFAULT_BORDER;
+        } else if (mode === "bottom") {
+          if (isBottomEdge) borderPatch.bottom = DEFAULT_BORDER;
+        } else if (mode === "left") {
+          if (isLeftEdge) borderPatch.left = DEFAULT_BORDER;
+        } else if (mode === "right") {
+          if (isRightEdge) borderPatch.right = DEFAULT_BORDER;
+        }
+
+        nextFormat = mergeCellFormat(currentFormat, { border: borderPatch });
       }
 
       const nextCell = setCellFormat(workingCell, nextFormat);
