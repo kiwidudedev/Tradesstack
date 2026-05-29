@@ -234,6 +234,12 @@ function buildJobError(code: PricingWorksheetAiJobErrorCode, message: string, re
   return { code, message, retryable };
 }
 
+function isAnthropicSafeUnknownFallback(
+  generationMeta: Awaited<ReturnType<typeof buildPricingWorksheetEditAssistantPreview>>["generationMeta"],
+) {
+  return generationMeta.fallbackUsed && generationMeta.fallbackReason === "anthropic_safe_unknown_fallback";
+}
+
 function classifyJobError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
@@ -718,7 +724,7 @@ async function runPricingWorksheetAiJob(params: {
     }
   }
 
-  if (previewResult.generationMeta.fallbackUsed) {
+  if (previewResult.generationMeta.fallbackUsed && !isAnthropicSafeUnknownFallback(previewResult.generationMeta)) {
     throw new Error(previewResult.generationMeta.fallbackReason ?? "AI worksheet job failed before a preview was ready.");
   }
 
@@ -745,6 +751,15 @@ async function runPricingWorksheetAiJob(params: {
   });
 
   const { preview, generationMeta, providerAudit } = previewResult;
+
+  if (isAnthropicSafeUnknownFallback(generationMeta)) {
+    preview.validationWarnings.push({
+      ruleKey: "anthropic_safe_unknown_fallback",
+      severity: "warning",
+      result: "warning",
+      message: "The assistant returned a safe answer instead of worksheet edits. Add more detail and retry if you want a previewable worksheet change.",
+    });
+  }
 
   if (usedUnverifiedNoSearchFallback) {
     preview.warnings.push("Source lookup failed, so this worksheet was generated without web search. Assumptions should be verified before apply.");

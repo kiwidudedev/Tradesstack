@@ -5,6 +5,7 @@ import { buildWorksheetCellKey } from "@/lib/opportunity-pricing-worksheet-paste
 import type { Json } from "@/lib/supabase/types";
 
 export type WorksheetTextAlign = "left" | "center" | "right";
+export type WorksheetTextWrapMode = "overflow" | "wrap" | "clip";
 export type WorksheetNumberFormatKind = "general" | "number" | "currency" | "percent";
 export type WorksheetNegativeNumberStyle = "minus" | "parentheses";
 
@@ -22,6 +23,7 @@ export interface WorksheetCellFormat {
     fontSize?: number;
     color?: string;
     align?: WorksheetTextAlign;
+    wrap?: WorksheetTextWrapMode;
   };
   fill?: {
     color?: string;
@@ -82,7 +84,8 @@ function isEmptyFormat(format: WorksheetCellFormat | undefined) {
       format.text?.strikethrough !== undefined ||
       format.text?.fontSize !== undefined ||
       Boolean(format.text?.color) ||
-      Boolean(format.text?.align));
+      Boolean(format.text?.align) ||
+      format.text?.wrap !== undefined);
   const hasFill = Boolean(format.fill?.color);
   const hasBorder =
     Boolean(format.border) &&
@@ -294,6 +297,12 @@ export function getCellFormat(cell: WorksheetCell | undefined): WorksheetCellFor
           rawFormat.text.align === "center" ||
           rawFormat.text.align === "right"
             ? rawFormat.text.align
+            : undefined,
+        wrap:
+          rawFormat.text.wrap === "overflow" ||
+          rawFormat.text.wrap === "wrap" ||
+          rawFormat.text.wrap === "clip"
+            ? rawFormat.text.wrap
             : undefined,
       }
     : undefined;

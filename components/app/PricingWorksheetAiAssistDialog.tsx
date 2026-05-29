@@ -357,18 +357,17 @@ export function PricingWorksheetAiAssistDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[96vw] max-w-[920px] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
-        <DialogHeader className="border-b border-[var(--border)] px-6 pb-5 pt-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-secondary)]">
-                <Sparkles className="h-3.5 w-3.5" />
-                Preview only
-              </div>
-              <DialogTitle className="text-[24px] font-semibold tracking-[-0.02em]">
-                Ask AI worksheet assistant
+        <DialogHeader className="border-b border-[var(--border)] px-6 pb-4 pt-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--primary)]/10 text-[var(--primary)]">
+              <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="text-[18px] font-semibold tracking-[-0.01em]">
+                Ask AI
               </DialogTitle>
-              <DialogDescription className="max-w-[680px] text-sm text-[var(--text-secondary)]">
-                Ask for formula advice, explanations, or safe worksheet edits. Nothing is applied or saved until you explicitly approve it.
+              <DialogDescription className="text-[13px] text-[var(--text-secondary)]">
+                Preview only — nothing changes until you apply it.
               </DialogDescription>
             </div>
           </div>
@@ -386,22 +385,22 @@ export function PricingWorksheetAiAssistDialog({
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.9fr)]">
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="block text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-                  Prompt
+                <label className="block text-[13px] font-medium text-[var(--text-primary)]">
+                  What do you need?
                 </label>
                 <textarea
                   value={prompt}
                   onChange={(event) => onPromptChange(event.target.value)}
                   disabled={isBusy}
-                  placeholder="Explain this formula, add a nogs row, fix the total formula, or suggest a safer worksheet edit."
+                  placeholder="e.g. Explain this formula, or add a labour row and total it."
                   className="min-h-[132px] w-full rounded-[10px] border border-[var(--border)] bg-white px-3 py-3 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="block text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-                    Preview worksheet name
+                <label className="space-y-1.5">
+                  <span className="block text-[12px] font-medium text-[var(--text-secondary)]">
+                    Worksheet name
                   </span>
                   <input
                     value={previewWorksheetName}
@@ -410,9 +409,9 @@ export function PricingWorksheetAiAssistDialog({
                     className="h-11 w-full rounded-[10px] border border-[var(--border)] bg-white px-3 text-sm text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </label>
-                <label className="space-y-2">
-                  <span className="block text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-                    Preview trade package
+                <label className="space-y-1.5">
+                  <span className="block text-[12px] font-medium text-[var(--text-secondary)]">
+                    Trade package
                   </span>
                   <input
                     value={previewTradePackage}
@@ -424,20 +423,15 @@ export function PricingWorksheetAiAssistDialog({
                 </label>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  onClick={onGenerate}
-                  disabled={isBusy || previewWorksheetName.trim().length === 0}
-                  className="h-10 rounded-[8px] px-4 text-sm font-medium"
-                >
-                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  {isGenerating ? (jobProgressLabel ?? "Preparing response...") : jobError?.retryable ? "Retry Ask AI" : "Ask AI"}
-                </Button>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Ask AI uses compact worksheet context only. Any worksheet edits stay local until you apply them, and nothing saves until you save normally.
-                </p>
-              </div>
+              <Button
+                type="button"
+                onClick={onGenerate}
+                disabled={isBusy || previewWorksheetName.trim().length === 0}
+                className="h-11 w-full rounded-[10px] text-sm font-semibold"
+              >
+                {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                {isGenerating ? (jobProgressLabel ?? "Thinking…") : jobError?.retryable ? "Retry" : "Ask AI"}
+              </Button>
 
               {preview ? (
                 <div className="space-y-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
@@ -553,21 +547,14 @@ export function PricingWorksheetAiAssistDialog({
                   ) : null}
                 </div>
               ) : (
-                <div className="rounded-[12px] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-5 text-sm text-[var(--text-secondary)]">
-                  Ask AI to see an answer, suggested worksheet edits, validation warnings, and matching memory context before anything touches the current sheet.
+                <div className="rounded-[12px] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-4 text-[13px] text-[var(--text-secondary)]">
+                  Your answer and any suggested edits will show here.
                 </div>
               )}
             </div>
 
             <div className="space-y-4 rounded-[14px] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-              <div>
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Preview summary</h3>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                  {isAnswerOnly
-                    ? "Review the answer, assumptions, and memory support. This response will not change the worksheet unless you ask for an edit."
-                    : "Review the answer, proposed changes, and memory support before applying anything to the current worksheet."}
-                </p>
-              </div>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Preview</h3>
 
               {preview ? (
                 <div className="space-y-4">
@@ -1162,8 +1149,8 @@ export function PricingWorksheetAiAssistDialog({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-white px-4 py-5 text-sm text-[var(--text-secondary)]">
-                  Answers, proposed worksheet changes, and memory support will appear here after Ask AI responds.
+                <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-white px-4 py-5 text-[13px] text-[var(--text-secondary)]">
+                  Nothing yet. Ask a question to see the response here.
                 </div>
               )}
             </div>
@@ -1203,34 +1190,27 @@ export function PricingWorksheetAiAssistDialog({
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-[var(--border)] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-[var(--text-secondary)]">
-            {isAnswerOnly
-              ? "This response is advice only. Closing it will not change or save the current worksheet."
-              : "Applying a preview updates the current worksheet locally and marks it as unsaved. You can still review and save manually afterward."}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onReject}
-              disabled={isBusy || !preview}
-              className="border-[var(--border)]"
-            >
-              {isSubmittingReview ? "Updating..." : "Reject"}
-            </Button>
-            <Button
-              type="button"
-              onClick={onApply}
-              disabled={isBusy || !preview || !canApply || hasBlockingWarning}
-              className="h-10 rounded-[8px] px-4 text-sm font-medium"
-            >
-              {isSubmittingReview ? (isAnswerOnly ? "Closing..." : "Applying...") : applyLabel}
-            </Button>
-          </div>
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] px-6 py-4">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onReject}
+            disabled={isBusy || !preview}
+            className="border-[var(--border)]"
+          >
+            {isSubmittingReview ? "Updating…" : "Reject"}
+          </Button>
+          <Button
+            type="button"
+            onClick={onApply}
+            disabled={isBusy || !preview || !canApply || hasBlockingWarning}
+            className="h-10 rounded-[8px] px-4 text-sm font-medium"
+          >
+            {isSubmittingReview ? (isAnswerOnly ? "Closing…" : "Applying…") : applyLabel}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

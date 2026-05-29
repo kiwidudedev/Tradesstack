@@ -640,6 +640,69 @@ describe("pricing worksheet ai jobs", () => {
     expect(aiInteractionState.model).toBe("claude-sonnet-4-6");
   });
 
+  it("returns Anthropic safe unknown fallbacks as ready answer-only previews", async () => {
+    const { createPricingWorksheetEditAssistantJob, getPricingWorksheetEditAssistantJob } = await import("./pricing-worksheet-ai-jobs");
+    const { request } = buildFixture();
+    mockModelConfig = {
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    };
+
+    buildPricingWorksheetEditAssistantPreview.mockResolvedValue(
+      buildPreviewResult({
+        generationMeta: {
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          fallbackUsed: true,
+          fallbackReason: "anthropic_safe_unknown_fallback",
+        },
+        providerAudit: {
+          requestedProvider: "anthropic",
+          requestedModel: "claude-sonnet-4-6",
+          actualProvider: "anthropic",
+          actualModel: "claude-sonnet-4-6",
+          webSearchEnabled: false,
+        },
+        preview: {
+          ...buildPreviewResult().preview,
+          mode: "answer_only",
+          answer: "I can help build that worksheet, but I need more detail before proposing safe worksheet edits.",
+          summary: "The assistant returned a safe answer instead of worksheet edits.",
+          confidence: "low",
+          operations: [],
+          warnings: ["anthropic_safe_unknown_fallback"],
+          diffSummary: {
+            changedCells: [],
+            formulaCells: [],
+            insertedRows: [],
+            affectedRows: [],
+          },
+        },
+      }),
+    );
+
+    await createPricingWorksheetEditAssistantJob(request);
+    await vi.runAllTimersAsync();
+
+    const job = await getPricingWorksheetEditAssistantJob({
+      organizationId: request.organizationId,
+      aiInteractionId: interactionId,
+    });
+
+    expect(job.status).toBe("ready");
+    expect(job.error).toBeNull();
+    expect(job.validationStatus).toBe("warning");
+    expect(job.preview?.assistant?.mode).toBe("answer_only");
+    expect(job.preview?.validationWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleKey: "anthropic_safe_unknown_fallback",
+          message: expect.stringContaining("safe answer"),
+        }),
+      ]),
+    );
+  });
+
   it("surfaces quota-specific failure messaging", async () => {
     const { createPricingWorksheetEditAssistantJob, getPricingWorksheetEditAssistantJob } = await import("./pricing-worksheet-ai-jobs");
     const { request } = buildFixture();
