@@ -39,6 +39,7 @@ import {
   type PricingWorksheetAiPreviewSummary,
   type PricingWorksheetAiValidationWarning,
 } from "@/components/app/PricingWorksheetAiAssistDialog";
+import { PricingWorksheetAiChatPanel } from "@/components/app/PricingWorksheetAiChatPanel";
 import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { Button } from "@/components/ui/button";
@@ -1369,6 +1370,12 @@ export function OpportunityPricingWorksheetBoard({
   const [aiAppliedSuggestedEditGroupIds, setAiAppliedSuggestedEditGroupIds] = useState<string[]>([]);
   const [aiFollowUpPrompt, setAiFollowUpPrompt] = useState("");
   const [isSubmittingAiFollowUp, setIsSubmittingAiFollowUp] = useState(false);
+  const [isAiChatOpen, setIsAiChatOpen] = useState(false);
+  const aiPreApplySnapshotRef = useRef<{
+    worksheet: WorksheetData;
+    name: string | null;
+    tradePackage: string | null;
+  } | null>(null);
   const aiJobPollTimeoutRef = useRef<number | null>(null);
   const [historyPast, setHistoryPast] = useState<WorksheetData[]>([]);
   const [historyFuture, setHistoryFuture] = useState<WorksheetData[]>([]);
@@ -1662,6 +1669,8 @@ export function OpportunityPricingWorksheetBoard({
     setAiFindingStates({});
     setAiAppliedSuggestedEditGroupIds([]);
     setAiFollowUpPrompt("");
+    setIsAiChatOpen(false);
+    aiPreApplySnapshotRef.current = null;
   }, []);
 
   const openAiDialog = useCallback(() => {
@@ -1673,6 +1682,8 @@ export function OpportunityPricingWorksheetBoard({
     setAiFindingStates({});
     setAiAppliedSuggestedEditGroupIds([]);
     setAiFollowUpPrompt("");
+    setIsAiChatOpen(false);
+    aiPreApplySnapshotRef.current = null;
     setIsAiDialogOpen(true);
   }, [worksheetDisplayName, worksheetTradePackage]);
 
@@ -4585,7 +4596,60 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     logAiReviewIntelligenceEvents(reviewEvents);
-  }, [aiPrompt, logAiReviewIntelligenceEvents]);
+
+    // New flow: the dialog only collects the prompt. Once a preview is ready we
+    // build it straight into the live sheet and hand review off to the docked
+    // chat panel (Approve keeps it, Reject restores the pre-AI snapshot).
+    const isFollowUp = Boolean(options?.followUpContext);
+    const hasMutatingOperations = (payload.preview.assistant?.operations ?? []).some(
+      (operation) => operation.type !== "explain_formula"
+    );
+
+    if (hasMutatingOperations && canWriteWorksheet) {
+      // Keep the snapshot pinned to the true pre-AI sheet so Reject (and a final
+      // reject after several follow-ups) always restores the original. A
+      // follow-up's preview.worksheet is the complete revised sheet, so it
+      // replaces the grid wholesale — no need to unwind the prior apply first.
+      if (!isFollowUp) {
+        aiPreApplySnapshotRef.current = {
+          worksheet: cloneWorksheetData(worksheetRef.current),
+          name: worksheetName,
+          tradePackage: worksheetTradePackage,
+        };
+      }
+
+      let nextWorksheet = cloneWorksheetData(payload.preview.worksheet);
+      nextWorksheet = autoLayoutWorksheet(nextWorksheet, payload.preview.assistant?.diffSummary);
+      nextWorksheet.sheetName =
+        payload.preview.compactOutput.worksheetName || nextWorksheet.sheetName;
+
+      const commitResult = applyCommittedWorksheetChange(() => nextWorksheet, {
+        validateFormulaOutputs: true,
+      });
+      if (commitResult.committed) {
+        setWorksheetName(nextWorksheet.sheetName);
+        setWorksheetTradePackage(payload.preview.compactOutput.tradePackage ?? null);
+        setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
+        setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+        setActiveCellKey(null);
+        setActiveEditor(null);
+        setEditingCellValue("");
+      } else {
+        setAiPreviewError(commitResult.message ?? "Unable to build the AI worksheet into your sheet.");
+      }
+    }
+
+    setIsAiDialogOpen(false);
+    setIsAiChatOpen(true);
+  }, [
+    aiPrompt,
+    applyCommittedWorksheetChange,
+    autoLayoutWorksheet,
+    canWriteWorksheet,
+    logAiReviewIntelligenceEvents,
+    worksheetName,
+    worksheetTradePackage,
+  ]);
 
   const pollAiWorksheetJob = useCallback(async (
     jobId: string,
@@ -4873,9 +4937,86 @@ export function OpportunityPricingWorksheetBoard({
     session?.organizationId,
   ]);
 
-  const rejectAiWorksheetPreview = useCallback(async () => {
+  const revertAiPreApplySnapshot = useCallback(() => {
+    const snapshot = aiPreApplySnapshotRef.current;
+    if (!snapshot) {
+      return;
+    }
+
+    applyCommittedWorksheetChange(() => cloneWorksheetData(snapshot.worksheet), {
+      validateFormulaOutputs: false,
+    });
+    setWorksheetName(snapshot.name);
+    setWorksheetTradePackage(snapshot.tradePackage);
+    setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
+    setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+    setActiveCellKey(null);
+    setActiveEditor(null);
+    setEditingCellValue("");
+    aiPreApplySnapshotRef.current = null;
+  }, [applyCommittedWorksheetChange]);
+
+  const approveAiWorksheetPreview = useCallback(async () => {
     if (!aiPreviewResponse) {
-      handleAiDialogOpenChange(false);
+      resetAiPreviewState();
+      return;
+    }
+
+    const isAnswerOnly = aiPreviewResponse.preview.assistant?.mode === "answer_only";
+    setIsSubmittingAiReview(true);
+    setAiPreviewError(null);
+
+    try {
+      const normalizedTradePackage = aiPreviewTradePackage.trim() || null;
+      const editedOutput = buildWorksheetAiEditedOutput({
+        preview: aiPreviewResponse.preview,
+        worksheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName,
+        tradePackage: normalizedTradePackage,
+      });
+      editedOutput.acceptedFindingIds = Object.entries(aiFindingStates)
+        .filter(([, disposition]) => disposition === "accepted")
+        .map(([findingId]) => findingId);
+      editedOutput.rejectedFindingIds = Object.entries(aiFindingStates)
+        .filter(([, disposition]) => disposition === "rejected")
+        .map(([findingId]) => findingId);
+      editedOutput.appliedSuggestedEditGroupIds = aiAppliedSuggestedEditGroupIds;
+      const isEdited =
+        (aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName) !==
+          aiPreviewResponse.preview.compactOutput.worksheetName ||
+        normalizedTradePackage !== (aiPreviewResponse.preview.compactOutput.tradePackage ?? null) ||
+        aiAppliedSuggestedEditGroupIds.length > 0 ||
+        Object.keys(aiFindingStates).length > 0;
+
+      await submitAiWorksheetReview(isEdited ? "edited" : "accepted", editedOutput);
+      setMessage(
+        isAnswerOnly
+          ? "AI worksheet answer accepted."
+          : "AI worksheet changes approved. Review the sheet and save when ready."
+      );
+      aiPreApplySnapshotRef.current = null;
+      resetAiPreviewState();
+    } catch (aiReviewError) {
+      setAiPreviewError(
+        aiReviewError instanceof Error ? aiReviewError.message : "Unable to approve the AI worksheet response."
+      );
+    } finally {
+      setIsSubmittingAiReview(false);
+    }
+  }, [
+    aiAppliedSuggestedEditGroupIds,
+    aiFindingStates,
+    aiPreviewResponse,
+    aiPreviewTradePackage,
+    aiPreviewWorksheetName,
+    resetAiPreviewState,
+    submitAiWorksheetReview,
+  ]);
+
+  const rejectAiWorksheetPreview = useCallback(async () => {
+    revertAiPreApplySnapshot();
+
+    if (!aiPreviewResponse) {
+      resetAiPreviewState();
       return;
     }
 
@@ -4884,8 +5025,8 @@ export function OpportunityPricingWorksheetBoard({
 
     try {
       await submitAiWorksheetReview("rejected");
-      setMessage("AI worksheet assistant response rejected.");
-      handleAiDialogOpenChange(false);
+      setMessage("AI worksheet changes reverted.");
+      resetAiPreviewState();
     } catch (aiReviewError) {
       setAiPreviewError(
         aiReviewError instanceof Error ? aiReviewError.message : "Unable to reject the AI worksheet response."
@@ -4893,7 +5034,14 @@ export function OpportunityPricingWorksheetBoard({
     } finally {
       setIsSubmittingAiReview(false);
     }
-  }, [aiPreviewResponse, handleAiDialogOpenChange, submitAiWorksheetReview]);
+  }, [aiPreviewResponse, resetAiPreviewState, revertAiPreApplySnapshot, submitAiWorksheetReview]);
+
+  const dismissAiChat = useCallback(() => {
+    if (isSubmittingAiReview || isSubmittingAiFollowUp) {
+      return;
+    }
+    resetAiPreviewState();
+  }, [isSubmittingAiFollowUp, isSubmittingAiReview, resetAiPreviewState]);
 
   const applyAiSuggestedEditGroup = useCallback(async (groupId: string) => {
     if (!aiPreviewResponse?.preview.assistant) {
@@ -5333,8 +5481,8 @@ export function OpportunityPricingWorksheetBoard({
   })();
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1">
-      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-white">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-1">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
         <div className="shrink-0 border-b border-[color-mix(in_srgb,var(--topbar)_82%,white_18%)] bg-[var(--topbar)] px-4 py-2.5 text-white">
           <div className="flex min-h-12 items-center justify-between gap-4">
             <div ref={worksheetNameEditorRef} className="relative flex min-w-0 items-center gap-3">
@@ -5450,7 +5598,7 @@ export function OpportunityPricingWorksheetBoard({
         </div>
         <div
           ref={worksheetSurfaceRef}
-          className="flex min-h-0 flex-1 flex-col space-y-0 bg-[var(--surface-muted)] outline-none"
+          className="relative flex min-h-0 flex-1 flex-col space-y-0 bg-[var(--surface-muted)] outline-none"
           tabIndex={0}
           onPasteCapture={handleWorksheetPaste}
           onCopy={handleWorksheetCopy}
@@ -5595,11 +5743,11 @@ export function OpportunityPricingWorksheetBoard({
                       disabled={!canWriteWorksheet || !selectedRange}
                       aria-label="Fill color"
                     >
-                      <span className="relative flex h-5 w-5 items-center justify-center">
-                        <PaintBucket className="h-5 w-5" strokeWidth={1.75} />
+                      <span className="relative flex h-6 w-6 translate-y-0.5 items-center justify-center">
+                        <PaintBucket className="h-4.5 w-4.5" strokeWidth={1.75} />
                         <span
                           aria-hidden="true"
-                          className="absolute bottom-[-1px] h-[3px] w-[15px] rounded-full bg-[var(--surface-subtle)]"
+                          className="absolute bottom-[1px] h-0.5 w-[15px] rounded-full bg-[var(--surface-subtle)]"
                           style={selectedFillColor ? { backgroundColor: selectedFillColor } : undefined}
                         />
                       </span>
@@ -5790,16 +5938,16 @@ export function OpportunityPricingWorksheetBoard({
                     disabled={!canWriteWorksheet || !selectedRange}
                     aria-label="Text color"
                   >
-                    <span className="relative flex h-5 w-5 flex-col items-center justify-center">
+                    <span className="relative flex h-6 w-6 flex-col items-center justify-center">
                       <span
                         aria-hidden="true"
-                        className="text-[15px] font-medium leading-none text-[var(--text-primary)]"
+                        className="text-[18px] font-medium leading-none text-[var(--text-primary)]"
                       >
                         A
                       </span>
                       <span
                         aria-hidden="true"
-                        className="absolute bottom-[-1px] h-[3px] w-[15px] rounded-full"
+                        className="absolute bottom-[1px] h-0.5 w-[15px] rounded-full"
                         style={{ backgroundColor: selectedTextColor ?? "#1E293B" }}
                       />
                     </span>
@@ -6139,6 +6287,45 @@ export function OpportunityPricingWorksheetBoard({
               spellCheck={false}
             />
           </div>
+
+          {isAiChatOpen ? (
+            <div className="pointer-events-none absolute top-[8.5rem] right-3 bottom-3 z-30 flex">
+              <PricingWorksheetAiChatPanel
+                answer={aiPreviewResponse?.preview.assistant?.answer ?? ""}
+                summary={aiPreviewResponse?.preview.assistant?.summary ?? ""}
+                confidence={aiPreviewResponse?.preview.assistant?.confidence ?? "medium"}
+                assumptions={
+                  aiPreviewResponse?.preview.assistant?.assumptions ??
+                  aiPreviewResponse?.preview.compactOutput.assumptions ??
+                  []
+                }
+                warnings={aiPreviewResponse?.preview.assistant?.warnings ?? []}
+                changedCellCount={aiPreviewResponse?.preview.assistant?.diffSummary.changedCells.length ?? 0}
+                isAnswerOnly={aiPreviewResponse?.preview.assistant?.mode === "answer_only"}
+                canApply={
+                  canWriteWorksheet || aiPreviewResponse?.preview.assistant?.mode === "answer_only"
+                }
+                hasBlockingWarning={
+                  aiPreviewResponse?.preview.validationWarnings.some(
+                    (warning) =>
+                      warning.result === "failed" ||
+                      warning.severity === "error" ||
+                      warning.severity === "critical"
+                  ) ?? false
+                }
+                hasResponse={Boolean(aiPreviewResponse)}
+                error={aiPreviewError}
+                followUpPrompt={aiFollowUpPrompt}
+                isSubmittingFollowUp={isSubmittingAiFollowUp || isGeneratingAiPreview}
+                isSubmittingReview={isSubmittingAiReview}
+                onFollowUpPromptChange={setAiFollowUpPrompt}
+                onSubmitFollowUp={() => void submitAiFollowUp()}
+                onApprove={() => void approveAiWorksheetPreview()}
+                onReject={() => void rejectAiWorksheetPreview()}
+                onClose={dismissAiChat}
+              />
+            </div>
+          ) : null}
 
           <div className="mx-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-[var(--border)] bg-white shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
             <div

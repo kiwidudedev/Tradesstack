@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Copy, FileSpreadsheet, FolderPen, Pencil, Plus } from "lucide-react";
+import { Archive, ChevronDown, Copy, FileSpreadsheet, FolderPen, Pencil, Plus } from "lucide-react";
 import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
@@ -26,7 +26,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import {
   createDefaultWorksheetData,
@@ -683,7 +691,7 @@ export default function OpportunityPricingWorksheetRegisterPage() {
                 <OperationalTableHead className="w-[42%]">Worksheet name</OperationalTableHead>
                 <OperationalTableHead className="w-[28%]">Trade/package</OperationalTableHead>
                 <OperationalTableHead className="w-[22%]">Last updated</OperationalTableHead>
-                <OperationalTableHead className="w-[180px] text-center">Actions</OperationalTableHead>
+                <OperationalTableHead className="w-[112px] text-center">Actions</OperationalTableHead>
               </OperationalTableRow>
             </OperationalTableHeader>
             <OperationalTableBody>
@@ -704,80 +712,78 @@ export default function OpportunityPricingWorksheetRegisterPage() {
                   </OperationalTableCell>
                   <OperationalTableCell className="px-2">
                     <div className="flex items-center justify-center gap-1">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
-                        aria-label="Open worksheet"
-                        title="Open"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openWorksheet(row.id);
-                        }}
-                      >
-                        <FileSpreadsheet className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
-                        aria-label="Rename worksheet"
-                        title="Rename"
-                        disabled={!canManageWorksheets || mutatingWorksheetId === row.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setActionDialog({ type: "rename", row, value: row.name });
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
-                        aria-label="Edit trade or package"
-                        title="Edit trade/package"
-                        disabled={!canManageWorksheets || mutatingWorksheetId === row.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setActionDialog({ type: "trade", row, value: row.trade_package ?? "" });
-                        }}
-                      >
-                        <FolderPen className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
-                        aria-label="Duplicate worksheet"
-                        title="Duplicate"
-                        disabled={!canManageWorksheets || mutatingWorksheetId !== null}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void duplicateWorksheet(row.id);
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--error)] shadow-none hover:bg-[var(--error-light)] hover:text-[var(--error)]"
-                        aria-label="Archive worksheet"
-                        title="Archive"
-                        disabled={!canManageWorksheets || mutatingWorksheetId === row.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setActionDialog({ type: "archive", row });
-                        }}
-                      >
-                        <Archive className="h-4 w-4" />
-                      </Button>
+                      <Tooltip label="Edit worksheet">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
+                          aria-label="Edit worksheet"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openWorksheet(row.id);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
+                      <DropdownMenu>
+                        <Tooltip label="More actions">
+                          <DropdownMenuTrigger asChild disabled={mutatingWorksheetId === row.id}>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="icon"
+                              className="h-8 w-8 rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
+                              aria-label="More worksheet actions"
+                              disabled={mutatingWorksheetId === row.id}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                        </Tooltip>
+                        <DropdownMenuContent
+                          align="end"
+                          sideOffset={4}
+                          className="min-w-[11rem] rounded-[10px] p-1"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <DropdownMenuItem
+                            disabled={!canManageWorksheets || mutatingWorksheetId === row.id}
+                            className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
+                            onSelect={() => setActionDialog({ type: "rename", row, value: row.name })}
+                          >
+                            <Pencil className="mr-2 h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!canManageWorksheets || mutatingWorksheetId === row.id}
+                            className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
+                            onSelect={() => setActionDialog({ type: "trade", row, value: row.trade_package ?? "" })}
+                          >
+                            <FolderPen className="mr-2 h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                            Edit trade/package
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!canManageWorksheets || mutatingWorksheetId !== null}
+                            className="h-8 rounded-[6px] px-2 text-[12px] font-medium"
+                            onSelect={() => void duplicateWorksheet(row.id)}
+                          >
+                            <Copy className="mr-2 h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                            Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            disabled={!canManageWorksheets || mutatingWorksheetId === row.id}
+                            className="h-8 rounded-[6px] px-2 text-[12px] font-medium text-[var(--error)] focus:text-[var(--error)]"
+                            onSelect={() => setActionDialog({ type: "archive", row })}
+                          >
+                            <Archive className="mr-2 h-3.5 w-3.5" />
+                            Archive
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </OperationalTableCell>
                 </OperationalTableRow>
