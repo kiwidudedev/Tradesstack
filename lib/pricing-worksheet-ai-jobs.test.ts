@@ -48,7 +48,10 @@ function buildFixture() {
   });
 
   const worksheetContext = buildPricingWorksheetAiContext(worksheet, {
+    workbookId: "worksheet-123",
     worksheetId: "worksheet-123",
+    sheetId: "sheet-123",
+    sheetName: "Ceiling Grid",
     worksheetName: "Ceiling Grid",
     tradePackage: "Ceilings",
   });
@@ -57,7 +60,10 @@ function buildFixture() {
     request: {
       organizationId: "org-123",
       opportunityId: "opp-123",
+      workbookId: "worksheet-123",
       worksheetId: "worksheet-123",
+      sheetId: "sheet-123",
+      sheetName: "Ceiling Grid",
       worksheetName: "Ceiling Grid",
       tradePackage: "Ceilings",
       prompt:
@@ -320,6 +326,17 @@ describe("pricing worksheet ai jobs", () => {
 
     expect(job.aiInteractionId).toBe(interactionId);
     expect(job.status).toBe("queued");
+    expect(createAiLifecycleInteraction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        inputContextSummary: expect.objectContaining({
+          workbookId: "worksheet-123",
+          worksheetId: "worksheet-123",
+          sheetId: "sheet-123",
+          sheetName: "Ceiling Grid",
+        }),
+      }),
+    );
     expect(buildPricingWorksheetEditAssistantPreview).not.toHaveBeenCalled();
   });
 
@@ -345,6 +362,26 @@ describe("pricing worksheet ai jobs", () => {
     if (job.status !== "ready") {
       throw new Error(JSON.stringify(job));
     }
+    expect(job.workbookId).toBe("worksheet-123");
+    expect(job.worksheetId).toBe("worksheet-123");
+    expect(job.sheetId).toBe("sheet-123");
+    expect(job.sheetName).toBe("Ceiling Grid");
+    expect(aiInteractionState.output_structured).toMatchObject({
+      job: {
+        request: {
+          workbookId: "worksheet-123",
+          worksheetId: "worksheet-123",
+          sheetId: "sheet-123",
+          sheetName: "Ceiling Grid",
+        },
+        result: {
+          workbookId: "worksheet-123",
+          worksheetId: "worksheet-123",
+          sheetId: "sheet-123",
+          sheetName: "Ceiling Grid",
+        },
+      },
+    });
     expect(job.preview?.assistant?.mode).toBe("propose_edit");
   });
 

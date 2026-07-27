@@ -1,5 +1,13 @@
-import type { WorksheetCell, WorksheetData } from "@/lib/opportunity-pricing-worksheet-defaults";
 import {
+  normalizeWorksheetCell,
+  type WorksheetCell,
+  type WorksheetData,
+} from "@/lib/opportunity-pricing-worksheet-defaults";
+import {
+  FORMULA_DIV_ZERO_ERROR,
+  FORMULA_ERROR,
+  FORMULA_REF_ERROR,
+  FORMULA_VALUE_ERROR,
   findWorksheetFormulaErrors,
   recalculateWorksheetFormulas,
 } from "@/lib/opportunity-pricing-worksheet-formulas";
@@ -175,6 +183,9 @@ export type PricingWorksheetAiValidationIssue = {
   code: string;
   message: string;
   severity: "warning" | "error";
+  cellRef?: string;
+  formula?: string;
+  formulaError?: string;
 };
 
 export type PricingWorksheetAiOperationNormalizationDiagnostics = {
@@ -382,6 +393,175 @@ function ensureCell(worksheet: WorksheetData, rowIndex: number, columnIndex: num
   return worksheet.cells[cellKey] as WorksheetCell;
 }
 
+type PricingWorksheetAiFormulaMutation = {
+  ref: string;
+  formula: string;
+  previousCell: WorksheetCell | null;
+  operationType: PricingWorksheetAiOperationType;
+};
+
+function cloneCell(cell: WorksheetCell | undefined | null): WorksheetCell | null {
+  return cell ? cloneWorksheet(cell) : null;
+}
+
+function getCellAtRef(worksheet: WorksheetData, ref: string): WorksheetCell | null {
+  const parsed = parseCellRef(ref);
+  if (!parsed) {
+    return null;
+  }
+
+  const row = worksheet.rows[parsed.rowNumber - 1];
+  const column = worksheet.columns[parsed.columnIndex];
+  if (!row || !column) {
+    return null;
+  }
+
+  return worksheet.cells[buildWorksheetCellKey(column.id, row.id)] ?? null;
+}
+
+function restoreCellAtRef(worksheet: WorksheetData, ref: string, cell: WorksheetCell | null) {
+  const parsed = parseCellRef(ref);
+  if (!parsed) {
+    return;
+  }
+
+  const row = worksheet.rows[parsed.rowNumber - 1];
+  const column = worksheet.columns[parsed.columnIndex];
+  if (!row || !column) {
+    return;
+  }
+
+  const cellKey = buildWorksheetCellKey(column.id, row.id);
+  if (!cell) {
+    delete worksheet.cells[cellKey];
+    return;
+  }
+
+  worksheet.cells[cellKey] = cloneWorksheet(cell);
+}
+
+function trackFormulaMutation(params: {
+  worksheet: WorksheetData;
+  mutations: Map<string, PricingWorksheetAiFormulaMutation>;
+  ref: string;
+  formula: string;
+  operationType: PricingWorksheetAiOperationType;
+  previousCell?: WorksheetCell | null;
+}) {
+  const ref = params.ref.trim().toUpperCase();
+  const existing = params.mutations.get(ref);
+  const previousCell =
+    params.previousCell !== undefined ? cloneCell(params.previousCell) : cloneCell(getCellAtRef(params.worksheet, ref));
+  if (!existing) {
+    params.mutations.set(ref, {
+      ref,
+      formula: params.formula,
+      previousCell,
+      operationType: params.operationType,
+    });
+    return;
+  }
+
+  existing.formula = params.formula;
+  existing.operationType = params.operationType;
+}
+
+function extractFormulaReferencedRefs(formula: string): string[] {
+  return Array.from(
+    new Set(
+      (formula.match(/\$?[A-Z]+\$?\d+/g) ?? []).map((entry) => entry.toUpperCase()),
+    ),
+  );
+}
+
+function isNonNumericTextCell(cell: WorksheetCell | null) {
+  if (!cell) {
+    return false;
+  }
+
+  const candidate =
+    typeof cell.computedValue === "string"
+      ? cell.computedValue
+      : typeof cell.value === "string"
+        ? cell.value
+        : null;
+  if (candidate === null) {
+    return false;
+  }
+
+  const trimmed = candidate.trim();
+  return trimmed.length > 0 && !Number.isFinite(Number(trimmed));
+}
+
+function isBlankOrZeroCell(cell: WorksheetCell | null) {
+  if (!cell) {
+    return true;
+  }
+
+  const raw =
+    typeof cell.computedValue === "number" || typeof cell.computedValue === "string"
+      ? cell.computedValue
+      : typeof cell.value === "number" || typeof cell.value === "string"
+        ? cell.value
+        : null;
+  if (raw === null) {
+    return true;
+  }
+
+  if (typeof raw === "number") {
+    return raw === 0;
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return true;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed === 0;
+}
+
+function describeFormulaRuntimeFailure(worksheet: WorksheetData, formula: string, error: string) {
+  const referencedRefs = extractFormulaReferencedRefs(formula);
+  const referencedCells = referencedRefs.map((ref) => ({
+    ref,
+    cell: getCellAtRef(worksheet, ref),
+  }));
+
+  if (error === FORMULA_VALUE_ERROR) {
+    const textRefs = referencedCells.filter((entry) => isNonNumericTextCell(entry.cell)).map((entry) => entry.ref);
+    if (textRefs.length > 0) {
+      return `It referenced non-numeric text cells ${textRefs.join(", ")} during arithmetic.`;
+    }
+    return "It likely mixed text or unit labels into arithmetic.";
+  }
+
+  if (error === FORMULA_DIV_ZERO_ERROR) {
+    const zeroRefs = referencedCells.filter((entry) => isBlankOrZeroCell(entry.cell)).map((entry) => entry.ref);
+    if (zeroRefs.length > 0) {
+      return `It divided by a blank or zero input in ${zeroRefs.join(", ")}.`;
+    }
+    return "It divided by a blank or zero input during preview recalculation.";
+  }
+
+  if (error === FORMULA_REF_ERROR) {
+    return "It resolved to an invalid worksheet reference after preview application.";
+  }
+
+  if (error === FORMULA_ERROR) {
+    if (referencedRefs.length > 0) {
+      return `It could not evaluate safely with the current preview inputs and references (${referencedRefs.join(", ")}).`;
+    }
+    return "It could not evaluate safely with the current preview inputs.";
+  }
+
+  if (referencedRefs.length > 0) {
+    return `It failed while recalculating against ${referencedRefs.join(", ")}.`;
+  }
+
+  return "It failed during preview recalculation.";
+}
+
 export function getPricingWorksheetAiAllowedFunctions(): string[] {
   return Array.from(ALLOWED_FUNCTIONS);
 }
@@ -402,14 +582,263 @@ export function getPricingWorksheetAiFormulaCompatibility() {
   } as const;
 }
 
-function setCellLiteral(cell: WorksheetCell, value: string | number | boolean | null | undefined): void {
-  const nextValue = typeof value === "boolean" ? String(value) : value ?? null;
-  cell.formula = null;
-  cell.value = nextValue;
-  cell.computedValue = nextValue;
-  cell.displayValue = nextValue === null ? "" : String(nextValue);
-  cell.type =
-    typeof nextValue === "number" ? "number" : nextValue === null ? "empty" : "text";
+const PLAIN_NUMERIC_LITERAL_PATTERN = /^-?\d+(\.\d+)?$/;
+const DIRTY_NUMERIC_LITERAL_PATTERN =
+  /^\s*[$€£¥]?\s*-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*[$€£¥])?\s*$/;
+const AI_NUMERIC_PLACEHOLDER_PATTERN = /^(?:-|n\/a|na|tbc)$/i;
+
+type PricingWorksheetAiSemanticColumnRole =
+  | "other"
+  | "quantity"
+  | "labour_hours"
+  | "margin"
+  | "currency_input"
+  | "currency_formula_output";
+
+function normalizeSemanticHeaderText(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return (typeof value === "string" ? value : "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9$%]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectPricingWorksheetSemanticColumnRole(
+  worksheet: WorksheetData,
+  columnIndex: number,
+): PricingWorksheetAiSemanticColumnRole {
+  const headerTexts: string[] = [];
+
+  for (let rowIndex = 0; rowIndex < Math.min(worksheet.rows.length, 6); rowIndex += 1) {
+    const row = worksheet.rows[rowIndex];
+    const column = worksheet.columns[columnIndex];
+    if (!row || !column) {
+      continue;
+    }
+
+    const cell = worksheet.cells[buildWorksheetCellKey(column.id, row.id)];
+    if (!cell) {
+      continue;
+    }
+
+    const normalizedHeader = normalizeSemanticHeaderText(
+      typeof cell.value === "string" || typeof cell.value === "number" ? cell.value : cell.displayValue,
+    );
+    if (normalizedHeader.length > 0) {
+      headerTexts.push(normalizedHeader);
+    }
+  }
+
+  const hasHeaderMatch = (pattern: RegExp) => headerTexts.some((text) => pattern.test(text));
+
+  if (headerTexts.length === 0) {
+    return "other";
+  }
+
+  if (hasHeaderMatch(/\b(qty|quantity)\b/)) {
+    return "quantity";
+  }
+
+  if (hasHeaderMatch(/\b(labour hours|labor hours|hours|hrs)\b/)) {
+    return "labour_hours";
+  }
+
+  if (hasHeaderMatch(/\b(margin|markup|mark up|gp %|gross margin)\b/) || hasHeaderMatch(/%$/)) {
+    return "margin";
+  }
+
+  if (
+    hasHeaderMatch(/\b(material rate|mat rate|labour rate|labor rate|rate|unit rate|price)\b/) ||
+    hasHeaderMatch(/\brate \$\b/)
+  ) {
+    return "currency_input";
+  }
+
+  if (
+    hasHeaderMatch(/^(material|labour|labor)$/) ||
+    hasHeaderMatch(/^total(?: \$)?$/) ||
+    hasHeaderMatch(/\b(subtotal|sell price|net cost|grand total|total \$)\b/)
+  ) {
+    return "currency_formula_output";
+  }
+
+  switch (columnIndex) {
+    case 4:
+      return "quantity";
+    case 5:
+      return "currency_input";
+    case 6:
+      return "labour_hours";
+    case 7:
+      return "currency_input";
+    case 8:
+      return "margin";
+    case 9:
+      return "currency_formula_output";
+    default:
+      return "other";
+  }
+}
+
+function applySemanticNumberFormat(
+  cell: WorksheetCell,
+  role: PricingWorksheetAiSemanticColumnRole,
+) {
+  if (role !== "currency_input" && role !== "currency_formula_output") {
+    return;
+  }
+
+  const existingMetadata = cell.metadata ?? {};
+  const existingFormat =
+    existingMetadata.format && typeof existingMetadata.format === "object" && !Array.isArray(existingMetadata.format)
+      ? (existingMetadata.format as Record<string, unknown>)
+      : {};
+  const existingNumber =
+    existingFormat.number && typeof existingFormat.number === "object" && !Array.isArray(existingFormat.number)
+      ? (existingFormat.number as Record<string, unknown>)
+      : {};
+
+  cell.metadata = {
+    ...existingMetadata,
+    format: {
+      ...existingFormat,
+      number: {
+        ...existingNumber,
+        kind: "currency",
+        decimalPlaces: 2,
+        useGrouping: true,
+      },
+    },
+  };
+}
+
+function buildSemanticLiteralValidationIssue(params: {
+  cellRef: string;
+  role: PricingWorksheetAiSemanticColumnRole;
+  value: string | number | boolean | null | undefined;
+}): PricingWorksheetAiValidationIssue | null {
+  if (params.role === "other") {
+    return null;
+  }
+
+  if (params.value === null || params.value === undefined) {
+    return null;
+  }
+
+  if (typeof params.value === "boolean") {
+    return {
+      code: "invalid_numeric_placeholder_literal",
+      message: `AI literal for ${params.cellRef} must be numeric, blank, or formula-based for this worksheet column.`,
+      severity: "warning",
+      cellRef: params.cellRef,
+    };
+  }
+
+  if (params.role === "currency_formula_output") {
+    if (typeof params.value === "string" && params.value.trim().startsWith("=")) {
+      return null;
+    }
+
+    return {
+      code: "formula_output_requires_formula",
+      message: `AI literal for ${params.cellRef} targeted a formula/output column. Use a worksheet formula instead of a persisted literal value.`,
+      severity: "warning",
+      cellRef: params.cellRef,
+    };
+  }
+
+  if (typeof params.value === "string") {
+    const trimmed = params.value.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    if (AI_NUMERIC_PLACEHOLDER_PATTERN.test(trimmed)) {
+      return {
+        code: "invalid_numeric_placeholder_literal",
+        message: `AI literal for ${params.cellRef} used a placeholder like "${trimmed}". Use a plain number, a blank cell, or a real formula instead.`,
+        severity: "warning",
+        cellRef: params.cellRef,
+      };
+    }
+  }
+
+  return null;
+}
+
+function classifyAiLiteralInput(value: string | number | boolean | null | undefined):
+  | { kind: "cell"; cell: WorksheetCell }
+  | { kind: "invalid_dirty_numeric"; originalValue: string } {
+  if (typeof value === "number" || value === null || value === undefined) {
+    return {
+      kind: "cell",
+      cell: normalizeWorksheetCell(value === null || value === undefined ? "" : String(value)),
+    };
+  }
+
+  if (typeof value === "boolean") {
+    return {
+      kind: "cell",
+      cell: normalizeWorksheetCell(String(value)),
+    };
+  }
+
+  const rawValue = value;
+  const trimmed = rawValue.trim();
+  if (trimmed.length === 0) {
+    return {
+      kind: "cell",
+      cell: normalizeWorksheetCell(""),
+    };
+  }
+
+  if (trimmed.startsWith("=")) {
+    return {
+      kind: "cell",
+      cell: normalizeWorksheetCell(trimmed),
+    };
+  }
+
+  const collapsedWhitespace = rawValue.replace(/\s+/g, "");
+  const isPlainNumeric = PLAIN_NUMERIC_LITERAL_PATTERN.test(trimmed);
+  const isMultiline = /[\r\n]/.test(rawValue);
+  const isCommaOrCurrencyNumeric =
+    DIRTY_NUMERIC_LITERAL_PATTERN.test(rawValue) && !PLAIN_NUMERIC_LITERAL_PATTERN.test(collapsedWhitespace);
+  const isMultilineNumeric =
+    isMultiline &&
+    collapsedWhitespace.length > 0 &&
+    PLAIN_NUMERIC_LITERAL_PATTERN.test(collapsedWhitespace);
+
+  if (!isPlainNumeric && (isCommaOrCurrencyNumeric || isMultilineNumeric)) {
+    return {
+      kind: "invalid_dirty_numeric",
+      originalValue: rawValue,
+    };
+  }
+
+  return {
+    kind: "cell",
+    cell: normalizeWorksheetCell(rawValue),
+  };
+}
+
+function setCellLiteral(cell: WorksheetCell, value: string | number | boolean | null | undefined): boolean {
+  const normalized = classifyAiLiteralInput(value);
+  if (normalized.kind === "invalid_dirty_numeric") {
+    return false;
+  }
+
+  cell.formula = normalized.cell.formula;
+  cell.value = normalized.cell.value;
+  cell.computedValue = normalized.cell.computedValue;
+  cell.displayValue = normalized.cell.displayValue;
+  cell.type = normalized.cell.type;
+  return true;
 }
 
 function setCellFormula(cell: WorksheetCell, formula: string): void {
@@ -1904,6 +2333,7 @@ function applyInsertedRowEntries(
   operation: PricingWorksheetAiOperation,
   issues: PricingWorksheetAiValidationIssue[],
   diffSummary: PricingWorksheetAiDiffSummary,
+  formulaMutations: Map<string, PricingWorksheetAiFormulaMutation>,
 ): void {
   const rowIndex = rowNumber - 1;
   for (const entry of getValueEntries(operation)) {
@@ -1917,9 +2347,36 @@ function applyInsertedRowEntries(
       continue;
     }
 
+    const ref = buildCellRef(columnIndex, rowNumber);
+    const semanticRole = detectPricingWorksheetSemanticColumnRole(worksheet, columnIndex);
+    const semanticIssue = buildSemanticLiteralValidationIssue({
+      cellRef: ref,
+      role: semanticRole,
+      value: entry.value,
+    });
+    if (semanticIssue) {
+      issues.push(semanticIssue);
+      continue;
+    }
+
     const cell = ensureCell(worksheet, rowIndex, columnIndex);
-    setCellLiteral(cell, entry.value);
-    diffSummary.changedCells.push(buildCellRef(columnIndex, rowNumber));
+    const applied = setCellLiteral(cell, entry.value);
+    if (!applied) {
+      const row = worksheet.rows[rowIndex];
+      const column = worksheet.columns[columnIndex];
+      if (row && column) {
+        delete worksheet.cells[buildWorksheetCellKey(column.id, row.id)];
+      }
+      issues.push({
+        code: "dirty_numeric_literal_rejected",
+        message: `AI literal for ${ref} looked numeric but included unsupported formatting or line breaks. Use a plain number like 1250.5 instead.`,
+        severity: "warning",
+        cellRef: ref,
+      });
+      continue;
+    }
+    applySemanticNumberFormat(cell, semanticRole);
+    diffSummary.changedCells.push(ref);
   }
 
   for (const entry of getFormulaEntries(operation)) {
@@ -1940,8 +2397,20 @@ function applyInsertedRowEntries(
     }
 
     const cell = ensureCell(worksheet, rowIndex, columnIndex);
-    setCellFormula(cell, entry.formula);
     const ref = buildCellRef(columnIndex, rowNumber);
+    trackFormulaMutation({
+      worksheet,
+      mutations: formulaMutations,
+      ref,
+      formula: entry.formula,
+      operationType: operation.type,
+      previousCell: null,
+    });
+    setCellFormula(cell, entry.formula);
+    applySemanticNumberFormat(
+      cell,
+      detectPricingWorksheetSemanticColumnRole(worksheet, columnIndex),
+    );
     diffSummary.changedCells.push(ref);
     diffSummary.formulaCells.push(ref);
   }
@@ -1986,6 +2455,7 @@ export function simulatePricingWorksheetAiEditPlan(
 ): PricingWorksheetAiSimulationResult {
   let worksheet = cloneWorksheet(worksheetInput);
   const validationIssues = validatePricingWorksheetAiAssistantResponse(response, worksheetInput);
+  const formulaMutations = new Map<string, PricingWorksheetAiFormulaMutation>();
   const diffSummary: PricingWorksheetAiDiffSummary = {
     changedCells: [],
     formulaCells: [],
@@ -2023,8 +2493,40 @@ export function simulatePricingWorksheetAiEditPlan(
           continue;
         }
 
-      const cell = ensureCell(worksheet, parsed.rowNumber - 1, parsed.columnIndex);
-      setCellLiteral(cell, entry.value);
+        const row = worksheet.rows[parsed.rowNumber - 1];
+        const column = worksheet.columns[parsed.columnIndex];
+        if (!row || !column) {
+          continue;
+        }
+
+        const semanticRole = detectPricingWorksheetSemanticColumnRole(worksheet, parsed.columnIndex);
+        const semanticIssue = buildSemanticLiteralValidationIssue({
+          cellRef: entry.ref.toUpperCase(),
+          role: semanticRole,
+          value: entry.value,
+        });
+        if (semanticIssue) {
+          validationIssues.push(semanticIssue);
+          continue;
+        }
+
+        const cellKey = buildWorksheetCellKey(column.id, row.id);
+        const existingCell = worksheet.cells[cellKey];
+        const cell = ensureCell(worksheet, parsed.rowNumber - 1, parsed.columnIndex);
+        const applied = setCellLiteral(cell, entry.value);
+        if (!applied) {
+          if (!existingCell) {
+            delete worksheet.cells[cellKey];
+          }
+          validationIssues.push({
+            code: "dirty_numeric_literal_rejected",
+            message: `AI literal for ${entry.ref.toUpperCase()} looked numeric but included unsupported formatting or line breaks. Use a plain number like 1250.5 instead.`,
+            severity: "warning",
+            cellRef: entry.ref.toUpperCase(),
+          });
+          continue;
+        }
+        applySemanticNumberFormat(cell, semanticRole);
         diffSummary.changedCells.push(entry.ref.toUpperCase());
         diffSummary.affectedRows.push(parsed.rowNumber);
       }
@@ -2051,7 +2553,18 @@ export function simulatePricingWorksheetAiEditPlan(
         }
 
         const cell = ensureCell(worksheet, parsed.rowNumber - 1, parsed.columnIndex);
+        trackFormulaMutation({
+          worksheet,
+          mutations: formulaMutations,
+          ref: entry.ref,
+          formula: entry.formula,
+          operationType: operation.type,
+        });
         setCellFormula(cell, entry.formula);
+        applySemanticNumberFormat(
+          cell,
+          detectPricingWorksheetSemanticColumnRole(worksheet, parsed.columnIndex),
+        );
         diffSummary.changedCells.push(entry.ref.toUpperCase());
         diffSummary.formulaCells.push(entry.ref.toUpperCase());
         diffSummary.affectedRows.push(parsed.rowNumber);
@@ -2107,7 +2620,14 @@ export function simulatePricingWorksheetAiEditPlan(
       const insertedRowNumber = insertIndex + 1;
       diffSummary.insertedRows.push(insertedRowNumber);
       diffSummary.affectedRows.push(insertedRowNumber);
-      applyInsertedRowEntries(worksheet, insertedRowNumber, operation, validationIssues, diffSummary);
+      applyInsertedRowEntries(
+        worksheet,
+        insertedRowNumber,
+        operation,
+        validationIssues,
+        diffSummary,
+        formulaMutations,
+      );
     }
 
     if (operation.type === "copy_row_variant") {
@@ -2147,6 +2667,14 @@ export function simulatePricingWorksheetAiEditPlan(
           const ref = buildCellRef(columnIndex, insertedRowNumber);
           diffSummary.changedCells.push(ref);
           if (cell?.formula) {
+            trackFormulaMutation({
+              worksheet,
+              mutations: formulaMutations,
+              ref,
+              formula: cell.formula,
+              operationType: operation.type,
+              previousCell: null,
+            });
             const issues = validateFormulaAllowlist(cell.formula, worksheet);
             validationIssues.push(...issues);
             if (!issues.some((issue) => issue.severity === "error")) {
@@ -2156,7 +2684,14 @@ export function simulatePricingWorksheetAiEditPlan(
         }
       }
 
-      applyInsertedRowEntries(worksheet, insertedRowNumber, operation, validationIssues, diffSummary);
+      applyInsertedRowEntries(
+        worksheet,
+        insertedRowNumber,
+        operation,
+        validationIssues,
+        diffSummary,
+        formulaMutations,
+      );
     }
 
     if (operation.type === "insert_subtotal") {
@@ -2205,20 +2740,84 @@ export function simulatePricingWorksheetAiEditPlan(
       const subtotalIssues = validateFormulaAllowlist(subtotalFormula, worksheet);
       validationIssues.push(...subtotalIssues);
       if (!subtotalIssues.some((issue) => issue.severity === "error")) {
-        setCellFormula(ensureCell(worksheet, insertedRowNumber - 1, totalIndex), subtotalFormula);
         const ref = buildCellRef(totalIndex, insertedRowNumber);
+        trackFormulaMutation({
+          worksheet,
+          mutations: formulaMutations,
+          ref,
+          formula: subtotalFormula,
+          operationType: operation.type,
+          previousCell: null,
+        });
+        setCellFormula(ensureCell(worksheet, insertedRowNumber - 1, totalIndex), subtotalFormula);
         diffSummary.changedCells.push(ref);
         diffSummary.formulaCells.push(ref);
       }
     }
   }
 
-  const recalculated = recalculateWorksheetFormulas(worksheet);
+  const downgradedRefs = new Set<string>();
+  let recalculated = recalculateWorksheetFormulas(worksheet);
+
+  while (true) {
+    const runtimeIssues = findWorksheetFormulaErrors(recalculated);
+    const downgradableIssues = runtimeIssues.filter((issue) => formulaMutations.has(issue.cellKey.toUpperCase()));
+    if (downgradableIssues.length === 0) {
+      break;
+    }
+
+    const failingRefs = new Set(runtimeIssues.map((issue) => issue.cellKey.toUpperCase()));
+    const rootCauseIssues = downgradableIssues.filter((issue) => {
+      const mutation = formulaMutations.get(issue.cellKey.toUpperCase());
+      if (!mutation) {
+        return false;
+      }
+
+      const dependentFailingRefs = extractFormulaReferencedRefs(mutation.formula).filter(
+        (ref) => ref !== mutation.ref && failingRefs.has(ref),
+      );
+      return dependentFailingRefs.length === 0;
+    });
+    const issuesToDowngrade = rootCauseIssues.length > 0 ? rootCauseIssues : [downgradableIssues[0]];
+
+    for (const issue of issuesToDowngrade) {
+      const mutation = formulaMutations.get(issue.cellKey.toUpperCase());
+      if (!mutation) {
+        continue;
+      }
+
+      restoreCellAtRef(worksheet, mutation.ref, mutation.previousCell);
+      formulaMutations.delete(mutation.ref);
+      downgradedRefs.add(mutation.ref);
+      validationIssues.push({
+        code: "formula_recalc_downgraded",
+        message: `Removed generated formula at ${mutation.ref} (${mutation.formula}) because preview recalculation returned ${issue.error}. ${describeFormulaRuntimeFailure(
+          recalculated,
+          mutation.formula,
+          issue.error,
+        )}`,
+        severity: "warning",
+        cellRef: mutation.ref,
+        formula: mutation.formula,
+        formulaError: issue.error,
+      });
+    }
+
+    recalculated = recalculateWorksheetFormulas(worksheet);
+  }
+
+  if (downgradedRefs.size > 0) {
+    diffSummary.formulaCells = diffSummary.formulaCells.filter((ref) => !downgradedRefs.has(ref));
+  }
+
   for (const issue of findWorksheetFormulaErrors(recalculated)) {
     validationIssues.push({
       code: "formula_recalc_error",
       message: `Generated formula at ${issue.cellKey} recalculated to ${issue.error}.`,
       severity: "error",
+      cellRef: issue.cellKey,
+      formula: getCellAtRef(recalculated, issue.cellKey)?.formula ?? undefined,
+      formulaError: issue.error,
     });
   }
 

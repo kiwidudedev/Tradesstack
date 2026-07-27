@@ -1,11 +1,14 @@
 import type { WorksheetData } from "@/lib/opportunity-pricing-worksheet-defaults";
 import type { PricingWorksheetAiCompactContext } from "@/lib/pricing-worksheet-ai-context";
 import type { PricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
+import { detectPricingWorksheetState } from "@/lib/pricing-worksheet-ai-structure-snapshot";
 import type {
   PricingWorksheetAiAssistantResponse,
   PricingWorksheetAiCellValueEntry,
+  PricingWorksheetAiFormulaEntry,
   PricingWorksheetAiOperation,
 } from "@/lib/pricing-worksheet-edit-plan";
+import { buildWorksheetCellKey } from "@/lib/opportunity-pricing-worksheet-paste";
 
 export type AnthropicWorksheetDraftMode = "worksheet_draft" | "answer_only";
 
@@ -193,17 +196,88 @@ function buildHeaderLabels(mapping: WorksheetColumnMapping): Array<{ column: str
   return entries.filter((entry): entry is { column: string; value: string } => Boolean(entry.column));
 }
 
-function firstEmptyInsertRow(worksheet: WorksheetData): number {
-  let lastPopulatedRow = 0;
-  for (const key of Object.keys(worksheet.cells)) {
-    const match = /(\d+)$/.exec(key);
-    if (!match) {
-      continue;
-    }
-    lastPopulatedRow = Math.max(lastPopulatedRow, Number(match[1]));
+function isMeaningfullyPopulatedCell(cell: WorksheetData["cells"][string]): boolean {
+  if (!cell) {
+    return false;
   }
 
-  return Math.min(lastPopulatedRow + 1, worksheet.rows.length + 1) || 1;
+  if (typeof cell.formula === "string" && cell.formula.trim().length > 0) {
+    return true;
+  }
+
+  if (typeof cell.value === "number" || typeof cell.value === "boolean") {
+    return true;
+  }
+
+  return typeof cell.value === "string" && cell.value.trim().length > 0;
+}
+
+function buildWorksheetSummary(worksheet: WorksheetData) {
+  let formulaCount = 0;
+  let populatedCellCount = 0;
+
+  for (const cell of Object.values(worksheet.cells)) {
+    if (!cell) {
+      continue;
+    }
+
+    if (typeof cell.formula === "string" && cell.formula.trim().length > 0) {
+      formulaCount += 1;
+      populatedCellCount += 1;
+      continue;
+    }
+
+    if (typeof cell.value === "number" || (typeof cell.value === "string" && cell.value.trim().length > 0)) {
+      populatedCellCount += 1;
+    }
+  }
+
+  return {
+    formulaCount,
+    populatedCellCount,
+  };
+}
+
+function firstMeaningfulInsertRow(worksheet: WorksheetData): number {
+  let lastMeaningfulRow = 0;
+
+  for (let rowIndex = 0; rowIndex < worksheet.rows.length; rowIndex += 1) {
+    const row = worksheet.rows[rowIndex];
+    const rowHasMeaningfulCell = worksheet.columns.some((column) =>
+      isMeaningfullyPopulatedCell(worksheet.cells[buildWorksheetCellKey(column.id, row.id)]),
+    );
+
+    if (rowHasMeaningfulCell) {
+      lastMeaningfulRow = rowIndex + 1;
+    }
+  }
+
+  return lastMeaningfulRow > 0 ? Math.min(lastMeaningfulRow + 1, worksheet.rows.length + 1) : 1;
+}
+
+function shouldRestartGeneratedWorksheetAtTop(params: ConvertAnthropicWorksheetDraftParams) {
+  if (
+    params.classification.primaryIntent !== "worksheet_generation" ||
+    params.classification.recommendedPromptPath !== "generation"
+  ) {
+    return false;
+  }
+
+  const worksheetState = detectPricingWorksheetState({
+    worksheet: params.worksheet,
+    worksheetContext: params.worksheetContext,
+    currentWorksheetSummary: buildWorksheetSummary(params.worksheet),
+  });
+
+  return worksheetState === "blank" || worksheetState === "starter_generated";
+}
+
+function resolveDraftInsertStartRow(params: ConvertAnthropicWorksheetDraftParams): number {
+  if (shouldRestartGeneratedWorksheetAtTop(params)) {
+    return 1;
+  }
+
+  return firstMeaningfulInsertRow(params.worksheet);
 }
 
 function shouldInsertHeaderRow(context: PricingWorksheetAiCompactContext) {
@@ -296,7 +370,7 @@ export function convertAnthropicWorksheetDraftToOperations(
   const draft = normalizeAnthropicWorksheetDraft(params.draft);
   const mapping = buildColumnMapping(params.worksheet);
   const operations: PricingWorksheetAiOperation[] = [];
-  let nextInsertRow = firstEmptyInsertRow(params.worksheet);
+  let nextInsertRow = resolveDraftInsertStartRow(params);
   const hasRenderableRows = draft.sections.some((section) => section.rows.length > 0);
 
   if (draft.mode === "answer_only") {

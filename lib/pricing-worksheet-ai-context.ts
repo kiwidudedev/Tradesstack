@@ -20,7 +20,10 @@ export type PricingWorksheetAiContextRowSummary = {
 };
 
 export type PricingWorksheetAiCompactContext = {
+  workbookId: string | null;
   worksheetId: string | null;
+  sheetId: string | null;
+  sheetName: string;
   worksheetName: string;
   tradePackage: string | null;
   dimensions: {
@@ -42,7 +45,10 @@ export type PricingWorksheetAiCompactContext = {
 };
 
 type BuildContextOptions = {
+  workbookId?: string | null;
   worksheetId?: string | null;
+  sheetId?: string | null;
+  sheetName?: string;
   worksheetName: string;
   tradePackage?: string | null;
   selection?: PricingWorksheetAiSelectionContext;
@@ -441,7 +447,10 @@ export function buildPricingWorksheetAiContext(
   });
 
   return {
+    workbookId: options.workbookId ?? options.worksheetId ?? null,
     worksheetId: options.worksheetId ?? null,
+    sheetId: options.sheetId ?? null,
+    sheetName: options.sheetName?.trim() || options.worksheetName,
     worksheetName: options.worksheetName,
     tradePackage: options.tradePackage ?? null,
     dimensions: {

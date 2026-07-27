@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  ...(process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR
+    ? { distDir: process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR }
+    : {}),
   images: {
     remotePatterns: [
       {

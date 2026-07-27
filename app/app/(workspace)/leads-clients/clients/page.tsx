@@ -31,14 +31,6 @@ const TOP_CLIENT_PERIOD_OPTIONS = [
 ] as const;
 type TopClientPeriodKey = (typeof TOP_CLIENT_PERIOD_OPTIONS)[number]["key"];
 
-type ClaimFinanceRow = {
-  project_id: string | null;
-  status: string | null;
-  due_date: string | null;
-  claim_amount: number | null;
-  paid_amount: number | null;
-};
-
 function getClientDisplayName(client: { company_name: string | null; name: string }): string {
   return client.company_name?.trim() || "Unknown Company";
 }
@@ -183,7 +175,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   }
 
   const supabase = await createServerSupabaseClient();
-  const [clientsResult, projectsResult, opportunitiesResult, claimsResult] = await Promise.all([
+  const [clientsResult, projectsResult, opportunitiesResult, xeroConnectionResult] = await Promise.all([
     supabase
       .from("organization_clients")
       .select("id, name, company_name, email, phone")
@@ -199,16 +191,11 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
       .select("client_id, stage, estimated_value, updated_at")
       .eq("organization_id", member.organization_id)
       .order("updated_at", { ascending: false }),
-    (supabase as unknown as {
-      from: (table: string) => {
-        select: (columns: string) => {
-          eq: (column: string, value: string) => Promise<{ data: ClaimFinanceRow[] | null; error: { message: string } | null }>;
-        };
-      };
-    })
-      .from("project_claims")
-      .select("project_id, status, due_date, claim_amount, paid_amount")
-      .eq("organization_id", member.organization_id),
+    supabase
+      .from("organization_xero_connections")
+      .select("id, status, tenant_id")
+      .eq("organization_id", member.organization_id)
+      .maybeSingle(),
   ]);
 
   if (clientsResult.error || projectsResult.error || opportunitiesResult.error) {
@@ -224,7 +211,40 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   const clients = clientsResult.data ?? [];
   const projects = projectsResult.data ?? [];
   const opportunities = opportunitiesResult.data ?? [];
-  const claims = claimsResult.error ? [] : (claimsResult.data ?? []);
+  const xeroConnection = xeroConnectionResult.error ? null : xeroConnectionResult.data;
+
+  const activeXeroClientIds = new Set<string>();
+  if (xeroConnection?.status === "connected" && xeroConnection.tenant_id) {
+    const [xeroLinksResult, xeroContactsResult] = await Promise.all([
+      supabase
+        .from("organization_external_contacts")
+        .select("local_entity_id, external_contact_id")
+        .eq("organization_id", member.organization_id)
+        .eq("provider", "xero")
+        .eq("local_entity_type", "client")
+        .eq("link_status", "linked")
+        .eq("accounting_connection_id", xeroConnection.id)
+        .eq("tenant_id", xeroConnection.tenant_id),
+      supabase
+        .from("organization_xero_contacts")
+        .select("contact_id")
+        .eq("organization_id", member.organization_id)
+        .eq("connection_id", xeroConnection.id)
+        .eq("tenant_id", xeroConnection.tenant_id)
+        .eq("contact_status", "ACTIVE"),
+    ]);
+
+    if (!xeroLinksResult.error && !xeroContactsResult.error) {
+      const activeXeroContactIds = new Set(
+        (xeroContactsResult.data ?? []).map((contact) => contact.contact_id)
+      );
+      for (const link of xeroLinksResult.data ?? []) {
+        if (activeXeroContactIds.has(link.external_contact_id)) {
+          activeXeroClientIds.add(link.local_entity_id);
+        }
+      }
+    }
+  }
 
   const projectCountByClientId = new Map<string, number>();
   for (const project of projects) {
@@ -285,6 +305,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
       projectsCount,
       wonProjects,
       rawScore,
+      hasActiveXeroContact: activeXeroClientIds.has(client.id),
     };
   });
 
@@ -306,39 +327,6 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
       }
       return left.name.localeCompare(right.name);
     });
-
-  const projectClientByProjectId = new Map<string, string>();
-  for (const project of projects) {
-    if (!project.client_id) {
-      continue;
-    }
-    projectClientByProjectId.set(project.id, project.client_id);
-  }
-
-  const overdueClientIds = new Set<string>();
-  const todayIso = new Date().toISOString().slice(0, 10);
-
-  for (const claim of claims) {
-    const projectId = claim.project_id;
-    if (!projectId) {
-      continue;
-    }
-
-    const clientId = projectClientByProjectId.get(projectId);
-    if (!clientId) {
-      continue;
-    }
-
-    const claimAmount = Number(claim.claim_amount ?? 0);
-    const paidAmount = Number(claim.paid_amount ?? 0);
-    const balance = Math.max(0, claimAmount - paidAmount);
-    const dueDate = claim.due_date;
-    const isOverdueByStatus = (claim.status ?? "").toLowerCase() === "overdue";
-    const isOverdueByDate = Boolean(dueDate && dueDate < todayIso && balance > 0);
-    if (isOverdueByStatus || isOverdueByDate) {
-      overdueClientIds.add(clientId);
-    }
-  }
 
   const bestConversionClientInTopPeriod = rows.reduce<{
     id: string;
@@ -549,7 +537,7 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
                 <OperationalTableHead>Client</OperationalTableHead>
                 <OperationalTableHead>Contact</OperationalTableHead>
                 <OperationalTableHead>Projects</OperationalTableHead>
-                <OperationalTableHead>Status</OperationalTableHead>
+                <OperationalTableHead>Xero</OperationalTableHead>
                 <OperationalTableHead className="text-right">Actions</OperationalTableHead>
               </OperationalTableRow>
             </OperationalTableHeader>
@@ -561,11 +549,8 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
                   .slice(0, 2)
                   .map((w: string) => w[0]?.toUpperCase() ?? "")
                   .join("");
-                const isOverdue = overdueClientIds.has(client.id);
                 const totalProjects = client.projectsCount;
                 const activeProjects = client.activeLeads;
-                const statusVariant = isOverdue ? "overdue" : activeProjects > 0 ? "approved" : "draft";
-                const statusLabel = isOverdue ? "Overdue" : activeProjects > 0 ? "Active" : "Inactive";
 
                 return (
                   <OperationalTableRow key={client.id}>
@@ -603,7 +588,9 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
                       {activeProjects} active / {totalProjects} total
                     </OperationalTableCell>
                     <OperationalTableCell>
-                      <StatusBadge status={statusVariant}>{statusLabel}</StatusBadge>
+                      <StatusBadge status={client.hasActiveXeroContact ? "approved" : "overdue"}>
+                        {client.hasActiveXeroContact ? "Active" : "Not Active"}
+                      </StatusBadge>
                     </OperationalTableCell>
                     <OperationalTableCell>
                       <div className="flex justify-end">

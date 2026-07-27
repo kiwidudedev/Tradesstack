@@ -2,6 +2,10 @@ import Link from "next/link";
 import { AlertTriangle, BriefcaseBusiness, CheckCircle2, Clock3, TrendingUp, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { interBold, interMedium, ibmPlexSans } from "@/lib/fonts";
+import { hasOrganizationPermission } from "@/lib/permissions-server";
+import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { loadClientXeroLinkWorkspaceData } from "@/lib/xero/client-contacts";
+import { ClientXeroContactPanel } from "./ClientXeroContactPanel";
 import { ClientDetailHeader } from "./ClientDetailHeader";
 import { formatDate, formatDateTime, getClientOverviewData, toMoney, toPercent } from "./client-detail-data";
 import styles from "./client-detail.module.css";
@@ -12,7 +16,31 @@ export default async function ClientOverviewPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
-  const data = await getClientOverviewData(clientId);
+  const [data, currentMember] = await Promise.all([
+    getClientOverviewData(clientId),
+    getCurrentOrganizationMember(),
+  ]);
+  let xeroWorkspace = null;
+  let xeroWorkspaceError: string | null = null;
+  let canManageXeroContacts = false;
+  if (currentMember) {
+    const [permission, workspaceResult] = await Promise.all([
+      hasOrganizationPermission(currentMember.organization_id, "accounting.contacts.manage"),
+      loadClientXeroLinkWorkspaceData({
+        organizationId: currentMember.organization_id,
+        clientId,
+      }).then(
+        (workspace) => ({ workspace, error: null }),
+        (error: unknown) => ({
+          workspace: null,
+          error: error instanceof Error ? error.message : "Unable to load the Xero Contact link.",
+        }),
+      ),
+    ]);
+    canManageXeroContacts = permission;
+    xeroWorkspace = workspaceResult.workspace;
+    xeroWorkspaceError = workspaceResult.error;
+  }
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} ${styles.scope} space-y-6 pb-8`}>
@@ -125,6 +153,13 @@ export default async function ClientOverviewPage({
               </div>
             </CardContent>
           </Card>
+
+          <ClientXeroContactPanel
+            clientId={clientId}
+            initialWorkspace={xeroWorkspace}
+            initialError={xeroWorkspaceError}
+            canManage={canManageXeroContacts}
+          />
 
           <Card className={`${styles.card} ${styles.fullWidthCard}`}>
             <CardHeader className={styles.sectionHeader}>

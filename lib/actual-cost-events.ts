@@ -57,10 +57,13 @@ export function buildProjectActualCostEventPayload(params: {
     | "project_id"
     | "cost_item_id"
     | "source_cost_item_id"
+    | "tradesstack_cost_code"
+    | "tradesstack_cost_code_label"
     | "work_type"
     | "cost_type"
     | "internal_cost_code"
     | "organization_cost_code_id"
+    | "accounting_mapping_id"
     | "allocated_amount"
     | "allocated_quantity"
   >;
@@ -69,7 +72,7 @@ export function buildProjectActualCostEventPayload(params: {
   const amount = Number(params.allocation.allocated_amount ?? 0);
   const projectId = params.allocation.project_id;
 
-  if (!projectId) {
+  if (!projectId || !params.allocation.tradesstack_cost_code || !params.allocation.tradesstack_cost_code_label) {
     return null;
   }
 
@@ -98,10 +101,13 @@ export function buildProjectActualCostEventPayload(params: {
     supplier_id: params.supplierId,
     cost_item_id: params.allocation.cost_item_id,
     source_cost_item_id: params.allocation.source_cost_item_id,
+    tradesstack_cost_code: params.allocation.tradesstack_cost_code,
+    tradesstack_cost_code_label: params.allocation.tradesstack_cost_code_label,
     work_type: params.allocation.work_type,
     cost_type: params.allocation.cost_type,
     internal_cost_code: params.allocation.internal_cost_code,
     organization_cost_code_id: params.allocation.organization_cost_code_id,
+    accounting_mapping_id: params.allocation.accounting_mapping_id,
     amount,
     tax_amount: taxAmount,
     total_amount: totalAmount,

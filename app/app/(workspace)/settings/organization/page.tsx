@@ -37,6 +37,8 @@ export default async function OrganizationSettingsPage() {
       initialTimezone={organizationRow.timezone}
       initialDefaultTaxMode={organizationRow.default_tax_mode}
       initialDefaultTaxRate={organizationRow.default_tax_rate}
+      initialTaxRegistrationStatus={organizationRow.tax_registration_status}
+      initialConstructionProfile={organizationRow.construction_profile}
       canEdit={canEdit}
     />
   );

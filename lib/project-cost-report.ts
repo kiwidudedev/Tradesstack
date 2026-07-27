@@ -6,6 +6,7 @@ import {
   getOrganizationProjectBySlugForCurrentUser,
 } from "@/lib/projects-server";
 import type { Database } from "@/lib/supabase/types";
+import { getTradesstackFinancialRoutingLabel } from "@/lib/tradesstack-financial-routing";
 
 type ProjectQuoteRow = Database["public"]["Tables"]["project_quotes"]["Row"];
 type ProjectVariationRow = Database["public"]["Tables"]["project_variations"]["Row"];
@@ -15,6 +16,9 @@ type PurchaseOrderLineRow = Database["public"]["Tables"]["project_purchase_order
 type ActualCostEventRow = Database["public"]["Tables"]["project_actual_cost_events"]["Row"];
 type SupplierInvoiceRow = Database["public"]["Tables"]["supplier_invoices"]["Row"];
 type SupplierRow = Database["public"]["Tables"]["organization_suppliers"]["Row"];
+type OrganizationCostCodeRow = Database["public"]["Tables"]["organization_cost_codes"]["Row"];
+type OrganizationTradesstackAccountingMappingRow =
+  Database["public"]["Tables"]["organization_tradesstack_accounting_mappings"]["Row"];
 
 type ClassificationKey = string;
 
@@ -84,6 +88,11 @@ export interface ProjectCostReportRowDrilldown {
 export interface ProjectCostReportRow {
   key: string;
   classificationLabel: string;
+  tradesstackCostCode: string | null;
+  tradesstackCostCodeLabel: string | null;
+  accountingMappingId: string | null;
+  mappedAccountingCode: string | null;
+  mappedAccountingCodeLabel: string | null;
   internalCostCode: string | null;
   workType: string | null;
   costType: string | null;
@@ -149,6 +158,28 @@ function firstPresentText(...values: Array<string | null | undefined>) {
   return null;
 }
 
+function formatTradesstackRoutingDisplay(code: string | null | undefined, label: string | null | undefined) {
+  const normalizedCode = normalizeText(code);
+  const normalizedLabel = firstPresentText(label, getTradesstackFinancialRoutingLabel((normalizedCode ?? null) as never));
+
+  if (normalizedCode && normalizedLabel) {
+    return `${normalizedCode} ${normalizedLabel}`;
+  }
+
+  return normalizedCode ?? normalizedLabel ?? null;
+}
+
+function formatMappedAccountingCodeDisplay(code: string | null | undefined, label: string | null | undefined) {
+  const normalizedCode = normalizeText(code);
+  const normalizedLabel = normalizeText(label);
+
+  if (normalizedCode && normalizedLabel) {
+    return `${normalizedCode} ${normalizedLabel}`;
+  }
+
+  return normalizedCode ?? normalizedLabel ?? null;
+}
+
 function pickPreferredQuote(quotes: ProjectQuoteRow[]) {
   const sortedQuotes = [...quotes].sort((left, right) => {
     const leftAt = new Date(left.updated_at ?? left.created_at).getTime();
@@ -169,7 +200,12 @@ function pickPreferredQuote(quotes: ProjectQuoteRow[]) {
   return sortedQuotes[0] ?? null;
 }
 
-function buildClassificationKey(parts: {
+export function buildProjectCostReportGroupingKey(parts: {
+  tradesstackCostCode?: string | null;
+  tradesstackCostCodeLabel?: string | null;
+  accountingMappingId?: string | null;
+  mappedAccountingCode?: string | null;
+  mappedAccountingCodeLabel?: string | null;
   internalCostCode: string | null;
   workType: string | null;
   costType: string | null;
@@ -179,10 +215,26 @@ function buildClassificationKey(parts: {
     return "__unmatched_actual__";
   }
 
-  return [parts.internalCostCode ?? "", parts.workType ?? "", parts.costType ?? ""].join("|");
+  const tradesstackRoutingDisplay = formatTradesstackRoutingDisplay(
+    parts.tradesstackCostCode,
+    parts.tradesstackCostCodeLabel
+  );
+  if (tradesstackRoutingDisplay) {
+    return [
+      `routing:${tradesstackRoutingDisplay}`,
+      `mapping:${normalizeText(parts.accountingMappingId) ?? ""}`,
+      `account:${formatMappedAccountingCodeDisplay(parts.mappedAccountingCode, parts.mappedAccountingCodeLabel) ?? ""}`,
+    ].join("|");
+  }
+
+  return [`legacy:${parts.internalCostCode ?? ""}`, parts.workType ?? "", parts.costType ?? ""].join("|");
 }
 
-function toClassificationLabel(params: {
+export function formatProjectCostReportClassificationLabel(params: {
+  tradesstackCostCode?: string | null;
+  tradesstackCostCodeLabel?: string | null;
+  mappedAccountingCode?: string | null;
+  mappedAccountingCodeLabel?: string | null;
   internalCostCode: string | null;
   workType: string | null;
   costType: string | null;
@@ -190,6 +242,18 @@ function toClassificationLabel(params: {
 }) {
   if (params.isUnmatchedActual) {
     return "Unmatched actuals";
+  }
+
+  const tradesstackRoutingDisplay = formatTradesstackRoutingDisplay(
+    params.tradesstackCostCode,
+    params.tradesstackCostCodeLabel
+  );
+  if (tradesstackRoutingDisplay) {
+    const mappedAccountingDisplay = formatMappedAccountingCodeDisplay(
+      params.mappedAccountingCode,
+      params.mappedAccountingCodeLabel
+    );
+    return mappedAccountingDisplay ? `${tradesstackRoutingDisplay} / ${mappedAccountingDisplay}` : tradesstackRoutingDisplay;
   }
 
   if (params.internalCostCode) {
@@ -229,7 +293,14 @@ function calculateCommercialPreGstTotal(params: {
 
 function resolveCommittedLineClassification(params: {
   line: Pick<PurchaseOrderLineRow, "cost_item_id" | "source_cost_item_id">;
-  costItemById: Map<string, Pick<CostItemRow, "id" | "cost_code" | "work_type" | "cost_type">>;
+  costItemById: Map<
+    string,
+    Pick<CostItemRow, "id" | "accounting_mapping_id" | "cost_code" | "work_type" | "cost_type"> & {
+      tradesstack_cost_code?: string | null;
+      tradesstack_cost_code_label?: string | null;
+    }
+  >;
+  accountingCodeByMappingId: Map<string, Pick<OrganizationCostCodeRow, "id" | "code" | "name">>;
 }) {
   const sourceCostItem = params.line.source_cost_item_id
     ? params.costItemById.get(params.line.source_cost_item_id) ?? null
@@ -238,25 +309,68 @@ function resolveCommittedLineClassification(params: {
     ? params.costItemById.get(params.line.cost_item_id) ?? null
     : null;
 
+  const tradesstackCostCode = firstPresentText(sourceCostItem?.tradesstack_cost_code, costItem?.tradesstack_cost_code);
+  const tradesstackCostCodeLabel = firstPresentText(
+    sourceCostItem?.tradesstack_cost_code_label,
+    costItem?.tradesstack_cost_code_label,
+    getTradesstackFinancialRoutingLabel((tradesstackCostCode ?? null) as never)
+  );
+  const accountingMappingId = firstPresentText(
+    sourceCostItem?.accounting_mapping_id,
+    costItem?.accounting_mapping_id
+  );
+  const mappedAccountingCode = accountingMappingId
+    ? params.accountingCodeByMappingId.get(accountingMappingId) ?? null
+    : null;
   const internalCostCode = firstPresentText(sourceCostItem?.cost_code, costItem?.cost_code);
   const workType = firstPresentText(sourceCostItem?.work_type, costItem?.work_type);
   const costType = firstPresentText(sourceCostItem?.cost_type, costItem?.cost_type);
 
   return {
+    tradesstackCostCode,
+    tradesstackCostCodeLabel,
+    accountingMappingId,
+    mappedAccountingCode: normalizeText(mappedAccountingCode?.code),
+    mappedAccountingCodeLabel: normalizeText(mappedAccountingCode?.name),
     internalCostCode,
     workType,
     costType,
   };
 }
 
-function resolveActualEventClassification(event: Pick<
-  ActualCostEventRow,
-  "internal_cost_code" | "work_type" | "cost_type" | "cost_item_id" | "source_cost_item_id"
->) {
+function resolveActualEventClassification(
+  event: Pick<
+    ActualCostEventRow,
+    | "accounting_mapping_id"
+    | "organization_cost_code_id"
+    | "internal_cost_code"
+    | "work_type"
+    | "cost_type"
+    | "cost_item_id"
+    | "source_cost_item_id"
+  > & {
+    tradesstack_cost_code?: string | null;
+    tradesstack_cost_code_label?: string | null;
+  },
+  params: {
+    accountingCodeByMappingId: Map<string, Pick<OrganizationCostCodeRow, "id" | "code" | "name">>;
+    organizationCostCodeById: Map<string, Pick<OrganizationCostCodeRow, "id" | "code" | "name">>;
+  }
+) {
+  const tradesstackCostCode = normalizeText(event.tradesstack_cost_code);
+  const tradesstackCostCodeLabel = firstPresentText(
+    event.tradesstack_cost_code_label,
+    getTradesstackFinancialRoutingLabel((tradesstackCostCode ?? null) as never)
+  );
+  const accountingCode =
+    (event.accounting_mapping_id && params.accountingCodeByMappingId.get(event.accounting_mapping_id)) ||
+    (event.organization_cost_code_id && params.organizationCostCodeById.get(event.organization_cost_code_id)) ||
+    null;
   const internalCostCode = normalizeText(event.internal_cost_code);
   const workType = normalizeText(event.work_type);
   const costType = normalizeText(event.cost_type);
   const isUnmatchedActual =
+    !tradesstackCostCode &&
     !internalCostCode &&
     !workType &&
     !costType &&
@@ -264,6 +378,11 @@ function resolveActualEventClassification(event: Pick<
     !event.source_cost_item_id;
 
   return {
+    tradesstackCostCode,
+    tradesstackCostCodeLabel,
+    accountingMappingId: normalizeText(event.accounting_mapping_id),
+    mappedAccountingCode: normalizeText(accountingCode?.code),
+    mappedAccountingCodeLabel: normalizeText(accountingCode?.name),
     internalCostCode,
     workType,
     costType,
@@ -297,10 +416,30 @@ function createEmptyDrilldown(): ProjectCostReportRowDrilldown {
   };
 }
 
+function compareProjectCostReportRows(left: ProjectCostReportRow, right: ProjectCostReportRow) {
+  return (
+    (formatTradesstackRoutingDisplay(left.tradesstackCostCode, left.tradesstackCostCodeLabel) ?? left.classificationLabel).localeCompare(
+      formatTradesstackRoutingDisplay(right.tradesstackCostCode, right.tradesstackCostCodeLabel) ?? right.classificationLabel
+    ) ||
+    (formatMappedAccountingCodeDisplay(left.mappedAccountingCode, left.mappedAccountingCodeLabel) ?? "").localeCompare(
+      formatMappedAccountingCodeDisplay(right.mappedAccountingCode, right.mappedAccountingCodeLabel) ?? ""
+    ) ||
+    (left.classificationLabel ?? "").localeCompare(right.classificationLabel ?? "") ||
+    (left.internalCostCode ?? left.classificationLabel).localeCompare(right.internalCostCode ?? right.classificationLabel) ||
+    (left.workType ?? "").localeCompare(right.workType ?? "") ||
+    (left.costType ?? "").localeCompare(right.costType ?? "")
+  );
+}
+
 function upsertRowMetric(
   rowMap: Map<ClassificationKey, ProjectCostReportRow>,
   params: {
     key: ClassificationKey;
+    tradesstackCostCode?: string | null;
+    tradesstackCostCodeLabel?: string | null;
+    accountingMappingId?: string | null;
+    mappedAccountingCode?: string | null;
+    mappedAccountingCodeLabel?: string | null;
     internalCostCode: string | null;
     workType: string | null;
     costType: string | null;
@@ -314,12 +453,21 @@ function upsertRowMetric(
     rowMap.get(params.key) ??
     {
       key: params.key,
-      classificationLabel: toClassificationLabel({
+      classificationLabel: formatProjectCostReportClassificationLabel({
+        tradesstackCostCode: params.tradesstackCostCode,
+        tradesstackCostCodeLabel: params.tradesstackCostCodeLabel,
+        mappedAccountingCode: params.mappedAccountingCode,
+        mappedAccountingCodeLabel: params.mappedAccountingCodeLabel,
         internalCostCode: params.internalCostCode,
         workType: params.workType,
         costType: params.costType,
         isUnmatchedActual: params.isUnmatchedActual === true,
       }),
+      tradesstackCostCode: params.tradesstackCostCode ?? null,
+      tradesstackCostCodeLabel: params.tradesstackCostCodeLabel ?? null,
+      accountingMappingId: params.accountingMappingId ?? null,
+      mappedAccountingCode: params.mappedAccountingCode ?? null,
+      mappedAccountingCodeLabel: params.mappedAccountingCodeLabel ?? null,
       internalCostCode: params.internalCostCode,
       workType: params.workType,
       costType: params.costType,
@@ -378,6 +526,10 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
           "correction_root_event_id",
           "reversal_reason",
           "reversal_note",
+          "accounting_mapping_id",
+          "organization_cost_code_id",
+          "tradesstack_cost_code",
+          "tradesstack_cost_code_label",
           "work_type",
           "cost_type",
           "internal_cost_code",
@@ -430,7 +582,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
       ? supabase
           .from("cost_items")
           .select(
-            "id, cost_code, work_type, cost_type, line_total, status, is_current, is_optional, title, description, section, quantity, unit, unit_rate"
+            "id, accounting_mapping_id, tradesstack_cost_code, tradesstack_cost_code_label, cost_code, work_type, cost_type, line_total, status, is_current, is_optional, title, description, section, quantity, unit, unit_rate"
           )
           .eq("organization_id", organizationId)
           .eq("project_id", projectId)
@@ -497,7 +649,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
       ? await supabase
           .from("cost_items")
           .select(
-            "id, source_document_id, cost_code, work_type, cost_type, line_total, status, is_current, is_optional, title, description, section, quantity, unit, unit_rate"
+            "id, source_document_id, accounting_mapping_id, tradesstack_cost_code, tradesstack_cost_code_label, cost_code, work_type, cost_type, line_total, status, is_current, is_optional, title, description, section, quantity, unit, unit_rate"
           )
           .eq("organization_id", organizationId)
           .eq("project_id", projectId)
@@ -558,7 +710,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     committedCostItemIds.length > 0
       ? await supabase
           .from("cost_items")
-          .select("id, cost_code, work_type, cost_type")
+          .select("id, accounting_mapping_id, tradesstack_cost_code, tradesstack_cost_code_label, cost_code, work_type, cost_type")
           .eq("organization_id", organizationId)
           .in("id", committedCostItemIds)
       : { data: [], error: null };
@@ -568,10 +720,10 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
   }
 
   const committedCostItemById = new Map(
-    ((committedCostItemsRaw ?? []) as Pick<CostItemRow, "id" | "cost_code" | "work_type" | "cost_type">[]).map((row) => [
-      row.id,
-      row,
-    ])
+    ((committedCostItemsRaw ?? []) as Pick<
+      CostItemRow,
+      "id" | "accounting_mapping_id" | "tradesstack_cost_code" | "tradesstack_cost_code_label" | "cost_code" | "work_type" | "cost_type"
+    >[]).map((row) => [row.id, row])
   );
 
   const actualEvents = ((actualCostRows ?? []) as unknown) as Pick<
@@ -587,6 +739,10 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     | "correction_root_event_id"
     | "reversal_reason"
     | "reversal_note"
+    | "accounting_mapping_id"
+    | "organization_cost_code_id"
+    | "tradesstack_cost_code"
+    | "tradesstack_cost_code_label"
     | "internal_cost_code"
     | "work_type"
     | "cost_type"
@@ -608,11 +764,38 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
   const actualPurchaseOrderIds = Array.from(
     new Set(actualEvents.map((event) => event.purchase_order_id).filter((value): value is string => Boolean(value)))
   );
+  const accountingMappingIds = new Set<string>();
+  const organizationCostCodeIds = new Set<string>();
+
+  for (const item of (estimateCostItems ?? []) as Array<Pick<CostItemRow, "accounting_mapping_id">>) {
+    if (item.accounting_mapping_id) {
+      accountingMappingIds.add(item.accounting_mapping_id);
+    }
+  }
+  for (const item of (approvedVariationCostItemsRaw ?? []) as Array<Pick<CostItemRow, "accounting_mapping_id">>) {
+    if (item.accounting_mapping_id) {
+      accountingMappingIds.add(item.accounting_mapping_id);
+    }
+  }
+  for (const item of (committedCostItemsRaw ?? []) as Array<Pick<CostItemRow, "accounting_mapping_id">>) {
+    if (item.accounting_mapping_id) {
+      accountingMappingIds.add(item.accounting_mapping_id);
+    }
+  }
+  for (const event of actualEvents) {
+    if (event.accounting_mapping_id) {
+      accountingMappingIds.add(event.accounting_mapping_id);
+    }
+    if (event.organization_cost_code_id) {
+      organizationCostCodeIds.add(event.organization_cost_code_id);
+    }
+  }
 
   const [
     { data: supplierInvoicesRaw, error: supplierInvoicesError },
     { data: suppliersRaw, error: suppliersError },
     { data: actualPurchaseOrdersRaw, error: actualPurchaseOrdersError },
+    { data: accountingMappingsRaw, error: accountingMappingsError },
   ] = await Promise.all([
     supplierInvoiceIds.length > 0
       ? supabase
@@ -635,6 +818,13 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
           .eq("organization_id", organizationId)
           .in("id", actualPurchaseOrderIds)
       : Promise.resolve({ data: [], error: null }),
+    accountingMappingIds.size > 0
+      ? supabase
+          .from("organization_tradesstack_accounting_mappings")
+          .select("id, organization_cost_code_id")
+          .eq("organization_id", organizationId)
+          .in("id", Array.from(accountingMappingIds))
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (supplierInvoicesError) {
@@ -645,6 +835,30 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
   }
   if (actualPurchaseOrdersError) {
     throw new Error(actualPurchaseOrdersError.message);
+  }
+  if (accountingMappingsError) {
+    throw new Error(accountingMappingsError.message);
+  }
+
+  const accountingMappings = (accountingMappingsRaw ?? []) as Pick<
+    OrganizationTradesstackAccountingMappingRow,
+    "id" | "organization_cost_code_id"
+  >[];
+  for (const mapping of accountingMappings) {
+    organizationCostCodeIds.add(mapping.organization_cost_code_id);
+  }
+
+  const { data: organizationCostCodesRaw, error: organizationCostCodesError } =
+    organizationCostCodeIds.size > 0
+      ? await supabase
+          .from("organization_cost_codes")
+          .select("id, code, name")
+          .eq("organization_id", organizationId)
+          .in("id", Array.from(organizationCostCodeIds))
+      : { data: [], error: null };
+
+  if (organizationCostCodesError) {
+    throw new Error(organizationCostCodesError.message);
   }
 
   const supplierInvoiceById = new Map(
@@ -659,20 +873,66 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
       "id" | "purchase_order_number" | "purchase_order_title" | "status"
     >[]).map((row) => [row.id, row])
   );
+  const organizationCostCodeById = new Map(
+    ((organizationCostCodesRaw ?? []) as Pick<OrganizationCostCodeRow, "id" | "code" | "name">[]).map((row) => [row.id, row])
+  );
+  const accountingCodeByMappingId = new Map(
+    accountingMappings
+      .map((mapping) => {
+        const organizationCostCode = organizationCostCodeById.get(mapping.organization_cost_code_id) ?? null;
+        return organizationCostCode ? ([mapping.id, organizationCostCode] as const) : null;
+      })
+      .filter((entry): entry is readonly [string, Pick<OrganizationCostCodeRow, "id" | "code" | "name">] => entry !== null)
+  );
 
   const rowMap = new Map<ClassificationKey, ProjectCostReportRow>();
 
   for (const item of (estimateCostItems ?? []) as Pick<
     CostItemRow,
-    "id" | "cost_code" | "work_type" | "cost_type" | "line_total" | "title" | "description" | "section" | "quantity" | "unit" | "unit_rate"
+    | "id"
+    | "accounting_mapping_id"
+    | "tradesstack_cost_code"
+    | "tradesstack_cost_code_label"
+    | "cost_code"
+    | "work_type"
+    | "cost_type"
+    | "line_total"
+    | "title"
+    | "description"
+    | "section"
+    | "quantity"
+    | "unit"
+    | "unit_rate"
   >[]) {
+    const tradesstackCostCode = normalizeText(item.tradesstack_cost_code);
+    const tradesstackCostCodeLabel = firstPresentText(
+      item.tradesstack_cost_code_label,
+      getTradesstackFinancialRoutingLabel((tradesstackCostCode ?? null) as never)
+    );
+    const accountingCode = item.accounting_mapping_id
+      ? accountingCodeByMappingId.get(item.accounting_mapping_id) ?? null
+      : null;
     const internalCostCode = normalizeText(item.cost_code);
     const workType = normalizeText(item.work_type);
     const costType = normalizeText(item.cost_type);
-    const key = buildClassificationKey({ internalCostCode, workType, costType });
+    const key = buildProjectCostReportGroupingKey({
+      tradesstackCostCode,
+      tradesstackCostCodeLabel,
+      accountingMappingId: item.accounting_mapping_id,
+      mappedAccountingCode: accountingCode?.code ?? null,
+      mappedAccountingCodeLabel: accountingCode?.name ?? null,
+      internalCostCode,
+      workType,
+      costType,
+    });
 
     upsertRowMetric(rowMap, {
       key,
+      tradesstackCostCode,
+      tradesstackCostCodeLabel,
+      accountingMappingId: item.accounting_mapping_id,
+      mappedAccountingCode: accountingCode?.code ?? null,
+      mappedAccountingCodeLabel: accountingCode?.name ?? null,
       internalCostCode,
       workType,
       costType,
@@ -703,6 +963,9 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     CostItemRow,
     | "id"
     | "source_document_id"
+    | "accounting_mapping_id"
+    | "tradesstack_cost_code"
+    | "tradesstack_cost_code_label"
     | "cost_code"
     | "work_type"
     | "cost_type"
@@ -714,13 +977,35 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     | "unit"
     | "unit_rate"
   >[]) {
+    const tradesstackCostCode = normalizeText(item.tradesstack_cost_code);
+    const tradesstackCostCodeLabel = firstPresentText(
+      item.tradesstack_cost_code_label,
+      getTradesstackFinancialRoutingLabel((tradesstackCostCode ?? null) as never)
+    );
+    const accountingCode = item.accounting_mapping_id
+      ? accountingCodeByMappingId.get(item.accounting_mapping_id) ?? null
+      : null;
     const internalCostCode = normalizeText(item.cost_code);
     const workType = normalizeText(item.work_type);
     const costType = normalizeText(item.cost_type);
-    const key = buildClassificationKey({ internalCostCode, workType, costType });
+    const key = buildProjectCostReportGroupingKey({
+      tradesstackCostCode,
+      tradesstackCostCodeLabel,
+      accountingMappingId: item.accounting_mapping_id,
+      mappedAccountingCode: accountingCode?.code ?? null,
+      mappedAccountingCodeLabel: accountingCode?.name ?? null,
+      internalCostCode,
+      workType,
+      costType,
+    });
 
     upsertRowMetric(rowMap, {
       key,
+      tradesstackCostCode,
+      tradesstackCostCodeLabel,
+      accountingMappingId: item.accounting_mapping_id,
+      mappedAccountingCode: accountingCode?.code ?? null,
+      mappedAccountingCodeLabel: accountingCode?.name ?? null,
       internalCostCode,
       workType,
       costType,
@@ -752,11 +1037,17 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     const classification = resolveCommittedLineClassification({
       line,
       costItemById: committedCostItemById,
+      accountingCodeByMappingId,
     });
-    const key = buildClassificationKey(classification);
+    const key = buildProjectCostReportGroupingKey(classification);
 
     upsertRowMetric(rowMap, {
       key,
+      tradesstackCostCode: classification.tradesstackCostCode,
+      tradesstackCostCodeLabel: classification.tradesstackCostCodeLabel,
+      accountingMappingId: classification.accountingMappingId,
+      mappedAccountingCode: classification.mappedAccountingCode,
+      mappedAccountingCodeLabel: classification.mappedAccountingCodeLabel,
       internalCostCode: classification.internalCostCode,
       workType: classification.workType,
       costType: classification.costType,
@@ -787,13 +1078,21 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
   }
 
   for (const event of actualEvents) {
-    const classification = resolveActualEventClassification(event);
+    const classification = resolveActualEventClassification(event, {
+      accountingCodeByMappingId,
+      organizationCostCodeById,
+    });
     const ledgerLabel = deriveActualLedgerLabel(event);
     const isCorrectionChain = Boolean(
       event.event_type === "reversal" ||
       (event.correction_root_event_id && event.correction_root_event_id !== event.id)
     );
-    const key = buildClassificationKey({
+    const key = buildProjectCostReportGroupingKey({
+      tradesstackCostCode: classification.tradesstackCostCode,
+      tradesstackCostCodeLabel: classification.tradesstackCostCodeLabel,
+      accountingMappingId: classification.accountingMappingId,
+      mappedAccountingCode: classification.mappedAccountingCode,
+      mappedAccountingCodeLabel: classification.mappedAccountingCodeLabel,
       internalCostCode: classification.internalCostCode,
       workType: classification.workType,
       costType: classification.costType,
@@ -802,6 +1101,11 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
 
     upsertRowMetric(rowMap, {
       key,
+      tradesstackCostCode: classification.tradesstackCostCode,
+      tradesstackCostCodeLabel: classification.tradesstackCostCodeLabel,
+      accountingMappingId: classification.accountingMappingId,
+      mappedAccountingCode: classification.mappedAccountingCode,
+      mappedAccountingCodeLabel: classification.mappedAccountingCodeLabel,
       internalCostCode: classification.internalCostCode,
       workType: classification.workType,
       costType: classification.costType,
@@ -888,11 +1192,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
         return left.isUnmatchedActual ? 1 : -1;
       }
 
-      return (
-        (left.internalCostCode ?? left.classificationLabel).localeCompare(right.internalCostCode ?? right.classificationLabel) ||
-        (left.workType ?? "").localeCompare(right.workType ?? "") ||
-        (left.costType ?? "").localeCompare(right.costType ?? "")
-      );
+      return compareProjectCostReportRows(left, right);
     });
 
   const classifiedBudget = roundMoney(rows.reduce((sum, row) => sum + row.estimated, 0));
@@ -902,6 +1202,11 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     const adjustmentRow: ProjectCostReportRow = {
       key: adjustmentKey,
       classificationLabel: "Budget adjustments",
+      tradesstackCostCode: null,
+      tradesstackCostCodeLabel: null,
+      accountingMappingId: null,
+      mappedAccountingCode: null,
+      mappedAccountingCodeLabel: null,
       internalCostCode: null,
       workType: "Budget adjustments",
       costType: null,
@@ -945,11 +1250,7 @@ export async function getProjectCostReport(projectSlug: string): Promise<Project
     if (left.isBudgetAdjustment !== right.isBudgetAdjustment) {
       return left.isBudgetAdjustment ? 1 : -1;
     }
-    return (
-      (left.internalCostCode ?? left.classificationLabel).localeCompare(right.internalCostCode ?? right.classificationLabel) ||
-      (left.workType ?? "").localeCompare(right.workType ?? "") ||
-      (left.costType ?? "").localeCompare(right.costType ?? "")
-    );
+    return compareProjectCostReportRows(left, right);
   });
 
   const estimated = roundMoney(rows.reduce((sum, row) => sum + row.estimated, 0));

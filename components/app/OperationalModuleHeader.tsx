@@ -39,7 +39,7 @@ export function OperationalModuleHeader({
         ) : null}
         {children}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-nowrap">{actions}</div> : null}
     </section>
   );
 }

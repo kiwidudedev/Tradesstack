@@ -5,8 +5,8 @@ import {
   type ProjectActualCostEventRow,
 } from "@/lib/actual-cost-events";
 import type {
-  OrganizationCostCodeMappingRuleRow,
   OrganizationCostCodeRow,
+  OrganizationTradesstackAccountingMappingRow,
   ResolvedOrganizationAccountingCode,
 } from "@/lib/accounting/types";
 import {
@@ -18,6 +18,7 @@ import {
   type SupplierInvoiceLineRow,
   validateSupplierInvoiceOrgConsistency,
 } from "@/lib/supplier-invoice-lineage";
+import { getSupplierInvoiceCommercialComparison } from "@/lib/procurement-commercial-server";
 import {
   createSupplierInvoiceLineAllocationDraft,
   createUnmatchedSupplierInvoiceLineAllocationDraft,
@@ -33,11 +34,19 @@ import {
   summarizeSupplierInvoiceActualCostEvent,
   writeSupplierInvoiceIntelligenceEvents,
 } from "@/lib/supplier-invoice-intelligence";
+import {
+  buildCostConstructionIntelligenceIdempotencyKey,
+  type CostConstructionIntelligenceEventInput,
+  tryEnqueueCostConstructionIntelligenceEvent,
+} from "@/lib/cost-construction-intelligence";
 import type { Database, Json } from "@/lib/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveCurrentSupplierInvoiceTax } from "@/lib/supplier-invoice-tax-resolution-server";
 
 type ServerSupabase = SupabaseClient<Database>;
 type SupplierInvoiceRow = Database["public"]["Tables"]["supplier_invoices"]["Row"];
+type OrganizationSupplierRow = Database["public"]["Tables"]["organization_suppliers"]["Row"];
+type ProjectPurchaseOrderRow = Database["public"]["Tables"]["project_purchase_orders"]["Row"];
 type SupplierInvoiceActivityEventInsert =
   Database["public"]["Tables"]["supplier_invoice_activity_events"]["Insert"];
 type OrganizationProjectRow = Database["public"]["Tables"]["organization_projects"]["Row"];
@@ -86,6 +95,20 @@ type ReverseSupplierInvoiceActualCostEventRpcRow =
 
 function toNumber(value: number | null | undefined) {
   return Number(value ?? 0);
+}
+
+function firstPresentText(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function resolveSupplierDisplayName(supplier: Pick<OrganizationSupplierRow, "company_name" | "name"> | null) {
+  return firstPresentText(supplier?.company_name, supplier?.name);
 }
 
 async function fetchInvoiceDraftAllocations(params: {
@@ -273,6 +296,52 @@ async function loadAllocationRow(params: {
   return data as SupplierInvoiceLineAllocationRow;
 }
 
+async function loadSuppliersById(params: {
+  supabase: ServerSupabase;
+  organizationId: string;
+  supplierIds: string[];
+}) {
+  if (params.supplierIds.length === 0) {
+    return new Map<string, OrganizationSupplierRow>();
+  }
+
+  const { data, error } = await params.supabase
+    .from("organization_suppliers")
+    .select("id, company_name, name")
+    .eq("organization_id", params.organizationId)
+    .in("id", params.supplierIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as OrganizationSupplierRow[];
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+async function loadPurchaseOrdersById(params: {
+  supabase: ServerSupabase;
+  organizationId: string;
+  purchaseOrderIds: string[];
+}) {
+  if (params.purchaseOrderIds.length === 0) {
+    return new Map<string, ProjectPurchaseOrderRow>();
+  }
+
+  const { data, error } = await params.supabase
+    .from("project_purchase_orders")
+    .select("id, purchase_order_number, purchase_order_title, status")
+    .eq("organization_id", params.organizationId)
+    .in("id", params.purchaseOrderIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as ProjectPurchaseOrderRow[];
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
 async function loadPurchaseOrderLinesById(params: {
   supabase: ServerSupabase;
   organizationId: string;
@@ -342,14 +411,14 @@ async function loadAccountingMappings(params: {
   supabase: ServerSupabase;
   organizationId: string;
 }) {
-  const [{ data: costCodes, error: costCodesError }, { data: mappingRules, error: mappingRulesError }] =
+  const [{ data: costCodes, error: costCodesError }, { data: mappings, error: mappingsError }] =
     await Promise.all([
       params.supabase
         .from("organization_cost_codes")
         .select("*")
         .eq("organization_id", params.organizationId),
       params.supabase
-        .from("organization_cost_code_mapping_rules")
+        .from("organization_tradesstack_accounting_mappings")
         .select("*")
         .eq("organization_id", params.organizationId),
     ]);
@@ -357,13 +426,13 @@ async function loadAccountingMappings(params: {
   if (costCodesError) {
     throw new Error(costCodesError.message);
   }
-  if (mappingRulesError) {
-    throw new Error(mappingRulesError.message);
+  if (mappingsError) {
+    throw new Error(mappingsError.message);
   }
 
   return {
     costCodes: (costCodes ?? []) as OrganizationCostCodeRow[],
-    mappingRules: (mappingRules ?? []) as OrganizationCostCodeMappingRuleRow[],
+    mappings: (mappings ?? []) as OrganizationTradesstackAccountingMappingRow[],
   };
 }
 
@@ -377,7 +446,9 @@ function assertWritePermissions(params: {
   }
 
   if (
-    (params.reviewStatus === "needs_cost_review" || params.reviewStatus === "needs_accounting_review") &&
+    (params.reviewStatus === "needs_routing_review" ||
+      params.reviewStatus === "needs_accounting_mapping" ||
+      params.reviewStatus === "high_value_review") &&
     !params.canReview
   ) {
     throw new Error("You do not have permission to save draft allocations that require review.");
@@ -448,6 +519,209 @@ async function emitSupplierInvoiceIntelligenceEvents(params: {
   } catch (error) {
     logSupplierInvoiceIntelligenceFailure(params.action, error);
   }
+}
+
+async function emitSupplierInvoiceAllocationConstructionIntelligence(params: {
+  allocation: SupplierInvoiceLineAllocationRow;
+  invoice: SupplierInvoiceRow | null;
+  invoiceLine: SupplierInvoiceLineRow | null;
+  supplierName?: string | null;
+  purchaseOrder?: Pick<ProjectPurchaseOrderRow, "id" | "purchase_order_number" | "purchase_order_title" | "status"> | null;
+  purchaseOrderLine?: Pick<PurchaseOrderLineItemRow, "id" | "unit" | "description"> | null;
+}) {
+  const input = buildSupplierInvoiceAllocationConstructionIntelligenceInput(params);
+  if (!input) {
+    return;
+  }
+
+  await tryEnqueueCostConstructionIntelligenceEvent(input);
+}
+
+export function buildSupplierInvoiceAllocationConstructionIntelligenceInput(params: {
+  allocation: SupplierInvoiceLineAllocationRow;
+  invoice: SupplierInvoiceRow | null;
+  invoiceLine: SupplierInvoiceLineRow | null;
+  supplierName?: string | null;
+  purchaseOrder?: Pick<ProjectPurchaseOrderRow, "id" | "purchase_order_number" | "purchase_order_title" | "status"> | null;
+  purchaseOrderLine?: Pick<PurchaseOrderLineItemRow, "id" | "unit" | "description"> | null;
+}): CostConstructionIntelligenceEventInput | null {
+  if (!params.allocation.tradesstack_cost_code || !params.allocation.tradesstack_cost_code_label) {
+    return null;
+  }
+
+  const allocationUpdatedAt =
+    typeof (params.allocation as Record<string, unknown>).updated_at === "string"
+      ? ((params.allocation as Record<string, unknown>).updated_at as string)
+      : null;
+
+  return {
+    idempotencyKey: buildCostConstructionIntelligenceIdempotencyKey({
+      sourceType: "supplier_invoice_line_allocation",
+      sourceId: params.allocation.id,
+      sourceLineId: params.allocation.supplier_invoice_line_id,
+      revisionToken: allocationUpdatedAt ?? params.allocation.created_at,
+    }),
+    organizationId: params.allocation.organization_id,
+    projectId: params.allocation.project_id,
+    sourceType: "supplier_invoice_line_allocation",
+    sourceId: params.allocation.id,
+    sourceLineId: params.allocation.supplier_invoice_line_id,
+    tradesstackCostCode: String(params.allocation.tradesstack_cost_code),
+    tradesstackCostCodeLabel: params.allocation.tradesstack_cost_code_label,
+    accountingMappingId: params.allocation.accounting_mapping_id,
+    supplierName: params.supplierName ?? null,
+    description:
+      params.invoiceLine?.description?.trim() ||
+      params.purchaseOrderLine?.description?.trim() ||
+      params.allocation.approval_notes?.trim() ||
+      "Supplier invoice allocation",
+    quantity: params.allocation.allocated_quantity ?? null,
+    unit: firstPresentText(params.purchaseOrderLine?.unit),
+    rate:
+      typeof params.invoiceLine?.unit_price === "number" && Number.isFinite(params.invoiceLine.unit_price)
+        ? params.invoiceLine.unit_price
+        : null,
+    amount: Number(params.allocation.allocated_amount ?? 0),
+    documentContext: {
+      module: "supplier_invoices",
+      documentType: "supplier_invoice_line_allocation",
+      supplierInvoiceNumber: params.invoice?.invoice_number ?? null,
+      supplierInvoiceId: params.allocation.supplier_invoice_id,
+      supplierInvoiceLineId: params.allocation.supplier_invoice_line_id,
+      allocationStatus: params.allocation.allocation_status,
+      allocationSource:
+        typeof (params.allocation as Record<string, unknown>).allocation_source === "string"
+          ? ((params.allocation as Record<string, unknown>).allocation_source as string)
+          : null,
+      allocationGroupId:
+        typeof (params.allocation as Record<string, unknown>).allocation_group_id === "string"
+          ? ((params.allocation as Record<string, unknown>).allocation_group_id as string)
+          : null,
+      allocationSequence:
+        typeof (params.allocation as Record<string, unknown>).allocation_sequence === "number"
+          ? ((params.allocation as Record<string, unknown>).allocation_sequence as number)
+          : null,
+      approvalStatus: params.allocation.approval_status,
+      reviewStatus: params.allocation.review_status,
+      purchaseOrderId: params.purchaseOrder?.id ?? params.allocation.purchase_order_id ?? null,
+      purchaseOrderNumber: params.purchaseOrder?.purchase_order_number ?? null,
+      purchaseOrderTitle: params.purchaseOrder?.purchase_order_title ?? null,
+      purchaseOrderStatus: params.purchaseOrder?.status ?? null,
+    },
+    eventPayload: {
+      purchaseOrderId: params.allocation.purchase_order_id,
+      purchaseOrderLineItemId: params.allocation.purchase_order_line_item_id,
+      purchaseOrderLineDescription: params.purchaseOrderLine?.description ?? null,
+      costItemId: params.allocation.cost_item_id,
+      sourceCostItemId: params.allocation.source_cost_item_id,
+      invoiceLineDescription: params.invoiceLine?.description ?? null,
+      invoiceLineRate:
+        typeof params.invoiceLine?.unit_price === "number" && Number.isFinite(params.invoiceLine.unit_price)
+          ? params.invoiceLine.unit_price
+          : null,
+      invoiceLineQuantity:
+        typeof params.invoiceLine?.quantity === "number" && Number.isFinite(params.invoiceLine.quantity)
+          ? params.invoiceLine.quantity
+          : null,
+    },
+  };
+}
+
+async function emitActualCostEventConstructionIntelligence(params: {
+  event: ProjectActualCostEventRow;
+  invoice: SupplierInvoiceRow | null;
+  invoiceLine: SupplierInvoiceLineRow | null;
+  allocation?: SupplierInvoiceLineAllocationRow | null;
+  supplierName?: string | null;
+  purchaseOrder?: Pick<ProjectPurchaseOrderRow, "id" | "purchase_order_number" | "purchase_order_title" | "status"> | null;
+  purchaseOrderLine?: Pick<PurchaseOrderLineItemRow, "id" | "unit" | "description"> | null;
+}) {
+  const input = buildActualCostEventConstructionIntelligenceInput(params);
+  if (!input) {
+    return;
+  }
+
+  await tryEnqueueCostConstructionIntelligenceEvent(input);
+}
+
+export function buildActualCostEventConstructionIntelligenceInput(params: {
+  event: ProjectActualCostEventRow;
+  invoice: SupplierInvoiceRow | null;
+  invoiceLine: SupplierInvoiceLineRow | null;
+  allocation?: SupplierInvoiceLineAllocationRow | null;
+  supplierName?: string | null;
+  purchaseOrder?: Pick<ProjectPurchaseOrderRow, "id" | "purchase_order_number" | "purchase_order_title" | "status"> | null;
+  purchaseOrderLine?: Pick<PurchaseOrderLineItemRow, "id" | "unit" | "description"> | null;
+}): CostConstructionIntelligenceEventInput | null {
+  if (!params.event.tradesstack_cost_code || !params.event.tradesstack_cost_code_label) {
+    return null;
+  }
+
+  const eventUpdatedAt =
+    typeof (params.event as Record<string, unknown>).updated_at === "string"
+      ? ((params.event as Record<string, unknown>).updated_at as string)
+      : null;
+
+  return {
+    idempotencyKey: buildCostConstructionIntelligenceIdempotencyKey({
+      sourceType: "project_actual_cost_event",
+      sourceId: params.event.id,
+      sourceLineId: params.event.source_invoice_line_id,
+      revisionToken: eventUpdatedAt ?? params.event.created_at,
+    }),
+    organizationId: params.event.organization_id,
+    projectId: params.event.project_id,
+    sourceType: "project_actual_cost_event",
+    sourceId: params.event.id,
+    sourceLineId: params.event.source_invoice_line_id,
+    tradesstackCostCode: String(params.event.tradesstack_cost_code),
+    tradesstackCostCodeLabel: params.event.tradesstack_cost_code_label,
+    accountingMappingId: params.event.accounting_mapping_id,
+    supplierName: params.supplierName ?? null,
+    description:
+      params.invoiceLine?.description?.trim() ||
+      params.purchaseOrderLine?.description?.trim() ||
+      params.event.source_reference?.trim() ||
+      "Project actual cost event",
+    quantity: params.event.quantity ?? null,
+    unit: firstPresentText(params.purchaseOrderLine?.unit),
+    rate:
+      typeof params.invoiceLine?.unit_price === "number" && Number.isFinite(params.invoiceLine.unit_price)
+        ? params.invoiceLine.unit_price
+        : null,
+    amount: Number(params.event.total_amount ?? params.event.amount ?? 0),
+    documentContext: {
+      module: "actual_costs",
+      documentType: "project_actual_cost_event",
+      postingSource: params.event.posting_source,
+      sourceType: params.event.source_type,
+      eventStatus: params.event.event_status,
+      supplierInvoiceNumber: params.invoice?.invoice_number ?? null,
+      supplierInvoiceId: params.event.supplier_invoice_id,
+      supplierInvoiceAllocationId: params.event.supplier_invoice_line_allocation_id,
+      purchaseOrderId: params.purchaseOrder?.id ?? params.event.purchase_order_id ?? null,
+      purchaseOrderNumber: params.purchaseOrder?.purchase_order_number ?? null,
+      purchaseOrderTitle: params.purchaseOrder?.purchase_order_title ?? null,
+      purchaseOrderStatus: params.purchaseOrder?.status ?? null,
+    },
+    eventPayload: {
+      sourceReference: params.event.source_reference,
+      sourceInvoiceLineId: params.event.source_invoice_line_id,
+      sourceInvoiceAllocationId: params.event.source_invoice_allocation_id,
+      allocationId:
+        params.event.source_invoice_allocation_id ?? params.event.supplier_invoice_line_allocation_id ?? params.allocation?.id ?? null,
+      allocationQuantity: params.allocation?.allocated_quantity ?? null,
+      allocationAmount: params.allocation?.allocated_amount ?? null,
+      purchaseOrderLineItemId: params.event.purchase_order_line_item_id,
+      purchaseOrderLineDescription: params.purchaseOrderLine?.description ?? null,
+      costItemId: params.event.cost_item_id,
+      invoiceLineDescription: params.invoiceLine?.description ?? null,
+      invoiceLineRate:
+        typeof params.invoiceLine?.unit_price === "number" && Number.isFinite(params.invoiceLine.unit_price)
+          ? params.invoiceLine.unit_price
+          : null,
+    },
+  };
 }
 
 async function prepareAcceptedDraftContexts(params: {
@@ -554,10 +828,16 @@ async function prepareAcceptedDraftContexts(params: {
       costItem,
       sourceCostItem,
     });
+    const provider =
+      accountingMappings.mappings.find((row) => row.is_active)?.provider ??
+      accountingMappings.costCodes.find((row) => row.external_provider)?.external_provider ??
+      "manual";
     const accountingResolution = resolveInheritedAccountingCode({
       costCodes: accountingMappings.costCodes,
-      mappingRules: accountingMappings.mappingRules,
+      mappings: accountingMappings.mappings,
       input: buildAccountingResolutionInput({
+        organizationId: params.organizationId,
+        provider,
         costItemId: lineage.costItemId ?? lineage.sourceCostItemId,
         projectId: lineage.projectId,
         title: invoiceLine.description ?? "Supplier invoice line",
@@ -681,7 +961,7 @@ async function replaceDraftAllocationsForLines(params: {
       params.invoiceLineIds.includes(allocation.supplier_invoice_line_id) &&
       (allocation.approval_status === "approved" ||
         allocation.approval_status === "disputed" ||
-        allocation.review_status === "reviewed" ||
+        allocation.review_status === "resolved" ||
         allocation.review_status === "disputed")
   );
 
@@ -747,6 +1027,11 @@ async function replaceDraftAllocationsForLines(params: {
   }
 
   try {
+    const invoice = await loadInvoiceRow({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      supplierInvoiceId: params.supplierInvoiceId,
+    });
     const refreshedAllocations = await fetchInvoiceDraftAllocations({
       supabase: params.supabase,
       organizationId: params.organizationId,
@@ -757,6 +1042,48 @@ async function replaceDraftAllocationsForLines(params: {
         .filter((allocation) => params.invoiceLineIds.includes(allocation.supplier_invoice_line_id))
         .map((allocation) => [allocation.supplier_invoice_line_id, allocation])
     );
+    const invoiceLineById =
+      params.existingInvoiceLines ??
+      (await loadInvoiceLinesById({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        supplierInvoiceId: params.supplierInvoiceId,
+        invoiceLineIds: Array.from(currentAllocationByInvoiceLineId.keys()),
+      }));
+    const purchaseOrderIds = Array.from(
+      new Set(
+        Array.from(currentAllocationByInvoiceLineId.values())
+          .map((allocation) => allocation.purchase_order_id)
+          .filter((value): value is string => typeof value === "string" && value.length > 0)
+      )
+    );
+    const purchaseOrderLineIds = Array.from(
+      new Set(
+        Array.from(currentAllocationByInvoiceLineId.values())
+          .map((allocation) => allocation.purchase_order_line_item_id)
+          .filter((value): value is string => typeof value === "string" && value.length > 0)
+      )
+    );
+    const [supplierById, purchaseOrderById, purchaseOrderLineById] = await Promise.all([
+      loadSuppliersById({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        supplierIds: invoice.supplier_id ? [invoice.supplier_id] : [],
+      }),
+      loadPurchaseOrdersById({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        purchaseOrderIds,
+      }),
+      loadPurchaseOrderLinesById({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        purchaseOrderLineItemIds: purchaseOrderLineIds,
+      }),
+    ]);
+    const supplierName = invoice.supplier_id
+      ? resolveSupplierDisplayName(supplierById.get(invoice.supplier_id) ?? null)
+      : null;
     const intelligenceEvents: Array<ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>> = [];
 
     allocationsToReplace.forEach((previousAllocation) => {
@@ -847,6 +1174,18 @@ async function replaceDraftAllocationsForLines(params: {
 
     currentAllocationByInvoiceLineId.forEach((allocation) => {
       if (!hasAiSupplierInvoiceAllocationSuggestion(allocation)) {
+        void emitSupplierInvoiceAllocationConstructionIntelligence({
+          allocation,
+          invoice,
+          invoiceLine: invoiceLineById.get(allocation.supplier_invoice_line_id) ?? null,
+          supplierName,
+          purchaseOrder: allocation.purchase_order_id
+            ? purchaseOrderById.get(allocation.purchase_order_id) ?? null
+            : null,
+          purchaseOrderLine: allocation.purchase_order_line_item_id
+            ? purchaseOrderLineById.get(allocation.purchase_order_line_item_id) ?? null
+            : null,
+        });
         return;
       }
 
@@ -883,6 +1222,19 @@ async function replaceDraftAllocationsForLines(params: {
           reason: "AI-assisted supplier invoice allocation suggestion saved as the current draft.",
         })
       );
+
+      void emitSupplierInvoiceAllocationConstructionIntelligence({
+        allocation,
+        invoice,
+        invoiceLine: invoiceLineById.get(allocation.supplier_invoice_line_id) ?? null,
+        supplierName,
+        purchaseOrder: allocation.purchase_order_id
+          ? purchaseOrderById.get(allocation.purchase_order_id) ?? null
+          : null,
+        purchaseOrderLine: allocation.purchase_order_line_item_id
+          ? purchaseOrderLineById.get(allocation.purchase_order_line_item_id) ?? null
+          : null,
+      });
     });
 
     await emitSupplierInvoiceIntelligenceEvents({
@@ -905,6 +1257,12 @@ export async function saveAcceptedSupplierInvoiceDraftAllocations(params: {
   actorUserId: string;
 }) {
   const contexts = await prepareAcceptedDraftContexts(params);
+  const taxResolution = await resolveCurrentSupplierInvoiceTax(params);
+  const taxByInvoiceLineId = new Map(
+    taxResolution.status === "exception"
+      ? []
+      : taxResolution.lines.map((line) => [line.lineId, line] as const),
+  );
 
   const payloads = contexts.map((context) => {
     const payload = createSupplierInvoiceLineAllocationDraft({
@@ -915,6 +1273,12 @@ export async function saveAcceptedSupplierInvoiceDraftAllocations(params: {
       allocatedQuantity: context.invoiceLine.quantity ?? null,
       lineage: context.lineage,
       accountingResolution: context.accountingResolution,
+      taxResolution: taxByInvoiceLineId.has(context.invoiceLine.id)
+        ? {
+            accountingTaxRateId: taxByInvoiceLineId.get(context.invoiceLine.id)!.accountingTaxRateId,
+            taxResolutionStatus: taxByInvoiceLineId.get(context.invoiceLine.id)!.taxResolutionStatus,
+          }
+        : { accountingTaxRateId: null, taxResolutionStatus: "unresolved" },
       allocationSequence: 1,
       orgConsistency: {
         invoiceOrganizationId: context.invoice.organization_id,
@@ -976,12 +1340,26 @@ export async function markSupplierInvoiceLineAllocationUnmatched(params: {
     throw new Error("The selected supplier invoice line could not be found.");
   }
 
-  const projectById = await loadProjectsById({
-    supabase: params.supabase,
-    organizationId: params.organizationId,
-    projectIds: invoiceLine.project_id ? [invoiceLine.project_id] : [],
-  });
+  const [projectById, supplierById] = await Promise.all([
+    loadProjectsById({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      projectIds: invoiceLine.project_id ? [invoiceLine.project_id] : [],
+    }),
+    loadSuppliersById({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      supplierIds: invoice.supplier_id ? [invoice.supplier_id] : [],
+    }),
+  ]);
   const project = invoiceLine.project_id ? projectById.get(invoiceLine.project_id) ?? null : null;
+  const supplierName = invoice.supplier_id
+    ? resolveSupplierDisplayName(supplierById.get(invoice.supplier_id) ?? null)
+    : null;
+  const taxResolution = await resolveCurrentSupplierInvoiceTax(params);
+  const resolvedLineTax = taxResolution.status === "exception"
+    ? null
+    : taxResolution.lines.find((line) => line.lineId === invoiceLine.id) ?? null;
 
   validateSupplierInvoiceOrgConsistency(params.organizationId, {
     invoiceOrganizationId: invoice.organization_id,
@@ -997,6 +1375,14 @@ export async function markSupplierInvoiceLineAllocationUnmatched(params: {
     allocatedQuantity: invoiceLine.quantity ?? null,
     projectId: invoiceLine.project_id ?? null,
     organizationCostCodeId: invoiceLine.cost_code_id ?? null,
+    description: invoiceLine.description ?? null,
+    supplierName,
+    taxResolution: resolvedLineTax
+      ? {
+          accountingTaxRateId: resolvedLineTax.accountingTaxRateId,
+          taxResolutionStatus: resolvedLineTax.taxResolutionStatus,
+        }
+      : { accountingTaxRateId: null, taxResolutionStatus: "unresolved" },
   });
 
   assertWritePermissions({
@@ -1028,10 +1414,10 @@ function canApproveAllocation(allocation: SupplierInvoiceLineAllocationRow) {
   }
 
   return (
-    allocation.review_status === "pending" &&
+    (allocation.review_status === "auto_approved" || allocation.review_status === "resolved") &&
     allocation.classification_status !== "needs_review" &&
-    allocation.accounting_resolution_status !== "unresolved" &&
-    allocation.accounting_resolution_status !== "classification_review_required"
+    allocation.accounting_resolution_status !== "needs_accounting_mapping" &&
+    allocation.accounting_resolution_status !== "invalid_tradesstack_cost_code"
   );
 }
 
@@ -1045,15 +1431,13 @@ function canPostActualCostAllocation(allocation: SupplierInvoiceLineAllocationRo
   }
 
   if (allocation.allocation_status === "unmatched") {
-    return true;
+    return Boolean(allocation.tradesstack_cost_code);
   }
 
   return Boolean(
     allocation.purchase_order_id &&
       allocation.purchase_order_line_item_id &&
-      allocation.work_type &&
-      allocation.cost_type &&
-      allocation.internal_cost_code &&
+      allocation.tradesstack_cost_code &&
       allocation.organization_cost_code_id
   );
 }
@@ -1093,7 +1477,7 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
     .from("supplier_invoice_line_allocations")
     .update({
       approval_status: "approved",
-      review_status: "reviewed",
+      review_status: "resolved",
       approval_notes: note,
       reviewed_by_user_id: params.actorUserId,
       reviewed_at: new Date().toISOString(),
@@ -1137,15 +1521,15 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
   const updatedAllocationSummary = summarizeSupplierInvoiceAllocation({
     supplierInvoiceId: context.allocation.supplier_invoice_id,
     supplierInvoiceLineId: context.allocation.supplier_invoice_line_id,
-    purchaseOrderId: context.allocation.purchase_order_id,
-    purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
-    projectId: context.allocation.project_id,
-    allocatedAmount: context.allocation.allocated_amount,
-    allocationStatus: context.allocation.allocation_status,
-    reviewStatus: "reviewed",
-    approvalStatus: "approved",
-    classificationStatus: context.allocation.classification_status,
-    accountingResolutionStatus: context.allocation.accounting_resolution_status,
+        purchaseOrderId: context.allocation.purchase_order_id,
+        purchaseOrderLineItemId: context.allocation.purchase_order_line_item_id,
+        projectId: context.allocation.project_id,
+        allocatedAmount: context.allocation.allocated_amount,
+        allocationStatus: context.allocation.allocation_status,
+        reviewStatus: "resolved",
+        approvalStatus: "approved",
+        classificationStatus: context.allocation.classification_status,
+        accountingResolutionStatus: context.allocation.accounting_resolution_status,
     organizationCostCodeId: context.allocation.organization_cost_code_id,
     aiConfidenceScore: context.allocation.ai_confidence_score,
     aiSuggestedPurchaseOrderLineItemId: context.allocation.ai_suggested_purchase_order_line_item_id,
@@ -1464,6 +1848,47 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
 }) {
   assertReviewPermissions({ canReview: params.canReview });
 
+  const commercialComparison = await getSupplierInvoiceCommercialComparison({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    supplierInvoiceId: params.supplierInvoiceId,
+  });
+  if (
+    !commercialComparison.activeApproval ||
+    commercialComparison.activeApproval.finance_version_hash !==
+      commercialComparison.financeVersionHash
+  ) {
+    throw new Error(
+      "Commercial approval is required before posting supplier invoice actual costs."
+    );
+  }
+  const currentCommercialBlocker = commercialComparison.blockers.find(
+    (blocker) =>
+      blocker.code !== "warning_not_accepted" &&
+      blocker.code !== "missing_no_po_reason"
+  );
+  if (currentCommercialBlocker) {
+    throw new Error(
+      `Commercial approval must be reviewed again: ${currentCommercialBlocker.message}`
+    );
+  }
+
+  const accountsApprovalResult = await (params.supabase as unknown as {
+    from(table: string): ReturnType<ServerSupabase["from"]>;
+  })
+    .from("supplier_invoice_accounts_approvals")
+    .select("id")
+    .eq("organization_id", params.organizationId)
+    .eq("supplier_invoice_id", params.supplierInvoiceId)
+    .eq("finance_hash", commercialComparison.financeVersionHash)
+    .eq("status", "approved")
+    .limit(1);
+  if (accountsApprovalResult.error || (accountsApprovalResult.data ?? []).length === 0) {
+    throw new Error(
+      "Final Accounts approval is required before posting supplier invoice actual costs."
+    );
+  }
+
   const [invoice, allocations, existingEvents] = await Promise.all([
     loadInvoiceRow(params),
     fetchInvoiceDraftAllocations({
@@ -1490,30 +1915,39 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
     throw new Error("There are no approved allocations ready to post.");
   }
 
-  const invoiceLineIds = Array.from(new Set(approvedAllocations.map((allocation) => allocation.supplier_invoice_line_id)));
-  const purchaseOrderLineIds = Array.from(
+  const invoiceLineIds: string[] = Array.from(
+    new Set(approvedAllocations.map((allocation) => allocation.supplier_invoice_line_id))
+  );
+  const purchaseOrderLineIds: string[] = Array.from(
     new Set(
       approvedAllocations
         .map((allocation) => allocation.purchase_order_line_item_id)
         .filter((value): value is string => typeof value === "string" && value.length > 0)
     )
   );
-  const projectIds = Array.from(
+  const projectIds: string[] = Array.from(
     new Set(
       approvedAllocations
         .map((allocation) => allocation.project_id)
         .filter((value): value is string => typeof value === "string" && value.length > 0)
     )
   );
-  const costItemIds = Array.from(
+  const costItemIds: string[] = Array.from(
     new Set(
       approvedAllocations
         .flatMap((allocation) => [allocation.cost_item_id, allocation.source_cost_item_id])
         .filter((value): value is string => typeof value === "string" && value.length > 0)
     )
   );
+  const purchaseOrderIds: string[] = Array.from(
+    new Set(
+      approvedAllocations
+        .map((allocation) => allocation.purchase_order_id)
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+    )
+  );
 
-  const [invoiceLineById, purchaseOrderLineById, projectById, costItemById] = await Promise.all([
+  const [invoiceLineById, purchaseOrderLineById, projectById, costItemById, purchaseOrderById, supplierById] = await Promise.all([
     loadInvoiceLinesById({
       supabase: params.supabase,
       organizationId: params.organizationId,
@@ -1535,7 +1969,21 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
       organizationId: params.organizationId,
       costItemIds,
     }),
+    loadPurchaseOrdersById({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      purchaseOrderIds,
+    }),
+    loadSuppliersById({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      supplierIds: invoice.supplier_id ? [invoice.supplier_id] : [],
+    }),
   ]);
+  const supplierName = invoice.supplier_id
+    ? resolveSupplierDisplayName(supplierById.get(invoice.supplier_id) ?? null)
+    : null;
+  const allocationById = new Map(approvedAllocations.map((allocation) => [allocation.id, allocation]));
 
   const payloads: Database["public"]["Tables"]["project_actual_cost_events"]["Insert"][] = [];
   const skippedMessages: string[] = [];
@@ -1622,6 +2070,24 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
   const postedAmount = postedEvents.reduce(
     (sum, event) => sum + Number(event.total_amount ?? 0),
     0
+  );
+  void Promise.allSettled(
+    postedEvents.map((event) =>
+      emitActualCostEventConstructionIntelligence({
+        event,
+        invoice,
+        invoiceLine: invoiceLineById.get(event.source_invoice_line_id ?? event.supplier_invoice_line_id ?? "") ?? null,
+        allocation:
+          allocationById.get(
+            event.source_invoice_allocation_id ?? event.supplier_invoice_line_allocation_id ?? ""
+          ) ?? null,
+        supplierName,
+        purchaseOrder: event.purchase_order_id ? purchaseOrderById.get(event.purchase_order_id) ?? null : null,
+        purchaseOrderLine: event.purchase_order_line_item_id
+          ? purchaseOrderLineById.get(event.purchase_order_line_item_id) ?? null
+          : null,
+      })
+    )
   );
 
   await insertSupplierInvoiceActivityEvents({

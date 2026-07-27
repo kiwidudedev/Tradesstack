@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultWorksheetData, type WorksheetData } from "./opportunity-pricing-worksheet-defaults";
+import {
+  createDefaultWorksheetData,
+  normalizeWorksheetData,
+  type WorksheetData,
+} from "./opportunity-pricing-worksheet-defaults";
 import { getCellFormat } from "./opportunity-pricing-worksheet-formatting";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
+import { validateWorksheetBeforeSave } from "./opportunity-pricing-worksheet-save-validation";
 import {
   batchPricingWorksheetAiOperationsForSafePreview,
   buildPricingWorksheetAiAssistantSchema,
@@ -91,6 +96,23 @@ function buildBaseWorksheet() {
 
   setCell(worksheet, "B4", { value: "Timber total" });
   setCell(worksheet, "E4", { formula: "=SUM(E2:E3)" });
+
+  return worksheet;
+}
+
+function buildGeneratedPricingWorksheet() {
+  const worksheet = createDefaultWorksheetData({
+    sheetName: "Generated Pricing Sheet",
+    rowCount: 20,
+    columnCount: 20,
+  });
+
+  setCell(worksheet, "J3", { value: "Quantity" });
+  setCell(worksheet, "M3", { value: "Labour" });
+  setCell(worksheet, "N3", { value: "Mat. Rate" });
+  setCell(worksheet, "O3", { value: "Material" });
+  setCell(worksheet, "Q3", { value: "Total $" });
+  setCell(worksheet, "B9", { value: "Track and stud" });
 
   return worksheet;
 }
@@ -236,6 +258,324 @@ describe("simulatePricingWorksheetAiEditPlan", () => {
     expect(getCell(result.worksheet, "C2")?.value).toBe(12);
     expect(getCell(result.worksheet, "D2")?.value).toBe(2.5);
     expect(getCell(result.worksheet, "E2")?.displayValue).toBe("30");
+  });
+
+  it("stores AI numeric-looking string literals as numeric worksheet cells", () => {
+    const worksheet = buildBaseWorksheet();
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Update literals",
+      answer: "",
+      summary: "Store numeric-looking literals safely.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cells",
+          target: {},
+          values: {
+            cells: [
+              { ref: "C2", value: "51.75" },
+              { ref: "D2", value: "4" },
+            ],
+          },
+          formulas: { cells: [] },
+          rationale: "Apply AI literal updates.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "C2")?.type).toBe("number");
+    expect(getCell(result.worksheet, "C2")?.value).toBe(51.75);
+    expect(getCell(result.worksheet, "D2")?.type).toBe("number");
+    expect(getCell(result.worksheet, "D2")?.value).toBe(4);
+  });
+
+  it("keeps normal AI text literals as text cells", () => {
+    const worksheet = buildBaseWorksheet();
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Update text",
+      answer: "",
+      summary: "Keep descriptive text as text.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cell",
+          target: { cell: "B2" },
+          values: {
+            cells: [{ ref: "B2", value: "Wall framing labour" }],
+          },
+          formulas: { cells: [] },
+          rationale: "Update description.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "B2")?.type).toBe("text");
+    expect(getCell(result.worksheet, "B2")?.value).toBe("Wall framing labour");
+  });
+
+  it("recalculates formulas successfully after AI writes numeric-looking string literals", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Formula inputs",
+      rowCount: 20,
+      columnCount: 20,
+    });
+    setCell(worksheet, "J9", { value: null });
+    setCell(worksheet, "N9", { value: null });
+    setCell(worksheet, "O9", { formula: "=J9*N9" });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Apply totals inputs",
+      answer: "",
+      summary: "Set numeric inputs used by formulas.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cells",
+          target: {},
+          values: {
+            cells: [
+              { ref: "J9", value: "51.750000000000001" },
+              { ref: "N9", value: "5.78" },
+            ],
+          },
+          formulas: { cells: [] },
+          rationale: "Populate formula inputs.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "J9")?.type).toBe("number");
+    expect(getCell(result.worksheet, "J9")?.displayValue).toBe("51.75");
+    expect(getCell(result.worksheet, "N9")?.type).toBe("number");
+    expect(getCell(result.worksheet, "O9")?.displayValue).toBe("299.115");
+  });
+
+  it("preserves corrected numeric typing after worksheet reload normalization", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Reload test",
+      rowCount: 12,
+      columnCount: 12,
+    });
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Apply numeric literal",
+      answer: "",
+      summary: "Store a numeric AI literal.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cell",
+          target: { cell: "J9" },
+          values: {
+            cells: [{ ref: "J9", value: "1.15" }],
+          },
+          formulas: { cells: [] },
+          rationale: "Populate a quantity input.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+    const reloaded = normalizeWorksheetData(result.worksheet as unknown as Record<string, unknown>);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(reloaded, "J9")?.type).toBe("number");
+    expect(getCell(reloaded, "J9")?.value).toBe(1.15);
+  });
+
+  it("rejects dirty numeric-like AI literals instead of persisting broken text cells", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Dirty literals",
+      rowCount: 20,
+      columnCount: 20,
+    });
+    setCell(worksheet, "N9", { value: 5.78 });
+    setCell(worksheet, "O9", { formula: "=J9*N9" });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Dirty literals",
+      answer: "",
+      summary: "Attempt to write dirty numeric-looking text.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cells",
+          target: {},
+          values: {
+            cells: [
+              { ref: "J9", value: "$5.78" },
+              { ref: "J10", value: "1,250.50" },
+              { ref: "J11", value: "51.75\n0" },
+            ],
+          },
+          formulas: { cells: [] },
+          rationale: "Unsafe decorated literals.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues.map((issue) => issue.code)).toContain("dirty_numeric_literal_rejected");
+    expect(getCell(result.worksheet, "J9")).toBeNull();
+    expect(getCell(result.worksheet, "J10")).toBeNull();
+    expect(getCell(result.worksheet, "J11")).toBeNull();
+    expect(getCell(result.worksheet, "O9")?.displayValue).toBe("0");
+  });
+
+  it("stores generated material rates as numeric cells with currency formatting", () => {
+    const worksheet = buildGeneratedPricingWorksheet();
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Generated pricing row",
+      answer: "",
+      summary: "Apply generated pricing inputs and formulas.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "insert_row",
+          target: {
+            insertAfterRow: 8,
+          },
+          values: {
+            cells: [
+              { column: "B", value: "Track and stud" },
+              { column: "J", value: 51.75 },
+              { column: "N", value: 5.78 },
+            ],
+          },
+          formulas: {
+            cells: [
+              { column: "O", formula: "=J9*N9" },
+              { column: "Q", formula: "=O9+M9" },
+            ],
+          },
+          rationale: "Insert a generated pricing row with safe numeric values.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "N9")?.type).toBe("number");
+    expect(getCell(result.worksheet, "N9")?.value).toBe(5.78);
+    expect(getCellFormat(getCell(result.worksheet, "N9") ?? undefined).number).toMatchObject({
+      kind: "currency",
+      decimalPlaces: 2,
+    });
+    expect(getCell(result.worksheet, "O9")?.formula).toBe("=J9*N9");
+    expect(getCell(result.worksheet, "Q9")?.formula).toBe("=O9+M9");
+  });
+
+  it("rejects generated placeholder and decorated literals in numeric and formula output columns", () => {
+    const worksheet = buildGeneratedPricingWorksheet();
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Bad generated pricing row",
+      answer: "",
+      summary: "Reject placeholder-heavy generated output.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "insert_row",
+          target: {
+            insertAfterRow: 8,
+          },
+          values: {
+            cells: [
+              { column: "J", value: "-" },
+              { column: "N", value: "$5.78" },
+              { column: "O", value: "$0" },
+              { column: "Q", value: "$0" },
+            ],
+          },
+          formulas: {
+            cells: [],
+          },
+          rationale: "Unsafe generated placeholders.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+    const issueCodes = result.validationIssues.map((issue) => issue.code);
+
+    expect(issueCodes).toContain("invalid_numeric_placeholder_literal");
+    expect(issueCodes).toContain("dirty_numeric_literal_rejected");
+    expect(issueCodes).toContain("formula_output_requires_formula");
+    expect(getCell(result.worksheet, "J9")).toBeNull();
+    expect(getCell(result.worksheet, "N9")).toBeNull();
+    expect(getCell(result.worksheet, "O9")).toBeNull();
+    expect(getCell(result.worksheet, "Q9")).toBeNull();
+  });
+
+  it("keeps formulas evaluable and save-valid after generated numeric and formula writes", () => {
+    const worksheet = buildGeneratedPricingWorksheet();
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Generated formulas",
+      answer: "",
+      summary: "Apply generated formulas without text placeholders.",
+      confidence: "high",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cells",
+          target: {},
+          values: {
+            cells: [
+              { ref: "J9", value: "51.75" },
+              { ref: "N9", value: "5.78" },
+            ],
+          },
+          formulas: {
+            cells: [
+              { ref: "M9", formula: "=12" },
+              { ref: "O9", formula: "=J9*N9" },
+              { ref: "Q9", formula: "=O9+M9" },
+            ],
+          },
+          rationale: "Apply generated pricing formulas.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+    const saveValidation = validateWorksheetBeforeSave(result.worksheet);
+
+    expect(result.validationIssues).toEqual([]);
+    expect(getCell(result.worksheet, "O9")?.displayValue).toBe("299.115");
+    expect(getCell(result.worksheet, "Q9")?.displayValue).toBe("311.115");
+    expect(saveValidation.ok).toBe(true);
   });
 
   it("fixes a formula safely", () => {
@@ -855,7 +1195,7 @@ describe("simulatePricingWorksheetAiEditPlan", () => {
     expect(result.validationIssues.some((issue) => issue.code === "formula_ref_out_of_bounds")).toBe(true);
   });
 
-  it("flags formulas that recalculate to runtime errors during AI preview simulation", () => {
+  it("downgrades formulas that recalculate to runtime errors during AI preview simulation", () => {
     const worksheet = buildBaseWorksheet();
     setCell(worksheet, "D2", { value: 0 });
 
@@ -886,12 +1226,72 @@ describe("simulatePricingWorksheetAiEditPlan", () => {
 
     const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
 
-    expect(getCell(result.worksheet, "E2")?.displayValue).toBe("#DIV/0!");
-    expect(result.validationIssues).toContainEqual({
-      code: "formula_recalc_error",
-      message: "Generated formula at E2 recalculated to #DIV/0!.",
-      severity: "error",
-    });
+    expect(getCell(result.worksheet, "E2")?.formula).toBe("=C2*D2");
+    expect(getCell(result.worksheet, "E2")?.displayValue).toBe("0");
+    expect(result.validationIssues).toContainEqual(
+      expect.objectContaining({
+        code: "formula_recalc_downgraded",
+        severity: "warning",
+        cellRef: "E2",
+        formula: "=C2/D2",
+        formulaError: "#DIV/0!",
+      }),
+    );
+    expect(result.validationIssues.some((issue) => issue.severity === "error")).toBe(false);
+  });
+
+  it("keeps valid formulas while stripping only runtime-invalid formula edits", () => {
+    const worksheet = buildBaseWorksheet();
+    setCell(worksheet, "D2", { value: 0 });
+    setCell(worksheet, "B3", { value: "m2" });
+
+    const response: PricingWorksheetAiAssistantResponse = {
+      mode: "propose_edit",
+      proposalName: "Mixed safe and unsafe formulas",
+      answer: "",
+      summary: "Only the invalid formulas should be removed.",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cells",
+          target: {},
+          values: {
+            cells: [],
+          },
+          formulas: {
+            cells: [
+              { ref: "E2", formula: "=C2/D2" },
+              { ref: "E3", formula: "=C3*B3" },
+              { ref: "E4", formula: "=SUM(E2:E3)" },
+            ],
+          },
+          rationale: "Test mixed outcomes.",
+        },
+      ],
+    };
+
+    const result = simulatePricingWorksheetAiEditPlan(worksheet, response);
+
+    expect(getCell(result.worksheet, "E2")?.formula).toBe("=C2*D2");
+    expect(getCell(result.worksheet, "E3")?.formula).toBe("=C3*D3");
+    expect(getCell(result.worksheet, "E4")?.formula).toBe("=SUM(E2:E3)");
+    expect(result.validationIssues.filter((issue) => issue.code === "formula_recalc_downgraded")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cellRef: "E2",
+          formula: "=C2/D2",
+          formulaError: "#DIV/0!",
+        }),
+        expect.objectContaining({
+          cellRef: "E3",
+          formula: "=C3*B3",
+          formulaError: "#VALUE!",
+        }),
+      ]),
+    );
+    expect(result.validationIssues.some((issue) => issue.severity === "error")).toBe(false);
   });
 
   it("preserves surrounding rows when inserting a new row", () => {
@@ -985,6 +1385,36 @@ describe("simulatePricingWorksheetAiEditPlan", () => {
 
     expect(response.reviewFindings?.[0]?.title.length).toBeLessThanOrEqual(120);
     expect(response.reviewFindings?.[0]?.finding.length).toBeLessThanOrEqual(320);
+  });
+
+  it("promotes formula-like AI value strings into real formula updates", () => {
+    const response = normalizePricingWorksheetAiAssistantResponse({
+      mode: "propose_edit",
+      proposalName: "Apply formula",
+      answer: "",
+      summary: "",
+      confidence: "medium",
+      assumptions: [],
+      warnings: [],
+      operations: [
+        {
+          type: "update_cell",
+          target: {
+            cell: "E2",
+          },
+          values: {
+            cells: [{ ref: "E2", value: "=C2*D2" }],
+          },
+          formulas: {
+            cells: [],
+          },
+          rationale: "Apply formula via AI value payload.",
+        },
+      ],
+    });
+
+    expect(response.operations[0]?.values?.cells).toEqual([]);
+    expect(response.operations[0]?.formulas?.cells).toEqual([{ ref: "E2", column: null, formula: "=C2*D2" }]);
   });
 
   it("does not auto-apply suggested edit group operations during review normalization", () => {

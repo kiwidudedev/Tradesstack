@@ -520,7 +520,11 @@ export default async function OpportunityWorkspacePage({
         </Link>
 
         <Link
-          href={`/app/leads-clients/opportunities/${opportunityId}/quote`}
+          href={
+            activeOpportunity.workspaceProjectSlug
+              ? `/app/projects/${activeOpportunity.workspaceProjectSlug}/preconstruction/quote`
+              : `/app/leads-clients/opportunities/${opportunityId}/quote`
+          }
           prefetch
           className="block rounded-[var(--radius-lg)] transition-colors hover:bg-[var(--surface-muted)]/40"
         >

@@ -14,7 +14,7 @@ export default async function CompanySupplierInvoicesPage() {
 
   const [canView, canWrite] = await Promise.all([
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.view"),
-    hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.write"),
+    hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.capture"),
   ]);
 
   if (!canView) {

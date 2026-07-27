@@ -16,6 +16,8 @@ type OrganizationMemoryItemQueryRow = {
   derived_from_total_count: number | null;
   memory_value: Json | null;
   evidence_summary: Json | null;
+  source_memory_pool_type?: string | null;
+  source_memory_pool_id?: string | null;
   updated_at: string;
 };
 type OrganizationMemoryItemsQueryBuilder = {
@@ -59,6 +61,8 @@ export type AiMemoryItem = {
   updatedAt: string;
   projectId: string | null;
   opportunityId: string | null;
+  workbookId?: string | null;
+  sheetId?: string | null;
 };
 
 export type AiValidationWarning = {
@@ -77,6 +81,10 @@ export type AiRequestContextSummary = {
   opportunityId: string | null;
   module: string;
   workflowKey: string;
+  workbookId?: string | null;
+  worksheetId?: string | null;
+  sheetId?: string | null;
+  sheetName?: string | null;
   worksheetName?: string | null;
   tradePackage?: string | null;
   relatedCounts?: Record<string, Json>;
@@ -89,6 +97,216 @@ function toJsonRecord(value: Json | null | undefined): Record<string, Json | und
   }
 
   return value as Record<string, Json | undefined>;
+}
+
+function normalizeLookupValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function tokenizeLookupValue(value: string | null | undefined) {
+  const normalized = normalizeLookupValue(value);
+  return normalized ? normalized.split(" ").filter((token) => token.length > 1) : [];
+}
+
+function scoreContextMatch(memoryValue: Record<string, Json | undefined>, params: {
+  trade?: string | null;
+  system?: string | null;
+  product?: string | null;
+  supplier?: string | null;
+  projectType?: string | null;
+  activity?: string | null;
+}) {
+  const fieldPairs = [
+    { key: "trade", query: params.trade, weight: 0.22 },
+    { key: "system", query: params.system, weight: 0.2 },
+    { key: "product", query: params.product, weight: 0.24 },
+    { key: "productSignature", query: params.product, weight: 0.16 },
+    { key: "supplier", query: params.supplier, weight: 0.18 },
+    { key: "projectType", query: params.projectType, weight: 0.16 },
+    { key: "activity", query: params.activity, weight: 0.12 },
+    { key: "installMethod", query: params.activity, weight: 0.08 },
+  ];
+
+  let score = 0;
+  for (const pair of fieldPairs) {
+    const memoryText = normalizeLookupValue(typeof memoryValue[pair.key] === "string" ? String(memoryValue[pair.key]) : null);
+    const queryText = normalizeLookupValue(pair.query ?? null);
+    if (!memoryText || !queryText) {
+      continue;
+    }
+    if (memoryText === queryText) {
+      score += pair.weight;
+      continue;
+    }
+    const memoryTokens = new Set(tokenizeLookupValue(memoryText));
+    const queryTokens = tokenizeLookupValue(queryText);
+    if (queryTokens.length === 0) {
+      continue;
+    }
+    const overlapCount = queryTokens.filter((token) => memoryTokens.has(token)).length;
+    if (overlapCount === 0) {
+      continue;
+    }
+    score += pair.weight * (overlapCount / queryTokens.length) * 0.8;
+  }
+
+  return score;
+}
+
+function hasNormalizedMatch(
+  value: Json | undefined,
+  query: string | null | undefined,
+) {
+  const memoryText = normalizeLookupValue(typeof value === "string" ? value : null);
+  const queryText = normalizeLookupValue(query ?? null);
+  if (!memoryText || !queryText) {
+    return 0;
+  }
+  if (memoryText === queryText) {
+    return 1;
+  }
+  const memoryTokens = new Set(tokenizeLookupValue(memoryText));
+  const queryTokens = tokenizeLookupValue(queryText);
+  if (queryTokens.length === 0) {
+    return 0;
+  }
+  const overlapCount = queryTokens.filter((token) => memoryTokens.has(token)).length;
+  return overlapCount / queryTokens.length;
+}
+
+function scoreConstructionMemoryRelevance(params: {
+  memoryType: string;
+  title: string;
+  memoryValue: Record<string, Json | undefined>;
+  query: {
+    trade?: string | null;
+    system?: string | null;
+    product?: string | null;
+    supplier?: string | null;
+    projectType?: string | null;
+    activity?: string | null;
+  };
+}) {
+  const { memoryType, memoryValue, query } = params;
+  let score = 0;
+
+  const productMatch = Math.max(
+    hasNormalizedMatch(memoryValue.product, query.product),
+    hasNormalizedMatch(memoryValue.productSignature, query.product),
+  );
+  const systemMatch = hasNormalizedMatch(memoryValue.system, query.system);
+  const tradeMatch = hasNormalizedMatch(memoryValue.trade, query.trade);
+  const supplierMatch = hasNormalizedMatch(memoryValue.supplier, query.supplier);
+  const activityMatch = Math.max(
+    hasNormalizedMatch(memoryValue.activity, query.activity),
+    hasNormalizedMatch(memoryValue.installMethod, query.activity),
+  );
+
+  const hasProductQuery = Boolean(normalizeLookupValue(query.product ?? null));
+  const hasSupplierQuery = Boolean(normalizeLookupValue(query.supplier ?? null));
+  const hasTradeOrSystemQuery = Boolean(normalizeLookupValue(query.trade ?? null) || normalizeLookupValue(query.system ?? null));
+  const hasActivityQuery = Boolean(normalizeLookupValue(query.activity ?? null));
+  const hasProductDimension = Boolean(
+    normalizeLookupValue(typeof memoryValue.product === "string" ? memoryValue.product : null)
+    || normalizeLookupValue(typeof memoryValue.productSignature === "string" ? memoryValue.productSignature : null),
+  );
+  const hasTradeOrSystemDimension = Boolean(
+    normalizeLookupValue(typeof memoryValue.trade === "string" ? memoryValue.trade : null)
+    || normalizeLookupValue(typeof memoryValue.system === "string" ? memoryValue.system : null),
+  );
+  const hasSupplierDimension = Boolean(
+    normalizeLookupValue(typeof memoryValue.supplier === "string" ? memoryValue.supplier : null),
+  );
+  const hasActivityDimension = Boolean(
+    normalizeLookupValue(typeof memoryValue.activity === "string" ? memoryValue.activity : null)
+    || normalizeLookupValue(typeof memoryValue.installMethod === "string" ? memoryValue.installMethod : null),
+  );
+
+  if (hasProductQuery) {
+    score += productMatch * 0.55;
+    score += systemMatch * 0.16;
+    score += tradeMatch * 0.08;
+    if (["product_system_pattern", "trade_product_pattern", "assembly_pattern", "product_preference_pattern"].includes(memoryType)) {
+      score += 0.14;
+    }
+    if (!memoryValue.product && !memoryValue.productSignature) {
+      score -= 0.42;
+    }
+    if (["supplier_preference_pattern", "procurement_preference_pattern"].includes(memoryType) && productMatch < 0.35) {
+      score -= 0.3;
+    }
+    if (["pricing_pattern", "project_type_pattern"].includes(memoryType) && productMatch < 0.35 && systemMatch < 0.35) {
+      score -= 0.44;
+    }
+    if (!hasSupplierQuery && !hasProductDimension && !hasTradeOrSystemDimension) {
+      score -= 0.7;
+    } else if (!hasSupplierQuery && productMatch < 0.35 && systemMatch < 0.35 && tradeMatch < 0.35) {
+      score -= 0.44;
+    }
+  }
+
+  if (hasSupplierQuery) {
+    score += supplierMatch * 0.45;
+    if (["supplier_preference_pattern", "procurement_preference_pattern"].includes(memoryType)) {
+      score += 0.12;
+    }
+    if (!memoryValue.supplier) {
+      score -= 0.2;
+    }
+  } else if (hasProductQuery || hasTradeOrSystemQuery) {
+    if (["supplier_preference_pattern", "procurement_preference_pattern"].includes(memoryType) && supplierMatch === 0) {
+      score -= 0.12;
+    }
+  }
+
+  if (hasTradeOrSystemQuery) {
+    score += tradeMatch * 0.18;
+    score += systemMatch * 0.24;
+    if (["product_system_pattern", "trade_product_pattern", "assembly_pattern"].includes(memoryType)) {
+      score += 0.14;
+    }
+    if (["supplier_preference_pattern"].includes(memoryType) && tradeMatch === 0 && systemMatch === 0) {
+      score -= 0.24;
+    }
+    if (!hasTradeOrSystemDimension && !hasProductDimension && !hasSupplierQuery) {
+      score -= 0.48;
+    }
+  }
+
+  if (hasActivityQuery) {
+    score += activityMatch * 0.28;
+    if (["install_method_pattern", "procurement_preference_pattern", "productivity_pattern"].includes(memoryType)) {
+      score += 0.12;
+    }
+    if (!memoryValue.activity && !memoryValue.installMethod) {
+      score -= 0.18;
+    }
+    if (!hasActivityDimension && !hasProductDimension && !hasTradeOrSystemDimension) {
+      score -= 0.32;
+    }
+  }
+
+  const normalizedTitle = normalizeLookupValue(params.title);
+  if (hasProductQuery && normalizedTitle && normalizedTitle === normalizeLookupValue(typeof memoryValue.supplier === "string" ? memoryValue.supplier : null)) {
+    score -= 0.34;
+  }
+  if (
+    hasProductQuery
+    && !hasSupplierQuery
+    && hasSupplierDimension
+    && !hasProductDimension
+    && !hasTradeOrSystemDimension
+    && normalizedTitle
+    && normalizedTitle === normalizeLookupValue(typeof memoryValue.supplier === "string" ? memoryValue.supplier : null)
+  ) {
+    score -= 0.4;
+  }
+
+  return score;
 }
 
 export async function requireOrganizationMemberForAi(
@@ -152,6 +370,14 @@ export async function retrieveOrganizationMemoryForAi(params: {
   organizationId: string;
   projectId?: string | null;
   opportunityId?: string | null;
+  workbookId?: string | null;
+  sheetId?: string | null;
+  trade?: string | null;
+  system?: string | null;
+  product?: string | null;
+  supplier?: string | null;
+  projectType?: string | null;
+  activity?: string | null;
   memoryCategories?: string[];
   memoryTypes?: string[];
   minimumConfidence?: number;
@@ -164,7 +390,7 @@ export async function retrieveOrganizationMemoryForAi(params: {
   let query = (admin as unknown as OrganizationMemoryItemsQuery)
     .from("organization_memory_items")
     .select(
-      "id, memory_category, memory_type, title, summary, confidence_score, derived_from_total_count, memory_value, evidence_summary, updated_at"
+      "id, memory_category, memory_type, title, summary, confidence_score, derived_from_total_count, memory_value, evidence_summary, source_memory_pool_type, source_memory_pool_id, updated_at"
     )
     .eq("organization_id", params.organizationId)
     .eq("is_active", true)
@@ -188,7 +414,33 @@ export async function retrieveOrganizationMemoryForAi(params: {
     throw new Error(error.message);
   }
 
-  const scored = (data ?? [])
+  const candidateRows = data ?? [];
+  const constructionDecisionIds = candidateRows
+    .filter((row) => row.memory_category === "construction_decision")
+    .map((row) => row.id);
+
+  const { data: linkRows, error: linkError } = constructionDecisionIds.length > 0
+    ? await admin
+        .from("organization_memory_links")
+        .select("organization_memory_item_id")
+        .eq("organization_id", params.organizationId)
+        .in("organization_memory_item_id", constructionDecisionIds)
+    : { data: [], error: null };
+
+  if (linkError) {
+    throw new Error(linkError.message);
+  }
+
+  const directLinkCounts = new Map<string, number>();
+  for (const link of Array.isArray(linkRows) ? linkRows as Array<Record<string, unknown>> : []) {
+    const memoryId = typeof link.organization_memory_item_id === "string" ? link.organization_memory_item_id : null;
+    if (!memoryId) {
+      continue;
+    }
+    directLinkCounts.set(memoryId, (directLinkCounts.get(memoryId) ?? 0) + 1);
+  }
+
+  const scored = candidateRows
     .map((row) => {
       const memoryValue = toJsonRecord(row.memory_value as Json);
       const evidenceSummary = toJsonRecord(row.evidence_summary as Json);
@@ -200,13 +452,127 @@ export async function retrieveOrganizationMemoryForAi(params: {
         typeof memoryValue.opportunityId === "string" && memoryValue.opportunityId.length > 0
           ? memoryValue.opportunityId
           : null;
+      const workbookId =
+        typeof memoryValue.workbookId === "string" && memoryValue.workbookId.length > 0
+          ? memoryValue.workbookId
+          : null;
+      const sheetId =
+        typeof memoryValue.sheetId === "string" && memoryValue.sheetId.length > 0
+          ? memoryValue.sheetId
+          : null;
 
       let score = Number(row.confidence_score ?? 0);
+      if (sheetId && sheetId === (params.sheetId ?? null)) {
+        score += 0.3;
+      } else if (sheetId && params.sheetId) {
+        score -= 0.35;
+      }
+      if (workbookId && workbookId === (params.workbookId ?? null)) {
+        score += 0.18;
+      }
       if (projectId && projectId === (params.projectId ?? null)) {
         score += 0.12;
       }
       if (opportunityId && opportunityId === (params.opportunityId ?? null)) {
         score += 0.1;
+      }
+      const trade = typeof memoryValue.trade === "string" ? memoryValue.trade.toLowerCase() : null;
+      const system = typeof memoryValue.system === "string" ? memoryValue.system.toLowerCase() : null;
+      const product = typeof memoryValue.product === "string" ? memoryValue.product.toLowerCase() : null;
+      const supplier = typeof memoryValue.supplier === "string" ? memoryValue.supplier.toLowerCase() : null;
+      const projectType = typeof memoryValue.projectType === "string" ? memoryValue.projectType.toLowerCase() : null;
+      const activity = typeof memoryValue.activity === "string" ? memoryValue.activity.toLowerCase() : null;
+      const directLinkCount = directLinkCounts.get(row.id) ?? 0;
+      const productMatch = Math.max(
+        hasNormalizedMatch(memoryValue.product, params.product),
+        hasNormalizedMatch(memoryValue.productSignature, params.product),
+      );
+      const systemMatch = hasNormalizedMatch(memoryValue.system, params.system);
+      const tradeMatch = hasNormalizedMatch(memoryValue.trade, params.trade);
+      const supplierMatch = hasNormalizedMatch(memoryValue.supplier, params.supplier);
+      const activityMatch = Math.max(
+        hasNormalizedMatch(memoryValue.activity, params.activity),
+        hasNormalizedMatch(memoryValue.installMethod, params.activity),
+      );
+      const hasProductQuery = Boolean(normalizeLookupValue(params.product ?? null));
+      const hasSupplierQuery = Boolean(normalizeLookupValue(params.supplier ?? null));
+      const hasTradeOrSystemQuery = Boolean(normalizeLookupValue(params.trade ?? null) || normalizeLookupValue(params.system ?? null));
+      const hasActivityQuery = Boolean(normalizeLookupValue(params.activity ?? null));
+
+      if (
+        row.memory_category === "construction_decision"
+        && directLinkCount === 0
+      ) {
+        return null;
+      }
+      if (
+        row.memory_category === "construction_decision"
+        && hasProductQuery
+        && !hasSupplierQuery
+        && Math.max(productMatch, systemMatch, tradeMatch, activityMatch) < 0.35
+      ) {
+        return null;
+      }
+      if (
+        row.memory_category === "construction_decision"
+        && hasTradeOrSystemQuery
+        && !hasSupplierQuery
+        && Math.max(systemMatch, tradeMatch, productMatch, activityMatch) < 0.35
+      ) {
+        return null;
+      }
+      if (
+        row.memory_category === "construction_decision"
+        && hasActivityQuery
+        && !hasSupplierQuery
+        && Math.max(activityMatch, productMatch, systemMatch, tradeMatch) < 0.35
+      ) {
+        return null;
+      }
+
+      score += scoreContextMatch(memoryValue, {
+        trade: params.trade,
+        system: params.system,
+        product: params.product,
+        supplier: params.supplier,
+        projectType: params.projectType,
+        activity: params.activity,
+      });
+      if (row.memory_category === "construction_decision") {
+        score += scoreConstructionMemoryRelevance({
+          memoryType: row.memory_type,
+          title: row.title,
+          memoryValue,
+          query: {
+            trade: params.trade,
+            system: params.system,
+            product: params.product,
+            supplier: params.supplier,
+            projectType: params.projectType,
+            activity: params.activity,
+          },
+        });
+      }
+
+      const searchableText = normalizeLookupValue([
+        row.title,
+        row.summary,
+        trade,
+        system,
+        product,
+        supplier,
+        projectType,
+        activity,
+        typeof memoryValue.productSignature === "string" ? memoryValue.productSignature : null,
+      ].filter(Boolean).join(" "));
+      for (const queryValue of [params.product, params.supplier, params.system, params.trade, params.projectType, params.activity]) {
+        const queryText = normalizeLookupValue(queryValue ?? null);
+        if (!searchableText || !queryText) {
+          continue;
+        }
+        if (searchableText.includes(queryText)) {
+          score += 0.06;
+        }
       }
 
       return {
@@ -222,9 +588,18 @@ export async function retrieveOrganizationMemoryForAi(params: {
         updatedAt: row.updated_at,
         projectId,
         opportunityId,
+        workbookId,
+        sheetId,
+        directLinkCount,
+        productMatch,
+        systemMatch,
+        tradeMatch,
+        supplierMatch,
+        activityMatch,
         score,
       };
     })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
     .sort((left, right) => right.score - left.score || right.confidenceScore - left.confidenceScore)
     .slice(0, fetchLimit);
 
@@ -490,6 +865,10 @@ export function buildAiRequestContextSummary(input: AiRequestContextSummary) {
     opportunityId: input.opportunityId ?? null,
     module: input.module,
     workflowKey: input.workflowKey,
+    workbookId: input.workbookId ?? input.worksheetId ?? null,
+    worksheetId: input.worksheetId ?? input.workbookId ?? null,
+    sheetId: input.sheetId ?? null,
+    sheetName: input.sheetName ?? input.worksheetName ?? null,
     worksheetName: input.worksheetName ?? null,
     tradePackage: input.tradePackage ?? null,
     relatedCounts: input.relatedCounts ?? {},

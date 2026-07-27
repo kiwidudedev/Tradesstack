@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/xero-sync/run",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/worksheet-event-classifications/run",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/xero-bill-status/run",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/xero-sales-invoice-status/run",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import {
   buildSupplierInvoiceLineAllocationPayload,
   deriveAllocationReviewStatus,
 } from "@/lib/supplier-invoice-lineage";
+import { routeFinancialLineItem } from "@/lib/tradesstack-financial-routing";
 
 export type SupplierInvoiceLineAllocationRow =
   Database["public"]["Tables"]["supplier_invoice_line_allocations"]["Row"];
@@ -24,10 +25,11 @@ export const SUPPLIER_INVOICE_LINE_ALLOCATION_STATUSES = [
 ] as const;
 
 export const SUPPLIER_INVOICE_LINE_ALLOCATION_REVIEW_STATUSES = [
-  "pending",
-  "reviewed",
-  "needs_cost_review",
-  "needs_accounting_review",
+  "auto_approved",
+  "resolved",
+  "needs_routing_review",
+  "needs_accounting_mapping",
+  "high_value_review",
   "disputed",
 ] as const;
 
@@ -45,6 +47,10 @@ export function createSupplierInvoiceLineAllocationDraft(params: {
   allocatedQuantity?: number | null;
   lineage: SupplierInvoiceResolvedLineage;
   accountingResolution: ResolvedOrganizationAccountingCode | null;
+  taxResolution?: {
+    accountingTaxRateId: string | null;
+    taxResolutionStatus: "resolved" | "not_applicable" | "unresolved";
+  };
   allocationSequence?: number;
   orgConsistency?: SupplierInvoiceOrgConsistencyContext;
 }): SupplierInvoiceLineAllocationInsert {
@@ -59,7 +65,25 @@ export function createUnmatchedSupplierInvoiceLineAllocationDraft(params: {
   allocatedQuantity?: number | null;
   projectId?: string | null;
   organizationCostCodeId?: string | null;
+  description?: string | null;
+  supplierName?: string | null;
+  taxResolution?: {
+    accountingTaxRateId: string | null;
+    taxResolutionStatus: "resolved" | "not_applicable" | "unresolved";
+  };
 }): SupplierInvoiceLineAllocationInsert {
+  const routing = routeFinancialLineItem({
+    sourceModule: "supplier_invoice",
+    documentType: "supplier_invoice",
+    transactionType: "supplier_invoice",
+    objectType: "supplier_invoice_line_allocation",
+    description: params.description ?? null,
+    supplierName: params.supplierName ?? null,
+    amount: params.allocatedAmount,
+  });
+  const reviewStatus =
+    routing.reviewStatus === "auto_approved" ? "needs_accounting_mapping" : routing.reviewStatus;
+
   return {
     organization_id: params.organizationId,
     supplier_invoice_id: params.supplierInvoiceId,
@@ -73,15 +97,27 @@ export function createUnmatchedSupplierInvoiceLineAllocationDraft(params: {
     matched_amount: 0,
     cost_item_id: null,
     source_cost_item_id: null,
+    tradesstack_cost_code: routing.tradesstackCostCode,
+    tradesstack_cost_code_label: routing.tradesstackCostCodeLabel,
     work_type: null,
     cost_type: null,
     internal_cost_code: null,
-    classification_status: "needs_review",
+    classification_status:
+      reviewStatus === "needs_routing_review" || reviewStatus === "high_value_review"
+        ? "needs_review"
+        : "pending",
     organization_cost_code_id: params.organizationCostCodeId ?? null,
+    accounting_mapping_id: null,
     accounting_resolution_status: "pending",
+    accounting_tax_rate_id: params.taxResolution?.accountingTaxRateId ?? null,
+    tax_resolution_status: params.taxResolution?.taxResolutionStatus ?? "unresolved",
     allocation_status: "unmatched",
     match_status: "suggested",
-    review_status: "needs_cost_review",
+    review_status: reviewStatus,
+    review_reason:
+      reviewStatus === "needs_accounting_mapping"
+        ? "missing_accounting_mapping"
+        : "unmatched_supplier_invoice_line",
     approval_status: "pending",
     allocation_source: "manual",
   };
@@ -102,7 +138,7 @@ export function canUserSaveDraftAllocation(params: {
     accountingResolution: params.accountingResolution,
   });
 
-  if (reviewStatus === "pending") {
+  if (reviewStatus === "auto_approved" || reviewStatus === "resolved") {
     return true;
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Archive, ChevronDown, Copy, FileSpreadsheet, FolderPen, Pencil, Plus } from "lucide-react";
 import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
@@ -43,27 +43,36 @@ import {
   normalizeWorksheetData,
 } from "@/lib/opportunity-pricing-worksheet-defaults";
 import {
+  buildOpportunityPricingWorkbookRegisterRows,
+  deriveOpportunityPricingWorkbookRegisterName,
+  buildOpportunityPricingWorkbookEditorRecord,
+  createOpportunityPricingWorkbook,
+  duplicateOpportunityPricingWorkbook,
+  renameOpportunityPricingWorkbook,
+} from "@/lib/opportunity-pricing-workbook";
+import {
   buildPricingWorksheetIntelligenceEvent,
   logPricingWorksheetIntelligenceFailure,
   writePricingWorksheetIntelligenceEvent,
 } from "@/lib/pricing-worksheet-intelligence";
+import { mapPricingWorksheetUiErrorMessage } from "@/lib/pricing-worksheet-ui-errors";
 import { markPricingWorksheetPerformance } from "@/lib/pricing-worksheet-performance";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { Database, Json } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/types";
+import { buildOpportunityPricingWorksheetOwner } from "@/lib/pricing-worksheet-owner";
 
 type PricingWorksheetRegisterRow = Pick<
   Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"],
   "id" | "name" | "trade_package" | "updated_at"
 >;
-type PricingWorksheetDuplicateSource = Pick<
+type PricingWorksheetRegisterWorkbookRow = Pick<
   Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"],
-  | "name"
-  | "trade_package"
-  | "worksheet_data"
-  | "pricing_summary"
-  | "extracted_pricing_data"
-  | "version"
+  "id" | "name" | "trade_package" | "updated_at" | "variation_id" | "worksheet_data"
+>;
+type PricingWorksheetRegisterSheetRow = Pick<
+  Database["public"]["Tables"]["opportunity_pricing_workbook_sheets"]["Row"],
+  "id" | "created_at" | "is_default" | "name" | "sheet_order" | "workbook_id"
 >;
 type WorksheetActionDialog =
   | { type: "rename"; row: PricingWorksheetRegisterRow; value: string }
@@ -90,21 +99,6 @@ function formatUpdatedAt(value: string | null) {
   });
 }
 
-function cloneJson(value: Json): Json {
-  return JSON.parse(JSON.stringify(value)) as Json;
-}
-
-function syncWorksheetDataSheetName(value: Json, sheetName: string): Json {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return {
-      ...value,
-      sheetName,
-    } as Json;
-  }
-
-  return { sheetName } as Json;
-}
-
 function emitPricingWorksheetEvent(
   supabase: ReturnType<typeof createBrowserSupabaseClient>,
   event: ReturnType<typeof buildPricingWorksheetIntelligenceEvent>
@@ -114,9 +108,100 @@ function emitPricingWorksheetEvent(
   });
 }
 
+function resolveOverlayWorksheetIdFromPathname(pathname: string | null | undefined, registerPath: string) {
+  if (!pathname || !pathname.startsWith(`${registerPath}/`)) {
+    return null;
+  }
+
+  const suffix = pathname.slice(registerPath.length + 1).split("/")[0] ?? null;
+  return suffix && suffix.trim().length > 0 ? suffix : null;
+}
+
+function resolveOverlayWorksheetIdFromHistoryState(state: unknown) {
+  if (!state || typeof state !== "object") {
+    return null;
+  }
+
+  const overlayState = state as {
+    pricingWorksheetOverlay?: unknown;
+    worksheetId?: unknown;
+  };
+
+  if (!overlayState.pricingWorksheetOverlay || typeof overlayState.worksheetId !== "string") {
+    return null;
+  }
+
+  const worksheetId = overlayState.worksheetId.trim();
+  return worksheetId.length > 0 ? worksheetId : null;
+}
+
+function readPersistedOverlayWorksheetId(storageKey: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(storageKey);
+  return value && value.trim().length > 0 ? value : null;
+}
+
+function writePersistedOverlayWorksheetId(storageKey: string, worksheetId: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (worksheetId) {
+    window.sessionStorage.setItem(storageKey, worksheetId);
+    return;
+  }
+
+  window.sessionStorage.removeItem(storageKey);
+}
+
+async function loadPrimaryWorkbookSheet(params: {
+  supabase: ReturnType<typeof createBrowserSupabaseClient>;
+  organizationId: string;
+  opportunityId: string;
+  workbookId: string;
+}) {
+  const { data, error } = await params.supabase
+    .from("opportunity_pricing_workbook_sheets")
+    .select("id, name, is_default, sheet_order")
+    .eq("organization_id", params.organizationId)
+    .eq("opportunity_id", params.opportunityId)
+    .eq("workbook_id", params.workbookId)
+    .order("is_default", { ascending: false })
+    .order("sheet_order", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as Pick<
+    Database["public"]["Tables"]["opportunity_pricing_workbook_sheets"]["Row"],
+    "id" | "name" | "is_default" | "sheet_order"
+  > | null;
+}
+
 export default function OpportunityPricingWorksheetRegisterPage() {
   const sharedOpportunity = useOpportunityWorkspaceData();
+  const worksheetOwner = useMemo(() => buildOpportunityPricingWorksheetOwner({
+    organizationId: sharedOpportunity.organizationId,
+    opportunityId: sharedOpportunity.opportunityId,
+    opportunitySlug: sharedOpportunity.slug,
+    projectId: sharedOpportunity.workspaceProjectId,
+    projectSlug: sharedOpportunity.workspaceProjectSlug,
+  }), [
+    sharedOpportunity.opportunityId,
+    sharedOpportunity.organizationId,
+    sharedOpportunity.slug,
+    sharedOpportunity.workspaceProjectId,
+    sharedOpportunity.workspaceProjectSlug,
+  ]);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
   const canManageWorksheets = canManageCommercialData(session?.role);
   const sessionUserId = session?.id ?? null;
@@ -127,7 +212,6 @@ export default function OpportunityPricingWorksheetRegisterPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [mutatingWorksheetId, setMutatingWorksheetId] = useState<string | null>(null);
   const [actionDialog, setActionDialog] = useState<WorksheetActionDialog>(null);
-  const [selectedWorksheetId, setSelectedWorksheetId] = useState<string | null>(null);
   const [isOverlayWorksheetDirty, setIsOverlayWorksheetDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,6 +224,23 @@ export default function OpportunityPricingWorksheetRegisterPage() {
   }, []);
 
   const registerPath = `/app/leads-clients/opportunities/${sharedOpportunity.slug}/pricing-worksheet`;
+  const overlayWorksheetStorageKey = `pricing-worksheet-overlay:${sharedOpportunity.opportunityId}`;
+  const overlayWorksheetIdFromPathname = useMemo(
+    () => resolveOverlayWorksheetIdFromPathname(pathname, registerPath),
+    [pathname, registerPath],
+  );
+  const restoredOverlayWorksheetId = useMemo(
+    () =>
+      overlayWorksheetIdFromPathname ??
+      resolveOverlayWorksheetIdFromHistoryState(typeof window !== "undefined" ? window.history.state : null) ??
+      readPersistedOverlayWorksheetId(overlayWorksheetStorageKey),
+    [overlayWorksheetIdFromPathname, overlayWorksheetStorageKey],
+  );
+  const [selectedWorksheetId, setSelectedWorksheetId] = useState<string | null>(restoredOverlayWorksheetId);
+  const initialSheetId = useMemo(() => {
+    const sheetId = searchParams.get("sheetId");
+    return sheetId && sheetId.trim().length > 0 ? sheetId : null;
+  }, [searchParams]);
 
   const openWorksheet = useCallback(
     (worksheetId: string) => {
@@ -150,16 +251,51 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       });
       setIsOverlayWorksheetDirty(false);
       setSelectedWorksheetId(worksheetId);
+      writePersistedOverlayWorksheetId(overlayWorksheetStorageKey, worksheetId);
       window.history.pushState({ pricingWorksheetOverlay: true, worksheetId }, "", targetPath);
     },
-    [registerPath]
+    [overlayWorksheetStorageKey, registerPath]
   );
 
   const closeWorksheetOverlay = useCallback(() => {
     setIsOverlayWorksheetDirty(false);
     setSelectedWorksheetId(null);
+    writePersistedOverlayWorksheetId(overlayWorksheetStorageKey, null);
     router.replace(registerPath, { scroll: false });
-  }, [registerPath, router]);
+  }, [overlayWorksheetStorageKey, registerPath, router]);
+
+  useEffect(() => {
+    if (!restoredOverlayWorksheetId) {
+      return;
+    }
+
+    setSelectedWorksheetId((current) => current ?? restoredOverlayWorksheetId);
+  }, [restoredOverlayWorksheetId]);
+
+  useEffect(() => {
+    writePersistedOverlayWorksheetId(overlayWorksheetStorageKey, selectedWorksheetId);
+  }, [overlayWorksheetStorageKey, selectedWorksheetId]);
+
+  useEffect(() => {
+    if (!selectedWorksheetId || pathname !== registerPath) {
+      return;
+    }
+
+    const targetPath = `${registerPath}/${selectedWorksheetId}`;
+    const currentState = window.history.state && typeof window.history.state === "object"
+      ? window.history.state
+      : {};
+
+    window.history.replaceState(
+      {
+        ...currentState,
+        pricingWorksheetOverlay: true,
+        worksheetId: selectedWorksheetId,
+      },
+      "",
+      targetPath,
+    );
+  }, [pathname, registerPath, selectedWorksheetId]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -177,13 +313,14 @@ export default function OpportunityPricingWorksheetRegisterPage() {
 
       setIsOverlayWorksheetDirty(false);
       setSelectedWorksheetId(null);
+      writePersistedOverlayWorksheetId(overlayWorksheetStorageKey, null);
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [isOverlayWorksheetDirty, registerPath, selectedWorksheetId]);
+  }, [isOverlayWorksheetDirty, overlayWorksheetStorageKey, registerPath, selectedWorksheetId]);
 
   useEffect(() => {
     if (!supabase) {
@@ -203,11 +340,12 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       setError(null);
 
       try {
-        const { data, error: loadError } = await supabase
+        const { data: workbookRows, error: loadError } = await supabase
           .from("opportunity_pricing_worksheets")
-          .select("id, name, trade_package, updated_at")
+          .select("id, name, trade_package, updated_at, variation_id, worksheet_data")
           .eq("organization_id", sharedOpportunity.organizationId)
           .eq("opportunity_id", sharedOpportunity.opportunityId)
+          .is("variation_id", null)
           .is("archived_at", null)
           .order("updated_at", { ascending: false });
 
@@ -215,12 +353,40 @@ export default function OpportunityPricingWorksheetRegisterPage() {
           throw new Error(loadError.message);
         }
 
+        const workbookIds = (workbookRows ?? []).map((row) => row.id);
+        let sheetRows: PricingWorksheetRegisterSheetRow[] = [];
+
+        if (workbookIds.length > 0) {
+          const { data: loadedSheetRows, error: sheetLoadError } = await supabase
+            .from("opportunity_pricing_workbook_sheets")
+            .select("id, workbook_id, name, is_default, sheet_order, created_at")
+            .eq("organization_id", sharedOpportunity.organizationId)
+            .eq("opportunity_id", sharedOpportunity.opportunityId)
+            .in("workbook_id", workbookIds);
+
+          if (sheetLoadError) {
+            throw new Error(sheetLoadError.message);
+          }
+
+          sheetRows = (loadedSheetRows ?? []) as PricingWorksheetRegisterSheetRow[];
+        }
+
         if (!cancelled) {
-          setWorksheetRows((data ?? []) as PricingWorksheetRegisterRow[]);
+          setWorksheetRows(
+            buildOpportunityPricingWorkbookRegisterRows({
+              workbooks: (workbookRows ?? []) as PricingWorksheetRegisterWorkbookRow[],
+              sheets: sheetRows,
+            }).map((row) => ({
+              id: row.id,
+              name: row.name,
+              trade_package: row.tradePackage,
+              updated_at: row.updatedAt,
+            }))
+          );
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load pricing worksheets.");
+          setError(mapPricingWorksheetUiErrorMessage(loadError, "Unable to load pricing worksheets."));
         }
       } finally {
         if (!cancelled) {
@@ -257,63 +423,58 @@ export default function OpportunityPricingWorksheetRegisterPage() {
 
     try {
       const worksheet = createDefaultWorksheetData({ sheetName: "New Worksheet" });
-      const pricingSummary = createDefaultWorksheetPricingSummary();
-      const extractedPricingData = createDefaultWorksheetExtractedPricingData(worksheet.version);
+      const workbook = await createOpportunityPricingWorkbook({
+        supabase,
+        organizationId: sharedOpportunity.organizationId,
+        opportunityId: sharedOpportunity.opportunityId,
+        name: "New Worksheet",
+        tradePackage: null,
+        worksheet,
+        pricingSummary: createDefaultWorksheetPricingSummary(),
+        extractedPricingData: createDefaultWorksheetExtractedPricingData(worksheet.version),
+        userId: session.id,
+      });
 
-      const { data, error: createError } = await supabase
-        .from("opportunity_pricing_worksheets")
-        .insert({
-          organization_id: sharedOpportunity.organizationId,
-          opportunity_id: sharedOpportunity.opportunityId,
-          name: "New Worksheet",
-          trade_package: null,
-          worksheet_data: worksheet as unknown as Json,
-          pricing_summary: pricingSummary as unknown as Json,
-          extracted_pricing_data: extractedPricingData as unknown as Json,
-          version: worksheet.version,
-          created_by: session.id,
-          updated_by: session.id,
-        })
-        .select("id")
-        .single();
-
-      if (createError) {
-        throw new Error(createError.message);
-      }
-
-      if (!data?.id) {
-        throw new Error("Worksheet was created but no identifier was returned.");
-      }
-
-      const { data: createdRow, error: loadCreatedError } = await supabase
-        .from("opportunity_pricing_worksheets")
-        .select("id, name, trade_package, updated_at")
-        .eq("organization_id", sharedOpportunity.organizationId)
-        .eq("opportunity_id", sharedOpportunity.opportunityId)
-        .eq("id", data.id)
-        .single();
-
-      if (loadCreatedError) {
-        throw new Error(loadCreatedError.message);
-      }
-
-      setWorksheetRows((current) => [createdRow as PricingWorksheetRegisterRow, ...current]);
+      setWorksheetRows((current) => [
+        {
+          id: workbook.id,
+          name: deriveOpportunityPricingWorkbookRegisterName({
+            workbook: {
+              name: workbook.name,
+              trade_package: workbook.tradePackage,
+              worksheet_data: workbook.sheets[0]?.worksheet as never,
+            },
+            sheets: workbook.sheets.map((sheet) => ({
+              created_at: sheet.createdAt,
+              is_default: sheet.isDefault,
+              name: sheet.name,
+              sheet_order: sheet.sheetOrder,
+            })),
+          }),
+          trade_package: workbook.tradePackage,
+          updated_at: workbook.updatedAt,
+        },
+        ...current,
+      ]);
       emitPricingWorksheetEvent(
         supabase,
         buildPricingWorksheetIntelligenceEvent({
           organizationId: sharedOpportunity.organizationId,
           opportunityId: sharedOpportunity.opportunityId,
-          entityId: data.id,
+          workbookId: workbook.id,
+          sheetId: workbook.sheets[0]?.id ?? workbook.id,
+          sheetName: workbook.sheets[0]?.name ?? "New Worksheet",
+          worksheetId: workbook.id,
           worksheetName: "New Worksheet",
           tradePackage: null,
-          worksheet,
+          worksheet: buildOpportunityPricingWorkbookEditorRecord(workbook).worksheet,
           eventType: "worksheet_created",
           eventFamily: "entity_lifecycle",
           action: "created",
         })
       );
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Unable to create pricing worksheet.");
+      setError(mapPricingWorksheetUiErrorMessage(createError, "Unable to create pricing worksheet."));
     } finally {
       setIsCreating(false);
     }
@@ -383,26 +544,43 @@ export default function OpportunityPricingWorksheetRegisterPage() {
         throw new Error(loadError.message);
       }
 
-      const { data, error: updateError } = await context.supabase
-        .from("opportunity_pricing_worksheets")
-        .update({
-          name: nextName,
-          worksheet_data: syncWorksheetDataSheetName(currentWorksheet.worksheet_data, nextName),
-          updated_by: context.userId,
-        })
-        .eq("organization_id", context.organizationId)
-        .eq("opportunity_id", context.opportunityId)
-        .eq("id", actionDialog.row.id)
-        .select("id, name, trade_package, updated_at")
-        .single();
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
+      const workbook = await renameOpportunityPricingWorkbook({
+        supabase: context.supabase,
+        organizationId: context.organizationId,
+        opportunityId: context.opportunityId,
+        workbookId: actionDialog.row.id,
+        nextName,
+        userId: context.userId,
+      });
+      const primarySheet = await loadPrimaryWorkbookSheet({
+        supabase: context.supabase,
+        organizationId: context.organizationId,
+        opportunityId: context.opportunityId,
+        workbookId: actionDialog.row.id,
+      });
 
       setWorksheetRows((current) =>
         current.map((row) =>
-          row.id === data.id ? (data as PricingWorksheetRegisterRow) : row
+          row.id === workbook.id
+            ? {
+                id: workbook.id,
+                name: deriveOpportunityPricingWorkbookRegisterName({
+                  workbook: {
+                    name: workbook.name,
+                    trade_package: workbook.tradePackage,
+                    worksheet_data: workbook.sheets[0]?.worksheet as never,
+                  },
+                  sheets: workbook.sheets.map((sheet) => ({
+                    created_at: sheet.createdAt,
+                    is_default: sheet.isDefault,
+                    name: sheet.name,
+                    sheet_order: sheet.sheetOrder,
+                  })),
+                }),
+                trade_package: workbook.tradePackage,
+                updated_at: workbook.updatedAt,
+              }
+            : row
         )
       );
       emitPricingWorksheetEvent(
@@ -410,7 +588,10 @@ export default function OpportunityPricingWorksheetRegisterPage() {
         buildPricingWorksheetIntelligenceEvent({
           organizationId: context.organizationId,
           opportunityId: context.opportunityId,
-          entityId: actionDialog.row.id,
+          workbookId: actionDialog.row.id,
+          sheetId: primarySheet?.id ?? actionDialog.row.id,
+          sheetName: primarySheet?.name ?? nextName,
+          worksheetId: actionDialog.row.id,
           worksheetName: nextName,
           tradePackage:
             typeof currentWorksheet.trade_package === "string" ? currentWorksheet.trade_package : null,
@@ -432,7 +613,7 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       );
       setActionDialog(null);
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Unable to rename worksheet.");
+      setError(mapPricingWorksheetUiErrorMessage(updateError, "Unable to rename worksheet."));
     } finally {
       setMutatingWorksheetId(null);
     }
@@ -476,7 +657,7 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       );
       setActionDialog(null);
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Unable to update trade/package.");
+      setError(mapPricingWorksheetUiErrorMessage(updateError, "Unable to update trade/package."));
     } finally {
       setMutatingWorksheetId(null);
     }
@@ -494,7 +675,7 @@ export default function OpportunityPricingWorksheetRegisterPage() {
     try {
       const { data: source, error: loadError } = await context.supabase
         .from("opportunity_pricing_worksheets")
-        .select("name, trade_package, worksheet_data, pricing_summary, extracted_pricing_data, version")
+        .select("name, trade_package, worksheet_data")
         .eq("organization_id", context.organizationId)
         .eq("opportunity_id", context.opportunityId)
         .eq("id", worksheetId)
@@ -504,41 +685,50 @@ export default function OpportunityPricingWorksheetRegisterPage() {
         throw new Error(loadError.message);
       }
 
-      const sourceRow = source as PricingWorksheetDuplicateSource;
+      const sourceRow = source as Pick<
+        Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"],
+        "name" | "trade_package" | "worksheet_data"
+      >;
       const duplicatedName = `${sourceRow.name || "Worksheet"} Copy`;
-      const { data: createdRow, error: insertError } = await context.supabase
-        .from("opportunity_pricing_worksheets")
-        .insert({
-          organization_id: context.organizationId,
-          opportunity_id: context.opportunityId,
-          name: duplicatedName,
-          trade_package: sourceRow.trade_package,
-          worksheet_data: syncWorksheetDataSheetName(cloneJson(sourceRow.worksheet_data), duplicatedName),
-          pricing_summary: cloneJson(sourceRow.pricing_summary),
-          extracted_pricing_data: cloneJson(sourceRow.extracted_pricing_data),
-          version: sourceRow.version,
-          created_by: context.userId,
-          updated_by: context.userId,
-          archived_at: null,
-        })
-        .select("id, name, trade_package, updated_at")
-        .single();
+      const workbook = await duplicateOpportunityPricingWorkbook({
+        supabase: context.supabase,
+        organizationId: context.organizationId,
+        opportunityId: context.opportunityId,
+        workbookId: worksheetId,
+        userId: context.userId,
+      });
 
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
-
-      const nextRow = createdRow as PricingWorksheetRegisterRow;
+      const nextRow: PricingWorksheetRegisterRow = {
+        id: workbook.id,
+        name: deriveOpportunityPricingWorkbookRegisterName({
+          workbook: {
+            name: workbook.name,
+            trade_package: workbook.tradePackage,
+            worksheet_data: workbook.sheets[0]?.worksheet as never,
+          },
+          sheets: workbook.sheets.map((sheet) => ({
+            created_at: sheet.createdAt,
+            is_default: sheet.isDefault,
+            name: sheet.name,
+            sheet_order: sheet.sheetOrder,
+          })),
+        }),
+        trade_package: workbook.tradePackage,
+        updated_at: workbook.updatedAt,
+      };
       setWorksheetRows((current) => [nextRow, ...current]);
       emitPricingWorksheetEvent(
         context.supabase,
         buildPricingWorksheetIntelligenceEvent({
           organizationId: context.organizationId,
           opportunityId: context.opportunityId,
-          entityId: nextRow.id,
+          workbookId: nextRow.id,
+          sheetId: workbook.sheets[0]?.id ?? nextRow.id,
+          sheetName: workbook.sheets[0]?.name ?? duplicatedName,
+          worksheetId: nextRow.id,
           worksheetName: duplicatedName,
           tradePackage: sourceRow.trade_package,
-          worksheet: normalizeWorksheetData(sourceRow.worksheet_data),
+          worksheet: buildOpportunityPricingWorkbookEditorRecord(workbook).worksheet,
           eventType: "worksheet_duplicated",
           eventFamily: "entity_lifecycle",
           action: "duplicated",
@@ -559,7 +749,7 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       );
       openWorksheet(nextRow.id);
     } catch (duplicateError) {
-      setError(duplicateError instanceof Error ? duplicateError.message : "Unable to duplicate worksheet.");
+      setError(mapPricingWorksheetUiErrorMessage(duplicateError, "Unable to duplicate worksheet."));
     } finally {
       setMutatingWorksheetId(null);
     }
@@ -605,6 +795,12 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       if (archiveError) {
         throw new Error(archiveError.message);
       }
+      const primarySheet = await loadPrimaryWorkbookSheet({
+        supabase: context.supabase,
+        organizationId: context.organizationId,
+        opportunityId: context.opportunityId,
+        workbookId: actionDialog.row.id,
+      });
 
       setWorksheetRows((current) => current.filter((row) => row.id !== actionDialog.row.id));
       emitPricingWorksheetEvent(
@@ -612,7 +808,12 @@ export default function OpportunityPricingWorksheetRegisterPage() {
         buildPricingWorksheetIntelligenceEvent({
           organizationId: context.organizationId,
           opportunityId: context.opportunityId,
-          entityId: actionDialog.row.id,
+          workbookId: actionDialog.row.id,
+          sheetId: primarySheet?.id ?? actionDialog.row.id,
+          sheetName:
+            primarySheet?.name ??
+            (typeof currentWorksheet.name === "string" ? currentWorksheet.name : actionDialog.row.name),
+          worksheetId: actionDialog.row.id,
           worksheetName:
             typeof currentWorksheet.name === "string" ? currentWorksheet.name : actionDialog.row.name,
           tradePackage:
@@ -634,7 +835,7 @@ export default function OpportunityPricingWorksheetRegisterPage() {
       );
       setActionDialog(null);
     } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "Unable to archive worksheet.");
+      setError(mapPricingWorksheetUiErrorMessage(archiveError, "Unable to archive worksheet."));
     } finally {
       setMutatingWorksheetId(null);
     }
@@ -895,7 +1096,9 @@ export default function OpportunityPricingWorksheetRegisterPage() {
 
       {selectedWorksheetId ? (
         <PricingWorksheetOverlayDialog
+          owner={worksheetOwner}
           worksheetId={selectedWorksheetId}
+          initialSheetId={initialSheetId}
           onClose={closeWorksheetOverlay}
           onDirtyStateChange={setIsOverlayWorksheetDirty}
         />

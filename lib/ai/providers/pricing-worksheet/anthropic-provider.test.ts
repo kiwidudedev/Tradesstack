@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import {
   AnthropicPricingWorksheetProvider,
   buildAnthropicProviderSchema,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/ai/providers/pricing-worksheet/anthropic-provider";
 import { buildPricingWorksheetAiAssistantSchema } from "@/lib/pricing-worksheet-edit-plan";
 import { isPricingWorksheetProviderError } from "@/lib/ai/providers/pricing-worksheet/types";
+import { worksheetMemorySynthesisTestUtils } from "@/lib/worksheet-memory-synthesis";
 
 function buildRequest() {
   return {
@@ -35,6 +37,265 @@ function buildRequest() {
     maxOutputTokens: 2_000,
     enableWebSearch: false,
     metadata: {},
+  };
+}
+
+function buildWorksheetEventInterpretationRequest() {
+  return {
+    ...buildRequest(),
+    userPrompt: "Interpret this worksheet change.",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["classifications"],
+      properties: {
+        classifications: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "eventId",
+              "costRole",
+              "cellRole",
+              "pageType",
+              "sectionType",
+              "itemCategory",
+              "measurementBasis",
+              "normalizedUnit",
+              "normalizedTradePackage",
+              "workCategory",
+              "systemCategory",
+              "assemblyCategory",
+              "overallConfidence",
+              "reasoningSummary",
+              "interpretationSchemaVersion",
+              "interpretationPayload",
+            ],
+            properties: {
+              eventId: { type: "string" },
+              costRole: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              cellRole: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              pageType: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              sectionType: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              itemCategory: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              measurementBasis: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              normalizedUnit: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              normalizedTradePackage: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              workCategory: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              systemCategory: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              assemblyCategory: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value", "confidence"],
+                properties: {
+                  value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+                },
+              },
+              overallConfidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+              reasoningSummary: { anyOf: [{ type: "string" }, { type: "null" }] },
+              interpretationSchemaVersion: { type: "integer" },
+              interpretationPayload: {
+                type: "object",
+                additionalProperties: false,
+                required: ["interpretedChange"],
+                properties: {
+                  interpretedChange: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["whatChanged", "plainEnglishSummary", "businessMeaning", "futureUse"],
+                    properties: {
+                      whatChanged: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      plainEnglishSummary: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      businessMeaning: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      futureUse: {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["memoryCandidate", "retrievalGuidance"],
+                        properties: {
+                          memoryCandidate: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+                          retrievalGuidance: { anyOf: [{ type: "string" }, { type: "null" }] },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    metadata: {
+      workflowStage: "worksheet_event_interpretation",
+    },
+  };
+}
+
+function buildWorksheetPricingPatternShadowProposalRequest() {
+  return {
+    ...buildRequest(),
+    userPrompt: "Propose reusable worksheet pricing patterns from interpreted events.",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["proposals"],
+      properties: {
+        proposals: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "proposalKind",
+              "patternFamily",
+              "patternType",
+              "title",
+              "summary",
+              "retrievalGuidance",
+              "confidence",
+              "scope",
+              "patternValueSummary",
+              "patternSignals",
+              "supportingEvidenceEventIds",
+              "contradictoryEvidenceEventIds",
+              "contradictionReason",
+              "dominantAlternativePatternType",
+            ],
+            properties: {
+              proposalKind: { type: "string" },
+              patternFamily: { anyOf: [{ type: "string" }, { type: "null" }] },
+              patternType: { anyOf: [{ type: "string" }, { type: "null" }] },
+              title: { anyOf: [{ type: "string" }, { type: "null" }] },
+              summary: { anyOf: [{ type: "string" }, { type: "null" }] },
+              retrievalGuidance: { anyOf: [{ type: "string" }, { type: "null" }] },
+              confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+              scope: {
+                type: "object",
+                additionalProperties: false,
+                required: [
+                  "tradePackage",
+                  "pageType",
+                  "worksheetNameHint",
+                  "itemCategory",
+                  "normalizedUnit",
+                  "costRole",
+                  "sectionType",
+                ],
+                properties: {
+                  tradePackage: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  pageType: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  worksheetNameHint: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  itemCategory: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  normalizedUnit: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  costRole: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  sectionType: { anyOf: [{ type: "string" }, { type: "null" }] },
+                },
+              },
+              patternValueSummary: { anyOf: [{ type: "string" }, { type: "null" }] },
+              patternSignals: {
+                type: "array",
+                items: { type: "string" },
+              },
+              supportingEvidenceEventIds: {
+                type: "array",
+                items: { type: "string" },
+              },
+              contradictoryEvidenceEventIds: {
+                type: "array",
+                items: { type: "string" },
+              },
+              contradictionReason: { anyOf: [{ type: "string" }, { type: "null" }] },
+              dominantAlternativePatternType: { anyOf: [{ type: "string" }, { type: "null" }] },
+            },
+          },
+        },
+      },
+    },
+    metadata: {
+      workflowStage: "worksheet_pricing_pattern_shadow_proposals",
+    },
   };
 }
 
@@ -134,14 +395,34 @@ describe("AnthropicPricingWorksheetProvider", () => {
     });
   });
 
-  it("returns a warning and disables web search when requested", async () => {
+  it("enables Anthropic web search when requested", async () => {
     const provider = new AnthropicPricingWorksheetProvider("claude-sonnet-4-6");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
         type: "message",
         model: "claude-sonnet-4-6",
         content: [
+          {
+            type: "server_tool_use",
+            id: "srvtoolu_123",
+            name: "web_search",
+            input: {
+              query: "steel stud partition nz rondo",
+            },
+          },
+          {
+            type: "web_search_tool_result",
+            tool_use_id: "srvtoolu_123",
+            content: [
+              {
+                type: "web_search_result",
+                url: "https://www.rondo.co.nz/steel-stud-partitions",
+                title: "Rondo Steel Stud Partitions",
+                encrypted_content: "encrypted",
+              },
+            ],
+          },
           {
             type: "text",
             text: JSON.stringify({
@@ -164,9 +445,27 @@ describe("AnthropicPricingWorksheetProvider", () => {
       enableWebSearch: true,
     });
 
-    expect(result.warnings).toContain("web_search_unavailable_for_provider");
-    expect(result.effectiveWebSearchEnabled).toBe(false);
-    expect(result.webSearchUsed).toBe(false);
+    expect(fetchMock).toHaveBeenCalled();
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as Record<string, unknown>;
+
+    expect(requestBody.tools).toEqual([
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: 5,
+        allowed_callers: ["direct"],
+      },
+    ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.effectiveWebSearchEnabled).toBe(true);
+    expect(result.webSearchUsed).toBe(true);
+    expect(result.citations).toEqual([
+      {
+        title: "Rondo Steel Stud Partitions",
+        url: "https://www.rondo.co.nz/steel-stud-partitions",
+      },
+    ]);
   });
 
   it("routes worksheet generation prompts to the Anthropic draft schema", () => {
@@ -268,6 +567,358 @@ describe("AnthropicPricingWorksheetProvider", () => {
     expect((suggestionItemSchema.properties as Record<string, unknown>).expression).toBeTruthy();
     expect((suggestionItemSchema.properties as Record<string, unknown>).targetColumn).toBeTruthy();
     expect(countAnthropicOptionalParametersForTest(schema)).toBeLessThan(24);
+  });
+
+  it("routes worksheet event interpretation calls to a dedicated interpretation schema kind", () => {
+    const request = buildWorksheetEventInterpretationRequest();
+
+    const schema = buildAnthropicProviderSchema(request);
+    const properties = schema.properties as Record<string, unknown>;
+    const classificationsSchema = properties.classifications as Record<string, unknown>;
+    const classificationItemSchema = classificationsSchema.items as Record<string, unknown>;
+    const itemProperties = classificationItemSchema.properties as Record<string, unknown>;
+    const interpretationPayloadSchema = itemProperties.interpretationPayload as Record<string, unknown>;
+    const semanticSummarySchema = itemProperties.semanticSummary as Record<string, unknown>;
+    const schemaSizeBytes = Buffer.byteLength(JSON.stringify(schema), "utf8");
+
+    expect(getAnthropicSchemaKindForTest(request)).toBe("worksheet_event_interpretation");
+    expect(properties.mode).toBeUndefined();
+    expect(itemProperties.interpretationPayload).toBeTruthy();
+    expect(itemProperties.semanticSummary).toBeTruthy();
+    expect(itemProperties.reasoningSummary).toBeTruthy();
+    expect((classificationItemSchema.required as string[])).toContain("interpretationPayload");
+    expect((classificationItemSchema.required as string[])).toContain("semanticSummary");
+    expect((interpretationPayloadSchema.required as string[])).toEqual([
+      "whatChanged",
+      "plainEnglishSummary",
+      "businessMeaning",
+      "constructionMeaning",
+      "pricingMeaning",
+      "futureUse",
+      "memoryCandidate",
+      "memoryType",
+      "retrievalGuidance",
+    ]);
+    expect((semanticSummarySchema.required as string[])).toEqual([
+      "costRole",
+      "pageType",
+      "itemCategory",
+      "normalizedUnit",
+      "normalizedTradePackage",
+    ]);
+    expect(collectSchemaKeywordPaths(schema, "anyOf")).toEqual([]);
+    expect(countAnthropicOptionalParametersForTest(schema)).toBeLessThan(24);
+    expect(schemaSizeBytes).toBeLessThan(3000);
+  });
+
+  it("routes worksheet pricing pattern shadow proposal calls to a dedicated schema kind", () => {
+    const request = buildWorksheetPricingPatternShadowProposalRequest();
+
+    const schema = buildAnthropicProviderSchema(request);
+    const properties = schema.properties as Record<string, unknown>;
+    const proposalsSchema = properties.proposals as Record<string, unknown>;
+    const proposalItemSchema = proposalsSchema.items as Record<string, unknown>;
+    const itemProperties = proposalItemSchema.properties as Record<string, unknown>;
+    const scopeSchema = itemProperties.scope as Record<string, unknown>;
+
+    expect(getAnthropicSchemaKindForTest(request)).toBe("worksheet_pricing_pattern_shadow_proposals");
+    expect((properties.mode as Record<string, unknown> | undefined)?.enum).toBeUndefined();
+    expect(properties.proposals).toBeTruthy();
+    expect(scopeSchema.additionalProperties).toBe(false);
+    expect(itemProperties.supportingEvidenceEventIds).toBeTruthy();
+    expect(itemProperties.contradictoryEvidenceEventIds).toBeTruthy();
+    expect(itemProperties.patternValue).toBeUndefined();
+    expect(itemProperties.patternValueSummary).toBeTruthy();
+    expect(itemProperties.patternSignals).toBeTruthy();
+    expect(JSON.stringify(schema)).not.toContain("\"additionalProperties\":true");
+    expect(countAnthropicOptionalParametersForTest(schema)).toBeLessThan(24);
+  });
+
+  it("routes worksheet memory synthesis calls to a dedicated schema kind", async () => {
+    const provider = new AnthropicPricingWorksheetProvider("claude-sonnet-4-6");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        type: "message",
+        model: "claude-sonnet-4-6",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              decision: "no_memory",
+              targetMemoryId: null,
+              supersededMemoryIds: [],
+              memoryCategory: null,
+              memoryType: null,
+              title: null,
+              summary: null,
+              confidence: null,
+              scope: null,
+              memoryValue: null,
+              retrievalGuidance: null,
+              supportingEvidenceEventIds: [],
+              uncertainEvidenceEventIds: [],
+              contradictoryEvidenceEventIds: [],
+              reasoningSummary: "Insufficient evidence.",
+            }),
+          },
+        ],
+      }),
+    } as Response);
+
+    const request = {
+      ...buildRequest(),
+      userPrompt: "Synthesize worksheet company memory.",
+      schema: worksheetMemorySynthesisTestUtils.buildWorksheetMemorySynthesisSchema(),
+      metadata: {
+        workflowStage: "worksheet_memory_synthesis",
+      },
+    };
+
+    expect(getAnthropicSchemaKindForTest(request)).toBe("worksheet_memory_synthesis");
+
+    const schema = buildAnthropicProviderSchema(request);
+    expect(collectSchemaProblems(schema)).toEqual([]);
+    expect(collectUnsupportedAnthropicSchemaKeywordsForTest(schema)).toEqual([]);
+    expect(JSON.stringify(schema)).not.toContain("\"additionalProperties\":true");
+
+    await provider.generateEditPlan(request);
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as Record<string, unknown>;
+    const requestSchema = (((requestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema ?? {}) as Record<string, unknown>;
+    const properties = requestSchema.properties as Record<string, unknown>;
+
+    expect(properties.decision).toBeTruthy();
+    expect(properties.supportingEvidenceEventIds).toBeTruthy();
+    expect(properties.scope).toMatchObject({
+      anyOf: [{ type: "string" }, { type: "null" }],
+    });
+    expect(properties.memoryValue).toMatchObject({
+      anyOf: [{ type: "string" }, { type: "null" }],
+    });
+  });
+
+  it("bypasses output_config for worksheet event interpretation and parses JSON text directly", async () => {
+    const provider = new AnthropicPricingWorksheetProvider("claude-haiku-4-5-20251001");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        type: "message",
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              classifications: [
+                {
+                  eventId: "event-1",
+                  overallConfidence: 0.86,
+                  reasoningSummary: "This looks like a reusable assumption preference update.",
+                  interpretationPayload: {
+                    whatChanged: "Estimator changed an assumption input.",
+                    plainEnglishSummary: "Updated a worksheet assumption value.",
+                    businessMeaning: "This reflects a likely business preference for similar estimates.",
+                    constructionMeaning: "This belongs to an assumptions/input area of the worksheet.",
+                    pricingMeaning: "Future AI should treat this as a preferred assumption input.",
+                    futureUse: "Use this as guidance in future worksheet generation and review.",
+                    memoryCandidate: true,
+                    memoryType: "assumption_pattern",
+                    retrievalGuidance: "Prefer this assumption in similar contexts.",
+                    shouldInfluenceFutureGeneration: true,
+                    shouldInfluenceFutureReview: true,
+                    changeType: "assumption_update",
+                    oldValue: "15",
+                    newValue: "10",
+                    oldFormula: "",
+                    newFormula: "",
+                    unit: "%",
+                    formulaMeaning: "",
+                    aiCorrectionMeaning: "",
+                    contextConfidence: 0.8,
+                    futureUseConfidence: 0.82,
+                  },
+                  semanticSummary: {
+                    costRole: "",
+                    pageType: "inputs",
+                    itemCategory: "general_assumption",
+                    normalizedUnit: "%",
+                    normalizedTradePackage: "partitions",
+                  },
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await provider.generateEditPlan(buildWorksheetEventInterpretationRequest());
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as Record<string, unknown>;
+
+    expect(requestBody.output_config).toBeUndefined();
+    expect(result.parsedJson).toMatchObject({
+      classifications: [
+        {
+          eventId: "event-1",
+          interpretationPayload: {
+            whatChanged: expect.any(String),
+          },
+        },
+      ],
+    });
+  });
+
+  it("preserves the caller schema for cost construction intelligence", async () => {
+    const provider = new AnthropicPricingWorksheetProvider("claude-haiku-4-5-20251001");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        type: "message",
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              trade: "Wall Linings",
+              system: "Plasterboard Linings",
+              product: "13mm GIB Standard",
+              activity: "Supply",
+              likely_use: "Internal wall lining",
+              subtrade: null,
+              work_package: null,
+              assembly: null,
+              component: null,
+              product_family: null,
+              manufacturer: null,
+              brand: "GIB",
+              supplier: "PlaceMakers",
+              install_method: null,
+              application_area: null,
+              location_context: null,
+              project_context: null,
+              related_components: [],
+              exclusions_or_risks: [],
+              normalization_tokens: [],
+              confidence: 0.86,
+              reasoning: "Obvious plasterboard product wording.",
+              evidence: ["13mm", "GIB Standard", "plasterboard"],
+            }),
+          },
+        ],
+      }),
+    } as Response);
+
+    const request = {
+      ...buildRequest(),
+      userPrompt: "Classify construction meaning.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["trade", "system", "product", "activity", "likely_use"],
+        properties: {
+          trade: { type: ["string", "null"] },
+          system: { type: ["string", "null"] },
+          product: { type: ["string", "null"] },
+          activity: { type: ["string", "null"] },
+          likely_use: { type: ["string", "null"] },
+        },
+      },
+      metadata: {
+        engine: "cost_construction_intelligence",
+      },
+    };
+
+    expect(getAnthropicSchemaKindForTest(request)).toBe("cost_construction_intelligence");
+
+    const schema = buildAnthropicProviderSchema(request);
+    expect(schema).toMatchObject({
+      properties: expect.objectContaining({
+        trade: expect.any(Object),
+        system: expect.any(Object),
+        product: expect.any(Object),
+      }),
+    });
+
+    await provider.generateEditPlan(request);
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as Record<string, unknown>;
+    const requestSchema = (((requestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema ?? {}) as Record<string, unknown>;
+    const properties = requestSchema.properties as Record<string, unknown>;
+
+    expect(properties.trade).toBeTruthy();
+    expect(properties.system).toBeTruthy();
+    expect(properties.product).toBeTruthy();
+  });
+
+  it("uses json_schema output_config for worksheet pricing pattern shadow proposals", async () => {
+    const provider = new AnthropicPricingWorksheetProvider("claude-haiku-4-5-20251001");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        type: "message",
+        model: "claude-haiku-4-5-20251001",
+        structured_output: {
+          proposals: [
+            {
+              proposalKind: "no_pattern",
+              patternFamily: null,
+              patternType: null,
+              title: null,
+              summary: "No reusable pattern found.",
+              retrievalGuidance: null,
+              confidence: null,
+              scope: {
+                tradePackage: null,
+                pageType: null,
+                worksheetNameHint: null,
+                itemCategory: null,
+                normalizedUnit: null,
+                costRole: null,
+                sectionType: null,
+              },
+              patternValueSummary: null,
+              patternSignals: [],
+              supportingEvidenceEventIds: [],
+              contradictoryEvidenceEventIds: [],
+              contradictionReason: null,
+              dominantAlternativePatternType: null,
+            },
+          ],
+        },
+        content: [],
+      }),
+    } as Response);
+
+    const result = await provider.generateEditPlan(buildWorksheetPricingPatternShadowProposalRequest());
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String(requestInit?.body ?? "{}")) as Record<string, unknown>;
+    const outputConfig = requestBody.output_config as Record<string, unknown>;
+    const format = outputConfig.format as Record<string, unknown>;
+    const schema = format.schema as Record<string, unknown>;
+    const schemaProperties = schema.properties as Record<string, unknown>;
+    const proposalItemProperties = (((schemaProperties.proposals as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>);
+    const systemPrompt = String(requestBody.system ?? "");
+
+    expect(format.type).toBe("json_schema");
+    expect(schemaProperties.proposals).toBeTruthy();
+    expect(proposalItemProperties.patternValue).toBeUndefined();
+    expect(systemPrompt).toContain("supportingEvidenceEventIds from at least 2 worksheet instances and at least 2 projects");
+    expect(systemPrompt).toContain("Do not propose a pattern from a single support event.");
+    expect(systemPrompt).toContain("If proposalKind = no_pattern, supportingEvidenceEventIds and contradictoryEvidenceEventIds must both be empty arrays.");
+    expect(systemPrompt).toContain("If two events show the same specific pricing behavior across 2 worksheet instances and 2 projects, return a weak pattern");
+    expect((proposalItemProperties.scope as Record<string, unknown>).additionalProperties).toBe(false);
+    expect(result.parsedJson).toMatchObject({
+      proposals: [
+        {
+          proposalKind: "no_pattern",
+        },
+      ],
+    });
   });
 
   it("routes formatting workflow calls to the compact formatting suggestion schema", () => {
@@ -509,6 +1160,13 @@ describe("AnthropicPricingWorksheetProvider", () => {
       expect(error).toMatchObject({
         code: "provider_schema_parse_failed",
         provider: "anthropic",
+        rawError: {
+          parseFailureReason: "truncated_json",
+          stopReason: "end_turn",
+          outputTextLength: 8,
+          maxTokens: 2000,
+          parseErrorType: expect.any(String),
+        },
       });
     }
   });
@@ -676,6 +1334,22 @@ describe("AnthropicPricingWorksheetProvider", () => {
     expect(collectUnsupportedAnthropicSchemaKeywordsForTest(requestSchema)).toEqual([]);
     expect(requestSchema).not.toHaveProperty("anyOf");
     expect((requestSchema.properties as Record<string, unknown>).operations).toBeUndefined();
+  });
+
+  it("rejects free-form object schemas during Anthropic preflight", () => {
+    expect(() =>
+      preflightAnthropicSchemaForTest({
+        type: "object",
+        additionalProperties: false,
+        required: ["payload"],
+        properties: {
+          payload: {
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+      }),
+    ).toThrow(/free-form object schemas are not allowed/);
   });
 
   it("collapses non-enum nullable unions so the outbound Anthropic schema avoids type arrays", async () => {

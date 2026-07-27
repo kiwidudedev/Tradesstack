@@ -6,47 +6,12 @@ begin;
 -- Keep only the extended signature used by current app code.
 drop function if exists public.update_organization_settings(uuid, text, text);
 
--- Ensure execute grant remains on the canonical function.
-grant execute on function public.update_organization_settings(
-  uuid,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  numeric
-) to authenticated;
-
-comment on function public.update_organization_settings(
-  uuid,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  text,
-  numeric
-) is 'Canonical organization settings RPC. Do not create overloaded variants; PostgREST cannot disambiguate overloaded RPCs by name.';
+-- Historical clean-install correction: the extended canonical function is
+-- created by the immediately following 20260405234500 migration. Granting or
+-- commenting on that signature here references an object that does not yet
+-- exist and stops a database migrating from zero. The following migration
+-- creates the function and applies both statements. Omitting them here only
+-- makes the existing migration chain executable; it does not change runtime
+-- business behaviour.
 
 commit;

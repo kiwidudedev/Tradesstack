@@ -1,13 +1,27 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import type { Database } from "@/lib/supabase/types";
 
-export async function createServerSupabaseClient() {
+type ServerSupabaseClientOptions = {
+  requestTimeoutMs?: number;
+};
+
+export async function createServerSupabaseClient(options: ServerSupabaseClientOptions = {}) {
   const { url, anonKey } = getSupabaseEnv();
   const cookieStore = await cookies();
+  const requestTimeoutMs = options.requestTimeoutMs;
 
   return createServerClient<Database>(url, anonKey, {
+    ...(requestTimeoutMs
+      ? {
+          global: {
+            fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+              fetchWithTimeout(input, init ?? {}, requestTimeoutMs),
+          },
+        }
+      : {}),
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -433,7 +433,7 @@ export function ProjectDashboardBoard() {
 
         console.warn("[projects][dashboard] aggregate rpc returned unexpected shape", {
           projectSlug: routeProjectSlug,
-          data: aggregateData,
+          returnedType: Array.isArray(aggregateData) ? "array" : typeof aggregateData,
         });
       } else {
         console.error("[projects][dashboard] aggregate rpc error", {
@@ -718,8 +718,14 @@ export function ProjectDashboardBoard() {
             const status = String(row.status ?? "");
             return status === "Submitted" || status === "Unpaid" || status === "Paid" || status === "Overdue";
           }).length,
-          claimsPaidAmount: claimsRows.reduce((sum, row) => sum + (typeof row.paid_amount === "number" ? row.paid_amount : 0), 0),
-          claimsUnpaidAmount: claimsRows.reduce((sum, row) => {
+          claimsPaidAmount: claimsRows.filter((row) => {
+            const status = String(row.status ?? "");
+            return status === "Submitted" || status === "Unpaid" || status === "Paid" || status === "Overdue";
+          }).reduce((sum, row) => sum + (typeof row.paid_amount === "number" ? row.paid_amount : 0), 0),
+          claimsUnpaidAmount: claimsRows.filter((row) => {
+            const status = String(row.status ?? "");
+            return status === "Submitted" || status === "Unpaid" || status === "Overdue";
+          }).reduce((sum, row) => {
             const claimAmount = typeof row.claim_amount === "number" ? row.claim_amount : 0;
             const paidAmount = typeof row.paid_amount === "number" ? row.paid_amount : 0;
             return sum + Math.max(0, claimAmount - paidAmount);

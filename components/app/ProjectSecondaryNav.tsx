@@ -45,7 +45,6 @@ export function ProjectSecondaryNav({
   const projectId = params?.projectId ?? "";
   const dashboardHref = `/app/projects/${projectId}/dashboard`;
   const isDashboardRoute = pathname === `/app/projects/${projectId}` || pathname === dashboardHref;
-
   return (
     <div className="shadow-none">
       <div className="flex flex-col gap-3 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">

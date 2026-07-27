@@ -20,6 +20,7 @@ import {
   buildPricingWorksheetScaffoldPreviewWithModel,
   getPricingWorksheetModelConfig,
 } from "@/lib/ai-pricing-worksheet-model-generator";
+import { buildOrganizationAiContext } from "@/lib/organization-ai-context";
 
 export const runtime = "nodejs";
 
@@ -130,6 +131,8 @@ export async function POST(request: Request) {
       organizationId,
       projectId: opportunity?.workspace_project_id ?? null,
       opportunityId,
+      workbookId: null,
+      sheetId: null,
       memoryCategories: ["worksheet_structure", "pricing_structure"],
       memoryTypes: ["pricing_worksheet_layout"],
       minimumConfidence: 0.35,
@@ -137,16 +140,23 @@ export async function POST(request: Request) {
     });
 
     const matchedMemoryIds = memoryItems.map((item) => item.id);
+    const organizationAiContext = await buildOrganizationAiContext({ organizationId });
     const inputContextSummary = buildAiRequestContextSummary({
       organizationId,
       projectId: opportunity?.workspace_project_id ?? null,
       opportunityId,
       module: "pricing_worksheets",
       workflowKey: "pricing_worksheet_scaffold_preview",
+      workbookId: null,
+      worksheetId: null,
+      sheetId: null,
+      sheetName: worksheetName,
       worksheetName,
       tradePackage,
       relatedCounts: {
+        constructionProfileLength: organizationAiContext.constructionProfile?.length ?? 0,
         existingWorksheetCount: existingWorksheetsResult.count ?? 0,
+        hasConstructionProfile: organizationAiContext.constructionProfile ? 1 : 0,
         matchedMemoryCount: memoryItems.length,
         promptLength: prompt.length,
         currentWorksheetRowCount: currentWorksheetSummary?.rowCount ?? 0,
@@ -182,6 +192,7 @@ export async function POST(request: Request) {
       tradePackage,
       memoryItems,
       currentWorksheetSummary,
+      organizationConstructionContext: organizationAiContext.organizationConstructionContext,
     });
 
     await transitionAiLifecycleInteraction(supabase, {
@@ -194,6 +205,11 @@ export async function POST(request: Request) {
       confidence: preview.compactOutput.confidence,
       outputStructured: {
         ...preview.compactOutput,
+        workbookId: null,
+        worksheetId: null,
+        sheetId: null,
+        sheetName: worksheetName,
+        legacySinglePageFlow: true,
         generationMeta,
       },
       outputRefs: preview.matchedMemory
@@ -259,6 +275,11 @@ export async function POST(request: Request) {
       confidence: preview.compactOutput.confidence,
       outputStructured: {
         ...preview.compactOutput,
+        workbookId: null,
+        worksheetId: null,
+        sheetId: null,
+        sheetName: worksheetName,
+        legacySinglePageFlow: true,
         generationMeta,
       },
       outputRefs: preview.matchedMemory
@@ -268,6 +289,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       aiInteractionId,
+      workbookId: null,
+      worksheetId: null,
+      sheetId: null,
+      sheetName: worksheetName,
+      legacySinglePageFlow: true,
       lifecycleState: "previewed",
       validationStatus,
       preview: {

@@ -256,6 +256,15 @@ with check (
 
 -- Compatibility table for "trade_pack_workspace" terminology.
 -- Legacy source-of-truth remains organization_projects during this phase.
+-- Historical clean-install correction: organization_projects did not yet have
+-- cover_image_url when this migration's compatibility backfill and sync trigger
+-- first referenced it. The column must therefore be introduced here, before
+-- those statements execute, or a database migrating from zero stops at this
+-- migration. This only makes the existing migration chain executable; it does
+-- not change runtime business behaviour.
+alter table public.organization_projects
+  add column if not exists cover_image_url text;
+
 create table if not exists public.trade_pack_workspaces (
   id uuid primary key default gen_random_uuid(),
   legacy_project_id uuid not null references public.organization_projects (id) on delete cascade,

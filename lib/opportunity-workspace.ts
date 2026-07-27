@@ -17,5 +17,6 @@ export interface OpportunityWorkspaceData {
   ownerUserId: string | null;
   ownerName: string;
   workspaceProjectId: string | null;
+  workspaceProjectSlug: string | null;
   latestQuoteSummary: OpportunityWorkspaceLatestQuoteSummary | null;
 }

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import {
   getOrganizationProjectBySlugForCurrentUser,
   getOrganizationProjectsForCurrentUser,
@@ -20,7 +21,9 @@ export interface TradePackWorkspaceQuota {
 }
 
 export const getTradePackWorkspacesForCurrentUser = getOrganizationProjectsForCurrentUser;
-export const getTradePackWorkspaceBySlugForCurrentUser = getOrganizationProjectBySlugForCurrentUser;
+export const getTradePackWorkspaceBySlugForCurrentUser = cache(
+  getOrganizationProjectBySlugForCurrentUser,
+);
 export const getTradePackWorkspaceDrawingSetsForCurrentUser = getProjectDrawingSetsForCurrentUser;
 export const getTradePackWorkspaceDashboardMetricsForCurrentUser = getProjectDashboardMetricsForCurrentUser;
 export const getTradePackWorkspaceRecentActivityForCurrentUser = getRecentActivityForCurrentUser;
@@ -66,4 +69,3 @@ export async function getTradePackWorkspaceQuotaForCurrentUser(organizationId: s
     monthEnd,
   };
 }
-

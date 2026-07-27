@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
+import { buildCommercialItemSourceHref, enrichQuoteLineItemsWithCommercialItems } from "@/lib/commercial-items/quote-linking";
 import { useAuth } from "@/hooks/use-auth";
 import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -165,6 +166,7 @@ export default function PreconstructionQuotePage() {
       return null;
     }
   }, []);
+
   const shouldShowEditor = isEditing || !quoteId;
   const isHydratingExistingQuote = isLoadingQuote;
 
@@ -217,9 +219,10 @@ export default function PreconstructionQuotePage() {
 
     const prefix = `Q-${opportunityCodeValue}-`;
     const { data, error } = await supabase
-      .from("opportunity_quotes")
+      .from("project_quotes")
       .select("quote_number")
       .eq("organization_id", orgId)
+      .eq("originating_opportunity_id", sharedOpportunity.opportunityId)
       .like("quote_number", `${prefix}%`);
 
     if (error) {
@@ -240,7 +243,7 @@ export default function PreconstructionQuotePage() {
     }
 
     return `${prefix}${maxSuffix + 1}`;
-  }, [supabase]);
+  }, [sharedOpportunity.opportunityId, supabase]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -340,10 +343,10 @@ export default function PreconstructionQuotePage() {
                 .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
           supabase
-            .from("opportunity_quotes")
+            .from("project_quotes")
             .select("*")
             .eq("organization_id", resolvedOrganizationId)
-            .eq("opportunity_id", sharedOpportunity.opportunityId)
+            .eq("originating_opportunity_id", sharedOpportunity.opportunityId)
             .order("updated_at", { ascending: false })
             .limit(20),
           workspaceProjectId
@@ -478,8 +481,8 @@ export default function PreconstructionQuotePage() {
         setAcceptanceNotes(selectedQuote.acceptance_notes);
 
         const { data: itemRows, error: itemsError } = await supabase
-          .from("opportunity_quote_line_items")
-          .select("id, section, description, quantity, unit, rate, is_optional, sort_order")
+          .from("project_quote_line_items")
+          .select("id, section, description, quantity, unit, rate, is_optional, sort_order, source_opportunity_quote_id, source_opportunity_quote_line_item_id, source_opportunity_quote_number")
           .eq("organization_id", resolvedOrganizationId)
           .eq("quote_id", selectedQuote.id)
           .order("sort_order", { ascending: true });
@@ -496,8 +499,17 @@ export default function PreconstructionQuotePage() {
             unit: item.unit,
             rate: item.rate,
             isOptional: item.is_optional,
+            sourceOpportunityQuoteId: item.source_opportunity_quote_id,
+            sourceOpportunityQuoteLineItemId: item.source_opportunity_quote_line_item_id,
+            sourceOpportunityQuoteNumber: item.source_opportunity_quote_number,
           }));
-          setLineItems(nextItems.length > 0 ? nextItems : [makeDefaultLineItem()]);
+          const enrichedItems = await enrichQuoteLineItemsWithCommercialItems({
+            client: supabase,
+            organizationId: resolvedOrganizationId,
+            quoteId: selectedQuote.id,
+            lineItems: nextItems,
+          });
+          setLineItems(enrichedItems.length > 0 ? enrichedItems : [makeDefaultLineItem()]);
         }
         void loadBranding();
       } catch (loadError) {
@@ -623,9 +635,10 @@ export default function PreconstructionQuotePage() {
         isOptional: item.isOptional,
       }));
 
-      const { data: saveRows, error: saveError } = await supabase.rpc("save_opportunity_quote_draft", {
+      const { data: saveRows, error: saveError } = await supabase.rpc("save_commercial_quote_draft", {
         p_organization_id: organizationId,
-        p_opportunity_id: dbOpportunityId,
+        p_originating_opportunity_id: dbOpportunityId,
+        p_project_id: null,
         p_quote_id: quoteId,
         p_expected_updated_at: quoteId ? quoteUpdatedAt : null,
         p_quote_title: trimmedTitle,
@@ -650,6 +663,7 @@ export default function PreconstructionQuotePage() {
         p_gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
         p_validity_period: validityPeriod,
         p_payment_terms: paymentTerms,
+        p_retention_percent_default: 0,
         p_lead_time: leadTime,
         p_terms_inclusions: termsInclusions,
         p_terms_exclusions: termsExclusions,
@@ -675,7 +689,7 @@ export default function PreconstructionQuotePage() {
       setQuoteId(resolvedQuoteId);
       setQuoteUpdatedAt(nextUpdatedAt);
       triggerDocumentClassification({
-        documentKind: "opportunity_quote",
+        documentKind: "project_quote",
         documentId: resolvedQuoteId,
         keepalive: quoteStatus === "Accepted",
       });
@@ -810,6 +824,10 @@ export default function PreconstructionQuotePage() {
     termsInclusions,
   ]);
 
+  const getCommercialItemSourceHref = useCallback((item: LineItem) => {
+    return buildCommercialItemSourceHref(item, routeOpportunitySlug);
+  }, [routeOpportunitySlug]);
+
   return (
     <div className="px-5">
       <QuoteEditorLayout
@@ -860,6 +878,7 @@ export default function PreconstructionQuotePage() {
         selectedScopeCostItemIds={selectedScopeCostItemIds}
         toggleScopeCostItem={toggleScopeCostItem}
         importSelectedScopeItems={importSelectedScopeItems}
+        getCommercialItemSourceHref={getCommercialItemSourceHref}
         sectionSubtotals={sectionSubtotals}
         validityPeriod={validityPeriod}
         setValidityPeriod={setValidityPeriod}

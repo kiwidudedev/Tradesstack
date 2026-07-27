@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { FULL_TIME_SHEET_ENTRY_SELECT, autoCloseStaleTimeSheetEntries } from "../_shared/stale-time-sheet.ts";
 
 type BootstrapRequest = {
   organization_id?: string | null;
@@ -38,6 +39,7 @@ type OpenTimeSheetRow = {
   project_id: string;
   worker_member_id: string | null;
   worker_user_id: string;
+  worker_name: string;
   purchase_order_id: string | null;
   purchase_order_number: string;
   purchase_order_title: string;
@@ -196,7 +198,7 @@ Deno.serve(async (request) => {
     return errorResponse("Not authorized for the requested organization.", 403);
   }
 
-  const [organizationResult, projectMembershipsResult, openTimeSheetResult] = await Promise.all([
+  const [organizationResult, projectMembershipsResult] = await Promise.all([
     client.from("organizations").select("id, name").eq("id", member.organization_id).maybeSingle(),
     client
       .from("project_members")
@@ -207,15 +209,6 @@ Deno.serve(async (request) => {
       .eq("organization_member_id", member.id)
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
-    client
-      .from("project_time_sheet_entries")
-      .select(
-        "id, organization_id, project_id, worker_member_id, worker_user_id, purchase_order_id, purchase_order_number, purchase_order_title, client_entry_id, source, created_from_device_id, synced_at, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, clock_out_latitude, clock_out_longitude, clock_out_accuracy_meters, total_hours, auto_clocked_out, auto_clocked_out_at, warning_8h5_at, notes"
-      )
-      .eq("organization_id", member.organization_id)
-      .eq("worker_user_id", user.id)
-      .is("clock_out_at", null)
-      .maybeSingle(),
   ]);
 
   if (organizationResult.error) {
@@ -225,12 +218,6 @@ Deno.serve(async (request) => {
   if (projectMembershipsResult.error) {
     return errorResponse("Failed to load active project memberships.", 500, {
       detail: projectMembershipsResult.error.message,
-    });
-  }
-
-  if (openTimeSheetResult.error) {
-    return errorResponse("Failed to load open timesheet entry.", 500, {
-      detail: openTimeSheetResult.error.message,
     });
   }
 
@@ -279,7 +266,26 @@ Deno.serve(async (request) => {
     }, {});
   }
 
-  const openTimeSheetEntry = (openTimeSheetResult.data as OpenTimeSheetRow | null) ?? null;
+  const { data: openEntries, error: openEntriesError } = await client
+    .from("project_time_sheet_entries")
+    .select(FULL_TIME_SHEET_ENTRY_SELECT)
+    .eq("organization_id", member.organization_id)
+    .eq("worker_user_id", user.id)
+    .is("clock_out_at", null)
+    .order("clock_in_at", { ascending: false });
+
+  if (openEntriesError) {
+    return errorResponse("Failed to load open timesheet entry.", 500, {
+      detail: openEntriesError.message,
+    });
+  }
+
+  const healedOpenEntries = await autoCloseStaleTimeSheetEntries(
+    client,
+    (openEntries ?? []) as OpenTimeSheetRow[],
+    user.id
+  );
+  const openTimeSheetEntry = healedOpenEntries.find((entry) => !entry.clock_out_at) ?? null;
 
   return jsonResponse({
     ok: true,

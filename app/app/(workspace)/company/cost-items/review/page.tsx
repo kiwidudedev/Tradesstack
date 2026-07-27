@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -15,120 +14,23 @@ import {
 } from "@/components/app/OperationalTable";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { listOrganizationCostCodes, listOrganizationTradesstackAccountingMappings } from "@/lib/accounting/queries";
+import { resolveOrganizationAccountingCode } from "@/lib/accounting/organization-cost-code-resolver";
+import { listClassificationReviewRows } from "@/lib/classification-review";
 import { ibmPlexSans } from "@/lib/fonts";
+import { ClassificationReviewRow } from "@/lib/materials/types";
+import { hasOrganizationPermission } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import type { Json } from "@/lib/supabase/types";
 import {
-  buildCostItemIntelligenceEvent,
-  createCostItemAiInteraction,
-  logCostItemIntelligenceFailure,
-  summarizeCostItemClassification,
-  writeCostItemCorrectionEvent,
-  writeCostItemIntelligenceEvents,
-} from "@/lib/cost-item-intelligence";
-import { WORK_TYPE_KEYWORDS } from "@/lib/cost-items/classification/workTypeKeywords.enriched";
-import { ReviewEditorForm, type ReviewWorkTypeOption } from "./ReviewEditorForm";
-
-type JsonObject = Record<string, unknown>;
-
-type CostItemReviewRow = {
-  id: string;
-  organization_id: string;
-  project_id: string;
-  source_document_kind: string;
-  title: string;
-  description: string;
-  status: string;
-  is_current: boolean;
-  work_type: string | null;
-  cost_type: string | null;
-  cost_code: string | null;
-  classification_confidence: number | null;
-  needs_review: boolean;
-  classification_source: string | null;
-  original_classification?: JsonObject | null;
-  final_classification?: JsonObject | null;
-};
-
-type ProjectRow = {
-  id: string;
-  name: string;
-};
+  getTradesstackFinancialRoutingLabel,
+  isTradesstackFinancialRoutingCode,
+  listTradesstackFinancialRoutingCodes,
+  type TradesstackFinancialRoutingCode,
+} from "@/lib/tradesstack-financial-routing";
+import { ReviewEditorForm } from "./ReviewEditorForm";
 
 const PAGE_PATH = "/app/company/cost-items/review";
-
-const COST_TYPE_OPTIONS = ["LAB", "MAT", "LAB_MAT", "SUB", "PLN", "FRT", "WST", "DES", "CMS"] as const;
-type CostTypeOption = (typeof COST_TYPE_OPTIONS)[number];
-const VALID_COST_TYPES = new Set<string>(COST_TYPE_OPTIONS);
-const WORK_TYPE_OPTIONS: ReviewWorkTypeOption[] = WORK_TYPE_KEYWORDS.map((entry) => ({
-  workType: entry.workType,
-  codePrefix: entry.codePrefix ?? null,
-}));
-const WORK_TYPE_CODE_PREFIX_BY_NAME = new Map(WORK_TYPE_OPTIONS.map((option) => [option.workType, option.codePrefix]));
-
-type CostItemsSelectQuery = {
-  eq: (column: string, value: string | boolean) => CostItemsSelectQuery;
-  neq: (column: string, value: string) => CostItemsSelectQuery;
-  order: (column: string, options?: { ascending?: boolean }) => {
-    limit: (value: number) => Promise<{
-      data: CostItemReviewRow[] | null;
-      error: { message: string } | null;
-    }>;
-  };
-  maybeSingle: () => Promise<{
-    data: CostItemReviewRow | null;
-    error: { message: string } | null;
-  }>;
-};
-
-type CostItemsTable = {
-  select: (columns: string) => CostItemsSelectQuery;
-  update: (values: Record<string, unknown>) => {
-    eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
-  };
-};
-
-type ProjectsTable = {
-  select: (columns: string) => {
-    in: (column: string, values: string[]) => Promise<{
-      data: ProjectRow[] | null;
-      error: { message: string } | null;
-    }>;
-  };
-};
-
-function isObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getReviewDescription(row: Pick<CostItemReviewRow, "description" | "title">): string {
-  const description = row.description.trim();
-  if (description.length > 0) {
-    return description;
-  }
-
-  const title = row.title.trim();
-  return title.length > 0 ? title : "Untitled cost item";
-}
-
-function formatDocumentKind(value: string): string {
-  switch (value) {
-    case "opportunity_quote":
-      return "Opportunity quote";
-    case "project_quote":
-      return "Project quote";
-    case "project_variation":
-      return "Variation";
-    case "project_purchase_order":
-      return "Purchase order";
-    case "project_claim":
-      return "Claim";
-    default:
-      return value.replace(/_/g, " ");
-  }
-}
 
 function formatConfidence(value: number | null): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -138,589 +40,436 @@ function formatConfidence(value: number | null): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function buildCostCode(codePrefix: string | null, costType: string): string | null {
-  if (!codePrefix || !costType) {
+function formatMoney(value: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatReviewStatus(status: string | null) {
+  switch (status) {
+    case "needs_routing_review":
+      return { label: "Needs routing review", tone: "pending" as const };
+    case "needs_accounting_mapping":
+      return { label: "Needs accounting mapping", tone: "overdue" as const };
+    case "high_value_review":
+      return { label: "High value review", tone: "sent" as const };
+    case "resolved":
+      return { label: "Resolved", tone: "approved" as const };
+    case "auto_approved":
+      return { label: "Auto approved", tone: "approved" as const };
+    default:
+      return { label: status ?? "Pending", tone: "draft" as const };
+  }
+}
+
+function formatConstructionIntelligenceSummary(value: Record<string, unknown> | null) {
+  if (!value) {
     return null;
   }
 
-  return `${codePrefix}.${costType}`;
-}
+  const primary = [value.trade, value.subtrade, value.system, value.product]
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    .join(" / ");
+  const activity = [value.activity, value.likely_use]
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    .join(" · ");
 
-function buildConfirmedClassification(
-  row: CostItemReviewRow,
-  confirmedByUserId: string,
-  confirmedAt: string,
-  overrides?: {
-    workType?: string | null;
-    costType?: string | null;
-    costCode?: string | null;
+  if (!primary && !activity) {
+    return null;
   }
-): JsonObject {
-  const existingFinal = isObject(row.final_classification) ? row.final_classification : null;
-  const existingOriginal = isObject(row.original_classification) ? row.original_classification : null;
-  const workType = overrides?.workType ?? row.work_type;
-  const costType = overrides?.costType ?? row.cost_type;
-  const costCode = overrides?.costCode ?? row.cost_code;
 
-  return {
-    ...(existingFinal ?? {}),
-    method: "user_confirmed",
-    confirmedFromSource: row.classification_source ?? (existingOriginal?.method as string | undefined) ?? "rules",
-    workType,
-    costType,
-    costCode,
-    confidence: row.classification_confidence,
-    needsReview: false,
-    confirmedByUserId,
-    confirmedAt,
-  };
+  return activity ? `${primary || "Construction metadata"} · ${activity}` : primary;
 }
 
-function didClassificationChange(
-  before: ReturnType<typeof summarizeCostItemClassification>,
-  after: ReturnType<typeof summarizeCostItemClassification>
-) {
-  return (
-    before.workType !== after.workType ||
-    before.costType !== after.costType ||
-    before.costCode !== after.costCode
-  );
+function parseSelectedRows(values: FormDataEntryValue[]) {
+  return values
+    .map((value) => String(value))
+    .map((value) => value.split(":", 2))
+    .filter((parts): parts is [ClassificationReviewRow["entityType"], string] => {
+      return (parts[0] === "cost_item" || parts[0] === "organization_material") && Boolean(parts[1]);
+    });
 }
 
-async function emitReviewedCostItemIntelligence(params: {
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
-  row: CostItemReviewRow;
-  nextClassification: ReturnType<typeof summarizeCostItemClassification>;
-  reviewMode: "confirm" | "edit";
-  occurredAt: string;
+async function resolveAccountingForRouting(params: {
+  organizationId: string;
+  tradesstackCostCode: TradesstackFinancialRoutingCode;
 }) {
-  const beforeClassification = summarizeCostItemClassification({
-    workType: params.row.work_type,
-    costType: params.row.cost_type,
-    costCode: params.row.cost_code,
-    confidence: params.row.classification_confidence,
-    needsReview: params.row.needs_review,
-    classificationSource: params.row.classification_source,
+  const [costCodes, mappings] = await Promise.all([
+    listOrganizationCostCodes(params.organizationId),
+    listOrganizationTradesstackAccountingMappings(params.organizationId),
+  ]);
+
+  const provider =
+    mappings.find((row) => row.is_active)?.provider ??
+    costCodes.find((row) => row.external_provider)?.external_provider ??
+    "manual";
+
+  return resolveOrganizationAccountingCode({
+    costCodes,
+    mappings,
+    input: {
+      organizationId: params.organizationId,
+      provider,
+      tradesstackCostCode: params.tradesstackCostCode,
+      projectId: null,
+      reviewStatus: "resolved",
+    },
   });
-  const classificationChanged = didClassificationChange(beforeClassification, params.nextClassification);
-  const reviewReason = params.reviewMode === "edit" ? "reviewed_with_edits" : "confirmed_as_suggested";
-  const reviewEvents = [
-    buildCostItemIntelligenceEvent({
-      organizationId: params.row.organization_id,
-      projectId: params.row.project_id,
-      module: "cost_items",
-      eventFamily: classificationChanged ? "correction" : "commercial_action",
-      eventType: classificationChanged
-        ? "cost_item_classification_corrected"
-        : "cost_item_classification_assigned",
-      action: classificationChanged ? "corrected" : "assigned",
-      entityType: "cost_item",
-      entityId: params.row.id,
-      beforeData: beforeClassification as unknown as Record<string, Json | null>,
-      afterData: params.nextClassification as unknown as Record<string, Json | null>,
-      diffData: {
-        workTypeChanged: beforeClassification.workType !== params.nextClassification.workType,
-        costTypeChanged: beforeClassification.costType !== params.nextClassification.costType,
-        costCodeChanged: beforeClassification.costCode !== params.nextClassification.costCode,
-      },
-      metadata: {
-        sourceDocumentKind: params.row.source_document_kind,
-        reviewMode: params.reviewMode,
-        title: params.row.title,
-      },
-      reason: reviewReason,
-      occurredAt: params.occurredAt,
-    }),
-    buildCostItemIntelligenceEvent({
-      organizationId: params.row.organization_id,
-      projectId: params.row.project_id,
-      module: "cost_items",
-      eventFamily: "validation",
-      eventType: "cost_item_review_resolved",
-      action: "resolved",
-      entityType: "cost_item",
-      entityId: params.row.id,
-      beforeData: { needsReview: true },
-      afterData: { needsReview: false },
-      metadata: {
-        sourceDocumentKind: params.row.source_document_kind,
-        reviewMode: params.reviewMode,
-      },
-      reason: reviewReason,
-      occurredAt: params.occurredAt,
-    }),
-  ];
+}
 
-  const aiSource =
-    params.row.classification_source === "ai" ||
-    (isObject(params.row.original_classification) && params.row.original_classification.method === "ai");
+async function updateFinancialRoutingRows(params: {
+  organizationId: string;
+  actorUserId: string;
+  rows: Array<{ entityType: ClassificationReviewRow["entityType"]; entityId: string }>;
+  tradesstackCostCode: TradesstackFinancialRoutingCode;
+  mode: "resolve" | "mark_others";
+}) {
+  const supabase = await createServerSupabaseClient();
+  const accountingResolution = await resolveAccountingForRouting({
+    organizationId: params.organizationId,
+    tradesstackCostCode: params.tradesstackCostCode,
+  });
 
-  if (aiSource) {
-    reviewEvents.push(
-      buildCostItemIntelligenceEvent({
-        organizationId: params.row.organization_id,
-        projectId: params.row.project_id,
-        module: "cost_items",
-        eventFamily: "ai_interaction",
-        eventType: classificationChanged ? "ai_cost_classification_rejected" : "ai_cost_classification_accepted",
-        action: classificationChanged ? "rejected" : "accepted",
-        entityType: "cost_item",
-        entityId: params.row.id,
-        beforeData: beforeClassification as unknown as Record<string, Json | null>,
-        afterData: params.nextClassification as unknown as Record<string, Json | null>,
-        metadata: {
-          sourceDocumentKind: params.row.source_document_kind,
-          confidence: params.row.classification_confidence,
-        },
-        reason: classificationChanged ? "ai_suggestion_changed_before_approval" : "ai_suggestion_confirmed",
-        occurredAt: params.occurredAt,
+  const finalReviewStatus =
+    accountingResolution.status === "resolved" ? "resolved" : "needs_accounting_mapping";
+  const reviewReason =
+    accountingResolution.status === "resolved"
+      ? params.mode === "mark_others"
+        ? "marked_as_others"
+        : "routing_review_resolved"
+      : "missing_accounting_mapping";
+
+  const costItemIds = params.rows.filter((row) => row.entityType === "cost_item").map((row) => row.entityId);
+  const materialIds = params.rows
+    .filter((row) => row.entityType === "organization_material")
+    .map((row) => row.entityId);
+
+  if (costItemIds.length > 0) {
+    const { error } = await supabase
+      .from("cost_items")
+      .update({
+        tradesstack_cost_code: params.tradesstackCostCode,
+        tradesstack_cost_code_label: getTradesstackFinancialRoutingLabel(params.tradesstackCostCode),
+        financial_routing_confidence: 1,
+        financial_routing_source: "user_override",
+        review_status: finalReviewStatus,
+        review_reason: reviewReason,
+        accounting_mapping_id: accountingResolution.accountingMappingId,
+        needs_review: false,
+        confirmed_by_user_id: params.actorUserId,
+        confirmed_at: new Date().toISOString(),
       })
-    );
+      .eq("organization_id", params.organizationId)
+      .in("id", costItemIds);
 
-    if (classificationChanged) {
-      reviewEvents.push(
-        buildCostItemIntelligenceEvent({
-          organizationId: params.row.organization_id,
-          projectId: params.row.project_id,
-          module: "cost_items",
-          eventFamily: "ai_interaction",
-          eventType: "ai_cost_classification_edited",
-          action: "edited",
-          entityType: "cost_item",
-          entityId: params.row.id,
-          beforeData: beforeClassification as unknown as Record<string, Json | null>,
-          afterData: params.nextClassification as unknown as Record<string, Json | null>,
-          metadata: {
-            sourceDocumentKind: params.row.source_document_kind,
-            confidence: params.row.classification_confidence,
-          },
-          reason: "ai_suggestion_edited_before_approval",
-          occurredAt: params.occurredAt,
-        })
-      );
+    if (error) {
+      throw new Error(error.message);
     }
   }
 
-  try {
-    await writeCostItemIntelligenceEvents(params.supabase, reviewEvents);
+  if (materialIds.length > 0) {
+    const { error } = await supabase
+      .from("organization_materials")
+      .update({
+        tradesstack_cost_code: params.tradesstackCostCode,
+        tradesstack_cost_code_label: getTradesstackFinancialRoutingLabel(params.tradesstackCostCode),
+        financial_routing_confidence: 1,
+        financial_routing_source: "user_override",
+        review_status: finalReviewStatus,
+        review_reason: reviewReason,
+        accounting_mapping_id: accountingResolution.accountingMappingId,
+        organization_cost_code_id: accountingResolution.organizationCostCodeId,
+        needs_review: false,
+        classification_source: "user_confirmed",
+        confirmed_by_user_id: params.actorUserId,
+        confirmed_at: new Date().toISOString(),
+      })
+      .eq("organization_id", params.organizationId)
+      .in("id", materialIds);
 
-    let aiInteractionId: string | null = null;
-    if (aiSource) {
-      aiInteractionId = await createCostItemAiInteraction(params.supabase, {
-        organizationId: params.row.organization_id,
-        projectId: params.row.project_id,
-        subjectEntityId: params.row.id,
-        confidence: params.row.classification_confidence,
-        humanDisposition: classificationChanged ? "edited" : "accepted",
-        humanFeedbackSummary: classificationChanged
-          ? "User edited the AI cost classification before confirming."
-          : "User accepted the AI cost classification suggestion.",
-        outputStructured: beforeClassification as unknown as Json,
-        editedOutput: classificationChanged ? (params.nextClassification as unknown as Json) : null,
-      });
+    if (error) {
+      throw new Error(error.message);
     }
-
-    if (classificationChanged) {
-      await writeCostItemCorrectionEvent(params.supabase, {
-        organizationId: params.row.organization_id,
-        projectId: params.row.project_id,
-        targetEntityId: params.row.id,
-        correctionType: "classification_fix",
-        correctedFieldName: "classification",
-        incorrectValue: beforeClassification as unknown as Json,
-        correctedValue: params.nextClassification as unknown as Json,
-        correctionReason: "User adjusted cost item classification during review.",
-        feedbackLabel: "classification_corrected",
-        linkedAiInteractionId: aiInteractionId,
-      });
-    }
-  } catch (error) {
-    logCostItemIntelligenceFailure(`cost-item-review:${params.reviewMode}`, error);
   }
 }
 
-async function fetchReviewRows(organizationId: string): Promise<CostItemReviewRow[]> {
-  const supabase = await createServerSupabaseClient();
-  const table = supabase.from("cost_items") as unknown as CostItemsTable;
-  const { data, error } = await table
-    .select(
-      [
-        "id",
-        "project_id",
-        "source_document_kind",
-        "title",
-        "description",
-        "work_type",
-        "cost_type",
-        "cost_code",
-        "classification_confidence",
-      ].join(", ")
-    )
-    .eq("organization_id", organizationId)
-    .eq("is_current", true)
-    .eq("needs_review", true)
-    .neq("status", "deleted")
-    .neq("status", "superseded")
-    .order("updated_at", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data ?? [];
-}
-
-async function fetchProjectNames(projectIds: string[]): Promise<Map<string, string>> {
-  if (projectIds.length === 0) {
-    return new Map();
-  }
-
-  const supabase = await createServerSupabaseClient();
-  const projectsTable = supabase.from("organization_projects") as unknown as ProjectsTable;
-  const { data, error } = await projectsTable.select("id, name").in("id", projectIds);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return new Map((data ?? []).map((project: ProjectRow) => [project.id, project.name]));
-}
-
-type CostItemsReviewPageProps = {
+export default async function CostItemReviewPage({
+  searchParams,
+}: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
+}) {
+  const currentMember = await getCurrentOrganizationMember();
+  if (!currentMember) {
+    return null;
+  }
 
-export default async function CostItemsReviewPage({ searchParams }: CostItemsReviewPageProps) {
-  const member = await getCurrentOrganizationMember();
+  const canEdit = await hasOrganizationPermission(currentMember.organization_id, "settings.organization.update");
+  if (!canEdit) {
+    redirect("/app");
+  }
+
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const editRaw = resolvedSearchParams.edit;
-  const editCostItemId = typeof editRaw === "string" ? editRaw : Array.isArray(editRaw) ? editRaw[0] ?? null : null;
+  const editTarget = Array.isArray(editRaw) ? editRaw[0] : editRaw;
 
-  async function confirmCostItem(formData: FormData) {
+  async function saveRoutingReviewAction(formData: FormData) {
     "use server";
 
-    const currentMember = await getCurrentOrganizationMember();
-    if (!currentMember) {
-      redirect(PAGE_PATH);
+    const member = await getCurrentOrganizationMember();
+    if (!member) {
+      redirect("/login");
     }
 
-    const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      redirect(PAGE_PATH);
+    const canWrite = await hasOrganizationPermission(member.organization_id, "settings.organization.update");
+    if (!canWrite) {
+      throw new Error("You do not have permission to resolve routing review.");
     }
 
-    const costItemId = String(formData.get("costItemId") ?? "").trim();
-    if (!costItemId) {
-      redirect(PAGE_PATH);
+    const entityType = formData.get("entityType");
+    const entityId = formData.get("entityId");
+    const code = formData.get("tradesstackCostCode");
+    const resolutionMode = formData.get("resolutionMode");
+    const selectedCode =
+      resolutionMode === "mark_others"
+        ? "800"
+        : isTradesstackFinancialRoutingCode(code)
+          ? code
+          : null;
+
+    if ((entityType !== "cost_item" && entityType !== "organization_material") || typeof entityId !== "string" || !selectedCode) {
+      throw new Error("Invalid routing review submission.");
     }
 
-    const admin = createAdminSupabaseClient();
-    const costItemsTable = admin.from("cost_items") as unknown as CostItemsTable;
-    const { data: row, error: rowError } = await costItemsTable
-      .select(
-        [
-          "id",
-          "organization_id",
-          "project_id",
-          "source_document_kind",
-          "title",
-          "description",
-          "status",
-          "is_current",
-          "work_type",
-          "cost_type",
-          "cost_code",
-          "classification_confidence",
-          "needs_review",
-          "classification_source",
-          "original_classification",
-          "final_classification",
-        ].join(", ")
-      )
-      .eq("id", costItemId)
-      .eq("organization_id", currentMember.organization_id)
-      .maybeSingle();
-
-    if (rowError || !row) {
-      redirect(PAGE_PATH);
-    }
-
-    if (!row.is_current || row.status === "deleted" || row.status === "superseded") {
-      redirect(PAGE_PATH);
-    }
-
-    const confirmedAt = new Date().toISOString();
-    const finalClassification = buildConfirmedClassification(row, user.id, confirmedAt);
-
-    const { error: updateError } = await costItemsTable
-      .update({
-        classification_source: "user_confirmed",
-        needs_review: false,
-        final_classification: finalClassification,
-        confirmed_by_user_id: user.id,
-        confirmed_at: confirmedAt,
-      })
-      .eq("id", costItemId);
-
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    await emitReviewedCostItemIntelligence({
-      supabase,
-      row,
-      nextClassification: summarizeCostItemClassification({
-        workType: row.work_type,
-        costType: row.cost_type,
-        costCode: row.cost_code,
-        confidence: row.classification_confidence,
-        needsReview: false,
-        classificationSource: "user_confirmed",
-      }),
-      reviewMode: "confirm",
-      occurredAt: confirmedAt,
+    await updateFinancialRoutingRows({
+      organizationId: member.organization_id,
+      actorUserId: member.user_id,
+      rows: [{ entityType, entityId }],
+      tradesstackCostCode: selectedCode,
+      mode: resolutionMode === "mark_others" ? "mark_others" : "resolve",
     });
 
     revalidatePath(PAGE_PATH);
     redirect(PAGE_PATH);
   }
 
-  async function saveReviewedCostItem(formData: FormData) {
+  async function applyBatchReviewAction(formData: FormData) {
     "use server";
 
-    const currentMember = await getCurrentOrganizationMember();
-    if (!currentMember) {
-      redirect(PAGE_PATH);
+    const member = await getCurrentOrganizationMember();
+    if (!member) {
+      redirect("/login");
     }
 
-    const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      redirect(PAGE_PATH);
+    const canWrite = await hasOrganizationPermission(member.organization_id, "settings.organization.update");
+    if (!canWrite) {
+      throw new Error("You do not have permission to apply routing review.");
     }
 
-    const costItemId = String(formData.get("costItemId") ?? "").trim();
-    const workType = String(formData.get("workType") ?? "").trim();
-    const costType = String(formData.get("costType") ?? "").trim();
-    const submittedCostCode = String(formData.get("costCode") ?? "").trim();
-
-    if (!costItemId) {
-      redirect(PAGE_PATH);
+    const selectedRows = parseSelectedRows(formData.getAll("selectedRows"));
+    if (selectedRows.length === 0) {
+      throw new Error("Select at least one review row.");
     }
 
-    if (!WORK_TYPE_CODE_PREFIX_BY_NAME.has(workType) || !VALID_COST_TYPES.has(costType)) {
-      redirect(`${PAGE_PATH}?edit=${costItemId}`);
+    const action = String(formData.get("batchAction") ?? "");
+    const fallbackCode = formData.get("batchTradesstackCostCode");
+
+    let code: TradesstackFinancialRoutingCode | null = null;
+    let mode: "resolve" | "mark_others" = "resolve";
+
+    if (action === "mark_others") {
+      code = "800";
+      mode = "mark_others";
+    } else if (action === "change_code") {
+      code = isTradesstackFinancialRoutingCode(fallbackCode) ? fallbackCode : null;
+    } else {
+      const rows = await listClassificationReviewRows(member.organization_id);
+      const firstRowById = new Map(rows.map((row) => [`${row.entityType}:${row.entityId}`, row]));
+      const firstSelected = firstRowById.get(`${selectedRows[0][0]}:${selectedRows[0][1]}`) ?? null;
+      code =
+        firstSelected && isTradesstackFinancialRoutingCode(firstSelected.tradesstackCostCode)
+          ? firstSelected.tradesstackCostCode
+          : "800";
     }
 
-    const codePrefix = WORK_TYPE_CODE_PREFIX_BY_NAME.get(workType) ?? null;
-    const costCode = buildCostCode(codePrefix, costType) ?? (submittedCostCode || null);
-
-    const admin = createAdminSupabaseClient();
-    const costItemsTable = admin.from("cost_items") as unknown as CostItemsTable;
-    const { data: row, error: rowError } = await costItemsTable
-      .select(
-        [
-          "id",
-          "organization_id",
-          "project_id",
-          "source_document_kind",
-          "title",
-          "description",
-          "status",
-          "is_current",
-          "work_type",
-          "cost_type",
-          "cost_code",
-          "classification_confidence",
-          "needs_review",
-          "classification_source",
-          "original_classification",
-          "final_classification",
-        ].join(", ")
-      )
-      .eq("id", costItemId)
-      .eq("organization_id", currentMember.organization_id)
-      .maybeSingle();
-
-    if (rowError || !row) {
-      redirect(PAGE_PATH);
+    if (!code) {
+      throw new Error("Choose a TradesStack routing code for the batch action.");
     }
 
-    if (!row.is_current || row.status === "deleted" || row.status === "superseded") {
-      redirect(PAGE_PATH);
-    }
-
-    const confirmedAt = new Date().toISOString();
-    const finalClassification = buildConfirmedClassification(row, user.id, confirmedAt, {
-      workType: workType || null,
-      costType: costType || null,
-      costCode,
-    });
-
-    const { error: updateError } = await costItemsTable
-      .update({
-        work_type: workType || null,
-        cost_type: costType || null,
-        cost_code: costCode,
-        classification_source: "user_confirmed",
-        needs_review: false,
-        final_classification: finalClassification,
-        confirmed_by_user_id: user.id,
-        confirmed_at: confirmedAt,
-      })
-      .eq("id", costItemId);
-
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    await emitReviewedCostItemIntelligence({
-      supabase,
-      row,
-      nextClassification: summarizeCostItemClassification({
-        workType: workType || null,
-        costType: costType || null,
-        costCode,
-        confidence: row.classification_confidence,
-        needsReview: false,
-        classificationSource: "user_confirmed",
-      }),
-      reviewMode: "edit",
-      occurredAt: confirmedAt,
+    await updateFinancialRoutingRows({
+      organizationId: member.organization_id,
+      actorUserId: member.user_id,
+      rows: selectedRows.map(([entityType, entityId]) => ({ entityType, entityId })),
+      tradesstackCostCode: code,
+      mode,
     });
 
     revalidatePath(PAGE_PATH);
     redirect(PAGE_PATH);
   }
 
-  if (!member) {
-    return (
-      <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
-        <OperationalPanel>
-          <p className="text-sm text-[var(--text-secondary)]">Sign in to review cost item classifications.</p>
-        </OperationalPanel>
-      </main>
-    );
-  }
-
-  const reviewRows = await fetchReviewRows(member.organization_id);
-  const projectNameById = await fetchProjectNames([...new Set(reviewRows.map((row) => row.project_id).filter(Boolean))]);
+  const rows = await listClassificationReviewRows(currentMember.organization_id);
+  const editingRow = editTarget
+    ? rows.find((row) => row.entityId === editTarget || `${row.entityType}:${row.entityId}` === editTarget) ?? null
+    : null;
 
   return (
-    <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+    <div className="space-y-6">
       <OperationalModuleHeader
-        title="Cost Item Review"
-        description="Review low-confidence cost item classifications before they become part of your org’s confirmed intelligence."
-        actions={
-          <StatusBadge status="draft">{reviewRows.length} needing review</StatusBadge>
-        }
+        eyebrow="Financial routing"
+        title="Financial routing review"
+        description="Review only the broad TradesStack routing code and accounting mapping state. Construction intelligence is not part of this queue."
       />
 
-      <OperationalPanel contentClassName="p-0">
-          {reviewRows.length === 0 ? (
-            <div className="px-6 pb-6 pt-6">
-              <OperationalEmptyState title="No cost items need review right now." />
-            </div>
+      {editingRow ? (
+        <OperationalPanel>
+          <div className="space-y-3">
+            <h2 className={`${ibmPlexSans.className} text-lg font-semibold text-[var(--text-primary)]`}>
+              Edit routing review
+            </h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              {editingRow.title} · {editingRow.sourceLabel}
+            </p>
+            <ReviewEditorForm
+              action={saveRoutingReviewAction}
+              cancelHref={PAGE_PATH}
+              entityType={editingRow.entityType}
+              entityId={editingRow.entityId}
+              initialTradesstackCostCode={editingRow.tradesstackCostCode ?? "800"}
+              constructionIntelligenceSummary={formatConstructionIntelligenceSummary(editingRow.aiConstructionIntelligence)}
+            />
+          </div>
+        </OperationalPanel>
+      ) : null}
+
+      <OperationalPanel>
+        <form action={applyBatchReviewAction} className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-end">
+            <label className="block">
+              <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
+                Batch action
+              </span>
+              <select
+                name="batchAction"
+                className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)] outline-none`}
+                defaultValue="approve_selected"
+              >
+                <option value="approve_selected">Approve selected rows</option>
+                <option value="change_code">Change selected rows to code</option>
+                <option value="mark_others">Mark selected rows as 800 Others</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className={`${ibmPlexSans.className} mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}>
+                TradesStack code
+              </span>
+              <select
+                name="batchTradesstackCostCode"
+                defaultValue="100"
+                className={`${ibmPlexSans.className} h-[42px] w-full rounded-[0.8rem] border border-[var(--border)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text-primary)] outline-none`}
+              >
+                {listTradesstackFinancialRoutingCodes().map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.code} {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button type="submit">Apply Batch Review</Button>
+          </div>
+
+          {rows.length === 0 ? (
+            <OperationalEmptyState
+              title="No routing review items"
+              description="New records are routing cleanly, or any remaining issues are now accounting mapping tasks."
+            />
           ) : (
-            <OperationalTable className="min-w-[1280px]">
+            <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)]">
+              <OperationalTable>
                 <OperationalTableHeader>
                   <OperationalTableRow>
-                    {[
-                      "Description",
-                      "Project",
-                      "Source",
-                      "Work Type",
-                      "Cost Type",
-                      "Cost Code",
-                      "Confidence",
-                      "Action",
-                    ].map((heading) => (
-                      <OperationalTableHead key={heading}>{heading}</OperationalTableHead>
-                    ))}
+                    <OperationalTableHead className="w-[44px]">Select</OperationalTableHead>
+                    <OperationalTableHead>Item</OperationalTableHead>
+                    <OperationalTableHead>Routing</OperationalTableHead>
+                    <OperationalTableHead>Mapping</OperationalTableHead>
+                    <OperationalTableHead>Context</OperationalTableHead>
+                    <OperationalTableHead className="text-right">Action</OperationalTableHead>
                   </OperationalTableRow>
                 </OperationalTableHeader>
                 <OperationalTableBody>
-                  {reviewRows.map((row) => {
-                    const description = getReviewDescription(row);
-                    const projectName = projectNameById.get(row.project_id) ?? "Unknown project";
-                    const isEditing = editCostItemId === row.id;
-                    const confidence = row.classification_confidence;
-                    const confidenceTone =
-                      typeof confidence === "number" && confidence >= 0.75
-                        ? "approved"
-                        : typeof confidence === "number" && confidence >= 0.5
-                          ? "pending"
-                          : "overdue";
-
+                  {rows.map((row) => {
+                    const reviewStatus = formatReviewStatus(row.reviewStatus);
                     return (
-                      <Fragment key={row.id}>
-                        <OperationalTableRow>
-                          <OperationalTableCell>
-                            <div className="max-w-[320px] font-semibold">{description}</div>
-                          </OperationalTableCell>
-                          <OperationalTableCell>{projectName}</OperationalTableCell>
-                          <OperationalTableCell>
-                            <StatusBadge status="draft">{formatDocumentKind(row.source_document_kind)}</StatusBadge>
-                          </OperationalTableCell>
-                          <OperationalTableCell>{row.work_type ?? "—"}</OperationalTableCell>
-                          <OperationalTableCell>{row.cost_type ?? "—"}</OperationalTableCell>
-                          <OperationalTableCell>{row.cost_code ?? "—"}</OperationalTableCell>
-                          <OperationalTableCell>
-                            <StatusBadge status={confidenceTone}>{formatConfidence(confidence)}</StatusBadge>
-                          </OperationalTableCell>
-                          <OperationalTableCell>
-                            <div className="flex items-center gap-2">
-                              <form action={confirmCostItem}>
-                                <input type="hidden" name="costItemId" value={row.id} />
-                                <Button type="submit" variant="secondary" size="sm">
-                                  Confirm
-                                </Button>
-                              </form>
-                              <Button asChild variant={isEditing ? "primary" : "secondary"} size="sm">
-                                <Link href={isEditing ? PAGE_PATH : `${PAGE_PATH}?edit=${row.id}`}>
-                                  {isEditing ? "Close" : "Review"}
-                                </Link>
-                              </Button>
-                            </div>
-                          </OperationalTableCell>
-                        </OperationalTableRow>
-                        {isEditing ? (
-                          <OperationalTableRow className="bg-[var(--surface-muted)]">
-                            <OperationalTableCell colSpan={8} className="py-5">
-                              <ReviewEditorForm
-                                action={saveReviewedCostItem}
-                                cancelHref={PAGE_PATH}
-                                costItemId={row.id}
-                                initialWorkType={row.work_type ?? WORK_TYPE_OPTIONS[0]?.workType ?? ""}
-                                initialCostType={(row.cost_type as CostTypeOption | null) ?? COST_TYPE_OPTIONS[0]}
-                                initialCostCode={row.cost_code ?? ""}
-                                workTypeOptions={WORK_TYPE_OPTIONS}
-                                costTypeOptions={[...COST_TYPE_OPTIONS]}
-                              />
-                            </OperationalTableCell>
-                          </OperationalTableRow>
-                        ) : null}
-                      </Fragment>
+                      <OperationalTableRow key={`${row.entityType}:${row.entityId}`}>
+                        <OperationalTableCell>
+                          <input type="checkbox" name="selectedRows" value={`${row.entityType}:${row.entityId}`} />
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium text-[var(--text-primary)]">{row.title}</p>
+                            <p className="text-xs text-[var(--text-secondary)]">
+                              {row.projectName ? `${row.projectName} · ` : ""}
+                              {row.sourceLabel}
+                            </p>
+                            <p className="text-xs text-[var(--text-secondary)]">{row.description}</p>
+                          </div>
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <div className="space-y-2">
+                            <StatusBadge status={reviewStatus.tone}>{reviewStatus.label}</StatusBadge>
+                            <p className="text-sm text-[var(--text-primary)]">
+                              {row.tradesstackCostCode ?? "—"} {row.tradesstackCostCodeLabel ?? ""}
+                            </p>
+                            <p className="text-xs text-[var(--text-secondary)]">
+                              Confidence {formatConfidence(row.confidence)} · Source {row.classificationSource ?? "—"}
+                            </p>
+                            <p className="text-xs text-[var(--text-secondary)]">
+                              Reason {row.reviewReason ?? "No reason captured"}
+                            </p>
+                          </div>
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <div className="space-y-2">
+                            <StatusBadge status={row.accountingStatus === "resolved" ? "approved" : "overdue"}>
+                              {row.accountingStatus === "resolved" ? "Mapped" : "Needs mapping"}
+                            </StatusBadge>
+                            <p className="text-sm text-[var(--text-primary)]">
+                              {row.mappedOrganizationCostCodeLabel ?? "No external accounting code mapped"}
+                            </p>
+                            <Link href="/app/company/cost-codes" className="text-xs font-medium text-[var(--brand-blue)] hover:underline">
+                              Resolve mapping in Cost Codes
+                            </Link>
+                          </div>
+                        </OperationalTableCell>
+                        <OperationalTableCell>
+                          <div className="space-y-1 text-xs text-[var(--text-secondary)]">
+                            <p>Amount {formatMoney(row.amount)}</p>
+                            <p>Entity {row.entityType === "cost_item" ? "Cost item" : "Material"}</p>
+                          </div>
+                        </OperationalTableCell>
+                        <OperationalTableCell className="text-right">
+                          <Link
+                            href={`${PAGE_PATH}?edit=${row.entityType}:${row.entityId}`}
+                            className="inline-flex items-center rounded-[0.5rem] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[13px] font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]"
+                          >
+                            Edit routing
+                          </Link>
+                        </OperationalTableCell>
+                      </OperationalTableRow>
                     );
                   })}
                 </OperationalTableBody>
               </OperationalTable>
+            </div>
           )}
+        </form>
       </OperationalPanel>
-
-      {reviewRows.length > 0 ? (
-        <p className="text-sm text-[var(--text-secondary)]">
-          `Confirm` accepts the current suggestion as-is. `Review` opens an inline editor so the suggested work type, cost type, and cost code can be amended before confirming.
-        </p>
-      ) : null}
-    </main>
+    </div>
   );
 }

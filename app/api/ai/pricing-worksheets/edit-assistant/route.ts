@@ -13,6 +13,7 @@ import {
   getPricingWorksheetEditAssistantModelConfig,
   type PricingWorksheetAiFollowUpContext,
 } from "@/lib/ai-pricing-worksheet-edit-assistant";
+import { buildOrganizationAiContext } from "@/lib/organization-ai-context";
 import { classifyPricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
 import { retrievePricingWorksheetOrganizationGuidance } from "@/lib/pricing-worksheet-organization-guidance";
 import type { WorksheetData } from "@/lib/opportunity-pricing-worksheet-defaults";
@@ -43,7 +44,10 @@ type CurrentWorksheetSummary = {
 type RequestBody = {
   organizationId?: string;
   opportunityId?: string | null;
+  workbookId?: string | null;
   worksheetId?: string | null;
+  sheetId?: string | null;
+  sheetName?: string | null;
   worksheetName?: string | null;
   tradePackage?: string | null;
   prompt?: string | null;
@@ -107,7 +111,10 @@ export async function POST(request: Request) {
 
   const organizationId = typeof body.organizationId === "string" ? body.organizationId.trim() : "";
   const opportunityId = typeof body.opportunityId === "string" && body.opportunityId.trim() ? body.opportunityId.trim() : null;
+  const workbookId = typeof body.workbookId === "string" && body.workbookId.trim() ? body.workbookId.trim() : null;
   const worksheetId = typeof body.worksheetId === "string" && body.worksheetId.trim() ? body.worksheetId.trim() : null;
+  const sheetId = typeof body.sheetId === "string" && body.sheetId.trim() ? body.sheetId.trim() : null;
+  const sheetName = typeof body.sheetName === "string" && body.sheetName.trim() ? body.sheetName.trim() : null;
   const worksheetName =
     typeof body.worksheetName === "string" && body.worksheetName.trim() ? body.worksheetName.trim() : "Pricing Worksheet";
   const tradePackage = typeof body.tradePackage === "string" && body.tradePackage.trim() ? body.tradePackage.trim() : null;
@@ -153,6 +160,7 @@ export async function POST(request: Request) {
   try {
     logRouteDebug("edit_assistant_request_received", {
       worksheetId,
+      sheetId,
       worksheetName,
       promptLength: prompt.length,
       hasWorksheetData: hasWorksheetShape(body.worksheetData),
@@ -184,6 +192,8 @@ export async function POST(request: Request) {
       organizationId,
       projectId: opportunity?.workspace_project_id ?? null,
       opportunityId,
+      workbookId: workbookId ?? worksheetId,
+      sheetId,
       memoryCategories: ["worksheet_structure", "pricing_structure"],
       memoryTypes: ["pricing_worksheet_layout"],
       minimumConfidence: 0.35,
@@ -191,16 +201,23 @@ export async function POST(request: Request) {
     });
 
     const matchedMemoryIds = memoryItems.map((item) => item.id);
+    const organizationAiContext = await buildOrganizationAiContext({ organizationId });
     const inputContextSummary = buildAiRequestContextSummary({
       organizationId,
       projectId: opportunity?.workspace_project_id ?? null,
       opportunityId,
       module: "pricing_worksheets",
       workflowKey: "pricing_worksheet_edit_assistant",
+      workbookId: workbookId ?? worksheetId,
+      worksheetId: worksheetId ?? workbookId,
+      sheetId,
+      sheetName: sheetName ?? worksheetName,
       worksheetName,
       tradePackage,
       relatedCounts: {
+        constructionProfileLength: organizationAiContext.constructionProfile?.length ?? 0,
         existingWorksheetCount: existingWorksheetsResult.count ?? 0,
+        hasConstructionProfile: organizationAiContext.constructionProfile ? 1 : 0,
         matchedMemoryCount: memoryItems.length,
         promptLength: prompt.length,
         currentWorksheetRowCount: currentWorksheetSummary?.rowCount ?? body.worksheetData.rows.length ?? 0,
@@ -249,7 +266,10 @@ export async function POST(request: Request) {
       promptText: prompt.length > 0 ? prompt : `Help with worksheet "${worksheetName}".`,
       inputContextSummary: {
         ...inputContextSummary,
+        workbookId: workbookId ?? worksheetId,
         worksheetId,
+        sheetId,
+        sheetName: sheetName ?? worksheetName,
         worksheetContext: {
           headerCount: body.worksheetContext.headers.length,
           sectionCount: body.worksheetContext.sections.length,
@@ -269,6 +289,7 @@ export async function POST(request: Request) {
       worksheet: body.worksheetData,
       worksheetContext: body.worksheetContext,
       memoryItems,
+      organizationConstructionContext: organizationAiContext.organizationConstructionContext,
       classification,
       organizationGuidance,
       followUpContext:
@@ -315,6 +336,7 @@ export async function POST(request: Request) {
       confidence: confidenceToScore(preview.compactOutput.confidence),
       outputStructured: {
         ...preview.storageSummary,
+        workbookId: workbookId ?? worksheetId,
         proposalName: preview.proposalName,
         answer: preview.answer,
         summary: preview.summary,
@@ -328,7 +350,9 @@ export async function POST(request: Request) {
           result: warning.result,
           message: warning.message,
         })),
-        worksheetId,
+        worksheetId: worksheetId ?? workbookId,
+        sheetId,
+        sheetName: sheetName ?? worksheetName,
         worksheetName,
         tradePackage,
         canMutateWorksheet,
@@ -414,6 +438,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       aiInteractionId,
+      workbookId: workbookId ?? worksheetId,
+      worksheetId: worksheetId ?? workbookId,
+      sheetId,
+      sheetName: sheetName ?? worksheetName,
       preview: {
         worksheet: preview.worksheet,
         compactOutput: preview.compactOutput,

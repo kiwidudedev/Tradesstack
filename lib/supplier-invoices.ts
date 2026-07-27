@@ -85,8 +85,34 @@ export type SupplierInvoiceLineAllocationRow =
   Database["public"]["Tables"]["supplier_invoice_line_allocations"]["Row"];
 export type SupplierInvoiceAISuggestionRow =
   Database["public"]["Tables"]["supplier_invoice_ai_suggestions"]["Row"];
-export type SupplierInvoiceDocumentRow =
+type SupplierInvoiceDocumentTableRow =
   Database["public"]["Tables"]["supplier_invoice_documents"]["Row"];
+export type SupplierInvoiceDocumentRow = SupplierInvoiceDocumentTableRow & {
+  is_current: boolean;
+  superseded_at: string | null;
+  superseded_by_document_id: string | null;
+};
+export type SupplierInvoiceDocumentExtractionRow = {
+  id: string;
+  organization_id: string;
+  supplier_invoice_id: string;
+  supplier_invoice_document_id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  requested_by: string | null;
+  schema_version: string;
+  idempotency_key: string;
+  provider: string | null;
+  model: string | null;
+  attempt_number: number;
+  extracted_payload_json: Record<string, unknown> | null;
+  warnings_json: Array<Record<string, unknown>>;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 export type SupplierInvoicePurchaseOrderMatchRow =
   Database["public"]["Tables"]["supplier_invoice_purchase_order_matches"]["Row"];
 export type SupplierInvoiceMatchApprovalStepRow =
@@ -110,6 +136,8 @@ export type SupplierInvoiceLineAllocationPreviewRow = {
   candidatePurchaseOrderLineAmount: number | null;
   costItemId: string | null;
   sourceCostItemId: string | null;
+  tradesstackCostCode: string | null;
+  tradesstackCostCodeLabel: string | null;
   workType: string | null;
   costType: string | null;
   internalCostCode: string | null;
@@ -176,6 +204,16 @@ export function validateSupplierInvoiceDocument(file: File) {
   }
 }
 
+export function validateSupplierInvoicePdfDocument(file: File) {
+  validateSupplierInvoiceDocument(file);
+
+  const normalizedMimeType = file.type.trim().toLowerCase();
+  const hasPdfName = file.name.toLowerCase().endsWith(".pdf");
+  if (normalizedMimeType !== "application/pdf" && !(normalizedMimeType === "" && hasPdfName)) {
+    throw new Error("Only PDF files are supported for invoice extraction.");
+  }
+}
+
 export function buildSupplierInvoiceDocumentStoragePath(params: {
   organizationId: string;
   supplierInvoiceId: string;
@@ -224,6 +262,10 @@ export function toDayMonthYearLabel(value: string | null | undefined) {
 
 export function getSourceLabel(source: SupplierInvoiceSource | string) {
   return source === "upload" ? "Upload" : "Manual";
+}
+
+export function normalizeSupplierInvoiceNumber(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/\s+/g, "").toUpperCase();
 }
 
 export function getSupplierInvoiceMatchStatusClassName(status: SupplierInvoiceMatchStatus | string) {

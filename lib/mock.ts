@@ -1,6 +1,6 @@
 export const mockUser = {
-  name: "Corey Fenton",
-  email: "coreyajfenton@gmail.com",
+  name: "Example User",
+  email: "user@example.test",
   initials: "CF"
 };
 

@@ -27,6 +27,7 @@ export function OpportunityWorkspaceShell({
   title,
   opportunityId,
   activeTab,
+  quoteHref,
   children,
   titleClassName,
   contentClassName = "bg-[var(--background)] px-5 pt-6",
@@ -34,6 +35,7 @@ export function OpportunityWorkspaceShell({
   title: string;
   opportunityId: string;
   activeTab: OpportunityTab;
+  quoteHref?: string;
   children: React.ReactNode;
   titleClassName?: string;
   contentClassName?: string;
@@ -104,7 +106,7 @@ export function OpportunityWorkspaceShell({
     },
     {
       label: "Quotation",
-      href: `/app/leads-clients/opportunities/${opportunityId}/quote`,
+      href: quoteHref ?? `/app/leads-clients/opportunities/${opportunityId}/quote`,
       icon: FileText,
       active: activeTab === "start-pricing",
     },

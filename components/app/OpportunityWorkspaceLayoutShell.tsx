@@ -40,9 +40,10 @@ export function OpportunityWorkspaceLayoutShell({
 }) {
   const pathname = usePathname();
   const activeTab = getActiveOpportunityTab(pathname, opportunityId);
+  const quoteHref = `/app/leads-clients/opportunities/${opportunityId}/quote`;
 
   return (
-    <OpportunityWorkspaceShell title={title} opportunityId={opportunityId} activeTab={activeTab}>
+    <OpportunityWorkspaceShell title={title} opportunityId={opportunityId} activeTab={activeTab} quoteHref={quoteHref}>
       {children}
     </OpportunityWorkspaceShell>
   );

@@ -1,8 +1,10 @@
 import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 import type { PricingWorksheetAiProvider } from "@/lib/ai/providers/pricing-worksheet/provider";
+import type { PricingWorksheetAiEvidenceSource } from "@/lib/pricing-worksheet-edit-plan";
 import {
   createPricingWorksheetProviderError,
   isPricingWorksheetProviderError,
+  type PricingWorksheetProviderCitation,
   type PricingWorksheetProviderRequest,
   type PricingWorksheetProviderResponse,
 } from "@/lib/ai/providers/pricing-worksheet/types";
@@ -11,8 +13,14 @@ import { extractBalancedJsonObject } from "@/lib/ai/providers/pricing-worksheet/
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_API_VERSION = "2023-06-01";
 const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const ANTHROPIC_WEB_SEARCH_TOOL = {
+  type: "web_search_20250305",
+  name: "web_search",
+  max_uses: 5,
+  allowed_callers: ["direct"],
+} as const;
+const MAX_ANTHROPIC_SERVER_TOOL_CONTINUATIONS = 3;
 const RETRYABLE_PROVIDER_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
-const WEB_SEARCH_UNAVAILABLE_WARNING = "web_search_unavailable_for_provider";
 const ANTHROPIC_UNSUPPORTED_REMOVABLE_SCHEMA_KEYWORDS = new Set(["maxItems", "minItems"]);
 const ANTHROPIC_ALLOWED_SCHEMA_KEYWORDS = new Set([
   "type",
@@ -65,12 +73,21 @@ type AnthropicSchemaKeywordIssue = {
   path: string;
 };
 
+type AnthropicFreeFormObjectIssue = {
+  path: string;
+  additionalProperties: unknown;
+};
+
 type AnthropicSchemaKind =
   | "draft_generation"
   | "formula_generation"
   | "formatting_generation"
   | "review_generation"
   | "compact_edit_intent"
+  | "worksheet_pricing_pattern_shadow_proposals"
+  | "worksheet_memory_synthesis"
+  | "cost_construction_intelligence"
+  | "worksheet_event_interpretation"
   | "answer_only";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -253,6 +270,28 @@ function sanitizeAnthropicSchemaNode(node: unknown, path: string): unknown {
     ...rest,
     enum: nonNullEnumValues,
   };
+}
+
+function collectAnthropicFreeFormObjectIssues(node: unknown, path = "$"): AnthropicFreeFormObjectIssue[] {
+  if (Array.isArray(node)) {
+    return node.flatMap((entry, index) => collectAnthropicFreeFormObjectIssues(entry, `${path}[${index}]`));
+  }
+
+  if (!isRecord(node)) {
+    return [];
+  }
+
+  const issues: AnthropicFreeFormObjectIssue[] = [];
+  if (node.type === "object" && node.additionalProperties === true) {
+    issues.push({
+      path,
+      additionalProperties: node.additionalProperties,
+    });
+  }
+
+  return issues.concat(
+    Object.entries(node).flatMap(([key, value]) => collectAnthropicFreeFormObjectIssues(value, `${path}.${key}`)),
+  );
 }
 
 export function sanitizeAnthropicSchema(schema: Record<string, unknown>): Record<string, unknown> {
@@ -760,6 +799,191 @@ function buildAnthropicCompactEditIntentSchema() {
   } as const;
 }
 
+function buildAnthropicWorksheetPricingPatternShadowProposalSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["proposals"],
+    properties: {
+      proposals: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "proposalKind",
+            "patternFamily",
+            "patternType",
+            "title",
+            "summary",
+            "retrievalGuidance",
+            "confidence",
+            "scope",
+            "patternValueSummary",
+            "patternSignals",
+            "supportingEvidenceEventIds",
+            "contradictoryEvidenceEventIds",
+            "contradictionReason",
+            "dominantAlternativePatternType",
+          ],
+          properties: {
+            proposalKind: {
+              type: "string",
+              enum: ["pattern", "no_pattern"],
+            },
+            patternFamily: {
+              anyOf: [
+                {
+                  type: "string",
+                  enum: [
+                    "pricing_preference",
+                    "rate_adjustment_pattern",
+                    "allowance_pattern",
+                    "labour_productivity_pattern",
+                    "formula_pattern",
+                    "component_completeness_pattern",
+                    "review_correction_pattern",
+                    "worksheet_structure_pattern",
+                    "estimator_behavior_pattern",
+                  ],
+                },
+                { type: "null" },
+              ],
+            },
+            patternType: { anyOf: [{ type: "string" }, { type: "null" }] },
+            title: { anyOf: [{ type: "string" }, { type: "null" }] },
+            summary: { anyOf: [{ type: "string" }, { type: "null" }] },
+            retrievalGuidance: { anyOf: [{ type: "string" }, { type: "null" }] },
+            confidence: { anyOf: [{ type: "number" }, { type: "null" }] },
+            scope: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "tradePackage",
+                "pageType",
+                "worksheetNameHint",
+                "itemCategory",
+                "normalizedUnit",
+                "costRole",
+                "sectionType",
+              ],
+              properties: {
+                tradePackage: { anyOf: [{ type: "string" }, { type: "null" }] },
+                pageType: { anyOf: [{ type: "string" }, { type: "null" }] },
+                worksheetNameHint: { anyOf: [{ type: "string" }, { type: "null" }] },
+                itemCategory: { anyOf: [{ type: "string" }, { type: "null" }] },
+                normalizedUnit: { anyOf: [{ type: "string" }, { type: "null" }] },
+                costRole: { anyOf: [{ type: "string" }, { type: "null" }] },
+                sectionType: { anyOf: [{ type: "string" }, { type: "null" }] },
+              },
+            },
+            patternValueSummary: { anyOf: [{ type: "string" }, { type: "null" }] },
+            patternSignals: {
+              type: "array",
+              items: { type: "string" },
+            },
+            supportingEvidenceEventIds: {
+              type: "array",
+              items: { type: "string" },
+            },
+            contradictoryEvidenceEventIds: {
+              type: "array",
+              items: { type: "string" },
+            },
+            contradictionReason: { anyOf: [{ type: "string" }, { type: "null" }] },
+            dominantAlternativePatternType: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+        },
+      },
+    },
+  } as const;
+}
+
+function buildAnthropicWorksheetEventInterpretationSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["classifications"],
+    properties: {
+      classifications: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "eventId",
+            "overallConfidence",
+            "reasoningSummary",
+            "interpretationPayload",
+            "semanticSummary",
+          ],
+          properties: {
+            eventId: { type: "string" },
+            overallConfidence: { type: "number" },
+            reasoningSummary: { type: "string" },
+            interpretationPayload: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "whatChanged",
+                "plainEnglishSummary",
+                "businessMeaning",
+                "constructionMeaning",
+                "pricingMeaning",
+                "futureUse",
+                "memoryCandidate",
+                "memoryType",
+                "retrievalGuidance",
+              ],
+              properties: {
+                whatChanged: { type: "string" },
+                plainEnglishSummary: { type: "string" },
+                businessMeaning: { type: "string" },
+                constructionMeaning: { type: "string" },
+                pricingMeaning: { type: "string" },
+                formulaMeaning: { type: "string" },
+                aiCorrectionMeaning: { type: "string" },
+                futureUse: { type: "string" },
+                memoryCandidate: { type: "boolean" },
+                memoryType: { type: "string" },
+                retrievalGuidance: { type: "string" },
+                shouldInfluenceFutureGeneration: { type: "boolean" },
+                shouldInfluenceFutureReview: { type: "boolean" },
+                changeType: { type: "string" },
+                oldValue: { type: "string" },
+                newValue: { type: "string" },
+                oldFormula: { type: "string" },
+                newFormula: { type: "string" },
+                unit: { type: "string" },
+                contextConfidence: { type: "number" },
+                futureUseConfidence: { type: "number" },
+              },
+            },
+            semanticSummary: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "costRole",
+                "pageType",
+                "itemCategory",
+                "normalizedUnit",
+                "normalizedTradePackage",
+              ],
+              properties: {
+                costRole: { type: "string" },
+                pageType: { type: "string" },
+                itemCategory: { type: "string" },
+                normalizedUnit: { type: "string" },
+                normalizedTradePackage: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    },
+  } as const;
+}
+
 function buildAnthropicCompactWorksheetSchema(options: {
   mutationIntent: boolean;
 }) {
@@ -997,6 +1221,34 @@ function hasAnthropicCompactEditIntentSchema(node: unknown): boolean {
   return Object.values(node).some((value) => hasAnthropicCompactEditIntentSchema(value));
 }
 
+function hasAnthropicWorksheetPricingPatternShadowProposalSchema(node: unknown): boolean {
+  if (!isRecord(node)) {
+    return false;
+  }
+
+  if (isRecord(node.properties) && isRecord((node.properties as Record<string, unknown>).proposals)) {
+    return true;
+  }
+
+  return Object.values(node).some((value) => hasAnthropicWorksheetPricingPatternShadowProposalSchema(value));
+}
+
+function hasAnthropicWorksheetMemorySynthesisSchema(node: unknown): boolean {
+  if (!isRecord(node)) {
+    return false;
+  }
+
+  if (
+    isRecord(node.properties)
+    && isRecord((node.properties as Record<string, unknown>).decision)
+    && isRecord((node.properties as Record<string, unknown>).supportingEvidenceEventIds)
+  ) {
+    return true;
+  }
+
+  return Object.values(node).some((value) => hasAnthropicWorksheetMemorySynthesisSchema(value));
+}
+
 function hasAnthropicAnswerOnlySchema(node: unknown): boolean {
   if (!isRecord(node)) {
     return false;
@@ -1014,6 +1266,18 @@ function hasAnthropicAnswerOnlySchema(node: unknown): boolean {
   }
 
   return Object.values(node).some((value) => hasAnthropicAnswerOnlySchema(value));
+}
+
+function hasAnthropicWorksheetEventInterpretationSchema(node: unknown): boolean {
+  if (!isRecord(node)) {
+    return false;
+  }
+
+  if (isRecord(node.properties) && isRecord((node.properties as Record<string, unknown>).classifications)) {
+    return true;
+  }
+
+  return Object.values(node).some((value) => hasAnthropicWorksheetEventInterpretationSchema(value));
 }
 
 function countAnthropicOptionalParameters(node: unknown): number {
@@ -1057,17 +1321,28 @@ export function collectUnsupportedAnthropicSchemaKeywordsForTest(
   return collectUnsupportedAnthropicSchemaKeywords(schema);
 }
 
-function preflightAnthropicSchema(schema: Record<string, unknown>) {
+function preflightAnthropicSchema(
+  schema: Record<string, unknown>,
+  options: {
+    allowWorksheetEventInterpretationSchema?: boolean;
+    allowCustomSchema?: boolean;
+  } = {},
+) {
   const unsupportedIssues = collectUnsupportedAnthropicSchemaKeywords(schema);
+  const freeFormObjectIssues = collectAnthropicFreeFormObjectIssues(schema);
   const unsupportedKeywords = Array.from(new Set(unsupportedIssues.map((issue) => issue.keyword))).slice(0, 16);
   const unsupportedPaths = unsupportedIssues.map((issue) => issue.path).slice(0, 24);
+  const freeFormObjectPaths = freeFormObjectIssues.map((issue) => issue.path).slice(0, 24);
   const schemaSizeBytes = Buffer.byteLength(JSON.stringify(schema), "utf8");
   const hasOperationSchema = hasAnthropicOperationSchema(schema);
   const hasDraftSchema = hasAnthropicWorksheetDraftSchema(schema);
   const hasFormulaSuggestionSchema = hasAnthropicFormulaSuggestionSchema(schema);
   const hasReviewSchema = hasAnthropicReviewSchema(schema);
   const hasCompactEditIntentSchema = hasAnthropicCompactEditIntentSchema(schema);
+  const hasWorksheetPricingPatternShadowProposalSchema = hasAnthropicWorksheetPricingPatternShadowProposalSchema(schema);
+  const hasWorksheetMemorySynthesisSchema = hasAnthropicWorksheetMemorySynthesisSchema(schema);
   const hasAnswerOnlySchema = hasAnthropicAnswerOnlySchema(schema);
+  const hasWorksheetEventInterpretationSchema = hasAnthropicWorksheetEventInterpretationSchema(schema);
   const operationTypeEnumCount = countAnthropicOperationTypeEnums(schema);
   const optionalParameterCount = countAnthropicOptionalParameters(schema);
 
@@ -1075,12 +1350,17 @@ function preflightAnthropicSchema(schema: Record<string, unknown>) {
     unsupportedKeywordCount: unsupportedIssues.length,
     unsupportedKeywords,
     unsupportedPaths,
+    freeFormObjectCount: freeFormObjectIssues.length,
+    freeFormObjectPaths,
     hasOperationSchema,
     hasDraftSchema,
     hasFormulaSuggestionSchema,
     hasReviewSchema,
     hasCompactEditIntentSchema,
+    hasWorksheetPricingPatternShadowProposalSchema,
+    hasWorksheetMemorySynthesisSchema,
     hasAnswerOnlySchema,
+    hasWorksheetEventInterpretationSchema,
     operationTypeEnumCount,
     optionalParameterCount,
     schemaSizeBytes,
@@ -1103,9 +1383,27 @@ function preflightAnthropicSchema(schema: Record<string, unknown>) {
         hasFormulaSuggestionSchema,
         hasReviewSchema,
         hasCompactEditIntentSchema,
+        hasWorksheetPricingPatternShadowProposalSchema,
+        hasWorksheetMemorySynthesisSchema,
         hasAnswerOnlySchema,
+        hasWorksheetEventInterpretationSchema,
         operationTypeEnumCount,
         optionalParameterCount,
+      },
+    });
+  }
+
+  if (freeFormObjectIssues.length > 0) {
+    throw createPricingWorksheetProviderError({
+      code: "provider_schema_validation_failed",
+      provider: "anthropic",
+      model: "",
+      retryable: false,
+      message: "Anthropic schema preflight failed: free-form object schemas are not allowed.",
+      rawError: {
+        freeFormObjectCount: freeFormObjectIssues.length,
+        freeFormObjectPaths,
+        schemaSizeBytes,
       },
     });
   }
@@ -1116,7 +1414,11 @@ function preflightAnthropicSchema(schema: Record<string, unknown>) {
     !hasFormulaSuggestionSchema &&
     !hasReviewSchema &&
     !hasCompactEditIntentSchema &&
-    !hasAnswerOnlySchema
+    !hasWorksheetPricingPatternShadowProposalSchema &&
+    !hasWorksheetMemorySynthesisSchema &&
+    !hasAnswerOnlySchema &&
+    !options.allowCustomSchema &&
+    !(options.allowWorksheetEventInterpretationSchema && hasWorksheetEventInterpretationSchema)
   ) {
     throw createPricingWorksheetProviderError({
       code: "provider_schema_validation_failed",
@@ -1131,7 +1433,10 @@ function preflightAnthropicSchema(schema: Record<string, unknown>) {
         hasFormulaSuggestionSchema,
         hasReviewSchema,
         hasCompactEditIntentSchema,
+        hasWorksheetPricingPatternShadowProposalSchema,
+        hasWorksheetMemorySynthesisSchema,
         hasAnswerOnlySchema,
+        hasWorksheetEventInterpretationSchema,
         operationTypeEnumCount,
         optionalParameterCount,
       },
@@ -1153,6 +1458,7 @@ function preflightAnthropicSchema(schema: Record<string, unknown>) {
         hasFormulaSuggestionSchema,
         hasReviewSchema,
         hasCompactEditIntentSchema,
+        hasWorksheetPricingPatternShadowProposalSchema,
         hasAnswerOnlySchema,
         operationTypeEnumCount,
         optionalParameterCount,
@@ -1176,6 +1482,7 @@ function preflightAnthropicSchema(schema: Record<string, unknown>) {
         hasFormulaSuggestionSchema,
         hasReviewSchema,
         hasCompactEditIntentSchema,
+        hasWorksheetMemorySynthesisSchema,
         hasAnswerOnlySchema,
         operationTypeEnumCount,
       },
@@ -1210,6 +1517,9 @@ function isAnthropicMutationIntent(metadata: Record<string, unknown> | null) {
 }
 
 function getAnthropicSchemaKind(metadata: Record<string, unknown> | null): AnthropicSchemaKind {
+  if (metadata?.workflowStage === "worksheet_event_interpretation") {
+    return "worksheet_event_interpretation";
+  }
   if (metadata?.workflowStage === "formula_generation") {
     return "formula_generation";
   }
@@ -1221,6 +1531,15 @@ function getAnthropicSchemaKind(metadata: Record<string, unknown> | null): Anthr
   }
   if (metadata?.workflowStage === "edit_intent_generation") {
     return "compact_edit_intent";
+  }
+  if (metadata?.workflowStage === "worksheet_pricing_pattern_shadow_proposals") {
+    return "worksheet_pricing_pattern_shadow_proposals";
+  }
+  if (metadata?.workflowStage === "worksheet_memory_synthesis") {
+    return "worksheet_memory_synthesis";
+  }
+  if (metadata?.engine === "cost_construction_intelligence") {
+    return "cost_construction_intelligence";
   }
   if (metadata?.workflowStage === "answer_only_generation") {
     return "answer_only";
@@ -1262,7 +1581,9 @@ export function buildAnthropicProviderSchema(request: PricingWorksheetProviderRe
           : null,
   });
   const providerSchema =
-    schemaKind === "draft_generation"
+    schemaKind === "worksheet_event_interpretation"
+      ? buildAnthropicWorksheetEventInterpretationSchema()
+      : schemaKind === "draft_generation"
       ? buildAnthropicWorksheetDraftSchema()
       : schemaKind === "formula_generation"
         ? buildAnthropicFormulaSuggestionSchema()
@@ -1272,10 +1593,19 @@ export function buildAnthropicProviderSchema(request: PricingWorksheetProviderRe
             ? buildAnthropicReviewSchema()
             : schemaKind === "compact_edit_intent"
               ? buildAnthropicCompactEditIntentSchema()
-              : buildAnthropicAnswerOnlySchema();
+              : schemaKind === "worksheet_pricing_pattern_shadow_proposals"
+                ? buildAnthropicWorksheetPricingPatternShadowProposalSchema()
+                : schemaKind === "worksheet_memory_synthesis"
+                  ? request.schema
+                  : schemaKind === "cost_construction_intelligence"
+                  ? request.schema
+                  : buildAnthropicAnswerOnlySchema();
   const compactSchema = sanitizeAnthropicSchema(providerSchema);
   const outboundSchema = sanitizeSchemaForAnthropic(compactSchema);
-  preflightAnthropicSchema(outboundSchema);
+  preflightAnthropicSchema(outboundSchema, {
+    allowWorksheetEventInterpretationSchema: schemaKind === "worksheet_event_interpretation",
+    allowCustomSchema: schemaKind === "cost_construction_intelligence",
+  });
   return outboundSchema;
 }
 
@@ -1375,6 +1705,57 @@ function buildAnthropicSystemPrompt(request: PricingWorksheetProviderRequest) {
         ]
       : [];
 
+  const worksheetEventInterpretationInstructions =
+    schemaKind === "worksheet_event_interpretation"
+      ? [
+          "This request is for worksheet event interpretation only.",
+          "Do not use answer-only fallback shapes.",
+          "Do not emit worksheet operations, worksheet drafts, review findings, or edit intents.",
+          "Return one valid JSON object that matches the required interpretation fields in the prompt.",
+          "interpretationPayload is mandatory for every event.",
+          "The primary output is a compact interpretationPayload with useful text, not just tags.",
+          "semanticSummary is a short secondary summary for scoping only.",
+          "Low confidence still requires useful interpretation text inside interpretationPayload.",
+          "Anthropic interpretation schema notes: use empty strings for unknown string fields, 0 for unknown numeric confidence fields, and false for unknown boolean future-use fields.",
+        ]
+      : [];
+
+  const worksheetPricingPatternShadowProposalInstructions =
+    schemaKind === "worksheet_pricing_pattern_shadow_proposals"
+      ? [
+          "This request is for worksheet pricing pattern shadow proposals only.",
+          "Do not use answer-only fallback shapes.",
+          "Do not emit worksheet operations, worksheet drafts, review findings, or edit intents.",
+          "Return one valid JSON object with a proposals array only.",
+          "Each proposal must either be a reusable pattern proposal or a no_pattern result.",
+          "If proposalKind = no_pattern, it means no reusable pattern and no support set.",
+          "If proposalKind = no_pattern, supportingEvidenceEventIds and contradictoryEvidenceEventIds must both be empty arrays.",
+          "If proposalKind = no_pattern, patternFamily, patternType, confidence, and retrievalGuidance must all be null.",
+          "A reusable pattern proposal must use supportingEvidenceEventIds from at least 2 worksheet instances and at least 2 projects.",
+          "If two events show the same specific pricing behavior across 2 worksheet instances and 2 projects, return a weak pattern unless there is real contradiction.",
+          "Do not return no_pattern for matching cross-project support evidence.",
+          "If only one worksheet instance or one project genuinely supports the behavior, return no_pattern.",
+          "Do not propose a pattern from a single support event.",
+          "Do not propose a pattern when the broader pool is diverse but the actual supporting subset is narrow.",
+          "Use supportingEvidenceEventIds and contradictoryEvidenceEventIds only from the supplied event ids.",
+          "Keep summaries compact, evidence-backed, and non-speculative.",
+          "Use scope, patternValueSummary, and patternSignals as compact generic descriptors, not long explanations.",
+        ]
+      : [];
+
+  const worksheetMemorySynthesisInstructions =
+    schemaKind === "worksheet_memory_synthesis"
+      ? [
+          "This request is for worksheet memory synthesis only.",
+          "Do not use answer-only fallback shapes.",
+          "Do not emit worksheet operations, worksheet drafts, review findings, edit intents, or pattern proposals.",
+          "Return one valid JSON object only.",
+          "decision must be one of: no_memory, create_memory, reinforce_existing_memory, supersede_existing_memory.",
+          "scope and memoryValue must be JSON-encoded strings when they are present, or null when absent.",
+          "supportingEvidenceEventIds, uncertainEvidenceEventIds, contradictoryEvidenceEventIds, and supersededMemoryIds must always be arrays.",
+        ]
+      : [];
+
   const answerOnlyInstructions =
     schemaKind === "answer_only"
       ? [
@@ -1407,9 +1788,17 @@ function buildAnthropicSystemPrompt(request: PricingWorksheetProviderRequest) {
         : schemaKind === "formatting_generation"
           ? formattingStageInstructions
           : schemaKind === "review_generation"
-            ? reviewStageInstructions
-            : schemaKind === "compact_edit_intent"
+          ? reviewStageInstructions
+          : schemaKind === "compact_edit_intent"
               ? compactEditIntentInstructions
+            : schemaKind === "worksheet_pricing_pattern_shadow_proposals"
+              ? worksheetPricingPatternShadowProposalInstructions
+              : schemaKind === "worksheet_memory_synthesis"
+                ? worksheetMemorySynthesisInstructions
+              : schemaKind === "cost_construction_intelligence"
+                ? answerOnlyInstructions
+              : schemaKind === "worksheet_event_interpretation"
+                ? worksheetEventInterpretationInstructions
               : answerOnlyInstructions;
 
   return `${request.systemPrompt}\n\n${[...commonInstructions, ...providerSpecificInstructions].join(" ")}`;
@@ -1475,6 +1864,238 @@ function extractAnthropicTextBlocks(responseJson: unknown): string[] {
     .filter((value): value is string => Boolean(value));
 }
 
+function sanitizeEvidenceSourceText(value: unknown, maxLength: number): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, maxLength) : "";
+}
+
+function sanitizeEvidenceSourceUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim().slice(0, 280);
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return undefined;
+  }
+
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function buildEvidenceSourceId(index: number, title?: string, url?: string): string {
+  const seed = (url || title || `source-${index + 1}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return seed.length > 0 ? seed : `source-${index + 1}`;
+}
+
+function buildEvidenceSourceDedupKey(source: Pick<PricingWorksheetAiEvidenceSource, "title" | "url">): string {
+  const normalizedUrl = source.url?.trim().toLowerCase();
+  if (normalizedUrl) {
+    return normalizedUrl;
+  }
+
+  return source.title.trim().toLowerCase();
+}
+
+function inferEvidenceSourceType(params: { title?: string; url?: string }): PricingWorksheetAiEvidenceSource["sourceType"] {
+  const haystack = `${params.title ?? ""} ${params.url ?? ""}`.toLowerCase();
+  if (
+    haystack.includes("ncc") ||
+    haystack.includes("nzbc") ||
+    haystack.includes("as/nzs") ||
+    haystack.includes("building code") ||
+    haystack.includes("standards")
+  ) {
+    return "standard_or_code";
+  }
+
+  if (
+    haystack.includes("rondo") ||
+    haystack.includes("gib") ||
+    haystack.includes("knauf") ||
+    haystack.includes("sika") ||
+    haystack.includes("csr") ||
+    haystack.includes("bostik")
+  ) {
+    return "manufacturer";
+  }
+
+  if (
+    haystack.includes("supplier") ||
+    haystack.includes("mitre10") ||
+    haystack.includes("bunnings") ||
+    haystack.includes("placemakers")
+  ) {
+    return "supplier";
+  }
+
+  if (haystack.includes("guide") || haystack.includes("manual") || haystack.includes("technical") || haystack.includes("guidance")) {
+    return "industry_guidance";
+  }
+
+  return params.url ? "web" : "unknown";
+}
+
+function inferEvidenceJurisdiction(params: { title?: string; url?: string }): PricingWorksheetAiEvidenceSource["jurisdiction"] {
+  const haystack = `${params.title ?? ""} ${params.url ?? ""}`.toLowerCase();
+  if (haystack.includes(".au") || haystack.includes("australia") || haystack.includes("ncc") || haystack.includes("au/")) {
+    return "AU";
+  }
+
+  if (haystack.includes(".nz") || haystack.includes("new zealand") || haystack.includes("nzbc") || haystack.includes("nz/")) {
+    return "NZ";
+  }
+
+  if (haystack.includes("as/nzs") || (haystack.includes(".au") && haystack.includes(".nz"))) {
+    return "AUS_NZ";
+  }
+
+  return "unknown";
+}
+
+function inferEvidenceConfidence(sourceType: PricingWorksheetAiEvidenceSource["sourceType"]) {
+  if (sourceType === "standard_or_code") {
+    return "high" as const;
+  }
+
+  if (sourceType === "manufacturer" || sourceType === "industry_guidance" || sourceType === "project_document") {
+    return "medium" as const;
+  }
+
+  if (sourceType === "supplier" || sourceType === "unknown") {
+    return "low" as const;
+  }
+
+  return "medium" as const;
+}
+
+function mergeEvidenceSources(sources: PricingWorksheetAiEvidenceSource[]): PricingWorksheetAiEvidenceSource[] {
+  const merged: PricingWorksheetAiEvidenceSource[] = [];
+
+  for (const source of sources) {
+    const existingIndex = merged.findIndex((entry) => buildEvidenceSourceDedupKey(entry) === buildEvidenceSourceDedupKey(source));
+    if (existingIndex < 0) {
+      merged.push(source);
+      continue;
+    }
+
+    const existing = merged[existingIndex];
+    merged[existingIndex] = {
+      ...existing,
+      title: existing.title.length >= source.title.length ? existing.title : source.title,
+      url: existing.url ?? source.url,
+      sourceType: existing.sourceType === "unknown" ? source.sourceType : existing.sourceType,
+      jurisdiction: existing.jurisdiction === "unknown" ? source.jurisdiction : existing.jurisdiction,
+      confidence:
+        existing.confidence === "high" || source.confidence === "low"
+          ? existing.confidence
+          : source.confidence === "high"
+            ? "high"
+            : existing.confidence === "medium" || source.confidence === "medium"
+              ? "medium"
+              : "low",
+      supportedClaims: Array.from(new Set([...(existing.supportedClaims ?? []), ...(source.supportedClaims ?? [])])).slice(0, 4),
+      retrievedAt: existing.retrievedAt ?? source.retrievedAt,
+    };
+  }
+
+  return merged.slice(0, 16);
+}
+
+function extractAnthropicEvidenceSources(responseJson: unknown): PricingWorksheetAiEvidenceSource[] {
+  if (!isRecord(responseJson) || !Array.isArray(responseJson.content)) {
+    return [];
+  }
+
+  const collected: PricingWorksheetAiEvidenceSource[] = [];
+  const retrievedAt = new Date().toISOString();
+
+  for (const block of responseJson.content) {
+    if (!isRecord(block)) {
+      continue;
+    }
+
+    if (block.type === "web_search_tool_result") {
+      const content = block.content;
+      const contentItems = Array.isArray(content) ? content : [content];
+      for (const [index, item] of contentItems.entries()) {
+        if (!isRecord(item) || item.type !== "web_search_result") {
+          continue;
+        }
+
+        const title = sanitizeEvidenceSourceText(item.title, 120);
+        const url = sanitizeEvidenceSourceUrl(item.url);
+        if (!title && !url) {
+          continue;
+        }
+
+        const sourceType = inferEvidenceSourceType({ title, url });
+        collected.push({
+          id: buildEvidenceSourceId(index, title, url),
+          title: title || (url ?? `Search result ${index + 1}`),
+          url,
+          sourceType,
+          jurisdiction: inferEvidenceJurisdiction({ title, url }),
+          confidence: inferEvidenceConfidence(sourceType),
+          retrievedAt,
+          supportedClaims: [],
+        });
+      }
+    }
+
+    if (block.type !== "text" || !Array.isArray(block.citations)) {
+      continue;
+    }
+
+    for (const [index, citation] of block.citations.entries()) {
+      if (!isRecord(citation) || citation.type !== "web_search_result_location") {
+        continue;
+      }
+
+      const title = sanitizeEvidenceSourceText(citation.title, 120);
+      const url = sanitizeEvidenceSourceUrl(citation.url);
+      if (!title && !url) {
+        continue;
+      }
+
+      const sourceType = inferEvidenceSourceType({ title, url });
+      collected.push({
+        id: buildEvidenceSourceId(index, title, url),
+        title: title || (url ?? `Citation ${index + 1}`),
+        url,
+        sourceType,
+        jurisdiction: inferEvidenceJurisdiction({ title, url }),
+        confidence: inferEvidenceConfidence(sourceType),
+        retrievedAt,
+        supportedClaims: [],
+      });
+    }
+  }
+
+  return mergeEvidenceSources(collected);
+}
+
+function extractAnthropicCitations(responseJson: unknown): PricingWorksheetProviderCitation[] {
+  return extractAnthropicEvidenceSources(responseJson).map((source) => ({
+    title: source.title,
+    url: source.url,
+  }));
+}
+
+function extractAnthropicServerToolUses(responseJson: unknown): number {
+  if (!isRecord(responseJson) || !Array.isArray(responseJson.content)) {
+    return 0;
+  }
+
+  return responseJson.content.filter((block) => isRecord(block) && block.type === "server_tool_use").length;
+}
+
 function extractAnthropicStructuredObject(responseJson: unknown): Record<string, unknown> | null {
   if (!isRecord(responseJson)) {
     return null;
@@ -1532,11 +2153,28 @@ function mapAnthropicStatusError(params: {
   status: number;
   statusText: string;
   errorBody: string;
+  requestSummary: Record<string, unknown>;
 }) {
   const message = `Anthropic request failed with status ${params.status}.`;
+  let errorType: string | null = null;
+  let errorMessage: string | null = null;
+  try {
+    const parsed = JSON.parse(params.errorBody) as unknown;
+    if (isRecord(parsed)) {
+      const errorRecord = isRecord(parsed.error) ? parsed.error : parsed;
+      errorType = typeof errorRecord.type === "string" ? errorRecord.type : null;
+      errorMessage = typeof errorRecord.message === "string" ? errorRecord.message.slice(0, 600) : null;
+    }
+  } catch {
+    // Keep the snippet-only fallback below.
+  }
   const rawError = {
+    status: params.status,
     statusText: params.statusText,
     responseBodySnippet: params.errorBody.slice(0, 1200),
+    errorType,
+    errorMessage,
+    requestSummary: params.requestSummary,
   };
 
   if (params.status === 401 || params.status === 403) {
@@ -1586,7 +2224,11 @@ function mapAnthropicStatusError(params: {
   });
 }
 
-function mapAnthropicRequestError(model: string, error: unknown) {
+function mapAnthropicRequestError(
+  model: string,
+  error: unknown,
+  requestSummary?: Record<string, unknown>,
+) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("Upstream request timed out")) {
     return createPricingWorksheetProviderError({
@@ -1595,7 +2237,16 @@ function mapAnthropicRequestError(model: string, error: unknown) {
       model,
       retryable: true,
       message,
-      rawError: error,
+      rawError: {
+        originalError:
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+              }
+            : String(error),
+        requestSummary: requestSummary ?? null,
+      },
     });
   }
 
@@ -1605,8 +2256,17 @@ function mapAnthropicRequestError(model: string, error: unknown) {
     model,
     retryable: true,
     message,
-    rawError: error,
-  });
+      rawError: {
+        originalError:
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+              }
+            : String(error),
+        requestSummary: requestSummary ?? null,
+      },
+    });
 }
 
 function extractAnthropicUsage(responseJson: unknown): PricingWorksheetProviderResponse["usage"] | undefined {
@@ -1649,7 +2309,7 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
   ): Promise<PricingWorksheetProviderResponse> {
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     const model = request.model.trim() || this.defaultModel;
-    const warnings = request.enableWebSearch ? [WEB_SEARCH_UNAVAILABLE_WARNING] : [];
+    const warnings: string[] = [];
 
     if (!apiKey) {
       throw createPricingWorksheetProviderError({
@@ -1662,8 +2322,10 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
     }
 
     let sanitizedSchema: Record<string, unknown>;
+    let schemaKind: AnthropicSchemaKind;
     try {
       sanitizedSchema = buildAnthropicProviderSchema(request);
+      schemaKind = getAnthropicSchemaKind(isRecord(request.metadata) ? request.metadata : null);
     } catch (error) {
       if (isPricingWorksheetProviderError(error)) {
         error.model = model;
@@ -1671,70 +2333,146 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
       throw error;
     }
 
-    const requestBody = JSON.stringify({
+    const unsupportedKeywordCount = collectUnsupportedAnthropicSchemaKeywords(sanitizedSchema).length;
+    const optionalParameterCount = countAnthropicOptionalParameters(sanitizedSchema);
+    const schemaSizeBytes = Buffer.byteLength(JSON.stringify(sanitizedSchema), "utf8");
+    const useDirectJsonInterpretation = schemaKind === "worksheet_event_interpretation";
+    const requestSummary = {
+      workflowStage:
+        isRecord(request.metadata) && typeof request.metadata.workflowStage === "string"
+          ? request.metadata.workflowStage
+          : "default",
+      schemaKind,
+      schemaSizeBytes,
+      unsupportedKeywordCount,
+      optionalParameterCount,
+      hasWorksheetPricingPatternShadowProposalSchema: hasAnthropicWorksheetPricingPatternShadowProposalSchema(sanitizedSchema),
+      hasWorksheetMemorySynthesisSchema: hasAnthropicWorksheetMemorySynthesisSchema(sanitizedSchema),
+      hasWorksheetEventInterpretationSchema: hasAnthropicWorksheetEventInterpretationSchema(sanitizedSchema),
+      hasTools: request.enableWebSearch,
+      hasToolChoice: false,
+      hasOutputConfig: !useDirectJsonInterpretation,
+      outputConfigFormatType: useDirectJsonInterpretation ? null : "json_schema",
+      maxTokens: request.maxOutputTokens,
+      continuationCount: 0,
+      anthropicVersion: ANTHROPIC_API_VERSION,
+      hasAnthropicBetaHeader: false,
+    } satisfies Record<string, unknown>;
+
+    const baseMessages: Array<Record<string, unknown>> = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: request.userPrompt,
+          },
+        ],
+      },
+    ];
+    const requestBodyPayload: Record<string, unknown> = {
       model,
       max_tokens: request.maxOutputTokens,
       system: buildAnthropicSystemPrompt(request),
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: request.userPrompt,
-            },
-          ],
-        },
-      ],
-      output_config: {
+      messages: baseMessages,
+    };
+
+    if (!useDirectJsonInterpretation) {
+      requestBodyPayload.output_config = {
         format: {
           type: "json_schema",
           schema: sanitizedSchema,
         },
-      },
-    });
+      };
+    }
 
-    let response: Response;
-    try {
-      response = await fetchWithTimeout(
-        ANTHROPIC_API_URL,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": ANTHROPIC_API_VERSION,
+    if (request.enableWebSearch) {
+      requestBodyPayload.tools = [ANTHROPIC_WEB_SEARCH_TOOL];
+    }
+
+    let responseJson: unknown = null;
+    let continuationCount = 0;
+
+    while (true) {
+      const requestBody = JSON.stringify(requestBodyPayload);
+      requestSummary.requestBodyBytes = Buffer.byteLength(requestBody, "utf8");
+      requestSummary.continuationCount = continuationCount;
+
+      let response: Response;
+      try {
+        response = await fetchWithTimeout(
+          ANTHROPIC_API_URL,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": ANTHROPIC_API_VERSION,
+            },
+            body: requestBody,
           },
-          body: requestBody,
+          request.timeoutMs,
+        );
+      } catch (error) {
+        throw mapAnthropicRequestError(model, error, requestSummary);
+      }
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw mapAnthropicStatusError({
+          model,
+          status: response.status,
+          statusText: response.statusText,
+          errorBody,
+          requestSummary,
+        });
+      }
+
+      try {
+        responseJson = (await response.json()) as unknown;
+      } catch (error) {
+        throw createPricingWorksheetProviderError({
+          code: "provider_bad_response",
+          provider: "anthropic",
+          model,
+          retryable: false,
+          message: "Anthropic returned invalid JSON.",
+          rawError: error,
+        });
+      }
+
+      const stopReason = isRecord(responseJson) && typeof responseJson.stop_reason === "string" ? responseJson.stop_reason : null;
+      if (stopReason !== "pause_turn") {
+        break;
+      }
+
+      if (!Array.isArray((responseJson as Record<string, unknown>).content)) {
+        break;
+      }
+
+      continuationCount += 1;
+      if (continuationCount > MAX_ANTHROPIC_SERVER_TOOL_CONTINUATIONS) {
+        throw createPricingWorksheetProviderError({
+          code: "provider_tool_error",
+          provider: "anthropic",
+          model,
+          retryable: true,
+          message: "Anthropic web search paused too many times before completing.",
+          rawError: {
+            stopReason,
+            continuationCount,
+            responseJson,
+          },
+        });
+      }
+
+      requestBodyPayload.messages = [
+        ...baseMessages,
+        {
+          role: "assistant",
+          content: (responseJson as Record<string, unknown>).content,
         },
-        request.timeoutMs,
-      );
-    } catch (error) {
-      throw mapAnthropicRequestError(model, error);
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      throw mapAnthropicStatusError({
-        model,
-        status: response.status,
-        statusText: response.statusText,
-        errorBody,
-      });
-    }
-
-    let responseJson: unknown;
-    try {
-      responseJson = (await response.json()) as unknown;
-    } catch (error) {
-      throw createPricingWorksheetProviderError({
-        code: "provider_bad_response",
-        provider: "anthropic",
-        model,
-        retryable: false,
-        message: "Anthropic returned invalid JSON.",
-        rawError: error,
-      });
+      ];
     }
 
     const parsedJson = extractAnthropicStructuredObject(responseJson);
@@ -1742,6 +2480,7 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
 
     if (!parsedJson) {
       const parseFailureReason = classifyAnthropicResponseFailureReason(responseJson, outputText);
+      const parseAttempt = parseJsonObjectCandidate(outputText);
       throw createPricingWorksheetProviderError({
         code: "provider_schema_parse_failed",
         provider: "anthropic",
@@ -1750,10 +2489,17 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
         message: `AI assistant returned an unreadable response (${parseFailureReason}).`,
         rawError: {
           parseFailureReason,
+          stopReason:
+            isRecord(responseJson) && typeof responseJson.stop_reason === "string" ? responseJson.stop_reason : null,
+          outputTextLength: outputText.length,
+          maxTokens: request.maxOutputTokens,
+          parseErrorType: parseAttempt.parseError ?? null,
           responseJson,
         },
       });
     }
+
+    const evidence = extractAnthropicEvidenceSources(responseJson);
 
     return {
       provider: "anthropic",
@@ -1761,12 +2507,12 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
       rawProviderResponse: responseJson,
       parsedJson,
       outputText,
-      evidence: [],
-      citations: [],
+      evidence,
+      citations: extractAnthropicCitations(responseJson),
       usage: extractAnthropicUsage(responseJson),
       warnings,
-      webSearchUsed: false,
-      effectiveWebSearchEnabled: false,
+      webSearchUsed: request.enableWebSearch && (evidence.length > 0 || extractAnthropicServerToolUses(responseJson) > 0),
+      effectiveWebSearchEnabled: request.enableWebSearch,
     };
   }
 }

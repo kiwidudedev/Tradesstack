@@ -127,6 +127,47 @@ describe("classifyPricingWorksheetConstructionIntent", () => {
     expect(classification.tradeHints).toContain("painting");
   });
 
+  it("routes mixed review plus formula creation in column prompts to formula generation", () => {
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: "I want you to review the current spreadsheet and create the formulas in column J",
+      worksheetName: "Pricing worksheet",
+      worksheetTradePackage: "Fitout",
+      worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+    });
+
+    expect(classification.primaryIntent).toBe("formula_generate");
+    expect(classification.recommendedPromptPath).toBe("edit");
+    expect(classification.matchedIntentSignals).toContain("action:create_formulas_with_target");
+    expect(classification.matchedIntentSignals).toContain("target:column_letter");
+  });
+
+  it("routes worksheet checks that add formulas to a target column to formula generation", () => {
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: "Check this worksheet and add formulas to column J",
+      worksheetName: "Pricing worksheet",
+      worksheetTradePackage: "Fitout",
+      worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+    });
+
+    expect(classification.primaryIntent).toBe("formula_generate");
+    expect(classification.recommendedPromptPath).toBe("edit");
+    expect(classification.matchedIntentSignals).toContain("action:create_formulas_with_target");
+  });
+
+  it("routes review prompts that fix missing formulas in a target column to formula fix", () => {
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: "Review column J formulas and fix missing formulas",
+      worksheetName: "Pricing worksheet",
+      worksheetTradePackage: "Fitout",
+      worksheetContext: buildContext({ worksheetName: "Pricing worksheet", tradePackage: "Fitout" }),
+    });
+
+    expect(classification.primaryIntent).toBe("formula_fix");
+    expect(classification.recommendedPromptPath).toBe("edit");
+    expect(classification.matchedIntentSignals).toContain("action:review_fix_formulas_with_target");
+    expect(classification.matchedIntentSignals).toContain("target:column_letter");
+  });
+
   it("classifies manufacturer-linked formula prompts as requiring retrieval", () => {
     const classification = classifyPricingWorksheetConstructionIntent({
       userPrompt: "Create formulas for a Rondo Key-Lock ceiling grid",

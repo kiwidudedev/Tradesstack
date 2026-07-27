@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { FULL_TIME_SHEET_ENTRY_SELECT, autoCloseStaleTimeSheetEntry } from "../_shared/stale-time-sheet.ts";
 
 type ClockOutRequest = {
   client_entry_id?: string | null;
@@ -254,9 +255,7 @@ Deno.serve(async (request) => {
   const organizationIds = Array.from(new Set(memberRows.map((row) => row.organization_id)));
   const { data: matchedEntries, error: matchedEntriesError } = await client
     .from("project_time_sheet_entries")
-    .select(
-      "id, organization_id, project_id, worker_member_id, worker_user_id, worker_name, purchase_order_id, purchase_order_number, purchase_order_title, client_entry_id, source, created_from_device_id, synced_at, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, clock_out_latitude, clock_out_longitude, clock_out_accuracy_meters, total_hours, notes, created_at, updated_at"
-    )
+    .select(FULL_TIME_SHEET_ENTRY_SELECT)
     .in("organization_id", organizationIds)
     .eq("worker_user_id", user.id)
     .eq("client_entry_id", clientEntryId)
@@ -280,6 +279,17 @@ Deno.serve(async (request) => {
       created: false,
       idempotent: true,
       entry,
+    });
+  }
+
+  const staleCloseResult = await autoCloseStaleTimeSheetEntry(client, entry, user.id);
+  if (staleCloseResult.didAutoClose) {
+    return jsonResponse({
+      ok: true,
+      created: true,
+      idempotent: false,
+      auto_closed: true,
+      entry: staleCloseResult.entry,
     });
   }
 
@@ -320,9 +330,7 @@ Deno.serve(async (request) => {
     .eq("organization_id", entry.organization_id)
     .eq("worker_user_id", user.id)
     .is("clock_out_at", null)
-    .select(
-      "id, organization_id, project_id, worker_member_id, worker_user_id, worker_name, purchase_order_id, purchase_order_number, purchase_order_title, client_entry_id, source, created_from_device_id, synced_at, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, clock_out_latitude, clock_out_longitude, clock_out_accuracy_meters, total_hours, notes, created_at, updated_at"
-    )
+    .select(FULL_TIME_SHEET_ENTRY_SELECT)
     .maybeSingle();
 
   if (updatedEntryError) {

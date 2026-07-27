@@ -1,13 +1,18 @@
 import { notFound } from "next/navigation";
 import { hasOrganizationPermission } from "@/lib/permissions-server";
+import {
+  type AcceptedCommercialVarianceInput,
+  getPurchaseOrderInvoicingProgress,
+  getSupplierInvoiceCommercialComparison,
+} from "@/lib/procurement-commercial-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { loadSupplierInvoiceDocumentState } from "@/lib/supplier-invoice-document-service";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { OrganizationSupplierRow } from "@/lib/suppliers";
 import type {
   SupplierInvoiceActivityEventRow,
   SupplierInvoiceApprovalStepRow,
   SupplierInvoiceLineAllocationRow,
-  SupplierInvoiceDocumentRow,
   SupplierInvoiceLineAllocationPreviewRow,
   SupplierInvoiceLineRow,
   SupplierInvoicePurchaseOrderMatchRow,
@@ -23,8 +28,14 @@ import {
   resolveInheritedAccountingCode,
   resolvePurchaseOrderLineLineage,
 } from "@/lib/supplier-invoice-lineage";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
+import {
+  formatExternalAccountingCode,
+  isCostCodeAvailableForAccountingTenant,
+} from "@/lib/accounting/xero-account-tenant";
 import { SupplierInvoiceDetailWorkspace } from "./SupplierInvoiceDetailWorkspace";
+import { getSupplierInvoiceXeroBillReadiness } from "@/lib/xero/bills";
+import { getSupplierInvoiceWorkflowState } from "@/lib/supplier-invoice-workflow";
 
 type SupplierInvoiceDetailPageProps = {
   params: Promise<{ invoiceId: string }>;
@@ -32,8 +43,18 @@ type SupplierInvoiceDetailPageProps = {
 
 type OrganizationProjectRow = Database["public"]["Tables"]["organization_projects"]["Row"];
 type OrganizationCostCodeRow = Database["public"]["Tables"]["organization_cost_codes"]["Row"];
-type OrganizationCostCodeMappingRuleRow =
-  Database["public"]["Tables"]["organization_cost_code_mapping_rules"]["Row"];
+type OrganizationTradesstackAccountingMappingRow =
+  Database["public"]["Tables"]["organization_tradesstack_accounting_mappings"]["Row"];
+type OrganizationAccountingTaxRateRow = {
+  id: string;
+  name: string;
+  tax_type: string | null;
+  effective_rate: number | null;
+  is_active: boolean;
+  status: string | null;
+  tenant_id: string | null;
+  can_apply_to_expenses: boolean;
+};
 type OrganizationMemberRow = Database["public"]["Tables"]["organization_members"]["Row"];
 type PurchaseOrderCandidateRow = {
   id: string;
@@ -47,6 +68,7 @@ type PurchaseOrderCandidateRow = {
   total_purchase_order_price: number | null;
 };
 const MAX_PREVIEW_CANDIDATES_PER_LINE = 3;
+const SUPPLIER_INVOICE_REQUEST_TIMEOUT_MS = 15_000;
 
 function normalizePreviewText(value: string | null | undefined) {
   if (typeof value !== "string") {
@@ -92,27 +114,19 @@ function scorePreviewCandidate(line: SupplierInvoiceLineRow, purchaseOrderLine: 
 
 function derivePreviewStatus(params: {
   hasPurchaseOrderLine: boolean;
-  workType: string | null;
-  costType: string | null;
-  internalCostCode: string | null;
+  tradesstackCostCode: string | null;
   classificationNeedsReview: boolean;
-  organizationCostCodeId: string | null;
-  needsAccountingReview: boolean;
+  accountingResolutionStatus: string | null;
 }) {
   if (!params.hasPurchaseOrderLine) {
     return "No PO line candidate" as const;
   }
 
-  if (
-    params.classificationNeedsReview ||
-    !params.workType ||
-    !params.costType ||
-    !params.internalCostCode
-  ) {
+  if (params.classificationNeedsReview || !params.tradesstackCostCode) {
     return "Needs cost review" as const;
   }
 
-  if (!params.organizationCostCodeId || params.needsAccountingReview) {
+  if (params.accountingResolutionStatus !== "resolved") {
     return "Needs accounting mapping" as const;
   }
 
@@ -129,25 +143,31 @@ export default async function SupplierInvoiceDetailPage({
     return null;
   }
 
-  const [canView, canWrite, canReview, canReverse] = await Promise.all([
+  const [canView, canWrite, canReview, canReverse, canViewXeroBill, canExportXeroBill, canCapture, canSubmitSiteReview, canAccountsApprove] = await Promise.all([
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.view"),
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.write"),
     hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.review"),
     hasOrganizationPermission(currentMember.organization_id, "actual_costs.reverse"),
+    hasOrganizationPermission(currentMember.organization_id, "accounting.ap_bills.view"),
+    hasOrganizationPermission(currentMember.organization_id, "accounting.ap_bills.export"),
+    hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.capture"),
+    hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.submit_site_review"),
+    hasOrganizationPermission(currentMember.organization_id, "supplier_invoices.accounts_approve"),
   ]);
 
   if (!canView) {
     return null;
   }
 
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient({
+    requestTimeoutMs: SUPPLIER_INVOICE_REQUEST_TIMEOUT_MS,
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
   const [
     { data: invoice, error: invoiceError },
     { data: suppliers, error: suppliersError },
     { data: lines, error: linesError },
-    { data: documents, error: documentsError },
     { data: projects, error: projectsError },
     { data: costCodes, error: costCodesError },
     { data: matches, error: matchesError },
@@ -176,12 +196,6 @@ export default async function SupplierInvoiceDetailPage({
       .eq("organization_id", currentMember.organization_id)
       .eq("supplier_invoice_id", invoiceId)
       .order("sort_order", { ascending: true }),
-    supabase
-      .from("supplier_invoice_documents")
-      .select("*")
-      .eq("organization_id", currentMember.organization_id)
-      .eq("supplier_invoice_id", invoiceId)
-      .order("created_at", { ascending: true }),
     supabase
       .from("organization_projects")
       .select("*")
@@ -247,9 +261,6 @@ export default async function SupplierInvoiceDetailPage({
   if (linesError) {
     throw new Error(linesError.message);
   }
-  if (documentsError) {
-    throw new Error(documentsError.message);
-  }
   if (projectsError) {
     throw new Error(projectsError.message);
   }
@@ -286,14 +297,25 @@ export default async function SupplierInvoiceDetailPage({
     new Set((matches ?? []).map((match) => match.purchase_order_id).filter(Boolean))
   );
 
-  const [{ data: mappingRules, error: mappingRulesError }, matchedPurchaseOrderLinesResult] =
+  const [
+    { data: mappings, error: mappingsError },
+    { data: accountingTaxRates, error: accountingTaxRatesError },
+    matchedPurchaseOrderLinesResult,
+    initialCommercialComparison,
+  ] =
     await Promise.all([
       supabase
-        .from("organization_cost_code_mapping_rules")
+        .from("organization_tradesstack_accounting_mappings" as never)
         .select("*")
         .eq("organization_id", currentMember.organization_id)
-        .order("priority", { ascending: true })
-        .order("created_at", { ascending: true }),
+        .order("provider", { ascending: true })
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("organization_accounting_tax_rates" as never)
+        .select("id, name, tax_type, effective_rate, is_active, status, tenant_id, can_apply_to_expenses")
+        .eq("organization_id", currentMember.organization_id)
+        .eq("is_active", true)
+        .order("name", { ascending: true }),
       matchedPurchaseOrderIds.length > 0
         ? supabase
             .from("project_purchase_order_line_items")
@@ -303,17 +325,82 @@ export default async function SupplierInvoiceDetailPage({
             .order("purchase_order_id", { ascending: true })
             .order("sort_order", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
+      getSupplierInvoiceCommercialComparison({
+        supabase,
+        organizationId: currentMember.organization_id,
+        supplierInvoiceId: invoiceId,
+      }),
     ]);
 
-  if (mappingRulesError) {
-    throw new Error(mappingRulesError.message);
+  if (mappingsError) {
+    throw new Error(mappingsError.message);
+  }
+  if (accountingTaxRatesError) {
+    throw new Error(accountingTaxRatesError.message);
   }
   if (matchedPurchaseOrderLinesResult.error) {
     throw new Error(matchedPurchaseOrderLinesResult.error.message);
   }
 
+  const acceptedTeamReviewNotesByKey = new Map<string, string>();
+  ((draftAllocations ?? []) as SupplierInvoiceLineAllocationRow[]).forEach((allocation) => {
+    if (
+      allocation.approval_status !== "approved"
+      || allocation.edit_state === "reversed"
+      || allocation.edit_state === "superseded"
+    ) return;
+    const checks = allocation.approval_checks_json;
+    if (!checks || typeof checks !== "object" || Array.isArray(checks)) return;
+    const acceptedVariances = (checks as Record<string, Json>).acceptedVariances;
+    if (!Array.isArray(acceptedVariances)) return;
+    acceptedVariances.forEach((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      const record = value as Record<string, Json>;
+      if (typeof record.key === "string" && typeof record.note === "string" && record.note.trim()) {
+        acceptedTeamReviewNotesByKey.set(record.key, record.note.trim());
+      }
+    });
+  });
+  const acceptedTeamReviewVariances: AcceptedCommercialVarianceInput[] =
+    initialCommercialComparison.warnings.flatMap((warning) => {
+      const note = acceptedTeamReviewNotesByKey.get(warning.key);
+      return note ? [{
+        key: warning.key,
+        type: warning.type,
+        purchaseOrderLineItemId: warning.purchaseOrderLineItemId,
+        expectedValue: warning.expectedValue,
+        actualValue: warning.actualValue,
+        varianceAmount: warning.varianceAmount,
+        note,
+      }] : [];
+    });
+  const commercialComparison = acceptedTeamReviewVariances.length > 0
+    ? await getSupplierInvoiceCommercialComparison({
+        supabase,
+        organizationId: currentMember.organization_id,
+        supplierInvoiceId: invoiceId,
+        acceptedVariances: acceptedTeamReviewVariances,
+      })
+    : initialCommercialComparison;
+
   const matchedPurchaseOrderLines =
     (matchedPurchaseOrderLinesResult.data ?? []) as PurchaseOrderLineItemRow[];
+  const activeMatchedPurchaseOrderIds = Array.from(
+    new Set(
+      ((matches ?? []) as SupplierInvoicePurchaseOrderMatchRow[])
+        .filter((match) => match.match_status === "accepted" || match.match_status === "adjusted")
+        .map((match) => match.purchase_order_id)
+    )
+  );
+  const matchedPurchaseOrderProgress = await Promise.all(
+    activeMatchedPurchaseOrderIds.map((purchaseOrderId) =>
+      getPurchaseOrderInvoicingProgress({
+        supabase,
+        organizationId: currentMember.organization_id,
+        purchaseOrderId,
+      })
+    )
+  );
   const costItemIds = Array.from(
     new Set(
       matchedPurchaseOrderLines
@@ -361,6 +448,8 @@ export default async function SupplierInvoiceDetailPage({
             candidatePurchaseOrderLineAmount: null,
             costItemId: null,
             sourceCostItemId: null,
+            tradesstackCostCode: null,
+            tradesstackCostCodeLabel: null,
             workType: null,
             costType: null,
             internalCostCode: null,
@@ -387,6 +476,11 @@ export default async function SupplierInvoiceDetailPage({
               : null,
           });
           const accountingInput = buildAccountingResolutionInput({
+            organizationId: currentMember.organization_id,
+            provider:
+              ((mappings ?? []) as OrganizationTradesstackAccountingMappingRow[]).find((row) => row.is_active)?.provider ??
+              ((costCodes ?? []) as OrganizationCostCodeRow[]).find((row) => row.external_provider)?.external_provider ??
+              "manual",
             costItemId: lineage.costItemId ?? lineage.sourceCostItemId,
             projectId: lineage.projectId,
             title: line.description ?? "Supplier invoice line",
@@ -395,17 +489,14 @@ export default async function SupplierInvoiceDetailPage({
           });
           const accountingResolution = resolveInheritedAccountingCode({
             costCodes: (costCodes ?? []) as OrganizationCostCodeRow[],
-            mappingRules: (mappingRules ?? []) as OrganizationCostCodeMappingRuleRow[],
+            mappings: (mappings ?? []) as OrganizationTradesstackAccountingMappingRow[],
             input: accountingInput,
           });
           const status = derivePreviewStatus({
             hasPurchaseOrderLine: true,
-            workType: lineage.workType,
-            costType: lineage.costType,
-            internalCostCode: lineage.internalCostCode,
+            tradesstackCostCode: lineage.tradesstackCostCode,
             classificationNeedsReview: lineage.classificationNeedsReview,
-            organizationCostCodeId: accountingResolution?.organizationCostCodeId ?? null,
-            needsAccountingReview: accountingResolution?.needsAccountingReview ?? false,
+            accountingResolutionStatus: accountingResolution?.status ?? "pending",
           });
           const candidateScore = scorePreviewCandidate(line, purchaseOrderLine);
 
@@ -422,6 +513,8 @@ export default async function SupplierInvoiceDetailPage({
             candidatePurchaseOrderLineAmount: Number(purchaseOrderLine.total ?? 0),
             costItemId: lineage.costItemId,
             sourceCostItemId: lineage.sourceCostItemId,
+            tradesstackCostCode: lineage.tradesstackCostCode,
+            tradesstackCostCodeLabel: lineage.tradesstackCostCodeLabel,
             workType: lineage.workType,
             costType: lineage.costType,
             internalCostCode: lineage.internalCostCode,
@@ -451,6 +544,49 @@ export default async function SupplierInvoiceDetailPage({
         .slice(0, MAX_PREVIEW_CANDIDATES_PER_LINE);
     }
   );
+  let xeroBillReadinessError: string | null = null;
+  const [xeroBillReadiness, documentState, workflowState] = await Promise.all([
+    canViewXeroBill
+      ? getSupplierInvoiceXeroBillReadiness({
+          supabase,
+          organizationId: currentMember.organization_id,
+          supplierInvoiceId: invoiceId,
+          commercialComparison,
+        }).catch((error: unknown) => {
+          console.error("[supplier-invoice] Xero Bill readiness failed.", {
+            organizationId: currentMember.organization_id,
+            supplierInvoiceId: invoiceId,
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          });
+          xeroBillReadinessError =
+            "Xero readiness is temporarily unavailable. Refresh the page to try again.";
+          return null;
+        })
+      : Promise.resolve(null),
+    loadSupplierInvoiceDocumentState({
+      supabase,
+      organizationId: currentMember.organization_id,
+      supplierInvoiceId: invoiceId,
+    }),
+    getSupplierInvoiceWorkflowState({
+      supabase,
+      organizationId: currentMember.organization_id,
+      supplierInvoiceId: invoiceId,
+    }),
+  ]);
+  const currentXeroTenantId =
+    xeroBillReadiness?.resolvedSummary.tenantId ?? null;
+  const canManageAccountsWorkflow = ["owner", "admin"].includes(currentMember.role);
+  const canDeleteInvoice =
+    canManageAccountsWorkflow
+    && canCapture
+    && (!canViewXeroBill || xeroBillReadiness !== null)
+    && !(
+      xeroBillReadiness
+      && ["queued", "exporting", "exported", "attention_required"].includes(
+        xeroBillReadiness.resolvedSummary.exportStatus
+      )
+    );
 
   return (
     <SupplierInvoiceDetailWorkspace
@@ -458,7 +594,8 @@ export default async function SupplierInvoiceDetailPage({
       initialInvoice={invoice as SupplierInvoiceRow}
       suppliers={(suppliers ?? []) as OrganizationSupplierRow[]}
       initialLines={(lines ?? []) as SupplierInvoiceLineRow[]}
-      initialDocuments={(documents ?? []) as SupplierInvoiceDocumentRow[]}
+      initialCurrentDocument={documentState.currentDocument}
+      initialDocumentExtraction={documentState.extraction}
       initialMatches={(matches ?? []) as SupplierInvoicePurchaseOrderMatchRow[]}
       initialApprovalSteps={(approvalSteps ?? []) as SupplierInvoiceApprovalStepRow[]}
       initialActivityEvents={(activityEvents ?? []) as SupplierInvoiceActivityEventRow[]}
@@ -467,11 +604,74 @@ export default async function SupplierInvoiceDetailPage({
       costCodes={(costCodes ?? []) as OrganizationCostCodeRow[]}
       organizationMembers={(members ?? []) as OrganizationMemberRow[]}
       allocationPreviewRows={previewRows}
+      matchedPurchaseOrderLines={matchedPurchaseOrderLines}
+      matchedPurchaseOrderProgress={matchedPurchaseOrderProgress}
       initialDraftAllocations={(draftAllocations ?? []) as SupplierInvoiceLineAllocationRow[]}
       initialActualCostEvents={(actualCostEvents ?? []) as ProjectActualCostEventRow[]}
-      canWrite={canWrite}
-      canReview={canReview}
+      initialCommercialComparison={commercialComparison}
+      initialXeroBillReadiness={xeroBillReadiness}
+      initialXeroBillReadinessError={xeroBillReadinessError}
+      initialWorkflowState={workflowState}
+      accountingMappings={(
+        (mappings ?? []) as unknown as OrganizationTradesstackAccountingMappingRow[]
+      )
+        .filter((mapping) => {
+          if (!mapping.is_active) {
+            return false;
+          }
+          const costCode = ((costCodes ?? []) as OrganizationCostCodeRow[]).find(
+            (row) => row.id === mapping.organization_cost_code_id
+          );
+          return Boolean(
+            costCode
+            && isCostCodeAvailableForAccountingTenant({
+              costCode,
+              provider: mapping.provider,
+              currentXeroTenantId,
+            })
+          );
+        })
+        .map((mapping) => {
+          const costCode = ((costCodes ?? []) as OrganizationCostCodeRow[]).find(
+            (row) => row.id === mapping.organization_cost_code_id
+          );
+          return {
+            id: mapping.id,
+            label: [
+              mapping.tradesstack_cost_code,
+              costCode ? formatExternalAccountingCode(costCode) : null,
+              mapping.provider,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          };
+        })}
+      accountingTaxRates={(
+        (accountingTaxRates ?? []) as unknown as OrganizationAccountingTaxRateRow[]
+      ).filter((taxRate) =>
+        taxRate.tenant_id === currentXeroTenantId
+        && taxRate.can_apply_to_expenses
+        && taxRate.status?.toUpperCase() === "ACTIVE"
+      ).map((taxRate) => ({
+        id: taxRate.id,
+        label: [
+          taxRate.name,
+          taxRate.tax_type,
+          taxRate.effective_rate === null
+            ? null
+            : `${taxRate.effective_rate}%`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      }))}
+      canWrite={canWrite && canCapture}
+      canReview={canReview && canManageAccountsWorkflow}
       canReverse={canReverse}
+      canExportXeroBill={canExportXeroBill}
+      canRefreshXeroBill={canViewXeroBill && canManageAccountsWorkflow}
+      canSubmitSiteReview={canSubmitSiteReview && canManageAccountsWorkflow}
+      canAccountsApprove={canAccountsApprove && canManageAccountsWorkflow}
+      canDeleteInvoice={canDeleteInvoice}
     />
   );
 }

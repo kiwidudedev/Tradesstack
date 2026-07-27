@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Plus, Search, Upload } from "lucide-react";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
-import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
@@ -20,29 +19,18 @@ import {
 import { OperationalToolbar } from "@/components/app/OperationalToolbar";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans } from "@/lib/fonts";
-import {
-  buildSupplierInvoiceIntelligenceEvent,
-  logSupplierInvoiceIntelligenceFailure,
-  summarizeSupplierInvoiceHeader,
-  writeSupplierInvoiceIntelligenceEvent,
-} from "@/lib/supplier-invoice-intelligence";
 import type { OrganizationSupplierRow } from "@/lib/suppliers";
 import {
-  buildSupplierInvoiceDocumentStoragePath,
   deriveSupplierInvoiceDisplayStatus,
   getSourceLabel,
-  SUPPLIER_INVOICE_DOCUMENTS_BUCKET,
   toDayMonthYearLabel,
   toMoney,
   type SupplierInvoiceDisplayStatus,
   type SupplierInvoiceRow,
-  validateSupplierInvoiceDocument,
 } from "@/lib/supplier-invoices";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { NewSupplierInvoiceDialog } from "./NewSupplierInvoiceDialog";
 
 type CompanySupplierInvoicesWorkspaceProps = {
   organizationId: string;
@@ -58,49 +46,6 @@ type CompanySupplierInvoicesWorkspaceProps = {
   suppliers: OrganizationSupplierRow[];
   canWrite: boolean;
 };
-
-type CreateInvoiceFormState = {
-  supplierId: string;
-  invoiceNumber: string;
-  invoiceDate: string;
-  dueDate: string;
-  subtotal: string;
-  taxTotal: string;
-  total: string;
-  notes: string;
-  file: File | null;
-};
-
-const emptyFormState: CreateInvoiceFormState = {
-  supplierId: "",
-  invoiceNumber: "",
-  invoiceDate: "",
-  dueDate: "",
-  subtotal: "0.00",
-  taxTotal: "0.00",
-  total: "0.00",
-  notes: "",
-  file: null,
-};
-
-function FieldLabel({
-  htmlFor,
-  children,
-}: {
-  htmlFor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">
-      {children}
-    </label>
-  );
-}
-
-const FIELD_SELECT_CLASS =
-  "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
-const FIELD_TEXTAREA_CLASS =
-  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 function displayStatusBadge(value: SupplierInvoiceDisplayStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (value) {
@@ -118,36 +63,15 @@ function displayStatusBadge(value: SupplierInvoiceDisplayStatus): NonNullable<St
   }
 }
 
-function numberString(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function emitSupplierInvoiceEvent(
-  supabase: ReturnType<typeof createBrowserSupabaseClient>,
-  event: ReturnType<typeof buildSupplierInvoiceIntelligenceEvent>
-) {
-  void writeSupplierInvoiceIntelligenceEvent(supabase, event).catch((error) => {
-    logSupplierInvoiceIntelligenceFailure(event.eventType, error);
-  });
-}
-
 export function CompanySupplierInvoicesWorkspace({
-  organizationId,
   initialInvoices,
   invoiceMatchSummaries,
   suppliers,
   canWrite,
 }: CompanySupplierInvoicesWorkspaceProps) {
-  const router = useRouter();
-  const { session } = useAuth();
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
-  const [invoices, setInvoices] = useState(initialInvoices);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [formState, setFormState] = useState<CreateInvoiceFormState>(emptyFormState);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const statusFilters = useMemo(
     () =>
       [
@@ -177,7 +101,7 @@ export function CompanySupplierInvoicesWorkspace({
   const invoiceDisplayStatuses = useMemo(
     () =>
       Object.fromEntries(
-        invoices.map((invoice) => {
+        initialInvoices.map((invoice) => {
           const summary = invoiceMatchSummaries[invoice.id] ?? {
             activeMatchCount: 0,
             approvedAllocationTotal: 0,
@@ -196,13 +120,13 @@ export function CompanySupplierInvoicesWorkspace({
           ] as const;
         })
       ) as Record<string, SupplierInvoiceDisplayStatus>,
-    [invoiceMatchSummaries, invoices]
+    [initialInvoices, invoiceMatchSummaries]
   );
 
   const filteredInvoices = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return invoices.filter((invoice) => {
+    return initialInvoices.filter((invoice) => {
       const displayStatus = invoiceDisplayStatuses[invoice.id] ?? invoice.status;
 
       if (statusFilter !== "all" && displayStatus !== statusFilter) {
@@ -224,187 +148,11 @@ export function CompanySupplierInvoicesWorkspace({
         invoice.source,
       ].some((value) => value.toLowerCase().includes(query));
     });
-  }, [invoiceDisplayStatuses, invoices, searchQuery, statusFilter, supplierNameById]);
-
-  function closeCreateModal() {
-    setIsCreateOpen(false);
-    setFormState(emptyFormState);
-    setError(null);
-  }
-
-  async function createInvoice(nextStatus: "Captured" | "Needs Review") {
-    if (!canWrite || isSaving) {
-      return;
-    }
-
-    if (!session?.id) {
-      setError("You must be signed in to create an invoice.");
-      return;
-    }
-
-    const invoiceId = crypto.randomUUID();
-    const documentId = crypto.randomUUID();
-    const file = formState.file;
-    let uploadedStoragePath: string | null = null;
-    let createdInvoiceId: string | null = null;
-
-    setIsSaving(true);
-    setError(null);
-
-    try {
-      if (file) {
-        validateSupplierInvoiceDocument(file);
-      }
-
-      const normalizedSubtotal = numberString(formState.subtotal);
-      const normalizedTaxTotal = numberString(formState.taxTotal);
-      const normalizedTotal = numberString(formState.total);
-
-      const { data: insertedInvoice, error: insertError } = await supabase
-        .from("supplier_invoices")
-        .insert({
-          id: invoiceId,
-          organization_id: organizationId,
-          supplier_id: formState.supplierId || null,
-          invoice_number: formState.invoiceNumber.trim(),
-          invoice_date: formState.invoiceDate || null,
-          due_date: formState.dueDate || null,
-          subtotal: normalizedSubtotal,
-          tax_total: normalizedTaxTotal,
-          total: normalizedTotal,
-          currency: "NZD",
-          status: nextStatus,
-          source: file ? "upload" : "manual",
-          notes: formState.notes.trim(),
-          created_by: session.id,
-        })
-        .select("*")
-        .single();
-
-      if (insertError || !insertedInvoice) {
-        throw new Error(insertError?.message ?? "Unable to create invoice.");
-      }
-
-      createdInvoiceId = insertedInvoice.id;
-
-      if (file) {
-        const storagePath = buildSupplierInvoiceDocumentStoragePath({
-          organizationId,
-          supplierInvoiceId: invoiceId,
-          documentId,
-          fileName: file.name,
-        });
-        uploadedStoragePath = storagePath;
-
-        const { error: uploadError } = await supabase.storage
-          .from(SUPPLIER_INVOICE_DOCUMENTS_BUCKET)
-          .upload(storagePath, file, {
-            cacheControl: "3600",
-            contentType: file.type || undefined,
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw new Error(uploadError.message);
-        }
-
-        const { error: documentInsertError } = await supabase
-          .from("supplier_invoice_documents")
-          .insert({
-            id: documentId,
-            organization_id: organizationId,
-            supplier_invoice_id: invoiceId,
-            file_path: storagePath,
-            file_name: file.name,
-            mime_type: file.type || null,
-            size_bytes: file.size,
-            document_type: "invoice",
-            uploaded_by: session.id,
-          });
-
-        if (documentInsertError) {
-          throw new Error(documentInsertError.message);
-        }
-
-        const { error: headerUpdateError } = await supabase
-          .from("supplier_invoices")
-          .update({
-            document_file_path: storagePath,
-            document_file_name: file.name,
-            document_mime_type: file.type || null,
-            document_size_bytes: file.size,
-          })
-          .eq("id", invoiceId)
-          .eq("organization_id", organizationId);
-
-        if (headerUpdateError) {
-          throw new Error(headerUpdateError.message);
-        }
-
-        insertedInvoice.document_file_path = storagePath;
-        insertedInvoice.document_file_name = file.name;
-        insertedInvoice.document_mime_type = file.type || null;
-        insertedInvoice.document_size_bytes = file.size;
-      }
-
-      emitSupplierInvoiceEvent(
-        supabase,
-        buildSupplierInvoiceIntelligenceEvent({
-          organizationId,
-          module: "supplier_invoices",
-          eventFamily: file ? "file_lifecycle" : "commercial_action",
-          eventType: "supplier_invoice_created",
-          action: "created",
-          entityType: "supplier_invoice",
-          entityId: insertedInvoice.id,
-          afterData: summarizeSupplierInvoiceHeader({
-            supplierId: insertedInvoice.supplier_id,
-            source: insertedInvoice.source,
-            status: insertedInvoice.status,
-            invoiceNumber: insertedInvoice.invoice_number,
-            invoiceDate: insertedInvoice.invoice_date,
-            dueDate: insertedInvoice.due_date,
-            total: Number(insertedInvoice.total ?? 0),
-            hasDocument: Boolean(insertedInvoice.document_file_path),
-          }),
-          metadata: {
-            documentUploaded: Boolean(file),
-            documentMimeType: file?.type || null,
-            documentSizeBytes: file?.size ?? null,
-          },
-          reason: file
-            ? "Supplier invoice created from an uploaded document."
-            : "Supplier invoice created manually.",
-        })
-      );
-
-      setInvoices((current) => [insertedInvoice, ...current]);
-      closeCreateModal();
-      router.push(`/app/company/supplier-invoices/${invoiceId}`);
-    } catch (createError) {
-      if (uploadedStoragePath) {
-        await supabase.storage
-          .from(SUPPLIER_INVOICE_DOCUMENTS_BUCKET)
-          .remove([uploadedStoragePath]);
-      }
-
-      if (createdInvoiceId) {
-        await supabase
-          .from("supplier_invoices")
-          .delete()
-          .eq("id", createdInvoiceId)
-          .eq("organization_id", organizationId);
-      }
-
-      setError(createError instanceof Error ? createError.message : "Unable to create invoice.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
+  }, [initialInvoices, invoiceDisplayStatuses, searchQuery, statusFilter, supplierNameById]);
 
   const displayStatusCounts = useMemo(
     () =>
-      invoices.reduce<Record<SupplierInvoiceDisplayStatus, number>>(
+      initialInvoices.reduce<Record<SupplierInvoiceDisplayStatus, number>>(
         (counts, invoice) => {
           const displayStatus = invoiceDisplayStatuses[invoice.id] ?? invoice.status;
           counts[displayStatus] += 1;
@@ -418,7 +166,7 @@ export function CompanySupplierInvoicesWorkspace({
           Disputed: 0,
         }
       ),
-    [invoiceDisplayStatuses, invoices]
+    [initialInvoices, invoiceDisplayStatuses]
   );
 
   const kpiCards = [
@@ -448,18 +196,35 @@ export function CompanySupplierInvoicesWorkspace({
     },
   ];
 
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [toastMessage]);
+
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
+      {toastMessage ? (
+        <div className="fixed right-4 top-20 z-50 w-[min(420px,calc(100vw-2rem))]">
+          <OperationalAlert variant="success" role="status" aria-live="polite" className="shadow-[var(--shadow-lg)]">
+            {toastMessage}
+          </OperationalAlert>
+        </div>
+      ) : null}
+
       <OperationalModuleHeader
         title="Supplier Invoices"
         description="Capture supplier invoices separately from purchase orders and review them before approval."
         actions={
           <Button
             type="button"
-            onClick={() => {
-              setError(null);
-              setIsCreateOpen(true);
-            }}
+            onClick={() => setIsCreateOpen(true)}
             disabled={!canWrite}
           >
             <Plus className="h-4 w-4" strokeWidth={2.3} />
@@ -572,166 +337,13 @@ export function CompanySupplierInvoicesWorkspace({
         )}
       </OperationalPanel>
 
-      <Dialog open={isCreateOpen} onOpenChange={(open) => (!open ? closeCreateModal() : undefined)}>
-        <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto p-0">
-          <div className="px-7 pb-6 pt-7">
-            <h2 className="m-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--text-primary)]">
-              New Supplier Invoice
-            </h2>
-          </div>
-
-          <div className="space-y-3.5 px-7 pb-4">
-            {error ? (
-              <OperationalAlert variant="error">
-                {error}
-              </OperationalAlert>
-            ) : null}
-
-            <div>
-              <FieldLabel htmlFor="supplier-id">Supplier</FieldLabel>
-              <select
-                id="supplier-id"
-                value={formState.supplierId}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, supplierId: event.target.value }))
-                }
-                className={FIELD_SELECT_CLASS}
-              >
-                <option value="">Select supplier</option>
-                {suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.company_name?.trim() || supplier.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <FieldLabel htmlFor="invoice-number">Invoice Number</FieldLabel>
-              <Input
-                id="invoice-number"
-                value={formState.invoiceNumber}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, invoiceNumber: event.target.value }))
-                }
-                placeholder="INV-1042"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <FieldLabel htmlFor="invoice-date">Invoice Date</FieldLabel>
-                <Input
-                  id="invoice-date"
-                  type="date"
-                  value={formState.invoiceDate}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, invoiceDate: event.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <FieldLabel htmlFor="due-date">Due Date</FieldLabel>
-                <Input
-                  id="due-date"
-                  type="date"
-                  value={formState.dueDate}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, dueDate: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <FieldLabel htmlFor="subtotal">Subtotal</FieldLabel>
-                <Input
-                  id="subtotal"
-                  inputMode="decimal"
-                  value={formState.subtotal}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, subtotal: event.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <FieldLabel htmlFor="tax-total">Tax</FieldLabel>
-                <Input
-                  id="tax-total"
-                  inputMode="decimal"
-                  value={formState.taxTotal}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, taxTotal: event.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <FieldLabel htmlFor="invoice-total">Total</FieldLabel>
-                <Input
-                  id="invoice-total"
-                  inputMode="decimal"
-                  value={formState.total}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, total: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div>
-              <FieldLabel htmlFor="invoice-document">Document</FieldLabel>
-              <Input
-                id="invoice-document"
-                type="file"
-                accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
-                onChange={(event) =>
-                  setFormState((current) => ({
-                    ...current,
-                    file: event.target.files?.[0] ?? null,
-                  }))
-                }
-                className="h-auto py-2.5"
-              />
-            </div>
-
-            <div>
-              <FieldLabel htmlFor="invoice-notes">Notes</FieldLabel>
-              <textarea
-                id="invoice-notes"
-                rows={3}
-                value={formState.notes}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, notes: event.target.value }))
-                }
-                placeholder="Any notes for review"
-                className={FIELD_TEXTAREA_CLASS}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-3 px-7 pb-7 pt-5">
-            <DialogClose asChild>
-              <Button type="button" variant="secondary">Cancel</Button>
-            </DialogClose>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void createInvoice("Captured")}
-              disabled={!canWrite || isSaving}
-            >
-              {isSaving ? "Saving..." : "Save Captured"}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void createInvoice("Needs Review")}
-              disabled={!canWrite || isSaving}
-            >
-              {isSaving ? "Saving..." : "Save Needs Review"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <NewSupplierInvoiceDialog
+        open={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        onCreateSuccessMessage={setToastMessage}
+        suppliers={suppliers}
+        canWrite={canWrite}
+      />
     </main>
   );
 }

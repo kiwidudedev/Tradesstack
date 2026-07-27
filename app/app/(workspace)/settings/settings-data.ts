@@ -16,7 +16,7 @@ export async function getSettingsContext() {
   const organization = currentMember
     ? await supabase
         .from("organizations")
-        .select("id, name, logo_path, brand_primary_color, brand_accent_color, business_number, bank_account_details, gst_number, address_line_1, address_line_2, city, postcode, country, contact_name, contact_email, contact_phone, default_currency, timezone, default_tax_mode, default_tax_rate, created_by, created_at, updated_at")
+        .select("id, name, logo_path, brand_primary_color, brand_accent_color, business_number, bank_account_details, gst_number, address_line_1, address_line_2, city, postcode, country, contact_name, contact_email, contact_phone, default_currency, timezone, default_tax_mode, default_tax_rate, tax_registration_status, construction_profile, created_by, created_at, updated_at")
         .eq("id", currentMember.organization_id)
         .maybeSingle()
     : { data: null, error: null };

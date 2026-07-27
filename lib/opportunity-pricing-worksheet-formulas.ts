@@ -67,7 +67,8 @@ function formatComputedNumber(value: number) {
     return "0";
   }
 
-  return String(value);
+  const normalized = Number(value.toPrecision(15));
+  return String(Number.isFinite(normalized) ? normalized : value);
 }
 
 function createNumberValue(value: number): FormulaNumberValue | { ok: false; error: string } {

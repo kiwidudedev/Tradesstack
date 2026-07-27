@@ -3,13 +3,21 @@
 # Node / Next
 node_modules/
 .next/
+.next-payment-claims/
+.next-retention-proof/
 out/
 coverage/
+playwright-report/
+test-results/
+tests/e2e/payment-claims/payment-claim-visual.spec.ts-snapshots/
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local audit, browser, and test artifacts
+.tmp/
 
 # Env and secrets
 .env
@@ -18,4 +26,4 @@ pnpm-debug.log*
 
 # Supabase local runtime artifacts
 supabase/.temp/
-
+supabase/.branches/

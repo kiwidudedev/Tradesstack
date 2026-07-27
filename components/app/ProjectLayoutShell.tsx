@@ -10,6 +10,7 @@ const SECTION_MAP: { segment: string; label: string }[] = [
   { segment: "preconstruction/variations", label: "Variations" },
   { segment: "preconstruction/purchase-orders", label: "Purchase Orders" },
   { segment: "preconstruction/claims", label: "Payment Claim" },
+  { segment: "preconstruction/retention", label: "Retention" },
   { segment: "financials", label: "Financials" },
   { segment: "job-management/todos", label: "Tasks" },
   { segment: "job-management/time-sheets", label: "Timesheets" },
@@ -34,13 +35,20 @@ export default function ProjectLayoutShell({
 
   const match = SECTION_MAP.find((s) => pathname.includes(`/${s.segment}`));
   const sectionLabel = match?.label ?? null;
-  const sectionHref = match ? `/app/projects/${projectId}/${match.segment}` : null;
+  const sectionHref = match
+    ? match.segment === "preconstruction/retention"
+      ? `/app/projects/${projectId}/preconstruction/claims#retention`
+      : `/app/projects/${projectId}/${match.segment}`
+    : null;
   const isAiChatbotRoute = pathname.includes("/ai-chatbot");
 
   return (
     <div className={`${ibmPlexSans.variable} ${ibmPlexSans.className} project-theme -mx-1.5 bg-[var(--background)] pb-8 sm:-mx-4`}>
       <div className="space-y-6 bg-[var(--background)]">
-        <ProjectSecondaryNav projectName={projectName} projectStage={projectStage} />
+        <ProjectSecondaryNav
+          projectName={projectName}
+          projectStage={projectStage}
+        />
         <div className="min-w-0 flex-1 bg-[var(--background)] px-5">
           {sectionLabel && !isAiChatbotRoute ? (
             <nav className={`${interMedium.className} mb-3 flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]`}>

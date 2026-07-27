@@ -1,0 +1,364 @@
+{
+  "reviewSummary": {
+    "overallAssessment": "This month's activity is concentrated on a single project (3e70f9b8) and reveals a company actively processing supplier invoices for wall linings labour work, with a secondary structural timber materials line. All 10 allocations are manually processed with no AI assistance accepted. The dominant operational signal is that wall linings labour (07.01.LAB) is the core active cost type on this project, with recurring invoice lines being matched against a single PO line item. A subset of invoices carry unclassified, unmatched lines that have been deliberately approved through a QA gate, suggesting a conscious cost control and review discipline. One allocation has been reversed and superseded, indicating active cost correction behaviour.",
+    "dominantThemes": [
+      "Wall linings labour is the primary active cost type on the current project",
+      "All allocations are manually processed — no AI suggestion uptake",
+      "Recurring invoice lines matched to a single PO line item suggest a labour hire or periodic labour invoicing pattern",
+      "Unmatched, unclassified lines are being deliberately approved through a QA gate rather than left unresolved",
+      "Active allocation reversal and supersession indicates cost correction discipline",
+      "Structural timber materials appear as a secondary cost type on the same project, suggesting scope broader than pure fitout linings"
+    ],
+    "confidenceNotes": "Single project in scope this month limits cross-project generalisation. Patterns are internally consistent but need multi-project confirmation to elevate to durable. The existing memory (291e682b) is generic and weakly stated — this review provides more specific operational content."
+  },
+  "learnings": {
+    "observations": [
+      {
+        "learningId": "obs-001",
+        "title": "Wall linings labour is the dominant active cost type on the current project",
+        "statement": "7 of 10 allocations this month are classified as Wall linings / LAB / 07.01.LAB, all matched to a single PO (b98f16cf) and a single PO line item (07851a09), suggesting repeated periodic labour invoicing against a standing wall linings labour order.",
+        "whyItMatters": "Indicates the company runs wall linings labour through a standing PO structure with multiple invoice draws, which is relevant to how they estimate, procure, and control labour costs on fitout projects.",
+        "confidence": "medium",
+        "evidence": [
+          {
+            "sourceId": "12d4776a",
+            "reason": "Wall linings LAB, matched to PO b98f16cf / line 07851a09"
+          },
+          {
+            "sourceId": "3d8e2e70",
+            "reason": "Same PO and line item, Wall linings LAB"
+          },
+          {
+            "sourceId": "4b8f40ac",
+            "reason": "Same PO and line item, Wall linings LAB"
+          },
+          {
+            "sourceId": "7e7b06ef",
+            "reason": "Same PO and line item, Wall linings LAB, disputed"
+          },
+          {
+            "sourceId": "92645e65",
+            "reason": "Same PO and line item, Wall linings LAB, reversed"
+          },
+          {
+            "sourceId": "bcf80897",
+            "reason": "Same PO and line item, Wall linings LAB"
+          },
+          {
+            "sourceId": "d23c067a",
+            "reason": "From same invoice 1267da58, unmatched but same project context"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "Existing memory is generic; this is a specific operational observation."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      },
+      {
+        "learningId": "obs-002",
+        "title": "Structural timber materials appear on the same project alongside wall linings labour",
+        "statement": "One allocation (93eab4f4) is classified as Structural timber / MAT / 05.04.MAT at $1,000 for 100 units, matched to a separate PO (3da27266). This is a different work type and cost type from the dominant wall linings labour lines.",
+        "whyItMatters": "Suggests the project scope includes structural timber framing or blocking, not just plasterboard linings. This is consistent with a full wall system (frame + lining) rather than lining-only work, which affects how the company estimates and procures.",
+        "confidence": "low",
+        "evidence": [
+          {
+            "sourceId": "93eab4f4",
+            "reason": "Structural timber MAT 05.04.MAT, $1,000, 100 units, separate PO 3da27266"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "No existing memory covers structural timber procurement."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      }
+    ],
+    "emergingPatterns": [
+      {
+        "learningId": "emg-001",
+        "title": "Unmatched invoice lines are being deliberately approved through a QA gate rather than resolved",
+        "statement": "Three allocations are unmatched (no PO, no cost item, no work type) but have been approved by named users with explicit notes ('Approved unmatched with project', 'Approved as intentionally unmatched for QA', 'Approved unmatched without project'). This is a deliberate approval pattern, not an oversight.",
+        "whyItMatters": "Indicates the company has a conscious practice of approving invoice spend that cannot yet be classified or matched to a PO, likely for minor or overhead items. This is a commercial risk management behaviour — costs are acknowledged but not yet allocated to work scope.",
+        "confidence": "medium",
+        "evidence": [
+          {
+            "sourceId": "38da3671",
+            "reason": "Unmatched, approved, note: 'Approved unmatched with project', user 8521caaa"
+          },
+          {
+            "sourceId": "cc3f079b",
+            "reason": "Unmatched, approved, note: 'Approved as intentionally unmatched for QA', user e3dc1900"
+          },
+          {
+            "sourceId": "d23c067a",
+            "reason": "Unmatched, no project, approved, note: 'Approved unmatched without project', user 8521caaa"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "No existing memory covers this approval behaviour."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      },
+      {
+        "learningId": "emg-002",
+        "title": "Allocation reversal and supersession is being used as a cost correction mechanism",
+        "statement": "Allocation 92645e65 has edit_state 'reversed' and is superseded by allocation 12d4776a (allocation_sequence 2, supersedes_allocation_id matches 92645e65). Both are for the same invoice line, same PO line, same amount ($100), same work type. This is an active correction of a previously approved allocation.",
+        "whyItMatters": "Shows the company corrects cost allocations after approval rather than leaving errors in place. This is a sign of cost control discipline but also indicates that initial allocations are sometimes wrong or need adjustment.",
+        "confidence": "medium",
+        "evidence": [
+          {
+            "sourceId": "92645e65",
+            "reason": "edit_state: reversed, approval_status: approved, allocation_sequence: 1"
+          },
+          {
+            "sourceId": "12d4776a",
+            "reason": "supersedes_allocation_id: 92645e65, allocation_sequence: 2, same PO line and cost item"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "No existing memory covers reversal behaviour."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      },
+      {
+        "learningId": "emg-003",
+        "title": "A wall linings labour allocation has been disputed for QA, suggesting invoice verification is active",
+        "statement": "Allocation 7e7b06ef is matched, classified, and has a cost item, but carries approval_status 'disputed' with note 'Disputed for QA'. The allocation is otherwise identical in structure to the approved wall linings labour lines.",
+        "whyItMatters": "Indicates the company disputes specific invoice lines for quality assurance review even when the allocation itself is technically correct. This suggests an active QA check on labour invoices, possibly verifying hours or rates before final approval.",
+        "confidence": "low",
+        "evidence": [
+          {
+            "sourceId": "7e7b06ef",
+            "reason": "approval_status: disputed, approval_notes: 'Disputed for QA', matched Wall linings LAB $80, same PO line as other approved lines"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "No existing memory covers invoice dispute behaviour."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      }
+    ],
+    "reinforcedPatterns": [
+      {
+        "learningId": "rei-001",
+        "title": "All invoice allocations are processed manually with no AI suggestion uptake",
+        "statement": "All 10 allocations have accepted_ai_suggestion: false, ai_confidence_score: null, and allocation_source: manual. This is consistent with the prior review period evidence.",
+        "whyItMatters": "The company relies entirely on human judgement for invoice allocation decisions. This affects processing speed and consistency, and means cost classification quality depends on individual user knowledge.",
+        "confidence": "high",
+        "evidence": [
+          {
+            "sourceId": "12d4776a",
+            "reason": "allocation_source: manual, accepted_ai_suggestion: false"
+          },
+          {
+            "sourceId": "93eab4f4",
+            "reason": "allocation_source: manual, accepted_ai_suggestion: false"
+          },
+          {
+            "sourceId": "38da3671",
+            "reason": "allocation_source: manual, accepted_ai_suggestion: false"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "reinforces",
+          "memoryId": "291e682b-d135-452a-b691-00bf5db9fb62",
+          "explanation": "Prior memory noted repeatable construction decision patterns; manual processing is a consistent operational behaviour across both periods."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      }
+    ],
+    "durablePatterns": [],
+    "changingBehaviors": [],
+    "contradictions": [
+      {
+        "learningId": "con-001",
+        "title": "A MAT cost type allocation (structural timber) is routed to the Labour cost code",
+        "statement": "Allocation 93eab4f4 has cost_type: MAT and internal_cost_code: 05.04.MAT (Structural timber materials) but tradesstack_cost_code: 200 (Labour). The cost type and routing code are misaligned.",
+        "whyItMatters": "A materials purchase being routed under the Labour cost code is a cost classification inconsistency. This could distort labour vs materials cost reporting on the project. This is an operational observation only — routing codes are immutable and no change is recommended.",
+        "confidence": "medium",
+        "evidence": [
+          {
+            "sourceId": "93eab4f4",
+            "reason": "cost_type: MAT, internal_cost_code: 05.04.MAT, tradesstack_cost_code: 200 (Labour), $1,000 structural timber"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "No existing memory covers cost type vs routing code misalignment."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      }
+    ],
+    "needsMoreEvidence": [
+      {
+        "learningId": "nme-001",
+        "title": "Whether the standing PO model for wall linings labour is used across multiple projects",
+        "statement": "This month shows a single PO with multiple invoice draws for wall linings labour on one project. It is unclear whether this is a project-specific arrangement or a company-wide procurement pattern for labour.",
+        "whyItMatters": "If this is a standard procurement model, it has implications for how the company estimates and controls labour costs across all projects.",
+        "confidence": "low",
+        "evidence": [
+          {
+            "sourceId": "3d8e2e70",
+            "reason": "Same PO b98f16cf, multiple invoices, single project only visible this month"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "Needs multi-project evidence to confirm."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      },
+      {
+        "learningId": "nme-002",
+        "title": "Whether the QA dispute and intentional unmatched approval patterns are systematic or ad hoc",
+        "statement": "One disputed allocation and three intentionally approved unmatched lines appear this month. It is unclear whether these reflect a formal QA process or individual user discretion.",
+        "whyItMatters": "If systematic, this represents a deliberate commercial control mechanism. If ad hoc, it represents inconsistent cost management.",
+        "confidence": "low",
+        "evidence": [
+          {
+            "sourceId": "7e7b06ef",
+            "reason": "Disputed for QA on matched allocation"
+          },
+          {
+            "sourceId": "38da3671",
+            "reason": "Approved unmatched with project"
+          },
+          {
+            "sourceId": "cc3f079b",
+            "reason": "Approved intentionally unmatched for QA"
+          },
+          {
+            "sourceId": "d23c067a",
+            "reason": "Approved unmatched without project"
+          }
+        ],
+        "relationshipToExistingMemory": {
+          "status": "new",
+          "memoryId": null,
+          "explanation": "Needs recurrence across future periods to confirm as systematic."
+        },
+        "provenance": {
+          "reviewId": "09dbba72-bc79-444c-a770-dd7d4750a6fa",
+          "reviewMonth": "2026-06",
+          "containerType": "supplier_invoice_allocation"
+        }
+      }
+    ]
+  },
+  "memoryActions": {
+    "create": [
+      {
+        "action": "create",
+        "targetMemoryId": null,
+        "basedOnLearningId": "obs-001",
+        "proposedMemoryTitle": "Wall linings labour invoiced via standing PO with multiple periodic draws",
+        "proposedMemorySummary": "On active fitout projects, wall linings labour (07.01.LAB) is procured and invoiced through a standing purchase order with multiple invoice draws against a single PO line item. Multiple invoices from the same supplier are matched to the same PO line across a project's duration.",
+        "confidenceAdjustment": 0.45,
+        "reason": "Observed across 6 allocations on one project this month. Meaningful operational pattern but single-project evidence — low starting confidence pending multi-project confirmation."
+      },
+      {
+        "action": "create",
+        "targetMemoryId": null,
+        "basedOnLearningId": "emg-001",
+        "proposedMemoryTitle": "Unmatched invoice lines are deliberately approved through a named-user QA gate",
+        "proposedMemorySummary": "The company approves unmatched, unclassified invoice lines with explicit notes rather than leaving them unresolved. Approvals are made by named users and include notes indicating intentional QA holds or project-level acknowledgement of spend that cannot yet be matched to a PO or cost item.",
+        "confidenceAdjustment": 0.4,
+        "reason": "Three instances this month with consistent approval note language. Emerging pattern — needs recurrence to confirm as systematic commercial control behaviour."
+      },
+      {
+        "action": "create",
+        "targetMemoryId": null,
+        "basedOnLearningId": "emg-002",
+        "proposedMemoryTitle": "Allocation reversal and supersession used as active cost correction mechanism",
+        "proposedMemorySummary": "The company reverses and supersedes previously approved allocations when corrections are needed, rather than leaving incorrect allocations in place. Reversed allocations are replaced by a new allocation with an incremented sequence number referencing the superseded record.",
+        "confidenceAdjustment": 0.4,
+        "reason": "One clear reversal/supersession pair observed this month. Operationally meaningful but needs recurrence to confirm as standard practice."
+      }
+    ],
+    "reinforce": [
+      {
+        "action": "reinforce",
+        "targetMemoryId": "291e682b",
+        "basedOnLearningId": "rei-001",
+        "proposedMemoryTitle": "All invoice allocations processed manually with no AI suggestion uptake",
+        "proposedMemorySummary": "The company processes all supplier invoice allocations manually. No AI suggestions are accepted. allocation_source is consistently manual across all reviewed records. This is a stable operational behaviour observed across multiple review periods.",
+        "confidenceAdjustment": 0.05,
+        "reason": "10/10 allocations this month are manual with no AI uptake, consistent with prior period. Existing memory is generic — reinforce with more specific statement about manual allocation as the operational norm."
+      }
+    ],
+    "update": [],
+    "retireOrDeactivate": [],
+    "noAction": [
+      {
+        "action": "noAction",
+        "targetMemoryId": null,
+        "basedOnLearningId": "obs-002",
+        "proposedMemoryTitle": null,
+        "proposedMemorySummary": null,
+        "confidenceAdjustment": 0,
+        "reason": "Single allocation for structural timber materials. Insufficient evidence to create a memory — monitor for recurrence."
+      },
+      {
+        "action": "noAction",
+        "targetMemoryId": null,
+        "basedOnLearningId": "emg-003",
+        "proposedMemoryTitle": null,
+        "proposedMemorySummary": null,
+        "confidenceAdjustment": 0,
+        "reason": "Single disputed allocation. Insufficient evidence to create a memory — monitor for recurrence."
+      },
+      {
+        "action": "noAction",
+        "targetMemoryId": null,
+        "basedOnLearningId": "con-001",
+        "proposedMemoryTitle": null,
+        "proposedMemorySummary": null,
+        "confidenceAdjustment": 0,
+        "reason": "MAT/Labour routing misalignment is an operational observation only. Routing is immutable. No memory action appropriate — monitor for recurrence as a cost classification quality signal."
+      }
+    ]
+  }
+}

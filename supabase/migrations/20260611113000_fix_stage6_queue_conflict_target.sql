@@ -1,0 +1,4 @@
+drop index if exists public.worksheet_memory_evidence_pool_queue_classification_uidx;
+
+create unique index if not exists worksheet_memory_evidence_pool_queue_classification_uidx
+  on public.worksheet_memory_evidence_pool_queue (organization_id, classification_record_id);

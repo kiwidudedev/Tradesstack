@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import type { QuoteCommercialItemLink, QuoteCommercialItemPickerItem } from "@/lib/commercial-items/quote-linking";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
@@ -16,11 +17,12 @@ import {
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
-import type { QuoteLineItemSection, QuoteStatus } from "@/lib/supabase/types";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
-export type LineItemSection = QuoteLineItemSection;
+export type QuoteStatus = "Draft" | "Sent" | "Accepted" | "Rejected" | "Expired";
+export type LineItemSection = "Item" | "Materials" | "Labour" | "Plant" | "Subcontractors" | "Preliminaries";
 
 export interface LineItem {
   id: string;
@@ -33,6 +35,7 @@ export interface LineItem {
   sourceOpportunityQuoteId?: string | null;
   sourceOpportunityQuoteLineItemId?: string | null;
   sourceOpportunityQuoteNumber?: string | null;
+  commercialItemLink?: QuoteCommercialItemLink | null;
 }
 
 export interface ScopeCostCategoryItem {
@@ -516,8 +519,29 @@ function DescriptionInputWithPreview({
   );
 }
 
+function CommercialItemLineMeta({
+  lineItem,
+  sourceHref,
+}: {
+  lineItem: LineItem;
+  sourceHref?: string | null;
+}) {
+  const link = lineItem.commercialItemLink;
+  if (!link) {
+    return null;
+  }
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] leading-none">
+      <WorksheetSourceLink href={sourceHref} />
+    </div>
+  );
+}
+
 interface QuoteEditorLayoutProps {
   heroTitle: string;
+  backHref?: string;
+  backLabel?: string;
   createdAt?: string | null;
   error: string | null;
   saveMessage: string | null;
@@ -566,6 +590,14 @@ interface QuoteEditorLayoutProps {
   selectedScopeCostItemIds: string[];
   toggleScopeCostItem: (itemId: string) => void;
   importSelectedScopeItems: () => void;
+  isCommercialItemsOpen: boolean;
+  setIsCommercialItemsOpen: (value: boolean | ((current: boolean) => boolean)) => void;
+  isLoadingCommercialItems: boolean;
+  availableCommercialItems: QuoteCommercialItemPickerItem[];
+  selectedCommercialItemIds: string[];
+  toggleCommercialItem: (itemId: string) => void;
+  importSelectedCommercialItems: () => void;
+  getCommercialItemSourceHref?: (item: LineItem) => string | null;
   sectionSubtotals: Map<LineItemSection, number>;
   validityPeriod: string;
   setValidityPeriod: (value: string) => void;
@@ -600,6 +632,8 @@ interface QuoteEditorLayoutProps {
 
 export function QuoteEditorLayout({
   heroTitle,
+  backHref,
+  backLabel,
   createdAt,
   error,
   saveMessage,
@@ -648,6 +682,14 @@ export function QuoteEditorLayout({
   selectedScopeCostItemIds,
   toggleScopeCostItem,
   importSelectedScopeItems,
+  isCommercialItemsOpen,
+  setIsCommercialItemsOpen,
+  isLoadingCommercialItems,
+  availableCommercialItems,
+  selectedCommercialItemIds,
+  toggleCommercialItem,
+  importSelectedCommercialItems,
+  getCommercialItemSourceHref,
   sectionSubtotals,
   validityPeriod,
   setValidityPeriod,
@@ -713,6 +755,7 @@ export function QuoteEditorLayout({
             <StatusBadge status={quoteStatusBadge(quoteStatus)}>{currentStatusLabel}</StatusBadge>
           </span>
         }
+        eyebrow={backHref && backLabel ? <a href={backHref} className="underline underline-offset-2">{backLabel}</a> : undefined}
         description={saveMessage ?? undefined}
         actions={
           <>
@@ -826,18 +869,78 @@ export function QuoteEditorLayout({
             </div>
             <div className="flex items-center justify-between gap-4 pb-4 pt-6">
               <h2 className={styles.quoteSectionTitle}>Line Items</h2>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setIsScopeImportOpen((current) => !current)}
-              >
-                <Plus className="h-4 w-4" />
-                Import Scope Items
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsCommercialItemsOpen((current) => !current)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add from Worksheet Sources
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsScopeImportOpen((current) => !current)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Import Scope Items
+                </Button>
+              </div>
             </div>
 
             <section>
                   <div className="space-y-5">
+                  {isCommercialItemsOpen ? (
+                    <div className="min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
+                        <div className="space-y-1">
+                          <p className={styles.quoteCardTitle}>Worksheet Sources</p>
+                          <p className={styles.quoteBodyLabel}>Create quote lines from approved worksheet-backed source rows.</p>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={importSelectedCommercialItems}
+                          disabled={selectedCommercialItemIds.length === 0}
+                          className={`${styles.controlButton} ${styles.producedActionButtonProjectTone} ${styles.quoteButtonLabel} h-9 px-4 disabled:opacity-50`}
+                        >
+                          Add Selected ({selectedCommercialItemIds.length})
+                        </Button>
+                      </div>
+                      {isLoadingCommercialItems ? (
+                        <div className="rounded-[14px] bg-[var(--surface-muted)] px-4 py-5">
+                          <p className={styles.quoteBodyLabel}>Loading worksheet sources...</p>
+                        </div>
+                      ) : availableCommercialItems.length > 0 ? (
+                        <div className="mt-4 max-h-[240px] space-y-2 overflow-y-auto pr-1">
+                          {availableCommercialItems.map((item) => (
+                            <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 transition-colors hover:bg-[var(--surface-muted)]">
+                              <input
+                                type="checkbox"
+                                checked={selectedCommercialItemIds.includes(item.id)}
+                                onChange={() => toggleCommercialItem(item.id)}
+                                className="mt-0.5 h-4 w-4 rounded-[6px] border-[var(--border)]"
+                              />
+                              <span className="min-w-0">
+                                <span className={styles.quoteCardTitle}>{item.description}</span>
+                                <span className={`${styles.quoteBodyLabel} mt-0.5 block`}>
+                                  {item.quantity ?? 1} {item.unit ?? "Item"} at {toMoney(item.rate ?? 0)}
+                                </span>
+                                <span className={`${styles.quoteTabLabel} mt-1 block text-[10px] uppercase tracking-[0.08em]`}>
+                                  {commercialItemStatusLabel(item.sourceStatus)} · {item.sourceSheetName ?? item.sourceWorksheetName ?? "Worksheet"} · {item.sourceRange}
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-5">
+                          <p className={styles.quoteBodyLabel}>No worksheet sources are available for this quote yet.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
                   {isScopeImportOpen ? (
                     <div className="min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5">
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
@@ -908,7 +1011,10 @@ export function QuoteEditorLayout({
                             {mainLineItems.map((item) => (
                               <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${MAIN_LINE_GRID_TEMPLATE} 44px` }}>
                                 <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
-                                  <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
+                                  <div className="w-full py-1">
+                                    <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
+                                    <CommercialItemLineMeta lineItem={item} sourceHref={getCommercialItemSourceHref?.(item) ?? null} />
+                                  </div>
                                 </div>
                                 <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
                                   <div className={ROW_FIELD_SHELL_CLASS}>
@@ -982,6 +1088,7 @@ export function QuoteEditorLayout({
                     {mainLineItems.map((item) => (
                       <div key={item.id} className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-4">
                         <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
+                        <CommercialItemLineMeta lineItem={item} sourceHref={getCommercialItemSourceHref?.(item) ?? null} />
                         <select
                           value={item.section}
                           onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
@@ -1053,7 +1160,10 @@ export function QuoteEditorLayout({
                             {optionalLineItems.map((item) => (
                               <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${OPTIONAL_LINE_GRID_TEMPLATE} 44px` }}>
                                 <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
-                                  <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
+                                  <div className="w-full py-1">
+                                    <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
+                                    <CommercialItemLineMeta lineItem={item} sourceHref={getCommercialItemSourceHref?.(item) ?? null} />
+                                  </div>
                                 </div>
                                 <div className={`${ROW_DIVIDER_CLASS} ${ROW_CELL_PADDING_CLASS}`}>
                                   <div className={ROW_FIELD_SHELL_CLASS}>
@@ -1128,6 +1238,7 @@ export function QuoteEditorLayout({
                     {optionalLineItems.map((item) => (
                       <div key={item.id} className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-4">
                         <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
+                        <CommercialItemLineMeta lineItem={item} sourceHref={getCommercialItemSourceHref?.(item) ?? null} />
                         <select
                           value={item.section}
                           onChange={(event) => updateLineItem(item.id, "section", event.target.value as LineItemSection)}
@@ -1370,7 +1481,10 @@ export function QuoteEditorLayout({
                     {lineItems.map((item) => (
                       <OperationalTableRow key={item.id}>
                         <OperationalTableCell className="font-semibold text-[var(--text-primary)]">
-                          {item.description || "Untitled item"}
+                          <div>
+                            <div>{item.description || "Untitled item"}</div>
+                            <CommercialItemLineMeta lineItem={item} sourceHref={getCommercialItemSourceHref?.(item) ?? null} />
+                          </div>
                         </OperationalTableCell>
                         <OperationalTableCell className="text-[var(--text-secondary)]">
                           {item.section}{item.isOptional ? " (Optional)" : ""}

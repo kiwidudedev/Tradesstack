@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import {
   Check,
   ChevronDown,
@@ -16,16 +16,35 @@ import {
 } from "lucide-react";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
+import { PricingWorksheetOverlayDialog } from "@/components/app/PricingWorksheetOverlayDialog";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
+import { VariationPricingWorksheetEntryPanel } from "@/components/app/VariationPricingWorksheetEntryPanel";
+import { VariationRecordTabs } from "@/components/app/VariationRecordTabs";
+import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { interMedium } from "@/lib/fonts";
+import {
+  createOpportunityPricingWorkbook,
+} from "@/lib/opportunity-pricing-workbook";
+import {
+  createDefaultWorksheetData,
+  createDefaultWorksheetExtractedPricingData,
+  createDefaultWorksheetPricingSummary,
+} from "@/lib/opportunity-pricing-worksheet-defaults";
+import { buildVariationPricingWorksheetOwner } from "@/lib/pricing-worksheet-owner";
+import { mapPricingWorksheetUiErrorMessage } from "@/lib/pricing-worksheet-ui-errors";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
+import {
+  buildVariationCommercialItemSourceHref,
+  enrichVariationLineItemsWithCommercialItems,
+  type VariationCommercialItemLink,
+} from "@/lib/commercial-items/variation-linking";
 import styles from "@/components/app/trade-pack-builder.module.css";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
@@ -36,20 +55,22 @@ interface CostLine {
   id: string;
   section: CostSection;
   description: string;
-  quantity: number;
-  unit: string;
-  rate: number;
+  quantity: number | null;
+  unit: string | null;
+  rate: number | null;
+  total: number | null;
   sourceProjectQuoteId?: string | null;
   sourceProjectQuoteLineItemId?: string | null;
   sourceProjectQuoteNumber?: string;
   sourcePurchaseOrderId?: string | null;
   sourcePurchaseOrderLineItemId?: string | null;
   sourcePurchaseOrderNumber?: string;
+  commercialItemLink?: VariationCommercialItemLink | null;
 }
 
 type CostLineIdentityFields = Pick<
   CostLine,
-  "section" | "description" | "quantity" | "unit" | "rate" | "sourceProjectQuoteLineItemId" | "sourcePurchaseOrderLineItemId"
+  "section" | "description" | "quantity" | "unit" | "rate" | "total" | "sourceProjectQuoteLineItemId" | "sourcePurchaseOrderLineItemId"
 >;
 
 interface AttachmentItem {
@@ -223,17 +244,35 @@ function numberOrZero(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function nullIfBlank(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function lineTotal(line: CostLine) {
-  return line.quantity * line.rate;
+  if (typeof line.total === "number" && Number.isFinite(line.total)) {
+    return line.total;
+  }
+
+  if (typeof line.quantity === "number" && Number.isFinite(line.quantity) && typeof line.rate === "number" && Number.isFinite(line.rate)) {
+    return line.quantity * line.rate;
+  }
+
+  return 0;
 }
 
 function getCostLineSignature(line: CostLineIdentityFields) {
   return [
     line.section,
     line.description.trim(),
-    Number(line.quantity ?? 0).toFixed(6),
-    line.unit.trim(),
-    Number(line.rate ?? 0).toFixed(6),
+    line.quantity === null ? "null" : Number(line.quantity).toFixed(6),
+    (line.unit ?? "").trim(),
+    line.rate === null ? "null" : Number(line.rate).toFixed(6),
+    line.total === null ? "null" : Number(line.total).toFixed(2),
   ].join("::");
 }
 
@@ -303,6 +342,8 @@ function makeDefaultCostLine(section: CostSection = "Labour"): CostLine {
     quantity: 1,
     unit: section === "Labour" ? "hr" : "item",
     rate: 0,
+    total: null,
+    commercialItemLink: null,
   };
 }
 
@@ -345,20 +386,80 @@ function variationStatusBadge(status: VariationStatus): NonNullable<StatusBadgeP
   }
 }
 
+function resolveOverlayWorksheetIdFromPathname(pathname: string | null | undefined, basePath: string) {
+  if (!pathname || !pathname.startsWith(`${basePath}/pricing-worksheet/`)) {
+    return null;
+  }
+
+  const suffix = pathname.slice(`${basePath}/pricing-worksheet/`.length).split("/")[0] ?? null;
+  return suffix && suffix.trim().length > 0 ? suffix : null;
+}
+
+function isVariationPricingWorksheetPath(pathname: string | null | undefined, basePath: string | null) {
+  if (!pathname || !basePath) {
+    return false;
+  }
+
+  return pathname === `${basePath}/pricing-worksheet` || pathname.startsWith(`${basePath}/pricing-worksheet/`);
+}
+
+function resolveOverlayWorksheetIdFromHistoryState(state: unknown) {
+  if (!state || typeof state !== "object") {
+    return null;
+  }
+
+  const overlayState = state as {
+    pricingWorksheetOverlay?: unknown;
+    worksheetId?: unknown;
+  };
+
+  if (!overlayState.pricingWorksheetOverlay || typeof overlayState.worksheetId !== "string") {
+    return null;
+  }
+
+  const worksheetId = overlayState.worksheetId.trim();
+  return worksheetId.length > 0 ? worksheetId : null;
+}
+
+function readPersistedOverlayWorksheetId(storageKey: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(storageKey);
+  return value && value.trim().length > 0 ? value : null;
+}
+
+function writePersistedOverlayWorksheetId(storageKey: string, worksheetId: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (worksheetId) {
+    window.sessionStorage.setItem(storageKey, worksheetId);
+    return;
+  }
+
+  window.sessionStorage.removeItem(storageKey);
+}
+
 export default function ProjectVariationsPage() {
   const params = useParams<{ projectId: string; variationId: string }>();
   const routeProjectSlug = params?.projectId;
   const routeVariationId = params?.variationId;
   const isNewVariationRoute = routeVariationId === "new";
   const router = useRouter();
+  const pathname = usePathname();
   const { session } = useAuth();
   const canManageVariation = canManageCommercialData(session?.role);
 
   const [variations, setVariations] = useState<VariationItem[]>([]);
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
   const persistedCostLinesByVariationRef = useRef<Map<string, CostLine[]>>(new Map());
+  const enrichedVariationIdsRef = useRef<Set<string>>(new Set());
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
+  const [projectSourceOpportunityId, setProjectSourceOpportunityId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
   const [jobCode, setJobCode] = useState(() => deriveJobCode(routeProjectSlug));
@@ -380,8 +481,12 @@ export default function ProjectVariationsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCreatingVariation, setIsCreatingVariation] = useState(false);
+  const [isCreatingWorksheet, setIsCreatingWorksheet] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [existingVariationWorksheetId, setExistingVariationWorksheetId] = useState<string | null>(null);
+  const [variationWorksheetId, setVariationWorksheetId] = useState<string | null>(null);
+  const [isVariationWorksheetDirty, setIsVariationWorksheetDirty] = useState(false);
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
   const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
   const [isTermsOpen, setIsTermsOpen] = useState(true);
@@ -389,6 +494,28 @@ export default function ProjectVariationsPage() {
   const [pendingAttachmentType, setPendingAttachmentType] = useState<AttachmentItem["type"] | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const hasAutoCreatedOnNewRoute = useRef(false);
+  const variationDetailPath = activeVariationId && routeProjectSlug
+    ? `/app/projects/${routeProjectSlug}/preconstruction/variations/${activeVariationId}`
+    : null;
+  const variationWorksheetTabPath = variationDetailPath ? `${variationDetailPath}/pricing-worksheet` : null;
+  const variationWorksheetStorageKey = activeVariationId
+    ? `variation-pricing-worksheet-overlay:${activeVariationId}`
+    : null;
+  const overlayWorksheetIdFromPathname = useMemo(
+    () => (variationDetailPath ? resolveOverlayWorksheetIdFromPathname(pathname, variationDetailPath) : null),
+    [pathname, variationDetailPath],
+  );
+  const restoredOverlayWorksheetId = useMemo(
+    () =>
+      overlayWorksheetIdFromPathname ??
+      resolveOverlayWorksheetIdFromHistoryState(typeof window !== "undefined" ? window.history.state : null) ??
+      (variationWorksheetStorageKey ? readPersistedOverlayWorksheetId(variationWorksheetStorageKey) : null),
+    [overlayWorksheetIdFromPathname, variationWorksheetStorageKey],
+  );
+  const isPricingWorksheetTabActive = useMemo(
+    () => isVariationPricingWorksheetPath(pathname, variationDetailPath),
+    [pathname, variationDetailPath],
+  );
   const supabase = useMemo(() => {
     try {
       return createBrowserSupabaseClient();
@@ -444,7 +571,7 @@ export default function ProjectVariationsPage() {
 
       const { data: projectRow } = await supabase
         .from("organization_projects")
-        .select("id, project_code, name, location")
+        .select("id, project_code, name, location, source_opportunity_id")
         .eq("organization_id", resolvedOrganizationId)
         .eq("slug", routeProjectSlug)
         .maybeSingle();
@@ -458,8 +585,32 @@ export default function ProjectVariationsPage() {
         return;
       }
 
+      let resolvedProjectSourceOpportunityId = projectRow.source_opportunity_id ?? null;
+      if (!resolvedProjectSourceOpportunityId) {
+        const { data: repairedSourceOpportunityId, error: repairError } = await supabase.rpc(
+          "repair_project_source_opportunity_lineage" as never,
+          {
+            p_project_id: projectRow.id,
+          } as never,
+        );
+
+        if (repairError) {
+          if (!cancelled) {
+            setError(repairError.message);
+          }
+          setIsLoadingVariations(false);
+          return;
+        }
+
+        const repairedSourceOpportunityValue =
+          typeof repairedSourceOpportunityId === "string" ? repairedSourceOpportunityId.trim() : "";
+        resolvedProjectSourceOpportunityId =
+          repairedSourceOpportunityValue.length > 0 ? repairedSourceOpportunityValue : null;
+      }
+
       setOrganizationId(resolvedOrganizationId);
       setDbProjectId(projectRow.id);
+      setProjectSourceOpportunityId(resolvedProjectSourceOpportunityId);
       setProjectName(projectRow.name ?? "");
       setProjectLocation(projectRow.location ?? "");
       const resolvedCode = projectRow?.project_code ? deriveJobCode(projectRow.project_code) : deriveJobCode(routeProjectSlug);
@@ -556,6 +707,7 @@ export default function ProjectVariationsPage() {
         setVariations([]);
         setActiveVariationId(null);
         persistedCostLinesByVariationRef.current = new Map();
+        enrichedVariationIdsRef.current = new Set();
         setPersistedVariationIds(new Set());
         setIsLoadingVariations(false);
         return;
@@ -564,7 +716,7 @@ export default function ProjectVariationsPage() {
       const variationIds = variationRows.map((row) => row.id);
       const [{ data: lineRowsRaw }, { data: attachmentRowsRaw }] = await Promise.all([
         lineItemsTable
-          .select("id, variation_id, section, description, quantity, unit, rate, source_project_quote_id, source_project_quote_line_item_id, source_project_quote_number, source_purchase_order_id, source_purchase_order_line_item_id, source_purchase_order_number")
+          .select("id, variation_id, section, description, quantity, unit, rate, total, source_project_quote_id, source_project_quote_line_item_id, source_project_quote_number, source_purchase_order_id, source_purchase_order_line_item_id, source_purchase_order_number")
           .in("variation_id", variationIds)
           .order("sort_order", { ascending: true }),
         attachmentsTable
@@ -578,9 +730,10 @@ export default function ProjectVariationsPage() {
         variation_id: string;
         section: string;
         description: string;
-        quantity: number;
-        unit: string;
-        rate: number;
+        quantity: number | null;
+        unit: string | null;
+        rate: number | null;
+        total: number | null;
         source_project_quote_id: string | null;
         source_project_quote_line_item_id: string | null;
         source_project_quote_number: string | null;
@@ -604,15 +757,17 @@ export default function ProjectVariationsPage() {
           id: lineRow.id,
           section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
           description: lineRow.description ?? "",
-          quantity: Number(lineRow.quantity ?? 0),
-          unit: lineRow.unit ?? "",
-          rate: Number(lineRow.rate ?? 0),
+          quantity: lineRow.quantity === null ? null : Number(lineRow.quantity),
+          unit: lineRow.unit ?? null,
+          rate: lineRow.rate === null ? null : Number(lineRow.rate),
+          total: lineRow.total === null ? null : Number(lineRow.total),
           sourceProjectQuoteId: lineRow.source_project_quote_id ?? null,
           sourceProjectQuoteLineItemId: lineRow.source_project_quote_line_item_id ?? null,
           sourceProjectQuoteNumber: lineRow.source_project_quote_number ?? "",
           sourcePurchaseOrderId: lineRow.source_purchase_order_id ?? null,
           sourcePurchaseOrderLineItemId: lineRow.source_purchase_order_line_item_id ?? null,
           sourcePurchaseOrderNumber: lineRow.source_purchase_order_number ?? "",
+          commercialItemLink: null,
         });
         linesByVariationId.set(lineRow.variation_id, current);
       }
@@ -671,6 +826,7 @@ export default function ProjectVariationsPage() {
           variation.costLines.map((line) => ({ ...line })),
         ])
       );
+      enrichedVariationIdsRef.current = new Set();
 
       setVariations(hydratedVariations);
       setActiveVariationId((current) => {
@@ -697,7 +853,75 @@ export default function ProjectVariationsPage() {
     () => variations.find((variation) => variation.id === activeVariationId) ?? variations[0] ?? null,
     [activeVariationId, variations]
   );
+
+  useEffect(() => {
+    if (!supabase || !organizationId || !activeVariation?.id) {
+      return;
+    }
+
+    if (enrichedVariationIdsRef.current.has(activeVariation.id)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const enrichedLines = await enrichVariationLineItemsWithCommercialItems({
+        client: supabase,
+        organizationId,
+        variationId: activeVariation.id,
+        lineItems: activeVariation.costLines,
+        onWarning: (loadError) => {
+          if (!cancelled) {
+            setError((current) => current ?? loadError.message);
+          }
+        },
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      enrichedVariationIdsRef.current.add(activeVariation.id);
+      persistedCostLinesByVariationRef.current.set(
+        activeVariation.id,
+        enrichedLines.map((line) => ({ ...line })),
+      );
+      setVariations((current) =>
+        current.map((variation) =>
+          variation.id === activeVariation.id
+            ? { ...variation, costLines: enrichedLines.map((line) => ({ ...line })) }
+            : variation,
+        ),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVariation?.costLines, activeVariation?.id, organizationId, supabase]);
+
+  const worksheetOwner = useMemo(() => {
+    if (!organizationId || !dbProjectId || !routeProjectSlug || !activeVariationId) {
+      return null;
+    }
+
+    return buildVariationPricingWorksheetOwner({
+      organizationId,
+      opportunityId: projectSourceOpportunityId,
+      projectId: dbProjectId,
+      projectSlug: routeProjectSlug,
+      variationId: activeVariationId,
+      variationCode: activeVariation?.code ?? null,
+    });
+  }, [activeVariation?.code, activeVariationId, dbProjectId, organizationId, projectSourceOpportunityId, routeProjectSlug]);
   const hasVariations = variations.length > 0;
+  const variationWorksheetNavigationHref =
+    variationWorksheetId && variationWorksheetTabPath
+      ? `${variationWorksheetTabPath}/${variationWorksheetId}`
+      : existingVariationWorksheetId && variationWorksheetTabPath
+        ? `${variationWorksheetTabPath}/${existingVariationWorksheetId}`
+        : variationWorksheetTabPath ?? variationDetailPath ?? "#";
   const selectedPurchaseOrder = useMemo(
     () => purchaseOrders.find((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId) ?? null,
     [purchaseOrders, selectedPurchaseOrderId]
@@ -718,6 +942,83 @@ export default function ProjectVariationsPage() {
     () => activeVariation?.costLines.find((line) => line.id === quoteLinkTargetLineId) ?? null,
     [activeVariation, quoteLinkTargetLineId]
   );
+
+  useEffect(() => {
+    if (!restoredOverlayWorksheetId) {
+      return;
+    }
+
+    setVariationWorksheetId((current) => current ?? restoredOverlayWorksheetId);
+  }, [restoredOverlayWorksheetId]);
+
+  useEffect(() => {
+    if (!variationWorksheetStorageKey) {
+      return;
+    }
+
+    writePersistedOverlayWorksheetId(variationWorksheetStorageKey, variationWorksheetId);
+  }, [variationWorksheetId, variationWorksheetStorageKey]);
+
+  useEffect(() => {
+    if (!supabase || !organizationId || !activeVariationId) {
+      setExistingVariationWorksheetId(null);
+      setVariationWorksheetId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadVariationWorksheet = async () => {
+      const { data, error: worksheetError } = await supabase
+        .from("opportunity_pricing_worksheets")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("variation_id", activeVariationId)
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (cancelled) {
+        return;
+      }
+
+      if (worksheetError) {
+        setError(mapPricingWorksheetUiErrorMessage(worksheetError, "Unable to load the pricing worksheet right now."));
+        return;
+      }
+
+      if (!data?.id && !overlayWorksheetIdFromPathname) {
+        setExistingVariationWorksheetId(null);
+        setVariationWorksheetId(null);
+        return;
+      }
+
+      setExistingVariationWorksheetId(data?.id ?? null);
+      if (overlayWorksheetIdFromPathname) {
+        setVariationWorksheetId(overlayWorksheetIdFromPathname);
+      } else if (data?.id && pathname === variationWorksheetTabPath) {
+        setIsVariationWorksheetDirty(false);
+        setVariationWorksheetId(data.id);
+        if (variationWorksheetStorageKey) {
+          writePersistedOverlayWorksheetId(variationWorksheetStorageKey, data.id);
+        }
+        window.history.replaceState({ pricingWorksheetOverlay: true, worksheetId: data.id }, "", `${variationWorksheetTabPath}/${data.id}`);
+      }
+    };
+
+    void loadVariationWorksheet();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeVariationId,
+    organizationId,
+    overlayWorksheetIdFromPathname,
+    pathname,
+    supabase,
+    variationWorksheetStorageKey,
+    variationWorksheetTabPath,
+  ]);
 
   useEffect(() => {
     if (selectedPurchaseOrderId && purchaseOrders.some((purchaseOrder) => purchaseOrder.id === selectedPurchaseOrderId)) {
@@ -756,6 +1057,151 @@ export default function ProjectVariationsPage() {
       setActiveVariationId(routeVariationId);
     }
   }, [routeVariationId, variations]);
+
+  const openVariationWorksheet = useCallback((worksheetId: string, options?: { replace?: boolean }) => {
+    if (!variationDetailPath || !variationWorksheetStorageKey || !variationWorksheetTabPath) {
+      return;
+    }
+
+    const targetPath = `${variationWorksheetTabPath}/${worksheetId}`;
+    const nextState = { pricingWorksheetOverlay: true, worksheetId };
+    setIsVariationWorksheetDirty(false);
+    setVariationWorksheetId(worksheetId);
+    writePersistedOverlayWorksheetId(variationWorksheetStorageKey, worksheetId);
+    if (options?.replace) {
+      window.history.replaceState(nextState, "", targetPath);
+      return;
+    }
+
+    window.history.pushState(nextState, "", targetPath);
+  }, [variationDetailPath, variationWorksheetStorageKey, variationWorksheetTabPath]);
+
+  const closeVariationWorksheetOverlay = useCallback(() => {
+    if (!variationDetailPath || !variationWorksheetStorageKey) {
+      return;
+    }
+
+    setIsVariationWorksheetDirty(false);
+    setVariationWorksheetId(null);
+    writePersistedOverlayWorksheetId(variationWorksheetStorageKey, null);
+    router.replace(variationDetailPath, { scroll: false });
+  }, [router, variationDetailPath, variationWorksheetStorageKey]);
+
+  useEffect(() => {
+    if (!variationWorksheetId || !variationDetailPath || pathname !== variationDetailPath) {
+      return;
+    }
+
+    const targetPath = `${variationWorksheetTabPath}/${variationWorksheetId}`;
+    const currentState = window.history.state && typeof window.history.state === "object"
+      ? window.history.state
+      : {};
+
+    window.history.replaceState(
+      {
+        ...currentState,
+        pricingWorksheetOverlay: true,
+        worksheetId: variationWorksheetId,
+      },
+      "",
+      targetPath,
+    );
+  }, [pathname, variationDetailPath, variationWorksheetId, variationWorksheetTabPath]);
+
+  useEffect(() => {
+    if (!variationWorksheetId || !variationDetailPath || !variationWorksheetStorageKey) {
+      return;
+    }
+
+    const handlePopState = () => {
+      if (
+        isVariationWorksheetDirty &&
+        !window.confirm("You have unsaved pricing worksheet changes. Leave this worksheet and discard those local edits?")
+      ) {
+        window.history.pushState(
+          { pricingWorksheetOverlay: true, worksheetId: variationWorksheetId },
+          "",
+          `${variationDetailPath}/pricing-worksheet/${variationWorksheetId}`,
+        );
+        return;
+      }
+
+      setIsVariationWorksheetDirty(false);
+      setVariationWorksheetId(null);
+      writePersistedOverlayWorksheetId(variationWorksheetStorageKey, null);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [
+    isVariationWorksheetDirty,
+    variationDetailPath,
+    variationWorksheetId,
+    variationWorksheetStorageKey,
+  ]);
+
+  const createOrOpenVariationWorksheet = useCallback(async () => {
+    if (!supabase || !session?.id || !organizationId || !dbProjectId || !activeVariationId) {
+      setError("Unable to open the pricing worksheet right now.");
+      return;
+    }
+
+    if (!projectSourceOpportunityId) {
+      setError("This project does not have source opportunity lineage yet, so the pricing worksheet cannot open.");
+      return;
+    }
+
+    if (existingVariationWorksheetId) {
+      openVariationWorksheet(existingVariationWorksheetId, {
+        replace: pathname === variationWorksheetTabPath,
+      });
+      return;
+    }
+
+    setIsCreatingWorksheet(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      const workbook = await createOpportunityPricingWorkbook({
+        supabase,
+        organizationId,
+        opportunityId: projectSourceOpportunityId,
+        projectId: dbProjectId,
+        variationId: activeVariationId,
+        name: activeVariation?.title?.trim() || "Pricing Worksheet",
+        pricingSummary: createDefaultWorksheetPricingSummary(),
+        extractedPricingData: createDefaultWorksheetExtractedPricingData(),
+        tradePackage: null,
+        userId: session.id,
+        worksheet: createDefaultWorksheetData(),
+      });
+
+      setExistingVariationWorksheetId(workbook.id);
+      setVariationWorksheetId(workbook.id);
+      openVariationWorksheet(workbook.id, {
+        replace: pathname === variationWorksheetTabPath,
+      });
+    } catch (worksheetError) {
+      setError(mapPricingWorksheetUiErrorMessage(worksheetError, "Unable to create the pricing worksheet right now."));
+    } finally {
+      setIsCreatingWorksheet(false);
+    }
+  }, [
+    activeVariation?.title,
+    activeVariationId,
+    dbProjectId,
+    openVariationWorksheet,
+    organizationId,
+    pathname,
+    projectSourceOpportunityId,
+    session?.id,
+    supabase,
+    existingVariationWorksheetId,
+    variationWorksheetTabPath,
+  ]);
 
   const pricingSummary = useMemo(() => {
     if (!activeVariation) {
@@ -869,6 +1315,7 @@ export default function ProjectVariationsPage() {
         createdVariation.id,
         createdVariation.costLines.map((line) => ({ ...line }))
       );
+      enrichedVariationIdsRef.current.delete(createdVariation.id);
       setPersistedVariationIds((current) => new Set([...current, createdVariation.id]));
 
       setActiveVariationId(createdVariation.id);
@@ -936,9 +1383,11 @@ export default function ProjectVariationsPage() {
         quantity: Number(line.quantity ?? 0),
         unit: line.unit ?? "",
         rate: Number(line.rate ?? 0),
+        total: Number(((Number(line.quantity ?? 0)) * (Number(line.rate ?? 0))).toFixed(2)),
         sourcePurchaseOrderId: selectedPurchaseOrder.id,
         sourcePurchaseOrderLineItemId: line.id,
         sourcePurchaseOrderNumber: selectedPurchaseOrder.purchase_order_number,
+        commercialItemLink: null,
       } satisfies CostLine));
 
     if (importedLines.length === 0) {
@@ -1033,7 +1482,30 @@ export default function ProjectVariationsPage() {
 
   const updateCostLine = <K extends keyof CostLine>(lineId: string, key: K, value: CostLine[K]) => {
     if (!activeVariation) return;
-    updateActiveVariation("costLines", activeVariation.costLines.map((line) => (line.id === lineId ? { ...line, [key]: value } : line)));
+    updateActiveVariation(
+      "costLines",
+      activeVariation.costLines.map((line) => {
+        if (line.id !== lineId) {
+          return line;
+        }
+
+        const nextLine = { ...line, [key]: value };
+        if ((key === "quantity" || key === "rate")) {
+          const nextQuantity = nextLine.quantity;
+          const nextRate = nextLine.rate;
+          if (
+            typeof nextQuantity === "number" &&
+            Number.isFinite(nextQuantity) &&
+            typeof nextRate === "number" &&
+            Number.isFinite(nextRate)
+          ) {
+            nextLine.total = Number((nextQuantity * nextRate).toFixed(2));
+          }
+        }
+
+        return nextLine;
+      }),
+    );
   };
 
   const removeCostLine = (lineId: string) => {
@@ -1108,10 +1580,10 @@ export default function ProjectVariationsPage() {
     if (!activeVariation) return;
     updateActiveVariation("status", status);
     if (status === "Sent" || status === "Client Review") {
-      updateActiveVariation("clientSentAt", new Date().toISOString().slice(0, 10));
+      updateActiveVariation("clientSentAt", new Date().toISOString());
     }
     if (status === "Approved") {
-      updateActiveVariation("approvedAt", new Date().toISOString().slice(0, 10));
+      updateActiveVariation("approvedAt", new Date().toISOString());
       updateActiveVariation("invoiceReady", true);
     }
   };
@@ -1136,6 +1608,8 @@ export default function ProjectVariationsPage() {
     setSaveMessage(null);
 
     try {
+      const currentOrganizationId = organizationId;
+      const currentProjectId = dbProjectId;
       const persistedCostLines = persistedCostLinesByVariationRef.current.get(activeVariation.id) ?? [];
       const reconciledCostLines = reconcileVariationCostLineIds(activeVariation.costLines, persistedCostLines);
 
@@ -1143,9 +1617,10 @@ export default function ProjectVariationsPage() {
         id: line.id,
         section: line.section,
         description: line.description,
-        quantity: Number(line.quantity),
+        quantity: line.quantity === null ? null : Number(line.quantity),
         unit: line.unit,
-        rate: Number(line.rate),
+        rate: line.rate === null ? null : Number(line.rate),
+        total: line.total === null ? null : Number(line.total),
         sourceProjectQuoteId: line.sourceProjectQuoteId ?? null,
         sourceProjectQuoteLineItemId: line.sourceProjectQuoteLineItemId ?? null,
         sourceProjectQuoteNumber: line.sourceProjectQuoteNumber ?? "",
@@ -1163,8 +1638,8 @@ export default function ProjectVariationsPage() {
       }));
 
       const { data: saveRows, error: saveError } = await supabase.rpc("save_project_variation_draft", {
-        p_organization_id: organizationId,
-        p_project_id: dbProjectId,
+        p_organization_id: currentOrganizationId,
+        p_project_id: currentProjectId,
         p_variation_id: activeVariation.id,
         p_expected_updated_at: activeVariation.updatedAt,
         p_variation_title: activeVariation.title.trim() || activeVariation.code,
@@ -1172,10 +1647,10 @@ export default function ProjectVariationsPage() {
         p_status: activeVariation.status,
         p_origin: activeVariation.origin,
         p_requested_by: activeVariation.requestedBy,
-        p_requested_date: activeVariation.requestedDate || null,
-        p_due_date: activeVariation.dueDate || null,
-        p_sent_to_client_at: activeVariation.clientSentAt || null,
-        p_approved_at: activeVariation.approvedAt || null,
+        p_requested_date: nullIfBlank(activeVariation.requestedDate),
+        p_due_date: nullIfBlank(activeVariation.dueDate),
+        p_sent_to_client_at: nullIfBlank(activeVariation.clientSentAt),
+        p_approved_at: nullIfBlank(activeVariation.approvedAt),
         p_invoice_ready: activeVariation.invoiceReady,
         p_notes: activeVariation.notes,
         p_margin_percent: Number(numberOrZero(activeVariation.marginPercent).toFixed(3)),
@@ -1304,6 +1779,7 @@ export default function ProjectVariationsPage() {
       const nextRows = variations.filter((item) => item.id !== variationId);
       setVariations(nextRows);
       persistedCostLinesByVariationRef.current.delete(variationId);
+      enrichedVariationIdsRef.current.delete(variationId);
       setPersistedVariationIds((current) => {
         const next = new Set(current);
         next.delete(variationId);
@@ -1338,9 +1814,9 @@ export default function ProjectVariationsPage() {
       ? activeVariation.costLines
           .map((line) => {
             const description = line.description.trim() || "Untitled line item";
-            const exportedRate = line.rate * exportMarginMultiplier;
+            const exportedRate = (line.rate ?? 0) * exportMarginMultiplier;
             const exportedLineTotal = lineTotal(line) * exportMarginMultiplier;
-            const qty = Number.isFinite(line.quantity) ? line.quantity : 0;
+            const qty = typeof line.quantity === "number" && Number.isFinite(line.quantity) ? line.quantity : 0;
             return `
               <tr>
                 <td class="desc-cell">
@@ -1792,14 +2268,16 @@ export default function ProjectVariationsPage() {
         description={saveMessage ?? undefined}
         actions={
           <>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void saveVariation()}
-              disabled={!canManageVariation || isSaving}
-            >
-              {isSaving ? "Saving..." : "Save Variation"}
-            </Button>
+            {!isPricingWorksheetTabActive ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void saveVariation()}
+                disabled={!canManageVariation || isSaving}
+              >
+                {isSaving ? "Saving..." : "Save Variation"}
+              </Button>
+            ) : null}
             <Button
               type="button"
               onClick={exportVariationPdf}
@@ -1832,20 +2310,17 @@ export default function ProjectVariationsPage() {
                   {isCreatingVariation ? "Creating..." : "New Variation"}
                 </DropdownMenuItem>
                 {activeVariation ? (
-                  <>
-                    <DropdownMenuSeparator className="my-1 bg-[var(--border)]" />
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        void deleteVariation(activeVariation.id);
-                      }}
-                      disabled={!canManageVariation || isDeleting}
-                      className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--error)] focus:bg-[var(--error-light)] focus:text-[var(--error)]"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {isDeleting ? "Deleting..." : "Delete"}
-                    </DropdownMenuItem>
-                  </>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void deleteVariation(activeVariation.id);
+                    }}
+                    disabled={!canManageVariation || isDeleting}
+                    className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--error)] focus:bg-[var(--error-light)] focus:text-[var(--error)]"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </DropdownMenuItem>
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1863,9 +2338,25 @@ export default function ProjectVariationsPage() {
           You can review this variation, but only owner, admin, QS, and project manager roles can edit or delete it.
         </OperationalAlert>
       ) : null}
+      {hasVariations && variationDetailPath ? (
+        <VariationRecordTabs
+          detailsHref={variationDetailPath}
+          pricingWorksheetHref={variationWorksheetNavigationHref}
+          activeTab={isPricingWorksheetTabActive ? "pricing-worksheet" : "details"}
+        />
+      ) : null}
 
       {hasVariations && activeVariation ? (
       <div className="space-y-6 [&_input]:border-[var(--border)] [&_input]:bg-[var(--surface)] [&_select]:border-[var(--border)] [&_select]:bg-[var(--surface)] [&_textarea]:border-[var(--border)] [&_textarea]:bg-[var(--surface)]">
+        {isPricingWorksheetTabActive ? (
+          <VariationPricingWorksheetEntryPanel
+            canManageVariation={canManageVariation}
+            hasSourceOpportunityLineage={Boolean(projectSourceOpportunityId)}
+            hasWorksheet={Boolean(existingVariationWorksheetId)}
+            isCreatingWorksheet={isCreatingWorksheet}
+            onOpenWorksheet={() => void createOrOpenVariationWorksheet()}
+          />
+        ) : (
         <div className={`${styles.quotePanelCard} px-5 py-5 sm:px-6`}>
           <section className="border-b border-[var(--border-subtle)] pb-5">
             <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Variation Details</h2>
@@ -1959,29 +2450,38 @@ export default function ProjectVariationsPage() {
                           />
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <div className="flex min-w-0 flex-col gap-0.5">
-                            <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
-                              {line.sourceProjectQuoteNumber || line.sourcePurchaseOrderNumber || "Manual"}
-                            </span>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openQuoteLinkPicker(line.id)}
-                                className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
-                              >
-                                {line.sourceProjectQuoteLineItemId ? "Change" : "Link"}
-                              </button>
-                              {line.sourceProjectQuoteLineItemId ? (
+                          {line.commercialItemLink ? (
+                            <WorksheetSourceLink
+                              href={buildVariationCommercialItemSourceHref({
+                                commercialItemLink: line.commercialItemLink,
+                              })}
+                              className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
+                            />
+                          ) : (
+                            <div className="flex min-w-0 flex-col gap-0.5">
+                              <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
+                                {line.sourceProjectQuoteNumber || line.sourcePurchaseOrderNumber || "Manual"}
+                              </span>
+                              <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => clearProjectQuoteLink(line.id)}
+                                  onClick={() => openQuoteLinkPicker(line.id)}
                                   className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
                                 >
-                                  Clear
+                                  {line.sourceProjectQuoteLineItemId ? "Change" : "Link"}
                                 </button>
-                              ) : null}
+                                {line.sourceProjectQuoteLineItemId ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => clearProjectQuoteLink(line.id)}
+                                    className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
+                                  >
+                                    Clear
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <select value={line.section} onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)} className={`${interMedium.className} h-9 w-full !border-0 !bg-transparent pl-0 pr-6 text-left text-sm text-[var(--text-primary)] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`}>
@@ -1989,15 +2489,15 @@ export default function ProjectVariationsPage() {
                           </select>
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <Input type="number" value={line.quantity} onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                          <Input type="number" value={line.quantity ?? ""} onChange={(event) => updateCostLine(line.id, "quantity", event.target.value === "" ? null : numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <Input value={line.unit} onChange={(event) => updateCostLine(line.id, "unit", event.target.value)} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                          <Input value={line.unit ?? ""} onChange={(event) => updateCostLine(line.id, "unit", event.target.value || null)} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
                           <div className="relative w-full">
                             <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>$</span>
-                            <Input type="number" value={line.rate === 0 ? "" : line.rate} onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
+                            <Input type="number" value={line.rate ?? ""} onChange={(event) => updateCostLine(line.id, "rate", event.target.value === "" ? null : numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                           </div>
                         </div>
                         <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
@@ -2470,6 +2970,7 @@ export default function ProjectVariationsPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
       ) : (
         <Card className="border-[var(--border)] bg-[var(--surface-muted)] shadow-none">
@@ -2494,6 +2995,14 @@ export default function ProjectVariationsPage() {
           </CardContent>
         </Card>
       )}
+      {variationWorksheetId && worksheetOwner ? (
+        <PricingWorksheetOverlayDialog
+          owner={worksheetOwner}
+          worksheetId={variationWorksheetId}
+          onClose={closeVariationWorksheetOverlay}
+          onDirtyStateChange={setIsVariationWorksheetDirty}
+        />
+      ) : null}
     </div>
   );
 }

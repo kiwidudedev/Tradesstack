@@ -33,7 +33,10 @@ type CurrentWorksheetSummary = {
 export type PricingWorksheetAiJobRequest = {
   organizationId: string;
   opportunityId?: string | null;
+  workbookId?: string | null;
   worksheetId?: string | null;
+  sheetId?: string | null;
+  sheetName?: string | null;
   worksheetName?: string | null;
   tradePackage?: string | null;
   prompt?: string | null;
@@ -65,6 +68,10 @@ export type PricingWorksheetAiJobErrorCode =
 
 type PricingWorksheetAiPreviewResponse = {
   aiInteractionId: string;
+  workbookId: string | null;
+  worksheetId: string | null;
+  sheetId: string | null;
+  sheetName: string;
   lifecycleState: string;
   validationStatus: string;
   preview: {
@@ -159,6 +166,20 @@ function hasContextShape(value: unknown): value is PricingWorksheetAiCompactCont
   );
 }
 
+function resolveWorkbookId(input: {
+  workbookId?: string | null;
+  worksheetId?: string | null;
+}) {
+  return input.workbookId ?? input.worksheetId ?? null;
+}
+
+function resolveSheetName(input: {
+  sheetName?: string | null;
+  worksheetName?: string | null;
+}) {
+  return input.sheetName ?? input.worksheetName ?? "Pricing Worksheet";
+}
+
 export function normalizePricingWorksheetAiJobRequest(body: unknown): PricingWorksheetAiJobRequest {
   if (!isRecord(body)) {
     throw new Error("Invalid request payload.");
@@ -180,7 +201,10 @@ export function normalizePricingWorksheetAiJobRequest(body: unknown): PricingWor
   return {
     organizationId,
     opportunityId: typeof body.opportunityId === "string" && body.opportunityId.trim() ? body.opportunityId.trim() : null,
+    workbookId: typeof body.workbookId === "string" && body.workbookId.trim() ? body.workbookId.trim() : null,
     worksheetId: typeof body.worksheetId === "string" && body.worksheetId.trim() ? body.worksheetId.trim() : null,
+    sheetId: typeof body.sheetId === "string" && body.sheetId.trim() ? body.sheetId.trim() : null,
+    sheetName: typeof body.sheetName === "string" && body.sheetName.trim() ? body.sheetName.trim() : null,
     worksheetName:
       typeof body.worksheetName === "string" && body.worksheetName.trim() ? body.worksheetName.trim() : "Pricing Worksheet",
     tradePackage: typeof body.tradePackage === "string" && body.tradePackage.trim() ? body.tradePackage.trim() : null,
@@ -285,7 +309,10 @@ function buildInitialJobEnvelope(params: {
     retryable: false,
     classification: params.classification,
     request: {
+      workbookId: resolveWorkbookId(params.request),
       worksheetId: params.request.worksheetId ?? null,
+      sheetId: params.request.sheetId ?? null,
+      sheetName: resolveSheetName(params.request),
       worksheetName: params.request.worksheetName ?? "Pricing Worksheet",
       tradePackage: params.request.tradePackage ?? null,
       prompt: params.request.prompt ?? "",
@@ -308,12 +335,20 @@ function buildInitialJobEnvelope(params: {
 
 function buildPreviewResponse(params: {
   aiInteractionId: string;
+  workbookId?: string | null;
+  worksheetId?: string | null;
+  sheetId?: string | null;
+  sheetName: string;
   validationStatus: string;
   preview: Awaited<ReturnType<typeof buildPricingWorksheetEditAssistantPreview>>["preview"];
   generationMeta: Awaited<ReturnType<typeof buildPricingWorksheetEditAssistantPreview>>["generationMeta"];
 }): PricingWorksheetAiPreviewResponse {
   return {
     aiInteractionId: params.aiInteractionId,
+    workbookId: params.workbookId ?? params.worksheetId ?? null,
+    worksheetId: params.worksheetId ?? params.workbookId ?? null,
+    sheetId: params.sheetId ?? null,
+    sheetName: params.sheetName,
     lifecycleState: "previewed",
     validationStatus: params.validationStatus,
     preview: {
@@ -579,6 +614,8 @@ async function runPricingWorksheetAiJob(params: {
     organizationId: params.request.organizationId,
     projectId: params.projectId,
     opportunityId: params.opportunityId,
+    workbookId: resolveWorkbookId(params.request),
+    sheetId: params.request.sheetId ?? null,
     memoryCategories: ["worksheet_structure", "pricing_structure"],
     memoryTypes: ["pricing_worksheet_layout"],
     minimumConfidence: 0.35,
@@ -795,6 +832,10 @@ async function runPricingWorksheetAiJob(params: {
 
   const previewResponse = buildPreviewResponse({
     aiInteractionId: params.aiInteractionId,
+    workbookId: resolveWorkbookId(params.request),
+    worksheetId: params.request.worksheetId ?? resolveWorkbookId(params.request),
+    sheetId: params.request.sheetId ?? null,
+    sheetName: resolveSheetName(params.request),
     validationStatus,
     preview,
     generationMeta,
@@ -983,6 +1024,10 @@ export async function createPricingWorksheetEditAssistantJob(request: PricingWor
     opportunityId: request.opportunityId ?? null,
     module: "pricing_worksheets",
     workflowKey: "pricing_worksheet_edit_assistant_job",
+    workbookId: resolveWorkbookId(request),
+    worksheetId: request.worksheetId ?? resolveWorkbookId(request),
+    sheetId: request.sheetId ?? null,
+    sheetName: resolveSheetName(request),
     worksheetName: request.worksheetName ?? "Pricing Worksheet",
     tradePackage: request.tradePackage ?? null,
     relatedCounts: {
@@ -1006,13 +1051,16 @@ export async function createPricingWorksheetEditAssistantJob(request: PricingWor
     provider: modelConfig.provider,
     model: modelConfig.model,
     modelVersion: "2026-05-24",
-    promptTemplateKey: "pricing_worksheet_edit_assistant_job_v1",
-    promptText: request.prompt ?? `Help with worksheet "${request.worksheetName ?? "Pricing Worksheet"}".`,
-    inputContextSummary: {
-      ...inputContextSummary,
-      worksheetId: request.worksheetId ?? null,
-      worksheetContext: {
-        headerCount: request.worksheetContext.headers.length,
+      promptTemplateKey: "pricing_worksheet_edit_assistant_job_v1",
+      promptText: request.prompt ?? `Help with worksheet "${request.worksheetName ?? "Pricing Worksheet"}".`,
+      inputContextSummary: {
+        ...inputContextSummary,
+        workbookId: resolveWorkbookId(request),
+        worksheetId: request.worksheetId ?? null,
+        sheetId: request.sheetId ?? null,
+        sheetName: resolveSheetName(request),
+        worksheetContext: {
+          headerCount: request.worksheetContext.headers.length,
         sectionCount: request.worksheetContext.sections.length,
         nearbyRowCount: request.worksheetContext.nearbyRows.length,
         selection: request.worksheetContext.visibleSelection,
@@ -1080,6 +1128,20 @@ export async function getPricingWorksheetEditAssistantJob(params: {
   return {
     aiInteractionId: record.id,
     jobId: record.id,
+    workbookId:
+      typeof job.request.workbookId === "string"
+        ? job.request.workbookId
+        : typeof job.request.worksheetId === "string"
+          ? job.request.worksheetId
+          : null,
+    worksheetId: typeof job.request.worksheetId === "string" ? job.request.worksheetId : null,
+    sheetId: typeof job.request.sheetId === "string" ? job.request.sheetId : null,
+    sheetName:
+      typeof job.request.sheetName === "string"
+        ? job.request.sheetName
+        : typeof job.request.worksheetName === "string"
+          ? job.request.worksheetName
+          : null,
     status: job.status,
     progressLabel: job.progressLabel,
     retryable: job.retryable,

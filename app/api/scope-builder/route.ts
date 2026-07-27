@@ -3,6 +3,7 @@ import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { enforceRouteGuard } from "@/lib/security/abuse-guard";
 import { fetchWithTimeout } from "@/lib/security/fetch-timeout";
 import { hasPdfSignature } from "@/lib/security/pdf-signature";
+import { buildOrganizationAiContext } from "@/lib/organization-ai-context";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getTradeById } from "@/lib/trade-pack-builder";
 
@@ -241,7 +242,7 @@ function toScopeBuilderPayload(value: unknown): ScopeBuilderResponsePayload | nu
   };
 }
 
-function buildScopePrompt(tradeLabel: string): string {
+export function buildScopePrompt(tradeLabel: string, organizationConstructionContext?: string | null): string {
   return `You are a Senior Quantity Surveyor operating in New Zealand / Australia.
 
 The attached documents represent a fully extracted trade package where irrelevant drawings have already been removed.
@@ -250,7 +251,9 @@ Your task is to review this trade package and generate a professional, pricing-r
 
 Trade: ${tradeLabel}
 
-Assume this package is for:
+${organizationConstructionContext ? `${organizationConstructionContext}
+
+` : ""}Assume this package is for:
 
 Subcontract tender pricing
 
@@ -1021,7 +1024,10 @@ export async function POST(request: Request) {
   const arrayBuffer = await fileValue.arrayBuffer();
   const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
   const model = process.env.OPENAI_SCOPE_MODEL || DEFAULT_SCOPE_MODEL;
-  const prompt = buildScopePrompt(selectedTrade.label);
+  const organizationAiContext = organizationId
+    ? await buildOrganizationAiContext({ organizationId })
+    : { constructionProfile: null, organizationConstructionContext: null };
+  const prompt = buildScopePrompt(selectedTrade.label, organizationAiContext.organizationConstructionContext);
   const initialMaxOutputTokens = Number.parseInt(
     process.env.OPENAI_SCOPE_MAX_OUTPUT_TOKENS ?? `${DEFAULT_SCOPE_MAX_OUTPUT_TOKENS}`,
     10
@@ -1083,7 +1089,9 @@ export async function POST(request: Request) {
       responseJson = await requestScopeFromOpenAi(retryMaxOutputTokens);
     }
   } catch (openAiError) {
-    console.error("[scope-builder] upstream request failed", openAiError);
+    console.error("[scope-builder] upstream request failed", {
+      errorType: openAiError instanceof Error ? openAiError.name : "UnknownError",
+    });
     await markRunFailed("AI provider request failed.");
     return NextResponse.json({ error: "AI provider request failed." }, { status: 502 });
   }
@@ -1101,12 +1109,6 @@ export async function POST(request: Request) {
 
   const outputText = extractOpenAiResponseText(responseJson);
   const parsedOutput = parseJsonObjectFromText(outputText);
-
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[scope-builder] responseJson", responseJson);
-    console.log("[scope-builder] outputText", outputText);
-    console.log("[scope-builder] parsedOutput", parsedOutput);
-  }
 
   const scopePayload = toScopeBuilderPayload(parsedOutput);
 

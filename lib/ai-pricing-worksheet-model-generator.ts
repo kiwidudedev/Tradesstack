@@ -59,6 +59,7 @@ type BuildWorksheetModelPreviewParams = {
   tradePackage: string | null;
   memoryItems: AiMemoryItem[];
   currentWorksheetSummary?: CurrentWorksheetSummary | null;
+  organizationConstructionContext?: string | null;
 };
 
 type WorksheetProviderColumn = {
@@ -499,6 +500,7 @@ function buildUserPrompt(params: {
   tradePackage: string | null;
   memoryItems: AiMemoryItem[];
   currentWorksheetSummary?: CurrentWorksheetSummary | null;
+  organizationConstructionContext?: string | null;
 }) {
   const currentWorksheetSummary = params.currentWorksheetSummary ?? {
     rowCount: 0,
@@ -512,6 +514,7 @@ function buildUserPrompt(params: {
     `User request: ${params.prompt || `Generate a worksheet for ${params.worksheetName}.`}`,
     `Requested worksheet name: ${params.worksheetName}`,
     `Trade package: ${params.tradePackage ?? "Not specified"}`,
+    params.organizationConstructionContext ?? null,
     `Current worksheet summary: ${JSON.stringify(currentWorksheetSummary)}`,
     `Organization memory examples for context only: ${JSON.stringify(buildMemorySummary(params.memoryItems))}`,
     "Output contract:",
@@ -524,7 +527,7 @@ function buildUserPrompt(params: {
     "- support arbitrary worksheet requests, not just trade-specific calculators",
     "- assumptions should be concise and useful",
     "- warnings should be concise and useful",
-  ].join("\n\n");
+  ].filter((value): value is string => typeof value === "string").join("\n\n");
 }
 
 function buildIssueWarning(issue: WorksheetBuildIssue): AiValidationWarning {

@@ -1,26 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ChevronDown,
   ExternalLink,
   FileStack,
-  MoreVertical,
   Plus,
   Trash2,
   Upload,
 } from "lucide-react";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
+import {
+  CommercialLineItemActionButton,
+  CommercialLineItemsAddButton,
+  CommercialLineItemsCell,
+  CommercialLineItemsRow,
+  CommercialLineItemsTable,
+  CommercialLineTextInput,
+  CommercialSummaryCard,
+  CommercialSummaryRow,
+} from "@/components/app/CommercialLineItemsTable";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
+import { SupplierInvoiceTeamReviewModal } from "@/components/app/SupplierInvoiceTeamReviewModal";
+import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { SupplierPicker } from "@/components/app/SupplierPicker";
+import { createPurchaseOrderInlineSupplierAction } from "@/app/app/(workspace)/company/suppliers/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  buildPurchaseOrderCommercialItemSourceHref,
+  enrichPurchaseOrderLineItemsWithCommercialItems,
+  type PurchaseOrderCommercialItemLink,
+} from "@/lib/commercial-items/purchase-order-linking";
 import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import {
@@ -30,30 +47,31 @@ import {
   listProjectMembers,
   listPurchaseOrderAssignments,
   listPurchaseOrderAttachments,
-  listPurchaseOrderInvoiceMatches,
   listPurchaseOrderLineItems,
   savePurchaseOrderDraft,
 } from "@/lib/purchase-orders/service";
+import type {
+  PurchaseOrderInvoiceXeroStatus,
+  PurchaseOrderSiteReviewStatus,
+  PurchaseOrderSupplierInvoiceSummaryPayload,
+} from "@/lib/purchase-order-supplier-invoice-summary";
+import type { PurchaseOrderSupplierInvoiceDetail } from "@/lib/purchase-order-supplier-invoice-detail";
+import {
+  derivePurchaseOrderPaymentProgressFillPresentation,
+  derivePurchaseOrderStatusPresentation,
+} from "@/lib/purchase-order-commercial-presentation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { Database } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import {
   getSupplierDisplayName,
-  getSupplierDuplicateWarnings,
   type OrganizationSupplierRow,
 } from "@/lib/suppliers";
-import {
-  DEFAULT_SUPPLIER_INVOICE_APPROVAL_CHECKS,
-  formatSupplierInvoiceMatchApprovalStatusLabel,
-  formatMatchStatusLabel,
-  getSupplierInvoiceMatchApprovalStatusClassName,
-  getSupplierInvoiceMatchStatusClassName,
-  matchCountsTowardInvoiceTotal,
-  normalizeSupplierInvoiceApprovalChecks,
-  type SupplierInvoiceApprovalChecks,
-  type SupplierInvoiceRow,
-} from "@/lib/supplier-invoices";
 import styles from "@/components/app/trade-pack-builder.module.css";
+import {
+  decideSupplierInvoiceSiteReviewAction,
+  loadPurchaseOrderSupplierInvoiceDetailAction,
+  loadPurchaseOrderSupplierInvoiceSummaryAction,
+} from "./actions";
 
 type VariationStatus = "Draft" | "Pending Approval" | "Approved" | "Issued" | "Received" | "Invoiced" | "Cancelled";
 type VariationOrigin = "Material Supply" | "Subcontract Work" | "Plant / Equipment Hire" | "Site Expense" | "Freight / Delivery" | "Variation Order" | "General Purchase" | "Other";
@@ -64,6 +82,7 @@ interface CostLine {
   lineUid?: string | null;
   costItemId?: string | null;
   sourceCostItemId?: string | null;
+  commercialItemLink?: PurchaseOrderCommercialItemLink | null;
   section: CostSection;
   description: string;
   quantity: number;
@@ -92,6 +111,7 @@ interface AttachmentItem {
   type: "Drawing" | "Email" | "Site Instruction";
   storagePath: string | null;
   externalUrl: string | null;
+  notes?: string;
 }
 
 interface VariationItem {
@@ -153,30 +173,6 @@ interface VariationRow {
   notes: string;
 }
 
-interface PurchaseOrderInvoiceMatchRow {
-  id: string;
-  organization_id: string;
-  supplier_invoice_id: string;
-  purchase_order_id: string;
-  matched_amount: number;
-  match_status: string;
-  confidence_score: number | null;
-  match_basis: string;
-  approval_status: string;
-  approved_by_user_id: string | null;
-  approved_at: string | null;
-  approval_notes: string;
-  approval_checks_json: Database["public"]["Tables"]["supplier_invoice_purchase_order_matches"]["Row"]["approval_checks_json"];
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-type MatchedSupplierInvoiceRow = Pick<
-  SupplierInvoiceRow,
-  "id" | "invoice_number" | "status" | "supplier_id" | "invoice_date" | "due_date" | "total"
->;
-
 interface ProjectMemberListItem {
   id: string;
   organization_id: string;
@@ -191,53 +187,12 @@ interface ProjectMemberListItem {
   avatar_path: string | null;
 }
 
-interface OrganizationMemberSummary {
-  user_id: string;
-  display_name: string;
-}
-
-type MatchApprovalDraft = {
-  approvalNotes: string;
-  approvalChecks: SupplierInvoiceApprovalChecks;
-};
-
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approved", "Issued", "Received", "Invoiced", "Cancelled"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work", "Plant / Equipment Hire", "Site Expense", "Freight / Delivery", "Variation Order", "General Purchase", "Other"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
 const NEW_SUPPLIER_OPTION = "__new_supplier__";
 const LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 140px 120px 72px 72px 104px 104px";
 const PURCHASE_ORDER_ATTACHMENTS_BUCKET = "project-variation-attachments";
-const SUPPLIER_INVOICE_APPROVAL_CHECK_OPTIONS: Array<{
-  key: keyof SupplierInvoiceApprovalChecks;
-  label: string;
-}> = [
-  { key: "materials_received", label: "Materials/services received" },
-  { key: "pricing_correct", label: "Pricing correct" },
-  { key: "variation_approved", label: "Variation approved if applicable" },
-  { key: "no_supplier_overcharge", label: "No supplier overcharge" },
-  { key: "allocation_correct", label: "Allocation correct" },
-  { key: "ready_for_accounting", label: "Ready for accounting" },
-];
-
-function DescriptionInputWithPreview({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Input
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent"
-      disabled={disabled}
-    />
-  );
-}
-
 function toMoney(value: number) {
   return new Intl.NumberFormat(undefined, {
     style: "currency",
@@ -371,6 +326,35 @@ function purchaseOrderStatusBadge(status: VariationStatus): NonNullable<StatusBa
   }
 }
 
+function siteReviewLabel(status: PurchaseOrderSiteReviewStatus) {
+  if (status === "approved") return "Approved";
+  if (status === "disputed") return "Declined";
+  if (status === "invalidated") return "Needs resubmission";
+  if (status === "awaiting_site_approval") return "Waiting";
+  return "Not available";
+}
+
+function xeroStatusLabel(status: PurchaseOrderInvoiceXeroStatus) {
+  return {
+    not_exported: "Not sent",
+    draft: "Draft",
+    awaiting_approval: "Awaiting approval",
+    awaiting_payment: "Awaiting payment",
+    partially_paid: "Partially paid",
+    paid: "Paid",
+    voided: "Voided",
+    deleted: "Voided",
+    attention_required: "Attention required",
+  }[status];
+}
+
+function statusPillClass(status: string) {
+  if (status === "approved" || status === "paid") return "bg-[#DCFCE7] text-[#15803D]";
+  if (status === "disputed" || status === "voided" || status === "deleted") return "bg-[#FEE2E2] text-[#B91C1C]";
+  if (status === "partially_paid" || status === "awaiting_payment") return "bg-[#DBEAFE] text-[#1D4ED8]";
+  return "bg-[#FEF3C7] text-[#92400E]";
+}
+
 export default function ProjectVariationsPage() {
   const params = useParams<{ projectId: string; purchaseOrderId: string }>();
   const routeProjectSlug = params?.projectId;
@@ -418,17 +402,20 @@ export default function ProjectVariationsPage() {
     approved: 0,
     invoiceReady: 0,
   });
-  const [purchaseOrderInvoiceMatches, setPurchaseOrderInvoiceMatches] = useState<PurchaseOrderInvoiceMatchRow[]>([]);
-  const [matchedSupplierInvoices, setMatchedSupplierInvoices] = useState<MatchedSupplierInvoiceRow[]>([]);
-  const [organizationMembersByUserId, setOrganizationMembersByUserId] = useState<Record<string, OrganizationMemberSummary>>({});
-  const [canReviewSupplierInvoiceAllocations, setCanReviewSupplierInvoiceAllocations] = useState(false);
-  const [matchApprovalDrafts, setMatchApprovalDrafts] = useState<Record<string, MatchApprovalDraft>>({});
-  const [expandedMatchApprovalId, setExpandedMatchApprovalId] = useState<string | null>(null);
-  const [isSavingMatchApprovalId, setIsSavingMatchApprovalId] = useState<string | null>(null);
+  const [invoiceSummary, setInvoiceSummary] =
+    useState<PurchaseOrderSupplierInvoiceSummaryPayload | null>(null);
+  const [isSavingSiteReviewId, setIsSavingSiteReviewId] = useState<string | null>(null);
+  const [selectedSupplierInvoiceId, setSelectedSupplierInvoiceId] = useState<string | null>(null);
+  const [supplierBillDetail, setSupplierBillDetail] = useState<PurchaseOrderSupplierInvoiceDetail | null>(null);
+  const [supplierBillDetailError, setSupplierBillDetailError] = useState<string | null>(null);
+  const [supplierBillReviewError, setSupplierBillReviewError] = useState<string | null>(null);
+  const [isLoadingSupplierBillDetail, setIsLoadingSupplierBillDetail] = useState(false);
+  const [isBillsInvoicesOpen, setIsBillsInvoicesOpen] = useState(true);
   const [hydratedPurchaseOrderIds, setHydratedPurchaseOrderIds] = useState<Set<string>>(new Set());
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
   const isCreatingPurchaseOrderRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const supplierBillTriggerRef = useRef<HTMLButtonElement | null>(null);
   const hydratingPurchaseOrderIdsRef = useRef<Set<string>>(new Set());
   const supabase = useMemo(() => {
     try {
@@ -494,18 +481,31 @@ export default function ProjectVariationsPage() {
       const row = purchaseOrderRowRaw;
 
       const hydratedLines = lineRowsRaw.length > 0
-        ? lineRowsRaw.map((lineRow) => ({
-            id: lineRow.id,
-            lineUid: lineRow.lineUid ?? crypto.randomUUID(),
-            costItemId: lineRow.costItemId ?? null,
-            sourceCostItemId: lineRow.sourceCostItemId ?? null,
-            section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
-            description: lineRow.description ?? "",
-            quantity: Number(lineRow.quantity ?? 0),
-            unit: lineRow.unit ?? "",
-            rate: Number(lineRow.rate ?? 0),
-            sourceTimeSheetEntryId: lineRow.sourceTimeSheetEntryId ?? null,
-          }))
+        ? await enrichPurchaseOrderLineItemsWithCommercialItems({
+            client: supabase,
+            organizationId: resolvedOrganizationId,
+            purchaseOrderId,
+            lineItems: lineRowsRaw.map((lineRow) => ({
+              id: lineRow.id,
+              lineUid: lineRow.lineUid ?? crypto.randomUUID(),
+              costItemId: lineRow.costItemId ?? null,
+              sourceCostItemId: lineRow.sourceCostItemId ?? null,
+              commercialItemLink: null,
+              section: COST_SECTIONS.includes(lineRow.section as CostSection) ? (lineRow.section as CostSection) : "Labour",
+              description: lineRow.description ?? "",
+              quantity: Number(lineRow.quantity ?? 0),
+              unit: lineRow.unit ?? "",
+              rate: Number(lineRow.rate ?? 0),
+              sourceTimeSheetEntryId: lineRow.sourceTimeSheetEntryId ?? null,
+            })),
+            onWarning: (error) => {
+              console.warn("Worksheet source enrichment failed while loading purchase order", {
+                purchaseOrderId,
+                organizationId: resolvedOrganizationId,
+                errorType: error.name,
+              });
+            },
+          })
         : [makeDefaultCostLine("Labour")];
 
       const hydratedAttachments: AttachmentItem[] = attachmentRowsRaw.map((attachmentRow) => ({
@@ -639,7 +639,7 @@ export default function ProjectVariationsPage() {
       ] = await Promise.all([
         supabase
           .from("organization_suppliers")
-          .select("id, name, company_name, legal_name, email, phone, address, website, default_tax_rate_id, default_payment_terms, is_active, source, created_by, created_at, updated_at")
+          .select("*")
           .eq("organization_id", resolvedOrganizationId)
           .order("company_name", { ascending: true })
           .order("name", { ascending: true }),
@@ -816,124 +816,60 @@ export default function ProjectVariationsPage() {
     [activeVariationId, variations]
   );
 
-  useEffect(() => {
-    if (!supabase || !organizationId || !activeVariation?.id) {
-      setPurchaseOrderInvoiceMatches([]);
-      setMatchedSupplierInvoices([]);
-      setOrganizationMembersByUserId({});
-      setCanReviewSupplierInvoiceAllocations(false);
-      setMatchApprovalDrafts({});
+  const refreshAuthoritativeInvoiceSummary = useCallback(async () => {
+    if (!activeVariation?.id || !persistedVariationIds.has(activeVariation.id)) {
+      setInvoiceSummary(null);
       return;
     }
+    const result = await loadPurchaseOrderSupplierInvoiceSummaryAction({
+      purchaseOrderId: activeVariation.id,
+      projectId: dbProjectId,
+    });
+    if (!result.ok || !result.data) {
+      setError(result.error ?? "Unable to load the authoritative Purchase Order invoice summary.");
+      return;
+    }
+    setInvoiceSummary(result.data.summary);
+  }, [activeVariation?.id, dbProjectId, persistedVariationIds]);
 
-    let cancelled = false;
+  const loadSupplierBillDetail = useCallback(async (supplierInvoiceId: string) => {
+    if (!activeVariation?.id) return;
+    setIsLoadingSupplierBillDetail(true);
+    setSupplierBillDetailError(null);
+    const result = await loadPurchaseOrderSupplierInvoiceDetailAction({
+      purchaseOrderId: activeVariation.id,
+      supplierInvoiceId,
+      projectId: dbProjectId,
+    });
+    if (!result.ok || !result.data) {
+      setSupplierBillDetail(null);
+      setSupplierBillDetailError(result.error ?? "Unable to load Supplier Invoice detail.");
+    } else {
+      setSupplierBillDetail(result.data);
+    }
+    setIsLoadingSupplierBillDetail(false);
+  }, [activeVariation?.id, dbProjectId]);
 
-    const loadInvoiceMatches = async () => {
-      const [
-        matchRowsRaw,
-        { data: canReviewData, error: canReviewError },
-        { data: memberRowsRaw, error: memberRowsError },
-      ] = await Promise.all([
-        listPurchaseOrderInvoiceMatches(supabase, {
-          organizationId,
-          purchaseOrderId: activeVariation.id,
-        }),
-        supabase.rpc("has_org_permission", {
-          p_organization_id: organizationId,
-          p_permission_key: "supplier_invoices.review",
-        }),
-        supabase
-          .from("organization_members")
-          .select("user_id, display_name")
-          .eq("organization_id", organizationId)
-          .order("display_name", { ascending: true }),
-      ]);
+  const openSupplierBill = useCallback((supplierInvoiceId: string, trigger: HTMLButtonElement) => {
+    supplierBillTriggerRef.current = trigger;
+    setSelectedSupplierInvoiceId(supplierInvoiceId);
+    setSupplierBillDetail(null);
+    setSupplierBillReviewError(null);
+    void loadSupplierBillDetail(supplierInvoiceId);
+  }, [loadSupplierBillDetail]);
 
-      if (canReviewError) {
-        if (!cancelled) {
-          setError(canReviewError.message);
-        }
-        return;
-      }
+  const setSupplierBillDialogOpen = useCallback((open: boolean) => {
+    if (open) return;
+    setSelectedSupplierInvoiceId(null);
+    setSupplierBillDetail(null);
+    setSupplierBillDetailError(null);
+    setSupplierBillReviewError(null);
+    requestAnimationFrame(() => supplierBillTriggerRef.current?.focus());
+  }, []);
 
-      if (memberRowsError) {
-        if (!cancelled) {
-          setError(memberRowsError.message);
-        }
-        return;
-      }
-
-      const matchRows = matchRowsRaw.map((match) => ({
-        id: match.id,
-        organization_id: match.organizationId,
-        supplier_invoice_id: match.supplierInvoiceId,
-        purchase_order_id: match.purchaseOrderId,
-        matched_amount: match.matchedAmount,
-        match_status: match.matchStatus,
-        confidence_score: match.confidenceScore,
-        match_basis: match.matchBasis,
-        approval_status: match.approvalStatus,
-        approved_by_user_id: match.approvedByUserId,
-        approved_at: match.approvedAt,
-        approval_notes: match.approvalNotes,
-        approval_checks_json: match.approvalChecksJson,
-        created_by: match.createdBy,
-        created_at: match.createdAt,
-        updated_at: match.updatedAt,
-      })) as PurchaseOrderInvoiceMatchRow[];
-      if (cancelled) {
-        return;
-      }
-
-      setCanReviewSupplierInvoiceAllocations(Boolean(canReviewData));
-      const memberDirectory = Object.fromEntries(
-        ((memberRowsRaw ?? []) as OrganizationMemberSummary[]).map((member) => [
-          member.user_id,
-          member,
-        ])
-      );
-      setOrganizationMembersByUserId(memberDirectory);
-      setPurchaseOrderInvoiceMatches(matchRows);
-      setMatchApprovalDrafts(
-        matchRows.reduce<Record<string, MatchApprovalDraft>>((accumulator, match) => {
-          accumulator[match.id] = {
-            approvalNotes: match.approval_notes ?? "",
-            approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
-          };
-          return accumulator;
-        }, {})
-      );
-
-      const supplierInvoiceIds = [...new Set(matchRows.map((match) => match.supplier_invoice_id).filter(Boolean))];
-      if (supplierInvoiceIds.length === 0) {
-        setMatchedSupplierInvoices([]);
-        return;
-      }
-
-      const { data: invoiceRowsRaw, error: invoiceRowsError } = await supabase
-        .from("supplier_invoices")
-        .select("id, invoice_number, status, supplier_id, invoice_date, due_date, total")
-        .eq("organization_id", organizationId)
-        .in("id", supplierInvoiceIds);
-
-      if (invoiceRowsError) {
-        if (!cancelled) {
-          setError(invoiceRowsError.message);
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setMatchedSupplierInvoices((invoiceRowsRaw ?? []) as MatchedSupplierInvoiceRow[]);
-      }
-    };
-
-    void loadInvoiceMatches();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeVariation?.id, organizationId, supabase]);
+  useEffect(() => {
+    void refreshAuthoritativeInvoiceSummary();
+  }, [refreshAuthoritativeInvoiceSummary]);
 
   const hasVariations = variations.length > 0;
   const assignableProjectMembers = useMemo(
@@ -971,161 +907,43 @@ export default function ProjectVariationsPage() {
     const entries = [...quoteSourceOptions, ...variationSourceOptions].map((option) => [option.id, option] as const);
     return new Map(entries);
   }, [quoteSourceOptions, variationSourceOptions]);
-  const matchedSupplierInvoiceById = useMemo(
-    () => new Map(matchedSupplierInvoices.map((invoice) => [invoice.id, invoice])),
-    [matchedSupplierInvoices]
-  );
-  const purchaseOrderInvoiceMatchRows = useMemo(
-    () =>
-      purchaseOrderInvoiceMatches.map((match) => ({
-        ...match,
-        invoice: matchedSupplierInvoiceById.get(match.supplier_invoice_id) ?? null,
-        approverName: match.approved_by_user_id
-          ? organizationMembersByUserId[match.approved_by_user_id]?.display_name ?? "Unknown reviewer"
-          : null,
-      })),
-    [matchedSupplierInvoiceById, organizationMembersByUserId, purchaseOrderInvoiceMatches]
-  );
-  const invoiceRollup = useMemo(() => {
-    const invoicedTotal = purchaseOrderInvoiceMatchRows.reduce((sum, match) => {
-      if (!matchCountsTowardInvoiceTotal(match.match_status)) {
-        return sum;
-      }
-      return sum + Number(match.matched_amount ?? 0);
-    }, 0);
-
-    const approvedInvoiceTotal = purchaseOrderInvoiceMatchRows.reduce((sum, match) => {
-      if (!matchCountsTowardInvoiceTotal(match.match_status) || match.approval_status !== "approved") {
-        return sum;
-      }
-      return sum + Number(match.matched_amount ?? 0);
-    }, 0);
-
-    const outstandingAmount = Math.max(0, Number(activeVariation?.totalPrice ?? 0) - approvedInvoiceTotal);
-
-    return {
-      invoicedTotal,
-      approvedInvoiceTotal,
-      outstandingAmount,
-    };
-  }, [activeVariation?.totalPrice, purchaseOrderInvoiceMatchRows]);
-
-  const updateMatchApprovalDraft = useCallback(
-    (
-      matchId: string,
-      updater: (current: MatchApprovalDraft) => MatchApprovalDraft
-    ) => {
-      setMatchApprovalDrafts((current) => {
-        const existing = current[matchId] ?? {
-          approvalNotes: "",
-          approvalChecks: { ...DEFAULT_SUPPLIER_INVOICE_APPROVAL_CHECKS },
-        };
-        return {
-          ...current,
-          [matchId]: updater(existing),
-        };
-      });
-    },
-    []
-  );
-
   const reviewAllocation = useCallback(
-    async (match: PurchaseOrderInvoiceMatchRow, nextStatus: "approved" | "disputed") => {
-      if (!supabase || !organizationId || !session?.id || !canReviewSupplierInvoiceAllocations) {
+    async (params: { allocationId: string; decision: "approved" | "disputed"; comment: string }) => {
+      if (!supplierBillDetail?.canReview || !invoiceSummary?.canReviewSiteDecisions || !selectedSupplierInvoiceId || !routePurchaseOrderId) {
         return;
       }
-
-      const draft = matchApprovalDrafts[match.id] ?? {
-        approvalNotes: match.approval_notes ?? "",
-        approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
-      };
-
-      if (
-        nextStatus === "approved" &&
-        Object.values(draft.approvalChecks).some((value) => value !== true)
-      ) {
-        setError("Complete every allocation review check before approving this matched amount.");
-        return;
-      }
-
-      setIsSavingMatchApprovalId(match.id);
+      setIsSavingSiteReviewId(params.allocationId);
       setError(null);
+      setSupplierBillReviewError(null);
       setSaveMessage(null);
 
       try {
-        const { error: updateError } = await supabase
-          .from("supplier_invoice_purchase_order_matches")
-          .update({
-            approval_status: nextStatus,
-            approved_by_user_id: session.id,
-            approved_at: new Date().toISOString(),
-            approval_notes: draft.approvalNotes.trim(),
-            approval_checks_json: draft.approvalChecks,
-          })
-          .eq("id", match.id)
-          .eq("organization_id", organizationId);
-
-        if (updateError) {
-          throw new Error(updateError.message);
-        }
-
-        const { data: refreshedMatchRowsRaw, error: refreshedMatchRowsError } = await supabase
-          .from("supplier_invoice_purchase_order_matches")
-          .select("*")
-          .eq("organization_id", organizationId)
-          .eq("purchase_order_id", activeVariation?.id)
-          .order("created_at", { ascending: true });
-
-        if (refreshedMatchRowsError) {
-          throw new Error(refreshedMatchRowsError.message);
-        }
-
-        const refreshedMatchRows = (refreshedMatchRowsRaw ?? []) as PurchaseOrderInvoiceMatchRow[];
-        const refreshedSupplierInvoiceIds = [
-          ...new Set(refreshedMatchRows.map((row) => row.supplier_invoice_id).filter(Boolean)),
-        ];
-
-        if (refreshedSupplierInvoiceIds.length > 0) {
-          const { data: refreshedInvoiceRowsRaw, error: refreshedInvoiceRowsError } = await supabase
-            .from("supplier_invoices")
-            .select("id, invoice_number, status, supplier_id, invoice_date, due_date, total")
-            .eq("organization_id", organizationId)
-            .in("id", refreshedSupplierInvoiceIds);
-
-          if (refreshedInvoiceRowsError) {
-            throw new Error(refreshedInvoiceRowsError.message);
-          }
-
-          setMatchedSupplierInvoices((refreshedInvoiceRowsRaw ?? []) as MatchedSupplierInvoiceRow[]);
-        } else {
-          setMatchedSupplierInvoices([]);
-        }
-
-        setPurchaseOrderInvoiceMatches(refreshedMatchRows);
-        setExpandedMatchApprovalId(null);
+        const result = await decideSupplierInvoiceSiteReviewAction({
+          purchaseOrderId: routePurchaseOrderId,
+          supplierInvoiceId: selectedSupplierInvoiceId,
+          allocationId: params.allocationId,
+          decision: params.decision,
+          note: params.comment,
+        });
+        if (!result.ok) throw new Error(result.error ?? "Unable to record site review.");
+        await refreshAuthoritativeInvoiceSummary();
+        await loadSupplierBillDetail(selectedSupplierInvoiceId);
         setSaveMessage(
-          nextStatus === "approved"
-            ? "Supplier invoice allocation approved."
-            : "Supplier invoice allocation marked disputed."
+          params.decision === "approved"
+            ? "Supplier Invoice line approved."
+            : "Supplier Invoice line declined."
         );
       } catch (reviewError) {
-        setError(
+        setSupplierBillReviewError(
           reviewError instanceof Error
             ? reviewError.message
             : "Unable to update the supplier invoice allocation."
         );
       } finally {
-        setIsSavingMatchApprovalId(null);
+        setIsSavingSiteReviewId(null);
       }
     },
-    [
-      activeVariation?.id,
-      canReviewSupplierInvoiceAllocations,
-      matchApprovalDrafts,
-      organizationId,
-      session?.id,
-      supabase,
-    ]
+    [invoiceSummary?.canReviewSiteDecisions, loadSupplierBillDetail, refreshAuthoritativeInvoiceSummary, routePurchaseOrderId, selectedSupplierInvoiceId, supplierBillDetail]
   );
 
   const resolveSourceLabel = useCallback((line: CostLine) => {
@@ -1296,6 +1114,27 @@ export default function ProjectVariationsPage() {
       grandTotal,
     };
   }, [activeVariation]);
+  const purchaseOrderStatusPresentation = useMemo(
+    () => invoiceSummary
+      ? derivePurchaseOrderStatusPresentation({
+          purchaseOrderValue: invoiceSummary.metrics.purchaseOrderValue,
+          paidAgainstPurchaseOrder: invoiceSummary.metrics.paidAgainstPurchaseOrder,
+          outstandingAgainstPurchaseOrder: invoiceSummary.metrics.outstandingAgainstPurchaseOrder,
+          overpaidAmount: invoiceSummary.metrics.overpaidAmount,
+          paymentStatus: invoiceSummary.metrics.paymentStatus,
+        })
+      : null,
+    [invoiceSummary]
+  );
+  const paymentProgressFillPresentation = useMemo(
+    () => purchaseOrderStatusPresentation && invoiceSummary
+      ? derivePurchaseOrderPaymentProgressFillPresentation({
+          paidPercent: purchaseOrderStatusPresentation.paidPercent,
+          paymentStatus: invoiceSummary.metrics.paymentStatus,
+        })
+      : null,
+    [invoiceSummary, purchaseOrderStatusPresentation]
+  );
   const purchaseOrderPreGstTotal = Math.max(0, pricingSummary.grandTotal - pricingSummary.gst);
   const isActiveVariationHydrated = activeVariation ? hydratedPurchaseOrderIds.has(activeVariation.id) : false;
 
@@ -1586,44 +1425,40 @@ export default function ProjectVariationsPage() {
         if (!supplierDisplay) {
           throw new Error("Supplier name is required when adding a new supplier.");
         }
-        if (!session?.id) {
-          throw new Error("You must be signed in to create a supplier.");
-        }
 
-        const duplicateWarnings = getSupplierDuplicateWarnings({
-          suppliers,
-          name: supplierDisplay,
-          email: newSupplierEmail.trim(),
-        });
-        if (
-          duplicateWarnings.length > 0 &&
-          !window.confirm(
-            `Possible duplicate supplier:\n\n${duplicateWarnings.map((warning) => `• ${warning.message}`).join("\n")}\n\nCreate anyway?`
-          )
-        ) {
-          setIsSaving(false);
-          return;
-        }
-
-        const { data: newSupplierRow, error: newSupplierError } = await supabase
-          .from("organization_suppliers")
-          .insert({
-            organization_id: organizationId,
-            created_by: session.id,
+        let supplierCreateResult = await createPurchaseOrderInlineSupplierAction({
+          input: {
             name: supplierDisplay,
-            company_name: supplierDisplay,
-            email: newSupplierEmail.trim() || null,
-            phone: newSupplierPhone.trim() || null,
-            source: "purchase_order_inline",
-          })
-          .select("*")
-          .single();
+            primaryContactEmail: newSupplierEmail.trim() || null,
+            primaryContactPhone: newSupplierPhone.trim() || null,
+          },
+        });
 
-        if (newSupplierError || !newSupplierRow?.id) {
-          throw new Error(newSupplierError?.message ?? "Unable to create supplier.");
+        if (supplierCreateResult.requiresDuplicateConfirmation && supplierCreateResult.warnings?.length) {
+          const confirmed = window.confirm(
+            `Possible duplicate supplier:\n\n${supplierCreateResult.warnings.map((warning) => `• ${warning.message}`).join("\n")}\n\nCreate anyway?`
+          );
+
+          if (!confirmed) {
+            setIsSaving(false);
+            return;
+          }
+
+          supplierCreateResult = await createPurchaseOrderInlineSupplierAction({
+            input: {
+              name: supplierDisplay,
+              primaryContactEmail: newSupplierEmail.trim() || null,
+              primaryContactPhone: newSupplierPhone.trim() || null,
+            },
+            confirmPotentialDuplicates: true,
+          });
         }
 
-        const createdSupplier = newSupplierRow as OrganizationSupplierRow;
+        if (!supplierCreateResult.ok || !supplierCreateResult.supplier?.id) {
+          throw new Error(supplierCreateResult.error ?? "Unable to create supplier.");
+        }
+
+        const createdSupplier = supplierCreateResult.supplier as OrganizationSupplierRow;
         setSuppliers((current) => {
           const withoutExisting = current.filter((supplier) => supplier.id !== createdSupplier.id);
           return [...withoutExisting, createdSupplier].sort((left, right) =>
@@ -2497,37 +2332,44 @@ export default function ProjectVariationsPage() {
               <div className="h-10" />
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
-              <div>
-                <div>
-                  <div
-                    className={`${interMedium.className} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
-                    style={{ gridTemplateColumns: `${LINE_GRID_TEMPLATE} 44px` }}
+            <div className="mt-4">
+              <CommercialLineItemsTable
+                columns={[
+                  { key: "description", label: "Description" },
+                  { key: "source", label: "Source" },
+                  { key: "item", label: "Item" },
+                  { key: "qty", label: "Qty." },
+                  { key: "unit", label: "Unit" },
+                  { key: "price", label: "Price" },
+                  { key: "amount", label: "Amount", align: "right" },
+                  { key: "actions", label: "" },
+                ]}
+                gridTemplateColumns={`${LINE_GRID_TEMPLATE} 44px`}
+              >
+                {activeVariation.costLines.map((line) => (
+                  <CommercialLineItemsRow
+                    key={line.id}
+                    gridTemplateColumns={`${LINE_GRID_TEMPLATE} 44px`}
                   >
-                    <span className="px-3 py-2.5 font-semibold">Description</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Source</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Item</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Qty.</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Unit</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Price</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Amount</span>
-                    <span className="border-l border-[var(--border)] px-3 py-2.5" />
-                  </div>
-                  <div className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
-                    {activeVariation.costLines.map((line) => (
-                      <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${LINE_GRID_TEMPLATE} 44px` }}>
-                        <div className="flex items-center px-3 py-1.5">
-                          <DescriptionInputWithPreview
-                            value={line.description}
-                            onChange={(value) => updateCostLine(line.id, "description", value)}
-                            disabled={Boolean(line.sourceTimeSheetEntryId)}
-                          />
-                        </div>
-                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
+                    <CommercialLineItemsCell>
+                      <CommercialLineTextInput
+                        value={line.description}
+                        onChange={(value) => updateCostLine(line.id, "description", value)}
+                        disabled={Boolean(line.sourceTimeSheetEntryId)}
+                      />
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder>
                           {line.sourceTimeSheetEntryId ? (
                             <span className={`${interMedium.className} text-[12px] text-[var(--text-secondary)]`}>
                               Synced from timesheet
                             </span>
+                          ) : line.commercialItemLink ? (
+                            <div className="flex min-w-0 flex-col gap-1">
+                              <WorksheetSourceLink
+                                href={buildPurchaseOrderCommercialItemSourceHref(line)}
+                                className={`${interMedium.className} inline-flex items-center gap-1 text-[11px] text-[var(--brand-primary,#0B2739)] underline underline-offset-2`}
+                              />
+                            </div>
                           ) : (
                             <div className="flex min-w-0 flex-col gap-0.5">
                               <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
@@ -2615,8 +2457,8 @@ export default function ProjectVariationsPage() {
                               </div>
                             </div>
                           )}
-                        </div>
-                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder>
                           <select
                             value={line.section}
                             onChange={(event) => updateCostLine(line.id, "section", event.target.value as CostSection)}
@@ -2625,69 +2467,56 @@ export default function ProjectVariationsPage() {
                           >
                             {COST_SECTIONS.map((section) => <option key={section} value={section}>{section}</option>)}
                           </select>
-                        </div>
-                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <Input
-                            type="number"
-                            value={line.quantity}
-                            onChange={(event) => updateCostLine(line.id, "quantity", numberOrZero(event.target.value))}
-                            disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[var(--text-secondary)]"
-                          />
-                        </div>
-                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <Input
-                            value={line.unit}
-                            onChange={(event) => updateCostLine(line.id, "unit", event.target.value)}
-                            disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[var(--text-secondary)]"
-                          />
-                        </div>
-                        <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder>
+                      <CommercialLineTextInput
+                        type="number"
+                        value={line.quantity}
+                        onChange={(value) => updateCostLine(line.id, "quantity", numberOrZero(value))}
+                        disabled={Boolean(line.sourceTimeSheetEntryId)}
+                      />
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder>
+                      <CommercialLineTextInput
+                        value={line.unit}
+                        onChange={(value) => updateCostLine(line.id, "unit", value)}
+                        disabled={Boolean(line.sourceTimeSheetEntryId)}
+                      />
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder>
                           <div className="relative w-full">
                             <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>$</span>
-                            <Input
+                            <CommercialLineTextInput
                               type="number"
                               value={line.rate === 0 ? "" : line.rate}
-                              onChange={(event) => updateCostLine(line.id, "rate", numberOrZero(event.target.value))}
+                              onChange={(value) => updateCostLine(line.id, "rate", numberOrZero(value))}
                               disabled={Boolean(line.sourceTimeSheetEntryId) ? !canManagePurchaseOrder : false}
-                              className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none disabled:!bg-transparent disabled:text-[var(--text-secondary)]"
+                              className="pl-4 pr-0"
                               title={line.sourceTimeSheetEntryId ? "Synced from timesheet: rate is editable, other fields are locked." : undefined}
                             />
                           </div>
-                        </div>
-                        <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder className="justify-end">
                           <div className={`${interMedium.className} text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
-                        </div>
-                        <div className="flex items-center justify-center border-l border-[var(--border-subtle)] px-0 py-1.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
+                    </CommercialLineItemsCell>
+                    <CommercialLineItemsCell withBorder className="justify-center px-0">
+                          <CommercialLineItemActionButton
+                            icon={<Trash2 className="h-4 w-4" />}
+                            label="Delete line item"
                             onClick={() => removeCostLine(line.id)}
                             disabled={Boolean(line.sourceTimeSheetEntryId)}
-                            className="h-8 w-8 rounded-none border-0 bg-transparent p-0 text-[var(--text-muted)]/80 opacity-0 shadow-none hover:bg-transparent hover:text-[var(--error)] group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-40"
-                            aria-label="Delete line item"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                          />
+                    </CommercialLineItemsCell>
+                  </CommercialLineItemsRow>
+                ))}
+              </CommercialLineItemsTable>
             </div>
 
-            <div className="mt-2 flex justify-end pr-12">
-              <Button
-                type="button"
-                variant="ghost"
+            <div className="mt-3 flex justify-end pr-3">
+              <CommercialLineItemsAddButton
                 onClick={() => addCostLine("Labour")}
-                className={`${styles.quoteButtonLabel} h-8 rounded-none border-0 bg-transparent px-0 text-[var(--text-secondary)] shadow-none hover:bg-transparent hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-0`}
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Add Item
-              </Button>
+                className={styles.quoteButtonLabel}
+              />
             </div>
           </section>
 
@@ -2747,15 +2576,17 @@ export default function ProjectVariationsPage() {
                 </div>
               </div>
 
-              <div className="rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
-                <h2 className={`${interMedium.className} ${styles.quoteSectionTitle} mb-4`}>Pricing Summary</h2>
+              <CommercialSummaryCard
+                title={<span className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Pricing Summary</span>}
+              >
                 <div className={`${interMedium.className} space-y-2.5 text-[13px]`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[var(--text-secondary)]">Subtotal</span>
-                    <span className="font-medium text-[var(--text-primary)]">{toMoney(purchaseOrderPreGstTotal)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[var(--text-secondary)]">
+                  <CommercialSummaryRow
+                    label="Subtotal"
+                    value={toMoney(purchaseOrderPreGstTotal)}
+                  />
+                  <CommercialSummaryRow
+                    label={
+                      <span className="inline-flex items-center gap-1.5 text-[var(--text-secondary)]">
                       GST
                       <Input
                         type="number"
@@ -2764,14 +2595,18 @@ export default function ProjectVariationsPage() {
                         className="h-6 w-12 rounded-[4px] border-[var(--border)] bg-[var(--surface)] px-1 text-center text-[12px]"
                       />
                       %
-                    </span>
-                    <span className="font-medium text-[var(--text-primary)]">{toMoney(pricingSummary.gst)}</span>
-                  </div>
+                      </span>
+                    }
+                    value={toMoney(pricingSummary.gst)}
+                  />
                   <div className="h-px bg-[var(--border)]" />
-                  <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">Total</span>
-                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(pricingSummary.grandTotal)}</span>
-                  </div>
+                  <CommercialSummaryRow
+                    label="Total"
+                    value={toMoney(pricingSummary.grandTotal)}
+                    className="pt-0.5"
+                    labelClassName="text-[15px] font-semibold text-[var(--text-primary)]"
+                    valueClassName="text-[15px] font-semibold text-[var(--text-primary)]"
+                  />
                 </div>
 
                 <div className="mt-4 flex flex-col gap-2">
@@ -2788,228 +2623,153 @@ export default function ProjectVariationsPage() {
                     Export PDF
                   </Button>
                 </div>
-              </div>
+              </CommercialSummaryCard>
             </div>
           </div>
         </div>
 
-        <section className={`${styles.quotePanelCard} overflow-hidden px-6 py-5`}>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Supplier Invoice Approvals</h2>
-                <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[12px] font-medium text-[var(--text-secondary)]`}>
-                  {canReviewSupplierInvoiceAllocations ? "QS / PM approval" : "Read only"}
-                </span>
+        <section data-testid="purchase-order-commercial-card" className={`${styles.quotePanelCard} min-w-0 overflow-hidden px-4 py-5 sm:px-6`}>
+          <button
+            type="button"
+            data-testid="purchase-order-bills-invoices-trigger"
+            aria-expanded={isBillsInvoicesOpen}
+            aria-controls="purchase-order-bills-invoices-content"
+            aria-label={isBillsInvoicesOpen ? "Collapse Bills/Invoices" : "Expand Bills/Invoices"}
+            onClick={() => setIsBillsInvoicesOpen((current) => !current)}
+            className="mb-4 flex w-full items-center justify-between gap-3 rounded-[8px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+          >
+            <div className="min-w-0">
+              <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Bills/Invoices</h2>
+            </div>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-[var(--text-secondary)] transition-transform ${isBillsInvoicesOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          {!isBillsInvoicesOpen ? null : (
+            <div id="purchase-order-bills-invoices-content" data-testid="purchase-order-bills-invoices-content" className="min-w-0">
+              {invoiceSummary && purchaseOrderStatusPresentation ? (
+                <section data-testid="purchase-order-status-section" className="min-w-0">
+                  <div data-testid="purchase-order-paid-outstanding-metrics" className="mt-5 grid grid-cols-1 items-end gap-8 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <p className={`${ibmPlexSans.className} text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-secondary)]`}>Paid</p>
+                      <p className={`${interMedium.className} mt-1 break-words text-[20px] font-semibold text-[var(--text-primary)]`}>{toMoney(invoiceSummary.metrics.paidAgainstPurchaseOrder)}</p>
+                      <p className={`${interMedium.className} mt-1 text-[15px] font-semibold text-[var(--text-secondary)]`}>{purchaseOrderStatusPresentation.paidPercent}%</p>
+                    </div>
+                    <div className="min-w-0 sm:text-right">
+                      <p className={`${ibmPlexSans.className} text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-secondary)]`}>Outstanding</p>
+                      <p className={`${interMedium.className} mt-1 break-words text-[20px] font-semibold text-[var(--text-primary)]`}>{toMoney(invoiceSummary.metrics.outstandingAgainstPurchaseOrder)}</p>
+                      <p className={`${interMedium.className} mt-1 text-[15px] font-semibold text-[var(--text-secondary)]`}>{purchaseOrderStatusPresentation.outstandingPercent}%</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 overflow-hidden rounded-full bg-[var(--surface-muted)]" aria-label="Purchase Order payment progress">
+                    <div className="flex h-4 w-full">
+                      <div
+                        data-testid="purchase-order-payment-progress-paid-fill"
+                        className={paymentProgressFillPresentation?.variant === "complete" ? "bg-[#22C55E]" : paymentProgressFillPresentation?.variant === "partial" ? "bg-[#FACC15]" : "bg-transparent"}
+                        style={paymentProgressFillPresentation?.variant === "partial"
+                          ? {
+                              width: `${paymentProgressFillPresentation.paidBarPercent}%`,
+                              backgroundImage: "repeating-linear-gradient(135deg, rgba(217,119,6,0.28) 0 3px, rgba(217,119,6,0) 3px 9px)",
+                            }
+                          : {
+                              width: `${paymentProgressFillPresentation?.paidBarPercent ?? 0}%`,
+                            }}
+                        title={`${purchaseOrderStatusPresentation.paidPercent}% paid`}
+                      />
+                      <div className="bg-[#CBD5E1]" style={{ width: `${purchaseOrderStatusPresentation.outstandingBarPercent}%` }} title={`${purchaseOrderStatusPresentation.outstandingPercent}% outstanding`} />
+                    </div>
+                  </div>
+                  {invoiceSummary.metrics.overpaidAmount > 0 ? <div className="mt-4 rounded-[10px] border border-[var(--error)]/20 bg-[var(--error-light)] px-3 py-3 text-[13px] font-semibold text-[var(--error)]">Overpaid by {toMoney(invoiceSummary.metrics.overpaidAmount)} ({purchaseOrderStatusPresentation.overpaidPercent}%). The standard progress bar is capped at 100%.</div> : null}
+                </section>
+              ) : null}
+
+              <div className="mb-3 mt-7">
+                <h3 className={`${interMedium.className} text-[15px] font-semibold text-[var(--text-primary)]`}>Current Bills</h3>
               </div>
 
-              <div className="rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
-                <div className={`${interMedium.className} space-y-3 text-[14px]`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[var(--text-secondary)]">Invoiced Total</span>
-                    <span className="font-medium text-[var(--text-primary)]">{toMoney(invoiceRollup.invoicedTotal)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[var(--text-secondary)]">Approved Invoice Total</span>
-                    <span className="font-medium text-[var(--text-primary)]">{toMoney(invoiceRollup.approvedInvoiceTotal)}</span>
-                  </div>
-                  <div className="h-px bg-[var(--border)]" />
-                  <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">Outstanding Amount</span>
-                    <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(invoiceRollup.outstandingAmount)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {purchaseOrderInvoiceMatchRows.length === 0 ? (
-                <div className="mt-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-5 text-center">
-                  <p className={`${ibmPlexSans.className} text-[14px] text-[var(--text-secondary)]`}>
-                    No supplier invoices matched yet.
-                  </p>
+              {!invoiceSummary || invoiceSummary.rows.length === 0 ? (
+                <div className="rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-5 text-center">
+                  <p className={`${ibmPlexSans.className} text-[14px] text-[var(--text-secondary)]`}>No Supplier Invoices have been allocated to this Purchase Order.</p>
                 </div>
               ) : (
-                <div className="mt-4 overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)]">
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] border-collapse">
+                <>
+                  <div className="hidden overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)] md:block">
+                    <div className="max-w-full overflow-x-auto">
+                      <table className="w-full min-w-[1080px] border-collapse">
                       <thead>
                         <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)]">
-                          {[
-                            "Invoice Number",
-                            "Invoice Date",
-                            "Matched Amount",
-                            "Allocation",
-                            "Approval",
-                            "Approver",
-                            "Actions",
-                          ].map((heading) => (
-                            <th
-                              key={heading}
-                              className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--text-secondary)]`}
-                            >
+                          {["Bill / Invoice", "Supplier", "Invoice date", "Due date", "Allocated to this PO", "Team Approval", "Payment status", "Action"].map((heading) => (
+                            <th key={heading} className={`${ibmPlexSans.className} px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--text-secondary)]`}>
                               {heading}
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {purchaseOrderInvoiceMatchRows.map((match) => {
-                          const isExpanded = expandedMatchApprovalId === match.id && canReviewSupplierInvoiceAllocations;
+                        {invoiceSummary.rows.map((summary) => {
                           return (
-                            <Fragment key={match.id}>
-                              <tr className="group border-b border-[var(--border)] last:border-0 transition-colors hover:bg-[var(--surface-muted)]">
-                                <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[15px] font-semibold text-[var(--text-primary)]`}>
-                                    {match.invoice?.invoice_number || "Supplier Invoice"}
-                                  </p>
+                              <tr key={summary.supplierInvoiceId} className="border-b border-[var(--border)] align-middle transition-colors last:border-b-0 hover:bg-[var(--surface-muted)]">
+                                <td className="px-4 py-4">
+                                  <button type="button" onClick={(event) => openSupplierBill(summary.supplierInvoiceId, event.currentTarget)} className={`${ibmPlexSans.className} rounded-[4px] text-left text-[13px] font-semibold text-[var(--text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2`}>{summary.invoiceNumber}</button>
                                 </td>
-                                <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[14px] text-[var(--text-primary)]`}>
-                                    {toDayMonthYearLabel(match.invoice?.invoice_date ?? null)}
-                                  </p>
+                                <td className="max-w-[190px] px-4 py-4 text-[12px] text-[var(--text-primary)]"><span className="line-clamp-2" title={summary.supplierName ?? "Supplier not recorded"}>{summary.supplierName ?? "Supplier not recorded"}</span></td>
+                                <td className="px-4 py-4 text-[13px] text-[var(--text-primary)]">{toDayMonthYearLabel(summary.invoiceDate)}</td>
+                                <td className="px-4 py-4 text-[13px] text-[var(--text-primary)]">{toDayMonthYearLabel(summary.dueDate)}</td>
+                                <td className="px-4 py-4">
+                                  <p className="text-[14px] font-semibold text-[var(--text-primary)]">{toMoney(summary.poAllocatedAmount)}</p>
                                 </td>
-                                <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[var(--text-primary)]`}>
-                                    {toMoney(Number(match.matched_amount ?? 0))}
-                                  </p>
+                                <td className="px-4 py-4">
+                                  <span className={`${ibmPlexSans.className} inline-flex rounded-full px-2.5 py-1 text-[12px] font-semibold ${statusPillClass(summary.siteReviewStatus)}`}>{siteReviewLabel(summary.siteReviewStatus)}</span>
                                 </td>
-                                <td className="px-6 py-4">
-                                  <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${getSupplierInvoiceMatchStatusClassName(match.match_status)}`}>
-                                    {formatMatchStatusLabel(match.match_status)}
-                                  </span>
+                                <td className="px-4 py-4">
+                                  <span className={`${ibmPlexSans.className} inline-flex rounded-full px-2.5 py-1 text-[12px] font-semibold ${statusPillClass(summary.xeroStatus)}`}>{xeroStatusLabel(summary.xeroStatus)}</span>
                                 </td>
-                                <td className="px-6 py-4">
-                                  <span className={`${ibmPlexSans.className} inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-semibold ${getSupplierInvoiceMatchApprovalStatusClassName(match.approval_status)}`}>
-                                    {formatSupplierInvoiceMatchApprovalStatusLabel(match.approval_status)}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <p className={`${ibmPlexSans.className} text-[13px] text-[var(--text-secondary)]`}>
-                                    {match.approverName
-                                      ? `${match.approverName}${match.approved_at ? ` · ${toDayMonthYearLabel(match.approved_at)}` : ""}`
-                                      : "Awaiting approval"}
-                                  </p>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <button
-                                        type="button"
-                                        aria-label="Row actions"
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]"
-                                      >
-                                        <MoreVertical className="h-4 w-4" strokeWidth={2.2} />
-                                      </button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent side="bottom" align="end" sideOffset={6} className="!z-[200] min-w-[160px] rounded-[12px] border border-[var(--border)] !bg-[var(--surface)] p-1.5 shadow-[0_4px_24px_rgba(15,23,42,0.10)]">
-                                      {match.invoice?.id ? (
-                                        <DropdownMenuItem asChild className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}>
-                                          <Link href={`/app/company/supplier-invoices/${match.invoice.id}`}>
-                                            Open
-                                          </Link>
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                      {canReviewSupplierInvoiceAllocations ? (
-                                        <DropdownMenuItem
-                                          className={`${ibmPlexSans.className} h-9 cursor-pointer rounded-[8px] px-3 text-[13px] font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]`}
-                                          onSelect={(event) => {
-                                            event.preventDefault();
-                                            setExpandedMatchApprovalId((current) =>
-                                              current === match.id ? null : match.id
-                                            );
-                                          }}
-                                        >
-                                          {isExpanded ? "Hide review" : "Review"}
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
+                                <td className="px-4 py-4">
+                                <Button type="button" variant="ghost" size="sm" onClick={(event) => openSupplierBill(summary.supplierInvoiceId, event.currentTarget)}>{summary.canReview ? "Review" : "View"}</Button>
                                 </td>
                               </tr>
-                              {isExpanded ? (
-                                <tr className="border-b border-[var(--border)] last:border-0 bg-[var(--surface-muted)]">
-                                  <td colSpan={7} className="px-6 py-5">
-                                    <div className="space-y-4">
-                                      <div className="grid gap-2 sm:grid-cols-2">
-                                        {SUPPLIER_INVOICE_APPROVAL_CHECK_OPTIONS.map((option) => {
-                                          const draft = matchApprovalDrafts[match.id] ?? {
-                                            approvalNotes: match.approval_notes ?? "",
-                                            approvalChecks: normalizeSupplierInvoiceApprovalChecks(match.approval_checks_json),
-                                          };
-
-                                          return (
-                                            <label key={option.key} className="flex items-start gap-2">
-                                              <input
-                                                type="checkbox"
-                                                checked={draft.approvalChecks[option.key]}
-                                                onChange={(event) =>
-                                                  updateMatchApprovalDraft(match.id, (current) => ({
-                                                    ...current,
-                                                    approvalChecks: {
-                                                      ...current.approvalChecks,
-                                                      [option.key]: event.target.checked,
-                                                    },
-                                                  }))
-                                                }
-                                                className="mt-0.5 h-4 w-4 rounded border-[var(--border)] text-[var(--navy-primary)] focus:ring-[var(--navy-primary)]"
-                                              />
-                                              <span className={`${interMedium.className} text-[13px] text-[var(--text-secondary)]`}>
-                                                {option.label}
-                                              </span>
-                                            </label>
-                                          );
-                                        })}
-                                      </div>
-
-                                      <div className="space-y-1.5">
-                                        <label className={`${ibmPlexSans.className} block text-[13px] font-semibold text-[var(--text-primary)]`}>
-                                          Approval notes
-                                        </label>
-                                        <textarea
-                                          rows={3}
-                                          value={
-                                            matchApprovalDrafts[match.id]?.approvalNotes ??
-                                            match.approval_notes ??
-                                            ""
-                                          }
-                                          onChange={(event) =>
-                                            updateMatchApprovalDraft(match.id, (current) => ({
-                                              ...current,
-                                              approvalNotes: event.target.value,
-                                            }))
-                                          }
-                                          className={`${interMedium.className} min-h-[84px] w-full max-w-[600px] rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--navy-primary)] focus:outline-none`}
-                                        />
-                                      </div>
-
-                                      <div className="flex flex-wrap gap-2">
-                                        <Button
-                                          type="button"
-                                          onClick={() => void reviewAllocation(match, "approved")}
-                                          disabled={isSavingMatchApprovalId === match.id}
-                                          className={`${ibmPlexSans.className} h-9 rounded-full bg-[var(--navy-primary)] px-5 text-[14px] font-semibold !text-white hover:bg-[var(--navy-primary)] hover:opacity-90`}
-                                        >
-                                          {isSavingMatchApprovalId === match.id ? "Saving..." : "Approve Allocation"}
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          onClick={() => void reviewAllocation(match, "disputed")}
-                                          disabled={isSavingMatchApprovalId === match.id}
-                                          className={`${ibmPlexSans.className} h-9 rounded-full border-[var(--error-light)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--error)] hover:bg-[var(--error-light)]`}
-                                        >
-                                          Mark Disputed
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ) : null}
-                            </Fragment>
                           );
                         })}
                       </tbody>
-                    </table>
+                      </table>
+                    </div>
                   </div>
-                </div>
+                  <div className="space-y-3 md:hidden">
+                    {invoiceSummary.rows.map((summary) => {
+                      return (
+                        <article key={summary.supplierInvoiceId} className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <button type="button" onClick={(event) => openSupplierBill(summary.supplierInvoiceId, event.currentTarget)} className={`${interMedium.className} rounded-[4px] text-left text-[14px] font-semibold text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]`}>{summary.invoiceNumber}</button>
+                              <p className="mt-1 break-words text-[12px] text-[var(--text-secondary)]">{summary.supplierName ?? "Supplier not recorded"}</p>
+                            </div>
+                            <span className={`${ibmPlexSans.className} shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusPillClass(summary.xeroStatus)}`}>{xeroStatusLabel(summary.xeroStatus)}</span>
+                          </div>
+                          <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
+                            <div><dt className="text-[var(--text-secondary)]">Invoice / due</dt><dd className="mt-1">{toDayMonthYearLabel(summary.invoiceDate)} / {toDayMonthYearLabel(summary.dueDate)}</dd></div>
+                            <div><dt className="text-[var(--text-secondary)]">Allocated to this PO</dt><dd className="mt-1 font-semibold">{toMoney(summary.poAllocatedAmount)}</dd></div>
+                            <div><dt className="text-[var(--text-secondary)]">Team Approval</dt><dd className="mt-1">{siteReviewLabel(summary.siteReviewStatus)}</dd></div>
+                          </dl>
+                          <Button type="button" variant="outline" size="sm" className="mt-4 w-full" onClick={(event) => openSupplierBill(summary.supplierInvoiceId, event.currentTarget)}>View details</Button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
               )}
+            </div>
+          )}
+
+          <SupplierInvoiceTeamReviewModal
+            open={Boolean(selectedSupplierInvoiceId)}
+            onOpenChange={setSupplierBillDialogOpen}
+            detail={supplierBillDetail}
+            loading={isLoadingSupplierBillDetail}
+            error={supplierBillDetailError}
+            reviewError={supplierBillReviewError}
+            savingAllocationId={isSavingSiteReviewId}
+            onReview={(params) => void reviewAllocation(params)}
+          />
+
         </section>
       </div>
       ) : (

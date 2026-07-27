@@ -533,8 +533,92 @@ function unique(values: string[]) {
   return Array.from(new Set(values));
 }
 
+function buildColumnReferenceRegex(source: string) {
+  return new RegExp(source, "i");
+}
+
+const COLUMN_REFERENCE_PATTERNS = [
+  {
+    label: "target:column_letter",
+    regex: buildColumnReferenceRegex(String.raw`\bcol(?:umn)?\s+[a-z]{1,3}\b`),
+  },
+  {
+    label: "target:letter_column",
+    regex: buildColumnReferenceRegex(String.raw`\b[a-z]{1,3}\s+column\b`),
+  },
+  {
+    label: "target:cell_range",
+    regex: buildColumnReferenceRegex(String.raw`\bcells?\s+[a-z]{1,3}\d+\s*:\s*[a-z]{1,3}\d+\b`),
+  },
+  {
+    label: "target:cell_ref",
+    regex: buildColumnReferenceRegex(String.raw`\bcell\s+[a-z]{1,3}\d+\b`),
+  },
+];
+
+const FORMULA_FIX_TARGET_PATTERNS = [
+  {
+    label: "action:fix_formulas_with_target",
+    regex:
+      /\b(?:fix|repair|correct|complete|finish)\b[\s\S]{0,20}\b(?:missing\s+)?formulas?\b[\s\S]{0,40}\b(?:column|col|cells?|[a-z]{1,3}\s+column)\b/i,
+  },
+  {
+    label: "action:review_fix_formulas_with_target",
+    regex:
+      /\b(?:review|check|audit)\b[\s\S]{0,40}\b(?:column|col|cells?|[a-z]{1,3}\s+column)\b[\s\S]{0,40}\b(?:fix|repair|correct|complete)\b[\s\S]{0,20}\b(?:missing\s+)?formulas?\b/i,
+  },
+];
+
+const FORMULA_GENERATE_TARGET_PATTERNS = [
+  {
+    label: "action:create_formulas_with_target",
+    regex:
+      /\b(?:create|add|fill|populate|write|insert|put|generate)\b[\s\S]{0,20}\bformulas?\b[\s\S]{0,40}\b(?:column|col|cells?|[a-z]{1,3}\s+column)\b/i,
+  },
+  {
+    label: "action:review_create_formulas_with_target",
+    regex:
+      /\b(?:review|check|audit)\b[\s\S]{0,50}\b(?:create|add|fill|populate|write|insert|put|generate)\b[\s\S]{0,20}\bformulas?\b[\s\S]{0,40}\b(?:column|col|cells?|[a-z]{1,3}\s+column)\b/i,
+  },
+];
+
 function hasPhrase(text: string, phrase: string) {
   return text.includes(phrase);
+}
+
+function detectPromptLevelColumnReference(promptText: string) {
+  return COLUMN_REFERENCE_PATTERNS
+    .filter((pattern) => pattern.regex.test(promptText))
+    .map((pattern) => pattern.label);
+}
+
+function detectExplicitFormulaMutationIntent(promptText: string) {
+  const targetSignals = detectPromptLevelColumnReference(promptText);
+  if (targetSignals.length === 0) {
+    return null;
+  }
+
+  const fixSignals = FORMULA_FIX_TARGET_PATTERNS
+    .filter((pattern) => pattern.regex.test(promptText))
+    .map((pattern) => pattern.label);
+  if (fixSignals.length > 0) {
+    return {
+      intent: "formula_fix" as const,
+      matchedSignals: unique([...fixSignals, ...targetSignals]),
+    };
+  }
+
+  const generateSignals = FORMULA_GENERATE_TARGET_PATTERNS
+    .filter((pattern) => pattern.regex.test(promptText))
+    .map((pattern) => pattern.label);
+  if (generateSignals.length > 0) {
+    return {
+      intent: "formula_generate" as const,
+      matchedSignals: unique([...generateSignals, ...targetSignals]),
+    };
+  }
+
+  return null;
 }
 
 function collectWorksheetSupportText(input: PricingWorksheetConstructionIntentInput) {
@@ -559,6 +643,7 @@ function collectWorksheetSupportText(input: PricingWorksheetConstructionIntentIn
 }
 
 function scoreIntent(promptText: string) {
+  const explicitFormulaMutationIntent = detectExplicitFormulaMutationIntent(promptText);
   const scored = INTENT_SIGNAL_SETS.map((set) => {
     const matchedSignals: string[] = [];
     let score = 0;
@@ -601,6 +686,15 @@ function scoreIntent(promptText: string) {
     existing.score += boost.scoreBoost;
     existing.priority = Math.max(existing.priority, boost.priority);
     existing.matchedSignals = unique([...existing.matchedSignals, ...matchedBoostSignals]);
+  }
+
+  if (explicitFormulaMutationIntent) {
+    const existing = scored.find((entry) => entry.intent === explicitFormulaMutationIntent.intent);
+    if (existing) {
+      existing.score += 30;
+      existing.priority = Math.max(existing.priority, 170);
+      existing.matchedSignals = unique([...existing.matchedSignals, ...explicitFormulaMutationIntent.matchedSignals]);
+    }
   }
 
   const top = [...scored].sort((left, right) => {

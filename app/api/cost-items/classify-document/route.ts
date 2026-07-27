@@ -93,6 +93,10 @@ export async function POST(request: Request) {
               metadata: {
                 sourceDocumentKind: row.source_document_kind,
                 classificationMethod: resolved.method,
+                tradesstackCostCode: update.tradesstack_cost_code,
+                tradesstackCostCodeLabel: update.tradesstack_cost_code_label,
+                financialRoutingSource: update.financial_routing_source,
+                reviewStatus: update.review_status,
               },
               reason:
                 resolved.method === "inherited"
@@ -101,7 +105,10 @@ export async function POST(request: Request) {
             })
           );
 
-          if (row.needs_review !== true && update.needs_review === true) {
+          if (
+            (row.needs_review !== true && update.needs_review === true) ||
+            row.review_status !== update.review_status
+          ) {
             const reviewReopenedEventId = await writeCostItemIntelligenceEvent(
               supabase,
               buildCostItemIntelligenceEvent({
@@ -118,6 +125,8 @@ export async function POST(request: Request) {
                 metadata: {
                   sourceDocumentKind: row.source_document_kind,
                   confidence: update.classification_confidence,
+                  tradesstackCostCode: update.tradesstack_cost_code,
+                  reviewStatus: update.review_status,
                 },
                 reason: "Automatic classification flagged the cost item for human review.",
               })
@@ -129,11 +138,16 @@ export async function POST(request: Request) {
               scopeEntityId: row.id,
               linkedEventId: reviewReopenedEventId,
               expectedValue: { needsReview: false },
-              observedValue: { needsReview: true },
+              observedValue: {
+                needsReview: update.needs_review,
+                reviewStatus: update.review_status,
+                tradesstackCostCode: update.tradesstack_cost_code,
+              },
               details: {
                 sourceDocumentKind: row.source_document_kind,
                 confidence: update.classification_confidence,
                 classificationMethod: resolved.method,
+                financialRoutingSource: update.financial_routing_source,
               },
               approvalNote: "Automatic classification confidence requires review.",
             });

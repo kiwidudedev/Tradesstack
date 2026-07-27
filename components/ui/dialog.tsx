@@ -25,21 +25,23 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   align?: "center" | "top";
   hideClose?: boolean;
+  fullScreenMobile?: boolean;
 }
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ align = "center", className, children, hideClose = false, ...props }, ref) => (
+>(({ align = "center", className, children, hideClose = false, fullScreenMobile = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <div
       className={cn(
-        "pointer-events-none fixed inset-0 z-50 flex justify-center p-4 sm:p-6",
+        "pointer-events-none fixed inset-0 z-50 flex justify-center sm:p-6",
+        fullScreenMobile ? "p-0" : "p-4",
         align === "top" ? "items-start" : "items-center"
       )}
     >
-      <div className="pointer-events-auto relative inline-flex max-w-full">
+      <div className={cn("pointer-events-auto relative max-w-full", fullScreenMobile ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex")}>
         <DialogPrimitive.Content
           ref={ref}
           className={cn(

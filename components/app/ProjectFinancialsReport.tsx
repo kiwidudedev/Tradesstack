@@ -52,7 +52,31 @@ function deriveCostAreaLabel(row: ProjectCostReportRow) {
     return "Commercial adjustments";
   }
 
+  if (row.tradesstackCostCode) {
+    return row.tradesstackCostCodeLabel
+      ? `${row.tradesstackCostCode} ${row.tradesstackCostCodeLabel}`
+      : row.tradesstackCostCode;
+  }
+
   return row.workType ?? row.classificationLabel;
+}
+
+function deriveRowMetadata(row: ProjectCostReportRow) {
+  if (row.isUnmatchedActual || row.isBudgetAdjustment) {
+    return [];
+  }
+
+  const values = [
+    row.mappedAccountingCode
+      ? row.mappedAccountingCodeLabel
+        ? `${row.mappedAccountingCode} ${row.mappedAccountingCodeLabel}`
+        : row.mappedAccountingCode
+      : null,
+    row.internalCostCode,
+    row.costType,
+  ].filter((value): value is string => Boolean(value));
+
+  return values;
 }
 
 function deriveRowStatus(row: ProjectCostReportRow) {
@@ -662,9 +686,11 @@ export function ProjectFinancialsReport({
                               ) : null}
                             </div>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-secondary)]">
-                              {row.internalCostCode ? <span>{row.internalCostCode}</span> : null}
-                              {row.costType ? <span>{row.costType}</span> : null}
-                              {!row.internalCostCode && !row.costType && !row.isUnmatchedActual && !row.isBudgetAdjustment ? <span>Unclassified</span> : null}
+                              {deriveRowMetadata(row).length > 0 ? (
+                                deriveRowMetadata(row).map((value) => <span key={value}>{value}</span>)
+                              ) : !row.isUnmatchedActual && !row.isBudgetAdjustment ? (
+                                <span>Unclassified</span>
+                              ) : null}
                             </div>
                           </div>
                         </OperationalTableCell>
@@ -763,9 +789,11 @@ export function ProjectFinancialsReport({
                               {row.isUnmatchedActual ? <StatusBadge status="pending">Unmatched actual</StatusBadge> : null}
                             </div>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-secondary)]">
-                              {row.internalCostCode ? <span>{row.internalCostCode}</span> : null}
-                              {row.costType ? <span>{row.costType}</span> : null}
-                              {!row.internalCostCode && !row.costType && !row.isUnmatchedActual && !row.isBudgetAdjustment ? <span>Unclassified</span> : null}
+                              {deriveRowMetadata(row).length > 0 ? (
+                                deriveRowMetadata(row).map((value) => <span key={value}>{value}</span>)
+                              ) : !row.isUnmatchedActual && !row.isBudgetAdjustment ? (
+                                <span>Unclassified</span>
+                              ) : null}
                             </div>
                           </div>
                         </OperationalTableCell>

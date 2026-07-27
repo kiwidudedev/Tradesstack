@@ -120,6 +120,62 @@ describe("pricing worksheet AI structure snapshot", () => {
     expect(snapshot.formulaCompatibility.allowedFunctions).toContain("SUM");
   });
 
+  it("does not treat formatting-only or orphaned blank-looking rows as meaningful worksheet structure", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Formatting Only Worksheet",
+      rowCount: 20,
+      columnCount: 12,
+    });
+    const visibleRow = worksheet.rows[11];
+    const visibleColumn = worksheet.columns[1];
+    worksheet.cells[buildWorksheetCellKey(visibleColumn.id, visibleRow.id)] = {
+      value: null,
+      type: "empty",
+      formula: null,
+      computedValue: null,
+      displayValue: "",
+      metadata: {
+        format: {
+          fill: {
+            color: "#DBEAFE",
+          },
+        },
+      },
+    };
+    worksheet.cells.A28 = {
+      value: "",
+      type: "empty",
+      formula: null,
+      computedValue: null,
+      displayValue: "",
+      metadata: {},
+    };
+
+    const context = buildPricingWorksheetAiContext(worksheet, {
+      worksheetName: worksheet.sheetName,
+      worksheetId: "formatting-only-worksheet",
+      tradePackage: "Interiors",
+    });
+
+    expect(
+      detectPricingWorksheetState({
+        worksheet,
+        worksheetContext: context,
+      }),
+    ).toBe("blank");
+
+    const snapshot = buildPricingWorksheetAiStructureSnapshot({
+      worksheet,
+      worksheetContext: context,
+      classification: buildClassification("generation"),
+      prompt: "Build a pricing worksheet.",
+    });
+
+    expect(snapshot.rows).toEqual([]);
+    expect(snapshot.rowCoverage.meaningfulRowCount).toBe(0);
+    expect(snapshot.sections.length).toBe(0);
+  });
+
   it("detects formula-heavy worksheets from real formula-bearing rows", () => {
     const worksheet = createDefaultWorksheetData({
       sheetName: "Formula Worksheet",

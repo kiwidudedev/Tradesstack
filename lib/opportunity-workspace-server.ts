@@ -27,7 +27,7 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
   const opportunity = opportunityResult.data;
   const ownerUserId = opportunity.owner_user_id ?? opportunity.created_by ?? null;
 
-  const [clientResult, ownerResult, latestQuoteResult] = await Promise.all([
+  const [clientResult, ownerResult, latestQuoteResult, workspaceProjectResult] = await Promise.all([
     opportunity.client_id
       ? supabase
           .from("organization_clients")
@@ -45,20 +45,29 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     supabase
-      .from("opportunity_quotes")
+      .from("project_quotes")
       .select("total_quote_price, status, quote_date, updated_at")
       .eq("organization_id", member.organization_id)
-      .eq("opportunity_id", opportunity.id)
+      .eq("originating_opportunity_id", opportunity.id)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    opportunity.workspace_project_id
+      ? supabase
+          .from("organization_projects")
+          .select("slug")
+          .eq("organization_id", member.organization_id)
+          .eq("id", opportunity.workspace_project_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
-  if (clientResult.error || ownerResult.error || latestQuoteResult.error) {
+  if (clientResult.error || ownerResult.error || latestQuoteResult.error || workspaceProjectResult.error) {
     throw new Error(
       clientResult.error?.message ??
       ownerResult.error?.message ??
       latestQuoteResult.error?.message ??
+      workspaceProjectResult.error?.message ??
       "Unable to load opportunity workspace data."
     );
   }
@@ -73,6 +82,7 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
     ownerUserId,
     ownerName: ownerResult.data?.display_name || "Unassigned",
     workspaceProjectId: opportunity.workspace_project_id,
+    workspaceProjectSlug: workspaceProjectResult.data?.slug ?? null,
     latestQuoteSummary: latestQuoteResult.data
       ? {
           totalQuotePrice:

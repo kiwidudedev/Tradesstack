@@ -21,6 +21,7 @@ import {
   FileSpreadsheet,
   Grid2X2,
   Italic as ItalicIcon,
+  LayoutGrid,
   Minus,
   PaintBucket,
   Plus,
@@ -40,9 +41,28 @@ import {
   type PricingWorksheetAiValidationWarning,
 } from "@/components/app/PricingWorksheetAiAssistDialog";
 import { PricingWorksheetAiChatPanel } from "@/components/app/PricingWorksheetAiChatPanel";
-import { useOpportunityWorkspaceData } from "@/components/app/OpportunityWorkspaceDataProvider";
+import { WorkbookPagesTray } from "@/components/app/WorkbookPagesTray";
+import { usePricingWorksheetOwner } from "@/components/app/PricingWorksheetOwnerProvider";
+import {
+  WorksheetPublishToPurchaseOrderDialog,
+  type WorksheetPublishConfirmationLineDraft,
+} from "@/components/app/WorksheetPublishToPurchaseOrderDialog";
+import { WorksheetPublishToQuoteDialog } from "@/components/app/WorksheetPublishToQuoteDialog";
+import {
+  WorksheetPublishToVariationDialog,
+  type WorksheetPublishToVariationLineDraft,
+} from "@/components/app/WorksheetPublishToVariationDialog";
+import type { CommercialLineDraft } from "@/components/app/WorksheetCommercialLineConfirmationEditor";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,6 +86,8 @@ import {
   type WorksheetPricingSummary,
   type WorksheetRow,
 } from "@/lib/opportunity-pricing-worksheet-defaults";
+import { resolveWorksheetPersistenceName } from "@/lib/opportunity-pricing-worksheet-title";
+import { deriveWorksheetPricingSummary } from "@/lib/opportunity-pricing-worksheet-summary";
 import {
   applyWorksheetAutoLayout,
   buildWorksheetColumnAutoFitTarget,
@@ -78,11 +100,17 @@ import {
   commitWorksheetHistoryEntry,
 } from "@/lib/opportunity-pricing-worksheet-history";
 import {
+  buildWorksheetClientMutationId,
+  buildWorksheetLearningArtifacts,
   buildPricingWorksheetAiEvidenceFeedbackData,
   buildPricingWorksheetAiReviewSignalData,
   buildPricingWorksheetIntelligenceEvent,
+  enqueueWorksheetMutationEvidenceV2Outbox,
+  listWorksheetChangedCellKeys,
   logPricingWorksheetIntelligenceFailure,
+  stampWorksheetAiProvenance,
   summarizeWorksheetStructure,
+  writePricingWorksheetCorrectionEvent,
   writePricingWorksheetIntelligenceEvents,
 } from "@/lib/pricing-worksheet-intelligence";
 import {
@@ -96,6 +124,24 @@ import {
   moveCellKey,
   type WorksheetSelectionRange,
 } from "@/lib/opportunity-pricing-worksheet-copy";
+import {
+  addWorksheetSelectionFromCellKeys,
+  createEmptyWorksheetMultiSelectionState,
+  findWorksheetSelectionRangeIndexForCellKey,
+  findWorksheetSelectionRangeIndexForColumn,
+  findWorksheetSelectionRangeIndexForRow,
+  getActiveWorksheetSelectionArea,
+  isColumnIndexSelected,
+  isPositionInWorksheetSelectionArea,
+  isRowIndexSelected,
+  replaceWorksheetSelectionFromCellKeys,
+  toggleWorksheetCellSelection,
+  toggleWorksheetColumnSelection,
+  toggleWorksheetRowSelection,
+  type WorksheetMultiSelectionState,
+  type WorksheetSelectionArea,
+  type WorksheetSelectionKind,
+} from "@/lib/opportunity-pricing-worksheet-multi-selection";
 import {
   resolveWorksheetPendingRangeSelectionState,
   resolveWorksheetPointerDragState,
@@ -140,8 +186,9 @@ import {
   markPricingWorksheetPerformance,
   startPricingWorksheetPerformanceMeasure,
 } from "@/lib/pricing-worksheet-performance";
+import { mapPricingWorksheetUiErrorMessage } from "@/lib/pricing-worksheet-ui-errors";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { Database, Json } from "@/lib/supabase/types";
+import type { Json } from "@/lib/supabase/types";
 import { buildPricingWorksheetAiContext } from "@/lib/pricing-worksheet-ai-context";
 import type { PricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
 import {
@@ -157,19 +204,54 @@ import {
   type PricingWorksheetAiSuggestedEditGroup,
 } from "@/lib/pricing-worksheet-edit-plan";
 import { validateWorksheetBeforeSave } from "@/lib/opportunity-pricing-worksheet-save-validation";
+import {
+  buildOpportunityPricingWorkbookEditorRecord,
+  createOpportunityPricingWorkbookSheet,
+  deleteOpportunityPricingWorkbookSheet,
+  loadOpportunityPricingWorkbook,
+  renameOpportunityPricingWorkbookSheet,
+  saveOpportunityPricingWorkbookActiveSheet,
+  setOpportunityPricingWorkbookLastActiveSheet,
+  type OpportunityPricingWorkbook,
+  type OpportunityPricingWorkbookSheet,
+} from "@/lib/opportunity-pricing-workbook";
+import {
+  flushPendingWorksheetLearningWrites,
+  queuePendingWorksheetLearningWrite,
+  type PendingWorksheetLearningWrite,
+} from "@/lib/pricing-worksheet-learning-persistence";
+import {
+  purchaseOrderDestinationAdapter,
+  resolvePurchaseOrderPublishOptions,
+  type PurchaseOrderPublishOption,
+  type PurchaseOrderPublishTarget,
+} from "@/lib/commercial-items/purchase-order-destination-adapter";
+import {
+  quoteDestinationAdapter,
+  resolveQuotePublishOptions,
+  resolveQuotePublishTarget,
+  type QuotePublishOption,
+  type QuotePublishTarget,
+} from "@/lib/commercial-items/quote-destination-adapter";
+import {
+  variationDestinationAdapter,
+  type VariationPublishTarget,
+} from "@/lib/commercial-items/variation-destination-adapter";
+import { resolveWorksheetPurchaseOrderPublishContext } from "@/lib/commercial-items/worksheet-purchase-order-publish-context";
+import { resolveWorksheetQuotePublishContext } from "@/lib/commercial-items/worksheet-quote-publish-context";
+import { resolveWorksheetVariationPublishContext } from "@/lib/commercial-items/worksheet-variation-publish-context";
+import {
+  mapWorksheetPurchaseOrderPublishErrorMessage,
+  mapWorksheetQuotePublishErrorMessage,
+  mapWorksheetVariationPublishErrorMessage,
+} from "@/lib/commercial-items/worksheet-publish-errors";
+import { publishWorksheetSelection } from "@/lib/commercial-items/worksheet-publish";
+import {
+  buildPublishedWorksheetSelectionFromConfirmedLines,
+  interpretWorksheetSelectionForPublish,
+  type InterpretedWorksheetSelection,
+} from "@/lib/commercial-items/worksheet-publish-v2";
 
-type PricingWorksheetRow = Pick<
-  Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"],
-  | "id"
-  | "name"
-  | "trade_package"
-  | "worksheet_data"
-  | "pricing_summary"
-  | "extracted_pricing_data"
-  | "version"
-  | "updated_at"
-  | "updated_by"
->;
 type WorksheetContextMenuState =
   | {
       type: "cell";
@@ -201,12 +283,20 @@ type FormulaReferenceRangeHighlight = {
 
 type PricingWorksheetAiPreviewResponse = {
   aiInteractionId: string;
+  workbookId?: string | null;
+  worksheetId?: string | null;
+  sheetId: string | null;
+  sheetName: string;
   lifecycleState: string;
   validationStatus: string;
   preview: {
     worksheet: WorksheetData;
     compactOutput: PricingWorksheetAiPreviewSummary;
     matchedMemory: PricingWorksheetAiMatchedMemory | null;
+    validationIssues?: Array<{
+      severity: "info" | "warning" | "error" | "critical";
+      message: string;
+    }>;
     validationWarnings: PricingWorksheetAiValidationWarning[];
     contextSummary: PricingWorksheetAiContextSummary;
     classification?: PricingWorksheetConstructionIntent;
@@ -220,6 +310,10 @@ type PricingWorksheetAiPreviewResponse = {
     };
   };
 };
+
+function getBlockingAiPreviewIssue(preview: PricingWorksheetAiPreviewResponse["preview"] | null | undefined) {
+  return preview?.validationIssues?.find((issue) => issue.severity === "error" || issue.severity === "critical") ?? null;
+}
 
 type PricingWorksheetAiJobStatus =
   | "queued"
@@ -245,9 +339,63 @@ type PricingWorksheetAiJobError = {
   retryable: boolean;
 };
 
+type WorksheetPageDialogState =
+  | {
+      type: "rename";
+      sheetId: string;
+      value: string;
+    }
+  | {
+      type: "delete";
+      sheetId: string;
+    }
+  | null;
+
+type QuotePublishDialogState = {
+  projectId: string | null;
+  range: WorksheetSelectionRange;
+  selectionRanges: WorksheetSelectionRange[];
+  interpretedSelection: InterpretedWorksheetSelection;
+  lines: CommercialLineDraft[];
+  quotes: QuotePublishOption[];
+};
+
+type PurchaseOrderPublishDialogState = {
+  context: {
+    projectId: string;
+    projectSlug: string | null;
+  };
+  range: WorksheetSelectionRange;
+  selectionRanges: WorksheetSelectionRange[];
+  interpretedSelection: InterpretedWorksheetSelection;
+  lines: WorksheetPublishConfirmationLineDraft[];
+  suppliers: Array<{ id: string; label: string }>;
+  draftPurchaseOrders: PurchaseOrderPublishOption[];
+};
+
+type VariationPublishDialogState = {
+  context: {
+    opportunityId: string;
+    projectId: string;
+    projectSlug: string | null;
+    variationId: string;
+    variationNumber: string;
+    variationTitle: string;
+    variationStatus: string;
+  };
+  range: WorksheetSelectionRange;
+  selectionRanges: WorksheetSelectionRange[];
+  interpretedSelection: InterpretedWorksheetSelection;
+  lines: WorksheetPublishToVariationLineDraft[];
+};
+
 type PricingWorksheetAiJobResponse = {
   jobId: string;
   aiInteractionId: string;
+  workbookId?: string | null;
+  worksheetId?: string | null;
+  sheetId?: string | null;
+  sheetName?: string | null;
   status: PricingWorksheetAiJobStatus;
   progressLabel: string;
   retryable?: boolean;
@@ -272,6 +420,58 @@ const WORKSHEET_ROW_GUTTER_WIDTH = 64;
 const WORKSHEET_ROW_OVERSCAN = 6;
 const WORKSHEET_COLUMN_OVERSCAN = 2;
 const WORKSHEET_VIEWPORT_FALLBACK_HEIGHT = 720;
+
+function formatWorksheetPublishDraftValue(value: number | string | null | undefined) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return typeof value === "string" ? value : "";
+}
+
+function parseWorksheetPublishDraftNumber(value: string) {
+  const normalized = value.replaceAll(",", "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeWorksheetPublishDraftText(value: string) {
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function roundWorksheetPublishNumber(value: number, decimals: number) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function normalizeVariationPublishSection(
+  sectionHint: string | null | undefined,
+): WorksheetPublishToVariationLineDraft["section"] {
+  const normalized = sectionHint?.trim().toLowerCase() ?? "";
+
+  if (normalized.includes("material")) {
+    return "Materials";
+  }
+
+  if (normalized.includes("subcontract")) {
+    return "Subcontractors";
+  }
+
+  if (normalized.includes("plant")) {
+    return "Plant";
+  }
+
+  if (normalized.includes("margin")) {
+    return "Margin";
+  }
+
+  return "Labour";
+}
 const WORKSHEET_VIEWPORT_FALLBACK_WIDTH = 1120;
 const WORKSHEET_ZOOM_LEVELS = [0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5] as const;
 const DEFAULT_WORKSHEET_FONT_SIZE = 14;
@@ -348,6 +548,7 @@ const WORKSHEET_CELL_VERTICAL_PADDING = 12;
 const WORKSHEET_CELL_FONT_SIZE = 14;
 const WORKSHEET_CELL_LINE_HEIGHT = 20;
 const SELECTION_OUTLINE_COLOR = "rgb(37 99 235)";
+const SECONDARY_SELECTION_OUTLINE_COLOR = "rgb(96 165 250)";
 const FILL_PREVIEW_OUTLINE_COLOR = "rgb(59 130 246)";
 const TEXT_ALIGN_OPTIONS = [
   { value: "left", label: "Left" },
@@ -358,6 +559,30 @@ const MAX_NUMBER_DECIMAL_PLACES = 6;
 
 function cloneWorksheetData(worksheet: WorksheetData) {
   return JSON.parse(JSON.stringify(worksheet)) as WorksheetData;
+}
+
+function cloneWorksheetSelectionRange(range: WorksheetSelectionRange | null) {
+  return range
+    ? {
+        startRowIndex: range.startRowIndex,
+        endRowIndex: range.endRowIndex,
+        startColumnIndex: range.startColumnIndex,
+        endColumnIndex: range.endColumnIndex,
+      }
+    : null;
+}
+
+function cloneWorksheetSelectionRanges(ranges: WorksheetSelectionRange[]) {
+  return ranges.map((range) => ({
+    startRowIndex: range.startRowIndex,
+    endRowIndex: range.endRowIndex,
+    startColumnIndex: range.startColumnIndex,
+    endColumnIndex: range.endColumnIndex,
+  }));
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function clampWorksheetZoom(nextZoom: number) {
@@ -452,11 +677,18 @@ function buildCurrentWorksheetSummary(worksheet: WorksheetData) {
 
 function buildWorksheetAiEditedOutput(params: {
   preview: PricingWorksheetAiPreviewResponse["preview"];
+  workbookId: string | null;
+  sheetId: string | null;
+  sheetName: string;
   worksheetName: string;
   tradePackage: string | null;
 }) {
   return {
     ...params.preview.compactOutput,
+    workbookId: params.workbookId,
+    worksheetId: params.workbookId,
+    sheetId: params.sheetId,
+    sheetName: params.sheetName,
     worksheetName: params.worksheetName,
     tradePackage: params.tradePackage,
     responseMode: params.preview.assistant?.mode ?? null,
@@ -612,22 +844,6 @@ function getCellPosition(worksheet: WorksheetData, cellKey: string) {
   };
 }
 
-function isPositionInRange(
-  position: { rowIndex: number; columnIndex: number },
-  range: WorksheetSelectionRange | null
-) {
-  if (!range) {
-    return false;
-  }
-
-  return (
-    position.rowIndex >= range.startRowIndex &&
-    position.rowIndex <= range.endRowIndex &&
-    position.columnIndex >= range.startColumnIndex &&
-    position.columnIndex <= range.endColumnIndex
-  );
-}
-
 type WorksheetBorderEdge = "top" | "right" | "bottom" | "left" | "hMid" | "vMid";
 
 const BORDER_MODE_EDGES: Record<
@@ -764,6 +980,7 @@ function getRangeEdgeFlagsByIndex(
 }
 
 type WorksheetCellViewProps = {
+  activeSelectedRange: WorksheetSelectionRange | null;
   activeCellKey: string | null;
   activeEditor: "cell" | "formulaBar" | null;
   canWriteWorksheet: boolean;
@@ -776,7 +993,7 @@ type WorksheetCellViewProps = {
   formulaReferenceRanges: FormulaReferenceRangeHighlight[];
   rowHeight: number;
   rowIndex: number;
-  selectedRange: WorksheetSelectionRange | null;
+  selectedRanges: WorksheetSelectionArea[];
   onBeginCellEdit: (cellKey: string, cell: WorksheetCell | undefined) => void;
   onBeginFillDrag: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onCellClick: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
@@ -790,6 +1007,7 @@ type WorksheetCellViewProps = {
 };
 
 const WorksheetCellView = memo(function WorksheetCellView({
+  activeSelectedRange,
   activeCellKey,
   activeEditor,
   canWriteWorksheet,
@@ -802,7 +1020,7 @@ const WorksheetCellView = memo(function WorksheetCellView({
   formulaReferenceRanges,
   rowHeight,
   rowIndex,
-  selectedRange,
+  selectedRanges,
   onBeginCellEdit,
   onBeginFillDrag,
   onCellClick,
@@ -817,9 +1035,22 @@ const WorksheetCellView = memo(function WorksheetCellView({
   const cellFormat = getCellFormat(cell);
   const isEditing = activeCellKey === cellKey && activeEditor === "cell";
   const inputValue = isEditing ? editingCellValue : getFormattedCellDisplayValue(cell);
-  const edgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, selectedRange);
+  const selectionEdgeFlags = selectedRanges
+    .map((range) => ({
+      range,
+      edgeFlags: getRangeEdgeFlagsByIndex(rowIndex, columnIndex, range),
+    }))
+    .filter((entry) => entry.edgeFlags.isInRange);
+  const activeSelectionEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, activeSelectedRange);
   const fillPreviewEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, fillPreviewRange);
-  const selectionShadow = edgeFlags.isInRange ? buildSelectionShadow(edgeFlags, SELECTION_OUTLINE_COLOR) : undefined;
+  const selectionShadows = selectionEdgeFlags.map(({ range, edgeFlags }) =>
+    buildSelectionShadow(
+      edgeFlags,
+      activeSelectedRange === range
+        ? SELECTION_OUTLINE_COLOR
+        : SECONDARY_SELECTION_OUTLINE_COLOR,
+    ),
+  ).filter(Boolean);
   const fillPreviewShadow = fillPreviewEdgeFlags.isInRange
     ? buildSelectionShadow(fillPreviewEdgeFlags, FILL_PREVIEW_OUTLINE_COLOR)
     : undefined;
@@ -856,19 +1087,19 @@ const WorksheetCellView = memo(function WorksheetCellView({
     }
   }
   const isSelectedRangeCorner =
-    Boolean(selectedRange) &&
-    edgeFlags.isBottomEdge &&
-    edgeFlags.isRightEdge &&
+    Boolean(activeSelectedRange) &&
+    activeSelectionEdgeFlags.isBottomEdge &&
+    activeSelectionEdgeFlags.isRightEdge &&
     !activeCellKey;
   const cellTextAlign = cellFormat.text?.align ?? "left";
-  const cellFillColor = edgeFlags.isInRange || fillPreviewEdgeFlags.isInRange
+  const cellFillColor = selectionEdgeFlags.length > 0 || fillPreviewEdgeFlags.isInRange
     ? undefined
     : cellFormat.fill?.color ?? formulaReferenceStyle?.backgroundColor ?? formulaReferenceRangeBackgroundColor;
 
   return (
     <div
       className={`relative border-r border-[var(--border-subtle)] last:border-r-0 ${
-        edgeFlags.isInRange
+        selectionEdgeFlags.length > 0
           ? "bg-[rgba(49,91,255,0.07)]"
           : fillPreviewEdgeFlags.isInRange
             ? "bg-[rgba(244,93,34,0.08)]"
@@ -879,7 +1110,7 @@ const WorksheetCellView = memo(function WorksheetCellView({
         height: `${rowHeight}px`,
         boxShadow: [
           fillPreviewShadow,
-          selectionShadow,
+          ...selectionShadows,
           formatBorderShadow,
           ...formulaReferenceRangeShadows,
           formulaReferenceShadow,
@@ -966,6 +1197,7 @@ const WorksheetCellView = memo(function WorksheetCellView({
 });
 
 type WorksheetRowViewProps = {
+  activeSelectedRange: WorksheetSelectionRange | null;
   activeCellKey: string | null;
   activeEditor: "cell" | "formulaBar" | null;
   canWriteWorksheet: boolean;
@@ -979,7 +1211,7 @@ type WorksheetRowViewProps = {
   row: WorksheetRow;
   rowIndex: number;
   rightSpacerWidth: number;
-  selectedRange: WorksheetSelectionRange | null;
+  selectedRanges: WorksheetSelectionArea[];
   visibleColumnStartIndex: number;
   visibleColumns: WorksheetColumn[];
   onBeginCellEdit: (cellKey: string, cell: WorksheetCell | undefined) => void;
@@ -989,15 +1221,17 @@ type WorksheetRowViewProps = {
   onCellClick: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellContextMenu: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellMouseDown: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
-  onCellMouseEnter: (cellKey: string) => void;
+  onCellMouseEnter: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onInputBlur: (cellKey: string) => void;
   onInputChange: (value: string) => void;
   onInputKeyDown: (cellKey: string, event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onRowClick: (event: ReactMouseEvent<HTMLDivElement>, rowIndex: number) => void;
   onRowContextMenu: (event: ReactMouseEvent<HTMLDivElement>, rowIndex: number) => void;
   setInputRef: (cellKey: string, node: HTMLInputElement | null) => void;
 };
 
 const WorksheetRowView = memo(function WorksheetRowView({
+  activeSelectedRange,
   activeCellKey,
   activeEditor,
   canWriteWorksheet,
@@ -1011,7 +1245,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
   row,
   rowIndex,
   rightSpacerWidth,
-  selectedRange,
+  selectedRanges,
   visibleColumnStartIndex,
   visibleColumns,
   onBeginCellEdit,
@@ -1025,9 +1259,11 @@ const WorksheetRowView = memo(function WorksheetRowView({
   onInputBlur,
   onInputChange,
   onInputKeyDown,
+  onRowClick,
   onRowContextMenu,
   setInputRef,
 }: WorksheetRowViewProps) {
+  const isRowSelected = isRowIndexSelected(selectedRanges, rowIndex);
   return (
     <div
       className="grid border-b border-[var(--border-subtle)] last:border-b-0"
@@ -1037,8 +1273,13 @@ const WorksheetRowView = memo(function WorksheetRowView({
       }}
     >
       <div
-        className="relative sticky left-0 z-10 border-r border-[var(--border)] bg-[linear-gradient(180deg,#F8FAFD_0%,#F2F6FB_100%)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-secondary)]"
+        className={`relative sticky left-0 z-10 border-r border-[var(--border)] px-3 py-1.5 text-[11px] font-medium ${
+          isRowSelected
+            ? "bg-[rgba(49,91,255,0.12)] text-[var(--brand-blue)]"
+            : "bg-[linear-gradient(180deg,#F8FAFD_0%,#F2F6FB_100%)] text-[var(--text-secondary)]"
+        }`}
         style={{ height: `${row.height}px` }}
+        onClick={(event) => onRowClick(event, rowIndex)}
         onContextMenu={(event) => onRowContextMenu(event, rowIndex)}
       >
         {row.id}
@@ -1065,6 +1306,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
         return (
           <WorksheetCellView
             key={cellKey}
+            activeSelectedRange={activeSelectedRange}
             activeCellKey={activeCellKey}
             activeEditor={activeEditor}
             canWriteWorksheet={canWriteWorksheet}
@@ -1077,7 +1319,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
             formulaReferenceRanges={formulaReferenceRanges}
             rowHeight={row.height}
             rowIndex={rowIndex}
-            selectedRange={selectedRange}
+            selectedRanges={selectedRanges}
             onBeginCellEdit={onBeginCellEdit}
             onBeginFillDrag={onBeginFillDrag}
             onCellClick={onCellClick}
@@ -1112,7 +1354,8 @@ const WorksheetRowView = memo(function WorksheetRowView({
     previousProps.row !== nextProps.row ||
     previousProps.rowIndex !== nextProps.rowIndex ||
     previousProps.rightSpacerWidth !== nextProps.rightSpacerWidth ||
-    previousProps.selectedRange !== nextProps.selectedRange
+    previousProps.activeSelectedRange !== nextProps.activeSelectedRange ||
+    previousProps.selectedRanges !== nextProps.selectedRanges
   ) {
     return false;
   }
@@ -1146,6 +1389,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
     previousProps.onInputBlur === nextProps.onInputBlur &&
     previousProps.onInputChange === nextProps.onInputChange &&
     previousProps.onInputKeyDown === nextProps.onInputKeyDown &&
+    previousProps.onRowClick === nextProps.onRowClick &&
     previousProps.onRowContextMenu === nextProps.onRowContextMenu &&
     previousProps.setInputRef === nextProps.setInputRef
   );
@@ -1324,18 +1568,35 @@ function getRowVirtualizationWindow(
   };
 }
 
+function setSheetIdQueryParamInUrl(currentHref: string, sheetId: string | null) {
+  const url = new URL(currentHref);
+  if (sheetId && sheetId.trim().length > 0) {
+    url.searchParams.set("sheetId", sheetId);
+  } else {
+    url.searchParams.delete("sheetId");
+  }
+  return url.toString();
+}
+
 export function OpportunityPricingWorksheetBoard({
   worksheetId: explicitWorksheetId,
+  initialSheetId,
   onClose,
   onDirtyStateChange,
 }: {
   worksheetId?: string;
+  initialSheetId?: string | null;
   onClose?: () => void;
   onDirtyStateChange?: (isDirty: boolean) => void;
 }) {
-  const sharedOpportunity = useOpportunityWorkspaceData();
+  const worksheetOwner = usePricingWorksheetOwner();
   const { session, isLoading: isAuthLoading } = useAuth();
+  const worksheetOpportunityId = worksheetOwner.opportunityId;
+  const worksheetProjectId = worksheetOwner.projectId;
+  const canPublishToVariation = worksheetOwner.ownerType === "variation" && Boolean(worksheetOwner.variationId && worksheetOwner.projectId);
   const [worksheetId, setWorksheetId] = useState<string | null>(null);
+  const [worksheetSheetId, setWorksheetSheetId] = useState<string | null>(null);
+  const [workbookSheets, setWorkbookSheets] = useState<OpportunityPricingWorkbookSheet[]>([]);
   const [worksheetName, setWorksheetName] = useState<string | null>(null);
   const [isWorksheetNameEditorOpen, setIsWorksheetNameEditorOpen] = useState(false);
   const [worksheetNameDraft, setWorksheetNameDraft] = useState("");
@@ -1345,6 +1606,7 @@ export function OpportunityPricingWorksheetBoard({
   const [pricingSummary, setPricingSummary] = useState<WorksheetPricingSummary>(() =>
     createDefaultWorksheetPricingSummary()
   );
+  const pricingSummaryRef = useRef<WorksheetPricingSummary>(pricingSummary);
   const [extractedPricingData, setExtractedPricingData] = useState<WorksheetExtractedPricingData>(() =>
     createDefaultWorksheetExtractedPricingData()
   );
@@ -1362,7 +1624,6 @@ export function OpportunityPricingWorksheetBoard({
   const [aiPreviewWorksheetName, setAiPreviewWorksheetName] = useState("");
   const [aiPreviewTradePackage, setAiPreviewTradePackage] = useState("");
   const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
-  const [aiJobId, setAiJobId] = useState<string | null>(null);
   const [aiJobStatus, setAiJobStatus] = useState<PricingWorksheetAiJobStatus | null>(null);
   const [aiJobProgressLabel, setAiJobProgressLabel] = useState<string | null>(null);
   const [aiJobError, setAiJobError] = useState<PricingWorksheetAiJobError | null>(null);
@@ -1385,8 +1646,9 @@ export function OpportunityPricingWorksheetBoard({
   const [activeEditor, setActiveEditor] = useState<"cell" | "formulaBar" | null>(null);
   const [showGridlines, setShowGridlines] = useState(true);
   const [editingCellValue, setEditingCellValue] = useState("");
-  const [selectionAnchorCellKey, setSelectionAnchorCellKey] = useState<string | null>(null);
-  const [selectionFocusCellKey, setSelectionFocusCellKey] = useState<string | null>(null);
+  const [selectionState, setSelectionState] = useState<WorksheetMultiSelectionState>(() =>
+    createEmptyWorksheetMultiSelectionState(),
+  );
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
   const [isDraggingFill, setIsDraggingFill] = useState(false);
   const [fillSourceRange, setFillSourceRange] = useState<WorksheetSelectionRange | null>(null);
@@ -1404,6 +1666,19 @@ export function OpportunityPricingWorksheetBoard({
   const [worksheetViewportHeight, setWorksheetViewportHeight] = useState(WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
   const [worksheetViewportWidth, setWorksheetViewportWidth] = useState(WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
   const [worksheetZoom, setWorksheetZoom] = useState(1);
+  const [isPagesTrayOpen, setIsPagesTrayOpen] = useState(false);
+  const [pageDialog, setPageDialog] = useState<WorksheetPageDialogState>(null);
+  const [quotePublishDialog, setQuotePublishDialog] = useState<QuotePublishDialogState | null>(null);
+  const [purchaseOrderPublishDialog, setPurchaseOrderPublishDialog] = useState<PurchaseOrderPublishDialogState | null>(null);
+  const [variationPublishDialog, setVariationPublishDialog] = useState<VariationPublishDialogState | null>(null);
+  const [quotePublishTargetMode, setQuotePublishTargetMode] = useState<"new" | "existing">("new");
+  const [quotePublishTargetId, setQuotePublishTargetId] = useState("");
+  const [purchaseOrderPublishSupplierId, setPurchaseOrderPublishSupplierId] = useState("");
+  const [purchaseOrderPublishTitle, setPurchaseOrderPublishTitle] = useState("Worksheet Purchase Order");
+  const [purchaseOrderPublishTargetMode, setPurchaseOrderPublishTargetMode] = useState<"new" | "existing">("new");
+  const [purchaseOrderPublishTargetId, setPurchaseOrderPublishTargetId] = useState("");
+  const [isPublishingWorksheetSelection, setIsPublishingWorksheetSelection] = useState(false);
+  const [isMutatingPages, setIsMutatingPages] = useState(false);
   const [customTextColorInput, setCustomTextColorInput] = useState("");
   const [customFillColorInput, setCustomFillColorInput] = useState("");
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -1429,16 +1704,27 @@ export function OpportunityPricingWorksheetBoard({
     anchorCellKey: string;
     startClientX: number;
     startClientY: number;
+    mode: "replace" | "add" | "extend";
+    baseSelectionState: WorksheetMultiSelectionState;
   } | null>(null);
   const rangeDragAnchorCellKeyRef = useRef<string | null>(null);
   const formulaReferenceDragAnchorCellKeyRef = useRef<string | null>(null);
   const formulaReferenceDragBaseValueRef = useRef<string | null>(null);
   const didDragSelectionRef = useRef(false);
+  const workbookSheetsRef = useRef<OpportunityPricingWorkbookSheet[]>([]);
+  const worksheetIdRef = useRef<string | null>(null);
+  const worksheetSheetIdRef = useRef<string | null>(null);
   const handledFormulaReferenceMouseDownRef = useRef(false);
   const fillSourceRangeRef = useRef<WorksheetSelectionRange | null>(null);
   const fillPreviewFocusCellKeyRef = useRef<string | null>(null);
   const [contextMenu, setContextMenu] = useState<WorksheetContextMenuState>(null);
   const locationHrefRef = useRef("");
+  const requestedSheetIdRef = useRef<string | null>(initialSheetId ?? null);
+  const activeAiJobIdRef = useRef<string | null>(null);
+  const activeAiJobSheetIdRef = useRef<string | null>(null);
+  const persistedLastActiveWorkbookIdRef = useRef<string | null>(null);
+  const persistedLastActiveSheetIdRef = useRef<string | null>(null);
+  const pendingLearningWritesRef = useRef<PendingWorksheetLearningWrite[]>([]);
 
   useEffect(() => {
     if (didCountBoardMountRef.current) {
@@ -1471,6 +1757,18 @@ export function OpportunityPricingWorksheetBoard({
     onDirtyStateChange?.(isDirty);
   }, [isDirty, onDirtyStateChange]);
 
+  useEffect(() => {
+    workbookSheetsRef.current = workbookSheets;
+  }, [workbookSheets]);
+
+  useEffect(() => {
+    worksheetIdRef.current = worksheetId;
+  }, [worksheetId]);
+
+  useEffect(() => {
+    worksheetSheetIdRef.current = worksheetSheetId;
+  }, [worksheetSheetId]);
+
   const canWriteWorksheet = useMemo(() => {
     return (
       session?.role === "owner" ||
@@ -1488,6 +1786,55 @@ export function OpportunityPricingWorksheetBoard({
     }
   }, []);
 
+  useEffect(() => {
+    const currentWorkbookId = worksheetId;
+    if (!supabase || !session?.organizationId || !currentWorkbookId) {
+      return;
+    }
+
+    const nextSheetId =
+      typeof worksheetSheetId === "string" && worksheetSheetId.trim().length > 0
+        ? worksheetSheetId
+        : null;
+    const alreadyPersistedForWorkbook =
+      persistedLastActiveWorkbookIdRef.current === currentWorkbookId &&
+      persistedLastActiveSheetIdRef.current === nextSheetId;
+
+    if (alreadyPersistedForWorkbook) {
+      return;
+    }
+
+    const previousWorkbookId = persistedLastActiveWorkbookIdRef.current;
+    const previousSheetId = persistedLastActiveSheetIdRef.current;
+    persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
+    persistedLastActiveSheetIdRef.current = nextSheetId;
+
+    void setOpportunityPricingWorkbookLastActiveSheet({
+      supabase,
+      organizationId: session.organizationId,
+      opportunityId: worksheetOpportunityId,
+      projectId: worksheetProjectId,
+      quoteId: worksheetOwner.quoteId,
+      variationId: worksheetOwner.variationId,
+      workbookId: currentWorkbookId,
+      sheetId: nextSheetId,
+    }).catch(() => {
+      if (persistedLastActiveWorkbookIdRef.current === currentWorkbookId) {
+        persistedLastActiveWorkbookIdRef.current = previousWorkbookId;
+        persistedLastActiveSheetIdRef.current = previousSheetId;
+      }
+    });
+  }, [
+    session?.organizationId,
+    supabase,
+    worksheetId,
+    worksheetSheetId,
+    worksheetOpportunityId,
+    worksheetOwner.quoteId,
+    worksheetOwner.variationId,
+    worksheetProjectId,
+  ]);
+
   const logAiReviewIntelligenceEvents = useCallback((params: Array<{
     eventType:
       | "worksheet_ai_review_generated"
@@ -1503,7 +1850,7 @@ export function OpportunityPricingWorksheetBoard({
     diffData?: Record<string, Json | null>;
   }>) => {
     const organizationId = session?.organizationId;
-    const opportunityId = sharedOpportunity.opportunityId;
+    const opportunityId = worksheetOpportunityId;
     const currentWorksheetId = worksheetId;
 
     if (!supabase || !organizationId || !opportunityId || !currentWorksheetId) {
@@ -1514,7 +1861,10 @@ export function OpportunityPricingWorksheetBoard({
       buildPricingWorksheetIntelligenceEvent({
         organizationId,
         opportunityId,
-        entityId: currentWorksheetId,
+        workbookId: currentWorksheetId,
+        sheetId: worksheetSheetIdRef.current ?? worksheetSheetId ?? currentWorksheetId,
+        sheetName: worksheetName?.trim() || worksheet.sheetName || "Pricing Worksheet",
+        worksheetId: currentWorksheetId,
         worksheetName: worksheetName?.trim() || worksheet.sheetName || "Pricing Worksheet",
         tradePackage: worksheetTradePackage,
         worksheet: worksheetRef.current,
@@ -1529,10 +1879,11 @@ export function OpportunityPricingWorksheetBoard({
     });
   }, [
     session?.organizationId,
-    sharedOpportunity.opportunityId,
+    worksheetOpportunityId,
     supabase,
     worksheet.sheetName,
     worksheetId,
+    worksheetSheetId,
     worksheetName,
     worksheetTradePackage,
   ]);
@@ -1554,17 +1905,222 @@ export function OpportunityPricingWorksheetBoard({
     logAiReviewIntelligenceEvents([params]);
   }, [logAiReviewIntelligenceEvents]);
 
+  const persistWorksheetLearningArtifacts = useCallback((params: {
+    clientMutationId: string;
+    previousWorksheet: WorksheetData;
+    nextWorksheet: WorksheetData;
+    occurredAt?: string;
+  }) => {
+    const organizationId = session?.organizationId;
+    const userId = session?.id ?? null;
+    const workbookId = explicitWorksheetId ?? worksheetId;
+
+    if (!supabase || !organizationId || !userId || !workbookId || !worksheetOpportunityId) {
+      return params.nextWorksheet;
+    }
+
+    const artifacts = buildWorksheetLearningArtifacts({
+      organizationId,
+      userId,
+      projectId: worksheetProjectId,
+      opportunityId: worksheetOpportunityId,
+      workbookId,
+      sheetId: worksheetSheetIdRef.current ?? worksheetSheetId ?? workbookId,
+      sheetName: worksheetName?.trim() || params.nextWorksheet.sheetName || "Pricing Worksheet",
+      worksheetId: workbookId,
+      worksheetName: worksheetName?.trim() || params.nextWorksheet.sheetName || "Pricing Worksheet",
+      tradePackage: worksheetTradePackage,
+      source: "manual",
+      previousWorksheet: params.previousWorksheet,
+      nextWorksheet: params.nextWorksheet,
+      clientMutationId: params.clientMutationId,
+      occurredAt: params.occurredAt,
+    });
+
+    pendingLearningWritesRef.current = queuePendingWorksheetLearningWrite(pendingLearningWritesRef.current, {
+      clientMutationId: params.clientMutationId,
+      correctionEvents: artifacts.correctionEvents,
+      enqueueOutbox: artifacts.intelligenceEvents.length > 0,
+      nextWorksheet: params.nextWorksheet,
+      occurredAt: params.occurredAt,
+      previousWorksheet: params.previousWorksheet,
+    });
+
+    return artifacts.worksheet;
+  }, [
+    explicitWorksheetId,
+    session?.id,
+    session?.organizationId,
+    worksheetOpportunityId,
+    worksheetProjectId,
+    supabase,
+    worksheetId,
+    worksheetName,
+    worksheetSheetId,
+    worksheetTradePackage,
+  ]);
+
+  const flushPersistedWorksheetLearningArtifacts = useCallback(async (params: {
+    organizationId: string;
+    sheetId: string;
+    sheetName: string;
+    tradePackage: string | null;
+    userId: string;
+    workbookId: string;
+    workbookName: string;
+    worksheetName: string;
+  }) => {
+    if (!supabase || !worksheetOpportunityId || pendingLearningWritesRef.current.length === 0) {
+      return;
+    }
+
+    const result = await flushPendingWorksheetLearningWrites({
+      queue: pendingLearningWritesRef.current,
+      workbookId: params.workbookId,
+      sheetId: params.sheetId,
+      sheetName: params.sheetName,
+      enqueueOutbox: async (input) => {
+        await enqueueWorksheetMutationEvidenceV2Outbox(supabase, {
+          organizationId: params.organizationId,
+          userId: params.userId,
+          projectId: worksheetProjectId,
+          opportunityId: worksheetOpportunityId,
+          workbookId: params.workbookId,
+          workbookName: params.workbookName,
+          sheetId: params.sheetId,
+          sheetName: params.sheetName,
+          worksheetId: params.workbookId,
+          worksheetName: params.worksheetName,
+          tradePackage: params.tradePackage,
+          source: "manual",
+          clientMutationId: input.clientMutationId,
+          occurredAt: input.occurredAt,
+          previousWorksheet: input.previousWorksheet,
+          nextWorksheet: input.nextWorksheet,
+        });
+      },
+      writeCorrectionEvent: async (input) => {
+        await writePricingWorksheetCorrectionEvent(supabase, input);
+      },
+    });
+
+    pendingLearningWritesRef.current = result.remainingQueue;
+  }, [
+    worksheetOpportunityId,
+    worksheetProjectId,
+    supabase,
+  ]);
+
+  const logAiPreviewOutcomeEvent = useCallback((params: {
+    eventType: "worksheet_ai_preview_accepted" | "worksheet_ai_preview_rejected";
+    action: "accepted" | "rejected";
+    aiInteractionId: string;
+    preview: PricingWorksheetAiPreviewResponse["preview"];
+    sheetId?: string | null;
+    sheetName?: string | null;
+    acceptedFindingIds?: string[];
+    rejectedFindingIds?: string[];
+    appliedSuggestedEditGroupIds?: string[];
+  }) => {
+    const organizationId = session?.organizationId;
+    const workbookId = explicitWorksheetId ?? worksheetId;
+
+    if (!supabase || !organizationId || !workbookId || !worksheetOpportunityId) {
+      return;
+    }
+
+    void writePricingWorksheetIntelligenceEvents(supabase, [
+      buildPricingWorksheetIntelligenceEvent({
+        organizationId,
+        userId: session?.id ?? null,
+        projectId: worksheetProjectId,
+        opportunityId: worksheetOpportunityId,
+        workbookId,
+        sheetId: params.sheetId ?? worksheetSheetIdRef.current ?? worksheetSheetId ?? workbookId,
+        sheetName: params.sheetName ?? worksheetName?.trim() ?? worksheetRef.current.sheetName ?? "Pricing Worksheet",
+        worksheetId: workbookId,
+        worksheetName: params.sheetName ?? worksheetName?.trim() ?? worksheetRef.current.sheetName ?? "Pricing Worksheet",
+        tradePackage: worksheetTradePackage,
+        worksheet: worksheetRef.current,
+        eventType: params.eventType,
+        eventFamily: "commercial_action",
+        action: params.action,
+        source: "ai",
+        diffData: {
+          aiInteractionId: params.aiInteractionId,
+          responseMode: params.preview.assistant?.mode ?? null,
+          operationCount: params.preview.assistant?.operations.length ?? 0,
+          changedCellCount: params.preview.assistant?.diffSummary.changedCells.length ?? 0,
+          acceptedFindingIds: params.acceptedFindingIds ?? [],
+          rejectedFindingIds: params.rejectedFindingIds ?? [],
+          appliedSuggestedEditGroupIds: params.appliedSuggestedEditGroupIds ?? [],
+          validationWarningCount: params.preview.validationWarnings.length ?? 0,
+        },
+        reason:
+          params.eventType === "worksheet_ai_preview_accepted"
+            ? "AI worksheet preview accepted."
+            : "AI worksheet preview rejected.",
+      }),
+    ]).catch((eventWriteError) => {
+      logPricingWorksheetIntelligenceFailure(params.eventType, eventWriteError);
+    });
+  }, [
+    explicitWorksheetId,
+    session?.id,
+    session?.organizationId,
+    worksheetOpportunityId,
+    worksheetProjectId,
+    supabase,
+    worksheetId,
+    worksheetName,
+    worksheetSheetId,
+    worksheetTradePackage,
+  ]);
+
+  const applyAiProvenanceToWorksheet = useCallback((params: {
+    nextWorksheet: WorksheetData;
+    aiInteractionId: string;
+    promptSummary?: string | null;
+    operationTypes?: string[];
+    batchIndex?: number | null;
+  }) => {
+    const changedCellKeys = listWorksheetChangedCellKeys({
+      previousWorksheet: worksheetRef.current,
+      nextWorksheet: params.nextWorksheet,
+    });
+
+    return stampWorksheetAiProvenance({
+      worksheet: params.nextWorksheet,
+      changedCellKeys,
+      aiInteractionId: params.aiInteractionId,
+      aiJobId: activeAiJobIdRef.current ?? params.aiInteractionId,
+      generatedAt: new Date().toISOString(),
+      operationType:
+        params.operationTypes && params.operationTypes.length > 0
+          ? Array.from(new Set(params.operationTypes)).join(",")
+          : null,
+      generationBatchId:
+        params.batchIndex && params.batchIndex > 0
+          ? `${params.aiInteractionId}:batch-${params.batchIndex}`
+          : `${params.aiInteractionId}:batch-1`,
+      promptSummary: params.promptSummary ?? null,
+    });
+  }, []);
+
+  const selectionAnchorCellKey = selectionState.anchorCellKey;
+  const selectionFocusCellKey = selectionState.focusCellKey;
+  const selectedRanges = selectionState.ranges;
   const selectedRange = useMemo(
-    () =>
-      getWorksheetSelectionRange(
-        worksheet,
-        selectionAnchorCellKey,
-        selectionFocusCellKey
-      ),
-    [selectionAnchorCellKey, selectionFocusCellKey, worksheet]
+    () => getActiveWorksheetSelectionArea(selectionState),
+    [selectionState],
+  );
+  const activeWorkbookSheet = useMemo(
+    () => workbookSheets.find((sheet) => sheet.id === worksheetSheetId) ?? workbookSheets[0] ?? null,
+    [workbookSheets, worksheetSheetId],
   );
 
   const selectedSingleCellKey =
+    selectedRanges.length === 1 &&
     selectionAnchorCellKey &&
     selectionFocusCellKey &&
     selectionAnchorCellKey === selectionFocusCellKey
@@ -1575,6 +2131,16 @@ export function OpportunityPricingWorksheetBoard({
     selectionFocusCellKey ??
     selectionAnchorCellKey ??
     buildWorksheetCellKey("A", "1");
+
+  const replaceSelection = useCallback((
+    anchorCellKey: string | null,
+    focusCellKey: string | null,
+    kind: WorksheetSelectionKind = "cells",
+  ) => {
+    setSelectionState((current) =>
+      replaceWorksheetSelectionFromCellKeys(current, worksheetRef.current, anchorCellKey, focusCellKey, kind),
+    );
+  }, []);
 
   const formulaBarCellKey = activeCellKey ?? selectedWorksheetCellKey;
   const formulaBarCell = formulaBarCellKey ? worksheet.cells[formulaBarCellKey] : undefined;
@@ -1637,6 +2203,10 @@ export function OpportunityPricingWorksheetBoard({
   }, [formulaBarValue]);
   const worksheetDisplayName =
     worksheetName?.trim() || worksheet.sheetName.trim() || "Pricing Worksheet";
+  const getWorksheetPersistenceName = useCallback(() => resolveWorksheetPersistenceName({
+    worksheet: worksheetRef.current,
+    worksheetName,
+  }), [worksheetName]);
   const selectedCellFormat = getCellFormat(worksheet.cells[selectedWorksheetCellKey]);
   const selectedNumberFormat = selectedCellFormat.number;
   const selectedNumberFormatKind = selectedNumberFormat?.kind ?? "general";
@@ -1657,12 +2227,13 @@ export function OpportunityPricingWorksheetBoard({
       window.clearTimeout(aiJobPollTimeoutRef.current);
       aiJobPollTimeoutRef.current = null;
     }
+    activeAiJobIdRef.current = null;
+    activeAiJobSheetIdRef.current = null;
     setAiPreviewResponse(null);
     setAiPreviewError(null);
     setIsGeneratingAiPreview(false);
     setIsSubmittingAiReview(false);
     setIsSubmittingAiFollowUp(false);
-    setAiJobId(null);
     setAiJobStatus(null);
     setAiJobProgressLabel(null);
     setAiJobError(null);
@@ -1672,6 +2243,109 @@ export function OpportunityPricingWorksheetBoard({
     setIsAiChatOpen(false);
     aiPreApplySnapshotRef.current = null;
   }, []);
+
+  const cancelActiveAiJob = useCallback(async () => {
+    const activeJobId = activeAiJobIdRef.current;
+    const organizationId = session?.organizationId;
+    if (!activeJobId || !organizationId) {
+      return;
+    }
+
+    activeAiJobIdRef.current = null;
+    activeAiJobSheetIdRef.current = null;
+
+    try {
+      await fetch(
+        `/api/ai/pricing-worksheets/edit-assistant/jobs/${activeJobId}/cancel?organizationId=${encodeURIComponent(organizationId)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    } catch {
+      // Best-effort cancellation only; local sheet scoping is the safety backstop.
+    }
+  }, [session?.organizationId]);
+
+  const updateSheetUrlState = useCallback((nextSheetId: string | null) => {
+    const nextHref = setSheetIdQueryParamInUrl(window.location.href, nextSheetId);
+    const currentState = window.history.state && typeof window.history.state === "object"
+      ? window.history.state
+      : {};
+    window.history.replaceState(
+      {
+        ...currentState,
+        pricingWorksheetOverlay: true,
+        worksheetId: explicitWorksheetId ?? worksheetId ?? null,
+        sheetId: nextSheetId,
+      },
+      "",
+      nextHref,
+    );
+    locationHrefRef.current = nextHref;
+    requestedSheetIdRef.current = nextSheetId;
+  }, [explicitWorksheetId, worksheetId]);
+
+  const resetWorksheetViewState = useCallback((nextWorksheet: WorksheetData) => {
+    // Phase 2 intentionally resets transient editor state when switching pages.
+    // Per-page scroll, selection, and history restoration can be layered in later.
+    setHistoryPast([]);
+    historyPastRef.current = [];
+    setHistoryFuture([]);
+    historyFutureRef.current = [];
+    replaceSelection(buildWorksheetCellKey("A", "1"), buildWorksheetCellKey("A", "1"));
+    setActiveCellKey(null);
+    setActiveEditor(null);
+    setEditingCellValue("");
+    setContextMenu(null);
+    setMessage(null);
+    setError(null);
+    setWorksheetViewportScrollLeft(0);
+    setWorksheetViewportScrollTop(0);
+    setWorksheetViewportHeight(WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
+    setWorksheetViewportWidth(WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
+    worksheetRef.current = nextWorksheet;
+  }, [replaceSelection]);
+
+  const hydrateWorkbookEditorState = useCallback((
+    workbook: OpportunityPricingWorkbook,
+    targetSheetId?: string | null,
+    options?: {
+      seedPersistedLastActiveSheet?: boolean;
+    },
+  ) => {
+    const editorRecord = buildOpportunityPricingWorkbookEditorRecord(workbook, targetSheetId);
+    const normalizedWorksheet = normalizeWorksheetData(editorRecord.worksheet as unknown as Json);
+    const loadedWorksheet = recalculateWorksheetFormulas(normalizedWorksheet);
+
+    if (options?.seedPersistedLastActiveSheet !== false) {
+      persistedLastActiveWorkbookIdRef.current = workbook.id;
+      persistedLastActiveSheetIdRef.current = workbook.lastActiveSheetId;
+    }
+    setWorksheetId(editorRecord.workbookId);
+    worksheetIdRef.current = editorRecord.workbookId;
+    setWorksheetSheetId(editorRecord.sheetId);
+    worksheetSheetIdRef.current = editorRecord.sheetId;
+    setWorkbookSheets(workbook.sheets);
+    setWorksheetName(editorRecord.sheetName);
+    setWorksheetTradePackage(editorRecord.tradePackage);
+    setWorksheet(loadedWorksheet);
+    const nextPricingSummary = deriveWorksheetPricingSummary(loadedWorksheet, editorRecord.pricingSummary, {
+      calculatedAt: editorRecord.pricingSummary.lastCalculatedAt,
+    });
+    pricingSummaryRef.current = nextPricingSummary;
+    setPricingSummary(nextPricingSummary);
+    setExtractedPricingData(editorRecord.extractedPricingData);
+    setLastSavedAt(editorRecord.updatedAt ?? null);
+    setIsDirty(false);
+    setWorksheetNameDraft(editorRecord.sheetName);
+    resetWorksheetViewState(loadedWorksheet);
+    resetAiPreviewState();
+    setIsAiDialogOpen(false);
+    return editorRecord;
+  }, [resetAiPreviewState, resetWorksheetViewState]);
 
   const openAiDialog = useCallback(() => {
     setAiPreviewError(null);
@@ -1692,12 +2366,734 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (!nextOpen) {
+    if (!nextOpen && !aiPreviewResponse && !isAiChatOpen) {
       resetAiPreviewState();
     }
 
     setIsAiDialogOpen(nextOpen);
-  }, [isGeneratingAiPreview, isSubmittingAiReview, resetAiPreviewState]);
+  }, [aiPreviewResponse, isAiChatOpen, isGeneratingAiPreview, isSubmittingAiReview, resetAiPreviewState]);
+
+  const executeWorksheetPublishToQuote = useCallback(async () => {
+    if (!quotePublishDialog || !supabase || !session?.organizationId || !worksheetOpportunityId || !canWriteWorksheet) {
+      setError("You do not have permission to publish worksheet rows to a quote.");
+      setMessage(null);
+      return;
+    }
+
+    const includedLines = quotePublishDialog.lines;
+    if (includedLines.length === 0) {
+      setError("Add at least one commercial line before adding it to a quote.");
+      setMessage(null);
+      return;
+    }
+
+    if (quotePublishTargetMode === "existing" && !quotePublishTargetId) {
+      setError("Select the draft quote that should receive these worksheet rows.");
+      setMessage(null);
+      return;
+    }
+
+    setIsPublishingWorksheetSelection(true);
+    setError(null);
+    setMessage("Adding rows to quote...");
+
+    try {
+      const confirmedLines = includedLines.map((line) => {
+        const description = line.description.trim();
+        const quantityValue = parseWorksheetPublishDraftNumber(line.quantity);
+        const rateValue = parseWorksheetPublishDraftNumber(line.rate);
+        const explicitTotal = parseWorksheetPublishDraftNumber(line.total);
+        const quantity = quantityValue === null ? null : roundWorksheetPublishNumber(quantityValue, 4);
+        const rate = rateValue === null ? null : roundWorksheetPublishNumber(rateValue, 2);
+        const total = explicitTotal !== null
+          ? roundWorksheetPublishNumber(explicitTotal, 2)
+          : quantity !== null && rate !== null
+          ? roundWorksheetPublishNumber(quantity * rate, 2)
+          : null;
+
+        if (!description) {
+          throw new Error("Enter a description.");
+        }
+
+        if (quantity === null && rate === null && total === null) {
+          throw new Error("Enter at least one commercial value.");
+        }
+
+        return {
+          proposalId: line.id,
+          description,
+          quantity,
+          unit: normalizeWorksheetPublishDraftText(line.unit),
+          rate,
+          total,
+        };
+      });
+
+      if (isDirty || !worksheetIdRef.current) {
+        if (!saveWorksheetRef.current) {
+          throw new Error("Save the worksheet before adding rows to a quote.");
+        }
+
+        const didSave = await saveWorksheetRef.current({ silent: true });
+        if (!didSave) {
+          throw new Error("Unable to save the worksheet before adding rows to the quote.");
+        }
+      }
+
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      const sheetName =
+        workbookSheetsRef.current.find((sheet) => sheet.id === sheetId)?.name?.trim() ||
+        activeWorkbookSheet?.name?.trim() ||
+        worksheetDisplayName;
+
+      if (!workbookId || !sheetId) {
+        throw new Error("Save the worksheet before adding rows to a quote.");
+      }
+
+      const selectionToPublish = buildPublishedWorksheetSelectionFromConfirmedLines({
+        destination: "quote",
+        worksheet: worksheetRef.current,
+        selectionRange: quotePublishDialog.range,
+        selectionRanges: quotePublishDialog.selectionRanges,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        owner: worksheetOwner,
+        interpretedSelection: quotePublishDialog.interpretedSelection,
+        confirmedLines,
+      });
+
+      const target: QuotePublishTarget = quotePublishTargetMode === "existing"
+        ? {
+            mode: "existing",
+            quoteId: quotePublishTargetId,
+          }
+        : {
+            mode: "new",
+          };
+
+      const publishResult = await publishWorksheetSelection({
+        client: supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: quotePublishDialog.projectId,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        worksheet: worksheetRef.current,
+        selectionRange: quotePublishDialog.range,
+        owner: worksheetOwner,
+        selection: selectionToPublish,
+        adapter: quoteDestinationAdapter,
+        target,
+      });
+
+      const destinationResult = publishResult.result;
+      setQuotePublishDialog(null);
+      setQuotePublishTargetMode("new");
+      setQuotePublishTargetId("");
+      setMessage(
+        destinationResult.partialLinkFailureMessage
+          ? `${destinationResult.message} ${mapWorksheetQuotePublishErrorMessage(destinationResult.partialLinkFailureMessage)}`
+          : destinationResult.message,
+      );
+    } catch (publishError) {
+      setError(mapWorksheetQuotePublishErrorMessage(
+        publishError instanceof Error ? publishError.message : "Unable to add rows to the quote right now.",
+      ));
+      setMessage(null);
+    } finally {
+      setIsPublishingWorksheetSelection(false);
+    }
+  }, [
+    activeWorkbookSheet?.name,
+    canWriteWorksheet,
+    explicitWorksheetId,
+    isDirty,
+    quotePublishDialog,
+    quotePublishTargetId,
+    quotePublishTargetMode,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    worksheetDisplayName,
+    worksheetOwner,
+  ]);
+
+  const beginWorksheetPublishToQuote = useCallback(async (
+    range: WorksheetSelectionRange | null,
+    selectionRanges?: WorksheetSelectionRange[],
+  ) => {
+    if (!range) {
+      setError("Select a worksheet row or range before adding it to a quote.");
+      setMessage(null);
+      return;
+    }
+
+    if (!supabase || !session?.organizationId || !worksheetOpportunityId || !canWriteWorksheet) {
+      setError("You do not have permission to publish worksheet rows to a quote.");
+      setMessage(null);
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      const publishContext = await resolveWorksheetQuotePublishContext({
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+      });
+      const interpretedSelection = interpretWorksheetSelectionForPublish({
+        destination: "quote",
+        worksheet: worksheetRef.current,
+        selectionRange: range,
+        selectionRanges,
+      });
+
+      const resolution = await resolveQuotePublishTarget({
+        client: supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: publishContext.projectId,
+      });
+
+      if (resolution.kind === "blocked") {
+        setError(mapWorksheetQuotePublishErrorMessage(resolution.message));
+        setMessage(null);
+        return;
+      }
+
+      const quotes = resolution.kind === "choose"
+        ? resolution.quotes
+        : await resolveQuotePublishOptions({
+            client: supabase,
+            organizationId: session.organizationId,
+            opportunityId: worksheetOpportunityId,
+          });
+      const initialTargetMode = resolution.kind === "ready" && resolution.target.mode === "existing"
+        ? "existing"
+        : "new";
+      const initialTargetId = resolution.kind === "ready" && resolution.target.mode === "existing"
+        ? resolution.target.quoteId
+        : "";
+      const firstProposal = interpretedSelection.proposedLines[0];
+
+      setQuotePublishDialog({
+        projectId: publishContext.projectId,
+        range,
+        selectionRanges: selectionRanges && selectionRanges.length > 0 ? selectionRanges : [range],
+        interpretedSelection,
+        lines: [
+          {
+            id: firstProposal?.id ?? "selection-line-0",
+            description: firstProposal?.description.value ?? "",
+            quantity: formatWorksheetPublishDraftValue(firstProposal?.quantity.value),
+            unit: formatWorksheetPublishDraftValue(firstProposal?.unit.value),
+            rate: formatWorksheetPublishDraftValue(firstProposal?.rate.value),
+            total: formatWorksheetPublishDraftValue(firstProposal?.total.value),
+          },
+        ],
+        quotes,
+      });
+      setQuotePublishTargetMode(initialTargetMode);
+      setQuotePublishTargetId(initialTargetId);
+    } catch (publishError) {
+      setError(mapWorksheetQuotePublishErrorMessage(
+        publishError instanceof Error ? publishError.message : "Unable to prepare quote publishing.",
+      ));
+      setMessage(null);
+    }
+  }, [
+    canWriteWorksheet,
+    executeWorksheetPublishToQuote,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+  ]);
+
+  const executeWorksheetPublishToPurchaseOrder = useCallback(async () => {
+    if (!purchaseOrderPublishDialog || !supabase || !session?.organizationId || !worksheetOpportunityId || !canWriteWorksheet) {
+      setError("You do not have permission to publish worksheet rows to a purchase order.");
+      setMessage(null);
+      return;
+    }
+
+    const includedLines = purchaseOrderPublishDialog.lines;
+    if (includedLines.length === 0) {
+      setError("Add at least one commercial line before adding it to a purchase order.");
+      setMessage(null);
+      return;
+    }
+
+    if (!purchaseOrderPublishSupplierId) {
+      setError("Select a supplier before adding rows to the purchase order.");
+      setMessage(null);
+      return;
+    }
+
+    if (purchaseOrderPublishTargetMode === "existing" && !purchaseOrderPublishTargetId) {
+      setError("Select the draft purchase order that should receive these worksheet rows.");
+      setMessage(null);
+      return;
+    }
+
+    if (purchaseOrderPublishTargetMode === "new" && !purchaseOrderPublishTitle.trim()) {
+      setError("Enter a purchase order title before creating a new draft.");
+      setMessage(null);
+      return;
+    }
+
+    setIsPublishingWorksheetSelection(true);
+    setError(null);
+    setMessage("Adding rows to purchase order...");
+
+    try {
+      const confirmedLines = includedLines.map((line) => {
+        const description = line.description.trim();
+        const quantityValue = parseWorksheetPublishDraftNumber(line.quantity);
+        const rateValue = parseWorksheetPublishDraftNumber(line.rate);
+        const explicitTotal = parseWorksheetPublishDraftNumber(line.total);
+        const quantity = quantityValue === null ? null : roundWorksheetPublishNumber(quantityValue, 4);
+        const rate = rateValue === null ? null : roundWorksheetPublishNumber(rateValue, 2);
+        const total = explicitTotal !== null
+          ? roundWorksheetPublishNumber(explicitTotal, 2)
+          : quantity !== null && rate !== null
+          ? roundWorksheetPublishNumber(quantity * rate, 2)
+          : null;
+
+        if (!description) {
+          throw new Error("Enter a description.");
+        }
+
+        if (quantity === null && rate === null && total === null) {
+          throw new Error("Enter at least one commercial value.");
+        }
+
+        return {
+          proposalId: line.id,
+          description,
+          quantity,
+          unit: normalizeWorksheetPublishDraftText(line.unit),
+          rate,
+          total,
+        };
+      });
+      const lineSelections = includedLines.map((line) => {
+        const purchaseOrderSection = line.purchaseOrderSection;
+        if (!purchaseOrderSection) {
+          throw new Error("Choose a procurement section.");
+        }
+
+        return {
+          rowId: line.id,
+          purchaseOrderSection,
+        };
+      });
+
+      if (isDirty || !worksheetIdRef.current) {
+        if (!saveWorksheetRef.current) {
+          throw new Error("Save the worksheet before adding rows to a purchase order.");
+        }
+
+        const didSave = await saveWorksheetRef.current({ silent: true });
+        if (!didSave) {
+          throw new Error("Unable to save the worksheet before adding rows to the purchase order.");
+        }
+      }
+
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      const sheetName =
+        workbookSheetsRef.current.find((sheet) => sheet.id === sheetId)?.name?.trim() ||
+        activeWorkbookSheet?.name?.trim() ||
+        worksheetDisplayName;
+
+      if (!workbookId || !sheetId) {
+        throw new Error("Save the worksheet before adding rows to a purchase order.");
+      }
+
+      const selectionToPublish = buildPublishedWorksheetSelectionFromConfirmedLines({
+        destination: "purchase_order",
+        worksheet: worksheetRef.current,
+        selectionRange: purchaseOrderPublishDialog.range,
+        selectionRanges: purchaseOrderPublishDialog.selectionRanges,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        owner: worksheetOwner,
+        interpretedSelection: purchaseOrderPublishDialog.interpretedSelection,
+        confirmedLines,
+      });
+
+      const target: PurchaseOrderPublishTarget = purchaseOrderPublishTargetMode === "existing"
+        ? {
+            mode: "existing",
+            purchaseOrderId: purchaseOrderPublishTargetId,
+            supplierId: purchaseOrderPublishSupplierId,
+            lineSelections,
+          }
+        : {
+            mode: "new",
+            supplierId: purchaseOrderPublishSupplierId,
+            purchaseOrderTitle: purchaseOrderPublishTitle.trim(),
+            lineSelections,
+          };
+
+      const publishResult = await publishWorksheetSelection({
+        client: supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: purchaseOrderPublishDialog.context.projectId,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        worksheet: worksheetRef.current,
+        selectionRange: purchaseOrderPublishDialog.range,
+        owner: worksheetOwner,
+        selection: selectionToPublish,
+        adapter: purchaseOrderDestinationAdapter,
+        target,
+      });
+
+      const destinationResult = publishResult.result;
+      setPurchaseOrderPublishDialog(null);
+      setPurchaseOrderPublishSupplierId("");
+      setPurchaseOrderPublishTitle("Worksheet Purchase Order");
+      setPurchaseOrderPublishTargetMode("new");
+      setPurchaseOrderPublishTargetId("");
+      setMessage(
+        destinationResult.partialLinkFailureMessage
+          ? `${destinationResult.message} ${mapWorksheetPurchaseOrderPublishErrorMessage(destinationResult.partialLinkFailureMessage)}`
+          : destinationResult.message,
+      );
+    } catch (publishError) {
+      setError(mapWorksheetPurchaseOrderPublishErrorMessage(
+        publishError instanceof Error ? publishError.message : "Unable to add rows to the purchase order.",
+      ));
+      setMessage(null);
+    } finally {
+      setIsPublishingWorksheetSelection(false);
+    }
+  }, [
+    activeWorkbookSheet?.name,
+    canWriteWorksheet,
+    explicitWorksheetId,
+    isDirty,
+    purchaseOrderPublishDialog,
+    purchaseOrderPublishSupplierId,
+    purchaseOrderPublishTitle,
+    purchaseOrderPublishTargetId,
+    purchaseOrderPublishTargetMode,
+    session?.organizationId,
+    supabase,
+    worksheetDisplayName,
+    worksheetOpportunityId,
+    worksheetOwner,
+  ]);
+
+  const beginWorksheetPublishToPurchaseOrder = useCallback(async (
+    range: WorksheetSelectionRange | null,
+    selectionRanges?: WorksheetSelectionRange[],
+  ) => {
+    if (!range) {
+      setError("Select a worksheet row or range before adding it to a purchase order.");
+      setMessage(null);
+      return;
+    }
+
+    if (!supabase || !session?.organizationId || !canWriteWorksheet) {
+      setError("You do not have permission to publish worksheet rows to a purchase order.");
+      setMessage(null);
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      const publishContext = await resolveWorksheetPurchaseOrderPublishContext({
+        owner: worksheetOwner,
+      });
+
+      const interpretedSelection = interpretWorksheetSelectionForPublish({
+        destination: "purchase_order",
+        worksheet: worksheetRef.current,
+        selectionRange: range,
+        selectionRanges,
+      });
+      const options = await resolvePurchaseOrderPublishOptions({
+        client: supabase,
+        organizationId: session.organizationId,
+        projectId: publishContext.projectId,
+      });
+
+      const firstProposal = interpretedSelection.proposedLines[0];
+      const lines: WorksheetPublishConfirmationLineDraft[] = [
+        {
+          id: firstProposal?.id ?? "selection-line-0",
+          description: firstProposal?.description.value ?? "",
+          quantity: formatWorksheetPublishDraftValue(firstProposal?.quantity.value),
+          unit: formatWorksheetPublishDraftValue(firstProposal?.unit.value),
+          rate: formatWorksheetPublishDraftValue(firstProposal?.rate.value),
+          total: formatWorksheetPublishDraftValue(firstProposal?.total.value),
+          purchaseOrderSection: "",
+        },
+      ];
+
+      setPurchaseOrderPublishDialog({
+        context: {
+          projectId: publishContext.projectId,
+          projectSlug: publishContext.projectSlug,
+        },
+        range,
+        selectionRanges: selectionRanges && selectionRanges.length > 0 ? selectionRanges : [range],
+        interpretedSelection,
+        lines,
+        suppliers: options.suppliers.map((supplier) => ({
+          id: supplier.id,
+          label: supplier.label,
+        })),
+        draftPurchaseOrders: options.draftPurchaseOrders,
+      });
+      setPurchaseOrderPublishSupplierId("");
+      setPurchaseOrderPublishTitle("Worksheet Purchase Order");
+      setPurchaseOrderPublishTargetMode("new");
+      setPurchaseOrderPublishTargetId("");
+    } catch (publishError) {
+      setError(mapWorksheetPurchaseOrderPublishErrorMessage(
+        publishError instanceof Error ? publishError.message : "Unable to prepare purchase order publishing.",
+      ));
+      setMessage(null);
+    }
+  }, [
+    canWriteWorksheet,
+    session?.organizationId,
+    supabase,
+    worksheetOwner,
+  ]);
+
+  const executeWorksheetPublishToVariation = useCallback(async () => {
+    if (!variationPublishDialog || !supabase || !session?.organizationId || !canWriteWorksheet) {
+      setError("You do not have permission to publish worksheet rows to a variation.");
+      setMessage(null);
+      return;
+    }
+
+    const includedLines = variationPublishDialog.lines;
+    if (includedLines.length === 0) {
+      setError("Add at least one commercial line before adding it to the variation.");
+      setMessage(null);
+      return;
+    }
+
+    setIsPublishingWorksheetSelection(true);
+    setError(null);
+    setMessage("Adding rows to variation...");
+
+    try {
+      const confirmedLines = includedLines.map((line) => {
+        const description = line.description.trim();
+        const quantityValue = parseWorksheetPublishDraftNumber(line.quantity);
+        const rateValue = parseWorksheetPublishDraftNumber(line.rate);
+        const explicitTotal = parseWorksheetPublishDraftNumber(line.total);
+        const quantity = quantityValue === null ? null : roundWorksheetPublishNumber(quantityValue, 4);
+        const rate = rateValue === null ? null : roundWorksheetPublishNumber(rateValue, 2);
+        const total = explicitTotal !== null
+          ? roundWorksheetPublishNumber(explicitTotal, 2)
+          : quantity !== null && rate !== null
+          ? roundWorksheetPublishNumber(quantity * rate, 2)
+          : null;
+
+        if (!description) {
+          throw new Error("Enter a description.");
+        }
+
+        if (quantity === null && rate === null && total === null) {
+          throw new Error("Enter at least one commercial value.");
+        }
+
+        return {
+          proposalId: line.id,
+          description,
+          quantity,
+          unit: normalizeWorksheetPublishDraftText(line.unit),
+          rate,
+          total,
+        };
+      });
+      const lineSelections = includedLines.map((line) => ({
+        rowId: line.id,
+        section: line.section,
+      }));
+
+      if (isDirty || !worksheetIdRef.current) {
+        if (!saveWorksheetRef.current) {
+          throw new Error("Save the worksheet before adding rows to the variation.");
+        }
+
+        const didSave = await saveWorksheetRef.current({ silent: true });
+        if (!didSave) {
+          throw new Error("Unable to save the worksheet before adding rows to the variation.");
+        }
+      }
+
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      const sheetName =
+        workbookSheetsRef.current.find((sheet) => sheet.id === sheetId)?.name?.trim() ||
+        activeWorkbookSheet?.name?.trim() ||
+        worksheetDisplayName;
+
+      if (!workbookId || !sheetId) {
+        throw new Error("Save the worksheet before adding rows to the variation.");
+      }
+
+      const selectionToPublish = buildPublishedWorksheetSelectionFromConfirmedLines({
+        destination: "variation",
+        worksheet: worksheetRef.current,
+        selectionRange: variationPublishDialog.range,
+        selectionRanges: variationPublishDialog.selectionRanges,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        owner: worksheetOwner,
+        interpretedSelection: variationPublishDialog.interpretedSelection,
+        confirmedLines,
+      });
+
+      const target: VariationPublishTarget = {
+        variationId: variationPublishDialog.context.variationId,
+        lineSelections,
+      };
+
+      const publishResult = await publishWorksheetSelection({
+        client: supabase,
+        organizationId: session.organizationId,
+        opportunityId: variationPublishDialog.context.opportunityId,
+        projectId: variationPublishDialog.context.projectId,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        worksheet: worksheetRef.current,
+        selectionRange: variationPublishDialog.range,
+        owner: worksheetOwner,
+        selection: selectionToPublish,
+        adapter: variationDestinationAdapter,
+        target,
+      });
+
+      const destinationResult = publishResult.result;
+      setVariationPublishDialog(null);
+      setMessage(
+        destinationResult.partialLinkFailureMessage
+          ? `${destinationResult.message} ${mapWorksheetVariationPublishErrorMessage(destinationResult.partialLinkFailureMessage)}`
+          : destinationResult.message,
+      );
+    } catch (publishError) {
+      setError(mapWorksheetVariationPublishErrorMessage(
+        publishError instanceof Error ? publishError.message : "Unable to add rows to the variation.",
+      ));
+      setMessage(null);
+    } finally {
+      setIsPublishingWorksheetSelection(false);
+    }
+  }, [
+    activeWorkbookSheet?.name,
+    canWriteWorksheet,
+    explicitWorksheetId,
+    isDirty,
+    session?.organizationId,
+    supabase,
+    variationPublishDialog,
+    worksheetDisplayName,
+    worksheetOwner,
+  ]);
+
+  const beginWorksheetPublishToVariation = useCallback(async (
+    range: WorksheetSelectionRange | null,
+    selectionRanges?: WorksheetSelectionRange[],
+  ) => {
+    if (!range) {
+      setError("Select a worksheet row or range before adding it to the variation.");
+      setMessage(null);
+      return;
+    }
+
+    if (!supabase || !canWriteWorksheet) {
+      setError("You do not have permission to publish worksheet rows to a variation.");
+      setMessage(null);
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      const publishContext = await resolveWorksheetVariationPublishContext({
+        owner: worksheetOwner,
+      });
+      const interpretedSelection = interpretWorksheetSelectionForPublish({
+        destination: "variation",
+        worksheet: worksheetRef.current,
+        selectionRange: range,
+        selectionRanges,
+      });
+
+      const firstProposal = interpretedSelection.proposedLines[0];
+      const defaultSection = normalizeVariationPublishSection(
+        firstProposal?.rowCategoryHint ?? firstProposal?.sectionHeading ?? null,
+      );
+
+      setVariationPublishDialog({
+        context: {
+          opportunityId: publishContext.opportunityId,
+          projectId: publishContext.projectId,
+          projectSlug: publishContext.projectSlug,
+          variationId: publishContext.variationId,
+          variationNumber: publishContext.variationNumber,
+          variationTitle: publishContext.variationTitle,
+          variationStatus: publishContext.variationStatus,
+        },
+        range,
+        selectionRanges: selectionRanges && selectionRanges.length > 0 ? selectionRanges : [range],
+        interpretedSelection,
+        lines: [
+          {
+            id: firstProposal?.id ?? "selection-line-0",
+            description: firstProposal?.description.value ?? "",
+            quantity: formatWorksheetPublishDraftValue(firstProposal?.quantity.value),
+            unit: formatWorksheetPublishDraftValue(firstProposal?.unit.value),
+            rate: formatWorksheetPublishDraftValue(firstProposal?.rate.value),
+            total: formatWorksheetPublishDraftValue(firstProposal?.total.value),
+            section: defaultSection,
+          },
+        ],
+      });
+    } catch (publishError) {
+      setError(mapWorksheetVariationPublishErrorMessage(
+        publishError instanceof Error ? publishError.message : "Unable to prepare variation publishing.",
+      ));
+      setMessage(null);
+    }
+  }, [
+    canWriteWorksheet,
+    supabase,
+    worksheetOwner,
+  ]);
 
   const confirmDiscardUnsavedChanges = useCallback(() => {
     if (!isDirty) {
@@ -1920,7 +3316,7 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    const scopeKey = `${session?.organizationId ?? "unknown"}:${sharedOpportunity.opportunityId}:${explicitWorksheetId ?? "legacy"}`;
+    const scopeKey = `${session?.organizationId ?? "unknown"}:${worksheetOpportunityId ?? "unknown"}:${explicitWorksheetId ?? "legacy"}`;
     if (firstGridRenderScopeKeyRef.current === scopeKey) {
       return;
     }
@@ -1941,7 +3337,7 @@ export function OpportunityPricingWorksheetBoard({
     explicitWorksheetId,
     isLoadingWorksheet,
     session?.organizationId,
-    sharedOpportunity.opportunityId,
+    worksheetOpportunityId,
     virtualColumns.visibleColumns.length,
     virtualRows.virtualRows.length,
     worksheet.cells,
@@ -1955,6 +3351,10 @@ export function OpportunityPricingWorksheetBoard({
   useEffect(() => {
     worksheetRef.current = worksheet;
   }, [worksheet]);
+
+  useEffect(() => {
+    pricingSummaryRef.current = pricingSummary;
+  }, [pricingSummary]);
 
   useEffect(() => {
     historyPastRef.current = historyPast;
@@ -2215,13 +3615,13 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (!supabase || !session?.organizationId) {
+    if (!supabase || !session?.organizationId || !worksheetOpportunityId) {
       setIsLoadingWorksheet(false);
       setError("Unable to load the pricing worksheet right now.");
       return;
     }
 
-    const scopeKey = `${session.organizationId}:${sharedOpportunity.opportunityId}:${explicitWorksheetId ?? "legacy"}`;
+    const scopeKey = `${session.organizationId}:${worksheetOpportunityId}:${explicitWorksheetId ?? "legacy"}`;
     activeWorksheetLoadScopeKeyRef.current = scopeKey;
     if (loadedWorksheetScopeKeyRef.current === scopeKey) {
       setIsLoadingWorksheet(false);
@@ -2255,25 +3655,19 @@ export function OpportunityPricingWorksheetBoard({
             worksheetId: explicitWorksheetId ?? "legacy",
           }
         );
-        const loadQuery = supabase
-          .from("opportunity_pricing_worksheets")
-          .select(
-            "id, name, trade_package, worksheet_data, pricing_summary, extracted_pricing_data, version, updated_at, updated_by"
-          )
-          .eq("organization_id", organizationId)
-          .eq("opportunity_id", sharedOpportunity.opportunityId);
-
-        const { data, error: loadError } = explicitWorksheetId
-          ? await loadQuery.eq("id", explicitWorksheetId).single()
-          : await loadQuery.maybeSingle();
-        endSupabaseQueryMeasure({
-          foundWorksheet: Boolean(data),
-          hasError: Boolean(loadError),
+        const workbook = await loadOpportunityPricingWorkbook({
+          supabase,
+          organizationId,
+          opportunityId: worksheetOpportunityId,
+          projectId: worksheetProjectId,
+          quoteId: worksheetOwner.quoteId,
+          variationId: worksheetOwner.variationId,
+          workbookId: explicitWorksheetId ?? null,
         });
-
-        if (loadError) {
-          throw new Error(loadError.message);
-        }
+        endSupabaseQueryMeasure({
+          foundWorksheet: Boolean(workbook),
+          hasError: false,
+        });
 
         if (
           !isWorksheetBoardMountedRef.current ||
@@ -2282,9 +3676,9 @@ export function OpportunityPricingWorksheetBoard({
           return;
         }
 
-        const worksheetRow = data as PricingWorksheetRow | null;
-        if (!worksheetRow) {
+        if (!workbook) {
           if (explicitWorksheetId) {
+            pendingLearningWritesRef.current = [];
             throw new Error("Pricing worksheet not found.");
           }
 
@@ -2302,84 +3696,66 @@ export function OpportunityPricingWorksheetBoard({
             columnCount: blankWorksheet.columns.length,
           });
           setWorksheetId(null);
+          worksheetIdRef.current = null;
+          setWorksheetSheetId(null);
+          worksheetSheetIdRef.current = null;
+          persistedLastActiveWorkbookIdRef.current = null;
+          persistedLastActiveSheetIdRef.current = null;
+          setWorkbookSheets([]);
           setWorksheetName(null);
           setWorksheetTradePackage(null);
           setWorksheet(blankWorksheet);
-          worksheetRef.current = blankWorksheet;
           loadedWorksheetScopeKeyRef.current = scopeKey;
-          setPricingSummary(createDefaultWorksheetPricingSummary());
+          pendingLearningWritesRef.current = [];
+          const nextPricingSummary = deriveWorksheetPricingSummary(
+            blankWorksheet,
+            createDefaultWorksheetPricingSummary(),
+          );
+          pricingSummaryRef.current = nextPricingSummary;
+          setPricingSummary(nextPricingSummary);
           setExtractedPricingData(createDefaultWorksheetExtractedPricingData(blankWorksheet.version));
-          setHistoryPast([]);
-          historyPastRef.current = [];
-          setHistoryFuture([]);
-          historyFutureRef.current = [];
           setLastSavedAt(null);
           setIsDirty(false);
-          setMessage(null);
-          setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
-          setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+          resetWorksheetViewState(blankWorksheet);
+          resetAiPreviewState();
+          setIsAiDialogOpen(false);
+          updateSheetUrlState(null);
           return;
         }
-
-        setWorksheetId(worksheetRow.id);
-        setWorksheetName(worksheetRow.name);
-        setWorksheetTradePackage(typeof worksheetRow.trade_package === "string" ? worksheetRow.trade_package : null);
-        const endNormalizeMeasure = startPricingWorksheetPerformanceMeasure(
-          "normalizeWorksheetData",
-          {
-            scopeKey,
-            worksheetId: worksheetRow.id,
-          }
-        );
-        const normalizedWorksheet = normalizeWorksheetData(worksheetRow.worksheet_data);
+        const requestedSheetId = requestedSheetIdRef.current;
+        const editorRecord = buildOpportunityPricingWorkbookEditorRecord(workbook, requestedSheetId);
+        const endNormalizeMeasure = startPricingWorksheetPerformanceMeasure("normalizeWorksheetData", {
+          scopeKey,
+          worksheetId: editorRecord.workbookId,
+        });
+        const normalizedWorksheet = normalizeWorksheetData(editorRecord.worksheet as unknown as Json);
         endNormalizeMeasure({
           cellCount: Object.keys(normalizedWorksheet.cells).length,
           rowCount: normalizedWorksheet.rows.length,
           columnCount: normalizedWorksheet.columns.length,
         });
-        const endFormulaMeasure = startPricingWorksheetPerformanceMeasure(
-          "recalculateWorksheetFormulas",
-          {
-            scopeKey,
-            worksheetId: worksheetRow.id,
-          }
-        );
+        const endFormulaMeasure = startPricingWorksheetPerformanceMeasure("recalculateWorksheetFormulas", {
+          scopeKey,
+          worksheetId: editorRecord.workbookId,
+        });
         const loadedWorksheet = recalculateWorksheetFormulas(normalizedWorksheet);
         endFormulaMeasure({
           cellCount: Object.keys(loadedWorksheet.cells).length,
           rowCount: loadedWorksheet.rows.length,
           columnCount: loadedWorksheet.columns.length,
         });
+        pendingLearningWritesRef.current = [];
         setWorksheet(loadedWorksheet);
         worksheetRef.current = loadedWorksheet;
         loadedWorksheetScopeKeyRef.current = scopeKey;
-        setPricingSummary(
-          (worksheetRow.pricing_summary as WorksheetPricingSummary | null) ??
-            createDefaultWorksheetPricingSummary()
-        );
-        setExtractedPricingData(
-          (worksheetRow.extracted_pricing_data as WorksheetExtractedPricingData | null) ??
-            createDefaultWorksheetExtractedPricingData()
-        );
-        setHistoryPast([]);
-        historyPastRef.current = [];
-        setHistoryFuture([]);
-        historyFutureRef.current = [];
-        setLastSavedAt(worksheetRow.updated_at ?? null);
-        setIsDirty(false);
-        setMessage(null);
-        setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
-        setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+        hydrateWorkbookEditorState(workbook, editorRecord.sheetId);
+        updateSheetUrlState(editorRecord.sheetId);
       } catch (loadWorksheetError) {
         if (
           isWorksheetBoardMountedRef.current &&
           activeWorksheetLoadScopeKeyRef.current === scopeKey
         ) {
-          setError(
-            loadWorksheetError instanceof Error
-              ? loadWorksheetError.message
-              : "Unable to load the pricing worksheet."
-          );
+          setError(mapPricingWorksheetUiErrorMessage(loadWorksheetError, "Unable to load the pricing worksheet."));
         }
       } finally {
         if (loadingWorksheetScopeKeyRef.current === scopeKey) {
@@ -2396,11 +3772,26 @@ export function OpportunityPricingWorksheetBoard({
     };
 
     void loadWorksheet();
-  }, [explicitWorksheetId, isAuthLoading, session?.organizationId, sharedOpportunity.opportunityId, supabase]);
+  }, [
+    explicitWorksheetId,
+    hydrateWorkbookEditorState,
+    isAuthLoading,
+    resetAiPreviewState,
+    resetWorksheetViewState,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    updateSheetUrlState,
+  ]);
 
   const applyCommittedWorksheetChange = useCallback((
     mutator: (current: WorksheetData) => WorksheetData,
-    options?: { recalculateFormulas?: boolean; validateFormulaOutputs?: boolean }
+    options?: {
+      recalculateFormulas?: boolean;
+      validateFormulaOutputs?: boolean;
+      trackLearning?: boolean;
+      occurredAt?: string;
+    }
   ) => {
     const endMutationMeasure = startPricingWorksheetPerformanceMeasure("committed-change", {
       recalculateFormulas: options?.recalculateFormulas !== false,
@@ -2440,6 +3831,15 @@ export function OpportunityPricingWorksheetBoard({
       } satisfies WorksheetCommitResult;
     }
 
+    const committedWorksheet = options?.trackLearning
+      ? persistWorksheetLearningArtifacts({
+          clientMutationId: buildWorksheetClientMutationId(),
+          previousWorksheet: mutationResult.previousWorksheet,
+          nextWorksheet: mutationResult.nextWorksheet,
+          occurredAt: options.occurredAt,
+        })
+      : mutationResult.nextWorksheet;
+
     const nextHistory = commitWorksheetHistoryEntry({
       changed: true,
       future: historyFutureRef.current,
@@ -2450,8 +3850,13 @@ export function OpportunityPricingWorksheetBoard({
 
     historyPastRef.current = nextHistory.past;
     historyFutureRef.current = nextHistory.future;
-    worksheetRef.current = mutationResult.nextWorksheet;
-    setWorksheet(mutationResult.nextWorksheet);
+    worksheetRef.current = committedWorksheet;
+    const nextPricingSummary = deriveWorksheetPricingSummary(committedWorksheet, pricingSummaryRef.current, {
+      calculatedAt: new Date().toISOString(),
+    });
+    pricingSummaryRef.current = nextPricingSummary;
+    setWorksheet(committedWorksheet);
+    setPricingSummary(nextPricingSummary);
     setHistoryPast(nextHistory.past);
     setHistoryFuture(nextHistory.future);
     setIsDirty(true);
@@ -2466,9 +3871,9 @@ export function OpportunityPricingWorksheetBoard({
     return {
       committed: true,
       changed: true,
-      worksheet: mutationResult.nextWorksheet,
+      worksheet: committedWorksheet,
     } satisfies WorksheetCommitResult;
-  }, [explicitWorksheetId, worksheetId]);
+  }, [explicitWorksheetId, persistWorksheetLearningArtifacts, worksheetId]);
 
   const updateCell = useCallback((cellKey: string, nextValue: string) => {
     if (isCellCommitNoOp(worksheetRef.current.cells[cellKey], nextValue)) {
@@ -2502,7 +3907,7 @@ export function OpportunityPricingWorksheetBoard({
         ...current,
         cells: nextCells,
       };
-    });
+    }, { trackLearning: true });
   }, [applyCommittedWorksheetChange]);
 
   const focusWorksheetSurface = useCallback((options?: { immediate?: boolean }) => {
@@ -2530,6 +3935,11 @@ export function OpportunityPricingWorksheetBoard({
     setHistoryPast(nextPast);
     setHistoryFuture(nextFuture);
     setWorksheet(restoredWorksheet);
+    const nextPricingSummary = deriveWorksheetPricingSummary(restoredWorksheet, pricingSummaryRef.current, {
+      calculatedAt: new Date().toISOString(),
+    });
+    pricingSummaryRef.current = nextPricingSummary;
+    setPricingSummary(nextPricingSummary);
     setIsDirty(true);
     setError(null);
     setMessage(null);
@@ -2660,8 +4070,7 @@ export function OpportunityPricingWorksheetBoard({
     const nextEditor = options?.editor ?? "cell";
     setActiveCellKey(cellKey);
     setActiveEditor(nextEditor);
-    setSelectionAnchorCellKey(cellKey);
-    setSelectionFocusCellKey(cellKey);
+    replaceSelection(cellKey, cellKey);
     setEditingCellValue(
       cell?.formula ??
         (typeof cell?.value === "number"
@@ -2681,7 +4090,7 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     focusInputCell(cellKey);
-  }, [canWriteWorksheet, focusFormulaBar, focusInputCell]);
+  }, [canWriteWorksheet, focusFormulaBar, focusInputCell, replaceSelection]);
 
   const commitCellEdit = useCallback((cellKey: string, nextValue: string, nextSelectedCellKey?: string | null) => {
     if (formulaBarRef.current === document.activeElement) {
@@ -2701,10 +4110,9 @@ export function OpportunityPricingWorksheetBoard({
     setActiveCellKey((current) => (current === cellKey ? null : current));
     setActiveEditor(null);
     setEditingCellValue("");
-    setSelectionAnchorCellKey(nextSelectedCellKey ?? cellKey);
-    setSelectionFocusCellKey(nextSelectedCellKey ?? cellKey);
+    replaceSelection(nextSelectedCellKey ?? cellKey, nextSelectedCellKey ?? cellKey);
     focusWorksheetSurface({ immediate: true });
-  }, [focusWorksheetSurface, updateCell]);
+  }, [focusWorksheetSurface, replaceSelection, updateCell]);
 
   const handleWorksheetPaste = (event: ReactClipboardEvent<HTMLElement>) => {
     if (!canWriteWorksheet) {
@@ -2737,8 +4145,7 @@ export function OpportunityPricingWorksheetBoard({
 
       event.preventDefault();
       updateCell(anchorCellKey, clipboardText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, ""));
-      setSelectionAnchorCellKey(anchorCellKey);
-      setSelectionFocusCellKey(anchorCellKey);
+      replaceSelection(anchorCellKey, anchorCellKey);
       return;
     }
 
@@ -2762,7 +4169,7 @@ export function OpportunityPricingWorksheetBoard({
       );
 
       return patchedWorksheet;
-    });
+    }, { trackLearning: true });
 
     if (activeCellKey) {
       suppressBlurCommitCellKeyRef.current = activeCellKey;
@@ -2770,8 +4177,7 @@ export function OpportunityPricingWorksheetBoard({
     setActiveCellKey(null);
     setActiveEditor(null);
     setEditingCellValue("");
-    setSelectionAnchorCellKey(anchorCellKey);
-    setSelectionFocusCellKey(anchorCellKey);
+    replaceSelection(anchorCellKey, anchorCellKey);
     focusWorksheetSurface();
   };
 
@@ -2788,8 +4194,7 @@ export function OpportunityPricingWorksheetBoard({
     formulaReferenceDragBaseValueRef.current = editingCellValueRef.current;
     setIsDraggingSelection(true);
     setEditingCellValue(`${editingCellValueRef.current}${cellReference}`);
-    setSelectionAnchorCellKey(cellReference);
-    setSelectionFocusCellKey(cellReference);
+    replaceSelection(cellReference, cellReference);
 
     if (activeEditor === "formulaBar") {
       focusFormulaBar({ selectAll: false });
@@ -2803,6 +4208,7 @@ export function OpportunityPricingWorksheetBoard({
     focusFormulaBar,
     focusInputCell,
     isFormulaReferenceMode,
+    replaceSelection,
   ]);
 
   const handleCellBlur = (cellKey: string) => {
@@ -3220,7 +4626,7 @@ export function OpportunityPricingWorksheetBoard({
         ...current,
         cells: nextCells,
       };
-    });
+    }, { trackLearning: true });
   };
 
   const getRowRange = (rowIndex: number): WorksheetSelectionRange => ({
@@ -3237,7 +4643,32 @@ export function OpportunityPricingWorksheetBoard({
     endColumnIndex: columnIndex,
   });
 
-  const selectRange = useCallback((range: WorksheetSelectionRange) => {
+  const setActiveSelectionRangeIndex = useCallback((index: number) => {
+    setSelectionState((current) => {
+      const nextRange = current.ranges[index] ?? null;
+      if (!nextRange) {
+        return current;
+      }
+
+      const anchorCellKey = buildWorksheetCellKey(
+        worksheetRef.current.columns[nextRange.startColumnIndex]?.id ?? "A",
+        worksheetRef.current.rows[nextRange.startRowIndex]?.id ?? "1",
+      );
+      const focusCellKey = buildWorksheetCellKey(
+        worksheetRef.current.columns[nextRange.endColumnIndex]?.id ?? "A",
+        worksheetRef.current.rows[nextRange.endRowIndex]?.id ?? "1",
+      );
+
+      return {
+        ...current,
+        activeRangeIndex: index,
+        anchorCellKey,
+        focusCellKey,
+      };
+    });
+  }, []);
+
+  const selectRange = useCallback((range: WorksheetSelectionRange, kind: WorksheetSelectionKind = "cells") => {
     const currentWorksheet = worksheetRef.current;
     const anchorColumn = currentWorksheet.columns[range.startColumnIndex];
     const anchorRow = currentWorksheet.rows[range.startRowIndex];
@@ -3248,9 +4679,12 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    setSelectionAnchorCellKey(buildWorksheetCellKey(anchorColumn.id, anchorRow.id));
-    setSelectionFocusCellKey(buildWorksheetCellKey(focusColumn.id, focusRow.id));
-  }, []);
+    replaceSelection(
+      buildWorksheetCellKey(anchorColumn.id, anchorRow.id),
+      buildWorksheetCellKey(focusColumn.id, focusRow.id),
+      kind,
+    );
+  }, [replaceSelection]);
 
   const closeContextMenu = () => {
     setContextMenu(null);
@@ -3291,8 +4725,7 @@ export function OpportunityPricingWorksheetBoard({
 
     if (anchorColumn) {
       const nextCellKey = buildWorksheetCellKey(anchorColumn.id, String(insertRowIndex + 1));
-      setSelectionAnchorCellKey(nextCellKey);
-      setSelectionFocusCellKey(nextCellKey);
+      replaceSelection(nextCellKey, nextCellKey);
     }
   };
 
@@ -3318,8 +4751,7 @@ export function OpportunityPricingWorksheetBoard({
 
     if (anchorRow) {
       const nextCellKey = buildWorksheetCellKey(columnLabelFromIndex(insertColumnIndex), anchorRow.id);
-      setSelectionAnchorCellKey(nextCellKey);
-      setSelectionFocusCellKey(nextCellKey);
+      replaceSelection(nextCellKey, nextCellKey);
     }
   };
 
@@ -3412,8 +4844,7 @@ export function OpportunityPricingWorksheetBoard({
 
     if (anchorColumn) {
       const nextCellKey = buildWorksheetCellKey(anchorColumn.id, String(nextSelectedRowIndex + 1));
-      setSelectionAnchorCellKey(nextCellKey);
-      setSelectionFocusCellKey(nextCellKey);
+      replaceSelection(nextCellKey, nextCellKey);
     }
   };
 
@@ -3439,8 +4870,7 @@ export function OpportunityPricingWorksheetBoard({
 
     if (anchorRow) {
       const nextCellKey = buildWorksheetCellKey(columnLabelFromIndex(nextSelectedColumnIndex), anchorRow.id);
-      setSelectionAnchorCellKey(nextCellKey);
-      setSelectionFocusCellKey(nextCellKey);
+      replaceSelection(nextCellKey, nextCellKey);
     }
   };
 
@@ -3462,8 +4892,9 @@ export function OpportunityPricingWorksheetBoard({
       return selectedRange;
     }
 
-    if (isPositionInRange(position, selectedRange)) {
-      return selectedRange;
+    const matchingRange = selectedRanges.find((range) => isPositionInWorksheetSelectionArea(position, range));
+    if (matchingRange) {
+      return matchingRange;
     }
 
     return {
@@ -3472,6 +4903,34 @@ export function OpportunityPricingWorksheetBoard({
       startColumnIndex: position.columnIndex,
       endColumnIndex: position.columnIndex,
     };
+  };
+
+  const getContextMenuSelectionRanges = (menu: WorksheetContextMenuState): WorksheetSelectionRange[] => {
+    if (!menu) {
+      return selectedRanges;
+    }
+
+    if (menu.type === "row") {
+      const matchingRangeIndex = findWorksheetSelectionRangeIndexForRow(selectedRanges, menu.rowIndex);
+      return matchingRangeIndex >= 0 ? selectedRanges : [getRowRange(menu.rowIndex)];
+    }
+
+    if (menu.type === "column") {
+      const matchingRangeIndex = findWorksheetSelectionRangeIndexForColumn(selectedRanges, menu.columnIndex);
+      return matchingRangeIndex >= 0 ? selectedRanges : [getColumnRange(menu.columnIndex)];
+    }
+
+    const matchingRangeIndex = findWorksheetSelectionRangeIndexForCellKey(
+      worksheetRef.current,
+      selectedRanges,
+      menu.cellKey,
+    );
+    if (matchingRangeIndex >= 0) {
+      return selectedRanges;
+    }
+
+    const fallbackRange = getContextMenuRange(menu);
+    return fallbackRange ? [fallbackRange] : [];
   };
 
   const copyRangeToClipboard = async (range: WorksheetSelectionRange | null) => {
@@ -3507,9 +4966,16 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (!isPositionInRange(position, selectedRange)) {
-      setSelectionAnchorCellKey(cellKey);
-      setSelectionFocusCellKey(cellKey);
+    const matchingRangeIndex = findWorksheetSelectionRangeIndexForCellKey(
+      worksheetRef.current,
+      selectedRanges,
+      cellKey,
+    );
+
+    if (matchingRangeIndex >= 0) {
+      setActiveSelectionRangeIndex(matchingRangeIndex);
+    } else {
+      replaceSelection(cellKey, cellKey);
     }
 
     setContextMenu({
@@ -3518,7 +4984,34 @@ export function OpportunityPricingWorksheetBoard({
       y: event.clientY,
       cellKey,
     });
-  }, [activeCellKey, isFormulaReferenceMode, selectedRange]);
+  }, [activeCellKey, isFormulaReferenceMode, replaceSelection, selectedRanges, setActiveSelectionRangeIndex]);
+
+  const handleRowHeaderClick = useCallback((
+    event: ReactMouseEvent<HTMLDivElement>,
+    rowIndex: number,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const row = worksheetRef.current.rows[rowIndex];
+    const firstColumn = worksheetRef.current.columns[0];
+    if (!row || !firstColumn) {
+      return;
+    }
+
+    const rowCellKey = buildWorksheetCellKey(firstColumn.id, row.id);
+    if (event.metaKey || event.ctrlKey) {
+      setSelectionState((current) => toggleWorksheetRowSelection(current, worksheetRef.current, rowIndex));
+      return;
+    }
+
+    if (event.shiftKey) {
+      replaceSelection(selectionAnchorCellKey ?? rowCellKey, rowCellKey, "rows");
+      return;
+    }
+
+    replaceSelection(rowCellKey, rowCellKey, "rows");
+  }, [replaceSelection, selectionAnchorCellKey]);
 
   const openRowContextMenu = useCallback((
     event: ReactMouseEvent<HTMLDivElement>,
@@ -3527,13 +5020,11 @@ export function OpportunityPricingWorksheetBoard({
     event.preventDefault();
     event.stopPropagation();
 
-    if (
-      !isFullRowRange(selectedRange) ||
-      !selectedRange ||
-      rowIndex < selectedRange.startRowIndex ||
-      rowIndex > selectedRange.endRowIndex
-    ) {
-      selectRange(getRowRange(rowIndex));
+    const matchingRangeIndex = findWorksheetSelectionRangeIndexForRow(selectedRanges, rowIndex);
+    if (matchingRangeIndex >= 0) {
+      setActiveSelectionRangeIndex(matchingRangeIndex);
+    } else {
+      selectRange(getRowRange(rowIndex), "rows");
     }
     setContextMenu({
       type: "row",
@@ -3541,7 +5032,34 @@ export function OpportunityPricingWorksheetBoard({
       y: event.clientY,
       rowIndex,
     });
-  }, [selectedRange, selectRange]);
+  }, [selectRange, selectedRanges, setActiveSelectionRangeIndex]);
+
+  const handleColumnHeaderClick = useCallback((
+    event: ReactMouseEvent<HTMLDivElement>,
+    columnIndex: number,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const column = worksheetRef.current.columns[columnIndex];
+    const firstRow = worksheetRef.current.rows[0];
+    if (!column || !firstRow) {
+      return;
+    }
+
+    const columnCellKey = buildWorksheetCellKey(column.id, firstRow.id);
+    if (event.metaKey || event.ctrlKey) {
+      setSelectionState((current) => toggleWorksheetColumnSelection(current, worksheetRef.current, columnIndex));
+      return;
+    }
+
+    if (event.shiftKey) {
+      replaceSelection(selectionAnchorCellKey ?? columnCellKey, columnCellKey, "columns");
+      return;
+    }
+
+    replaceSelection(columnCellKey, columnCellKey, "columns");
+  }, [replaceSelection, selectionAnchorCellKey]);
 
   const openColumnContextMenu = (
     event: ReactMouseEvent<HTMLDivElement>,
@@ -3550,13 +5068,11 @@ export function OpportunityPricingWorksheetBoard({
     event.preventDefault();
     event.stopPropagation();
 
-    if (
-      !isFullColumnRange(selectedRange) ||
-      !selectedRange ||
-      columnIndex < selectedRange.startColumnIndex ||
-      columnIndex > selectedRange.endColumnIndex
-    ) {
-      selectRange(getColumnRange(columnIndex));
+    const matchingRangeIndex = findWorksheetSelectionRangeIndexForColumn(selectedRanges, columnIndex);
+    if (matchingRangeIndex >= 0) {
+      setActiveSelectionRangeIndex(matchingRangeIndex);
+    } else {
+      selectRange(getColumnRange(columnIndex), "columns");
     }
     setContextMenu({
       type: "column",
@@ -3566,9 +5082,61 @@ export function OpportunityPricingWorksheetBoard({
     });
   };
 
-  const runContextMenuAction = (action: () => void | Promise<void>) => {
-    closeContextMenu();
+  const runContextMenuAction = (
+    action: () => void | Promise<void>,
+    options?: { preserveUntilNextFrame?: boolean },
+  ) => {
+    if (options?.preserveUntilNextFrame) {
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => {
+          closeContextMenu();
+        });
+      } else {
+        closeContextMenu();
+      }
+    } else {
+      closeContextMenu();
+    }
     void action();
+  };
+
+  const handleQuoteContextMenuAction = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    range: WorksheetSelectionRange | null,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const preservedRange = cloneWorksheetSelectionRange(range);
+    const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));
+    runContextMenuAction(() => beginWorksheetPublishToQuote(preservedRange, preservedSelectionRanges), {
+      preserveUntilNextFrame: true,
+    });
+  };
+
+  const handlePurchaseOrderContextMenuAction = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    range: WorksheetSelectionRange | null,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const preservedRange = cloneWorksheetSelectionRange(range);
+    const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));
+    runContextMenuAction(() => beginWorksheetPublishToPurchaseOrder(preservedRange, preservedSelectionRanges), {
+      preserveUntilNextFrame: true,
+    });
+  };
+
+  const handleVariationContextMenuAction = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    range: WorksheetSelectionRange | null,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const preservedRange = cloneWorksheetSelectionRange(range);
+    const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));
+    runContextMenuAction(() => beginWorksheetPublishToVariation(preservedRange, preservedSelectionRanges), {
+      preserveUntilNextFrame: true,
+    });
   };
 
   const selectSingleCell = useCallback((cellKey: string) => {
@@ -3582,37 +5150,49 @@ export function OpportunityPricingWorksheetBoard({
     rangeDragAnchorCellKeyRef.current = cellKey;
     formulaReferenceDragAnchorCellKeyRef.current = null;
     formulaReferenceDragBaseValueRef.current = null;
-    setSelectionAnchorCellKey(cellKey);
-    setSelectionFocusCellKey(cellKey);
+    replaceSelection(cellKey, cellKey);
     setIsDraggingSelection(false);
     focusWorksheetSurface();
-  }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode]);
+  }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode, replaceSelection]);
 
   const startPendingRangeSelection = useCallback((
     cellKey: string,
     startClientX: number,
-    startClientY: number
+    startClientY: number,
+    options?: {
+      anchorCellKey?: string | null;
+      mode?: "replace" | "add" | "extend";
+    },
   ) => {
     if (isFormulaReferenceMode) {
       appendCellReferenceToFormula(cellKey);
       return;
     }
 
+    const nextMode = options?.mode ?? "replace";
+    const nextAnchorCellKey =
+      nextMode === "extend" && options.anchorCellKey
+        ? options.anchorCellKey
+        : cellKey;
+
     pendingSelectionDragRef.current = {
-      anchorCellKey: cellKey,
+      anchorCellKey: nextAnchorCellKey,
       startClientX,
       startClientY,
+      mode: nextMode,
+      baseSelectionState: selectionState,
     };
     isDraggingSelectionRef.current = false;
-    rangeDragAnchorCellKeyRef.current = cellKey;
+    rangeDragAnchorCellKeyRef.current = nextAnchorCellKey;
     formulaReferenceDragAnchorCellKeyRef.current = null;
     formulaReferenceDragBaseValueRef.current = null;
     didDragSelectionRef.current = false;
-    setSelectionAnchorCellKey(cellKey);
-    setSelectionFocusCellKey(cellKey);
+    if (nextMode === "replace" || nextMode === "extend") {
+      replaceSelection(nextAnchorCellKey, cellKey);
+    }
     setIsDraggingSelection(false);
     focusWorksheetSurface();
-  }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode]);
+  }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode, replaceSelection, selectionState]);
 
   const updateRangeSelection = useCallback((cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => {
     if (isFormulaReferenceMode) {
@@ -3635,8 +5215,7 @@ export function OpportunityPricingWorksheetBoard({
         formulaReferenceAnchorCellKey,
         cellKey
       );
-      setSelectionAnchorCellKey(formulaReferenceAnchorCellKey);
-      setSelectionFocusCellKey(cellKey);
+      replaceSelection(formulaReferenceAnchorCellKey, cellKey);
       setEditingCellValue(`${formulaReferenceBaseValue}${nextReference}`);
       return;
     }
@@ -3696,7 +5275,23 @@ export function OpportunityPricingWorksheetBoard({
     if (anchorCellKey && anchorCellKey !== cellKey) {
       didDragSelectionRef.current = true;
     }
-    setSelectionFocusCellKey(cellKey);
+    if (!anchorCellKey) {
+      return;
+    }
+    if (pendingSelection?.mode === "add") {
+      setSelectionState(
+        addWorksheetSelectionFromCellKeys(
+          pendingSelection.baseSelectionState,
+          worksheetRef.current,
+          anchorCellKey,
+          cellKey,
+          "cells",
+        ),
+      );
+      return;
+    }
+
+    replaceSelection(anchorCellKey, cellKey);
   }, [
     clearFillDragState,
     clearSelectionDragState,
@@ -3704,6 +5299,7 @@ export function OpportunityPricingWorksheetBoard({
     isDraggingSelection,
     isFormulaEditing,
     isFormulaReferenceMode,
+    replaceSelection,
     selectionAnchorCellKey,
   ]);
 
@@ -3857,20 +5453,20 @@ export function OpportunityPricingWorksheetBoard({
         ...current,
         cells: nextCells,
       };
-    });
+    }, { trackLearning: true });
 
     const nextFocusCellKey = buildWorksheetCellKey(
       worksheet.columns[previewRange.endColumnIndex]?.id ?? worksheet.columns[sourceRange.endColumnIndex].id,
       worksheet.rows[previewRange.endRowIndex]?.id ?? worksheet.rows[sourceRange.endRowIndex].id
     );
-    setSelectionAnchorCellKey(
+    replaceSelection(
       buildWorksheetCellKey(
         worksheet.columns[sourceRange.startColumnIndex].id,
         worksheet.rows[sourceRange.startRowIndex].id
-      )
+      ),
+      nextFocusCellKey,
     );
-    setSelectionFocusCellKey(nextFocusCellKey);
-  }, [applyCommittedWorksheetChange, worksheet.columns, worksheet.rows]);
+  }, [applyCommittedWorksheetChange, replaceSelection, worksheet.columns, worksheet.rows]);
 
   const handleWorksheetCopy = (event: ReactClipboardEvent<HTMLDivElement>) => {
     if (activeCellKey || !selectedRange) {
@@ -3926,6 +5522,16 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const handleWorksheetKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target;
+    const isTextEditingTarget =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable);
+    if (isTextEditingTarget) {
+      return;
+    }
+
     const isUndoShortcut =
       (event.metaKey || event.ctrlKey) &&
       !event.altKey &&
@@ -4015,7 +5621,7 @@ export function OpportunityPricingWorksheetBoard({
         );
 
         if (nextFocusKey) {
-          setSelectionFocusCellKey(nextFocusKey);
+          replaceSelection(selectionAnchorCellKey ?? baseCellKey, nextFocusKey);
         }
         return;
       }
@@ -4025,8 +5631,7 @@ export function OpportunityPricingWorksheetBoard({
         return;
       }
 
-      setSelectionAnchorCellKey(nextCellKey);
-      setSelectionFocusCellKey(nextCellKey);
+      replaceSelection(nextCellKey, nextCellKey);
     };
 
     if (event.key === "ArrowUp") {
@@ -4258,7 +5863,7 @@ export function OpportunityPricingWorksheetBoard({
   ]);
 
   const saveWorksheet = async (options?: { silent?: boolean }) => {
-    if (!supabase || !session?.organizationId || !session?.id) {
+    if (!supabase || !session?.organizationId || !session?.id || !worksheetOpportunityId) {
       setError("Pricing worksheet save is not ready. Please refresh and try again.");
       return false;
     }
@@ -4275,6 +5880,7 @@ export function OpportunityPricingWorksheetBoard({
     try {
       const organizationId = session.organizationId;
       const userId = session.id;
+      const worksheetPersistenceName = getWorksheetPersistenceName();
       if (!organizationId || !userId) {
         throw new Error("Could not resolve your organization or user.");
       }
@@ -4283,7 +5889,7 @@ export function OpportunityPricingWorksheetBoard({
       });
       const worksheetValidation = validateWorksheetBeforeSave({
         ...worksheetRef.current,
-        sheetName: worksheetDisplayName,
+        sheetName: worksheetPersistenceName,
       });
       endSaveValidationMeasure({
         ok: worksheetValidation.ok,
@@ -4293,141 +5899,172 @@ export function OpportunityPricingWorksheetBoard({
       }
 
       const syncedWorksheet = worksheetValidation.worksheet;
-      const worksheetJson = syncedWorksheet as unknown as Json;
-      const pricingSummaryJson = pricingSummary as unknown as Json;
-      const extractedPricingDataJson = extractedPricingData as unknown as Json;
+      const nextPricingSummary = deriveWorksheetPricingSummary(syncedWorksheet, pricingSummaryRef.current, {
+        calculatedAt: new Date().toISOString(),
+      });
+      pricingSummaryRef.current = nextPricingSummary;
+      const saveRequestId = crypto.randomUUID();
 
       const targetWorksheetId = explicitWorksheetId ?? worksheetId;
+      let persistedWorkbook: OpportunityPricingWorkbook | null = null;
 
       if (targetWorksheetId) {
         const endSaveRequestMeasure = startPricingWorksheetPerformanceMeasure("worksheet-save-request", {
           action: "update",
           worksheetId: targetWorksheetId,
         });
-        let updateError: { message: string } | null = null;
-        let data: { id: string; updated_at: string | null } | null = null;
+        let saveError: Error | null = null;
+        let savedWorkbook = null;
         try {
-          const result = await supabase
-            .from("opportunity_pricing_worksheets")
-            .update({
-              name: worksheetDisplayName,
-              worksheet_data: worksheetJson,
-              pricing_summary: pricingSummaryJson,
-              extracted_pricing_data: extractedPricingDataJson,
-              version: worksheet.version,
-              updated_by: userId,
-            })
-            .eq("organization_id", organizationId)
-            .eq("opportunity_id", sharedOpportunity.opportunityId)
-            .eq("id", targetWorksheetId)
-            .select("id, updated_at")
-            .single();
-          data = result.data;
-          updateError = result.error;
+          savedWorkbook = await saveOpportunityPricingWorkbookActiveSheet({
+            supabase,
+            organizationId,
+            opportunityId: worksheetOpportunityId,
+            projectId: worksheetProjectId,
+            quoteId: worksheetOwner.quoteId,
+            variationId: worksheetOwner.variationId,
+            workbookId: targetWorksheetId,
+            sheetId: worksheetSheetId,
+            name: worksheetPersistenceName,
+            tradePackage: worksheetTradePackage,
+            worksheet: syncedWorksheet,
+            pricingSummary: nextPricingSummary,
+            extractedPricingData,
+            saveRequestId,
+            userId,
+          });
+        } catch (error) {
+          saveError = error instanceof Error ? error : new Error("Workbook save failed.");
         } finally {
           endSaveRequestMeasure({
-            ok: !updateError,
+            ok: !saveError,
           });
         }
 
-        if (updateError) {
-          throw new Error(updateError.message);
+        if (saveError) {
+          throw saveError;
         }
 
-        if (!data) {
+        if (!savedWorkbook) {
           throw new Error("Worksheet save response was empty.");
         }
 
-        setWorksheetId(data.id);
-        setWorksheetName(worksheetDisplayName);
-        setLastSavedAt(data.updated_at ?? null);
-        void writePricingWorksheetIntelligenceEvents(supabase, [
-          buildPricingWorksheetIntelligenceEvent({
-            organizationId,
-            opportunityId: sharedOpportunity.opportunityId,
-            entityId: data.id,
-            worksheetName: worksheetDisplayName,
-            tradePackage: worksheetTradePackage,
-            worksheet: syncedWorksheet,
-            eventType: "worksheet_saved",
-            eventFamily: "commercial_action",
-            action: "saved",
-          }),
-        ]).catch((eventWriteError) => {
-          logPricingWorksheetIntelligenceFailure("worksheet_saved", eventWriteError);
+        const editorRecord = buildOpportunityPricingWorkbookEditorRecord(savedWorkbook);
+        await flushPersistedWorksheetLearningArtifacts({
+          organizationId,
+          userId,
+          workbookId: editorRecord.workbookId,
+          workbookName: editorRecord.workbookName,
+          sheetId: editorRecord.sheetId,
+          sheetName: editorRecord.sheetName,
+          worksheetName: editorRecord.sheetName,
+          tradePackage: editorRecord.tradePackage,
         });
+        persistedWorkbook = savedWorkbook;
+        setWorksheetId(editorRecord.workbookId);
+        worksheetIdRef.current = editorRecord.workbookId;
+        setWorksheetSheetId(editorRecord.sheetId);
+        worksheetSheetIdRef.current = editorRecord.sheetId;
+        setWorksheetName(editorRecord.sheetName);
+        pricingSummaryRef.current = editorRecord.pricingSummary;
+        setPricingSummary(editorRecord.pricingSummary);
+        setLastSavedAt(editorRecord.updatedAt ?? null);
       } else {
         const endSaveRequestMeasure = startPricingWorksheetPerformanceMeasure("worksheet-save-request", {
           action: "insert",
           worksheetId: "new",
         });
-        let insertError: { message: string } | null = null;
-        let data: { id: string; updated_at: string | null } | null = null;
+        let saveError: Error | null = null;
+        let savedWorkbook = null;
         try {
-          const result = await supabase
-            .from("opportunity_pricing_worksheets")
-            .insert({
-              organization_id: organizationId,
-              opportunity_id: sharedOpportunity.opportunityId,
-              name: worksheetDisplayName,
-              worksheet_data: worksheetJson,
-              pricing_summary: pricingSummaryJson,
-              extracted_pricing_data: extractedPricingDataJson,
-              version: worksheet.version,
-              created_by: userId,
-              updated_by: userId,
-            })
-            .select("id, updated_at")
-            .single();
-          data = result.data;
-          insertError = result.error;
+          savedWorkbook = await saveOpportunityPricingWorkbookActiveSheet({
+            supabase,
+            organizationId,
+            opportunityId: worksheetOpportunityId,
+            projectId: worksheetProjectId,
+            quoteId: worksheetOwner.quoteId,
+            variationId: worksheetOwner.variationId,
+            workbookId: null,
+            sheetId: worksheetSheetId,
+            name: worksheetPersistenceName,
+            tradePackage: worksheetTradePackage,
+            worksheet: syncedWorksheet,
+            pricingSummary: nextPricingSummary,
+            extractedPricingData,
+            saveRequestId,
+            userId,
+          });
+        } catch (error) {
+          saveError = error instanceof Error ? error : new Error("Workbook save failed.");
         } finally {
           endSaveRequestMeasure({
-            ok: !insertError,
+            ok: !saveError,
           });
         }
 
-        if (insertError) {
-          throw new Error(insertError.message);
+        if (saveError) {
+          throw saveError;
         }
 
-        if (!data) {
+        if (!savedWorkbook) {
           throw new Error("Worksheet save response was empty.");
         }
 
-        setWorksheetId(data.id);
-        setWorksheetName(worksheetDisplayName);
-        setLastSavedAt(data.updated_at ?? null);
-        void writePricingWorksheetIntelligenceEvents(supabase, [
-          buildPricingWorksheetIntelligenceEvent({
-            organizationId,
-            opportunityId: sharedOpportunity.opportunityId,
-            entityId: data.id,
-            worksheetName: worksheetDisplayName,
-            tradePackage: worksheetTradePackage,
-            worksheet: syncedWorksheet,
-            eventType: "worksheet_saved",
-            eventFamily: "commercial_action",
-            action: "saved",
-          }),
-        ]).catch((eventWriteError) => {
-          logPricingWorksheetIntelligenceFailure("worksheet_saved", eventWriteError);
+        const editorRecord = buildOpportunityPricingWorkbookEditorRecord(savedWorkbook);
+        await flushPersistedWorksheetLearningArtifacts({
+          organizationId,
+          userId,
+          workbookId: editorRecord.workbookId,
+          workbookName: editorRecord.workbookName,
+          sheetId: editorRecord.sheetId,
+          sheetName: editorRecord.sheetName,
+          worksheetName: editorRecord.sheetName,
+          tradePackage: editorRecord.tradePackage,
         });
+        persistedWorkbook = savedWorkbook;
+        setWorksheetId(editorRecord.workbookId);
+        worksheetIdRef.current = editorRecord.workbookId;
+        setWorksheetSheetId(editorRecord.sheetId);
+        worksheetSheetIdRef.current = editorRecord.sheetId;
+        setWorkbookSheets(savedWorkbook.sheets);
+        setWorksheetName(editorRecord.sheetName);
+        pricingSummaryRef.current = editorRecord.pricingSummary;
+        setPricingSummary(editorRecord.pricingSummary);
+        setLastSavedAt(editorRecord.updatedAt ?? null);
       }
 
       setWorksheet(syncedWorksheet);
       worksheetRef.current = syncedWorksheet;
+      setPricingSummary(nextPricingSummary);
+      if (persistedWorkbook) {
+        const savedSheet = persistedWorkbook.sheets[0] ?? null;
+        if (savedSheet) {
+          setWorkbookSheets((current) => {
+            if (current.length === 0) {
+              workbookSheetsRef.current = [savedSheet];
+              return [savedSheet];
+            }
+
+            const existingIndex = current.findIndex((sheet) => sheet.id === savedSheet.id);
+            if (existingIndex === -1) {
+              const nextSheets = [...current, savedSheet];
+              workbookSheetsRef.current = nextSheets;
+              return nextSheets;
+            }
+
+            const nextSheets = current.map((sheet) => (sheet.id === savedSheet.id ? savedSheet : sheet));
+            workbookSheetsRef.current = nextSheets;
+            return nextSheets;
+          });
+        }
+      }
       setIsDirty(false);
       if (!options?.silent) {
         setMessage("Pricing worksheet saved.");
       }
       return true;
     } catch (saveWorksheetError) {
-      setError(
-        saveWorksheetError instanceof Error
-          ? saveWorksheetError.message
-          : "Unable to save the pricing worksheet."
-      );
+      setError(mapPricingWorksheetUiErrorMessage(saveWorksheetError, "Unable to save the pricing worksheet."));
       return false;
     } finally {
       setIsSavingWorksheet(false);
@@ -4451,36 +6088,369 @@ export function OpportunityPricingWorksheetBoard({
 
   saveWorksheetRef.current = saveWorksheet;
 
-  useEffect(() => {
-    if (
-      !isDirty ||
-      isSavingWorksheet ||
-      isLoadingWorksheet ||
-      !canWriteWorksheet ||
-      isWorksheetNameEditorOpen
-    ) {
+  const switchToWorkbookSheet = useCallback(async (nextSheetId: string) => {
+    if (nextSheetId === worksheetSheetId) {
       return;
     }
 
-    const autosaveTimeout = window.setTimeout(() => {
-      void saveWorksheetRef.current?.({ silent: true });
-    }, 1200);
+    if (isSavingWorksheet) {
+      return;
+    }
 
-    return () => {
-      window.clearTimeout(autosaveTimeout);
+    if (isDirty) {
+      const didSave = await saveWorksheetRef.current?.({ silent: true });
+      if (!didSave) {
+        return;
+      }
+    }
+
+    const nextSheet = workbookSheetsRef.current.find((sheet) => sheet.id === nextSheetId);
+    const currentWorkbookId = explicitWorksheetId ?? worksheetId;
+    if (!nextSheet || !currentWorkbookId || !session?.organizationId) {
+      return;
+    }
+
+    await cancelActiveAiJob();
+
+    try {
+      await setOpportunityPricingWorkbookLastActiveSheet({
+        supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: worksheetProjectId,
+        quoteId: worksheetOwner.quoteId,
+        variationId: worksheetOwner.variationId,
+        workbookId: currentWorkbookId,
+        sheetId: nextSheetId,
+      });
+      persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
+      persistedLastActiveSheetIdRef.current = nextSheetId;
+    } catch {
+      persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
+      persistedLastActiveSheetIdRef.current = null;
+    }
+
+    const workbookSnapshot: OpportunityPricingWorkbook = {
+      archivedAt: null,
+      createdAt: nextSheet.createdAt,
+      createdBy: nextSheet.createdBy,
+      id: currentWorkbookId,
+      lastActiveSheetId: nextSheetId,
+      legacySheetFallback: false,
+      name: worksheetName?.trim() || nextSheet.name,
+      opportunityId: worksheetOpportunityId,
+      projectId: worksheetProjectId,
+      quoteId: worksheetOwner.quoteId,
+      variationId: worksheetOwner.variationId,
+      organizationId: session.organizationId,
+      sortOrder: null,
+      tradePackage: worksheetTradePackage,
+      updatedAt: nextSheet.updatedAt,
+      updatedBy: nextSheet.updatedBy,
+      version: nextSheet.version,
+      sheets: workbookSheetsRef.current,
     };
+
+    hydrateWorkbookEditorState(workbookSnapshot, nextSheetId, {
+      seedPersistedLastActiveSheet: false,
+    });
+    updateSheetUrlState(nextSheetId);
   }, [
-    canWriteWorksheet,
+    cancelActiveAiJob,
+    explicitWorksheetId,
+    hydrateWorkbookEditorState,
     isDirty,
-    isLoadingWorksheet,
     isSavingWorksheet,
-    isWorksheetNameEditorOpen,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    worksheetId,
+    worksheetName,
+    worksheetSheetId,
+    worksheetTradePackage,
+    updateSheetUrlState,
+  ]);
+
+  const addBlankWorkbookSheet = useCallback(async () => {
+    if (!supabase || !session?.organizationId || !session?.id || !worksheetId || isMutatingPages) {
+      return;
+    }
+
+    if (isDirty) {
+      const didSave = await saveWorksheetRef.current?.({ silent: true });
+      if (!didSave) {
+        return;
+      }
+    }
+
+    setIsMutatingPages(true);
+    setError(null);
+
+    try {
+      const nextSheetNumber = workbookSheetsRef.current.length + 1;
+      const nextWorksheet = createDefaultWorksheetData({
+        sheetName: `Page ${nextSheetNumber}`,
+      });
+      const createdSheet = await createOpportunityPricingWorkbookSheet({
+        supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: worksheetProjectId,
+        quoteId: worksheetOwner.quoteId,
+        variationId: worksheetOwner.variationId,
+        workbookId: worksheetId,
+        userId: session.id,
+        worksheet: nextWorksheet,
+        pricingSummary: createDefaultWorksheetPricingSummary(),
+        extractedPricingData: createDefaultWorksheetExtractedPricingData(nextWorksheet.version),
+      });
+      const nextSheets = [...workbookSheetsRef.current, createdSheet];
+      workbookSheetsRef.current = nextSheets;
+      setWorkbookSheets(nextSheets);
+      setIsPagesTrayOpen(true);
+      await switchToWorkbookSheet(createdSheet.id);
+    } catch (sheetError) {
+      setError(sheetError instanceof Error ? sheetError.message : "Unable to add a worksheet page.");
+    } finally {
+      setIsMutatingPages(false);
+    }
+  }, [
+    isDirty,
+    isMutatingPages,
+    session?.id,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    switchToWorkbookSheet,
+    worksheetId,
+  ]);
+
+  const duplicateWorkbookSheet = useCallback(async (sheetId: string) => {
+    if (!supabase || !session?.organizationId || !session?.id || !worksheetId || isMutatingPages) {
+      return;
+    }
+
+    const sourceSheet = workbookSheetsRef.current.find((sheet) => sheet.id === sheetId);
+    if (!sourceSheet) {
+      return;
+    }
+
+    if (sheetId === worksheetSheetId && isDirty) {
+      const didSave = await saveWorksheetRef.current?.({ silent: true });
+      if (!didSave) {
+        return;
+      }
+    }
+
+    setIsMutatingPages(true);
+    setError(null);
+
+    try {
+      const duplicatedSheet = await createOpportunityPricingWorkbookSheet({
+        supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: worksheetProjectId,
+        quoteId: worksheetOwner.quoteId,
+        variationId: worksheetOwner.variationId,
+        workbookId: worksheetId,
+        userId: session.id,
+        name: `${sourceSheet.name} Copy`,
+        worksheet: {
+          ...cloneWorksheetData(sourceSheet.worksheet),
+          sheetName: `${sourceSheet.name} Copy`,
+        },
+        pricingSummary: cloneJson(sourceSheet.pricingSummary),
+        extractedPricingData: cloneJson(sourceSheet.extractedPricingData),
+      });
+      const nextSheets = [...workbookSheetsRef.current, duplicatedSheet];
+      workbookSheetsRef.current = nextSheets;
+      setWorkbookSheets(nextSheets);
+      setIsPagesTrayOpen(true);
+      await switchToWorkbookSheet(duplicatedSheet.id);
+    } catch (sheetError) {
+      setError(sheetError instanceof Error ? sheetError.message : "Unable to duplicate the worksheet page.");
+    } finally {
+      setIsMutatingPages(false);
+    }
+  }, [
+    isDirty,
+    isMutatingPages,
+    session?.id,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    switchToWorkbookSheet,
+    worksheetId,
+    worksheetSheetId,
+  ]);
+
+  const confirmPageRename = useCallback(async () => {
+    if (pageDialog?.type !== "rename" || !supabase || !session?.organizationId || !session?.id || !worksheetId) {
+      return;
+    }
+
+    const nextName = pageDialog.value.trim();
+    if (!nextName) {
+      setError("Worksheet page name cannot be blank.");
+      return;
+    }
+
+    if (pageDialog.sheetId === worksheetSheetId) {
+      setWorksheetNameDraft(nextName);
+      setPageDialog(null);
+      const commitResult = applyCommittedWorksheetChange(
+        (current) => ({
+          ...current,
+          sheetName: nextName,
+        }),
+        { recalculateFormulas: false },
+      );
+
+      if (commitResult.committed) {
+        setWorksheetName(nextName);
+        const nextSheets = workbookSheetsRef.current.map((sheet) =>
+          sheet.id === pageDialog.sheetId
+            ? {
+                ...sheet,
+                name: nextName,
+                worksheet: {
+                  ...sheet.worksheet,
+                  sheetName: nextName,
+                },
+              }
+            : sheet,
+        );
+        workbookSheetsRef.current = nextSheets;
+        setWorkbookSheets(nextSheets);
+      }
+      return;
+    }
+
+    setIsMutatingPages(true);
+    setError(null);
+    try {
+      await renameOpportunityPricingWorkbookSheet({
+        supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: worksheetProjectId,
+        quoteId: worksheetOwner.quoteId,
+        variationId: worksheetOwner.variationId,
+        workbookId: worksheetId,
+        sheetId: pageDialog.sheetId,
+        nextName,
+        tradePackage: worksheetTradePackage,
+        userId: session.id,
+      });
+      const nextSheets = workbookSheetsRef.current.map((sheet) => (
+        sheet.id === pageDialog.sheetId
+          ? {
+              ...sheet,
+              name: nextName,
+              worksheet: {
+                ...sheet.worksheet,
+                sheetName: nextName,
+              },
+            }
+          : sheet
+      ));
+      workbookSheetsRef.current = nextSheets;
+      setWorkbookSheets(nextSheets);
+      setPageDialog(null);
+    } catch (sheetError) {
+      setError(sheetError instanceof Error ? sheetError.message : "Unable to rename the worksheet page.");
+    } finally {
+      setIsMutatingPages(false);
+    }
+  }, [
+    applyCommittedWorksheetChange,
+    pageDialog,
+    session?.id,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    worksheetId,
+    worksheetSheetId,
+    worksheetTradePackage,
+  ]);
+
+  const confirmPageDelete = useCallback(async () => {
+    if (pageDialog?.type !== "delete" || !supabase || !session?.organizationId || !session?.id || !worksheetId) {
+      return;
+    }
+
+    if (workbookSheetsRef.current.length <= 1) {
+      setError("You must keep at least one worksheet page.");
+      return;
+    }
+
+    if (pageDialog.sheetId === worksheetSheetId && isDirty) {
+      const didSave = await saveWorksheetRef.current?.({ silent: true });
+      if (!didSave) {
+        return;
+      }
+    }
+
+    const deletedSheet = workbookSheetsRef.current.find((sheet) => sheet.id === pageDialog.sheetId) ?? null;
+    const remainingSheets = workbookSheetsRef.current.filter((sheet) => sheet.id !== pageDialog.sheetId);
+    const promotedDefaultSheetId = deletedSheet?.isDefault ? (remainingSheets[0]?.id ?? null) : null;
+    const nextSheetId =
+      pageDialog.sheetId === worksheetSheetId
+        ? remainingSheets[0]?.id ?? null
+        : promotedDefaultSheetId;
+    const activeFallbackSheetId =
+      pageDialog.sheetId === worksheetSheetId
+        ? remainingSheets[0]?.id ?? null
+        : null;
+
+    setIsMutatingPages(true);
+    setError(null);
+    try {
+      await deleteOpportunityPricingWorkbookSheet({
+        supabase,
+        organizationId: session.organizationId,
+        opportunityId: worksheetOpportunityId,
+        projectId: worksheetProjectId,
+        quoteId: worksheetOwner.quoteId,
+        variationId: worksheetOwner.variationId,
+        workbookId: worksheetId,
+        sheetId: pageDialog.sheetId,
+        userId: session.id,
+        nextSheetId,
+      });
+      workbookSheetsRef.current = remainingSheets;
+      setWorkbookSheets(remainingSheets);
+      setPageDialog(null);
+
+      if (activeFallbackSheetId) {
+        await switchToWorkbookSheet(activeFallbackSheetId);
+      }
+    } catch (sheetError) {
+      setError(sheetError instanceof Error ? sheetError.message : "Unable to delete the worksheet page.");
+    } finally {
+      setIsMutatingPages(false);
+    }
+  }, [
+    isDirty,
+    pageDialog,
+    session?.id,
+    session?.organizationId,
+    worksheetOpportunityId,
+    supabase,
+    switchToWorkbookSheet,
+    worksheetId,
+    worksheetSheetId,
   ]);
 
   const applyAiPreviewPayload = useCallback((payload: PricingWorksheetAiPreviewResponse, options?: {
     promptOverride?: string | null;
     followUpContext?: PricingWorksheetAiFollowUpContext | null;
   }) => {
+    if ((payload.sheetId ?? null) !== (worksheetSheetIdRef.current ?? null)) {
+      return false;
+    }
+
     setAiPreviewResponse(payload);
     setAiPreviewWorksheetName(payload.preview.compactOutput.worksheetName);
     setAiPreviewTradePackage(payload.preview.compactOutput.tradePackage ?? "");
@@ -4622,6 +6592,13 @@ export function OpportunityPricingWorksheetBoard({
       nextWorksheet = autoLayoutWorksheet(nextWorksheet, payload.preview.assistant?.diffSummary);
       nextWorksheet.sheetName =
         payload.preview.compactOutput.worksheetName || nextWorksheet.sheetName;
+      nextWorksheet = applyAiProvenanceToWorksheet({
+        nextWorksheet,
+        aiInteractionId: payload.aiInteractionId,
+        promptSummary: payload.preview.assistant?.summary ?? options?.promptOverride ?? aiPrompt,
+        operationTypes: payload.preview.assistant?.operations.map((operation) => operation.type) ?? [],
+        batchIndex: payload.preview.continuation?.currentBatchIndex ?? 1,
+      });
 
       const commitResult = applyCommittedWorksheetChange(() => nextWorksheet, {
         validateFormulaOutputs: true,
@@ -4629,8 +6606,7 @@ export function OpportunityPricingWorksheetBoard({
       if (commitResult.committed) {
         setWorksheetName(nextWorksheet.sheetName);
         setWorksheetTradePackage(payload.preview.compactOutput.tradePackage ?? null);
-        setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
-        setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+        replaceSelection(buildWorksheetCellKey("A", "1"), buildWorksheetCellKey("A", "1"));
         setActiveCellKey(null);
         setActiveEditor(null);
         setEditingCellValue("");
@@ -4639,14 +6615,16 @@ export function OpportunityPricingWorksheetBoard({
       }
     }
 
-    setIsAiDialogOpen(false);
     setIsAiChatOpen(true);
+    return true;
   }, [
-    aiPrompt,
     applyCommittedWorksheetChange,
+    aiPrompt,
+    applyAiProvenanceToWorksheet,
     autoLayoutWorksheet,
     canWriteWorksheet,
     logAiReviewIntelligenceEvents,
+    replaceSelection,
     worksheetName,
     worksheetTradePackage,
   ]);
@@ -4656,6 +6634,7 @@ export function OpportunityPricingWorksheetBoard({
     options?: {
       promptOverride?: string | null;
       followUpContext?: PricingWorksheetAiFollowUpContext | null;
+      sheetId?: string | null;
     },
   ) => {
     if (!session?.organizationId) {
@@ -4688,17 +6667,27 @@ export function OpportunityPricingWorksheetBoard({
     if (payload.status === "ready" && payload.preview) {
       const readyPayload: PricingWorksheetAiPreviewResponse = {
         aiInteractionId: payload.aiInteractionId,
+        sheetId: payload.sheetId ?? options?.sheetId ?? null,
+        sheetName: payload.sheetName?.trim() || aiPreviewWorksheetName.trim() || worksheetDisplayName,
         lifecycleState: payload.lifecycleState ?? "previewed",
         validationStatus: payload.validationStatus ?? "passed",
         preview: payload.preview,
       };
-      applyAiPreviewPayload(readyPayload, options);
+      const didApplyPreview = applyAiPreviewPayload(readyPayload, options);
+      activeAiJobIdRef.current = null;
+      activeAiJobSheetIdRef.current = null;
+      if (!didApplyPreview) {
+        setIsGeneratingAiPreview(false);
+        return null;
+      }
       setAiPreviewError(payload.error?.code === "validation_blocked" ? payload.error.message : null);
       setIsGeneratingAiPreview(false);
       return readyPayload;
     }
 
     if (payload.status === "failed" || payload.status === "cancelled") {
+      activeAiJobIdRef.current = null;
+      activeAiJobSheetIdRef.current = null;
       setAiPreviewError(payload.error?.message ?? "Unable to complete the AI worksheet job.");
       setIsGeneratingAiPreview(false);
       return null;
@@ -4709,7 +6698,7 @@ export function OpportunityPricingWorksheetBoard({
     }, payload.status === "queued" ? 800 : 1200);
 
     return null;
-  }, [applyAiPreviewPayload, session?.organizationId]);
+  }, [aiPreviewWorksheetName, applyAiPreviewPayload, session?.organizationId, worksheetDisplayName]);
 
   const generateAiWorksheetPreview = useCallback(async (options?: {
     promptOverride?: string | null;
@@ -4729,18 +6718,21 @@ export function OpportunityPricingWorksheetBoard({
     setAiPreviewError(null);
     setAiPreviewResponse(null);
     setAiJobError(null);
-    setAiJobId(null);
     setAiJobStatus("queued");
     setAiJobProgressLabel("Queued");
 
     try {
       const requestPrompt = options?.promptOverride ?? aiPrompt;
       const worksheetSnapshot = cloneWorksheetData(worksheetRef.current);
+      const requestSheetId = worksheetSheetIdRef.current;
       const endAiContextMeasure = startPricingWorksheetPerformanceMeasure("ai-context-build", {
         worksheetId: worksheetId ?? "unsaved",
       });
       const worksheetContext = buildPricingWorksheetAiContext(worksheetSnapshot, {
+        workbookId: worksheetId,
         worksheetId,
+        sheetId: requestSheetId,
+        sheetName: aiPreviewWorksheetName.trim() || worksheetDisplayName,
         worksheetName: aiPreviewWorksheetName.trim() || worksheetDisplayName,
         tradePackage: aiPreviewTradePackage.trim() || worksheetTradePackage || null,
         selection: {
@@ -4768,8 +6760,11 @@ export function OpportunityPricingWorksheetBoard({
           },
           body: JSON.stringify({
             organizationId: session.organizationId,
-            opportunityId: sharedOpportunity.opportunityId,
+            opportunityId: worksheetOpportunityId,
+            workbookId: worksheetId,
             worksheetId,
+            sheetId: requestSheetId,
+            sheetName: aiPreviewWorksheetName.trim() || worksheetDisplayName,
             worksheetName: aiPreviewWorksheetName.trim() || worksheetDisplayName,
             tradePackage: aiPreviewTradePackage.trim() || null,
             prompt: requestPrompt,
@@ -4798,12 +6793,18 @@ export function OpportunityPricingWorksheetBoard({
         );
       }
 
-      setAiJobId(payload.jobId);
       setAiJobStatus(payload.status);
       setAiJobProgressLabel(payload.progressLabel);
+      activeAiJobIdRef.current = payload.jobId;
+      activeAiJobSheetIdRef.current = requestSheetId;
 
-      return await pollAiWorksheetJob(payload.jobId, options);
+      return await pollAiWorksheetJob(payload.jobId, {
+        ...options,
+        sheetId: requestSheetId,
+      });
     } catch (aiPreviewGenerationError) {
+      activeAiJobIdRef.current = null;
+      activeAiJobSheetIdRef.current = null;
       setAiPreviewError(
         aiPreviewGenerationError instanceof Error
           ? aiPreviewGenerationError.message
@@ -4821,7 +6822,7 @@ export function OpportunityPricingWorksheetBoard({
     selectionAnchorCellKey,
     selectionFocusCellKey,
     session?.organizationId,
-    sharedOpportunity.opportunityId,
+    worksheetOpportunityId,
     worksheetId,
     worksheetDisplayName,
     worksheetTradePackage,
@@ -4948,16 +6949,21 @@ export function OpportunityPricingWorksheetBoard({
     });
     setWorksheetName(snapshot.name);
     setWorksheetTradePackage(snapshot.tradePackage);
-    setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
-    setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+    replaceSelection(buildWorksheetCellKey("A", "1"), buildWorksheetCellKey("A", "1"));
     setActiveCellKey(null);
     setActiveEditor(null);
     setEditingCellValue("");
     aiPreApplySnapshotRef.current = null;
-  }, [applyCommittedWorksheetChange]);
+  }, [applyCommittedWorksheetChange, replaceSelection]);
 
   const approveAiWorksheetPreview = useCallback(async () => {
     if (!aiPreviewResponse) {
+      resetAiPreviewState();
+      return;
+    }
+
+    if ((aiPreviewResponse.sheetId ?? null) !== (worksheetSheetIdRef.current ?? null)) {
+      setAiPreviewError("This AI preview belongs to a different worksheet page. Ask AI again on the current page.");
       resetAiPreviewState();
       return;
     }
@@ -4970,6 +6976,9 @@ export function OpportunityPricingWorksheetBoard({
       const normalizedTradePackage = aiPreviewTradePackage.trim() || null;
       const editedOutput = buildWorksheetAiEditedOutput({
         preview: aiPreviewResponse.preview,
+        workbookId: worksheetId ?? null,
+        sheetId: aiPreviewResponse.sheetId ?? worksheetSheetIdRef.current ?? null,
+        sheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.sheetName,
         worksheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName,
         tradePackage: normalizedTradePackage,
       });
@@ -4988,6 +6997,17 @@ export function OpportunityPricingWorksheetBoard({
         Object.keys(aiFindingStates).length > 0;
 
       await submitAiWorksheetReview(isEdited ? "edited" : "accepted", editedOutput);
+      logAiPreviewOutcomeEvent({
+        eventType: "worksheet_ai_preview_accepted",
+        action: "accepted",
+        aiInteractionId: aiPreviewResponse.aiInteractionId,
+        preview: aiPreviewResponse.preview,
+        sheetId: aiPreviewResponse.sheetId ?? worksheetSheetIdRef.current ?? null,
+        sheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.sheetName,
+        acceptedFindingIds: editedOutput.acceptedFindingIds,
+        rejectedFindingIds: editedOutput.rejectedFindingIds,
+        appliedSuggestedEditGroupIds: aiAppliedSuggestedEditGroupIds,
+      });
       setMessage(
         isAnswerOnly
           ? "AI worksheet answer accepted."
@@ -5008,8 +7028,10 @@ export function OpportunityPricingWorksheetBoard({
     aiPreviewResponse,
     aiPreviewTradePackage,
     aiPreviewWorksheetName,
+    logAiPreviewOutcomeEvent,
     resetAiPreviewState,
     submitAiWorksheetReview,
+    worksheetId,
   ]);
 
   const rejectAiWorksheetPreview = useCallback(async () => {
@@ -5025,6 +7047,14 @@ export function OpportunityPricingWorksheetBoard({
 
     try {
       await submitAiWorksheetReview("rejected");
+      logAiPreviewOutcomeEvent({
+        eventType: "worksheet_ai_preview_rejected",
+        action: "rejected",
+        aiInteractionId: aiPreviewResponse.aiInteractionId,
+        preview: aiPreviewResponse.preview,
+        sheetId: aiPreviewResponse.sheetId ?? worksheetSheetIdRef.current ?? null,
+        sheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.sheetName,
+      });
       setMessage("AI worksheet changes reverted.");
       resetAiPreviewState();
     } catch (aiReviewError) {
@@ -5034,7 +7064,14 @@ export function OpportunityPricingWorksheetBoard({
     } finally {
       setIsSubmittingAiReview(false);
     }
-  }, [aiPreviewResponse, resetAiPreviewState, revertAiPreApplySnapshot, submitAiWorksheetReview]);
+  }, [
+    aiPreviewResponse,
+    aiPreviewWorksheetName,
+    logAiPreviewOutcomeEvent,
+    resetAiPreviewState,
+    revertAiPreApplySnapshot,
+    submitAiWorksheetReview,
+  ]);
 
   const dismissAiChat = useCallback(() => {
     if (isSubmittingAiReview || isSubmittingAiFollowUp) {
@@ -5046,6 +7083,12 @@ export function OpportunityPricingWorksheetBoard({
   const applyAiSuggestedEditGroup = useCallback(async (groupId: string) => {
     if (!aiPreviewResponse?.preview.assistant) {
       setAiPreviewError("Ask AI for a review before applying a suggested edit.");
+      return;
+    }
+
+    if ((aiPreviewResponse.sheetId ?? null) !== (worksheetSheetIdRef.current ?? null)) {
+      setAiPreviewError("This AI preview belongs to a different worksheet page. Ask AI again on the current page.");
+      resetAiPreviewState();
       return;
     }
 
@@ -5072,10 +7115,20 @@ export function OpportunityPricingWorksheetBoard({
       nextWorksheet = autoLayoutWorksheet(nextWorksheet, simulation.diffSummary);
       nextWorksheet.sheetName =
         aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName || nextWorksheet.sheetName;
+      nextWorksheet = applyAiProvenanceToWorksheet({
+        nextWorksheet,
+        aiInteractionId: aiPreviewResponse.aiInteractionId,
+        promptSummary: aiPreviewResponse.preview.assistant?.summary ?? aiPrompt,
+        operationTypes: selectedResponse.operations.map((operation) => operation.type),
+        batchIndex: aiPreviewResponse.preview.continuation?.currentBatchIndex ?? 1,
+      });
 
       await submitAiWorksheetReview("edited", {
         ...buildWorksheetAiEditedOutput({
           preview: aiPreviewResponse.preview,
+          workbookId: worksheetId ?? null,
+          sheetId: aiPreviewResponse.sheetId ?? worksheetSheetIdRef.current ?? null,
+          sheetName: nextWorksheet.sheetName,
           worksheetName: nextWorksheet.sheetName,
           tradePackage: normalizedTradePackage,
         }),
@@ -5094,8 +7147,7 @@ export function OpportunityPricingWorksheetBoard({
       setWorksheetName(nextWorksheet.sheetName);
       setWorksheetTradePackage(normalizedTradePackage);
       setAiAppliedSuggestedEditGroupIds((current) => (current.includes(groupId) ? current : [...current, groupId]));
-      setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
-      setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+      replaceSelection(buildWorksheetCellKey("A", "1"), buildWorksheetCellKey("A", "1"));
       setActiveCellKey(null);
       setActiveEditor(null);
       setEditingCellValue("");
@@ -5133,16 +7185,33 @@ export function OpportunityPricingWorksheetBoard({
     aiPreviewResponse,
     aiPreviewTradePackage,
     aiPreviewWorksheetName,
+    aiPrompt,
+    applyAiProvenanceToWorksheet,
     autoLayoutWorksheet,
     applyCommittedWorksheetChange,
     canWriteWorksheet,
     logAiReviewIntelligenceEvent,
+    replaceSelection,
+    resetAiPreviewState,
     submitAiWorksheetReview,
+    worksheetId,
   ]);
 
   const applyAiWorksheetPreview = useCallback(async () => {
     if (!aiPreviewResponse) {
       setAiPreviewError("Ask AI for a worksheet response before applying it.");
+      return;
+    }
+
+    const blockingPreviewIssue = getBlockingAiPreviewIssue(aiPreviewResponse.preview);
+    if (blockingPreviewIssue) {
+      setAiPreviewError(blockingPreviewIssue.message);
+      return;
+    }
+
+    if ((aiPreviewResponse.sheetId ?? null) !== (worksheetSheetIdRef.current ?? null)) {
+      setAiPreviewError("This AI preview belongs to a different worksheet page. Ask AI again on the current page.");
+      resetAiPreviewState();
       return;
     }
 
@@ -5169,6 +7238,9 @@ export function OpportunityPricingWorksheetBoard({
       const normalizedTradePackage = aiPreviewTradePackage.trim() || null;
       const editedOutput = buildWorksheetAiEditedOutput({
         preview: aiPreviewResponse.preview,
+        workbookId: worksheetId ?? null,
+        sheetId: aiPreviewResponse.sheetId ?? worksheetSheetIdRef.current ?? null,
+        sheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.sheetName,
         worksheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName,
         tradePackage: normalizedTradePackage,
       });
@@ -5187,6 +7259,17 @@ export function OpportunityPricingWorksheetBoard({
         Object.keys(aiFindingStates).length > 0;
 
       await submitAiWorksheetReview(isEdited ? "edited" : "accepted", editedOutput);
+      logAiPreviewOutcomeEvent({
+        eventType: "worksheet_ai_preview_accepted",
+        action: "accepted",
+        aiInteractionId: aiPreviewResponse.aiInteractionId,
+        preview: aiPreviewResponse.preview,
+        sheetId: aiPreviewResponse.sheetId ?? worksheetSheetIdRef.current ?? null,
+        sheetName: aiPreviewWorksheetName.trim() || aiPreviewResponse.sheetName,
+        acceptedFindingIds: editedOutput.acceptedFindingIds,
+        rejectedFindingIds: editedOutput.rejectedFindingIds,
+        appliedSuggestedEditGroupIds: aiAppliedSuggestedEditGroupIds,
+      });
 
       if (hasMutatingOperations) {
         logWorksheetAiContinuation("apply_batch_started", {
@@ -5199,6 +7282,13 @@ export function OpportunityPricingWorksheetBoard({
         nextWorksheet = autoLayoutWorksheet(nextWorksheet, aiPreviewResponse.preview.assistant?.diffSummary);
         nextWorksheet.sheetName =
           aiPreviewWorksheetName.trim() || aiPreviewResponse.preview.compactOutput.worksheetName || nextWorksheet.sheetName;
+        nextWorksheet = applyAiProvenanceToWorksheet({
+          nextWorksheet,
+          aiInteractionId: aiPreviewResponse.aiInteractionId,
+          promptSummary: aiPreviewResponse.preview.assistant?.summary ?? aiPrompt,
+          operationTypes: aiPreviewResponse.preview.assistant?.operations.map((operation) => operation.type) ?? [],
+          batchIndex: aiPreviewResponse.preview.continuation?.currentBatchIndex ?? 1,
+        });
 
         const commitResult = applyCommittedWorksheetChange(() => nextWorksheet, {
           validateFormulaOutputs: true,
@@ -5210,8 +7300,7 @@ export function OpportunityPricingWorksheetBoard({
 
         setWorksheetName(nextWorksheet.sheetName);
         setWorksheetTradePackage(normalizedTradePackage);
-        setSelectionAnchorCellKey(buildWorksheetCellKey("A", "1"));
-        setSelectionFocusCellKey(buildWorksheetCellKey("A", "1"));
+        replaceSelection(buildWorksheetCellKey("A", "1"), buildWorksheetCellKey("A", "1"));
         setActiveCellKey(null);
         setActiveEditor(null);
         setEditingCellValue("");
@@ -5377,12 +7466,18 @@ export function OpportunityPricingWorksheetBoard({
     aiPreviewWorksheetName,
     aiAppliedSuggestedEditGroupIds,
     aiFindingStates,
+    aiPrompt,
+    applyAiProvenanceToWorksheet,
     autoLayoutWorksheet,
     applyAiPreviewPayload,
     applyCommittedWorksheetChange,
     canWriteWorksheet,
     handleAiDialogOpenChange,
+    logAiPreviewOutcomeEvent,
+    replaceSelection,
+    resetAiPreviewState,
     submitAiWorksheetReview,
+    worksheetId,
   ]);
 
   const setWorksheetInputRef = useCallback((cellKey: string, node: HTMLInputElement | null) => {
@@ -5409,8 +7504,17 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     event.preventDefault();
-    startPendingRangeSelection(cellKey, event.clientX, event.clientY);
-  }, [activeCellKey, appendCellReferenceToFormula, isFormulaReferenceMode, startPendingRangeSelection]);
+    const isAdditiveSelection = event.ctrlKey || event.metaKey;
+    startPendingRangeSelection(cellKey, event.clientX, event.clientY, {
+      anchorCellKey: selectionAnchorCellKey,
+      mode:
+        event.shiftKey && Boolean(selectionAnchorCellKey)
+          ? "extend"
+          : isAdditiveSelection
+            ? "add"
+            : "replace",
+    });
+  }, [activeCellKey, appendCellReferenceToFormula, isFormulaReferenceMode, selectionAnchorCellKey, startPendingRangeSelection]);
 
   const handleGridCellClick = useCallback((
     cellKey: string,
@@ -5435,10 +7539,21 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
+    if (event.metaKey || event.ctrlKey) {
+      event.preventDefault();
+      setSelectionState((current) => toggleWorksheetCellSelection(current, worksheetRef.current, cellKey));
+      return;
+    }
+
+    if (event.shiftKey && selectionAnchorCellKey) {
+      replaceSelection(selectionAnchorCellKey, cellKey);
+      return;
+    }
+
     if (event.detail === 1) {
       selectSingleCell(cellKey);
     }
-  }, [appendCellReferenceToFormula, isFormulaReferenceMode, selectSingleCell]);
+  }, [appendCellReferenceToFormula, isFormulaReferenceMode, replaceSelection, selectSingleCell, selectionAnchorCellKey]);
 
   const handleGridCellKeyDown = useCallback((
     cellKey: string,
@@ -5583,16 +7698,39 @@ export function OpportunityPricingWorksheetBoard({
               <Button
                 type="button"
                 size="sm"
-                onClick={() => void (onClose ? closeWorksheet() : saveWorksheet())}
-                disabled={
-                  onClose
-                    ? isSavingWorksheet || isLoadingWorksheet
-                    : !canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty
-                }
-                className="h-9 rounded-[10px] bg-white px-4 text-[12px] font-semibold text-[var(--navy-primary)] shadow-[0_8px_20px_rgba(15,23,42,0.18)] hover:bg-[var(--surface-subtle)] disabled:bg-white/60 disabled:text-[var(--text-secondary)]"
+                variant="secondary"
+                onClick={() => setIsPagesTrayOpen((current) => !current)}
+                className={`h-9 rounded-[10px] border-0 px-3 text-[12px] font-semibold text-white shadow-none ${
+                  isPagesTrayOpen ? "bg-white/18" : "bg-white/10 hover:bg-white/15"
+                }`}
+                aria-pressed={isPagesTrayOpen}
+                aria-label={isPagesTrayOpen ? "Hide worksheet pages" : "Show worksheet pages"}
               >
-                {isSavingWorksheet ? "Saving..." : onClose ? "Close" : "Save worksheet"}
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Pages
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveWorksheet()}
+                disabled={
+                  !canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty
+                }
+                className="h-9 rounded-[10px] border-0 bg-white/10 px-3 text-[12px] font-semibold text-white shadow-none hover:bg-white/15 disabled:bg-white/10 disabled:text-white/45"
+              >
+                {isSavingWorksheet ? "Saving..." : "Save"}
+              </Button>
+              {onClose ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void closeWorksheet()}
+                  disabled={isSavingWorksheet || isLoadingWorksheet}
+                  className="h-9 rounded-[10px] bg-white px-4 text-[12px] font-semibold text-[var(--navy-primary)] shadow-[0_8px_20px_rgba(15,23,42,0.18)] hover:bg-[var(--surface-subtle)] disabled:bg-white/60 disabled:text-[var(--text-secondary)]"
+                >
+                  Close
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -6242,8 +8380,7 @@ export function OpportunityPricingWorksheetBoard({
                 if (activeCellKey !== formulaBarCellKey || activeEditor !== "formulaBar") {
                   setActiveCellKey(formulaBarCellKey);
                   setActiveEditor("formulaBar");
-                  setSelectionAnchorCellKey(formulaBarCellKey);
-                  setSelectionFocusCellKey(formulaBarCellKey);
+                  replaceSelection(formulaBarCellKey, formulaBarCellKey);
                 }
 
                 setEditingCellValue(event.target.value);
@@ -6303,7 +8440,8 @@ export function OpportunityPricingWorksheetBoard({
                 changedCellCount={aiPreviewResponse?.preview.assistant?.diffSummary.changedCells.length ?? 0}
                 isAnswerOnly={aiPreviewResponse?.preview.assistant?.mode === "answer_only"}
                 canApply={
-                  canWriteWorksheet || aiPreviewResponse?.preview.assistant?.mode === "answer_only"
+                  (canWriteWorksheet || aiPreviewResponse?.preview.assistant?.mode === "answer_only") &&
+                  !getBlockingAiPreviewIssue(aiPreviewResponse?.preview)
                 }
                 hasBlockingWarning={
                   aiPreviewResponse?.preview.validationWarnings.some(
@@ -6370,7 +8508,12 @@ export function OpportunityPricingWorksheetBoard({
                   {virtualColumns.visibleColumns.map((column, columnOffset) => (
                     <div
                       key={column.id}
-                      className="relative border-r border-[var(--border)] bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)] px-3 py-2 text-[11px] font-medium text-[var(--text-secondary)] last:border-r-0"
+                      className={`relative border-r border-[var(--border)] px-3 py-2 text-[11px] font-medium last:border-r-0 ${
+                        isColumnIndexSelected(selectedRanges, virtualColumns.startIndex + columnOffset)
+                          ? "bg-[rgba(49,91,255,0.12)] text-[var(--brand-blue)]"
+                          : "bg-[linear-gradient(180deg,#F9FBFE_0%,#F2F6FB_100%)] text-[var(--text-secondary)]"
+                      }`}
+                      onClick={(event) => handleColumnHeaderClick(event, virtualColumns.startIndex + columnOffset)}
                       onContextMenu={(event) => openColumnContextMenu(event, virtualColumns.startIndex + columnOffset)}
                     >
                       {column.label}
@@ -6404,6 +8547,7 @@ export function OpportunityPricingWorksheetBoard({
                     {virtualRows.virtualRows.map(({ row, rowIndex }) => (
                       <WorksheetRowView
                         key={row.id}
+                        activeSelectedRange={selectedRange}
                         activeCellKey={activeCellKey}
                         activeEditor={activeEditor}
                         canWriteWorksheet={canWriteWorksheet}
@@ -6417,7 +8561,7 @@ export function OpportunityPricingWorksheetBoard({
                         row={row}
                         rowIndex={rowIndex}
                         rightSpacerWidth={virtualColumns.rightSpacerWidth}
-                        selectedRange={selectedRange}
+                        selectedRanges={selectedRanges}
                         visibleColumnStartIndex={virtualColumns.startIndex}
                         visibleColumns={virtualColumns.visibleColumns}
                         onBeginCellEdit={handleBeginGridCellEdit}
@@ -6431,6 +8575,7 @@ export function OpportunityPricingWorksheetBoard({
                         onInputBlur={handleCellBlur}
                         onInputChange={setEditingCellValue}
                         onInputKeyDown={handleGridCellKeyDown}
+                        onRowClick={handleRowHeaderClick}
                         onRowContextMenu={openRowContextMenu}
                         setInputRef={setWorksheetInputRef}
                       />
@@ -6443,6 +8588,290 @@ export function OpportunityPricingWorksheetBoard({
               </div>
             </div>
           </div>
+
+          <WorkbookPagesTray
+            canWriteWorksheet={canWriteWorksheet}
+            isLoadingWorksheet={isLoadingWorksheet}
+            isMutatingPages={isMutatingPages}
+            isOpen={isPagesTrayOpen}
+            onAddBlankPage={() => void addBlankWorkbookSheet()}
+            onDeletePage={(sheetId) => setPageDialog({ type: "delete", sheetId })}
+            onDuplicatePage={(sheetId) => void duplicateWorkbookSheet(sheetId)}
+            onRenamePage={(sheetId, currentName) => setPageDialog({ type: "rename", sheetId, value: currentName })}
+            onSwitchPage={(sheetId) => void switchToWorkbookSheet(sheetId)}
+            sheets={workbookSheets}
+            worksheetSheetId={worksheetSheetId}
+          />
+
+          <Dialog open={pageDialog?.type === "rename"} onOpenChange={(open) => !open && setPageDialog(null)}>
+            <DialogContent className="max-w-md p-6 sm:p-6">
+              <DialogHeader className="pr-8">
+                <DialogTitle>Rename page</DialogTitle>
+              </DialogHeader>
+              <input
+                value={pageDialog?.type === "rename" ? pageDialog.value : ""}
+                onChange={(event) =>
+                  setPageDialog((current) =>
+                    current?.type === "rename"
+                      ? { ...current, value: event.target.value }
+                      : current,
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void confirmPageRename();
+                  }
+                }}
+                autoFocus
+                className="mt-2 rounded-[10px] border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+                placeholder="Page name"
+              />
+              <DialogFooter className="mt-5 flex flex-row justify-end gap-2 border-t border-[var(--app-border)] pt-4">
+                <Button type="button" variant="secondary" className="min-w-[104px]" onClick={() => setPageDialog(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="min-w-[104px]"
+                  onClick={() => void confirmPageRename()}
+                  disabled={isMutatingPages}
+                >
+                  Save
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={pageDialog?.type === "delete"} onOpenChange={(open) => !open && setPageDialog(null)}>
+            <DialogContent className="max-w-md p-6 sm:p-6" hideClose>
+              <DialogHeader>
+                <DialogTitle>Delete page?</DialogTitle>
+              </DialogHeader>
+              <DialogDescription className="mt-2 max-w-[32ch] text-sm leading-6 text-[var(--text-secondary)]">
+                Delete this worksheet page from the workbook. The last remaining page cannot be deleted.
+              </DialogDescription>
+              <DialogFooter className="mt-5 flex flex-row justify-end gap-2 border-t border-[var(--app-border)] pt-4">
+                <Button type="button" variant="secondary" className="min-w-[104px]" onClick={() => setPageDialog(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="min-w-[104px]"
+                  onClick={() => void confirmPageDelete()}
+                  disabled={isMutatingPages || workbookSheets.length <= 1}
+                >
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <WorksheetPublishToPurchaseOrderDialog
+            open={Boolean(purchaseOrderPublishDialog)}
+            suppliers={purchaseOrderPublishDialog?.suppliers ?? []}
+            draftPurchaseOrders={purchaseOrderPublishDialog?.draftPurchaseOrders ?? []}
+            lines={purchaseOrderPublishDialog?.lines ?? []}
+            purchaseOrderTitle={purchaseOrderPublishTitle}
+            variationCode={worksheetOwner.variationCode}
+            selectedSupplierId={purchaseOrderPublishSupplierId}
+            selectedTargetMode={purchaseOrderPublishTargetMode}
+            selectedPurchaseOrderId={purchaseOrderPublishTargetId}
+            sourceRangeLabel={purchaseOrderPublishDialog?.interpretedSelection.selectionRangeLabel ?? ""}
+            selectedValues={purchaseOrderPublishDialog?.interpretedSelection.visibleSelectedValues ?? []}
+            onOpenChange={(open) => {
+              if (!open && !isPublishingWorksheetSelection) {
+                setPurchaseOrderPublishDialog(null);
+                setPurchaseOrderPublishTitle("Worksheet Purchase Order");
+              }
+            }}
+            onSupplierChange={setPurchaseOrderPublishSupplierId}
+            onPurchaseOrderTitleChange={setPurchaseOrderPublishTitle}
+            onTargetModeChange={setPurchaseOrderPublishTargetMode}
+            onPurchaseOrderChange={setPurchaseOrderPublishTargetId}
+            onAddLine={() =>
+              setPurchaseOrderPublishDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      interpretedSelection: {
+                        ...current.interpretedSelection,
+                        proposedLines: [
+                          ...current.interpretedSelection.proposedLines,
+                          {
+                            ...current.interpretedSelection.proposedLines[0],
+                            id: `selection-line-${current.lines.length}`,
+                            rowId: `selection-line-${current.lines.length}`,
+                          },
+                        ],
+                      },
+                      lines: [
+                        ...current.lines,
+                        {
+                          id: `selection-line-${current.lines.length}`,
+                          description: "",
+                          quantity: "",
+                          unit: "",
+                          rate: "",
+                          total: "",
+                          purchaseOrderSection: "",
+                        },
+                      ],
+                    }
+                  : current,
+              )
+            }
+            onRemoveLine={(lineId) =>
+              setPurchaseOrderPublishDialog((current) =>
+                current && current.lines.length > 1
+                  ? {
+                      ...current,
+                      interpretedSelection: {
+                        ...current.interpretedSelection,
+                        proposedLines: current.interpretedSelection.proposedLines.filter((line) => line.id !== lineId),
+                      },
+                      lines: current.lines.filter((line) => line.id !== lineId),
+                    }
+                  : current,
+              )
+            }
+            onLineChange={(lineId, patch) =>
+              setPurchaseOrderPublishDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      lines: current.lines.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
+                    }
+                  : current,
+              )
+            }
+            onConfirm={() => void executeWorksheetPublishToPurchaseOrder()}
+            isSubmitting={isPublishingWorksheetSelection}
+          />
+
+          <WorksheetPublishToVariationDialog
+            open={Boolean(variationPublishDialog)}
+            lines={variationPublishDialog?.lines ?? []}
+            variationNumber={variationPublishDialog?.context.variationNumber ?? "Variation"}
+            variationTitle={variationPublishDialog?.context.variationTitle ?? ""}
+            variationStatus={variationPublishDialog?.context.variationStatus ?? "Draft"}
+            sourceRangeLabel={variationPublishDialog?.interpretedSelection.selectionRangeLabel ?? ""}
+            selectedValues={variationPublishDialog?.interpretedSelection.visibleSelectedValues ?? []}
+            onOpenChange={(open) => {
+              if (!open && !isPublishingWorksheetSelection) {
+                setVariationPublishDialog(null);
+              }
+            }}
+            onLineChange={(lineId, patch) =>
+              setVariationPublishDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      lines: current.lines.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
+                    }
+                  : current,
+              )
+            }
+            onAddLine={() =>
+              setVariationPublishDialog((current) => {
+                if (!current) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  lines: [
+                    ...current.lines,
+                    {
+                      id: `selection-line-${current.lines.length}`,
+                      description: "",
+                      quantity: "",
+                      unit: "",
+                      rate: "",
+                      total: "",
+                      section: current.lines[0]?.section ?? "Labour",
+                    },
+                  ],
+                };
+              })
+            }
+            onRemoveLine={(lineId) =>
+              setVariationPublishDialog((current) =>
+                current && current.lines.length > 1
+                  ? {
+                      ...current,
+                      lines: current.lines.filter((line) => line.id !== lineId),
+                    }
+                  : current,
+              )
+            }
+            onConfirm={() => void executeWorksheetPublishToVariation()}
+            isSubmitting={isPublishingWorksheetSelection}
+          />
+
+          <WorksheetPublishToQuoteDialog
+            open={Boolean(quotePublishDialog)}
+            lines={quotePublishDialog?.lines ?? []}
+            quotes={quotePublishDialog?.quotes ?? []}
+            selectedTargetMode={quotePublishTargetMode}
+            selectedQuoteId={quotePublishTargetId}
+            sourceRangeLabel={quotePublishDialog?.interpretedSelection.selectionRangeLabel ?? ""}
+            selectedValues={quotePublishDialog?.interpretedSelection.visibleSelectedValues ?? []}
+            onOpenChange={(open) => {
+              if (!open && !isPublishingWorksheetSelection) {
+                setQuotePublishDialog(null);
+                setQuotePublishTargetMode("new");
+                setQuotePublishTargetId("");
+              }
+            }}
+            onTargetModeChange={setQuotePublishTargetMode}
+            onQuoteChange={setQuotePublishTargetId}
+            onLineChange={(lineId, patch) =>
+              setQuotePublishDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      lines: current.lines.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
+                    }
+                  : current,
+              )
+            }
+            onAddLine={() =>
+              setQuotePublishDialog((current) => {
+                if (!current) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  lines: [
+                    ...current.lines,
+                    {
+                      id: `selection-line-${current.lines.length}`,
+                      description: "",
+                      quantity: "",
+                      unit: "",
+                      rate: "",
+                      total: "",
+                    },
+                  ],
+                };
+              })
+            }
+            onRemoveLine={(lineId) =>
+              setQuotePublishDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      lines: current.lines.filter((line) => line.id !== lineId),
+                    }
+                  : current,
+              )
+            }
+            onConfirm={() => void executeWorksheetPublishToQuote()}
+            isSubmitting={isPublishingWorksheetSelection}
+          />
 
           <div
             aria-hidden="true"
@@ -6496,6 +8925,61 @@ export function OpportunityPricingWorksheetBoard({
                   >
                     Clear contents
                   </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      const range = getContextMenuRange(contextMenu);
+                      handleQuoteContextMenuAction(event, range);
+                    }}
+                  >
+                    Add to Quote...
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      const range = getContextMenuRange(contextMenu);
+                      handlePurchaseOrderContextMenuAction(event, range);
+                    }}
+                  >
+                    Add to Purchase Order...
+                  </button>
+                  {canPublishToVariation ? (
+                    <>
+                      <div className="my-1 h-px bg-[var(--border)]" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          const range = getContextMenuRange(contextMenu);
+                          handleVariationContextMenuAction(event, range);
+                        }}
+                      >
+                        Add to Variation...
+                      </button>
+                    </>
+                  ) : null}
                   <div className="my-1 h-px bg-[var(--border)]" />
                   <button
                     type="button"
@@ -6567,6 +9051,61 @@ export function OpportunityPricingWorksheetBoard({
 
               {contextMenu.type === "row" ? (
                 <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      const range = getContextMenuRange(contextMenu);
+                      handleQuoteContextMenuAction(event, range);
+                    }}
+                  >
+                    Add to Quote...
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      const range = getContextMenuRange(contextMenu);
+                      handlePurchaseOrderContextMenuAction(event, range);
+                    }}
+                  >
+                    Add to Purchase Order...
+                  </button>
+                  {canPublishToVariation ? (
+                    <>
+                      <div className="my-1 h-px bg-[var(--border)]" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          const range = getContextMenuRange(contextMenu);
+                          handleVariationContextMenuAction(event, range);
+                        }}
+                      >
+                        Add to Variation...
+                      </button>
+                    </>
+                  ) : null}
+                  <div className="my-1 h-px bg-[var(--border)]" />
                   <button
                     type="button"
                     role="menuitem"
@@ -6715,8 +9254,9 @@ export function OpportunityPricingWorksheetBoard({
       <PricingWorksheetAiAssistDialog
         open={isAiDialogOpen}
         canApply={
-          canWriteWorksheet ||
-          aiPreviewResponse?.preview.assistant?.mode === "answer_only"
+          (canWriteWorksheet ||
+            aiPreviewResponse?.preview.assistant?.mode === "answer_only") &&
+          !getBlockingAiPreviewIssue(aiPreviewResponse?.preview)
         }
         prompt={aiPrompt}
         previewWorksheetName={aiPreviewWorksheetName}

@@ -2,15 +2,21 @@
 
 import { memo } from "react";
 import { OpportunityPricingWorksheetBoard } from "@/components/app/OpportunityPricingWorksheetBoard";
+import { PricingWorksheetOwnerProvider } from "@/components/app/PricingWorksheetOwnerProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countPricingWorksheetPerformance } from "@/lib/pricing-worksheet-performance";
+import type { PricingWorksheetOwnerContextValue } from "@/lib/pricing-worksheet-owner";
 
 export const PricingWorksheetOverlayDialog = memo(function PricingWorksheetOverlayDialog({
+  owner,
   worksheetId,
+  initialSheetId,
   onClose,
   onDirtyStateChange,
 }: {
+  owner: PricingWorksheetOwnerContextValue;
   worksheetId: string;
+  initialSheetId?: string | null;
   onClose: () => void;
   onDirtyStateChange?: (isDirty: boolean) => void;
 }) {
@@ -29,11 +35,14 @@ export const PricingWorksheetOverlayDialog = memo(function PricingWorksheetOverl
         <DialogTitle className="sr-only">Pricing worksheet editor</DialogTitle>
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-hidden">
-            <OpportunityPricingWorksheetBoard
-              worksheetId={worksheetId}
-              onClose={onClose}
-              onDirtyStateChange={onDirtyStateChange}
-            />
+            <PricingWorksheetOwnerProvider owner={owner}>
+              <OpportunityPricingWorksheetBoard
+                worksheetId={worksheetId}
+                initialSheetId={initialSheetId}
+                onClose={onClose}
+                onDirtyStateChange={onDirtyStateChange}
+              />
+            </PricingWorksheetOwnerProvider>
           </div>
         </div>
       </DialogContent>

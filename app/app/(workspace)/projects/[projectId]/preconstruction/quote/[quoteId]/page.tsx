@@ -3,9 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import type { CommercialItemPayload } from "@/lib/commercial-items/types";
+import {
+  buildCommercialItemSourceHref,
+  buildQuoteCommercialItemPickerItem,
+  buildQuoteLineDraftFromCommercialItem,
+  enrichQuoteLineItemsWithCommercialItems,
+  persistCommercialItemQuoteLinksSafely,
+} from "@/lib/commercial-items/quote-linking";
+import { listCommercialItemsForOpportunity } from "@/lib/commercial-items/service";
 import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { QuoteStatus } from "@/lib/supabase/types";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import {
   buildQuotePdfHtml,
@@ -14,6 +22,7 @@ import {
   type LineItem,
   type LineItemSection,
   type PricingSummary,
+  type QuoteStatus,
   type ScopeCostCategoryItem,
   lineItemTotal,
   makeDefaultLineItem,
@@ -99,6 +108,8 @@ export default function PreconstructionQuotePage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [projectCode, setProjectCode] = useState<string | null>(null);
+  const [quoteSourceOpportunityId, setQuoteSourceOpportunityId] = useState<string | null>(null);
+  const [quoteSourceOpportunitySlug, setQuoteSourceOpportunitySlug] = useState<string | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -147,10 +158,15 @@ export default function PreconstructionQuotePage() {
   const [isQuoteDetailsOpen, setIsQuoteDetailsOpen] = useState(true);
   const [isLineItemsOpen, setIsLineItemsOpen] = useState(true);
   const [isScopeImportOpen, setIsScopeImportOpen] = useState(false);
+  const [isCommercialItemsOpen, setIsCommercialItemsOpen] = useState(false);
   const [isLoadingScopeItems, setIsLoadingScopeItems] = useState(false);
+  const [isLoadingCommercialItems, setIsLoadingCommercialItems] = useState(false);
   const [hasLoadedScopeItems, setHasLoadedScopeItems] = useState(false);
+  const [hasLoadedCommercialItems, setHasLoadedCommercialItems] = useState(false);
   const [scopeCostItems, setScopeCostItems] = useState<ScopeCostCategoryItem[]>([]);
+  const [commercialItems, setCommercialItems] = useState<CommercialItemPayload[]>([]);
   const [selectedScopeCostItemIds, setSelectedScopeCostItemIds] = useState<string[]>([]);
+  const [selectedCommercialItemIds, setSelectedCommercialItemIds] = useState<string[]>([]);
   const [isTermsOpen, setIsTermsOpen] = useState(true);
   const loadedRouteRef = useRef<string | null>(null);
 
@@ -325,13 +341,14 @@ export default function PreconstructionQuotePage() {
               name: string;
               location: string;
               project_code: string | null;
+              source_opportunity_id: string | null;
               slug?: string | null;
             }
           | null = null;
 
         const withCodeResult = await supabase
           .from("organization_projects")
-          .select("id, client_id, name, project_code, location")
+          .select("id, client_id, name, project_code, location, source_opportunity_id")
           .eq("organization_id", resolvedOrganizationId)
           .eq("slug", routeProjectSlug)
           .maybeSingle();
@@ -344,7 +361,7 @@ export default function PreconstructionQuotePage() {
         } else {
           const fallbackResult = await supabase
             .from("organization_projects")
-            .select("id, client_id, name, slug, location")
+            .select("id, client_id, name, slug, location, source_opportunity_id")
             .eq("organization_id", resolvedOrganizationId)
             .eq("slug", routeProjectSlug)
             .maybeSingle();
@@ -372,9 +389,25 @@ export default function PreconstructionQuotePage() {
 
         setDbProjectId(projectRow.id);
         setProjectCode(resolvedProjectCode);
+        setQuoteSourceOpportunityId(projectRow.source_opportunity_id ?? null);
         setProjectName((current) => current || projectRow.name);
         setSiteAddress((current) => current || projectRow.location || "");
         setQuoteNumber((current) => current || `Q-${resolvedProjectCode}-1`);
+
+        if (projectRow.source_opportunity_id) {
+          const { data: opportunityRow } = await supabase
+            .from("organization_opportunities")
+            .select("slug")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("id", projectRow.source_opportunity_id)
+            .maybeSingle();
+
+          if (!cancelled) {
+            setQuoteSourceOpportunitySlug(opportunityRow?.slug ?? null);
+          }
+        } else if (!cancelled) {
+          setQuoteSourceOpportunitySlug(null);
+        }
 
         let linkedClientName = "";
         let linkedCompanyName = "";
@@ -425,6 +458,7 @@ export default function PreconstructionQuotePage() {
           scope_exclusions: string;
           assumptions: string;
           scope_notes: string;
+          source_opportunity_id: string | null;
           margin_percent: number | null;
           discount_amount: number | null;
           contingency_amount: number | null;
@@ -466,7 +500,7 @@ export default function PreconstructionQuotePage() {
             throw new Error(quoteError.message);
           }
 
-          selectedQuote = ((quoteRows ?? []).find((row) => row.status === "Sent") ?? (quoteRows ?? [])[0] ?? null) as QuoteRow | null;
+          selectedQuote = ((quoteRows ?? [])[0] ?? null) as QuoteRow | null;
         }
 
         if (!selectedQuote || cancelled) {
@@ -494,6 +528,7 @@ export default function PreconstructionQuotePage() {
         setProjectName(selectedQuote.project_name || projectRow.name);
         setQuoteDate(selectedQuote.quote_date ?? "");
         setExpiryDate(selectedQuote.expiry_date ?? "");
+        setQuoteSourceOpportunityId(selectedQuote.source_opportunity_id ?? projectRow.source_opportunity_id ?? null);
         setIsEditing(false);
         setOptionalItemsNotes(selectedQuote.optional_items_notes);
         setScopeExclusions(selectedQuote.scope_exclusions || selectedQuote.terms_exclusions || "");
@@ -522,9 +557,9 @@ export default function PreconstructionQuotePage() {
         }
 
         if (!cancelled) {
-          const nextItems = (itemRows ?? []).map((item) => ({
+          let nextItems: LineItem[] = (itemRows ?? []).map((item) => ({
             id: item.id,
-            section: item.section,
+            section: item.section as LineItemSection,
             description: item.description,
             quantity: item.quantity,
             unit: item.unit,
@@ -534,6 +569,23 @@ export default function PreconstructionQuotePage() {
             sourceOpportunityQuoteLineItemId: item.source_opportunity_quote_line_item_id,
             sourceOpportunityQuoteNumber: item.source_opportunity_quote_number,
           }));
+
+          if (nextItems.length > 0) {
+            nextItems = await enrichQuoteLineItemsWithCommercialItems({
+              client: supabase,
+              organizationId: resolvedOrganizationId,
+              quoteId: selectedQuote.id,
+              lineItems: nextItems,
+              onWarning: (error) => {
+                console.warn("Commercial Item enrichment failed while loading quote", {
+                  quoteId: selectedQuote.id,
+                  organizationId: resolvedOrganizationId,
+                  errorType: error.name,
+                });
+              },
+            });
+          }
+
           setLineItems(nextItems.length > 0 ? nextItems : [makeDefaultLineItem()]);
         }
       } catch (loadError) {
@@ -560,6 +612,13 @@ export default function PreconstructionQuotePage() {
     setSelectedScopeCostItemIds([]);
     setIsLoadingScopeItems(false);
   }, [dbProjectId, organizationId]);
+
+  useEffect(() => {
+    setHasLoadedCommercialItems(false);
+    setCommercialItems([]);
+    setSelectedCommercialItemIds([]);
+    setIsLoadingCommercialItems(false);
+  }, [dbProjectId, organizationId, quoteSourceOpportunityId]);
 
   useEffect(() => {
     if (!isScopeImportOpen || hasLoadedScopeItems || !supabase || !organizationId || !dbProjectId) {
@@ -623,13 +682,74 @@ export default function PreconstructionQuotePage() {
     };
   }, [dbProjectId, hasLoadedScopeItems, isScopeImportOpen, organizationId, supabase]);
 
+  useEffect(() => {
+    if (!isCommercialItemsOpen || hasLoadedCommercialItems || !supabase || !organizationId || !quoteSourceOpportunityId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCommercialItems = async () => {
+      setIsLoadingCommercialItems(true);
+
+      try {
+        const rows = await listCommercialItemsForOpportunity(supabase, {
+          organizationId,
+          opportunityId: quoteSourceOpportunityId,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        setCommercialItems(
+          rows
+            .filter((item) => item.projectId === dbProjectId)
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+        );
+        setHasLoadedCommercialItems(true);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load worksheet sources.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingCommercialItems(false);
+        }
+      }
+    };
+
+    void loadCommercialItems();
+    return () => {
+      cancelled = true;
+    };
+  }, [dbProjectId, hasLoadedCommercialItems, isCommercialItemsOpen, organizationId, quoteSourceOpportunityId, supabase]);
+
   const addLineItem = (isOptional = false) => {
     setLineItems((current) => [...current, makeDefaultLineItem(isOptional)]);
   };
 
+  const availableCommercialItems = useMemo(() => {
+    const linkedCommercialItemIds = new Set(
+      lineItems
+        .map((item) => item.commercialItemLink?.commercialItemId ?? null)
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    return commercialItems
+      .filter((item) => !linkedCommercialItemIds.has(item.id))
+      .map(buildQuoteCommercialItemPickerItem);
+  }, [commercialItems, lineItems]);
+
   const toggleScopeCostItem = (itemId: string) => {
     setSelectedScopeCostItemIds((current) =>
       current.includes(itemId) ? current.filter((value) => value !== itemId) : [...current, itemId]
+    );
+  };
+
+  const toggleCommercialItem = (itemId: string) => {
+    setSelectedCommercialItemIds((current) =>
+      current.includes(itemId) ? current.filter((value) => value !== itemId) : [...current, itemId],
     );
   };
 
@@ -672,6 +792,31 @@ export default function PreconstructionQuotePage() {
     setSaveMessage(`${selectedItems.length} Scope Builder item${selectedItems.length === 1 ? "" : "s"} added to line items.`);
     setSelectedScopeCostItemIds([]);
     setIsScopeImportOpen(false);
+  };
+
+  const importSelectedCommercialItems = () => {
+    if (selectedCommercialItemIds.length === 0) {
+      return;
+    }
+
+    const selectedItems = availableCommercialItems.filter((item) => selectedCommercialItemIds.includes(item.id));
+    if (selectedItems.length === 0) {
+      return;
+    }
+
+    setLineItems((current) => {
+      const commercialItemById = new Map(commercialItems.map((item) => [item.id, item]));
+      const importedItems = selectedItems.flatMap((item) => {
+        const fullItem = commercialItemById.get(item.id);
+        return fullItem ? [buildQuoteLineDraftFromCommercialItem(fullItem)] : [];
+      });
+
+      return importedItems.length > 0 ? [...importedItems, ...current] : current;
+    });
+
+    setSaveMessage(`${selectedItems.length} worksheet source${selectedItems.length === 1 ? "" : "s"} added to line items.`);
+    setSelectedCommercialItemIds([]);
+    setIsCommercialItemsOpen(false);
   };
 
   const updateLineItem = <K extends keyof LineItem>(id: string, key: K, value: LineItem[K]) => {
@@ -728,7 +873,7 @@ export default function PreconstructionQuotePage() {
         sourceOpportunityQuoteNumber: item.sourceOpportunityQuoteNumber ?? null,
       }));
 
-      const { data: saveRows, error: saveError } = await supabase.rpc("save_project_quote_draft", {
+      const { data: saveRows, error: saveError } = await supabase.rpc("save_project_quote_draft" as never, {
         p_organization_id: organizationId,
         p_project_id: dbProjectId,
         p_quote_id: quoteId,
@@ -755,13 +900,14 @@ export default function PreconstructionQuotePage() {
         p_gst_percent: Number(numberOrZero(gstPercent).toFixed(3)),
         p_validity_period: validityPeriod,
         p_payment_terms: paymentTerms,
+        p_retention_percent_default: 0,
         p_lead_time: leadTime,
         p_terms_inclusions: termsInclusions,
         p_terms_exclusions: termsExclusions.trim() || scopeExclusions.trim(),
         p_clarifications: clarifications.trim() || scopeNotes.trim(),
         p_acceptance_notes: acceptanceNotes,
         p_line_items: lineItemsPayload,
-      });
+      } as never);
 
       if (saveError) {
         throw new Error(saveError.message);
@@ -779,15 +925,31 @@ export default function PreconstructionQuotePage() {
 
       setQuoteId(savedQuoteId);
       setQuoteUpdatedAt(nextUpdatedAt);
+
+      const linkResult = await persistCommercialItemQuoteLinksSafely({
+        client: supabase,
+        organizationId,
+        quoteId: savedQuoteId,
+        quoteSourceOpportunityId,
+        lineItems,
+      });
+
       triggerDocumentClassification({
         documentKind: "project_quote",
         documentId: savedQuoteId,
         keepalive: true,
       });
 
-      setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
-      if (quoteStatus === "Expired") {
+      if (!linkResult.ok && linkResult.errorMessage) {
+        setSaveMessage(
+          quoteStatus === "Expired"
+            ? `Quote marked as expired. Worksheet source linking failed: ${linkResult.errorMessage}`
+            : `Quote saved, but worksheet source linking failed: ${linkResult.errorMessage}`,
+        );
+      } else if (quoteStatus === "Expired") {
         setSaveMessage("Quote marked as expired. Reprice required.");
+      } else {
+        setSaveMessage(`Last saved ${new Date().toLocaleTimeString()}`);
       }
       setIsEditing(true);
       router.push(`/app/projects/${routeProjectSlug}/preconstruction/quote`);
@@ -847,6 +1009,10 @@ export default function PreconstructionQuotePage() {
       setIsDeleting(false);
     }
   }, [canManageQuote, organizationId, quoteId, quoteNumber, routeProjectSlug, router, supabase]);
+
+  const getCommercialItemSourceHref = useCallback((item: LineItem) => {
+    return buildCommercialItemSourceHref(item, quoteSourceOpportunitySlug);
+  }, [quoteSourceOpportunitySlug]);
 
   const exportQuotePdf = useCallback(() => {
     if (typeof window === "undefined") {
@@ -978,6 +1144,14 @@ export default function PreconstructionQuotePage() {
       selectedScopeCostItemIds={selectedScopeCostItemIds}
       toggleScopeCostItem={toggleScopeCostItem}
       importSelectedScopeItems={importSelectedScopeItems}
+      isCommercialItemsOpen={isCommercialItemsOpen}
+      setIsCommercialItemsOpen={setIsCommercialItemsOpen}
+      isLoadingCommercialItems={isLoadingCommercialItems}
+      availableCommercialItems={availableCommercialItems}
+      selectedCommercialItemIds={selectedCommercialItemIds}
+      toggleCommercialItem={toggleCommercialItem}
+      importSelectedCommercialItems={importSelectedCommercialItems}
+      getCommercialItemSourceHref={getCommercialItemSourceHref}
       sectionSubtotals={sectionSubtotals}
       validityPeriod={validityPeriod}
       setValidityPeriod={setValidityPeriod}

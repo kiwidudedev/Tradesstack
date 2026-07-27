@@ -351,15 +351,29 @@ export async function createSupplierInvoiceValidationCase(
 export function hasAiSupplierInvoiceMatchSuggestion(input: {
   confidenceScore?: number | null;
   matchBasis?: string | null;
+  confidence_score?: number | null;
+  match_basis?: string | null;
 }) {
-  return typeof input.confidenceScore === "number" || (input.matchBasis ?? "") !== "manual";
+  return (
+    typeof input.confidenceScore === "number" ||
+    (input.matchBasis ?? "") !== "manual" ||
+    typeof input.confidence_score === "number" ||
+    (input.match_basis ?? "") !== "manual"
+  );
 }
 
 export function hasAiSupplierInvoiceAllocationSuggestion(input: {
   aiSuggestedPurchaseOrderLineItemId?: string | null;
   aiConfidenceScore?: number | null;
+  ai_suggested_purchase_order_line_item_id?: string | null;
+  ai_confidence_score?: number | null;
 }) {
-  return Boolean(input.aiSuggestedPurchaseOrderLineItemId) || typeof input.aiConfidenceScore === "number";
+  return (
+    Boolean(input.aiSuggestedPurchaseOrderLineItemId) ||
+    typeof input.aiConfidenceScore === "number" ||
+    Boolean(input.ai_suggested_purchase_order_line_item_id) ||
+    typeof input.ai_confidence_score === "number"
+  );
 }
 
 export function logSupplierInvoiceIntelligenceFailure(action: string, error: unknown) {
@@ -369,6 +383,6 @@ export function logSupplierInvoiceIntelligenceFailure(action: string, error: unk
 
   console.warn("[supplier-invoice-intelligence] write failed", {
     action,
-    error: error instanceof Error ? error.message : error,
+    errorType: error instanceof Error ? error.name : "UnknownError",
   });
 }

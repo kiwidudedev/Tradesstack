@@ -4,7 +4,11 @@ import { applyWorksheetMutation } from "./opportunity-pricing-worksheet-mutation
 import { recalculateWorksheetFormulas } from "./opportunity-pricing-worksheet-formulas";
 import { validateWorksheetBeforeSave } from "./opportunity-pricing-worksheet-save-validation";
 import { buildPricingWorksheetAiContext } from "./pricing-worksheet-ai-context";
-import { buildPricingWorksheetAiStructureSnapshot } from "./pricing-worksheet-ai-structure-snapshot";
+import {
+  buildPricingWorksheetAiStructureSnapshot,
+  detectPricingWorksheetState,
+  type PricingWorksheetState,
+} from "./pricing-worksheet-ai-structure-snapshot";
 import {
   buildPricingWorksheetContinuationPreview,
   buildPricingWorksheetEditAssistantPreview,
@@ -12,9 +16,13 @@ import {
   extractBalancedJsonObject,
   extractPricingWorksheetAssistantPayload,
   getPricingWorksheetAiProviderSettings,
+  routeAnthropicWorkflowForTest,
 } from "./ai-pricing-worksheet-edit-assistant";
 import { buildWorksheetCellKey } from "./opportunity-pricing-worksheet-paste";
-import type { PricingWorksheetConstructionIntent } from "./pricing-worksheet-construction-intent";
+import {
+  classifyPricingWorksheetConstructionIntent,
+  type PricingWorksheetConstructionIntent,
+} from "./pricing-worksheet-construction-intent";
 import type { PricingWorksheetAiAssistantPreview } from "./ai-pricing-worksheet-edit-assistant";
 import {
   simulatePricingWorksheetAiEditPlan,
@@ -82,6 +90,269 @@ function buildStructuredFormulaFixture() {
   });
 
   return { worksheet, context };
+}
+
+function buildPartialStructuredFixture() {
+  const worksheet = createDefaultWorksheetData({
+    sheetName: "Partial Structured Worksheet",
+    rowCount: 20,
+    columnCount: 12,
+  });
+
+  setCellValue(worksheet, "A1", "Inputs");
+  setCellValue(worksheet, "B2", "Area");
+  setCellValue(worksheet, "C2", "Measured ceiling area");
+  setCellValue(worksheet, "D2", "m2");
+  setCellValue(worksheet, "E2", 120);
+  setCellValue(worksheet, "F2", 1);
+  setCellValue(worksheet, "G2", 0.2);
+  setCellValue(worksheet, "H2", 68);
+  setCellValue(worksheet, "I2", 0.15);
+  setCellValue(worksheet, "J2", 0);
+  setCellValue(worksheet, "K2", "Editable input");
+
+  setCellValue(worksheet, "B3", "Plasterboard");
+  setCellValue(worksheet, "C3", "Ceiling lining supply");
+  setCellValue(worksheet, "D3", "m2");
+  setCellValue(worksheet, "E3", 120);
+  setCellValue(worksheet, "F3", 14.5);
+  setCellValue(worksheet, "G3", 0.1);
+  setCellValue(worksheet, "H3", 68);
+  setCellValue(worksheet, "I3", 0.15);
+  setCellValue(worksheet, "J3", 0);
+  setCellValue(worksheet, "K3", "Starter material row");
+
+  setCellValue(worksheet, "A5", "Labour");
+  setCellValue(worksheet, "B6", "Fixing labour");
+  setCellValue(worksheet, "C6", "Install ceiling linings");
+  setCellValue(worksheet, "D6", "hrs");
+  setCellValue(worksheet, "E6", 24);
+  setCellValue(worksheet, "F6", 0);
+  setCellValue(worksheet, "G6", 24);
+  setCellValue(worksheet, "H6", 68);
+  setCellValue(worksheet, "I6", 0.15);
+  setCellValue(worksheet, "J6", 0);
+  setCellValue(worksheet, "K6", "Starter labour row");
+
+  setCellValue(worksheet, "B7", "Stopping labour");
+  setCellValue(worksheet, "C7", "Finish ceiling joints");
+  setCellValue(worksheet, "D7", "hrs");
+  setCellValue(worksheet, "E7", 12);
+  setCellValue(worksheet, "F7", 0);
+  setCellValue(worksheet, "G7", 12);
+  setCellValue(worksheet, "H7", 68);
+  setCellValue(worksheet, "I7", 0.15);
+  setCellValue(worksheet, "J7", 0);
+  setCellValue(worksheet, "K7", "Starter labour row");
+
+  const context = buildPricingWorksheetAiContext(worksheet, {
+    worksheetId: "worksheet-partial-123",
+    worksheetName: worksheet.sheetName,
+    tradePackage: "Ceilings",
+  });
+
+  return { worksheet, context };
+}
+
+function buildStarterGeneratedFixture() {
+  const worksheet = createDefaultWorksheetData({
+    sheetName: "Starter Generated Worksheet",
+    rowCount: 20,
+    columnCount: 12,
+  });
+
+  setCellValue(worksheet, "A1", "Inputs");
+  setCellValue(worksheet, "B2", "Area");
+  setCellValue(worksheet, "D2", "m2");
+  setCellValue(worksheet, "E2", 120);
+  setCellValue(worksheet, "B3", "Material rate");
+  setCellValue(worksheet, "F3", 32.5);
+  setCellValue(worksheet, "B4", "Labour rate");
+  setCellValue(worksheet, "H4", 68);
+
+  const context = buildPricingWorksheetAiContext(worksheet, {
+    worksheetId: "worksheet-starter-generated-123",
+    worksheetName: worksheet.sheetName,
+    tradePackage: "Ceilings",
+  });
+
+  return { worksheet, context };
+}
+
+function buildMatureStructuredFixture() {
+  const worksheet = createDefaultWorksheetData({
+    sheetName: "Mature Structured Worksheet",
+    rowCount: 24,
+    columnCount: 12,
+  });
+
+  setCellValue(worksheet, "A1", "Inputs");
+  setCellValue(worksheet, "B2", "Area");
+  setCellValue(worksheet, "E2", 100);
+  setCellValue(worksheet, "B3", "Waste");
+  setCellValue(worksheet, "E3", 0.1);
+  setCellValue(worksheet, "B4", "Inputs subtotal");
+  setCellFormula(worksheet, "J4", "SUM(E2:E3)");
+
+  setCellValue(worksheet, "A8", "Materials");
+  setCellValue(worksheet, "B9", "Plasterboard");
+  setCellValue(worksheet, "E9", 100);
+  setCellValue(worksheet, "F9", 12.5);
+  setCellValue(worksheet, "B10", "Compound");
+  setCellValue(worksheet, "E10", 12);
+  setCellValue(worksheet, "F10", 4.5);
+  setCellValue(worksheet, "B11", "Materials subtotal");
+  setCellFormula(worksheet, "J11", "SUM(J9:J10)");
+
+  setCellValue(worksheet, "A15", "Labour");
+  setCellValue(worksheet, "B16", "Fixing");
+  setCellValue(worksheet, "G16", 18);
+  setCellValue(worksheet, "H16", 68);
+  setCellValue(worksheet, "B17", "Stopping");
+  setCellValue(worksheet, "G17", 9);
+  setCellValue(worksheet, "H17", 68);
+  setCellValue(worksheet, "B18", "Labour subtotal");
+  setCellFormula(worksheet, "J18", "SUM(J16:J17)");
+  setCellValue(worksheet, "K18", "Subtotal row");
+
+  setCellValue(worksheet, "A21", "Summary");
+  setCellValue(worksheet, "B22", "Sell price");
+  setCellValue(worksheet, "C22", "Combined total");
+  setCellValue(worksheet, "D22", "NZD");
+  setCellFormula(worksheet, "J22", "SUM(J11:J18)");
+  setCellValue(worksheet, "K22", "Summary total");
+  setCellValue(worksheet, "B23", "Margin percent");
+  setCellValue(worksheet, "C23", "Commercial markup");
+  setCellValue(worksheet, "D23", "%");
+  setCellValue(worksheet, "E23", 0.15);
+  setCellValue(worksheet, "F23", "Editable");
+  setCellValue(worksheet, "G23", "Estimator input");
+
+  const context = buildPricingWorksheetAiContext(worksheet, {
+    worksheetId: "worksheet-mature-123",
+    worksheetName: worksheet.sheetName,
+    tradePackage: "Ceilings",
+  });
+
+  return { worksheet, context };
+}
+
+function buildFormulaHeavyFixture() {
+  const worksheet = createDefaultWorksheetData({
+    sheetName: "Formula Heavy Worksheet",
+    rowCount: 24,
+    columnCount: 12,
+  });
+
+  for (let row = 1; row <= 16; row += 1) {
+    setCellValue(worksheet, `B${row}`, `Line ${row}`);
+    setCellValue(worksheet, `E${row}`, 100 + row);
+    setCellValue(worksheet, `F${row}`, 1.2);
+    setCellFormula(worksheet, `J${row}`, `E${row}*F${row}`);
+  }
+
+  const context = buildPricingWorksheetAiContext(worksheet, {
+    worksheetId: "worksheet-formula-heavy-123",
+    worksheetName: worksheet.sheetName,
+    tradePackage: "Ceilings",
+  });
+
+  return { worksheet, context };
+}
+
+function buildWorksheetSummaryForTest(worksheet: ReturnType<typeof createDefaultWorksheetData>) {
+  let formulaCount = 0;
+  let populatedCellCount = 0;
+
+  for (const cell of Object.values(worksheet.cells)) {
+    if (!cell) {
+      continue;
+    }
+    if (typeof cell.formula === "string" && cell.formula.trim().length > 0) {
+      formulaCount += 1;
+      populatedCellCount += 1;
+      continue;
+    }
+    if (typeof cell.value === "number" || (typeof cell.value === "string" && cell.value.trim().length > 0)) {
+      populatedCellCount += 1;
+    }
+  }
+
+  return {
+    formulaCount,
+    populatedCellCount,
+  };
+}
+
+function mockAnthropicStagedGenerationSuccess() {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: "msg_draft_state_route_1",
+        type: "message",
+        model: "claude-sonnet-4-6",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              mode: "worksheet_draft",
+              proposalName: "Ceiling starter worksheet",
+              answer: "Built a compact starter worksheet draft.",
+              sections: [
+                {
+                  title: "Inputs",
+                  rows: [
+                    {
+                      label: "Area",
+                      description: "Editable measured area",
+                      unit: "m2",
+                      rowPurpose: "input",
+                      quantityValue: null,
+                      materialRate: null,
+                      labourRate: null,
+                      formulaIntent: "editable input row",
+                    },
+                  ],
+                },
+              ],
+              assumptions: [],
+              warnings: [],
+            }),
+          },
+        ],
+      }),
+    } as Response)
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: "msg_formula_state_route_1",
+        type: "message",
+        model: "claude-sonnet-4-6",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              mode: "formula_suggestions",
+              answer: "Added worksheet-aware formulas.",
+              assumptions: [],
+              warnings: [],
+              suggestions: [
+                {
+                  targetRowNumber: 4,
+                  targetColumn: "J",
+                  expression: '=IFERROR((E4*F4)+(G4*H4)+I4,"")',
+                  rationale: "Build the starter total row.",
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    } as Response);
 }
 
 function buildMediumFormulaBudgetFixture() {
@@ -352,6 +623,52 @@ function setCellFormula(worksheet: ReturnType<typeof createDefaultWorksheetData>
     computedValue: 0,
     displayValue: "0",
     metadata: {},
+  };
+}
+
+function getWorksheetCellValue(worksheet: ReturnType<typeof createDefaultWorksheetData>, ref: string) {
+  const match = /^([A-Z]+)(\d+)$/.exec(ref);
+  if (!match) {
+    throw new Error(`Invalid ref ${ref}`);
+  }
+
+  const column = worksheet.columns.find((entry) => entry.id === match[1]);
+  const row = worksheet.rows[Number(match[2]) - 1];
+  if (!column || !row) {
+    throw new Error(`Missing worksheet position for ${ref}`);
+  }
+
+  return worksheet.cells[buildWorksheetCellKey(column.id, row.id)] ?? null;
+}
+
+function setFormattingOnlyCell(
+  worksheet: ReturnType<typeof createDefaultWorksheetData>,
+  ref: string,
+) {
+  const match = /^([A-Z]+)(\d+)$/.exec(ref);
+  if (!match) {
+    throw new Error(`Invalid ref ${ref}`);
+  }
+
+  const column = worksheet.columns.find((entry) => entry.id === match[1]);
+  const row = worksheet.rows[Number(match[2]) - 1];
+  if (!column || !row) {
+    throw new Error(`Missing worksheet position for ${ref}`);
+  }
+
+  worksheet.cells[buildWorksheetCellKey(column.id, row.id)] = {
+    value: null,
+    type: "empty",
+    formula: null,
+    computedValue: null,
+    displayValue: "",
+    metadata: {
+      format: {
+        fill: {
+          color: "#DBEAFE",
+        },
+      },
+    },
   };
 }
 
@@ -633,6 +950,197 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
     expect(answerSettings.timeoutMs).toBe(45_000);
   });
 
+  it("routes mixed review and formula creation prompts to the Anthropic formula workflow on non-blank worksheets", () => {
+    const { worksheet, context } = buildPartialStructuredFixture();
+    const prompt = "I want you to review the current spreadsheet and create the formulas in column J";
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: prompt,
+      worksheetName: context.worksheetName,
+      worksheetTradePackage: context.tradePackage,
+      worksheetContext: context,
+      selection: context.visibleSelection,
+    });
+    const worksheetState = detectPricingWorksheetState({
+      worksheet,
+      worksheetContext: context,
+      currentWorksheetSummary: buildWorksheetSummaryForTest(worksheet),
+    });
+
+    expect(classification.primaryIntent).toBe("formula_generate");
+    expect(classification.recommendedPromptPath).toBe("edit");
+    expect(routeAnthropicWorkflowForTest({
+      provider: "anthropic",
+      prompt,
+      classification,
+      worksheetState,
+      selection: context.visibleSelection,
+    })).toBe("formula_suggestions");
+  });
+
+  it("routes worksheet checks that add formulas to column J to the Anthropic formula workflow", () => {
+    const { worksheet, context } = buildPartialStructuredFixture();
+    const prompt = "Check this worksheet and add formulas to column J";
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: prompt,
+      worksheetName: context.worksheetName,
+      worksheetTradePackage: context.tradePackage,
+      worksheetContext: context,
+      selection: context.visibleSelection,
+    });
+    const worksheetState = detectPricingWorksheetState({
+      worksheet,
+      worksheetContext: context,
+      currentWorksheetSummary: buildWorksheetSummaryForTest(worksheet),
+    });
+
+    expect(classification.primaryIntent).toBe("formula_generate");
+    expect(classification.recommendedPromptPath).toBe("edit");
+    expect(routeAnthropicWorkflowForTest({
+      provider: "anthropic",
+      prompt,
+      classification,
+      worksheetState,
+      selection: context.visibleSelection,
+    })).toBe("formula_suggestions");
+  });
+
+  it("routes review prompts that fix missing formulas to the Anthropic formula workflow", () => {
+    const { worksheet, context } = buildPartialStructuredFixture();
+    const prompt = "Review column J formulas and fix missing formulas";
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: prompt,
+      worksheetName: context.worksheetName,
+      worksheetTradePackage: context.tradePackage,
+      worksheetContext: context,
+      selection: context.visibleSelection,
+    });
+    const worksheetState = detectPricingWorksheetState({
+      worksheet,
+      worksheetContext: context,
+      currentWorksheetSummary: buildWorksheetSummaryForTest(worksheet),
+    });
+
+    expect(classification.primaryIntent).toBe("formula_fix");
+    expect(classification.recommendedPromptPath).toBe("edit");
+    expect(routeAnthropicWorkflowForTest({
+      provider: "anthropic",
+      prompt,
+      classification,
+      worksheetState,
+      selection: context.visibleSelection,
+    })).toBe("formula_suggestions");
+  });
+
+  it("keeps pure review prompts on the review workflow", () => {
+    const { worksheet, context } = buildPartialStructuredFixture();
+    const prompt = "Review this worksheet for pricing risks.";
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: prompt,
+      worksheetName: context.worksheetName,
+      worksheetTradePackage: context.tradePackage,
+      worksheetContext: context,
+      selection: context.visibleSelection,
+    });
+    const worksheetState = detectPricingWorksheetState({
+      worksheet,
+      worksheetContext: context,
+      currentWorksheetSummary: buildWorksheetSummaryForTest(worksheet),
+    });
+
+    expect(classification.primaryIntent).toBe("review_estimate");
+    expect(classification.recommendedPromptPath).toBe("review");
+    expect(routeAnthropicWorkflowForTest({
+      provider: "anthropic",
+      prompt,
+      classification,
+      worksheetState,
+      selection: context.visibleSelection,
+    })).toBe("review");
+  });
+
+  it("keeps blank worksheet generation prompts on the staged generation path", () => {
+    const { worksheet, context } = buildFixture();
+    const prompt = "Create a pricing worksheet for partitions.";
+    const classification = classifyPricingWorksheetConstructionIntent({
+      userPrompt: prompt,
+      worksheetName: context.worksheetName,
+      worksheetTradePackage: context.tradePackage,
+      worksheetContext: context,
+      selection: context.visibleSelection,
+    });
+    const worksheetState = detectPricingWorksheetState({
+      worksheet,
+      worksheetContext: context,
+      currentWorksheetSummary: buildWorksheetSummaryForTest(worksheet),
+    });
+
+    expect(worksheetState).toBe("blank");
+    expect(classification.primaryIntent).toBe("worksheet_generation");
+    expect(classification.recommendedPromptPath).toBe("generation");
+    expect(routeAnthropicWorkflowForTest({
+      provider: "anthropic",
+      prompt,
+      classification,
+      worksheetState,
+      selection: context.visibleSelection,
+    })).toBe("staged_generation");
+  });
+
+  it("sends mixed review plus formula creation prompts through the formula suggestion schema instead of the review schema", async () => {
+    const { worksheet, context } = buildPartialStructuredFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "msg_formula_route_mixed_review",
+        type: "message",
+        model: "claude-sonnet-4-6",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              mode: "formula_suggestions",
+              answer: "Prepared column J formulas.",
+              assumptions: [],
+              warnings: [],
+              suggestions: [
+                {
+                  targetRowNumber: 3,
+                  targetColumn: "J",
+                  expression: '=IFERROR((E3*F3)+(G3*H3)+I3,"")',
+                  rationale: "Build the total for the material row.",
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt: "I want you to review the current spreadsheet and create the formulas in column J",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+    });
+
+    const requestBody = readRequestBody(fetchMock, 0);
+    const schemaProperties =
+      (((requestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema as Record<
+        string,
+        unknown
+      >).properties as Record<string, unknown>;
+
+    expect((schemaProperties.mode as Record<string, unknown>).enum).toEqual(["formula_suggestions", "answer_only"]);
+    expect(schemaProperties.reviewFindings).toBeUndefined();
+    expect(result.generationMeta.fallbackUsed).toBe(false);
+    expect(result.preview.diffSummary.formulaCells.length).toBeGreaterThan(0);
+  });
+
   it("returns answer_only without fallback for the steel stud LM prompt when provider responds cleanly", async () => {
     const { worksheet, context } = buildFixture();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
@@ -689,8 +1197,8 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
       },
     });
 
-    expect(result.providerAudit.webSearchEnabled).toBe(false);
-    expect(result.preview.storageSummary.webSearchEnabled).toBe(false);
+    expect(result.providerAudit.webSearchEnabled).toBe(true);
+    expect(result.preview.storageSummary.webSearchEnabled).toBe(true);
   });
 
   it("fails safely when anthropic is selected without an Anthropic API key", async () => {
@@ -933,6 +1441,8 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
     expect(result.preview.operations.length).toBeGreaterThan(0);
     expect(result.preview.diffSummary.formulaCells.length).toBeGreaterThan(0);
     expect(result.preview.validationIssues).toEqual([]);
+    const saveValidation = validateWorksheetBeforeSave(result.preview.worksheet);
+    expect(saveValidation.ok).toBe(true);
   });
 
   it("routes blank worksheet generation prompts with highlight-input phrasing to staged generation instead of formatting", async () => {
@@ -1055,7 +1565,505 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
     expect(result.preview.answer).not.toContain("The AI returned an explanation but no worksheet changes");
   });
 
-  it("falls back to a structure-only preview when the Anthropic formula stage fails", async () => {
+  it.each([
+    {
+      label: "blank",
+      buildFixture: buildGenerationFixture,
+      expectedState: "blank" as PricingWorksheetState,
+    },
+    {
+      label: "starter_generated",
+      buildFixture: buildStarterGeneratedFixture,
+      expectedState: "starter_generated" as PricingWorksheetState,
+    },
+    {
+      label: "partial_structured",
+      buildFixture: buildPartialStructuredFixture,
+      expectedState: "partial_structured" as PricingWorksheetState,
+    },
+    {
+      label: "mature_structured",
+      buildFixture: buildMatureStructuredFixture,
+      expectedState: "mature_structured" as PricingWorksheetState,
+    },
+    {
+      label: "formula_heavy",
+      buildFixture: buildFormulaHeavyFixture,
+      expectedState: "formula_heavy" as PricingWorksheetState,
+    },
+  ])("routes Anthropic worksheet_generation prompts on $label worksheets through staged generation", async ({
+    buildFixture,
+    expectedState,
+  }) => {
+    const { worksheet, context } = buildFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const detectedState = detectPricingWorksheetState({
+      worksheet,
+      worksheetContext: context,
+      currentWorksheetSummary: buildWorksheetSummaryForTest(worksheet),
+    });
+    expect(detectedState).toBe(expectedState);
+
+    const fetchMock = mockAnthropicStagedGenerationSuccess();
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt:
+        "Build me a spreadsheet to calculate plasterboard linings to ceilings. I want to put in M2 and it calculates all the material and labour components.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+      classification: buildClassification({
+        primaryIntent: "worksheet_generation",
+        requiresRetrieval: false,
+        recommendedPromptPath: "generation",
+        tradeHints: ["ceilings"],
+      }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstRequestBody = readRequestBody(fetchMock, 0);
+    const secondRequestBody = readRequestBody(fetchMock, 1);
+    const firstSchemaProperties =
+      (((firstRequestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema as Record<
+        string,
+        unknown
+      >).properties as Record<string, unknown>;
+    const secondSchemaProperties =
+      (((secondRequestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema as Record<
+        string,
+        unknown
+      >).properties as Record<string, unknown>;
+
+    expect((firstSchemaProperties.mode as Record<string, unknown>).enum).toEqual(["worksheet_draft", "answer_only"]);
+    expect(firstSchemaProperties.operations).toBeUndefined();
+    expect((secondSchemaProperties.mode as Record<string, unknown>).enum).toEqual(["formula_suggestions", "answer_only"]);
+    expect(result.generationMeta.fallbackUsed).toBe(false);
+    expect(result.preview.mode).toBe("propose_edit");
+    expect(result.preview.operations.length).toBeGreaterThan(0);
+    expect(result.preview.answer).not.toContain("The AI returned an explanation but no worksheet changes");
+  });
+
+  it("routes starter pages with generation-style prompts to staged generation even when intent classification says formula_generate", async () => {
+    const { worksheet, context } = buildStarterGeneratedFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const fetchMock = mockAnthropicStagedGenerationSuccess();
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt:
+        "Build me a spreadsheet for Page 2 that calculates all the components for a ceiling grid system from m2 and LM inputs.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+      classification: buildClassification({
+        primaryIntent: "formula_generate",
+        requiresRetrieval: false,
+        recommendedPromptPath: "edit",
+        tradeHints: ["ceilings"],
+      }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.preview.mode).toBe("propose_edit");
+    expect(result.preview.operations.length).toBeGreaterThan(0);
+  });
+
+  it("falls back from answer-only formula routing to staged generation for starter-page generation prompts", async () => {
+    const { worksheet, context } = buildStarterGeneratedFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_formula_answer_only_1",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "answer_only",
+                answer: "You could add formulas once the calculator structure exists.",
+                assumptions: [],
+                warnings: [],
+                suggestions: [],
+              }),
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_draft_after_formula_fallback",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "worksheet_draft",
+                proposalName: "Ceiling starter worksheet",
+                answer: "Built a compact starter worksheet draft.",
+                sections: [
+                  {
+                    title: "Inputs",
+                    rows: [
+                      {
+                        label: "Area",
+                        description: "Editable measured area",
+                        unit: "m2",
+                        rowPurpose: "input",
+                        quantityValue: null,
+                        materialRate: null,
+                        labourRate: null,
+                        formulaIntent: "editable input row",
+                      },
+                    ],
+                  },
+                ],
+                assumptions: [],
+                warnings: [],
+              }),
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_formula_after_generation_fallback",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "formula_suggestions",
+                answer: "Added worksheet-aware formulas.",
+                assumptions: [],
+                warnings: [],
+                suggestions: [
+                  {
+                    targetRowNumber: 4,
+                    targetColumn: "J",
+                    expression: '=IFERROR((E4*F4)+(G4*H4)+I4,"")',
+                    rationale: "Build the starter total row.",
+                  },
+                ],
+              }),
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt:
+        "Build me a spreadsheet for Page 2 that calculates all the components for a ceiling grid system from m2 and LM inputs.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+      classification: buildClassification({
+        primaryIntent: "formula_generate",
+        requiresRetrieval: false,
+        recommendedPromptPath: "edit",
+        tradeHints: ["ceilings"],
+      }),
+      internalFlags: {
+        anthropicWorkflowOverride: "formula_suggestions",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const firstRequestBody = readRequestBody(fetchMock, 0);
+    const secondRequestBody = readRequestBody(fetchMock, 1);
+    const firstSchemaProperties =
+      (((firstRequestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema as Record<
+        string,
+        unknown
+      >).properties as Record<string, unknown>;
+    const secondSchemaProperties =
+      (((secondRequestBody.output_config as Record<string, unknown>).format as Record<string, unknown>).schema as Record<
+        string,
+        unknown
+      >).properties as Record<string, unknown>;
+
+    expect((firstSchemaProperties.mode as Record<string, unknown>).enum).toEqual(["formula_suggestions", "answer_only"]);
+    expect((secondSchemaProperties.mode as Record<string, unknown>).enum).toEqual(["answer_only"]);
+    expect(result.preview.mode).toBe("propose_edit");
+    expect(result.preview.operations.length).toBeGreaterThan(0);
+  });
+
+  it("starts staged generation at row 1 on formatting-only worksheets and keeps a single coherent calculator across continuation batches", async () => {
+    const { worksheet, context } = buildGenerationFixture();
+    setFormattingOnlyCell(worksheet, "A18");
+    setFormattingOnlyCell(worksheet, "B18");
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const largeSections = [
+      {
+        title: "Inputs",
+        rows: [
+          {
+            label: "Ceiling area",
+            description: "Editable measured area",
+            unit: "m2",
+            rowPurpose: "input",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "editable area input",
+          },
+          {
+            label: "Waste factor",
+            description: "Editable wastage allowance",
+            unit: "%",
+            rowPurpose: "input",
+            quantityValue: 0.1,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "editable waste input",
+          },
+          {
+            label: "Waste-adjusted area",
+            description: "Base area with wastage",
+            unit: "m2",
+            rowPurpose: "calculation",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "area plus waste",
+          },
+        ],
+      },
+      {
+        title: "Material pricing",
+        rows: [
+          {
+            label: "Plasterboard sheets",
+            description: "Supply sheets for ceilings",
+            unit: "ea",
+            rowPurpose: "material",
+            quantityValue: null,
+            materialRate: 32,
+            labourRate: null,
+            formulaIntent: "sheet count times sheet rate",
+          },
+          {
+            label: "Material subtotal",
+            description: "Materials total",
+            unit: "NZD",
+            rowPurpose: "subtotal",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "materials subtotal",
+          },
+        ],
+      },
+      {
+        title: "Labour pricing",
+        rows: [
+          {
+            label: "Fixing labour hours",
+            description: "Hours to install ceiling linings",
+            unit: "hrs",
+            rowPurpose: "labour",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: 72,
+            formulaIntent: "area times productivity hours",
+          },
+          {
+            label: "Labour subtotal",
+            description: "Total labour cost",
+            unit: "NZD",
+            rowPurpose: "subtotal",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "labour subtotal",
+          },
+        ],
+      },
+      {
+        title: "Summary Dashboard",
+        rows: [
+          {
+            label: "Net cost",
+            description: "Combined material and labour cost",
+            unit: "NZD",
+            rowPurpose: "summary",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "net cost total",
+          },
+          {
+            label: "Margin",
+            description: "Editable commercial margin",
+            unit: "%",
+            rowPurpose: "input",
+            quantityValue: 0.15,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "editable margin input",
+          },
+          {
+            label: "Sell price",
+            description: "Final sell price including margin",
+            unit: "NZD",
+            rowPurpose: "summary",
+            quantityValue: null,
+            materialRate: null,
+            labourRate: null,
+            formulaIntent: "sell price total",
+          },
+        ],
+      },
+    ];
+
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_large_draft",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "worksheet_draft",
+                proposalName: "Plasterboard ceiling calculator",
+                answer: "Built a complete calculator structure.",
+                sections: largeSections,
+                assumptions: ["Supplier rates stay editable."],
+                warnings: [],
+              }),
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_large_formula",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "formula_suggestions",
+                answer: "Added formulas across the generated calculator.",
+                assumptions: [],
+                warnings: [],
+                suggestions: [
+                  {
+                    targetRowNumber: 5,
+                    targetColumn: "J",
+                    expression: "=E3*(1+E4)",
+                    rationale: "Waste-adjusted area.",
+                  },
+                  {
+                    targetRowNumber: 8,
+                    targetColumn: "J",
+                    expression: "=ROUNDUP(J5/2.88,0)*F8",
+                    rationale: "Sheet count material cost.",
+                  },
+                  {
+                    targetRowNumber: 9,
+                    targetColumn: "J",
+                    expression: "=SUM(J8)",
+                    rationale: "Material subtotal.",
+                  },
+                  {
+                    targetRowNumber: 12,
+                    targetColumn: "J",
+                    expression: "=J5*0.18*H12",
+                    rationale: "Labour subtotal.",
+                  },
+                  {
+                    targetRowNumber: 15,
+                    targetColumn: "J",
+                    expression: "=J9+J12",
+                    rationale: "Net cost.",
+                  },
+                  {
+                    targetRowNumber: 17,
+                    targetColumn: "J",
+                    expression: "=J15*(1+E16)",
+                    rationale: "Sell price.",
+                  },
+                ],
+              }),
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt:
+        "Build me a spreadsheet to calculate plasterboard linings to ceilings. I want to put in M2 and it calculates all the material and labour components.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+      classification: buildClassification({
+        primaryIntent: "worksheet_generation",
+        recommendedPromptPath: "generation",
+        tradeHints: ["ceilings"],
+      }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.preview.diffSummary.insertedRows[0]).toBe(1);
+
+    let appliedPreview: PricingWorksheetAiAssistantPreview = result.preview;
+    while (appliedPreview.continuation) {
+      const nextPreview = buildPricingWorksheetContinuationPreview({
+        preview: appliedPreview,
+        worksheet: appliedPreview.worksheet,
+      });
+      expect(nextPreview).not.toBeNull();
+      appliedPreview = nextPreview!;
+    }
+
+    const finalCells = Object.values(appliedPreview.worksheet.cells);
+    const finalValues = finalCells.map((cell) => String(cell?.value ?? cell?.computedValue ?? ""));
+    const finalFormulas = finalCells.map((cell) => cell?.formula).filter((formula): formula is string => Boolean(formula));
+
+    expect(finalValues).toContain("Inputs");
+    expect(finalValues).toContain("Material pricing");
+    expect(finalValues).toContain("Labour pricing");
+    expect(finalValues).toContain("Summary Dashboard");
+    expect(finalFormulas).toEqual(
+      expect.arrayContaining([
+        "=E3*(1+E4)",
+        "=ROUNDUP(J5/2.88,0)*F8",
+        "=SUM(J8)",
+        "=J9+J12",
+      ]),
+    );
+  });
+
+  it("surfaces a validation error when blank-sheet staged generation cannot complete the formula stage", async () => {
     const { worksheet, context } = buildGenerationFixture();
     process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
     process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
@@ -1128,7 +2136,105 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
     expect(result.preview.warnings).toContain(
       "Formula generation was rate limited, so the preview contains structure only.",
     );
+    expect(result.preview.validationIssues).toContainEqual({
+      code: "staged_generation_incomplete_formula_fill",
+      message:
+        "The AI generated worksheet structure, but the formula stage did not complete safely. Please retry so TradesStack can finish the calculator formulas before approval.",
+      severity: "error",
+    });
   });
+
+  it("rejects staged generation when the formula stage returns zero formulas", async () => {
+    const { worksheet, context } = buildGenerationFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_draft_zero_formula",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "worksheet_draft",
+                proposalName: "Partitions starter worksheet",
+                answer: "Built the worksheet structure.",
+                sections: [
+                  {
+                    title: "Materials",
+                    rows: [
+                      {
+                        label: "Track and stud",
+                        description: "Primary framing line",
+                        unit: "lm",
+                        rowPurpose: "material",
+                        quantityValue: 80,
+                        materialRate: 8.75,
+                        labourRate: 68,
+                        formulaIntent: "quantity times material rate plus labour and margin",
+                      },
+                    ],
+                  },
+                ],
+                assumptions: [],
+                warnings: [],
+              }),
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "msg_formula_zero_formula",
+          type: "message",
+          model: "claude-sonnet-4-6",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: "formula_suggestions",
+                answer: "No safe formulas generated.",
+                assumptions: [],
+                warnings: [],
+                suggestions: [],
+              }),
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt: "Create a partitions pricing worksheet with materials, labour, wastage, margins, formulas and totals.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+      classification: buildClassification({
+        primaryIntent: "worksheet_generation",
+        requiresRetrieval: true,
+        recommendedPromptPath: "generation",
+        tradeHints: ["partitions"],
+      }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.preview.diffSummary.formulaCells).toEqual([]);
+    expect(result.preview.validationIssues).toContainEqual({
+      code: "staged_generation_incomplete_formula_fill",
+      message:
+        "The AI generated worksheet structure, but the formula stage did not complete safely. Please retry so TradesStack can finish the calculator formulas before approval.",
+      severity: "error",
+    });
+  });
+
 
   it("routes Anthropic formula-generation prompts on structured worksheets to the worksheet-aware formula stage", async () => {
     const { worksheet, context } = buildStructuredFormulaFixture();
@@ -1237,6 +2343,83 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
     expect(result.preview.mode).toBe("propose_edit");
     expect(result.preview.diffSummary.formulaCells.length).toBeGreaterThan(0);
     expect(result.preview.validationIssues).toEqual([]);
+  });
+
+  it("downgrades formula-stage suggestions that compile but fail preview recalculation", async () => {
+    const { worksheet, context } = buildStructuredFormulaFixture();
+    process.env.PRICING_WORKSHEET_AI_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    delete process.env.OPENAI_API_KEY;
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "msg_formula_runtime_mismatch",
+        type: "message",
+        model: "claude-sonnet-4-6",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              mode: "formula_suggestions",
+              answer: "Added formulas for the ceiling worksheet.",
+              assumptions: [],
+              warnings: [],
+              suggestions: [
+                {
+                  targetRowNumber: 3,
+                  targetColumn: "J",
+                  expression: "=E3*F3",
+                  rationale: "Calculate main tee total from quantity and rate.",
+                },
+                {
+                  targetRowNumber: 4,
+                  targetColumn: "J",
+                  expression: "=E4*D4",
+                  rationale: "This incorrectly multiplies by the unit cell.",
+                },
+                {
+                  targetRowNumber: 5,
+                  targetColumn: "J",
+                  expression: "=SUM(J3:J4)",
+                  rationale: "Subtotal materials rows.",
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await buildPricingWorksheetEditAssistantPreview({
+      prompt: "Add formulas for the generated ceiling calculator.",
+      worksheet,
+      worksheetContext: context,
+      memoryItems: [],
+      classification: buildClassification({
+        primaryIntent: "formula_generate",
+        recommendedPromptPath: "edit",
+        tradeHints: ["ceilings"],
+      }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.preview.validationIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "formula_recalc_downgraded",
+          severity: "warning",
+          cellRef: "J4",
+          formula: "=E4*D4",
+          formulaError: "#VALUE!",
+        }),
+      ]),
+    );
+    expect(result.preview.validationIssues.some((issue) => issue.severity === "error")).toBe(false);
+    expect(getWorksheetCellValue(result.preview.worksheet, "J3")?.formula).toBe("=E3*F3");
+    expect(getWorksheetCellValue(result.preview.worksheet, "J4")?.formula ?? null).toBeNull();
+    expect(getWorksheetCellValue(result.preview.worksheet, "J5")?.formula).toBe("=SUM(J3:J4)");
   });
 
   it("does not double-count the worksheet snapshot in Anthropic formula-stage token budgeting", async () => {
@@ -3747,7 +4930,7 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
                   {
                     targetRowNumber: 4,
                     targetColumn: "J",
-                    expression: "quantity times material rate",
+                    expression: "=E4*F4",
                     rationale: "Calculate the material total for the current row.",
                   },
                 ],

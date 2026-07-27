@@ -3,19 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart3,
   Building2,
   ChevronDown,
   DollarSign,
   FolderKanban,
   LayoutGrid,
-  Package,
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
   TrendingUp,
   Users,
-  UsersRound,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ibmPlexSans } from "@/lib/fonts";
@@ -72,11 +69,9 @@ const PRIMARY_NAV_ITEMS = [
       { label: "Cost Codes", href: "/app/company/cost-codes" },
       { label: "Suppliers", href: "/app/company/suppliers" },
       { label: "Supplier Invoices", href: "/app/company/supplier-invoices" },
+      { label: "Materials", href: "/app/company/materials" },
     ],
   },
-  { label: "Resources", icon: Package },
-  { label: "Team", icon: UsersRound },
-  { label: "Reports", icon: BarChart3 },
   { label: "AI Assistant", icon: Sparkles },
 ] as const;
 
@@ -161,7 +156,7 @@ export function SidebarNavContent({
               );
             }
 
-            // Non-href button (Resources / Team / Reports / AI Assistant)
+            // Non-href button (AI Assistant)
             return (
               <Tooltip key={item.label} label={item.label} side="right">
                 <button type="button" aria-label={item.label} className={itemClass}>

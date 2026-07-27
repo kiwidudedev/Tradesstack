@@ -32,7 +32,10 @@ export default async function ProjectLayout({
   console.timeEnd(timingLabel);
 
   return (
-    <ProjectLayoutShell projectName={project.name} projectStage={project.stage}>
+    <ProjectLayoutShell
+      projectName={project.name}
+      projectStage={project.stage}
+    >
       {children}
     </ProjectLayoutShell>
   );

@@ -34,12 +34,15 @@ interface OrganizationSettingsFormProps {
   initialTimezone?: string | null;
   initialDefaultTaxMode?: string | null;
   initialDefaultTaxRate?: number | null;
+  initialTaxRegistrationStatus?: string | null;
+  initialConstructionProfile?: string | null;
   canEdit: boolean;
 }
 
 const DEFAULT_BRAND_PRIMARY_COLOR = DEFAULT_PLATFORM_COLOR;
 const DEFAULT_BRAND_ACCENT_COLOR = DEFAULT_ACTION_COLOR;
 const ALLOWED_LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const CONSTRUCTION_PROFILE_MAX_LENGTH = 4000;
 
 function normalizeHexColor(value: string | null | undefined, fallback: string) {
   const normalized = (value ?? "").trim();
@@ -97,6 +100,12 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   const [defaultTaxRate, setDefaultTaxRate] = useState(
     props.initialDefaultTaxRate != null ? String(props.initialDefaultTaxRate) : "15",
   );
+  const [taxRegistrationStatus, setTaxRegistrationStatus] = useState(
+    props.initialTaxRegistrationStatus === "registered" || props.initialTaxRegistrationStatus === "unregistered"
+      ? props.initialTaxRegistrationStatus
+      : "unknown",
+  );
+  const [constructionProfile, setConstructionProfile] = useState(props.initialConstructionProfile ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,12 +160,24 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
         p_timezone: timezone.trim() || null,
         p_default_tax_mode: defaultTaxMode.trim() || null,
         p_default_tax_rate: normalizedTaxRate,
+        p_construction_profile: constructionProfile,
       } as never);
 
     if (updateError) {
       setError(toSettingsErrorMessage(updateError));
     } else {
-      setMessage("Settings Saved.");
+      const { error: registrationError } = await supabase.rpc(
+        "update_organization_tax_registration_status" as never,
+        {
+          p_organization_id: props.organizationId,
+          p_tax_registration_status: taxRegistrationStatus,
+        } as never,
+      );
+      if (registrationError) {
+        setError(toSettingsErrorMessage(registrationError));
+      } else {
+        setMessage("Settings Saved.");
+      }
     }
 
     setIsSaving(false);
@@ -232,6 +253,7 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
   const fieldLabel = "mb-1 block text-[13px] font-semibold text-[var(--text-primary)] font-[family-name:var(--font-ibm-plex-sans)]";
   const fieldInput = "h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--brand-blue)] font-[family-name:var(--font-ibm-plex-sans)]";
   const fieldSelect = "h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--brand-blue)] font-[family-name:var(--font-ibm-plex-sans)]";
+  const fieldTextarea = "min-h-[220px] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3 text-[14px] font-medium leading-6 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--brand-blue)] font-[family-name:var(--font-ibm-plex-sans)]";
 
   return (
     <form
@@ -313,6 +335,36 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                   <label className={fieldLabel}>Contact email</label>
                   <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} disabled={!props.canEdit || isSaving} className={fieldInput} />
                 </div>
+              </div>
+            </div>
+          </OperationalPanel>
+
+          <OperationalPanel
+            title="Construction Profile"
+            description="Tell TradesStack about your construction business so AI can better understand your company, projects, suppliers, terminology, estimating approach, and construction context."
+          >
+            <div className="space-y-3">
+              <div>
+                <label className={fieldLabel} htmlFor="organization-construction-profile">
+                  Company construction context
+                </label>
+                <textarea
+                  id="organization-construction-profile"
+                  value={constructionProfile}
+                  onChange={(event) => setConstructionProfile(event.target.value.slice(0, CONSTRUCTION_PROFILE_MAX_LENGTH))}
+                  placeholder="TradesStack Limited is a commercial interiors contractor based in Auckland, New Zealand. We mostly work on office fitouts, apartment interiors, wall linings, suspended ceilings, partitions, doors and insulation..."
+                  disabled={!props.canEdit || isSaving}
+                  className={fieldTextarea}
+                  maxLength={CONSTRUCTION_PROFILE_MAX_LENGTH}
+                />
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <p className={`${interMedium.className} max-w-[560px] text-[12px] leading-5 text-[var(--text-secondary)]`}>
+                  Example: TradesStack Limited is a commercial interiors contractor based in Auckland, New Zealand. We mostly work on office fitouts, apartment interiors, wall linings, suspended ceilings, partitions, doors and insulation. We use New Zealand construction terminology and commonly work with suppliers like PlaceMakers, Carters, GIB and Rondo.
+                </p>
+                <p className={`${interMedium.className} shrink-0 text-[12px] text-[var(--text-muted)]`}>
+                  {constructionProfile.length}/{CONSTRUCTION_PROFILE_MAX_LENGTH}
+                </p>
               </div>
             </div>
           </OperationalPanel>
@@ -422,6 +474,14 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
               <div>
                 <label className={fieldLabel}>Default tax rate (%)</label>
                 <Input value={defaultTaxRate} onChange={(e) => setDefaultTaxRate(e.target.value)} disabled={!props.canEdit || isSaving} className={fieldInput} />
+              </div>
+              <div className="md:col-span-3">
+                <label className={fieldLabel}>GST registration</label>
+                <select value={taxRegistrationStatus} onChange={(e) => setTaxRegistrationStatus(e.target.value)} disabled={!props.canEdit || isSaving} className={fieldSelect}>
+                  <option value="unknown">Not confirmed</option>
+                  <option value="registered">Registered</option>
+                  <option value="unregistered">Not registered</option>
+                </select>
               </div>
             </div>
           </OperationalPanel>

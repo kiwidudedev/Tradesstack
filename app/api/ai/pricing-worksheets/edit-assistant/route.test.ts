@@ -11,6 +11,7 @@ const recordAiInteractionValidation = vi.fn();
 const transitionAiLifecycleInteraction = vi.fn();
 const buildPricingWorksheetEditAssistantPreview = vi.fn();
 const retrievePricingWorksheetOrganizationGuidance = vi.fn();
+const buildOrganizationAiContext = vi.fn();
 
 vi.mock("@/lib/ai-lifecycle-server", () => ({
   requireOrganizationMemberForAi,
@@ -32,6 +33,10 @@ vi.mock("@/lib/ai-pricing-worksheet-edit-assistant", () => ({
 
 vi.mock("@/lib/pricing-worksheet-organization-guidance", () => ({
   retrievePricingWorksheetOrganizationGuidance,
+}));
+
+vi.mock("@/lib/organization-ai-context", () => ({
+  buildOrganizationAiContext,
 }));
 
 describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
@@ -70,6 +75,16 @@ describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
       summary: "No strong organization estimating guidance was available for this worksheet request.",
       suppressionHints: [],
     });
+    buildOrganizationAiContext.mockResolvedValue({
+      constructionProfile: "We mostly work on office fitouts and suspended ceilings.",
+      organizationConstructionContext: [
+        "Company Construction Context:",
+        "",
+        "The following is user-provided background context about this organization.",
+        "",
+        "We mostly work on office fitouts and suspended ceilings.",
+      ].join("\n"),
+    });
     createAiLifecycleInteraction.mockResolvedValue("interaction-123");
     recordAiInteractionValidation.mockResolvedValue("validation-123");
     transitionAiLifecycleInteraction.mockResolvedValue("transition-123");
@@ -82,7 +97,9 @@ describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
       columnCount: 6,
     });
     const worksheetContext = buildPricingWorksheetAiContext(worksheet, {
+      workbookId: "worksheet-123",
       worksheetId: "worksheet-123",
+      sheetName: "Wall Framing",
       worksheetName: "Wall Framing",
       tradePackage: "Wall framing",
     });
@@ -195,7 +212,9 @@ describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
         body: JSON.stringify({
           organizationId: "org-123",
           opportunityId: "opp-123",
+          workbookId: "worksheet-123",
           worksheetId: "worksheet-123",
+          sheetName: "Wall Framing",
           worksheetName: "Wall Framing",
           tradePackage: "Wall framing",
           prompt: "Write me a formula for calculating steel stud LM in wall",
@@ -223,6 +242,40 @@ describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
     expect(buildPricingWorksheetEditAssistantPreview.mock.calls[0]?.[0]?.organizationGuidance).toMatchObject({
       items: [],
     });
+    expect(buildPricingWorksheetEditAssistantPreview.mock.calls[0]?.[0]?.organizationConstructionContext).toContain(
+      "Company Construction Context:"
+    );
+    expect(buildAiRequestContextSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relatedCounts: expect.objectContaining({
+          constructionProfileLength: 56,
+          hasConstructionProfile: 1,
+        }),
+      }),
+    );
+    expect(createAiLifecycleInteraction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        inputContextSummary: expect.objectContaining({
+          workbookId: "worksheet-123",
+          worksheetId: "worksheet-123",
+          sheetName: "Wall Framing",
+        }),
+      }),
+    );
+    expect(transitionAiLifecycleInteraction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        outputStructured: expect.objectContaining({
+          workbookId: "worksheet-123",
+          worksheetId: "worksheet-123",
+          sheetName: "Wall Framing",
+        }),
+      }),
+    );
+    expect(payload.workbookId).toBe("worksheet-123");
+    expect(payload.worksheetId).toBe("worksheet-123");
+    expect(payload.sheetName).toBe("Wall Framing");
     expect(payload.preview.assistant.mode).toBe("answer_only");
     expect(payload.preview.assistant.answer.length).toBeGreaterThan(0);
     expect(payload.preview.assistant.operations).toEqual([]);
@@ -663,5 +716,135 @@ describe("POST /api/ai/pricing-worksheets/edit-assistant", () => {
     const payload = await response.json();
     expect(payload.preview.assistant.evidenceSources).toHaveLength(1);
     expect(payload.preview.assistant.evidenceSources[0].title).toContain("Rondo");
+  });
+
+  it("continues targeting only the active worksheet payload for AI edits", async () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Active Default Sheet",
+      rowCount: 8,
+      columnCount: 6,
+    });
+    const worksheetContext = buildPricingWorksheetAiContext(worksheet, {
+      worksheetId: "workbook-123",
+      worksheetName: "Active Default Sheet",
+      tradePackage: "Ceilings",
+    });
+
+    buildPricingWorksheetEditAssistantPreview.mockResolvedValue({
+      generationMeta: {
+        provider: "openai",
+        model: "gpt-5.5",
+        fallbackUsed: false,
+        fallbackReason: null,
+      },
+      preview: {
+        mode: "propose_edit",
+        proposalName: "Active sheet only",
+        answer: "Edited the active sheet only.",
+        summary: "No other sheet context was used.",
+        confidence: "high",
+        operations: [],
+        assumptions: [],
+        warnings: [],
+        evidenceSources: [],
+        reviewFindings: [],
+        reviewSummary: null,
+        suggestedEditGroups: [],
+        worksheet,
+        diffSummary: {
+          changedCells: [],
+          formulaCells: [],
+          insertedRows: [],
+          affectedRows: [],
+        },
+        diffPreview: {
+          changedCells: [],
+          insertedRows: [],
+          affectedSections: [],
+          formulaChanges: [],
+        },
+        storageSummary: {
+          responseMode: "propose_edit",
+          sanitizedOperations: [],
+          affectedCellRefs: [],
+          formulaChangeSummary: [],
+          insertedRowSummary: [],
+          affectedSections: [],
+          assumptions: [],
+          warnings: [],
+          evidenceSources: [],
+          reviewFindings: [],
+          reviewSummary: null,
+          suggestedEditGroups: [],
+        },
+        validationIssues: [],
+        validationWarnings: [],
+        compactOutput: {
+          worksheetName: "Active Default Sheet",
+          tradePackage: "Ceilings",
+          suggestionSource: "default",
+          confidence: "high",
+          rowCount: worksheet.rows.length,
+          columnCount: worksheet.columns.length,
+          formulaCount: 0,
+          populatedCellCount: 0,
+          sectionCounts: {
+            sections: 0,
+            rows: 0,
+            operations: 0,
+          },
+          headers: ["A", "B", "C", "D", "E", "F"],
+          sections: [],
+          assumptions: [],
+          warnings: [],
+          promptHighlights: ["Update the active sheet only"],
+          sampleLineItems: [],
+        },
+        matchedMemory: null,
+        contextSummary: {
+          matchedMemoryCount: 0,
+          summary: "Headers: A, B, C, D, E, F",
+        },
+      },
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/ai/pricing-worksheets/edit-assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          organizationId: "org-123",
+          opportunityId: "opp-123",
+          workbookId: "workbook-123",
+          worksheetId: "workbook-123",
+          sheetId: "sheet-page-2",
+          sheetName: "Active Default Sheet",
+          worksheetName: "Active Default Sheet",
+          tradePackage: "Ceilings",
+          prompt: "Update the active sheet only",
+          currentWorksheetSummary: {
+            rowCount: worksheet.rows.length,
+            columnCount: worksheet.columns.length,
+            formulaCount: 0,
+            populatedCellCount: 0,
+            hasExistingContent: false,
+          },
+          worksheetData: worksheet,
+          worksheetContext,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.workbookId).toBe("workbook-123");
+    expect(payload.worksheetId).toBe("workbook-123");
+    expect(payload.sheetId).toBe("sheet-page-2");
+    expect(payload.sheetName).toBe("Active Default Sheet");
+    expect(buildPricingWorksheetEditAssistantPreview.mock.calls[0]?.[0]?.worksheet).toEqual(worksheet);
+    expect(buildPricingWorksheetEditAssistantPreview.mock.calls[0]?.[0]?.worksheetContext).toEqual(worksheetContext);
   });
 });

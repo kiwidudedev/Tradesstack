@@ -4,7 +4,7 @@ import { createOrganizationProjectForCurrentUser } from "@/lib/project-creation-
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { toProjectSlug, resolveUniqueProjectSlug } from "@/lib/projects";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { Database, OpportunityStage, QuoteStatus } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/types";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { toTradePackPdfUrl } from "@/lib/trade-packs";
 
@@ -12,6 +12,8 @@ type OpportunityRow = Database["public"]["Tables"]["organization_opportunities"]
 type ClientRow = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
 type MemberRow = Pick<Database["public"]["Tables"]["organization_members"]["Row"], "user_id" | "display_name">;
 type OpportunityQuoteRow = Database["public"]["Tables"]["opportunity_quotes"]["Row"];
+type OpportunityStage = OpportunityRow["stage"];
+type QuoteStatus = OpportunityQuoteRow["status"];
 type OpportunityQuoteSummaryRow = Pick<
   OpportunityQuoteRow,
   "id" | "opportunity_id" | "status" | "total_quote_price" | "updated_at" | "created_at"
@@ -47,6 +49,23 @@ export interface CreateOpportunityInput {
   clientId?: string | null;
   dueDateIso?: string | null;
   estimatedValue?: number;
+}
+
+interface OpportunityWorkspaceProjectRow {
+  id: string;
+  slug: string;
+  source_opportunity_id: string | null;
+}
+
+interface OpportunityWorkspaceSeed {
+  id: string;
+  name: string;
+  slug: string;
+  location: string | null;
+  client_id: string | null;
+  created_by: string | null;
+  owner_user_id: string | null;
+  workspace_project_id: string | null;
 }
 
 async function cloneWorkspaceDataToProject(params: {
@@ -240,6 +259,123 @@ async function cloneWorkspaceDataToProject(params: {
   }
 }
 
+async function ensureOpportunityWorkspaceProject(params: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  organizationId: string;
+  actingUserId: string;
+  opportunity: OpportunityWorkspaceSeed;
+}): Promise<{ projectId: string; projectSlug: string; created: boolean; repairedLineage: boolean }> {
+  const { supabase, organizationId, actingUserId, opportunity } = params;
+
+  if (opportunity.workspace_project_id) {
+    const existingWorkspaceResult = await supabase
+      .from("organization_projects")
+      .select("id, slug, source_opportunity_id")
+      .eq("organization_id", organizationId)
+      .eq("id", opportunity.workspace_project_id)
+      .maybeSingle();
+
+    if (existingWorkspaceResult.error) {
+      throw new Error(existingWorkspaceResult.error.message);
+    }
+
+    const existingWorkspace = existingWorkspaceResult.data as OpportunityWorkspaceProjectRow | null;
+    if (existingWorkspace) {
+      if (existingWorkspace.source_opportunity_id === opportunity.id) {
+        return {
+          projectId: existingWorkspace.id,
+          projectSlug: existingWorkspace.slug,
+          created: false,
+          repairedLineage: false,
+        };
+      }
+
+      if (existingWorkspace.source_opportunity_id === null) {
+        const repairResult = await supabase
+          .from("organization_projects")
+          .update({ source_opportunity_id: opportunity.id })
+          .eq("organization_id", organizationId)
+          .eq("id", existingWorkspace.id)
+          .is("source_opportunity_id", null)
+          .select("id, slug")
+          .single();
+
+        if (repairResult.error) {
+          throw new Error(repairResult.error.message);
+        }
+
+        return {
+          projectId: repairResult.data.id,
+          projectSlug: repairResult.data.slug,
+          created: false,
+          repairedLineage: true,
+        };
+      }
+
+      throw new Error("This worksheet is not linked to a quote workspace yet.");
+    }
+  }
+
+  const workspaceBaseSlug = toProjectSlug(`${opportunity.slug}-tender`);
+  const existingProjectSlugsResult = await supabase
+    .from("organization_projects")
+    .select("slug")
+    .eq("organization_id", organizationId)
+    .like("slug", `${workspaceBaseSlug}%`);
+
+  if (existingProjectSlugsResult.error) {
+    throw new Error(existingProjectSlugsResult.error.message);
+  }
+
+  const workspaceSlug = resolveUniqueProjectSlug(
+    workspaceBaseSlug,
+    (existingProjectSlugsResult.data ?? []).map((row) => row.slug)
+  );
+
+  const workspaceCreatedBy = opportunity.owner_user_id ?? opportunity.created_by ?? actingUserId;
+  const workspaceResult = await supabase
+    .from("organization_projects")
+    .insert({
+      organization_id: organizationId,
+      created_by: workspaceCreatedBy,
+      client_id: opportunity.client_id,
+      source_opportunity_id: opportunity.id,
+      name: `${opportunity.name} Tender Workspace`,
+      slug: workspaceSlug,
+      stage: "Pricing",
+      location: opportunity.location || "Unspecified",
+      cover_image_url: null,
+    })
+    .select("id, slug")
+    .single();
+
+  if (workspaceResult.error) {
+    throw new Error(workspaceResult.error.message);
+  }
+
+  const opportunityUpdateResult = await supabase
+    .from("organization_opportunities")
+    .update({ workspace_project_id: workspaceResult.data.id })
+    .eq("organization_id", organizationId)
+    .eq("id", opportunity.id);
+
+  if (opportunityUpdateResult.error) {
+    await supabase
+      .from("organization_projects")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", workspaceResult.data.id);
+    throw new Error(opportunityUpdateResult.error.message);
+  }
+
+  return {
+    projectId: workspaceResult.data.id,
+    projectSlug: workspaceResult.data.slug,
+    created: true,
+    repairedLineage: false,
+  };
+}
+
 function resolveOpportunityGroup(stage: OpportunityStage, convertedProjectId: string | null): OpportunityGroup {
   if (stage === "Won" && convertedProjectId) {
     return "won";
@@ -334,6 +470,51 @@ async function syncLatestOpportunityQuoteToProject(params: {
   }
 
   return { quoteDate: latestOpportunityQuote.quote_date ?? null };
+}
+
+async function attachOpportunityCommercialHistoryToProject(params: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  organizationId: string;
+  opportunityId: string;
+  projectId: string;
+}) {
+  const rpcClient = params.supabase as unknown as {
+    rpc: (
+      fn: "attach_opportunity_commercial_history_to_project",
+      rpcParams: {
+        p_organization_id: string;
+        p_opportunity_id: string;
+        p_project_id: string;
+      }
+    ) => Promise<{
+      data:
+        | Array<{
+            attached_quote_count: number | null;
+            attached_quote_line_count: number | null;
+            attached_commercial_item_count: number | null;
+          }>
+        | null;
+      error: { message?: string } | null;
+    }>;
+  };
+
+  const result = await rpcClient.rpc("attach_opportunity_commercial_history_to_project", {
+    p_organization_id: params.organizationId,
+    p_opportunity_id: params.opportunityId,
+    p_project_id: params.projectId,
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message ?? "Failed to attach commercial history to project.");
+  }
+
+  return (
+    result.data?.[0] ?? {
+      attached_quote_count: 0,
+      attached_quote_line_count: 0,
+      attached_commercial_item_count: 0,
+    }
+  );
 }
 
 export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportunityRow[]> {
@@ -497,63 +678,41 @@ export async function createOpportunityForCurrentUser(input: CreateOpportunityIn
   const existingSlugs = (existingSlugsResult.data ?? []).map((row) => row.slug);
   const slug = resolveUniqueProjectSlug(baseSlug, existingSlugs);
 
-  const workspaceName = `${name} Tender Workspace`;
-  const workspaceBaseSlug = toProjectSlug(`${slug}-tender`);
-  const projectSlugsResult = await supabase
-    .from("organization_projects")
-    .select("slug")
-    .eq("organization_id", member.organization_id)
-    .like("slug", `${workspaceBaseSlug}%`);
-
-  if (projectSlugsResult.error) {
-    throw new Error(projectSlugsResult.error.message);
-  }
-
-  const workspaceSlug = resolveUniqueProjectSlug(
-    workspaceBaseSlug,
-    (projectSlugsResult.data ?? []).map((row) => row.slug)
-  );
-
-  const workspaceResult = await supabase
-    .from("organization_projects")
+  const opportunityInsertResult = await supabase
+    .from("organization_opportunities")
     .insert({
       organization_id: member.organization_id,
       created_by: member.user_id,
+      owner_user_id: member.user_id,
       client_id: input.clientId ?? null,
-      name: workspaceName,
-      slug: workspaceSlug,
-      stage: "Pricing",
+      name,
+      slug,
+      stage: "New",
       location: input.location?.trim() || "Unspecified",
-      cover_image_url: null,
+      due_date: normalizeIsoDate(input.dueDateIso),
+      estimated_value: Number(input.estimatedValue ?? 0),
     })
-    .select("id")
+    .select("id, name, slug, location, client_id, created_by, owner_user_id, workspace_project_id")
     .single();
 
-  if (workspaceResult.error) {
-    throw new Error(workspaceResult.error.message);
+  if (opportunityInsertResult.error) {
+    throw new Error(opportunityInsertResult.error.message);
   }
 
-  const insertResult = await supabase.from("organization_opportunities").insert({
-    organization_id: member.organization_id,
-    created_by: member.user_id,
-    owner_user_id: member.user_id,
-    client_id: input.clientId ?? null,
-    workspace_project_id: workspaceResult.data.id,
-    name,
-    slug,
-    stage: "New",
-    location: input.location?.trim() || "Unspecified",
-    due_date: normalizeIsoDate(input.dueDateIso),
-    estimated_value: Number(input.estimatedValue ?? 0),
-  });
-
-  if (insertResult.error) {
+  try {
+    await ensureOpportunityWorkspaceProject({
+      supabase,
+      organizationId: member.organization_id,
+      actingUserId: member.user_id,
+      opportunity: opportunityInsertResult.data,
+    });
+  } catch (error) {
     await supabase
-      .from("organization_projects")
+      .from("organization_opportunities")
       .delete()
       .eq("organization_id", member.organization_id)
-      .eq("id", workspaceResult.data.id);
-    throw new Error(insertResult.error.message);
+      .eq("id", opportunityInsertResult.data.id);
+    throw error;
   }
 
   return { slug };
@@ -591,6 +750,13 @@ export async function convertOpportunityToProjectForCurrentUser(opportunitySlug:
       .maybeSingle();
 
     if (existingProjectResult.data?.slug) {
+      await attachOpportunityCommercialHistoryToProject({
+        supabase,
+        organizationId: member.organization_id,
+        opportunityId: opportunity.id,
+        projectId: existingProjectResult.data.id,
+      });
+
       const syncedQuote = await syncLatestOpportunityQuoteToProject({
         supabase,
         organizationId: member.organization_id,
@@ -641,6 +807,13 @@ export async function convertOpportunityToProjectForCurrentUser(opportunitySlug:
       actingUserId: member.user_id,
     });
   }
+
+  await attachOpportunityCommercialHistoryToProject({
+    supabase,
+    organizationId: member.organization_id,
+    opportunityId: opportunity.id,
+    projectId: createdProject.id,
+  });
 
   const syncedQuote = await syncLatestOpportunityQuoteToProject({
     supabase,
@@ -696,75 +869,58 @@ export async function getOrCreateOpportunityWorkspaceSlugForCurrentUser(opportun
     throw new Error("Opportunity not found.");
   }
 
-  if (opportunity.workspace_project_id) {
-    const existingWorkspaceResult = await supabase
-      .from("organization_projects")
-      .select("id, slug")
-      .eq("organization_id", member.organization_id)
-      .eq("id", opportunity.workspace_project_id)
-      .maybeSingle();
+  const workspace = await ensureOpportunityWorkspaceProject({
+    supabase,
+    organizationId: member.organization_id,
+    actingUserId: member.user_id,
+    opportunity,
+  });
 
-    if (existingWorkspaceResult.error) {
-      throw new Error(existingWorkspaceResult.error.message);
-    }
+  return workspace.projectSlug;
+}
 
-    if (existingWorkspaceResult.data?.slug) {
-      return existingWorkspaceResult.data.slug;
-    }
+export async function ensureOpportunityWorkspaceProjectForCurrentUser(opportunityId: string): Promise<{
+  opportunityId: string;
+  projectId: string;
+  projectSlug: string;
+  created: boolean;
+  repairedLineage: boolean;
+}> {
+  const member = await getCurrentOrganizationMember();
+  if (!member) {
+    throw new Error("Unauthorized");
   }
 
-  const workspaceBaseSlug = toProjectSlug(`${opportunity.slug}-tender`);
-  const existingProjectSlugsResult = await supabase
-    .from("organization_projects")
-    .select("slug")
-    .eq("organization_id", member.organization_id)
-    .like("slug", `${workspaceBaseSlug}%`);
-
-  if (existingProjectSlugsResult.error) {
-    throw new Error(existingProjectSlugsResult.error.message);
-  }
-
-  const workspaceSlug = resolveUniqueProjectSlug(
-    workspaceBaseSlug,
-    (existingProjectSlugsResult.data ?? []).map((row) => row.slug)
-  );
-
-  const workspaceCreatedBy = opportunity.owner_user_id ?? opportunity.created_by ?? member.user_id;
-  const workspaceResult = await supabase
-    .from("organization_projects")
-    .insert({
-      organization_id: member.organization_id,
-      created_by: workspaceCreatedBy,
-      client_id: opportunity.client_id,
-      name: `${opportunity.name} Tender Workspace`,
-      slug: workspaceSlug,
-      stage: "Pricing",
-      location: opportunity.location || "Unspecified",
-      cover_image_url: null,
-    })
-    .select("id, slug")
-    .single();
-
-  if (workspaceResult.error) {
-    throw new Error(workspaceResult.error.message);
-  }
-
-  const opportunityUpdateResult = await supabase
+  const supabase = await createServerSupabaseClient();
+  const opportunityResult = await supabase
     .from("organization_opportunities")
-    .update({ workspace_project_id: workspaceResult.data.id })
+    .select("id, name, slug, location, client_id, created_by, owner_user_id, workspace_project_id")
     .eq("organization_id", member.organization_id)
-    .eq("id", opportunity.id);
+    .eq("id", opportunityId)
+    .maybeSingle();
 
-  if (opportunityUpdateResult.error) {
-    await supabase
-      .from("organization_projects")
-      .delete()
-      .eq("organization_id", member.organization_id)
-      .eq("id", workspaceResult.data.id);
-    throw new Error(opportunityUpdateResult.error.message);
+  if (opportunityResult.error) {
+    throw new Error(opportunityResult.error.message);
   }
 
-  return workspaceResult.data.slug;
+  if (!opportunityResult.data) {
+    throw new Error("Opportunity not found.");
+  }
+
+  const workspace = await ensureOpportunityWorkspaceProject({
+    supabase,
+    organizationId: member.organization_id,
+    actingUserId: member.user_id,
+    opportunity: opportunityResult.data,
+  });
+
+  return {
+    opportunityId: opportunityResult.data.id,
+    projectId: workspace.projectId,
+    projectSlug: workspace.projectSlug,
+    created: workspace.created,
+    repairedLineage: workspace.repairedLineage,
+  };
 }
 
 export async function deleteOpportunityForCurrentUser(opportunityId: string): Promise<void> {

@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { FULL_TIME_SHEET_ENTRY_SELECT, autoCloseStaleTimeSheetEntries } from "../_shared/stale-time-sheet.ts";
 
 type ClockInRequest = {
   project_id?: string | null;
@@ -364,14 +365,11 @@ Deno.serve(async (request) => {
 
   const { data: openEntries, error: openEntriesError } = await client
     .from("project_time_sheet_entries")
-    .select(
-      "id, organization_id, project_id, worker_member_id, worker_user_id, worker_name, purchase_order_id, purchase_order_number, purchase_order_title, client_entry_id, source, created_from_device_id, synced_at, clock_in_at, clock_out_at, clock_in_latitude, clock_in_longitude, clock_in_accuracy_meters, notes, created_at, updated_at"
-    )
+    .select(FULL_TIME_SHEET_ENTRY_SELECT)
     .eq("organization_id", member.organization_id)
     .eq("worker_user_id", user.id)
     .is("clock_out_at", null)
-    .order("clock_in_at", { ascending: false })
-    .limit(1);
+    .order("clock_in_at", { ascending: false });
 
   if (openEntriesError) {
     return errorResponse("Failed to check for an open shift.", 500, {
@@ -379,7 +377,12 @@ Deno.serve(async (request) => {
     });
   }
 
-  const openEntry = ((openEntries ?? []) as TimeSheetEntryRow[])[0] ?? null;
+  const healedOpenEntries = await autoCloseStaleTimeSheetEntries(
+    client,
+    (openEntries ?? []) as TimeSheetEntryRow[],
+    user.id
+  );
+  const openEntry = healedOpenEntries.find((entry) => !entry.clock_out_at) ?? null;
   if (openEntry) {
     return errorResponse("An open shift already exists for this user.", 409, {
       open_entry_id: openEntry.id,

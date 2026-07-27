@@ -1,0 +1,631 @@
+alter table if exists public.opportunity_pricing_worksheets
+  add column if not exists project_id uuid null references public.organization_projects (id) on delete set null,
+  add column if not exists quote_id uuid null references public.project_quotes (id) on delete set null,
+  add column if not exists variation_id uuid null references public.project_variations (id) on delete cascade,
+  add column if not exists last_active_sheet_id uuid null;
+
+alter table if exists public.opportunity_pricing_worksheets
+  drop constraint if exists opportunity_pricing_worksheets_module_owner_check;
+
+alter table if exists public.opportunity_pricing_worksheets
+  add constraint opportunity_pricing_worksheets_module_owner_check
+  check (
+    (quote_id is null and variation_id is null)
+    or (num_nonnulls(quote_id, variation_id) = 1 and project_id is not null)
+  );
+
+create unique index if not exists opportunity_pricing_worksheets_active_variation_owner_idx
+  on public.opportunity_pricing_worksheets (organization_id, variation_id)
+  where variation_id is not null
+    and archived_at is null;
+
+create index if not exists opportunity_pricing_worksheets_org_project_idx
+  on public.opportunity_pricing_worksheets (organization_id, project_id, updated_at desc)
+  where project_id is not null;
+
+create or replace function public.can_write_pricing_workbook_owner(
+  p_organization_id uuid,
+  p_opportunity_id uuid,
+  p_project_id uuid default null,
+  p_quote_id uuid default null,
+  p_variation_id uuid default null
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  resolved_project_source_opportunity_id uuid;
+begin
+  if not public.is_member_of_organization(p_organization_id) then
+    return false;
+  end if;
+
+  if p_variation_id is not null then
+    if not public.has_org_permission(p_organization_id, 'variations.write') then
+      return false;
+    end if;
+
+    if p_project_id is null then
+      return false;
+    end if;
+
+    select project.source_opportunity_id
+    into resolved_project_source_opportunity_id
+    from public.project_variations variation
+    join public.organization_projects project
+      on project.id = variation.project_id
+     and project.organization_id = variation.organization_id
+    where variation.id = p_variation_id
+      and variation.organization_id = p_organization_id
+      and variation.project_id = p_project_id;
+
+    if not found then
+      return false;
+    end if;
+
+    if resolved_project_source_opportunity_id is distinct from p_opportunity_id then
+      return false;
+    end if;
+
+    return true;
+  end if;
+
+  if p_quote_id is not null then
+    if not public.has_org_permission(p_organization_id, 'quotes.write') then
+      return false;
+    end if;
+
+    if p_project_id is null then
+      return false;
+    end if;
+
+    if not exists (
+      select 1
+      from public.project_quotes quote
+      where quote.id = p_quote_id
+        and quote.organization_id = p_organization_id
+        and quote.project_id = p_project_id
+        and quote.originating_opportunity_id = p_opportunity_id
+    ) then
+      return false;
+    end if;
+
+    return true;
+  end if;
+
+  if not public.has_org_permission(p_organization_id, 'leads.opportunities.write') then
+    return false;
+  end if;
+
+  return exists (
+    select 1
+    from public.organization_opportunities opportunity
+    where opportunity.id = p_opportunity_id
+      and opportunity.organization_id = p_organization_id
+  );
+end;
+$$;
+
+create or replace function public.validate_pricing_workbook_owner_lineage()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  resolved_project_source_opportunity_id uuid;
+begin
+  if new.variation_id is not null then
+    if new.project_id is null then
+      raise exception 'Variation-owned pricing worksheet requires project_id.';
+    end if;
+
+    select project.source_opportunity_id
+    into resolved_project_source_opportunity_id
+    from public.project_variations variation
+    join public.organization_projects project
+      on project.id = variation.project_id
+     and project.organization_id = variation.organization_id
+    where variation.id = new.variation_id
+      and variation.organization_id = new.organization_id
+      and variation.project_id = new.project_id;
+
+    if not found then
+      raise exception 'Variation worksheet lineage is invalid.';
+    end if;
+
+    if resolved_project_source_opportunity_id is distinct from new.opportunity_id then
+      raise exception 'Variation worksheet opportunity lineage is invalid.';
+    end if;
+  end if;
+
+  if new.quote_id is not null then
+    if new.project_id is null then
+      raise exception 'Quote-owned pricing worksheet requires project_id.';
+    end if;
+
+    if not exists (
+      select 1
+      from public.project_quotes quote
+      where quote.id = new.quote_id
+        and quote.organization_id = new.organization_id
+        and quote.project_id = new.project_id
+        and quote.originating_opportunity_id = new.opportunity_id
+    ) then
+      raise exception 'Quote worksheet lineage is invalid.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists validate_pricing_workbook_owner_lineage
+  on public.opportunity_pricing_worksheets;
+
+create trigger validate_pricing_workbook_owner_lineage
+before insert or update on public.opportunity_pricing_worksheets
+for each row execute function public.validate_pricing_workbook_owner_lineage();
+
+drop policy if exists "Privileged members can create opportunity pricing worksheets"
+  on public.opportunity_pricing_worksheets;
+
+create policy "Privileged members can create opportunity pricing worksheets"
+on public.opportunity_pricing_worksheets
+for insert
+with check (
+  opportunity_pricing_worksheets.created_by = auth.uid()
+  and opportunity_pricing_worksheets.updated_by = auth.uid()
+  and public.can_write_pricing_workbook_owner(
+    opportunity_pricing_worksheets.organization_id,
+    opportunity_pricing_worksheets.opportunity_id,
+    opportunity_pricing_worksheets.project_id,
+    opportunity_pricing_worksheets.quote_id,
+    opportunity_pricing_worksheets.variation_id
+  )
+);
+
+drop policy if exists "Privileged members can update opportunity pricing worksheets"
+  on public.opportunity_pricing_worksheets;
+
+create policy "Privileged members can update opportunity pricing worksheets"
+on public.opportunity_pricing_worksheets
+for update
+using (
+  public.can_write_pricing_workbook_owner(
+    opportunity_pricing_worksheets.organization_id,
+    opportunity_pricing_worksheets.opportunity_id,
+    opportunity_pricing_worksheets.project_id,
+    opportunity_pricing_worksheets.quote_id,
+    opportunity_pricing_worksheets.variation_id
+  )
+)
+with check (
+  opportunity_pricing_worksheets.updated_by = auth.uid()
+  and public.can_write_pricing_workbook_owner(
+    opportunity_pricing_worksheets.organization_id,
+    opportunity_pricing_worksheets.opportunity_id,
+    opportunity_pricing_worksheets.project_id,
+    opportunity_pricing_worksheets.quote_id,
+    opportunity_pricing_worksheets.variation_id
+  )
+);
+
+drop policy if exists "Privileged members can create opportunity pricing workbook sheets"
+  on public.opportunity_pricing_workbook_sheets;
+
+create policy "Privileged members can create opportunity pricing workbook sheets"
+on public.opportunity_pricing_workbook_sheets
+for insert
+with check (
+  opportunity_pricing_workbook_sheets.created_by = auth.uid()
+  and opportunity_pricing_workbook_sheets.updated_by = auth.uid()
+  and public.is_member_of_organization(opportunity_pricing_workbook_sheets.organization_id)
+  and exists (
+    select 1
+    from public.opportunity_pricing_worksheets workbook
+    where workbook.id = opportunity_pricing_workbook_sheets.workbook_id
+      and workbook.organization_id = opportunity_pricing_workbook_sheets.organization_id
+      and workbook.opportunity_id = opportunity_pricing_workbook_sheets.opportunity_id
+      and workbook.archived_at is null
+      and public.can_write_pricing_workbook_owner(
+        workbook.organization_id,
+        workbook.opportunity_id,
+        workbook.project_id,
+        workbook.quote_id,
+        workbook.variation_id
+      )
+  )
+);
+
+drop policy if exists "Privileged members can update opportunity pricing workbook sheets"
+  on public.opportunity_pricing_workbook_sheets;
+
+create policy "Privileged members can update opportunity pricing workbook sheets"
+on public.opportunity_pricing_workbook_sheets
+for update
+using (
+  public.is_member_of_organization(opportunity_pricing_workbook_sheets.organization_id)
+  and exists (
+    select 1
+    from public.opportunity_pricing_worksheets workbook
+    where workbook.id = opportunity_pricing_workbook_sheets.workbook_id
+      and workbook.organization_id = opportunity_pricing_workbook_sheets.organization_id
+      and workbook.opportunity_id = opportunity_pricing_workbook_sheets.opportunity_id
+      and workbook.archived_at is null
+      and public.can_write_pricing_workbook_owner(
+        workbook.organization_id,
+        workbook.opportunity_id,
+        workbook.project_id,
+        workbook.quote_id,
+        workbook.variation_id
+      )
+  )
+)
+with check (
+  public.is_member_of_organization(opportunity_pricing_workbook_sheets.organization_id)
+  and opportunity_pricing_workbook_sheets.updated_by = auth.uid()
+  and exists (
+    select 1
+    from public.opportunity_pricing_worksheets workbook
+    where workbook.id = opportunity_pricing_workbook_sheets.workbook_id
+      and workbook.organization_id = opportunity_pricing_workbook_sheets.organization_id
+      and workbook.opportunity_id = opportunity_pricing_workbook_sheets.opportunity_id
+      and workbook.archived_at is null
+      and public.can_write_pricing_workbook_owner(
+        workbook.organization_id,
+        workbook.opportunity_id,
+        workbook.project_id,
+        workbook.quote_id,
+        workbook.variation_id
+      )
+  )
+);
+
+drop policy if exists "Privileged members can delete opportunity pricing workbook sheets"
+  on public.opportunity_pricing_workbook_sheets;
+
+create policy "Privileged members can delete opportunity pricing workbook sheets"
+on public.opportunity_pricing_workbook_sheets
+for delete
+using (
+  public.is_member_of_organization(opportunity_pricing_workbook_sheets.organization_id)
+  and exists (
+    select 1
+    from public.opportunity_pricing_worksheets workbook
+    where workbook.id = opportunity_pricing_workbook_sheets.workbook_id
+      and workbook.organization_id = opportunity_pricing_workbook_sheets.organization_id
+      and workbook.opportunity_id = opportunity_pricing_workbook_sheets.opportunity_id
+      and workbook.archived_at is null
+      and public.can_write_pricing_workbook_owner(
+        workbook.organization_id,
+        workbook.opportunity_id,
+        workbook.project_id,
+        workbook.quote_id,
+        workbook.variation_id
+      )
+  )
+);
+
+create or replace function public.save_pricing_workbook_active_sheet(
+  p_organization_id uuid,
+  p_opportunity_id uuid,
+  p_project_id uuid default null,
+  p_quote_id uuid default null,
+  p_user_id uuid default null,
+  p_variation_id uuid default null,
+  p_workbook_id uuid default null,
+  p_sheet_id uuid default null,
+  p_name text default null,
+  p_trade_package text default null,
+  p_worksheet_data jsonb default '{}'::jsonb,
+  p_pricing_summary jsonb default '{}'::jsonb,
+  p_extracted_pricing_data jsonb default '{}'::jsonb,
+  p_version integer default 1,
+  p_save_request_id text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_workbook public.opportunity_pricing_worksheets%rowtype;
+  v_sheet public.opportunity_pricing_workbook_sheets%rowtype;
+  v_target_sheet public.opportunity_pricing_workbook_sheets%rowtype;
+  v_sheet_name text;
+  v_worksheet_data jsonb;
+  v_version integer;
+  v_should_sync_parent boolean := false;
+  v_actor_member_id uuid;
+  v_actor_role text;
+  v_save_request_id text;
+begin
+  v_sheet_name := public._normalize_opportunity_pricing_workbook_name(
+    p_name,
+    coalesce(nullif(trim(p_worksheet_data->>'sheetName'), ''), 'Pricing Worksheet')
+  );
+  v_worksheet_data := public._sync_opportunity_pricing_workbook_sheet_name(
+    coalesce(p_worksheet_data, '{}'::jsonb),
+    v_sheet_name
+  );
+  v_version := greatest(coalesce(p_version, nullif((v_worksheet_data->>'version')::integer, 0), 1), 1);
+  v_save_request_id := nullif(btrim(coalesce(p_save_request_id, '')), '');
+
+  if auth.uid() is not null then
+    select member.id, member.role
+    into v_actor_member_id, v_actor_role
+    from public.organization_members member
+    where member.organization_id = p_organization_id
+      and member.user_id = auth.uid()
+    limit 1;
+  end if;
+
+  if p_workbook_id is null then
+    insert into public.opportunity_pricing_worksheets (
+      organization_id,
+      opportunity_id,
+      project_id,
+      quote_id,
+      variation_id,
+      name,
+      trade_package,
+      worksheet_data,
+      pricing_summary,
+      extracted_pricing_data,
+      version,
+      created_by,
+      updated_by
+    )
+    values (
+      p_organization_id,
+      p_opportunity_id,
+      p_project_id,
+      p_quote_id,
+      p_variation_id,
+      v_sheet_name,
+      p_trade_package,
+      v_worksheet_data,
+      coalesce(p_pricing_summary, '{}'::jsonb),
+      coalesce(p_extracted_pricing_data, '{}'::jsonb),
+      v_version,
+      p_user_id,
+      p_user_id
+    )
+    returning * into v_workbook;
+    v_should_sync_parent := true;
+  else
+    select *
+    into v_workbook
+    from public.opportunity_pricing_worksheets workbook
+    where workbook.id = p_workbook_id
+      and workbook.organization_id = p_organization_id
+      and workbook.opportunity_id = p_opportunity_id
+      and workbook.archived_at is null
+      and (
+        (p_quote_id is null and workbook.quote_id is null)
+        or workbook.quote_id = p_quote_id
+      )
+      and (
+        (p_variation_id is null and workbook.variation_id is null)
+        or workbook.variation_id = p_variation_id
+      )
+      and (
+        (p_project_id is null and workbook.project_id is null)
+        or workbook.project_id = p_project_id
+      );
+
+    if not found then
+      raise exception 'Pricing worksheet not found.';
+    end if;
+
+    if p_sheet_id is not null then
+      select *
+      into v_target_sheet
+      from public.opportunity_pricing_workbook_sheets
+      where id = p_sheet_id
+        and workbook_id = v_workbook.id
+        and organization_id = p_organization_id
+        and opportunity_id = p_opportunity_id;
+
+      if not found then
+        raise exception 'Worksheet page not found.';
+      end if;
+
+      v_should_sync_parent := coalesce(v_target_sheet.is_default, false);
+    else
+      v_should_sync_parent := true;
+    end if;
+
+    if v_should_sync_parent then
+      update public.opportunity_pricing_worksheets
+      set
+        name = v_sheet_name,
+        trade_package = p_trade_package,
+        worksheet_data = v_worksheet_data,
+        pricing_summary = coalesce(p_pricing_summary, '{}'::jsonb),
+        extracted_pricing_data = coalesce(p_extracted_pricing_data, '{}'::jsonb),
+        version = v_version,
+        updated_by = p_user_id
+      where id = p_workbook_id
+        and organization_id = p_organization_id
+        and opportunity_id = p_opportunity_id
+        and archived_at is null
+      returning * into v_workbook;
+    else
+      update public.opportunity_pricing_worksheets
+      set
+        trade_package = p_trade_package,
+        updated_by = p_user_id
+      where id = p_workbook_id
+        and organization_id = p_organization_id
+        and opportunity_id = p_opportunity_id
+        and archived_at is null
+      returning * into v_workbook;
+    end if;
+  end if;
+
+  if p_sheet_id is not null then
+    update public.opportunity_pricing_workbook_sheets
+    set
+      name = v_sheet_name,
+      worksheet_data = v_worksheet_data,
+      pricing_summary = coalesce(p_pricing_summary, '{}'::jsonb),
+      extracted_pricing_data = coalesce(p_extracted_pricing_data, '{}'::jsonb),
+      version = v_version,
+      updated_by = p_user_id
+    where id = p_sheet_id
+      and workbook_id = v_workbook.id
+      and organization_id = p_organization_id
+      and opportunity_id = p_opportunity_id
+    returning * into v_sheet;
+  end if;
+
+  if v_sheet.id is null then
+    update public.opportunity_pricing_workbook_sheets
+    set
+      name = v_sheet_name,
+      worksheet_data = v_worksheet_data,
+      pricing_summary = coalesce(p_pricing_summary, '{}'::jsonb),
+      extracted_pricing_data = coalesce(p_extracted_pricing_data, '{}'::jsonb),
+      version = v_version,
+      updated_by = p_user_id
+    where workbook_id = v_workbook.id
+      and organization_id = p_organization_id
+      and opportunity_id = p_opportunity_id
+      and is_default = true
+    returning * into v_sheet;
+  end if;
+
+  if v_sheet.id is null then
+    insert into public.opportunity_pricing_workbook_sheets (
+      workbook_id,
+      organization_id,
+      opportunity_id,
+      name,
+      sheet_order,
+      is_default,
+      worksheet_data,
+      pricing_summary,
+      extracted_pricing_data,
+      version,
+      created_by,
+      updated_by
+    )
+    values (
+      v_workbook.id,
+      p_organization_id,
+      p_opportunity_id,
+      v_sheet_name,
+      0,
+      true,
+      v_worksheet_data,
+      coalesce(p_pricing_summary, '{}'::jsonb),
+      coalesce(p_extracted_pricing_data, '{}'::jsonb),
+      v_version,
+      p_user_id,
+      p_user_id
+    )
+    returning * into v_sheet;
+  end if;
+
+  insert into public.intelligence_events (
+    organization_id,
+    project_id,
+    opportunity_id,
+    module,
+    event_family,
+    event_type,
+    action,
+    entity_type,
+    entity_id,
+    parent_entity_type,
+    parent_entity_id,
+    related_entities,
+    lineage_refs,
+    actor_user_id,
+    actor_member_id,
+    actor_role,
+    source_channel,
+    source_request_id,
+    diff_data,
+    metadata,
+    privacy_classification,
+    visibility_scope,
+    contains_financial_data,
+    contains_personal_data,
+    contains_attachment_content,
+    occurred_at
+  )
+  values (
+    p_organization_id,
+    v_workbook.project_id,
+    p_opportunity_id,
+    'pricing_worksheets',
+    'commercial_action',
+    'worksheet_saved',
+    'saved',
+    'pricing_worksheet_page',
+    v_sheet.id,
+    'pricing_workbook',
+    v_workbook.id,
+    '[]'::jsonb,
+    '[]'::jsonb,
+    auth.uid(),
+    v_actor_member_id,
+    v_actor_role,
+    'system',
+    v_save_request_id,
+    '{}'::jsonb,
+    jsonb_build_object(
+      'workbookId', v_workbook.id,
+      'workbookName', v_workbook.name,
+      'sheetId', v_sheet.id,
+      'sheetName', v_sheet.name,
+      'worksheetId', v_workbook.id,
+      'worksheetName', v_workbook.name,
+      'version', v_version,
+      'tradePackage', v_workbook.trade_package,
+      'userId', p_user_id,
+      'projectId', v_workbook.project_id,
+      'source', 'system',
+      'ownerType',
+      case
+        when v_workbook.variation_id is not null then 'variation'
+        when v_workbook.quote_id is not null then 'quote'
+        else 'opportunity'
+      end,
+      'ownerVariationId', v_workbook.variation_id,
+      'ownerQuoteId', v_workbook.quote_id,
+      'structureSummary', public._pricing_worksheet_structure_summary(v_worksheet_data)
+    ),
+    'financial_sensitive',
+    'organization',
+    true,
+    false,
+    false,
+    now()
+  )
+  on conflict (organization_id, source_request_id)
+    where module = 'pricing_worksheets'
+      and event_type = 'worksheet_saved'
+      and source_request_id is not null
+  do nothing;
+
+  return jsonb_build_object(
+    'workbook', row_to_json(v_workbook),
+    'sheet', row_to_json(v_sheet),
+    'sheets', (
+      select coalesce(jsonb_agg(row_to_json(sheet) order by sheet.sheet_order asc, sheet.created_at asc), '[]'::jsonb)
+      from public.opportunity_pricing_workbook_sheets sheet
+      where sheet.workbook_id = v_workbook.id
+        and sheet.organization_id = p_organization_id
+        and sheet.opportunity_id = p_opportunity_id
+    )
+  );
+end;
+$$;
+
+grant execute on function public.can_write_pricing_workbook_owner(uuid, uuid, uuid, uuid, uuid) to authenticated;
+grant execute on function public.save_pricing_workbook_active_sheet(uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, jsonb, jsonb, jsonb, integer, text) to authenticated;
