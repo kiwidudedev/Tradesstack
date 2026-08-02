@@ -5,10 +5,14 @@ import { hashAccountingEvidence } from "@/lib/accounting/accounting-evidence";
 import { hasXeroInvoiceScope } from "@/lib/xero/scopes";
 import {
   nextRetentionClaimReplacementNumber,
+  retentionInheritedEvidenceChanged,
   resolveRetentionClaimAccountingOperation,
   type RetentionClaimAccountingDecision,
   type RetentionClaimProviderState,
 } from "@/lib/xero/retention-claim-accounting-decision";
+import {
+  resolveRetentionClaimAccountingDrift,
+} from "@/lib/xero/retention-claim-accounting-drift";
 
 type Row = Record<string, unknown>;
 type Db = {
@@ -74,6 +78,11 @@ export async function resolveRetentionClaimAccountingOperationForState(params: {
   connection: Row | null;
   hasPushPermission: boolean;
   featureEnabled: boolean;
+  desiredSubtotalMinor?: number;
+  desiredTaxMinor?: number;
+  desiredTotalMinor?: number;
+  desiredTaxType?: string;
+  desiredOriginRevisionLineId?: string;
   hasActiveFinancialWork?: boolean;
   hasUncertainFinancialResult?: boolean;
 }): Promise<RetentionClaimAccountingDecision & {
@@ -192,13 +201,34 @@ export async function resolveRetentionClaimAccountingOperationForState(params: {
     ?? text(revisionPayload.Date);
   const activeDueDate = text(revisionCommercial.dueDate)
     ?? text(revisionPayload.DueDate);
-  const dateChangedAfterExport = Boolean(
-    revision
-    && (
-      (params.issueDate && params.issueDate !== activeIssueDate)
-      || (params.dueDate && params.dueDate !== activeDueDate)
-    ),
-  );
+  const drift = resolveRetentionClaimAccountingDrift({
+    activeStructuredSourceHash: activeHash,
+    currentStructuredSourceHash: text(params.sourceStateHash),
+    activeIssueDate,
+    currentIssueDate: text(params.issueDate),
+    activeDueDate,
+    currentDueDate: text(params.dueDate),
+  });
+  const revisionTaxSnapshot = object(revision?.tax_snapshot);
+  const inheritedEvidenceChanged = retentionInheritedEvidenceChanged({
+    active: revision
+      ? {
+          subtotalMinor: number(revision.subtotal_minor),
+          taxMinor: number(revision.tax_minor),
+          totalMinor: number(revision.total_minor),
+          taxType: text(revisionTaxSnapshot.taxType),
+          originRevisionLineId:
+            text(revisionTaxSnapshot.originAccountingRevisionLineId),
+        }
+      : null,
+    desired: {
+      subtotalMinor: params.desiredSubtotalMinor,
+      taxMinor: params.desiredTaxMinor,
+      totalMinor: params.desiredTotalMinor,
+      taxType: params.desiredTaxType,
+      originRevisionLineId: params.desiredOriginRevisionLineId,
+    },
+  });
   const legacyAdoptionEligible = Boolean(
     params.document
     && params.document.integration_contract !== "retention_claim_revision_v1"
@@ -262,9 +292,8 @@ export async function resolveRetentionClaimAccountingOperationForState(params: {
       || number(projection?.amount_due_minor) < 0
       || number(projection?.amount_credited_minor) < 0,
     contentDivergence: projection?.divergent === true,
-    claimChangedAfterExport: Boolean(
-      activeHash && params.sourceStateHash && activeHash !== params.sourceStateHash,
-    ) || dateChangedAfterExport,
+    claimChangedAfterExport:
+      drift.claimChangedAfterExport || inheritedEvidenceChanged,
     canRefresh: Boolean(
       text(revision?.external_document_id)
       ?? text(params.document?.external_document_id),
@@ -286,10 +315,9 @@ export async function resolveRetentionClaimAccountingOperationForState(params: {
           observedAt: observationRow.observed_at,
         })
       : null,
-    financialChangedAfterExport: Boolean(
-      activeHash && params.sourceStateHash && activeHash !== params.sourceStateHash,
-    ),
-    dateChangedAfterExport,
+    financialChangedAfterExport:
+      drift.financialChangedAfterExport || inheritedEvidenceChanged,
+    dateChangedAfterExport: drift.dateChangedAfterExport,
     nextRevisionSequence: Math.max(
       0,
       ...(revisionsResult.data ?? []).map(

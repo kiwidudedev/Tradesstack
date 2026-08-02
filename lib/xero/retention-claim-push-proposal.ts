@@ -7,7 +7,7 @@ import {
   loadRetentionClaimXeroResolved,
 } from "@/lib/xero/retention-claim-sales-invoice";
 import {
-  buildRetentionClaimXeroPayload,
+  buildDirectInheritedRetentionClaimXeroPayload,
   type RetentionClaimXeroSource,
 } from "@/lib/xero/retention-claim-sales-invoice-payload";
 import { hashAccountingEvidence } from "@/lib/accounting/accounting-evidence";
@@ -19,6 +19,10 @@ import {
 import { resolveRetentionClaimAccountingOperationForState } from "@/lib/xero/retention-claim-accounting-decision-server";
 import { resolveRetentionClaimProposalInvoiceNumber } from "@/lib/xero/retention-claim-proposal-identity";
 import type { XeroActionTiming } from "@/lib/xero/action-performance";
+import { proposalDecisionError } from "@/lib/xero/retention-claim-proposal-decision-error";
+import {
+  loadDirectRetentionOriginEvidence,
+} from "@/lib/xero/retention-claim-direct-origin-evidence-server";
 
 type Row = Record<string, unknown>;
 type Admin = {
@@ -147,6 +151,12 @@ export async function buildRetentionClaimPushProposal(params: {
   if (resolved.source.claim.organizationId !== params.organizationId) {
     throw new Error("The Retention Claim belongs to another organisation.");
   }
+  const originEvidence = resolved.originEvidence;
+  if (!originEvidence) {
+    throw new Error(
+      "The originating Payment Claim retention tax evidence could not be resolved.",
+    );
+  }
 
   const ownership = timing
     ? await timing.span("retention_ownership", () =>
@@ -168,15 +178,13 @@ export async function buildRetentionClaimPushProposal(params: {
     throw new Error("Retention ownership changed. Review the Retention Claim before pushing.");
   }
 
-  const payloadResult = buildRetentionClaimXeroPayload({
+  const payloadResult = buildDirectInheritedRetentionClaimXeroPayload({
     source: resolved.source,
     projectName: text(resolved.project.name),
     contactId: resolved.contactId,
-    accountCode: text(resolved.costCode.external_code),
-    taxType: text(resolved.taxRate.tax_type),
-    taxRateBasisPoints:
-      Math.round(Number(resolved.taxRate.effective_rate) * 100),
-    currencyCode: text(resolved.organization.default_currency),
+    routeAccountCode: text(resolved.costCode.external_code),
+    configuredDefaultTaxType: text(resolved.taxRate.tax_type),
+    evidence: originEvidence,
   });
   const sourceStateHash = text(resolved.source.claim.submissionStateHash);
   const decision = timing
@@ -193,6 +201,13 @@ export async function buildRetentionClaimPushProposal(params: {
           connection: resolved.connection as unknown as Row,
           hasPushPermission: params.hasPushPermission ?? true,
           featureEnabled,
+          desiredSubtotalMinor:
+            Math.round(payloadResult.subtotalExclTax * 100),
+          desiredTaxMinor: Math.round(payloadResult.taxTotal * 100),
+          desiredTotalMinor: Math.round(payloadResult.total * 100),
+          desiredTaxType: originEvidence.taxType,
+          desiredOriginRevisionLineId:
+            originEvidence.originAccountingRevisionLineId,
         }))
     : await resolveRetentionClaimAccountingOperationForState({
         organizationId: params.organizationId,
@@ -206,9 +221,18 @@ export async function buildRetentionClaimPushProposal(params: {
         connection: resolved.connection as unknown as Row,
         hasPushPermission: params.hasPushPermission ?? true,
         featureEnabled,
+        desiredSubtotalMinor:
+          Math.round(payloadResult.subtotalExclTax * 100),
+        desiredTaxMinor: Math.round(payloadResult.taxTotal * 100),
+        desiredTotalMinor: Math.round(payloadResult.total * 100),
+        desiredTaxType: originEvidence.taxType,
+        desiredOriginRevisionLineId:
+          originEvidence.originAccountingRevisionLineId,
       });
   if (!decision.canPush) {
-    throw new Error(decision.blockers[0]?.message ?? "This Retention Claim cannot be pushed to Xero.");
+    const decisionBlocker = decision.blockers[0];
+    if (decisionBlocker) throw proposalDecisionError(decisionBlocker);
+    throw new Error("This Retention Claim cannot be pushed to Xero.");
   }
   if (decision.operation === "LEGACY_ADOPTION_REQUIRED") {
     throw new Error("The historical Retention Claim invoice must be adopted before preview.");
@@ -231,6 +255,7 @@ export async function buildRetentionClaimPushProposal(params: {
   const lines = buildRetentionClaimRevisionLines({
     payload,
     lines: payloadResult.lines,
+    directOriginEvidence: originEvidence,
   });
   const commercialSnapshot = {
     commercialClaimNumber: resolved.source.claim.claimNumber,
@@ -258,9 +283,14 @@ export async function buildRetentionClaimPushProposal(params: {
     },
   };
   const taxSnapshot = {
-    taxRateId: resolved.taxRate.id,
-    taxType: resolved.taxRate.tax_type,
-    effectiveRate: resolved.taxRate.effective_rate,
+    inheritanceContract: originEvidence.contract,
+    originAccountingRevisionId:
+      originEvidence.originAccountingRevisionId,
+    originAccountingRevisionLineId:
+      originEvidence.originAccountingRevisionLineId,
+    taxRateId: originEvidence.taxRateSnapshotId,
+    taxType: originEvidence.taxType,
+    effectiveRate: originEvidence.effectiveRate,
   };
   const ownershipSnapshot = ownership.data as Record<string, unknown>;
   const sourceEvidence = {
@@ -283,6 +313,7 @@ export async function buildRetentionClaimPushProposal(params: {
     mappingUpdatedAt: resolved.mapping.updated_at,
     costCodeUpdatedAt: resolved.costCode.updated_at,
     taxRateSyncedAt: resolved.taxRate.synced_at,
+    originEvidence,
     ownership: ownershipSnapshot,
   };
   const previousRevision = decision.activeRevisionId
@@ -498,7 +529,8 @@ export async function validateRetentionClaimProposalStillCurrent(
       && text(row.status).toUpperCase() === "ACTIVE"
       && Number.isFinite(Number(row.effective_rate))
       && Number(row.effective_rate) >= 0
-      && Boolean(text(row.tax_type))
+      && text(row.tax_type).toUpperCase()
+        === text(proposal.taxSnapshot.taxType).toUpperCase()
       && rowMeta.canApplyToRevenue === true;
   });
   if (!mapping || !taxRate) {
@@ -539,6 +571,16 @@ export async function validateRetentionClaimProposalStillCurrent(
   const costMeta = metadata(costCode.data as Row);
   const taxMeta = metadata(taxRate);
   const currency = text(organization.data.default_currency).toUpperCase();
+  const originResolution = await loadDirectRetentionOriginEvidence({
+    source,
+    connectionId: proposal.connectionId,
+    tenantId: proposal.tenantId,
+    currencyCode: currency,
+    routeAccountCode: text(costCode.data?.external_code),
+  });
+  if (!originResolution.ok) {
+    return { valid: false, sourceChanged: false, ownershipChanged: false };
+  }
   const dependenciesValid =
     /^[A-Z]{3}$/.test(currency)
     && connection.data.status === "connected"
@@ -559,7 +601,6 @@ export async function validateRetentionClaimProposalStillCurrent(
     && !["ARCHIVED", "GDPRREQUEST"].includes(
       text(contact.data.contact_status).toUpperCase(),
     )
-    && taxRate.id === proposal.taxSnapshot.taxRateId
     && taxRate.accounting_connection_id === proposal.connectionId
     && taxRate.tenant_id === proposal.tenantId
     && taxRate.is_active === true
@@ -572,14 +613,13 @@ export async function validateRetentionClaimProposalStillCurrent(
     return { valid: false, sourceChanged: false, ownershipChanged: false };
   }
 
-  const payloadResult = buildRetentionClaimXeroPayload({
+  const payloadResult = buildDirectInheritedRetentionClaimXeroPayload({
     source,
     projectName: text(project.data.name),
     contactId: currentContactId,
-    accountCode: text(costCode.data.external_code),
-    taxType: text(taxRate.tax_type),
-    taxRateBasisPoints: Math.round(Number(taxRate.effective_rate) * 100),
-    currencyCode: currency,
+    routeAccountCode: text(costCode.data.external_code),
+    configuredDefaultTaxType: text(taxRate.tax_type),
+    evidence: originResolution.evidence,
   });
   const payload = {
     ...payloadResult.payload,
@@ -588,6 +628,7 @@ export async function validateRetentionClaimProposalStillCurrent(
   const lines = buildRetentionClaimRevisionLines({
     payload,
     lines: payloadResult.lines,
+    directOriginEvidence: originResolution.evidence,
   });
   const commercialSnapshot = {
     commercialClaimNumber: source.claim.claimNumber,
@@ -619,6 +660,7 @@ export async function validateRetentionClaimProposalStillCurrent(
     mappingUpdatedAt: mapping.updated_at,
     costCodeUpdatedAt: costCode.data.updated_at,
     taxRateSyncedAt: taxRate.synced_at,
+    originEvidence: originResolution.evidence,
     ownership: ownership.data as Record<string, unknown>,
   };
   const hashes = calculateRetentionClaimPushHashes({

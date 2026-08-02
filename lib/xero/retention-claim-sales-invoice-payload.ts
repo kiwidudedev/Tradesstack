@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import type {
+  DirectRetentionOriginEvidence,
+} from "@/lib/xero/retention-claim-direct-origin-evidence";
 
 export type RetentionClaimXeroAllocationSource = {
   id: string;
@@ -41,6 +44,8 @@ export type RetentionClaimXeroPayload = {
     Description: string;
     Quantity: 1;
     UnitAmount: number;
+    LineAmount?: number;
+    TaxAmount?: number;
     AccountCode: string;
     TaxType: string;
   }>;
@@ -307,5 +312,125 @@ export function buildRetentionClaimXeroPayload(params: {
     subtotalExclTax: subtotalCents / 100,
     taxTotal: taxCents / 100,
     total: (subtotalCents + taxCents) / 100,
+  };
+}
+
+export function buildDirectInheritedRetentionClaimXeroPayload(params: {
+  source: RetentionClaimXeroSource;
+  projectName: string;
+  contactId: string;
+  routeAccountCode: string;
+  configuredDefaultTaxType?: string;
+  evidence: DirectRetentionOriginEvidence;
+}) {
+  if (params.source.claim.status !== "submitted") {
+    throw new RetentionClaimXeroPayloadError(
+      "not_submitted",
+      "Only submitted Retention Claims can synchronize to Xero.",
+    );
+  }
+  if (params.source.allocations.length !== 1) {
+    throw new RetentionClaimXeroPayloadError(
+      "allocation_mismatch",
+      "Direct Retention GST inheritance supports exactly one originating Payment Claim.",
+    );
+  }
+  const allocation = params.source.allocations[0]!;
+  const evidence = params.evidence;
+  const amountMinor = toCents(
+    allocation.allocationAmount,
+    `allocation ${allocation.id}`,
+  );
+  if (
+    evidence.contract !== "direct_immutable_retention_v1"
+    || evidence.allocationId !== allocation.id
+    || evidence.originatingPaymentClaimId
+      !== allocation.originatingPaymentClaimId
+    || evidence.releaseAmountMinor !== amountMinor
+    || evidence.releaseAmountMinor !== -evidence.originAmountMinor
+    || evidence.releaseTaxMinor !== -evidence.originTaxMinor
+    || evidence.releaseTotalMinor !== -evidence.originTotalMinor
+    || evidence.releaseTotalMinor
+      !== evidence.releaseAmountMinor + evidence.releaseTaxMinor
+    || evidence.accountCode !== params.routeAccountCode
+  ) {
+    throw new RetentionClaimXeroPayloadError(
+      "allocation_mismatch",
+      "The Retention Claim allocation does not exactly reverse its immutable originating retention line.",
+    );
+  }
+  const persistedSubtotalMinor = toCents(
+    params.source.claim.subtotalExclTax,
+    "submitted Retention Claim subtotal",
+  );
+  if (persistedSubtotalMinor !== evidence.releaseAmountMinor) {
+    throw new RetentionClaimXeroPayloadError(
+      "allocation_mismatch",
+      "The submitted Retention Claim subtotal does not match the immutable originating retention line.",
+    );
+  }
+  const claimNumber = requiredText(
+    params.source.claim.claimNumber,
+    "Retention Claim number",
+  );
+  const originNumber = requiredText(
+    allocation.originClaimNumberSnapshot,
+    "Originating Payment Claim number",
+  );
+  const description = `Retention release — Payment Claim ${originNumber}`;
+  const lineAmount = evidence.releaseAmountMinor / 100;
+  const taxAmount = evidence.releaseTaxMinor / 100;
+  const total = evidence.releaseTotalMinor / 100;
+  const payload: RetentionClaimXeroPayload = {
+    Type: "ACCREC",
+    Contact: {
+      ContactID: requiredText(params.contactId, "Xero ContactID"),
+    },
+    InvoiceNumber: claimNumber,
+    Reference: `${requiredText(params.projectName, "Project name")} | Retention Claim ${claimNumber}`,
+    Date: requiredDate(
+      params.source.claim.issueDate,
+      "Retention Claim issue date",
+    ),
+    DueDate: requiredDate(
+      params.source.claim.dueDate,
+      "Retention Claim due date",
+    ),
+    CurrencyCode: requiredText(
+      evidence.currencyCode,
+      "Origin revision currency",
+    ).toUpperCase(),
+    LineAmountTypes: "Exclusive",
+    Status: "AUTHORISED",
+    LineItems: [{
+      Description: description,
+      Quantity: 1,
+      UnitAmount: lineAmount,
+      LineAmount: lineAmount,
+      TaxAmount: taxAmount,
+      AccountCode: requiredText(evidence.accountCode, "Origin retention AccountCode"),
+      TaxType: requiredText(evidence.taxType, "Origin retention TaxType"),
+    }],
+  };
+  return {
+    payload,
+    payloadSha256: hashRetentionClaimXeroPayload(payload),
+    idempotencyKey: buildRetentionClaimXeroIdempotencyKey({
+      organizationId: params.source.claim.organizationId,
+      retentionClaimId: params.source.claim.id,
+    }),
+    lines: [{
+      allocationId: allocation.id,
+      originatingPaymentClaimId: allocation.originatingPaymentClaimId,
+      sequence: allocation.allocationSequence,
+      description,
+      lineAmountExclTax: lineAmount,
+      taxAmount,
+      grossAmount: total,
+      originClaimNumber: originNumber,
+    }] satisfies RetentionClaimXeroAccountingLine[],
+    subtotalExclTax: lineAmount,
+    taxTotal: taxAmount,
+    total,
   };
 }

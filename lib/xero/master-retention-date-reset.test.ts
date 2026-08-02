@@ -229,7 +229,11 @@ describe("master Retention Claim date reset and same-invoice update", () => {
     expect(decisionServer).toContain("dateChangedAfterExport");
     expect(decisionServer).toContain("revisionCommercial.issueDate");
     expect(decisionServer).toContain("revisionCommercial.dueDate");
-    expect(decisionServer).toContain("|| dateChangedAfterExport");
+    expect(decisionServer).toContain("drift.claimChangedAfterExport");
+    expect(decisionServer).toContain("inheritedEvidenceChanged");
+    expect(decisionServer).toContain(
+      "dateChangedAfterExport: drift.dateChangedAfterExport",
+    );
     expect(resolveRetentionClaimAccountingOperation(
       safeDecision({ claimChangedAfterExport: true }),
     ).operation).toBe("UPDATE_EXISTING_INVOICE");

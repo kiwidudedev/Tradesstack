@@ -303,6 +303,36 @@ describe("Retention Claim immutable Xero accounting panel", () => {
     expect(payment).not.toContain("pushRetentionClaimToXeroAction");
   });
 
+  it("shows GST-inclusive authoritative values only for an inherited revision", () => {
+    const markup = render(state({
+      status: "synced",
+      statusLabel: "Synced",
+      invoiceNumber: "26030-RC-01",
+      amountOutstanding: 1150,
+      invoiceSubtotalMinor: 100000,
+      invoiceTaxMinor: 15000,
+      invoiceTotalMinor: 115000,
+      authoritativeInheritedTax: true,
+    }));
+    expect(markup).toContain("Retention excl. GST");
+    expect(markup).toContain("GST");
+    expect(markup).toContain("Total incl. GST");
+    expect(markup).toContain("$1,000.00");
+    expect(markup).toContain("$150.00");
+    expect(markup).toContain("$1,150.00");
+
+    const legacyMarkup = render(state({
+      status: "synced",
+      statusLabel: "Synced",
+      invoiceNumber: "26030-RC-01",
+      invoiceSubtotalMinor: 100000,
+      invoiceTaxMinor: null,
+      invoiceTotalMinor: 100000,
+      authoritativeInheritedTax: false,
+    }));
+    expect(legacyMarkup).not.toContain("Retention excl. GST");
+  });
+
   it("keeps proposal identity and preview state out of the browser", () => {
     const source = readFileSync(
       join(process.cwd(), "components/app/RetentionClaimXeroPanel.tsx"),

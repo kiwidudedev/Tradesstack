@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   nextRetentionClaimReplacementNumber,
+  retentionInheritedEvidenceChanged,
   resolveRetentionClaimAccountingOperation,
   type RetentionClaimAccountingDecisionInput,
 } from "./retention-claim-accounting-decision";
@@ -121,6 +122,32 @@ describe("Retention Claim accounting decision engine", () => {
       operation: "UPDATE_EXISTING_INVOICE",
       canPush: true,
       accountingState: "update_required",
+      workerKind: "xero.retention_claim.update",
+    });
+  });
+
+  it("classifies inherited GST and origin-line drift as an accounting update", () => {
+    expect(retentionInheritedEvidenceChanged({
+      active: {
+        subtotalMinor: 100000,
+        taxMinor: 0,
+        totalMinor: 100000,
+        taxType: "NONE",
+        originRevisionLineId: null,
+      },
+      desired: {
+        subtotalMinor: 100000,
+        taxMinor: 15000,
+        totalMinor: 115000,
+        taxType: "OUTPUT2",
+        originRevisionLineId: "origin-line-1",
+      },
+    })).toBe(true);
+    expect(resolveRetentionClaimAccountingOperation({
+      ...base,
+      claimChangedAfterExport: true,
+    })).toMatchObject({
+      operation: "UPDATE_EXISTING_INVOICE",
       workerKind: "xero.retention_claim.update",
     });
   });

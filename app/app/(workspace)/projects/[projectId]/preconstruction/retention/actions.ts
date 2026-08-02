@@ -78,6 +78,12 @@ import {
   loadRetentionClaimLocalAccountingComparison,
   parseAccountingSyncCompletionEvidence,
 } from "@/lib/xero/accounting-sync-completion-evidence";
+import {
+  RetentionClaimProposalDecisionError,
+} from "@/lib/xero/retention-claim-proposal-decision-error";
+import {
+  recoverSynchronizedRetentionClaimPanel,
+} from "@/lib/xero/retention-claim-stale-panel-recovery";
 
 function retentionCompletionEvidence(
   execution: Awaited<ReturnType<typeof runXeroSyncWorker>>,
@@ -687,6 +693,13 @@ function immutableXeroActionError(
   error: unknown,
   fallbackSupportReference: string | null = null,
 ): RetentionClaimXeroActionError {
+  if (error instanceof RetentionClaimProposalDecisionError) {
+    return {
+      code: error.code,
+      message: error.message,
+      supportReference: null,
+    };
+  }
   if (error instanceof RetentionClaimPushError) {
     return {
       code: error.code,
@@ -1191,8 +1204,16 @@ export async function pushRetentionClaimToXeroAction(params: {
       }
     },
   });
+  const recovered = result.ok
+    ? result
+    : await recoverSynchronizedRetentionClaimPanel({
+        failed: result,
+        loadPanel: () => getRetentionClaimImmutableXeroPanel(
+          params.retentionClaimId,
+        ),
+      });
   timing.complete();
-  return result;
+  return recovered;
 }
 
 export async function refreshRetentionClaimXeroAction(params: {

@@ -86,6 +86,33 @@ export type RetentionClaimAccountingDecision = {
   warnings: string[];
 };
 
+export function retentionInheritedEvidenceChanged(params: {
+  active: {
+    subtotalMinor: number;
+    taxMinor: number;
+    totalMinor: number;
+    taxType: string | null;
+    originRevisionLineId: string | null;
+  } | null;
+  desired: {
+    subtotalMinor?: number;
+    taxMinor?: number;
+    totalMinor?: number;
+    taxType?: string;
+    originRevisionLineId?: string;
+  };
+}) {
+  const { active, desired } = params;
+  if (!active) return false;
+  return (desired.subtotalMinor != null
+      && active.subtotalMinor !== desired.subtotalMinor)
+    || (desired.taxMinor != null && active.taxMinor !== desired.taxMinor)
+    || (desired.totalMinor != null && active.totalMinor !== desired.totalMinor)
+    || (desired.taxType != null && active.taxType !== desired.taxType)
+    || (desired.originRevisionLineId != null
+      && active.originRevisionLineId !== desired.originRevisionLineId);
+}
+
 const INITIAL_MESSAGE =
   "This will create an authorised sales invoice in Xero.";
 const REPLACEMENT_MESSAGE =
@@ -267,5 +294,10 @@ export function resolveRetentionClaimAccountingOperation(
       warnings: ["Retention values or dates have changed since the last Xero sync."],
     };
   }
-  return blocked(input, "already_exported", "The current Retention Claim is already authorised in Xero.", "authorised");
+  return blocked(
+    input,
+    "already_exported",
+    "This Retention Claim is already synchronized with Xero.",
+    "authorised",
+  );
 }

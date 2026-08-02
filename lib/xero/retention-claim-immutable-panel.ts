@@ -13,6 +13,12 @@ import {
   isRetentionClaimImmutableXeroEnabled,
 } from "@/lib/xero/retention-claim-push-proposal";
 import {
+  loadRetentionClaimStructuredSourceAccess,
+} from "@/lib/xero/retention-claim-sales-invoice";
+import {
+  loadDirectRetentionOriginEvidence,
+} from "@/lib/xero/retention-claim-direct-origin-evidence-server";
+import {
   RETENTION_CLAIM_PUSH_PERMISSION,
 } from "@/lib/xero/retention-claim-push-contract";
 import { getOrganizationXeroConnection } from "@/lib/xero/service";
@@ -68,7 +74,9 @@ export type RetentionClaimImmutableXeroPanelState = {
   amountPaid: number | null;
   amountOutstanding: number | null;
   invoiceSubtotalMinor?: number | null;
+  invoiceTaxMinor?: number | null;
   invoiceTotalMinor?: number | null;
+  authoritativeInheritedTax?: boolean;
   paymentStatus: "unpaid" | "partially_paid" | "paid" | "attention_required" | null;
   paymentStatusLabel: "Unpaid" | "Partially paid" | "Paid" | "Attention required" | null;
   fullyPaidAt: string | null;
@@ -184,6 +192,10 @@ export function deriveRetentionClaimPanelFromCompletionEvidence(params: {
     && evidence.creditedMinor === 0;
   const rawObservation = evidence.observation.raw_observation as Row | null;
   const payment = paymentProjection(evidence.document, evidence.projection);
+  const revisionTaxSnapshot = evidence.revision.tax_snapshot as Row | null;
+  const authoritativeInheritedTax =
+    text(revisionTaxSnapshot?.inheritanceContract)
+      === "direct_immutable_retention_v1";
   return {
     visible: true,
     canManage,
@@ -206,7 +218,9 @@ export function deriveRetentionClaimPanelFromCompletionEvidence(params: {
     amountPaid: evidence.paidMinor / 100,
     amountOutstanding: evidence.outstandingMinor / 100,
     invoiceSubtotalMinor: evidence.subtotalMinor,
+    invoiceTaxMinor: authoritativeInheritedTax ? evidence.taxMinor : null,
     invoiceTotalMinor: evidence.totalMinor,
+    authoritativeInheritedTax,
     paymentStatus: payment.status,
     paymentStatusLabel: payment.label,
     fullyPaidAt: text(evidence.document.fully_paid_at)
@@ -283,12 +297,20 @@ export async function getRetentionClaimImmutableXeroPanel(
   ) => dependencies
     ? dependencies.measure(stage, operation, { databaseOperation })
     : Promise.resolve(operation());
-  const [claimResult, permissions, featureEnabled, documentResult, connection] =
+  const [
+    claimResult,
+    permissions,
+    featureEnabled,
+    documentResult,
+    connection,
+    structuredSourceAccess,
+    organizationResult,
+  ] =
     await Promise.all([
       runDependency<QueryResult>("master_claim", () => db.from("retention_claims")
         .select(
-          "id,organization_id,project_id,claim_number,submission_state_hash,"
-          + "issue_date,due_date,draft_revision,status",
+          "id,organization_id,project_id,claim_number,issue_date,due_date,"
+          + "draft_revision,status",
         )
         .eq("id", retentionClaimId)
         .eq("organization_id", member.organization_id)
@@ -325,6 +347,13 @@ export async function getRetentionClaimImmutableXeroPanel(
       runDependency("xero_connection", () =>
         getOrganizationXeroConnection(member.organization_id),
       "organization_xero_connection"),
+      runDependency("structured_source", () =>
+        loadRetentionClaimStructuredSourceAccess(retentionClaimId),
+      "get_retention_claim_xero_source_phase2c"),
+      runDependency<QueryResult>("organization", () =>
+        db.from("organizations").select("id,default_currency")
+          .eq("id", member.organization_id)
+          .maybeSingle(), "retention_organization_currency"),
     ]);
   dependencies?.complete();
   if (claimResult.error || !claimResult.data) {
@@ -336,8 +365,42 @@ export async function getRetentionClaimImmutableXeroPanel(
   if (!featureEnabled) {
     return hidden;
   }
-  if (documentResult.error) throw new Error(documentResult.error.message);
+  if (documentResult.error || organizationResult.error) {
+    throw new Error(
+      documentResult.error?.message ?? organizationResult.error?.message,
+    );
+  }
   const document = documentResult.data as Row | null;
+  const authoritativeSourceStateHash = text(
+    structuredSourceAccess.source?.claim.submissionStateHash,
+  );
+  const submittedSourceReady = claim.status !== "submitted"
+    || (
+      structuredSourceAccess.succeeded === true
+      && Boolean(authoritativeSourceStateHash)
+    );
+  const directOriginResolution = claim.status === "submitted"
+    && structuredSourceAccess.source
+    && connection?.id
+    && connection.tenant_id
+    && text(organizationResult.data?.default_currency)
+    ? await loadDirectRetentionOriginEvidence({
+        source: structuredSourceAccess.source,
+        connectionId: connection.id,
+        tenantId: connection.tenant_id,
+        currencyCode: text(organizationResult.data?.default_currency)!,
+        routeAccountCode: "700",
+      })
+    : null;
+  const directReadinessBlocker = directOriginResolution
+    && !directOriginResolution.ok
+    ? directOriginResolution.blocker
+    : null;
+  const directOriginEvidence = directOriginResolution?.ok
+    ? directOriginResolution.evidence
+    : null;
+  const directOriginReady = claim.status !== "submitted"
+    || Boolean(directOriginEvidence);
   timing?.identify({
     accountingDocumentId: text(document?.id),
     revisionId: text(document?.active_accounting_revision_id),
@@ -347,12 +410,19 @@ export async function getRetentionClaimImmutableXeroPanel(
         resolveRetentionClaimAccountingOperationForState({
     organizationId: member.organization_id,
     claimNumber: String(claim.claim_number),
-    sourceStateHash: String(claim.submission_state_hash ?? ""),
+    sourceStateHash: authoritativeSourceStateHash ?? "",
     issueDate: String(claim.issue_date ?? ""),
     dueDate: String(claim.due_date ?? ""),
-    readinessReady: claim.status === "submitted",
+    readinessReady: claim.status === "submitted"
+      && submittedSourceReady
+      && directOriginReady,
     readinessMessage: claim.status === "submitted"
+      && submittedSourceReady
+      && directOriginReady
       ? undefined
+      : claim.status === "submitted"
+        ? directReadinessBlocker?.message
+          ?? "Retention Claim accounting evidence could not be resolved."
       : "Save the Retention Claim before pushing it to Xero.",
     retentionOwnershipValid: true,
     retentionOwnershipMessage: null,
@@ -360,16 +430,33 @@ export async function getRetentionClaimImmutableXeroPanel(
     connection: connection as unknown as Row | null,
     hasPushPermission: canManage,
     featureEnabled: true,
+    desiredSubtotalMinor:
+      directOriginEvidence?.releaseAmountMinor,
+    desiredTaxMinor:
+      directOriginEvidence?.releaseTaxMinor,
+    desiredTotalMinor:
+      directOriginEvidence?.releaseTotalMinor,
+    desiredTaxType:
+      directOriginEvidence?.taxType,
+    desiredOriginRevisionLineId:
+      directOriginEvidence?.originAccountingRevisionLineId,
         }), { databaseOperation: "retention_accounting_decision_evidence" })
     : resolveRetentionClaimAccountingOperationForState({
         organizationId: member.organization_id,
         claimNumber: String(claim.claim_number),
-        sourceStateHash: String(claim.submission_state_hash ?? ""),
+        sourceStateHash: authoritativeSourceStateHash ?? "",
         issueDate: String(claim.issue_date ?? ""),
         dueDate: String(claim.due_date ?? ""),
-        readinessReady: claim.status === "submitted",
+        readinessReady: claim.status === "submitted"
+          && submittedSourceReady
+          && directOriginReady,
         readinessMessage: claim.status === "submitted"
+          && submittedSourceReady
+          && directOriginReady
           ? undefined
+          : claim.status === "submitted"
+            ? directReadinessBlocker?.message
+              ?? "Retention Claim accounting evidence could not be resolved."
           : "Save the Retention Claim before pushing it to Xero.",
         retentionOwnershipValid: true,
         retentionOwnershipMessage: null,
@@ -377,6 +464,16 @@ export async function getRetentionClaimImmutableXeroPanel(
         connection: connection as unknown as Row | null,
         hasPushPermission: canManage,
         featureEnabled: true,
+        desiredSubtotalMinor:
+          directOriginEvidence?.releaseAmountMinor,
+        desiredTaxMinor:
+          directOriginEvidence?.releaseTaxMinor,
+        desiredTotalMinor:
+          directOriginEvidence?.releaseTotalMinor,
+        desiredTaxType:
+          directOriginEvidence?.taxType,
+        desiredOriginRevisionLineId:
+          directOriginEvidence?.originAccountingRevisionLineId,
       }));
 
   const activeJobs = decision.decisionEvidence.activeJobs;
@@ -396,6 +493,10 @@ export async function getRetentionClaimImmutableXeroPanel(
   const projectionRow = decision.decisionEvidence.projection;
   const payment = paymentProjection(document, projectionRow);
   const rawObservation = observationRow?.raw_observation as Row | null;
+  const revisionTaxSnapshot = revisionRow?.tax_snapshot as Row | null;
+  const authoritativeInheritedTax =
+    text(revisionTaxSnapshot?.inheritanceContract)
+      === "direct_immutable_retention_v1";
   const observedAtMs = Date.parse(String(observationRow?.observed_at ?? ""));
   const exactVerified = Boolean(
     revisionRow
@@ -472,9 +573,14 @@ export async function getRetentionClaimImmutableXeroPanel(
     invoiceSubtotalMinor: revisionRow?.subtotal_minor == null
       ? null
       : Number(revisionRow.subtotal_minor),
+    invoiceTaxMinor: authoritativeInheritedTax
+      && revisionRow?.tax_minor != null
+      ? Number(revisionRow.tax_minor)
+      : null,
     invoiceTotalMinor: revisionRow?.total_minor == null
       ? null
       : Number(revisionRow.total_minor),
+    authoritativeInheritedTax,
     paymentStatus: payment.status,
     paymentStatusLabel: payment.label,
     fullyPaidAt: text(document?.fully_paid_at)
@@ -494,9 +600,13 @@ export async function getRetentionClaimImmutableXeroPanel(
     safeErrorMessage: claim.status === "draft"
       || decision.blockers[0]?.code === "already_exported"
       ? null
-      : decision.blockers[0]?.message ?? null,
+      : directReadinessBlocker?.message
+        ?? decision.blockers[0]?.message
+        ?? null,
     decisionOperation: decision.operation,
-    blockers: decision.blockers,
+    blockers: directReadinessBlocker
+      ? [directReadinessBlocker]
+      : decision.blockers,
   };
   presentation?.complete({
     rowsReturned: 1,
@@ -535,7 +645,7 @@ export async function getRetentionClaimRefreshIdentity(params: {
         .maybeSingle(),
       db.from("organization_accounting_documents")
         .select(
-          "id,organization_id,project_id,retention_claim_id,"
+          "id,organization_id,retention_claim_id,"
           + "active_accounting_revision_id,external_document_id,"
           + "accounting_connection_id,tenant_id",
         )

@@ -8,6 +8,12 @@ import {
   buildRetentionClaimXeroPayload,
   type RetentionClaimXeroSource,
 } from "@/lib/xero/retention-claim-sales-invoice-payload";
+import {
+  loadDirectRetentionOriginEvidence,
+} from "@/lib/xero/retention-claim-direct-origin-evidence-server";
+import type {
+  DirectRetentionOriginEvidence,
+} from "@/lib/xero/retention-claim-direct-origin-evidence";
 
 type Row = Record<string, unknown>;
 type UntypedClient = {
@@ -65,6 +71,7 @@ export type RetentionClaimXeroResolved = {
   document: Row | null;
   accountingDocument: Row | null;
   activeJob: Row | null;
+  originEvidence: DirectRetentionOriginEvidence | null;
 };
 
 const MESSAGES: Record<string, string> = {
@@ -82,6 +89,26 @@ const MESSAGES: Record<string, string> = {
   retention_mapping_missing: "Map route 700 Retentions to an active Xero Current Asset account.",
   revenue_tax_type_missing: "Synchronize an active revenue TaxType for the selected Xero tenant.",
   accounting_document_invalid: "The Retention Claim Xero accounting identity is invalid.",
+  multiple_origins_unsupported:
+    "This Retention Claim requires a single originating Payment Claim.",
+  origin_revision_missing:
+    "The originating Payment Claim does not have one effective succeeded accounting revision.",
+  origin_revision_ambiguous:
+    "The originating Payment Claim has ambiguous effective accounting revisions.",
+  origin_retention_line_missing:
+    "The effective originating Payment Claim revision has no immutable retention line.",
+  origin_retention_line_ambiguous:
+    "The effective originating Payment Claim revision has ambiguous immutable retention lines.",
+  origin_tax_evidence_missing:
+    "The originating Payment Claim retention line does not contain complete immutable tax evidence.",
+  origin_tax_type_unavailable:
+    "The originating Payment Claim TaxType is not available for the selected Xero tenant.",
+  origin_amount_mismatch:
+    "The Retention Claim must release the full immutable originating retention amount.",
+  origin_identity_mismatch:
+    "The originating Payment Claim accounting identity does not match this Retention Claim.",
+  origin_retention_line_invalid:
+    "The immutable originating Payment Claim retention line is invalid.",
 };
 
 function db(client: unknown) {
@@ -112,6 +139,18 @@ async function access(retentionClaimId: string, manage: boolean) {
   return (result.data ?? {}) as RetentionClaimXeroSourceAccess;
 }
 
+export async function loadRetentionClaimStructuredSourceAccess(
+  retentionClaimId: string,
+) {
+  const admin = db(await createAdminSupabaseClient());
+  const result = await admin.rpc(
+    "get_retention_claim_xero_source_phase2c",
+    { p_retention_claim_id: retentionClaimId },
+  );
+  if (result.error) throw new Error(result.error.message);
+  return (result.data ?? {}) as RetentionClaimXeroSourceAccess;
+}
+
 export async function loadRetentionClaimXeroResolved(
   retentionClaimId: string,
   manage: boolean,
@@ -122,15 +161,7 @@ export async function loadRetentionClaimXeroResolved(
   access: RetentionClaimXeroSourceAccess;
 }> {
   const accessResult = immutablePhase2c && manage
-    ? await (async () => {
-        const admin = db(await createAdminSupabaseClient());
-        const result = await admin.rpc(
-          "get_retention_claim_xero_source_phase2c",
-          { p_retention_claim_id: retentionClaimId },
-        );
-        if (result.error) throw new Error(result.error.message);
-        return (result.data ?? {}) as RetentionClaimXeroSourceAccess;
-      })()
+    ? await loadRetentionClaimStructuredSourceAccess(retentionClaimId)
     : await access(retentionClaimId, manage);
   if (!accessResult.succeeded) {
     return {
@@ -283,7 +314,7 @@ export async function loadRetentionClaimXeroResolved(
     || text(costMeta.type)?.toUpperCase() !== "CURRENT"
   ) blockers.push(blocker("retention_mapping_missing"));
 
-  const taxRate = (taxRates.data ?? []).find((row: Row) => {
+  let taxRate = (taxRates.data ?? []).find((row: Row) => {
     const metadata = meta(row);
     return row.is_active === true
       && text(row.status)?.toUpperCase() === "ACTIVE"
@@ -292,7 +323,38 @@ export async function loadRetentionClaimXeroResolved(
       && text(row.tax_type)
       && metadata.canApplyToRevenue === true;
   }) as Row | undefined;
-  if (!taxRate) blockers.push(blocker("revenue_tax_type_missing"));
+
+  const originResolution = immutablePhase2c
+    && costCode.data
+    && connection.tenant_id
+    && currency
+    ? await loadDirectRetentionOriginEvidence({
+        source,
+        connectionId: connection.id,
+        tenantId: connection.tenant_id,
+        currencyCode: currency,
+        routeAccountCode: String(costCode.data.external_code ?? ""),
+      })
+    : null;
+  if (originResolution && !originResolution.ok) {
+    blockers.push({
+      code: originResolution.blocker.code,
+      message: originResolution.blocker.message,
+    });
+  }
+  if (originResolution?.ok) {
+    taxRate = (taxRates.data ?? []).find((row: Row) => {
+      const metadata = meta(row);
+      return row.is_active === true
+        && text(row.status)?.toUpperCase() === "ACTIVE"
+        && text(row.tax_type)?.toUpperCase()
+          === originResolution.evidence.taxType
+        && metadata.canApplyToRevenue === true;
+    }) as Row | undefined;
+  }
+  if (!taxRate && !originResolution) {
+    blockers.push(blocker("revenue_tax_type_missing"));
+  }
 
   const existing = accountingDocument.data as Row | null;
   if (
@@ -345,6 +407,9 @@ export async function loadRetentionClaimXeroResolved(
       document: document.data,
       accountingDocument: existing,
       activeJob,
+      originEvidence: originResolution?.ok
+        ? originResolution.evidence
+        : null,
     },
   };
 }

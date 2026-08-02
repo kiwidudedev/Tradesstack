@@ -7,6 +7,9 @@ import type {
   RetentionClaimXeroAccountingLine,
   RetentionClaimXeroPayload,
 } from "@/lib/xero/retention-claim-sales-invoice-payload";
+import type {
+  DirectRetentionOriginEvidence,
+} from "@/lib/xero/retention-claim-direct-origin-evidence";
 
 export const RETENTION_CLAIM_INITIAL_PUSH_JOB =
   "xero.retention_claim.initial_push";
@@ -101,6 +104,7 @@ export type RetentionClaimPushProposal = {
 export function buildRetentionClaimRevisionLines(params: {
   payload: RetentionClaimXeroPayload;
   lines: RetentionClaimXeroAccountingLine[];
+  directOriginEvidence?: DirectRetentionOriginEvidence;
 }): RetentionClaimRevisionLineEvidence[] {
   return params.lines.map((line, index) => {
     const payloadLine = params.payload.LineItems[index];
@@ -117,13 +121,44 @@ export function buildRetentionClaimRevisionLines(params: {
       lineAmountMinor: Math.round(line.lineAmountExclTax * 100),
       taxMinor: Math.round(line.taxAmount * 100),
       totalMinor: Math.round(line.grossAmount * 100),
-      accountSnapshot: { accountCode: payloadLine.AccountCode },
-      taxSnapshot: { taxType: payloadLine.TaxType },
+      accountSnapshot: {
+        accountCode: payloadLine.AccountCode,
+        ...(params.directOriginEvidence?.accountId
+          ? { accountId: params.directOriginEvidence.accountId }
+          : {}),
+      },
+      taxSnapshot: {
+        taxType: payloadLine.TaxType,
+        ...(params.directOriginEvidence
+          ? {
+              taxRateId: params.directOriginEvidence.taxRateSnapshotId,
+              effectiveRate: params.directOriginEvidence.effectiveRate,
+              inheritedFromOrigin: true,
+            }
+          : {}),
+      },
       trackingSnapshot: {},
       sourceSnapshot: {
         allocationId: line.allocationId,
         originatingPaymentClaimId: line.originatingPaymentClaimId,
         originClaimNumber: line.originClaimNumber,
+        ...(params.directOriginEvidence
+          ? {
+              originEvidenceContract: params.directOriginEvidence.contract,
+              originAccountingDocumentId:
+                params.directOriginEvidence.originAccountingDocumentId,
+              originAccountingRevisionId:
+                params.directOriginEvidence.originAccountingRevisionId,
+              originAccountingRevisionLineId:
+                params.directOriginEvidence.originAccountingRevisionLineId,
+              originRevisionSequence:
+                params.directOriginEvidence.originRevisionSequence,
+              originAmountMinor:
+                params.directOriginEvidence.originAmountMinor,
+              originTaxMinor: params.directOriginEvidence.originTaxMinor,
+              originTotalMinor: params.directOriginEvidence.originTotalMinor,
+            }
+          : {}),
       },
     };
   });
