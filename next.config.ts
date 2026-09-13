@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  typescript: { tsconfigPath: "tsconfig.build.json" },
   ...(process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR
     ? { distDir: process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR }
     : {}),

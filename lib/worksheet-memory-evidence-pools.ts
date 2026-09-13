@@ -367,7 +367,7 @@ function buildWorksheetStructuralScopeIdentity(
     && Boolean(targetCellColumn);
   const hasRowIdentity = Boolean(rowLabel && itemLabel && descriptionToken);
   const hasTypeIdentity = Boolean(normalizedUnit && targetValueType && transitionKind);
-  const isStrong = hasLocationIdentity && hasRowIdentity && hasTypeIdentity && presentCount >= 7;
+  const isStrong = Boolean(hasLocationIdentity && hasRowIdentity && hasTypeIdentity && presentCount >= 7);
   const signaturePayload = {
     signatureVersion: 2,
     poolKind: getPoolKind(event),

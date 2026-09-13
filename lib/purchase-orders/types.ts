@@ -239,6 +239,7 @@ export interface PurchaseOrderSaveLineItemInput {
 }
 
 export interface PurchaseOrderSaveAttachmentInput {
+  notes?: string | null;
   id?: string | null;
   name: string;
   type: string;

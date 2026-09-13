@@ -879,10 +879,10 @@ export async function listClassifiedWorksheetMemoryEvents(params: {
   limit?: number;
 }) {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin.rpc("list_classified_worksheet_memory_events" as never, {
+  const { data, error } = await admin.rpc("list_classified_worksheet_memory_events", {
     p_organization_id: params.organizationId ?? null,
     p_limit: Math.min(Math.max(params.limit ?? CLASSIFIED_EVENT_LIMIT, 1), CLASSIFIED_EVENT_LIMIT),
-  } as never);
+  });
 
   if (error) {
     throw new Error(error.message);

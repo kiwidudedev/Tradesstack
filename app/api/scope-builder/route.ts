@@ -17,19 +17,19 @@ const DEFAULT_SCOPE_MAX_OUTPUT_TOKENS = 128000;
 const SCOPE_RETRY_MAX_OUTPUT_TOKENS = 128000;
 const SCOPE_AI_TIMEOUT_MS = 120_000;
 
-interface ScopeStructuredItem {
+type ScopeStructuredItem = {
   title: string;
   description: string;
 }
 
-interface ScopePricingStructure {
+type ScopePricingStructure = {
   costBreakdownCategories: ScopeStructuredItem[];
   measurementUnits: ScopeStructuredItem[];
   keyCostDrivers: ScopeStructuredItem[];
   marginSensitiveItems: ScopeStructuredItem[];
 }
 
-interface ScopeBuilderResponsePayload {
+type ScopeBuilderResponsePayload = {
   tradeLabel: string;
   summary: ScopeStructuredItem[];
   generalRequirements: ScopeStructuredItem[];
@@ -634,7 +634,7 @@ export async function POST(request: Request) {
       trade_id: selectedTrade.id,
       trade_label: selectedTrade.label,
       pdf_url: toTradePackPdfUrl(resolvedStoragePath, fileValue.name),
-      page_index_json: [] as Record<string, unknown>[],
+      page_index_json: [],
       created_by: user.id,
     };
 
@@ -820,7 +820,7 @@ export async function POST(request: Request) {
       .from("scope_runs")
       .update({
         status: "complete",
-        result_json: scopePayload as unknown as Record<string, unknown>,
+        result_json: scopePayload,
         error_message: null,
       })
       .eq("id", scopeRunId);

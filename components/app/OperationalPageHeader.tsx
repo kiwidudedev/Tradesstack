@@ -2,7 +2,7 @@ import * as React from "react";
 import { interBold, interMedium } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 
-interface OperationalPageHeaderProps extends React.HTMLAttributes<HTMLElement> {
+interface OperationalPageHeaderProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
   title: React.ReactNode;
   description?: React.ReactNode;
   eyebrow?: React.ReactNode;

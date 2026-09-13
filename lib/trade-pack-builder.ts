@@ -94,7 +94,7 @@ export interface TradePageSignal {
   reason: string;
 }
 
-export interface TradePagePrefilterSignal {
+export type TradePagePrefilterSignal = {
   shouldSendToVlm: boolean;
   score: number;
   matchedSheetPrefixes: string[];

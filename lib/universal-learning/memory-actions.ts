@@ -708,7 +708,6 @@ export function normalizeUniversalLearningResponseSourceIds(input: {
   const recordsBySourceId = input.recordsBySourceId ?? new Map<string, UniversalLearningBusinessRecord>();
   const sourceResolutionCandidates = buildSourceResolutionCandidates({
     reviewedSourceIds: input.reviewedSourceIds,
-    reviewedRecords: input.reviewedRecords,
     recordsBySourceId,
     existingMemories: input.existingMemories,
   });

@@ -807,7 +807,7 @@ function buildWorksheetAiEditedOutput(params: {
   sheetName: string;
   worksheetName: string;
   tradePackage: string | null;
-}) {
+}): Record<string, Json> & { acceptedFindingIds?: string[]; rejectedFindingIds?: string[] } {
   return {
     ...params.preview.compactOutput,
     workbookId: params.workbookId,
@@ -842,7 +842,7 @@ function buildWorksheetAiEditedOutput(params: {
           remainingBatchCount: params.preview.continuation.remainingBatchCount,
         }
       : null,
-  } as Record<string, Json | null | string | number | string[]>;
+  };
 }
 
 function logWorksheetAiContinuation(action: string, payload: Record<string, unknown>) {
@@ -8918,9 +8918,9 @@ export function OpportunityPricingWorksheetBoard({
             },
           };
           logWorksheetAiContinuation("apply_batch_advanced", {
-            currentBatchIndex: nextContinuationPreview.continuation?.currentBatchIndex ?? null,
-            remainingBatchCountAfterApply: nextContinuationPreview.continuation?.remainingBatchCount ?? 0,
-            totalBatchCount: nextContinuationPreview.continuation?.totalBatchCount ?? 1,
+            currentBatchIndex: nextContinuationPreview.preview.continuation?.currentBatchIndex ?? null,
+            remainingBatchCountAfterApply: nextContinuationPreview.preview.continuation?.remainingBatchCount ?? 0,
+            totalBatchCount: nextContinuationPreview.preview.continuation?.totalBatchCount ?? 1,
             nextOperationCount: nextContinuationPreview.preview.assistant?.operations.length ?? 0,
           });
           applyAiPreviewPayload(nextContinuationPreview);

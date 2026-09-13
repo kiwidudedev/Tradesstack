@@ -366,7 +366,7 @@ function toRecordOrNull(value: unknown): Record<string, unknown> | null {
 
 function toCompactPageIndexInsertRow(row: TradePackPageIndexInsert): TradePackPageIndexInsert {
   const metadataRecord = toRecordOrNull(row.metadata);
-  const compactMetadata: Record<string, unknown> = {
+  const compactMetadata = {
     compacted: true,
     prefilterPass: row.prefilter_pass,
     classifier: row.classifier,
@@ -730,7 +730,7 @@ async function saveTradePackReasonSnapshot(params: {
     total_pages: Math.max(0, params.totalPages),
     support_pages: Math.max(0, params.supportPages),
     average_confidence: clampConfidence(Number(params.averageConfidence.toFixed(4))),
-    reasons: reasonItems as Record<string, unknown>[],
+    reasons: reasonItems,
   };
 
   const { error: insertError } = await params.supabase

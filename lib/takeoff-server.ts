@@ -1,3 +1,4 @@
+import { assertJsonValue } from "@/lib/json-contract";
 import "server-only";
 
 import { execFile } from "node:child_process";
@@ -135,13 +136,14 @@ function getTakeoffPageDisplayDimensions(params: {
 }
 
 function getTakeoffPageRenderGeometry(page: Pick<TakeoffPage, "page_width_pts" | "page_height_pts" | "rotation_degrees" | "metadata">) {
+  const metadata = page.metadata && typeof page.metadata === "object" && !Array.isArray(page.metadata) ? page.metadata : {};
   const rawWidthPts =
-    typeof page.metadata?.rawPageWidthPts === "number" && Number.isFinite(page.metadata.rawPageWidthPts)
-      ? Number(page.metadata.rawPageWidthPts)
+    typeof metadata.rawPageWidthPts === "number" && Number.isFinite(metadata.rawPageWidthPts)
+      ? Number(metadata.rawPageWidthPts)
       : page.page_width_pts;
   const rawHeightPts =
-    typeof page.metadata?.rawPageHeightPts === "number" && Number.isFinite(page.metadata.rawPageHeightPts)
-      ? Number(page.metadata.rawPageHeightPts)
+    typeof metadata.rawPageHeightPts === "number" && Number.isFinite(metadata.rawPageHeightPts)
+      ? Number(metadata.rawPageHeightPts)
       : page.page_height_pts;
   const displayDimensions = getTakeoffPageDisplayDimensions({
     pageWidthPts: rawWidthPts,
@@ -658,7 +660,7 @@ type AreaShapeRole = "include" | "deduction";
 
 function getMeasurementMetadataObject(
   metadata: TakeoffMeasurement["metadata"] | null | undefined
-): Record<string, unknown> {
+): Record<string, Json | undefined> {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {};
   }
@@ -704,7 +706,7 @@ function buildAreaMeasurementMetadata(params: {
   metadata: TakeoffMeasurement["metadata"] | null | undefined;
   areaShapes: Array<Pick<TakeoffMeasurementAreaShape, "id">>;
   overrides?: Record<string, AreaShapeRole>;
-}): Record<string, unknown> {
+}): Record<string, Json | undefined> {
   const metadataObject = getMeasurementMetadataObject(params.metadata);
   return {
     ...metadataObject,
@@ -951,6 +953,7 @@ async function writeTakeoffMeasurementEvent(params: {
     line_paths: params.linePaths ?? [],
   };
 
+  assertJsonValue(params.diff);
   const { error } = await supabase.from("takeoff_measurement_events").insert({
     organization_id: params.organizationId,
     project_id: params.projectId,

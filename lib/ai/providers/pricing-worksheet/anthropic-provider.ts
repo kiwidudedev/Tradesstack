@@ -2337,7 +2337,7 @@ export class AnthropicPricingWorksheetProvider implements PricingWorksheetAiProv
     const optionalParameterCount = countAnthropicOptionalParameters(sanitizedSchema);
     const schemaSizeBytes = Buffer.byteLength(JSON.stringify(sanitizedSchema), "utf8");
     const useDirectJsonInterpretation = schemaKind === "worksheet_event_interpretation";
-    const requestSummary = {
+    const requestSummary: Record<string, unknown> = {
       workflowStage:
         isRecord(request.metadata) && typeof request.metadata.workflowStage === "string"
           ? request.metadata.workflowStage

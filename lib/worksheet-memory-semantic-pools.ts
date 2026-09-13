@@ -681,7 +681,7 @@ function buildStage6StructuralCoherenceSummary(pool: WorksheetMemoryEvidenceSeed
   const structuralPayloadRaw = isJsonRecord(pool.scopeContext.structuralSignaturePayload)
     ? pool.scopeContext.structuralSignaturePayload
     : {};
-  const structuralPayload = isJsonRecord(structuralPayloadRaw)
+  const structuralPayload: Record<string, Json | undefined> = isJsonRecord(structuralPayloadRaw)
     ? compactJsonRecord(structuralPayloadRaw, 18)
     : {};
   const structuralIdentityStrong =
@@ -774,17 +774,17 @@ function buildSemanticCandidateSummary(batch: SemanticGroupingBatch): SemanticCa
     return null;
   }
 
-  const structuralPayload = isJsonRecord(seedPool.scopeContext.structuralSignaturePayload)
+  const structuralPayload: Record<string, Json | undefined> = isJsonRecord(seedPool.scopeContext.structuralSignaturePayload)
     ? seedPool.scopeContext.structuralSignaturePayload
     : {};
   const structuralSummary = buildStage6StructuralCoherenceSummary(seedPool);
-  const structuralScope = isJsonRecord(structuralSummary.structuralScopeSummary)
+  const structuralScope: Record<string, Json | undefined> = isJsonRecord(structuralSummary.structuralScopeSummary)
     ? structuralSummary.structuralScopeSummary
     : {};
-  const diversity = isJsonRecord(structuralSummary.diversitySummary)
+  const diversity: Record<string, Json | undefined> = isJsonRecord(structuralSummary.diversitySummary)
     ? structuralSummary.diversitySummary
     : {};
-  const downstream = isJsonRecord(structuralSummary.downstreamRoleSummary)
+  const downstream: Record<string, Json | undefined> = isJsonRecord(structuralSummary.downstreamRoleSummary)
     ? structuralSummary.downstreamRoleSummary
     : {};
 

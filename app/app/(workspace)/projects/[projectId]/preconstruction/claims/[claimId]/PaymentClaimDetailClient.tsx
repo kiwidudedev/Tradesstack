@@ -85,6 +85,7 @@ interface ClaimRow {
 }
 
 interface CreateClaimDraftRow {
+  claim_amount?: number | null;
   id: string;
   claim_number: string;
   claim_title: string;
@@ -189,7 +190,7 @@ function toMoney(value: number) {
   }).format(value);
 }
 
-function numberOrZero(value: string | number | null | undefined) {
+function numberOrZero(value: unknown) {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }

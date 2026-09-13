@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { Clock3 } from "lucide-react";
 import { interMedium } from "@/lib/fonts";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { OpportunityStage } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/types";
+type OpportunityStage = Database["public"]["Tables"]["organization_opportunities"]["Row"]["stage"];
 import type { LiveOpportunityRow } from "@/lib/leads-clients-server";
 import styles from "./opportunities.module.css";
 

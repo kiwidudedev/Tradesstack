@@ -26446,7 +26446,7 @@ export type Database = {
           p_classification_version?: number
           p_lease_seconds?: number
           p_limit?: number
-          p_organization_id?: string
+          p_organization_id?: string | null
           p_worker_id?: string
         }
         Returns: Json
@@ -28676,7 +28676,7 @@ export type Database = {
         Returns: string
       }
       list_classified_worksheet_memory_events: {
-        Args: { p_limit?: number; p_organization_id?: string }
+        Args: { p_limit?: number; p_organization_id?: string | null }
         Returns: Json
       }
       list_commercial_items_for_opportunity: {
@@ -30637,13 +30637,13 @@ export type Database = {
           }
       save_project_variation_draft: {
         Args: {
-          p_approved_at: string
+          p_approved_at: string | null
           p_assumptions: string
           p_attachments: Json
           p_clarifications: string
           p_contingency_amount: number
           p_discount_amount: number
-          p_due_date: string
+          p_due_date: string | null
           p_expected_updated_at: string
           p_gst_percent: number
           p_include_contingency_in_export: boolean
@@ -30659,8 +30659,8 @@ export type Database = {
           p_payment_terms: string
           p_project_id: string
           p_requested_by: string
-          p_requested_date: string
-          p_sent_to_client_at: string
+          p_requested_date: string | null
+          p_sent_to_client_at: string | null
           p_status: string
           p_terms_exclusions: string
           p_terms_inclusions: string

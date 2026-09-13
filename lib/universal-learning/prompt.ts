@@ -37,8 +37,10 @@ function prunePromptValue(value: unknown): unknown {
 }
 
 function compactExistingMemoryForPrompt(memory: UniversalLearningPromptPacket["existingRelevantMemories"][number]) {
-  const supportingRecords = Array.isArray(memory.evidenceSummary?.evidence?.supportingRecords)
-    ? memory.evidenceSummary.evidence.supportingRecords
+  const evidence = memory.evidenceSummary?.evidence;
+  const evidenceObject = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? evidence : {};
+  const supportingRecords = Array.isArray(evidenceObject.supportingRecords)
+    ? evidenceObject.supportingRecords
     : [];
   const latestSupportingSourceRefs = supportingRecords
     .map((record) => {
@@ -54,7 +56,9 @@ function compactExistingMemoryForPrompt(memory: UniversalLearningPromptPacket["e
     .filter((record): record is Record<string, unknown> => Boolean(record))
     .slice(0, 4);
 
-  const relevantEntities = prunePromptValue(memory.memoryValue?.provenance?.relevantEntities);
+  const provenance = memory.memoryValue?.provenance;
+  const provenanceObject = provenance && typeof provenance === "object" && !Array.isArray(provenance) ? provenance : {};
+  const relevantEntities = prunePromptValue(provenanceObject.relevantEntities);
 
   return prunePromptValue({
     memoryId: memory.id,

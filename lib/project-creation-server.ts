@@ -77,6 +77,7 @@ export async function createOrganizationProjectForCurrentUser(
   const createProjectResult = await supabase
     .from("organization_projects")
     .insert({
+      project_code: "", // BEFORE INSERT trigger generates the code for blank input.
       organization_id: member.organization_id,
       created_by: member.user_id,
       client_id: input.clientId ?? null,

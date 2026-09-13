@@ -12,7 +12,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isUuid(value: string | null | undefined) {
-  return Boolean(value) && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 export type RunOrganizationMemoryDerivationInput = {
@@ -1123,6 +1123,7 @@ async function getSemanticPoolsById(organizationId: string, poolIds: string[]) {
       semanticSignature: toNullableString(row.semantic_signature) ?? "",
       domainLabel: toNullableString(row.domain_label),
       domainSummary: toNullableString(row.domain_summary),
+      evidenceSummary: compactJsonRecord(row.evidence_summary),
       groupingRationale: toNullableString(row.grouping_rationale),
       variantSummary: toNullableString(row.variant_summary),
       maturityStatus: toNullableString(row.maturity_status) ?? "emerging",

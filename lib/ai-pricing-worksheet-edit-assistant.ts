@@ -32,6 +32,7 @@ import { compileAiWorksheetFormula } from "@/lib/pricing-worksheet-ai-formula-co
 import { parsePricingWorksheetFormula } from "@/lib/pricing-worksheet-formula-parser";
 import {
   isPricingWorksheetProviderError,
+  createPricingWorksheetProviderError,
   type PricingWorksheetProviderError,
 } from "@/lib/ai/providers/pricing-worksheet/types";
 import type { AiMemoryItem } from "@/lib/ai-lifecycle-server";
@@ -260,7 +261,7 @@ type BuildPricingWorksheetEditAssistantParams = {
 
 export type PricingWorksheetAiFollowUpContext = {
   previousReviewFindings?: PricingWorksheetAiReviewFinding[];
-  previousReviewSummary?: PricingWorksheetAiReviewSummary | null;
+  previousReviewSummary?: (PricingWorksheetAiReviewSummary & { summary?: string }) | null;
   previousSuggestedEditGroups?: PricingWorksheetAiSuggestedEditGroup[];
   acceptedFindingIds?: string[];
   rejectedFindingIds?: string[];
@@ -358,7 +359,7 @@ export type PricingWorksheetAiAssistantPreview = {
     responseMode: PricingWorksheetAiAssistantMode;
     sanitizedOperations: Array<{
       type: string;
-      target: Record<string, string | number | null>;
+      target: Record<string, string | string[] | number | null>;
       values: Array<{
         ref: string | null;
         column: string | null;
@@ -941,7 +942,7 @@ function buildAnthropicConstructionSummary(params: {
     systemHints: params.classification.systemHints.slice(0, 6),
     riskLevel: params.classification.riskLevel,
     requiresRetrieval: params.classification.requiresRetrieval,
-    retrievalReasons: params.classification.retrievalReasons.slice(0, 6),
+    retrievalReasons: (params.classification.retrievalReasons ?? []).slice(0, 6),
     organizationConstructionContext: params.organizationConstructionContext ?? null,
     organizationMemorySummary: formatMemorySummary(params.memoryItems),
     organizationGuidanceSummary: formatOrganizationGuidanceSummary(params.organizationGuidance),
@@ -1984,7 +1985,7 @@ function shouldValidateGeneratedPricingWorksheetCompleteness(params: {
 
 function estimateWorksheetAiTokenSize(values: unknown[]) {
   return Math.ceil(
-    values.reduce((total, value) => total + JSON.stringify(value).length, 0) / 4,
+    values.reduce<number>((total, value) => total + JSON.stringify(value).length, 0) / 4,
   );
 }
 
@@ -3256,9 +3257,8 @@ function buildAnthropicFormattingCandidateSummary(snapshot: PricingWorksheetStru
   ).slice(0, 24);
 
   const outputFormulaRefs = uniqueRefs(
-    snapshot.rows.flatMap((row) => row.formulaRefs).concat(
-      snapshot.formulaTargets.rows.flatMap((row) => [row.cells.total]),
-    ),
+    [...snapshot.rows.flatMap((row) => row.formulaRefs),
+      ...snapshot.formulaTargets.rows.flatMap((row) => [row.cells.total])],
   ).slice(0, 24);
 
   return {
@@ -4220,7 +4220,7 @@ async function callWorksheetAssistantModel(
         logEditAssistantDebug("anthropic_draft_converted", {
           draftMode: providerResult.parsedJson.mode,
           sectionCount: Array.isArray(providerResult.parsedJson.sections) ? providerResult.parsedJson.sections.length : 0,
-          convertedOperationCount: providerAssistantPayload.operations.length,
+          convertedOperationCount: Array.isArray(providerAssistantPayload?.operations) ? providerAssistantPayload.operations.length : 0,
           primaryIntent: classification.primaryIntent,
           recommendedPromptPath: classification.recommendedPromptPath,
         });
@@ -4466,7 +4466,7 @@ async function callAnthropicFormulaStage(params: {
   assumptions: string[];
   warnings: string[];
   answer: string;
-  provider: "anthropic";
+  provider: "openai" | "anthropic";
   model: string;
   effectiveWebSearchEnabled: boolean;
 }> {
@@ -4605,7 +4605,7 @@ async function callAnthropicFormattingStage(params: {
   assumptions: string[];
   warnings: string[];
   answer: string;
-  provider: "anthropic";
+  provider: "openai" | "anthropic";
   model: string;
   effectiveWebSearchEnabled: boolean;
 }> {
@@ -4951,7 +4951,6 @@ export async function buildPricingWorksheetEditAssistantPreview(
         prompt: params.prompt,
       });
       logEditAssistantDebug("worksheet_snapshot_built", {
-        worksheetState,
         ...summarizePricingWorksheetStructureSnapshot(structureSnapshot),
       });
       const formattingStageResult = await callAnthropicFormattingStage({
@@ -5043,7 +5042,6 @@ export async function buildPricingWorksheetEditAssistantPreview(
         prompt: params.prompt,
       });
       logEditAssistantDebug("worksheet_snapshot_built", {
-        worksheetState,
         ...summarizePricingWorksheetStructureSnapshot(structureSnapshot),
       });
       try {
@@ -5397,7 +5395,6 @@ export async function buildPricingWorksheetEditAssistantPreview(
           const structureSnapshotSummary = summarizePricingWorksheetStructureSnapshot(structureSnapshot);
 
           logEditAssistantDebug("worksheet_snapshot_built", {
-            worksheetState: generatedWorksheetState,
             ...structureSnapshotSummary,
           });
 

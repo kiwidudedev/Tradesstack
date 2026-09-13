@@ -307,7 +307,7 @@ export type WorksheetLearningEventBuildInput = {
   worksheetName?: string;
   tradePackage: string | null;
   worksheet: WorksheetData;
-  eventType: WorksheetLearningEventType;
+  eventType: WorksheetIntelligenceEventType;
   eventFamily: WorksheetIntelligenceEventFamily;
   action: WorksheetIntelligenceAction;
   source: WorksheetLearningSource;
@@ -353,8 +353,8 @@ export type WorksheetLearningEventBuildInput = {
   sectionInferenceMode?: string | null;
   rowSnapshotCompleteness?: number | null;
   occurredAt?: string;
-  beforeData?: Record<string, Json | null>;
-  afterData?: Record<string, Json | null>;
+  beforeData?: Record<string, Json | null> | null;
+  afterData?: Record<string, Json | null> | null;
   diffData?: Record<string, Json | null>;
   reason?: string | null;
   relatedEntities?: WorksheetEntityRef[];
@@ -451,8 +451,8 @@ export type PricingWorksheetIntelligenceEventInput = {
   source?: WorksheetLearningSource;
   sourceRequestId?: string | null;
   occurredAt?: string;
-  beforeData?: Record<string, Json | null>;
-  afterData?: Record<string, Json | null>;
+  beforeData?: Record<string, Json | null> | null;
+  afterData?: Record<string, Json | null> | null;
   diffData?: Record<string, Json | null>;
   reason?: string | null;
   relatedEntities?: WorksheetEntityRef[];
@@ -715,7 +715,11 @@ function extractUnitFromCells(cells: Array<WorksheetCell | undefined>) {
   );
 }
 
-function inferWorksheetColumnRole(header: string | null | undefined, formula: string | null | undefined) {
+function isWorksheetColumnRole(value: unknown): value is WorksheetColumnRole {
+  return typeof value === "string" && ["description", "quantity", "rate", "unit", "amount", "notes", "formula", "unknown", "margin", "material", "labour", "allowance", "markup"].includes(value);
+}
+
+function inferWorksheetColumnRole(header: string | null | undefined, formula: string | null | undefined): WorksheetColumnRole {
   const normalizedHeader = normalizeTextToken(header);
 
   if (!normalizedHeader) {
@@ -956,7 +960,7 @@ function buildWorksheetRowSnapshot(
         unit: columnRole === "unit" ? normalizeWorksheetUnitValue(normalizeWorksheetCellValue(cell)) : null,
       } satisfies WorksheetRowSnapshotCell;
     })
-    .filter((cell): cell is WorksheetRowSnapshotCell => cell !== null);
+    .filter((cell) => cell !== null);
 
   const explicitUnitCell = visibleCells.find((cell) => cell.columnRole === "unit");
 
@@ -1426,7 +1430,7 @@ function inferWorksheetCellContext(worksheet: WorksheetData, cellKey: string) {
             return buildWorksheetSectionContext(worksheet, candidateIndex).sectionPath.join(">") === currentSectionKey;
           })
           .map((candidateIndex) => buildWorksheetRowSnapshot(worksheet, candidateIndex, headerContext))
-          .filter((snapshot): snapshot is WorksheetRowSnapshot => snapshot !== null)
+          .filter((snapshot) => snapshot !== null)
       : [];
   const pricingTuple = buildWorksheetPricingTupleEvidence(rowSnapshot);
 
@@ -2028,7 +2032,7 @@ export function preparePricingWorksheetIntelligenceEventForPersistence(
   }
 
   const diffData = isJsonRecord(event.diffData) ? event.diffData : {};
-  const metadata = isJsonRecord(event.metadata) ? event.metadata : {};
+  const metadata: Record<string, Json | undefined> = isJsonRecord(event.metadata) ? event.metadata : {};
   const rawSamples = Array.isArray(diffData.sampleChanges) ? diffData.sampleChanges : [];
   const firstSample = rawSamples.find((entry) => isJsonRecord(entry));
 
@@ -2063,9 +2067,9 @@ export function preparePricingWorksheetIntelligenceEventForPersistence(
         ? firstSample.columnHeader
         : null;
   const columnRole =
-    typeof diffData.columnRole === "string"
+    isWorksheetColumnRole(diffData.columnRole)
       ? diffData.columnRole
-      : typeof firstSample?.columnRole === "string"
+      : isWorksheetColumnRole(firstSample?.columnRole)
         ? firstSample.columnRole
         : inferWorksheetColumnRole(columnHeader, typeof diffData.formula === "string" ? diffData.formula : null);
   const nearbyHeaders =
@@ -2187,7 +2191,7 @@ export function preparePricingWorksheetIntelligenceEventForPersistence(
         ? firstSample.aiInteractionId
         : null;
   const source =
-    typeof diffData.source === "string"
+    (diffData.source === "manual" || diffData.source === "ai" || diffData.source === "system")
       ? diffData.source
       : deriveWorksheetLearningSourceFromChannel(event.sourceChannel);
   const evidenceSchemaVersion =
@@ -2350,7 +2354,7 @@ export function preparePricingWorksheetIntelligenceEventForPersistence(
           aiInteractionId,
         })
       )
-      .filter((sample): sample is Record<string, Json | null> => sample !== null),
+      .filter((sample) => sample !== null),
   } satisfies Record<string, Json | null>;
 
   return {
@@ -2428,7 +2432,7 @@ function buildWorksheetLearningEventGroup(params: {
       params.changes.length === 1
         ? firstChange.context.relatedRows
             .map((snapshot) => serializeWorksheetRowSnapshot(snapshot))
-            .filter((snapshot): snapshot is Record<string, Json> => snapshot !== null)
+            .filter((snapshot) => snapshot !== null)
         : [],
     formula:
       params.changes.length === 1
@@ -2459,7 +2463,7 @@ function buildWorksheetLearningEventGroup(params: {
     correctionContext: collapseWorksheetCorrectionContext(
       params.changes
         .map((change) => change.correctionContext)
-        .filter((context): context is WorksheetCorrectionContext => context !== null)
+        .filter((context) => context !== null)
     ),
     validationResult: {
       status: summary.formulaCellCount > 0 ? "passed" : "not_applicable",
@@ -2575,7 +2579,7 @@ export function buildWorksheetLearningArtifacts(params: {
           sheetName: params.sheetName,
           aiInteractionId,
           correctionType: "manual_override",
-          correctionLabel: eventType,
+          correctionLabel: classified.correctionType,
           targetEntityId: cellKey,
           correctedFieldName:
             previousCell?.formula !== currentCorrectedCell?.formula
@@ -3024,7 +3028,7 @@ export async function enqueueWorksheetMutationEvidenceV2Outbox(
   supabase: BrowserSupabaseClient,
   input: WorksheetMutationEvidenceV2OutboxInput
 ) {
-  const { data, error } = await supabase.rpc("enqueue_worksheet_mutation_evidence_v2_outbox" as never, {
+  const { data, error } = await supabase.rpc("enqueue_worksheet_mutation_evidence_v2_outbox", {
     p_input: {
       organizationId: input.organizationId,
       userId: input.userId,
@@ -3043,15 +3047,15 @@ export async function enqueueWorksheetMutationEvidenceV2Outbox(
       previousWorksheet: input.previousWorksheet as unknown as Json,
       nextWorksheet: input.nextWorksheet as unknown as Json,
     },
-  } as never);
+  });
 
   if (error) {
     throw new Error(error.message);
   }
 
   return {
-    id: typeof data?.id === "string" ? data.id : null,
-    inserted: data?.inserted === true,
+    id: isJsonRecord(data) && typeof data.id === "string" ? data.id : null,
+    inserted: isJsonRecord(data) && data.inserted === true,
   };
 }
 

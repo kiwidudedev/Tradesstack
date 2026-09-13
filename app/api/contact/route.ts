@@ -1,9 +1,16 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req: Request) {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
+    return Response.json(
+      { success: false, error: "Contact service is temporarily unavailable" },
+      { status: 503 }
+    );
+  }
+
   try {
+    const resend = new Resend(apiKey);
     const body = await req.json();
     const { firstName, lastName, email, phone, country, message } = body;
 
@@ -23,13 +30,13 @@ export async function POST(req: Request) {
     });
 
     if (error) {
-      console.error("Resend error:", error);
-      return Response.json({ success: false, error }, { status: 500 });
+      console.error("Contact email delivery failed.");
+      return Response.json({ success: false, error: "Failed to send email" }, { status: 500 });
     }
 
     return Response.json({ success: true, data });
-  } catch (err) {
-    console.error("Contact route failed:", err);
+  } catch {
+    console.error("Contact email request failed.");
     return Response.json(
       { success: false, error: "Failed to send email" },
       { status: 500 }

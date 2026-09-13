@@ -4,9 +4,9 @@ import { useEffect } from "react";
 import { Loader2, Sparkles, Wand2 } from "lucide-react";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { Button } from "@/components/ui/button";
+import type { PricingWorksheetAiAssistantPreview, PricingWorksheetAiContinuationPlan } from "@/lib/ai-pricing-worksheet-edit-assistant";
 import type { PricingWorksheetConstructionIntent } from "@/lib/pricing-worksheet-construction-intent";
 import type {
-  PricingWorksheetAiContinuationPlan,
   PricingWorksheetAiEvidenceSource,
   PricingWorksheetAiReviewFinding,
   PricingWorksheetAiReviewSummary,
@@ -20,27 +20,7 @@ export type PricingWorksheetAiValidationWarning = {
   message: string;
 };
 
-export type PricingWorksheetAiPreviewSummary = {
-  suggestionSource: "memory" | "default";
-  worksheetName: string;
-  tradePackage: string | null;
-  rowCount: number;
-  columnCount: number;
-  formulaCount: number;
-  populatedCellCount: number;
-  confidence: "high" | "medium" | "low";
-  headers: string[];
-  promptHighlights: string[];
-  sampleLineItems: string[];
-  sections?: string[];
-  sectionCounts?: {
-    sections: number;
-    rows: number;
-    operations: number;
-  };
-  assumptions?: string[];
-  warnings?: string[];
-};
+export type PricingWorksheetAiPreviewSummary = PricingWorksheetAiAssistantPreview["compactOutput"];
 
 export type PricingWorksheetAiMatchedMemory = {
   id: string;
@@ -48,10 +28,7 @@ export type PricingWorksheetAiMatchedMemory = {
   summary: string;
 };
 
-export type PricingWorksheetAiContextSummary = {
-  matchedMemoryCount?: number;
-  summary: string;
-};
+export type PricingWorksheetAiContextSummary = PricingWorksheetAiAssistantPreview["contextSummary"];
 
 export type PricingWorksheetAiOperationPreview = {
   type: string;

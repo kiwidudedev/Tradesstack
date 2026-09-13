@@ -336,7 +336,7 @@ export async function listUniversalLearningQueueRows(
 ) {
   const admin = createDynamicAdminSupabaseClient();
   let query = admin
-    .from<LearningReviewQueueOpsRow>("learning_review_queue")
+    .from<LearningReviewQueueOpsRow[]>("learning_review_queue")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(filters.limit);
@@ -351,7 +351,7 @@ export async function listUniversalLearningReviewRuns(filters: UniversalLearning
   const admin = createDynamicAdminSupabaseClient();
   const query = applyRunFilters(
     admin
-      .from<LearningReviewRunOpsRow>("learning_review_runs")
+      .from<LearningReviewRunOpsRow[]>("learning_review_runs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(filters.limit),
@@ -364,7 +364,7 @@ export async function listUniversalLearningReviewRuns(filters: UniversalLearning
 export async function listUniversalLearningActionResults(filters: UniversalLearningOperationsFilters) {
   const admin = createDynamicAdminSupabaseClient();
   let query = admin
-    .from<LearningReviewActionResultOpsRow>("learning_review_action_results")
+    .from<LearningReviewActionResultOpsRow[]>("learning_review_action_results")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(filters.limit);
@@ -421,7 +421,7 @@ export async function getUniversalLearningCostSummary(filters: UniversalLearning
 export async function getUniversalLearningMemoryHealth(filters: UniversalLearningOperationsFilters) {
   const admin = createDynamicAdminSupabaseClient();
   let memoryQuery = admin
-    .from<OrganizationMemoryOpsRow>("organization_memory_items")
+    .from<OrganizationMemoryOpsRow[]>("organization_memory_items")
     .select("id,organization_id,title,summary,memory_type,memory_category,confidence_score,reinforcement_count,contradiction_count,last_reinforced_at,last_contradicted_at,retired_at,is_active,created_at,updated_at")
     .order("created_at", { ascending: false })
     .limit(5000);
@@ -438,7 +438,7 @@ export async function getUniversalLearningMemoryHealth(filters: UniversalLearnin
     if (memoryIdChunk.length === 0) continue;
     const links = await queryRows<Pick<OrganizationMemoryLinkOpsRow, "organization_memory_item_id">>(
       admin
-        .from<Pick<OrganizationMemoryLinkOpsRow, "organization_memory_item_id">>("organization_memory_links")
+        .from<Pick<OrganizationMemoryLinkOpsRow, "organization_memory_item_id">[]>("organization_memory_links")
         .select("organization_memory_item_id")
         .in("organization_memory_item_id", memoryIdChunk),
       "list organization memory health links",
@@ -479,14 +479,14 @@ export async function getUniversalLearningProvenanceGraph(input: {
   for (const memoryIdChunk of chunk(memoryIds, 500)) {
     memories.push(...await queryRows<OrganizationMemoryOpsRow>(
       admin
-        .from<OrganizationMemoryOpsRow>("organization_memory_items")
+        .from<OrganizationMemoryOpsRow[]>("organization_memory_items")
         .select("id,organization_id,title,summary,memory_type,memory_category,confidence_score,reinforcement_count,contradiction_count,last_reinforced_at,last_contradicted_at,retired_at,is_active,created_at,updated_at")
         .in("id", memoryIdChunk),
       "list provenance memories",
     ));
     links.push(...await queryRows<OrganizationMemoryLinkOpsRow>(
       admin
-        .from<OrganizationMemoryLinkOpsRow>("organization_memory_links")
+        .from<OrganizationMemoryLinkOpsRow[]>("organization_memory_links")
         .select("*")
         .in("organization_memory_item_id", memoryIdChunk)
         .order("created_at", { ascending: false }),
@@ -540,7 +540,7 @@ export async function getUniversalLearningReviewRunDetail(reviewRunId: string) {
   const [queueRows, cursor, sourceRecords, actionResults] = await Promise.all([
     queryRows<LearningReviewQueueOpsRow>(
       admin
-        .from<LearningReviewQueueOpsRow>("learning_review_queue")
+        .from<LearningReviewQueueOpsRow[]>("learning_review_queue")
         .select("*")
         .eq("last_run_id", reviewRunId)
         .order("created_at", { ascending: false })
@@ -559,7 +559,7 @@ export async function getUniversalLearningReviewRunDetail(reviewRunId: string) {
     ),
     queryRows<LearningReviewRunRecordOpsRow>(
       admin
-        .from<LearningReviewRunRecordOpsRow>("learning_review_run_records")
+        .from<LearningReviewRunRecordOpsRow[]>("learning_review_run_records")
         .select("*")
         .eq("review_run_id", reviewRunId)
         .order("created_at", { ascending: true })
@@ -568,7 +568,7 @@ export async function getUniversalLearningReviewRunDetail(reviewRunId: string) {
     ),
     queryRows<LearningReviewActionResultOpsRow>(
       admin
-        .from<LearningReviewActionResultOpsRow>("learning_review_action_results")
+        .from<LearningReviewActionResultOpsRow[]>("learning_review_action_results")
         .select("*")
         .eq("review_run_id", reviewRunId)
         .order("created_at", { ascending: true }),

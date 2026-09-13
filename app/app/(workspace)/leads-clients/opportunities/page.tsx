@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { ibmPlexSans } from "@/lib/fonts";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
 import { getOpportunityCreationDependenciesForCurrentUser } from "@/lib/opportunity-creation-dependencies-server";
-import type { QuoteStatus } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/types";
+type QuoteStatus = Database["public"]["Tables"]["project_quotes"]["Row"]["status"];
 import { OpportunitiesTable } from "./OpportunitiesTable";
 import { NewOpportunityDialog } from "./NewOpportunityDialog";
 

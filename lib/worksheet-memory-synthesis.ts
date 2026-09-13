@@ -2267,7 +2267,7 @@ async function evaluateContradictionEligibility(params: {
   beforeMemoryRow: Record<string, unknown> | null;
   afterMemoryRow: Record<string, unknown>;
 }) {
-  const emptyResult = {
+  const emptyResult: Omit<ContradictionEligibility, "reason"> = {
     shouldContradict: false,
     netNewContradictingClassificationRecordIds: [],
     netNewContradictingEventIds: [],
@@ -2278,7 +2278,7 @@ async function evaluateContradictionEligibility(params: {
     distinctProjectIds: [],
     distinctWorkbookIds: [],
     distinctWorksheetIds: [],
-  } as const;
+  };
 
   if (!params.memoryId) {
     return { ...emptyResult, reason: "no_memory" } satisfies ContradictionEligibility;

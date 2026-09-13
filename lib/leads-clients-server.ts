@@ -402,6 +402,7 @@ async function ensureOpportunityWorkspaceProject(params: {
   const workspaceResult = await supabase
     .from("organization_projects")
     .insert({
+      project_code: "", // BEFORE INSERT trigger generates the code for blank input.
       organization_id: organizationId,
       created_by: workspaceCreatedBy,
       client_id: opportunity.client_id,
@@ -664,6 +665,7 @@ export async function createOpportunityForCurrentUser(input: CreateOpportunityIn
   const opportunityInsertResult = await supabase
     .from("organization_opportunities")
     .insert({
+      opportunity_code: "", // BEFORE INSERT trigger generates the code for blank input.
       organization_id: member.organization_id,
       created_by: member.user_id,
       owner_user_id: member.user_id,

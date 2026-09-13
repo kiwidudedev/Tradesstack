@@ -85,7 +85,7 @@ function createBooleanValue(value: boolean): FormulaBooleanValue {
   return { ok: true, kind: "boolean", value };
 }
 
-function createBlankValue(): FormulaValue {
+function createBlankValue(): { ok: true; kind: "blank"; value: null } {
   return { ok: true, kind: "blank", value: null };
 }
 

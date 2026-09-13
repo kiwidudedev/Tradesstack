@@ -370,26 +370,7 @@ async function loadReusableDuplicateMaterialSnapshot(params: {
     return null;
   }
 
-  const table = params.admin.from("cost_construction_intelligence_events" as never) as unknown as {
-    select: (columns: string) => {
-      eq: (column: string, value: string) => {
-        eq: (column: string, value: string) => {
-          eq: (column: string, value: string) => {
-            eq: (column: string, value: string) => {
-              neq: (column: string, value: string) => {
-                order: (column: string, options?: { ascending?: boolean }) => {
-                  limit: (value: number) => Promise<{
-                    data: Array<Record<string, unknown>> | null;
-                    error: { message: string } | null;
-                  }>;
-                };
-              };
-            };
-          };
-        };
-      };
-    };
-  };
+  const table = params.admin.from("cost_construction_intelligence_events");
 
   const { data, error } = await table
     .select("ai_construction_intelligence, ai_provider, ai_model")

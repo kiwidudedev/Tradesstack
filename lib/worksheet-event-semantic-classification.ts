@@ -130,8 +130,8 @@ type WorksheetSemanticClassificationProviderBatchResponse = {
 };
 
 type WorksheetSemanticBatchProviderMeta = {
-  provider: string;
-  model: string;
+  provider: string | null;
+  model: string | null;
 };
 
 type WorksheetSemanticAiInteractionContext = {
@@ -479,7 +479,7 @@ function buildChangedRowCells(diffData: Record<string, Json | undefined>) {
         : [];
 
   return candidates
-    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
+    .filter((entry): entry is Record<string, Json | undefined> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
     .map((entry) => {
       const header = truncateString(toNullableString(entry.header), 60);
       const column = truncateString(toNullableString(entry.column), 8);
@@ -564,17 +564,17 @@ function buildRelatedRowKinds(relatedRows: unknown) {
   return Array.from(kinds).slice(0, 3);
 }
 
-function buildRelatedRowSignals(relatedRows: unknown) {
+function buildRelatedRowSignals(relatedRows: Json | undefined) {
   if (!Array.isArray(relatedRows)) {
     return [] as Array<Record<string, Json | null>>;
   }
 
   return relatedRows
-    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
+    .filter((entry): entry is Record<string, Json | undefined> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
     .slice(0, MAX_RELATED_ROW_SIGNALS)
     .map((entry, index) => {
       const visibleCells = Array.isArray(entry.visibleCells)
-        ? entry.visibleCells.filter((cell): cell is Record<string, unknown> => Boolean(cell) && typeof cell === "object" && !Array.isArray(cell))
+        ? entry.visibleCells.filter((cell): cell is Record<string, Json | undefined> => Boolean(cell) && typeof cell === "object" && !Array.isArray(cell))
         : [];
 
       const pricingTuple = {
@@ -610,7 +610,7 @@ function buildRelatedRowSignals(relatedRows: unknown) {
 function buildFormulaReferenceSignals(diffData: Record<string, Json | undefined>) {
   if (Array.isArray(diffData.referencedCellsSnapshot)) {
     return diffData.referencedCellsSnapshot
-      .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
+      .filter((entry): entry is Record<string, Json | undefined> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
       .slice(0, MAX_FORMULA_REFERENCE_SIGNALS)
       .map((entry) => ({
         ref: truncateString(coalesceNullableString(entry.ref, entry.startCell), 20),
@@ -782,7 +782,7 @@ function compactNearbyRows(value: unknown) {
                 unit: truncateString(toNullableString(cellRecord.unit), 24),
               } satisfies Record<string, Json | null>;
             })
-            .filter((cell): cell is Record<string, Json | null> => cell !== null)
+            .filter((cell) => cell !== null)
         : [];
 
       return {
@@ -792,7 +792,7 @@ function compactNearbyRows(value: unknown) {
         visibleCells,
       } satisfies Record<string, Json | null>;
     })
-    .filter((row): row is Record<string, Json | null> => row !== null);
+    .filter((row) => row !== null);
 }
 
 function normalizeSemanticField(value: unknown): WorksheetSemanticClassificationField {
@@ -1188,7 +1188,7 @@ function isValidInterpretationPayload(value: unknown) {
   return hasWhatChanged && hasPlainEnglishSummary && hasBusinessMeaning && hasFutureUse;
 }
 
-function compactConstructionIntent(value: unknown) {
+function compactConstructionIntent(value: unknown): Record<string, Json> {
   const record = normalizeNullableJsonRecord(value);
   if (Object.keys(record).length === 0) {
     return {};
@@ -2068,7 +2068,7 @@ function buildClassificationContextSources(event: PendingWorksheetSemanticClassi
     workbookPageContext: true,
     aiProvenance: event.diffData.generatedByAi === true || toNullableString(event.diffData.aiInteractionId) !== null,
     aiInteractionContext: aiContext ? true : false,
-    constructionIntent: aiContext && Object.keys(aiContext.constructionIntent).length > 0,
+    constructionIntent: Boolean(aiContext && Object.keys(aiContext.constructionIntent).length > 0),
     organizationGuidanceSummary: aiContext?.organizationGuidanceSummary ? true : false,
   } satisfies Record<string, Json | null>;
 }
@@ -2217,11 +2217,11 @@ export async function listPendingWorksheetSemanticClassificationBatch(params?: {
   organizationId?: string | null;
 }) {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin.rpc("list_pending_worksheet_event_classification_batch" as never, {
+  const { data, error } = await admin.rpc("list_pending_worksheet_event_classification_batch", {
     p_limit: Math.max(params?.limit ?? DEFAULT_BATCH_LIMIT, 1),
     p_classification_version: Math.max(params?.classificationVersion ?? DEFAULT_CLASSIFICATION_VERSION, 1),
     p_organization_id: params?.organizationId ?? null,
-  } as never);
+  });
 
   if (error) {
     throw new Error(error.message);
@@ -2245,13 +2245,13 @@ export async function claimWorksheetSemanticClassificationBatch(params?: {
   leaseSeconds?: number;
 }) {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin.rpc("claim_worksheet_event_classification_batch" as never, {
+  const { data, error } = await admin.rpc("claim_worksheet_event_classification_batch", {
     p_limit: Math.max(params?.limit ?? DEFAULT_BATCH_LIMIT, 1),
     p_classification_version: Math.max(params?.classificationVersion ?? DEFAULT_CLASSIFICATION_VERSION, 1),
     p_organization_id: params?.organizationId ?? null,
     p_worker_id: params?.workerId ?? DEFAULT_CLASSIFICATION_WORKER_ID,
     p_lease_seconds: Math.max(params?.leaseSeconds ?? DEFAULT_CLAIM_LEASE_SECONDS, 30),
-  } as never);
+  });
 
   if (error) {
     throw new Error(error.message);
@@ -2281,20 +2281,20 @@ export async function finalizeWorksheetSemanticClassificationClaims(
   }
 
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin.rpc("finalize_worksheet_event_classification_claims" as never, {
+  const { data, error } = await admin.rpc("finalize_worksheet_event_classification_claims", {
     p_inputs: records,
-  } as never);
+  });
 
   if (error) {
     throw new Error(error.message);
   }
 
   return {
-    count: typeof data?.count === "number" ? data.count : records.length,
-    ids: Array.isArray(data?.ids) ? data.ids : [],
-    completedCount: typeof data?.completedCount === "number" ? data.completedCount : 0,
-    retriedCount: typeof data?.retriedCount === "number" ? data.retriedCount : 0,
-    deadLetteredCount: typeof data?.deadLetteredCount === "number" ? data.deadLetteredCount : 0,
+    count: isJsonRecord(data) && typeof data.count === "number" ? data.count : records.length,
+    ids: isJsonRecord(data) && Array.isArray(data.ids) ? data.ids : [],
+    completedCount: isJsonRecord(data) && typeof data.completedCount === "number" ? data.completedCount : 0,
+    retriedCount: isJsonRecord(data) && typeof data.retriedCount === "number" ? data.retriedCount : 0,
+    deadLetteredCount: isJsonRecord(data) && typeof data.deadLetteredCount === "number" ? data.deadLetteredCount : 0,
   };
 }
 

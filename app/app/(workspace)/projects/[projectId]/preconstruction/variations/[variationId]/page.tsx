@@ -600,10 +600,10 @@ export default function ProjectVariationsPage() {
       let resolvedProjectSourceOpportunityId = projectRow.source_opportunity_id ?? null;
       if (!resolvedProjectSourceOpportunityId) {
         const { data: repairedSourceOpportunityId, error: repairError } = await supabase.rpc(
-          "repair_project_source_opportunity_lineage" as never,
+          "repair_project_source_opportunity_lineage",
           {
             p_project_id: projectRow.id,
-          } as never,
+          },
         );
 
         if (repairError) {

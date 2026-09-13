@@ -851,8 +851,6 @@ export function NewSupplierInvoiceDialog({
                     suppliers={suppliers}
                     documentExtraction={selectedItem.extraction}
                     pendingExtraction={selectedItem.pendingExtraction}
-                    uploaderMessage={selectedItem.uploaderMessage}
-                    supplierSelectionWarning={selectedItem.supplierSelectionWarning}
                     error={selectedItem.error}
                     supplierFieldRef={{ current: null }}
                     onKeepCurrentEntries={() => keepCurrentEntries(selectedItem.id)}

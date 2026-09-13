@@ -1,3 +1,5 @@
+import type { Json } from "@/lib/supabase/types";
+import { assertJsonValue } from "@/lib/json-contract";
 import { getUniversalLearningContainerDefinition } from "@/lib/universal-learning/container-catalog";
 import {
   normalizeWorksheetData,
@@ -2713,6 +2715,7 @@ function buildPricingWorkbookSheetSummary(input: {
   clientContext: ReturnType<typeof buildPricingWorkbookSheetClientContext>;
 }) {
   const rawWorksheetRecord = toRecord(input.row.worksheet_data);
+  if (input.row.worksheet_data !== undefined) assertJsonValue(input.row.worksheet_data);
   const worksheet = normalizeWorksheetData(input.row.worksheet_data);
   const declaredRowCount =
     typeof rawWorksheetRecord.rowCount === "number" && Number.isFinite(rawWorksheetRecord.rowCount)
@@ -6848,8 +6851,8 @@ async function buildUnifiedProjectQuoteRecords(input: {
   let nextCursorCandidate = input.context.cursor;
   const projectIds = new Set<string>();
   const clientIds = new Set<string>();
-  const projectContexts = new Map<string, JsonRecord>();
-  const clientContexts = new Map<string, JsonRecord>();
+  const projectContexts = new Map<string, Record<string, Json>>();
+  const clientContexts = new Map<string, Record<string, Json>>();
   const statusMix = new Map<string, number>();
 
   for (const candidate of selectedCandidates) {
@@ -6907,7 +6910,7 @@ async function buildUnifiedProjectQuoteRecords(input: {
       });
     }
 
-    const status: UniversalLearningBusinessRecord["status"] = { status: row.status as JsonRecord["status"] };
+    const status: UniversalLearningBusinessRecord["status"] = { status: toStringOrNull(row.status) };
     statusMix.set(`status:${String(row.status)}`, (statusMix.get(`status:${String(row.status)}`) ?? 0) + 1);
 
     if (compareUnifiedQuoteCursor(
@@ -7168,9 +7171,9 @@ export async function buildUniversalLearningContainerRecords(input: {
   const projectIds = new Set<string>();
   const supplierIds = new Set<string>();
   const clientIds = new Set<string>();
-  const projectContexts = new Map<string, JsonRecord>();
-  const supplierContexts = new Map<string, JsonRecord>();
-  const clientContexts = new Map<string, JsonRecord>();
+  const projectContexts = new Map<string, Record<string, Json>>();
+  const supplierContexts = new Map<string, Record<string, Json>>();
+  const clientContexts = new Map<string, Record<string, Json>>();
   const statusMix = new Map<string, number>();
 
   for (const row of ownerRows) {
@@ -7409,7 +7412,7 @@ export async function buildUniversalLearningContainerRecords(input: {
       signalStrengthOverride = worksheetSummary.evidenceStrength;
     }
 
-    if (projectPurchaseOrderEnrichment) {
+    if (projectPurchaseOrderEnrichment && poSupplierContext && poProjectContext) {
       const poLineItems = childPayload.lineItems ?? [];
       const statusContext = buildProjectPurchaseOrderStatusContext(row, childPayload.statusEvents ?? []);
       const poSummary = buildProjectPurchaseOrderSummary({
@@ -7987,7 +7990,7 @@ export async function buildUniversalLearningContainerRecords(input: {
       });
     }
 
-    const derivedStatus =
+    const derivedStatus: Record<string, string | boolean> | null =
       input.containerType === "project_time_sheet_entry"
         ? {
             close_status:

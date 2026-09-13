@@ -1,9 +1,12 @@
+import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { interBold, interMedium } from "@/lib/fonts";
 import { isPlatformAdmin } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  // Workspace identity and tenant data must only be resolved for an incoming request.
+  await connection();
   const member = await getCurrentOrganizationMember();
   const platformAdmin = member ? false : await isPlatformAdmin();
 
