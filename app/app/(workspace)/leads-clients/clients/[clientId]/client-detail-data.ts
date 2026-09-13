@@ -1,8 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { formatMoneyOperational } from "@/lib/format/currency";
+import { getVisibleProjectIds } from "@/lib/opportunity-lifecycle-compatibility-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { opportunityQuoteDisplayNumber } from "@/lib/opportunity-quote-display";
 
 export type ClientRow = {
   id: string;
@@ -27,6 +29,7 @@ export type ProjectRow = {
 export type OpportunityRow = {
   id: string;
   slug: string;
+  opportunity_code?: string | null;
   name: string;
   stage: string;
   estimated_value: number | null;
@@ -52,6 +55,7 @@ export type OpportunityQuoteRow = {
   opportunity_id: string;
   quote_title: string;
   quote_number: string;
+  revision_number?: number;
   status: string;
   total_quote_price: number | null;
   created_at: string;
@@ -84,6 +88,21 @@ export type VariationRow = {
   created_at: string;
   updated_at: string;
 };
+
+async function onlyVisibleProjects(params: {
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  organizationId: string;
+  projects: ProjectRow[];
+}) {
+  const visibleProjectIds = await getVisibleProjectIds({
+    client: params.supabase,
+    organizationId: params.organizationId,
+    candidateProjectIds: params.projects.map((project) => project.id),
+  });
+  return visibleProjectIds
+    ? params.projects.filter((project) => visibleProjectIds.has(project.id))
+    : params.projects;
+}
 
 export type DrawingSetRow = {
   id: string;
@@ -239,11 +258,17 @@ async function getClientBaseData(clientId: string) {
 
   if (clientResult.error || !clientResult.data) notFound();
 
+  const projects = await onlyVisibleProjects({
+    supabase,
+    organizationId: member.organization_id,
+    projects: projectsResult.error ? [] : (projectsResult.data ?? []),
+  });
+
   return {
     member,
     supabase,
     client: clientResult.data,
-    projects: projectsResult.error ? [] : (projectsResult.data ?? []),
+    projects,
     opportunities: opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []),
   };
 }
@@ -323,7 +348,11 @@ export async function getClientInvoicesTabData(clientId: string) {
   if (clientResult.error || !clientResult.data) notFound();
 
   const client = clientResult.data;
-  const projects = projectsResult.error ? [] : (projectsResult.data ?? []);
+  const projects = await onlyVisibleProjects({
+    supabase,
+    organizationId: member.organization_id,
+    projects: projectsResult.error ? [] : (projectsResult.data ?? []),
+  });
   const opportunities = opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []);
   const projectIds = projects.map((project) => project.id);
 
@@ -362,38 +391,58 @@ export async function getClientInvoicesTabData(clientId: string) {
 export async function getClientQuotesTabData(clientId: string) {
   const { member, client, projects, opportunities, supabase } = await getClientBaseData(clientId);
   const projectIds = projects.map((project) => project.id);
-  const opportunityIds = opportunities.map((opportunity) => opportunity.id);
 
-  const [projectQuotesResult, opportunityQuotesResult] = await Promise.all([
+  type RecipientSeriesRow = {
+    opportunity_id: string;
+    opportunity: OpportunityRow | null;
+    current_revision: OpportunityQuoteRow | null;
+  };
+  const seriesClient = supabase as unknown as {
+    from(table: "opportunity_quote_series"): {
+      select(columns: string): {
+        eq(column: string, value: string): {
+          eq(column: string, value: string): {
+            is(column: string, value: null): Promise<{ data: RecipientSeriesRow[] | null; error: { message: string } | null }>;
+          };
+        };
+      };
+    };
+  };
+
+  const [projectQuotesResult, recipientSeriesResult] = await Promise.all([
     projectIds.length > 0
       ? supabase
           .from("project_quotes")
           .select("id, project_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
           .eq("organization_id", member.organization_id)
           .in("project_id", projectIds)
+          .is("quote_series_id", null)
           .returns<ProjectQuoteRow[]>()
       : Promise.resolve({ data: [] as ProjectQuoteRow[], error: null }),
-    opportunityIds.length > 0
-      ? await (supabase as unknown as {
-          from: (table: string) => {
-            select: (columns: string) => {
-              eq: (column: string, value: string) => {
-                in: (column: string, values: string[]) => Promise<UntypedResult<Record<string, unknown>>>;
-              };
-            };
-          };
-        })
-          .from("opportunity_quotes")
-          .select("id, opportunity_id, quote_title, quote_number, status, total_quote_price, created_at, updated_at")
-          .eq("organization_id", member.organization_id)
-          .in("opportunity_id", opportunityIds)
-      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    seriesClient
+      .from("opportunity_quote_series")
+      .select("opportunity_id, opportunity:organization_opportunities!opportunity_quote_series_org_opportunity_fkey(id,slug,opportunity_code,name,stage,estimated_value,due_date,notes,created_at,updated_at), current_revision:project_quotes!opportunity_quote_series_org_current_revision_fkey(id,originating_opportunity_id,quote_title,quote_number,revision_number,status,total_quote_price,created_at,updated_at)")
+      .eq("organization_id", member.organization_id)
+      .eq("recipient_client_id", clientId)
+      .is("archived_at", null),
   ]);
 
   const projectQuotes = projectQuotesResult.error ? [] : (projectQuotesResult.data ?? []);
-  const opportunityQuotes = (opportunityQuotesResult.error ? [] : (opportunityQuotesResult.data ?? [])) as OpportunityQuoteRow[];
+  const recipientSeries = recipientSeriesResult.error ? [] : (recipientSeriesResult.data ?? []);
+  const opportunityQuotes = recipientSeries
+    .map((series) => series.current_revision ? ({
+      ...series.current_revision,
+      quote_number: opportunityQuoteDisplayNumber(
+        series.opportunity?.opportunity_code ?? series.current_revision.quote_number,
+        series.current_revision.revision_number,
+      ),
+    }) : null)
+    .filter((quote): quote is OpportunityQuoteRow => Boolean(quote));
   const projectById = new Map(projects.map((project) => [project.id, project]));
-  const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity]));
+  const opportunityById = new Map([
+    ...opportunities.map((opportunity) => [opportunity.id, opportunity] as const),
+    ...recipientSeries.filter((series) => series.opportunity).map((series) => [series.opportunity_id, series.opportunity as OpportunityRow] as const),
+  ]);
   const recentQuotes = [...projectQuotes, ...opportunityQuotes].sort((left, right) => (right.updated_at || right.created_at).localeCompare(left.updated_at || left.created_at));
   const jobsInProgress = projects.filter((project) => project.stage !== "Completion").length;
   const activeOpportunities = opportunities.filter((opportunity) => opportunity.stage !== "Won" && opportunity.stage !== "Lost");
@@ -438,7 +487,11 @@ export async function getClientFilesTabData(clientId: string) {
   if (clientResult.error || !clientResult.data) notFound();
 
   const client = clientResult.data;
-  const projects = projectsResult.error ? [] : (projectsResult.data ?? []);
+  const projects = await onlyVisibleProjects({
+    supabase,
+    organizationId: member.organization_id,
+    projects: projectsResult.error ? [] : (projectsResult.data ?? []),
+  });
   const opportunities = opportunitiesResult.error ? [] : (opportunitiesResult.data ?? []);
   const projectIds = projects.map((project) => project.id);
 

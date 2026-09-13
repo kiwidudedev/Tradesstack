@@ -1,103 +1,75 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import type { Database } from "@/lib/supabase/types";
-import { resolveUniqueProjectSlug, toProjectSlug } from "@/lib/projects";
+import {
+  clearStableOpportunityCreationRequestId,
+  getStableOpportunityCreationRequestId,
+  submitAuthoritativeOpportunityCreation,
+} from "@/lib/opportunity-creation-client";
+import type {
+  OpportunityCreationClient,
+  OpportunityCreationDependencies,
+  OpportunityCreationMember,
+} from "@/lib/opportunity-creation-dependencies-server";
 import { ibmPlexSans } from "@/lib/fonts";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { FormLabel } from "@/components/app/FormLabel";
 import { useAuth } from "@/hooks/use-auth";
 import { canManageCommercialData } from "@/lib/role-permissions";
+import { TenderClientMultiSelect, withPrimaryTenderClient } from "@/components/app/TenderClientMultiSelect";
 
 const NEW_CLIENT_OPTION = "__new_client__";
-type OrganizationClient = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
-type OrganizationMember = Pick<Database["public"]["Tables"]["organization_members"]["Row"], "user_id" | "display_name">;
 
 const inputClass = `${ibmPlexSans.className} h-[2.75rem] w-full rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--primary)]`;
 const selectClass = `${ibmPlexSans.className} h-[2.75rem] w-full appearance-none rounded-[0.6rem] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[14px] font-medium text-[var(--text-primary)] outline-none transition focus:border-[var(--primary)]`;
 
-export function NewOpportunityDialog() {
+function initialPrimaryClientId(clients: OpportunityCreationClient[], loadError: string | null) {
+  return loadError || clients.length > 0 ? "" : NEW_CLIENT_OPTION;
+}
+
+function initialOwnerUserId(members: OpportunityCreationMember[], currentUserId: string | null) {
+  return members.find((member) => member.user_id === currentUserId)?.user_id
+    ?? members[0]?.user_id
+    ?? currentUserId
+    ?? "";
+}
+
+export function NewOpportunityDialog({
+  clients,
+  members,
+  currentUserId,
+  loadError,
+}: OpportunityCreationDependencies) {
   const router = useRouter();
   const { session, isLoading: isAuthLoading } = useAuth();
   const [open, setOpen] = useState(false);
-
-  const supabase = useMemo(() => {
-    try { return createBrowserSupabaseClient(); } catch { return null; }
-  }, []);
 
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [clients, setClients] = useState<OrganizationClient[]>([]);
-  const [members, setMembers] = useState<OrganizationMember[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string>("");
-  const [selectedOwnerUserId, setSelectedOwnerUserId] = useState<string>("");
+  const [selectedClientId, setSelectedClientId] = useState<string>(() => initialPrimaryClientId(clients, loadError));
+  const [selectedTenderClientIds, setSelectedTenderClientIds] = useState<string[]>([]);
+  const [selectedOwnerUserId, setSelectedOwnerUserId] = useState<string>(() => initialOwnerUserId(members, currentUserId));
   const [clientContactName, setClientContactName] = useState("");
   const [clientCompanyName, setClientCompanyName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [isLoadingFormData, setIsLoadingFormData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const canManageOpportunities = canManageCommercialData(session?.role);
 
-  const resolveOrganizationId = useCallback(async (): Promise<string | null> => {
-    if (!session || !supabase) return null;
-    if (session.organizationId) return session.organizationId;
-    const { data: ensuredOrganizationId, error: ensureError } = await supabase.rpc("ensure_organization_membership");
-    if (!ensureError && ensuredOrganizationId) return ensuredOrganizationId;
-    const { data: memberRow } = await supabase
-      .from("organization_members")
-      .select("organization_id")
-      .eq("user_id", session.id)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    return memberRow?.organization_id ?? null;
-  }, [session, supabase]);
-
-  useEffect(() => {
-    if (!open || isAuthLoading || !session || !supabase) return;
-    let isCancelled = false;
-    const loadFormData = async () => {
-      setIsLoadingFormData(true);
-      try {
-        const resolvedOrganizationId = await resolveOrganizationId();
-        if (!resolvedOrganizationId) { if (!isCancelled) setError("Could not resolve organization."); return; }
-        if (!isCancelled) setOrganizationId(resolvedOrganizationId);
-        const [clientsResult, membersResult] = await Promise.all([
-          supabase.from("organization_clients").select("id, name, company_name").eq("organization_id", resolvedOrganizationId).order("company_name", { ascending: true }),
-          supabase.from("organization_members").select("user_id, display_name").eq("organization_id", resolvedOrganizationId).order("display_name", { ascending: true }),
-        ]);
-        if (clientsResult.error || membersResult.error) {
-          if (!isCancelled) setError(clientsResult.error?.message ?? membersResult.error?.message ?? "Failed to load form data.");
-          return;
-        }
-        if (isCancelled) return;
-        const resolvedClients = (clientsResult.data ?? []).sort((a, b) => (a.company_name?.trim() || "").toLowerCase().localeCompare((b.company_name?.trim() || "").toLowerCase()));
-        const resolvedMembers = membersResult.data ?? [];
-        setClients(resolvedClients);
-        setMembers(resolvedMembers);
-        setSelectedClientId(resolvedClients.length > 0 ? "" : NEW_CLIENT_OPTION);
-        const ownerFromSession = resolvedMembers.find((m) => m.user_id === session.id);
-        setSelectedOwnerUserId(ownerFromSession?.user_id ?? resolvedMembers[0]?.user_id ?? session.id);
-      } finally { if (!isCancelled) setIsLoadingFormData(false); }
-    };
-    void loadFormData();
-    return () => { isCancelled = true; };
-  }, [open, isAuthLoading, resolveOrganizationId, session, supabase]);
-
   const resetForm = () => {
     setName(""); setLocation(""); setDueDate(""); setEstimatedValue("");
-    setSelectedClientId(""); setSelectedOwnerUserId("");
+    setSelectedClientId(initialPrimaryClientId(clients, loadError));
+    setSelectedOwnerUserId(initialOwnerUserId(members, currentUserId));
+    setSelectedTenderClientIds([]);
     setClientContactName(""); setClientCompanyName(""); setClientEmail(""); setClientPhone("");
     setError(null); setIsSubmitting(false);
+    clearStableOpportunityCreationRequestId("dialog");
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -107,71 +79,50 @@ export function NewOpportunityDialog() {
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!supabase || !session || isAuthLoading) { setError("You must be signed in."); return; }
+    if (!session || isAuthLoading) { setError("You must be signed in."); return; }
+    if (loadError) { setError(loadError); return; }
     if (!canManageOpportunities) { setError("You do not have permission to create opportunities."); return; }
     const trimmedName = name.trim();
     if (!trimmedName) { setError("Opportunity name is required."); return; }
     setError(null);
     setIsSubmitting(true);
     try {
-      const resolvedOrganizationId = organizationId ?? (await resolveOrganizationId());
-      if (!resolvedOrganizationId) { setError("Could not resolve organization."); return; }
-      if (!organizationId) setOrganizationId(resolvedOrganizationId);
-
-      let resolvedClientId: string | null = null;
       const shouldCreateNewClient = selectedClientId === NEW_CLIENT_OPTION || clients.length === 0;
       if (shouldCreateNewClient) {
         const trimmedContactName = clientContactName.trim();
         const trimmedCompanyName = clientCompanyName.trim();
         if (!trimmedContactName) { setError("Contact name is required."); return; }
         if (!trimmedCompanyName) { setError("Company name is required."); return; }
-        const normalize = (v: string) => { const t = v.trim(); return t.length > 0 ? t : null; };
-        const createClientResult = await supabase.from("organization_clients").insert({
-          organization_id: resolvedOrganizationId, created_by: session.id,
-          name: trimmedContactName, company_name: trimmedCompanyName,
-          email: normalize(clientEmail), phone: normalize(clientPhone),
-        }).select("id").single();
-        if (createClientResult.error) { setError(createClientResult.error.message); return; }
-        resolvedClientId = createClientResult.data.id;
       } else {
         if (!selectedClientId) { setError("Please select a client."); return; }
-        resolvedClientId = selectedClientId;
       }
 
-      const baseSlug = toProjectSlug(trimmedName);
-      const existingResult = await supabase.from("organization_opportunities").select("slug").eq("organization_id", resolvedOrganizationId).like("slug", `${baseSlug}%`);
-      if (existingResult.error) { setError(existingResult.error.message); return; }
-      const slug = resolveUniqueProjectSlug(baseSlug, (existingResult.data ?? []).map((i) => i.slug));
-
-      const workspaceBaseSlug = toProjectSlug(`${slug}-tender`);
-      const existingWsResult = await supabase.from("organization_projects").select("slug").eq("organization_id", resolvedOrganizationId).like("slug", `${workspaceBaseSlug}%`);
-      if (existingWsResult.error) { setError(existingWsResult.error.message); return; }
-      const workspaceSlug = resolveUniqueProjectSlug(workspaceBaseSlug, (existingWsResult.data ?? []).map((i) => i.slug));
-
-      const wsInsert = await supabase.from("organization_projects").insert({
-        organization_id: resolvedOrganizationId, created_by: session.id, client_id: resolvedClientId,
-        name: `${trimmedName} Tender Workspace`, slug: workspaceSlug, stage: "Pricing",
-        location: location.trim() || "Unspecified", cover_image_url: null,
-      }).select("id").single();
-      if (wsInsert.error) { setError(wsInsert.error.message); return; }
-
-      const insertResult = await supabase.from("organization_opportunities").insert({
-        organization_id: resolvedOrganizationId, created_by: session.id,
-        owner_user_id: selectedOwnerUserId || session.id, client_id: resolvedClientId,
-        workspace_project_id: wsInsert.data.id, name: trimmedName, slug, stage: "New",
-        location: location.trim() || "Unspecified", due_date: dueDate || null,
-        estimated_value: Number(estimatedValue || "0"),
-      }).select("slug").single();
-
-      if (insertResult.error) {
-        await supabase.from("organization_projects").delete().eq("organization_id", resolvedOrganizationId).eq("id", wsInsert.data.id);
-        setError(insertResult.error.message);
-        return;
-      }
+      const insertResult = await submitAuthoritativeOpportunityCreation({
+        creationRequestId: getStableOpportunityCreationRequestId("dialog"),
+        name: trimmedName,
+        location,
+        clientId: shouldCreateNewClient ? null : selectedClientId,
+        tenderClientIds: Array.from(new Set([
+          ...selectedTenderClientIds,
+          ...(shouldCreateNewClient ? [] : [selectedClientId]),
+        ])),
+        newClient: shouldCreateNewClient
+          ? {
+              contactName: clientContactName,
+              companyName: clientCompanyName,
+              email: clientEmail,
+              phone: clientPhone,
+            }
+          : null,
+        ownerUserId: selectedOwnerUserId || session.id,
+        dueDate: dueDate || null,
+        estimatedValue: Number(estimatedValue || "0"),
+      });
 
       handleOpenChange(false);
-      router.push(`/app/leads-clients/opportunities/${insertResult.data.slug}`);
-      router.refresh();
+      router.push(`/app/leads-clients/opportunities/${insertResult.opportunitySlug}`);
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "Unable to create opportunity.");
     } finally {
       setIsSubmitting(false);
     }
@@ -210,23 +161,36 @@ export function NewOpportunityDialog() {
               <Input id="oppName" value={name} onChange={(e) => setName(e.target.value)} placeholder="Hobson Office Upgrade" className={inputClass} required />
             </div>
 
-            {/* Client */}
+            {/* Primary client */}
             <div>
-              <FormLabel htmlFor="oppClient">Client <span className="text-[var(--orange-primary)]">*</span></FormLabel>
-              {isLoadingFormData ? (
-                <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading clients...</p>
-              ) : clients.length > 0 ? (
-                <div className="relative">
-                  <select id="oppClient" value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)} className={selectClass} disabled={isAuthLoading} required={clients.length > 0}>
-                    <option value="">Select a client</option>
-                    {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name?.trim() || "Unknown Company"}</option>)}
-                    <option value={NEW_CLIENT_OPTION}>Add new client</option>
-                  </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                </div>
-              ) : (
-                <p className="text-[14px] font-medium text-[var(--text-secondary)]">No clients yet. Add below.</p>
-              )}
+              <FormLabel htmlFor="oppClient">Primary Client <span className="text-[var(--orange-primary)]">*</span></FormLabel>
+              <div className="relative">
+                <select id="oppClient" value={selectedClientId} onChange={(e) => {
+                  const nextClientId = e.target.value;
+                  setSelectedClientId(nextClientId);
+                  if (nextClientId && nextClientId !== NEW_CLIENT_OPTION) {
+                    setSelectedTenderClientIds((current) => withPrimaryTenderClient(current, nextClientId));
+                  }
+                }} className={selectClass} disabled={isAuthLoading || Boolean(loadError)} required>
+                  {loadError ? <option value="">Clients unavailable</option> : null}
+                  {!loadError && clients.length > 0 ? <option value="">Select a client</option> : null}
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name?.trim() || "Unknown Company"}</option>)}
+                  {!loadError ? <option value={NEW_CLIENT_OPTION}>Add new client</option> : null}
+                </select>
+                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+            </div>
+
+            <div>
+              <FormLabel htmlFor="oppTenderClients">Tender Clients</FormLabel>
+              <TenderClientMultiSelect
+                id="oppTenderClients"
+                clients={clients}
+                selectedIds={selectedTenderClientIds}
+                primaryClientId={selectedClientId}
+                onChange={setSelectedTenderClientIds}
+                disabled={isAuthLoading || Boolean(loadError) || clients.length === 0}
+              />
             </div>
 
             {/* Project Location */}
@@ -236,7 +200,7 @@ export function NewOpportunityDialog() {
             </div>
 
             {/* New client fields */}
-            {(selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) && !isLoadingFormData ? (
+            {!loadError && (selectedClientId === NEW_CLIENT_OPTION || clients.length === 0) ? (
               <>
                 <div>
                   <FormLabel htmlFor="oppContactName">Contact Name <span className="text-[var(--orange-primary)]">*</span></FormLabel>
@@ -274,20 +238,16 @@ export function NewOpportunityDialog() {
             {/* Estimator / Owner */}
             <div>
               <FormLabel htmlFor="oppOwner">Estimator / Owner <span className="text-[var(--orange-primary)]">*</span></FormLabel>
-              {isLoadingFormData ? (
-                <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading estimators...</p>
-              ) : (
-                <div className="relative">
-                  <select id="oppOwner" value={selectedOwnerUserId} onChange={(e) => setSelectedOwnerUserId(e.target.value)} className={selectClass}>
-                    {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}
-                  </select>
-                  <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                </div>
-              )}
+              <div className="relative">
+                <select id="oppOwner" value={selectedOwnerUserId} onChange={(e) => setSelectedOwnerUserId(e.target.value)} className={selectClass} disabled={isAuthLoading || Boolean(loadError)}>
+                  {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}
+                </select>
+                <svg className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
             </div>
 
-            {error ? (
-              <p className="rounded-[0.6rem] border border-[var(--error-light)] bg-[var(--error-light)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--error)]">{error}</p>
+            {loadError || error ? (
+              <p className="rounded-[0.6rem] border border-[var(--error-light)] bg-[var(--error-light)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--error)]">{error ?? loadError}</p>
             ) : null}
           </div>
 
@@ -299,7 +259,7 @@ export function NewOpportunityDialog() {
             </DialogClose>
             <button
               type="submit"
-              disabled={!canManageOpportunities || isSubmitting || isAuthLoading || isLoadingFormData}
+              disabled={!canManageOpportunities || isSubmitting || isAuthLoading || Boolean(loadError)}
               className={`${ibmPlexSans.className} inline-flex h-10 items-center justify-center rounded-[0.5rem] bg-[var(--primary)] px-5 text-[14px] font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:opacity-60`}
             >
               {isSubmitting ? "Creating..." : "Create Tender"}

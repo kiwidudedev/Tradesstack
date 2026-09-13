@@ -6,12 +6,17 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
-import { resolveUniqueProjectSlug, toProjectSlug } from "@/lib/projects";
+import {
+  clearStableOpportunityCreationRequestId,
+  getStableOpportunityCreationRequestId,
+  submitAuthoritativeOpportunityCreation,
+} from "@/lib/opportunity-creation-client";
 import { interMedium } from "@/lib/fonts";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { canManageCommercialData } from "@/lib/role-permissions";
+import { TenderClientMultiSelect, withPrimaryTenderClient } from "@/components/app/TenderClientMultiSelect";
 
 const NEW_CLIENT_OPTION = "__new_client__";
 type OrganizationClient = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
@@ -36,6 +41,7 @@ export default function NewOpportunityPage() {
   const [clients, setClients] = useState<OrganizationClient[]>([]);
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [selectedTenderClientIds, setSelectedTenderClientIds] = useState<string[]>([]);
   const [selectedOwnerUserId, setSelectedOwnerUserId] = useState<string>("");
   const [clientContactName, setClientContactName] = useState("");
   const [clientCompanyName, setClientCompanyName] = useState("");
@@ -177,7 +183,6 @@ export default function NewOpportunityPage() {
         setOrganizationId(resolvedOrganizationId);
       }
 
-      let resolvedClientId: string | null = null;
       const shouldCreateNewClient = selectedClientId === NEW_CLIENT_OPTION || clients.length === 0;
 
       if (shouldCreateNewClient) {
@@ -192,119 +197,38 @@ export default function NewOpportunityPage() {
           return;
         }
 
-        const normalizeOptional = (value: string) => {
-          const trimmed = value.trim();
-          return trimmed.length > 0 ? trimmed : null;
-        };
-
-        const createClientResult = await supabase
-          .from("organization_clients")
-          .insert({
-            organization_id: resolvedOrganizationId,
-            created_by: session.id,
-            name: trimmedContactName,
-            company_name: trimmedCompanyName,
-            email: normalizeOptional(clientEmail),
-            phone: normalizeOptional(clientPhone),
-          })
-          .select("id")
-          .single();
-
-        if (createClientResult.error) {
-          setError(createClientResult.error.message);
-          return;
-        }
-
-        resolvedClientId = createClientResult.data.id;
       } else {
         if (!selectedClientId) {
           setError("Please select a client.");
           return;
         }
-        resolvedClientId = selectedClientId;
       }
 
-      const baseSlug = toProjectSlug(trimmedName);
-      const existingResult = await supabase
-        .from("organization_opportunities")
-        .select("slug")
-        .eq("organization_id", resolvedOrganizationId)
-        .like("slug", `${baseSlug}%`);
-      if (existingResult.error) {
-        setError(existingResult.error.message);
-        return;
-      }
-      const slug = resolveUniqueProjectSlug(
-        baseSlug,
-        (existingResult.data ?? []).map((item) => item.slug)
-      );
-
-      const workspaceBaseSlug = toProjectSlug(`${slug}-tender`);
-      const existingWorkspaceSlugsResult = await supabase
-        .from("organization_projects")
-        .select("slug")
-        .eq("organization_id", resolvedOrganizationId)
-        .like("slug", `${workspaceBaseSlug}%`);
-
-      if (existingWorkspaceSlugsResult.error) {
-        setError(existingWorkspaceSlugsResult.error.message);
-        return;
-      }
-
-      const workspaceSlug = resolveUniqueProjectSlug(
-        workspaceBaseSlug,
-        (existingWorkspaceSlugsResult.data ?? []).map((item) => item.slug)
-      );
-
-      const workspaceInsertResult = await supabase
-        .from("organization_projects")
-        .insert({
-          organization_id: resolvedOrganizationId,
-          created_by: session.id,
-          client_id: resolvedClientId,
-          name: `${trimmedName} Tender Workspace`,
-          slug: workspaceSlug,
-          stage: "Pricing",
-          location: location.trim() || "Unspecified",
-          cover_image_url: null,
-        })
-        .select("id")
-        .single();
-
-      if (workspaceInsertResult.error) {
-        setError(workspaceInsertResult.error.message);
-        return;
-      }
-
-      const insertResult = await supabase
-        .from("organization_opportunities")
-        .insert({
-          organization_id: resolvedOrganizationId,
-          created_by: session.id,
-          owner_user_id: selectedOwnerUserId || session.id,
-          client_id: resolvedClientId,
-          workspace_project_id: workspaceInsertResult.data.id,
-          name: trimmedName,
-          slug,
-          stage: "New",
-          location: location.trim() || "Unspecified",
-          due_date: dueDate || null,
-          estimated_value: Number(estimatedValue || "0"),
-        })
-        .select("slug")
-        .single();
-
-      if (insertResult.error) {
-        await supabase
-          .from("organization_projects")
-          .delete()
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("id", workspaceInsertResult.data.id);
-        setError(insertResult.error.message);
-        return;
-      }
-
-      router.push(`/app/leads-clients/opportunities/${insertResult.data.slug}`);
+      const insertResult = await submitAuthoritativeOpportunityCreation({
+        creationRequestId: getStableOpportunityCreationRequestId("full-page"),
+        name: trimmedName,
+        location,
+        clientId: shouldCreateNewClient ? null : selectedClientId,
+        tenderClientIds: Array.from(new Set([
+          ...selectedTenderClientIds,
+          ...(shouldCreateNewClient ? [] : [selectedClientId]),
+        ])),
+        newClient: shouldCreateNewClient
+          ? {
+              contactName: clientContactName,
+              companyName: clientCompanyName,
+              email: clientEmail,
+              phone: clientPhone,
+            }
+          : null,
+        ownerUserId: selectedOwnerUserId || session.id,
+        dueDate: dueDate || null,
+        estimatedValue: Number(estimatedValue || "0"),
+      });
+      clearStableOpportunityCreationRequestId("full-page");
+      router.push(`/app/leads-clients/opportunities/${insertResult.opportunitySlug}`);
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "Unable to create opportunity.");
     } finally {
       setIsSubmitting(false);
     }
@@ -363,7 +287,7 @@ export default function NewOpportunityPage() {
             </div>
             <div>
               <label htmlFor="opportunityClient" className={labelClass}>
-                Client <span className="text-[var(--orange-primary)]">*</span>
+                Primary Client <span className="text-[var(--orange-primary)]">*</span>
               </label>
               {isLoadingFormData ? (
                 <p className="text-[14px] font-medium text-[var(--text-secondary)]">Loading clients...</p>
@@ -372,7 +296,13 @@ export default function NewOpportunityPage() {
                   <select
                     id="opportunityClient"
                     value={selectedClientId}
-                    onChange={(event) => setSelectedClientId(event.target.value)}
+                    onChange={(event) => {
+                      const nextClientId = event.target.value;
+                      setSelectedClientId(nextClientId);
+                      if (nextClientId && nextClientId !== NEW_CLIENT_OPTION) {
+                        setSelectedTenderClientIds((current) => withPrimaryTenderClient(current, nextClientId));
+                      }
+                    }}
                     className={selectClass}
                     disabled={isAuthLoading}
                     required={clients.length > 0}
@@ -392,6 +322,20 @@ export default function NewOpportunityPage() {
               )}
             </div>
           </div>
+
+          {clients.length > 0 && !isLoadingFormData ? (
+            <div>
+              <label htmlFor="opportunityTenderClients" className={labelClass}>Tender Clients</label>
+              <TenderClientMultiSelect
+                id="opportunityTenderClients"
+                clients={clients}
+                selectedIds={selectedTenderClientIds}
+                primaryClientId={selectedClientId}
+                onChange={setSelectedTenderClientIds}
+                disabled={isAuthLoading}
+              />
+            </div>
+          ) : null}
 
           {/* Project Location */}
           <div>

@@ -3,6 +3,7 @@ import {
   type UniversalLearningContainerType,
   UNIVERSAL_LEARNING_CONTAINER_TYPES,
 } from "@/lib/universal-learning/types";
+import { SUPPLIER_BILL_UCL_SOURCE_TABLES } from "@/lib/universal-learning/supplier-bill-dependencies";
 
 const CATALOG: Record<UniversalLearningContainerType, UniversalLearningContainerDefinition> = {
   pricing_workbook_sheet: {
@@ -68,9 +69,9 @@ const CATALOG: Record<UniversalLearningContainerType, UniversalLearningContainer
   },
   supplier_invoice: {
     containerType: "supplier_invoice",
-    displayName: "Supplier Invoice",
+    displayName: "Supplier Bill",
     primaryReasoningDomain: "procurement_commitment",
-    sourceTables: ["supplier_invoices", "supplier_invoice_lines", "supplier_invoice_documents"],
+    sourceTables: [...SUPPLIER_BILL_UCL_SOURCE_TABLES],
     monthlyCadence: "monthly",
     secondaryTriggers: ["exceptional_volume_threshold"],
     strongEvidenceStatuses: ["Approved", "Needs Review"],
@@ -81,7 +82,19 @@ const CATALOG: Record<UniversalLearningContainerType, UniversalLearningContainer
     containerType: "supplier_invoice_allocation",
     displayName: "Supplier Invoice Allocation",
     primaryReasoningDomain: "cost_attribution",
-    sourceTables: ["supplier_invoice_line_allocations"],
+    sourceTables: [
+      "supplier_invoice_line_allocations",
+      "supplier_invoices",
+      "supplier_invoice_lines",
+      "supplier_invoice_documents",
+      "supplier_invoice_purchase_order_matches",
+      "project_purchase_orders",
+      "project_purchase_order_line_items",
+      "project_actual_cost_events",
+      "organization_projects",
+      "organization_clients",
+      "organization_suppliers",
+    ],
     monthlyCadence: "monthly",
     secondaryTriggers: ["procurement_package_complete", "exceptional_volume_threshold"],
     strongEvidenceStatuses: ["approved", "resolved", "auto_approved"],
@@ -123,9 +136,18 @@ const CATALOG: Record<UniversalLearningContainerType, UniversalLearningContainer
   },
   project_claim: {
     containerType: "project_claim",
-    displayName: "Project Claim",
+    displayName: "Payment Claim",
     primaryReasoningDomain: "commercial_recovery",
-    sourceTables: ["project_claims", "project_claim_line_items"],
+    sourceTables: [
+      "project_claims",
+      "project_claim_line_items",
+      "organization_projects",
+      "organization_clients",
+      "project_quotes",
+      "project_variations",
+      "retention_claim_allocations",
+      "organization_accounting_documents",
+    ],
     monthlyCadence: "monthly",
     secondaryTriggers: ["major_claim_cycle_complete"],
     strongEvidenceStatuses: ["Submitted", "Paid"],

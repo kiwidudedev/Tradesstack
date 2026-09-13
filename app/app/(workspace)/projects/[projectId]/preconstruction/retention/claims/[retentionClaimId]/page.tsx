@@ -47,6 +47,9 @@ import {
   getMasterRetentionSource,
 } from "@/lib/retention/master-retention-source";
 import {
+  resolveRetentionClaimGstPresentation,
+} from "@/lib/retention/retention-claim-gst-presentation";
+import {
   RetentionClaimDraftEditor,
   type RetentionClaimDraftEditorLine,
 } from "./RetentionClaimDraftEditor";
@@ -102,6 +105,17 @@ function toCents(value: number | null | undefined) {
 
 function centsToAmount(value: number) {
   return value / 100;
+}
+
+function minorMoney(value: number | null | undefined) {
+  return value == null ? "—" : money(centsToAmount(value));
+}
+
+function gstLabel(effectiveRate: number | null | undefined) {
+  if (effectiveRate == null || !Number.isFinite(effectiveRate)) return "GST";
+  return `GST (${effectiveRate.toLocaleString("en-NZ", {
+    maximumFractionDigits: 4,
+  })}%)`;
 }
 
 function HiddenContext({
@@ -247,18 +261,6 @@ export default async function RetentionClaimDetailPage({
         originStateStale: false,
       }))
     : allocations;
-  const paidByOrigin = new Map(
-    paymentState?.attributions.map((attribution) => [
-      attribution.originatingPaymentClaimId,
-      attribution.paidAmount,
-    ]) ?? [],
-  );
-  const currentTotal = isDraft
-    ? allocations.reduce(
-        (sum, allocation) => sum + Number(allocation.allocationAmount),
-        0,
-      )
-    : masterSource?.claim.subtotalExclTax ?? claim.subtotalExclTax;
   const allocationByOrigin = new Map(
     allocations.map((allocation) => [
       allocation.originatingPaymentClaimId,
@@ -315,36 +317,78 @@ export default async function RetentionClaimDetailPage({
           ),
         0,
       );
-  const thisClaimCents = toCents(currentTotal);
-  const pushedToXeroCents = masterAccounting?.subtotalMinor ?? 0;
-  const newSinceLastPushCents = Math.max(
-    thisClaimCents - pushedToXeroCents,
-    0,
-  );
-  const claimedToDateCents = previouslyClaimedCents + thisClaimCents;
-  const remainingCents = isDraft
-    ? Math.max(
-        currentRetentionCents - previouslyClaimedCents - thisClaimCents,
-        0,
+  const currentGstEvidence =
+    immutableXeroPanel.currentRetentionSubtotalMinor != null
+    && immutableXeroPanel.currentRetentionTaxMinor != null
+    && immutableXeroPanel.currentRetentionTotalMinor != null
+    && immutableXeroPanel.currentRetentionTaxType
+    && immutableXeroPanel.currentRetentionEffectiveRate != null
+      ? {
+          subtotalMinor: immutableXeroPanel.currentRetentionSubtotalMinor,
+          taxMinor: immutableXeroPanel.currentRetentionTaxMinor,
+          totalMinor: immutableXeroPanel.currentRetentionTotalMinor,
+          taxType: immutableXeroPanel.currentRetentionTaxType,
+          effectiveRate: immutableXeroPanel.currentRetentionEffectiveRate,
+        }
+      : null;
+  const pushedGstEvidence = masterAccounting?.revisionId
+    && masterAccounting.authoritativeInheritedTax
+    && masterAccounting.taxType
+    && masterAccounting.effectiveRate != null
+      ? {
+          subtotalMinor: masterAccounting.subtotalMinor,
+          taxMinor: masterAccounting.taxMinor,
+          totalMinor: masterAccounting.totalMinor,
+          taxType: masterAccounting.taxType,
+          effectiveRate: masterAccounting.effectiveRate,
+        }
+      : null;
+  const gstPresentation = resolveRetentionClaimGstPresentation({
+    currentEvidence: currentGstEvidence,
+    pushedEvidence: pushedGstEvidence,
+    hasPushedRevision: Boolean(masterAccounting?.revisionId),
+    providerPayment: immutableXeroPanel.authoritativeInheritedTax
+      && immutableXeroPanel.amountPaid != null
+      && immutableXeroPanel.amountOutstanding != null
+      ? {
+          paidMinor: toCents(immutableXeroPanel.amountPaid),
+          outstandingMinor: toCents(immutableXeroPanel.amountOutstanding),
+        }
+      : null,
+  });
+  const submittedLinePresentations = displayAllocations.map((allocation) => {
+    const currentSubtotalMinor = toCents(allocation.allocationAmount);
+    const currentEvidence = gstPresentation.current
+      && currentSubtotalMinor === gstPresentation.current.subtotalMinor
+      && (
+        immutableXeroPanel.currentRetentionOriginatingPaymentClaimId
+          === allocation.originatingPaymentClaimId
+        || displayAllocations.length === 1
       )
-    : displayAllocations.reduce(
-        (sum, allocation) =>
-          sum +
-          toCents(
-            isSubmitted
-              ? allocation.remainingAfterAllocation
-              : Math.max(
-                  allocation.currentRetentionOwned -
-                    allocation.currentCommittedRetentionTotal,
-                  0,
-                ),
-          ),
-        0,
-      );
-  const paidCents = toCents(paymentState?.currentPaidAmount);
-  const outstandingCents = isSubmitted
-    ? toCents(paymentState?.currentOutstandingAmount ?? claim.subtotalExclTax)
-    : 0;
+        ? gstPresentation.current
+        : null;
+    const pushedTotalMinor = masterAccounting?.authoritativeInheritedTax
+      ? masterAccounting.pushedTotalByOrigin.get(
+          allocation.originatingPaymentClaimId,
+        ) ?? null
+      : null;
+    return {
+      allocation,
+      currentSubtotalMinor,
+      currentTaxMinor: currentEvidence?.taxMinor ?? null,
+      currentTotalMinor: currentEvidence?.totalMinor ?? null,
+      pushedTotalMinor,
+      newTotalMinor: currentEvidence && pushedTotalMinor != null
+        ? Math.max(currentEvidence.totalMinor - pushedTotalMinor, 0)
+        : null,
+      paidMinor: displayAllocations.length === 1
+        ? gstPresentation.payment?.paidMinor ?? null
+        : null,
+      outstandingMinor: displayAllocations.length === 1
+        ? gstPresentation.payment?.outstandingMinor ?? null
+        : null,
+    };
+  });
   const lineCount =
     automaticRolling && isDraft
       ? rollingOrigins.length
@@ -737,18 +781,65 @@ export default async function RetentionClaimDetailPage({
           )}
 
           <ClaimLineTableShell title="Retention Claim Lines">
-            <div className="overflow-x-auto rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
-              <table className="w-full min-w-[1180px] border-collapse text-sm">
+            <div
+              className="space-y-3 md:hidden"
+              data-testid="retention-gst-lines-mobile"
+            >
+              {submittedLinePresentations.map((line) => (
+                <article
+                  key={line.allocation.id}
+                  className="rounded-[16px] border border-[var(--border)] bg-[var(--surface)] p-4"
+                >
+                  <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] pb-3">
+                    <div className="font-medium text-[var(--text-primary)]">
+                      {line.allocation.originClaimNumberSnapshot
+                        ?? line.allocation.currentOriginClaimNumber}
+                    </div>
+                    <div className="text-xs text-[var(--text-muted)]">
+                      {displayDate(line.allocation.originClaimDateSnapshot)}
+                    </div>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm [font-variant-numeric:tabular-nums]">
+                    {[
+                      ["Retention excl. GST", line.currentSubtotalMinor],
+                      ["GST", line.currentTaxMinor],
+                      ["Total incl. GST", line.currentTotalMinor],
+                      ["Pushed to Xero incl. GST", line.pushedTotalMinor],
+                      ["New Since Last Push incl. GST", line.newTotalMinor],
+                      ["Paid incl. GST", line.paidMinor],
+                      ["Outstanding incl. GST", line.outstandingMinor],
+                    ].map(([label, amount]) => (
+                      <div key={String(label)} className="contents">
+                        <dt className="text-[var(--text-secondary)]">
+                          {label}
+                        </dt>
+                        <dd className={`whitespace-nowrap text-right text-[var(--text-primary)] ${label === "Outstanding incl. GST" || label === "Total incl. GST" ? "font-semibold" : "font-medium"}`}>
+                          {minorMoney(amount as number | null)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </article>
+              ))}
+              {lineCount === 0 ? (
+                <div className="rounded-[16px] border border-[var(--border)] bg-[var(--surface)] px-4 py-8 text-center text-sm text-[var(--text-secondary)]">
+                  No allocations have been added.
+                </div>
+              ) : null}
+            </div>
+            <div className="hidden overflow-x-auto rounded-[18px] border border-[var(--border)] bg-[var(--surface)] md:block">
+              <table className="w-full min-w-[1420px] border-collapse text-sm">
                 <thead>
                   <tr className={`${styles.quoteButtonLabel} border-b border-[var(--border)] bg-[var(--surface-muted)] text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}>
                     <th className="w-[210px] px-3 py-2.5 text-left font-semibold">Payment Claim</th>
                     <th className="w-[110px] border-l border-[var(--border)] px-3 py-2.5 text-left font-semibold">Date</th>
-                    <th className="w-[140px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Retention Held</th>
-                    <th className="w-[160px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">{isSubmitted ? "Pushed to Xero" : "Eligible at Submission"}</th>
-                    <th className="w-[155px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">{isSubmitted ? "New Since Last Push" : "Previously Claimed"}</th>
-                    <th className="w-[230px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">{isSubmitted ? "Cumulative Retention" : "This Claim"}</th>
-                    <th className="w-[145px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">{isSubmitted ? "Paid" : "Claimed to Date"}</th>
-                    <th className="w-[130px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">{isSubmitted ? "Outstanding" : "Remaining"}</th>
+                    <th className="w-[155px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Retention excl. GST</th>
+                    <th className="w-[120px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">GST</th>
+                    <th className="w-[155px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Total incl. GST</th>
+                    <th className="w-[180px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Pushed to Xero incl. GST</th>
+                    <th className="w-[190px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">New Since Last Push incl. GST</th>
+                    <th className="w-[145px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Paid incl. GST</th>
+                    <th className="w-[170px] border-l border-[var(--border)] px-3 py-2.5 text-right font-semibold">Outstanding incl. GST</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -873,45 +964,8 @@ export default async function RetentionClaimDetailPage({
                           </tr>
                         );
                       })
-                    : displayAllocations.map((allocation) => {
-                        const eligibility = eligibilityByOrigin.get(
-                          allocation.originatingPaymentClaimId,
-                        );
-                        const retentionHeld = isSubmitted
-                          ? allocation.retentionWithheldSnapshot
-                          : allocation.currentRetentionOwned;
-                        const previouslyClaimed =
-                          allocation.existingSubmittedAllocationBefore ??
-                          allocation.currentSubmittedAllocationTotalFromOtherClaims;
-                        const claimedToDate =
-                          Number(previouslyClaimed) +
-                          Number(allocation.allocationAmount);
-                        const remaining = isSubmitted
-                          ? allocation.remainingAfterAllocation
-                          : Math.max(
-                              allocation.currentRetentionOwned -
-                                allocation.currentCommittedRetentionTotal,
-                              0,
-                            );
-                        const claimPercent =
-                          Number(retentionHeld) > 0
-                            ? (Number(allocation.allocationAmount) /
-                                Number(retentionHeld)) *
-                              100
-                            : 0;
-                        const pushedMinor = masterAccounting?.pushedByOrigin.get(
-                          allocation.originatingPaymentClaimId,
-                        ) ?? 0;
-                        const cumulativeMinor = toCents(
-                          Number(allocation.allocationAmount),
-                        );
-                        const newMinor = Math.max(
-                          cumulativeMinor - pushedMinor,
-                          0,
-                        );
-                        const paidForOrigin = paidByOrigin.get(
-                          allocation.originatingPaymentClaimId,
-                        ) ?? 0;
+                    : submittedLinePresentations.map((line) => {
+                        const { allocation } = line;
                         return (
                           <tr
                             key={allocation.id}
@@ -938,71 +992,27 @@ export default async function RetentionClaimDetailPage({
                               )}
                             </td>
                             <td className={compactMoneyCellClass}>
-                              {money(retentionHeld)}
+                              {minorMoney(line.currentSubtotalMinor)}
                             </td>
                             <td className={compactMoneyCellClass}>
-                              {money(
-                                isSubmitted
-                                  ? centsToAmount(pushedMinor)
-                                  : eligibility?.currentEligibleRetention,
-                              )}
+                              {minorMoney(line.currentTaxMinor)}
                             </td>
                             <td className={compactMoneyCellClass}>
-                              {money(
-                                isSubmitted
-                                  ? centsToAmount(newMinor)
-                                  : previouslyClaimed,
-                              )}
+                              {minorMoney(line.currentTotalMinor)}
                             </td>
                             <td className={compactMoneyCellClass}>
-                              {isDraft ? (
-                                <form
-                                  action={updateRetentionAllocationAction}
-                                  className="flex items-center justify-end gap-2"
-                                >
-                                  <HiddenContext projectSlug={projectSlug} claimId={claim.id} revision={claim.draftRevision} />
-                                  <input type="hidden" name="allocationId" value={allocation.id} />
-                                  <Input
-                                    name="allocationAmount"
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    defaultValue={allocation.allocationAmount}
-                                    className="h-9 w-32 rounded-[6px] text-right"
-                                    aria-label={`Allocation for ${allocation.currentOriginClaimNumber}`}
-                                  />
-                                  <Button type="submit" size="sm" variant="secondary">Save</Button>
-                                </form>
-                              ) : (
-                                <div className="font-semibold text-[var(--text-primary)]">
-                                  {money(
-                                    centsToAmount(cumulativeMinor),
-                                  )}
-                                </div>
-                              )}
-                              {isDraft ? (
-                                <div className="mt-1 text-right text-[11px] font-normal text-[var(--text-muted)]">
-                                  {claimPercent.toFixed(1)}% of retention held
-                                </div>
-                              ) : null}
+                              {minorMoney(line.pushedTotalMinor)}
                             </td>
                             <td className={compactMoneyCellClass}>
-                              {money(
-                                isSubmitted
-                                  ? paidForOrigin
-                                  : claimedToDate,
-                              )}
+                              {minorMoney(line.newTotalMinor)}
                             </td>
                             <td className={compactMoneyCellClass}>
-                              {money(
-                                isSubmitted
-                                  ? Math.max(
-                                      centsToAmount(cumulativeMinor)
-                                        - paidForOrigin,
-                                      0,
-                                    )
-                                  : remaining,
-                              )}
+                              {minorMoney(line.paidMinor)}
+                            </td>
+                            <td className={compactMoneyCellClass}>
+                              <span className="font-semibold text-[var(--text-primary)]">
+                                {minorMoney(line.outstandingMinor)}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -1010,7 +1020,7 @@ export default async function RetentionClaimDetailPage({
                   {lineCount === 0 ? (
                     <tr>
                       <td
-                        colSpan={8}
+                        colSpan={9}
                         className="px-3 py-8 text-center text-[var(--text-secondary)]"
                       >
                         {automaticRolling && isDraft
@@ -1110,27 +1120,61 @@ export default async function RetentionClaimDetailPage({
                 </h2>
                 <div className="space-y-4">
                   <div className="rounded-[16px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-4">
-                    <div className={`${interMedium.className} space-y-3 text-sm`}>
-                      {[
-                        [isSubmitted ? "Current Retention" : "Retention Held", currentRetentionCents],
-                        [isSubmitted ? "Pushed to Xero" : "Previously Claimed", isSubmitted ? pushedToXeroCents : previouslyClaimedCents],
-                        [isSubmitted ? "New Since Last Push" : "This Retention Claim", isSubmitted ? newSinceLastPushCents : thisClaimCents],
-                        [isSubmitted ? "Cumulative Retention" : "Claimed to Date", isSubmitted ? thisClaimCents : claimedToDateCents],
-                        ["Paid", paidCents],
-                        ["Outstanding", outstandingCents],
-                      ].map(([label, amount], index) => (
-                        <div key={String(label)}>
-                          {index === 3 || index === 5 ? (
-                            <div className="mb-3 h-px bg-[var(--border)]" />
-                          ) : null}
-                          <p className="flex items-center justify-between gap-4">
-                            <span className="text-[var(--text-secondary)]">{label}</span>
-                            <span className={`whitespace-nowrap font-medium text-[var(--text-primary)] [font-variant-numeric:tabular-nums] ${label === "Outstanding" ? "text-[15px] font-semibold" : ""}`}>
-                              {money(centsToAmount(Number(amount)))}
-                            </span>
-                          </p>
-                        </div>
-                      ))}
+                    <div className={`${interMedium.className} space-y-3 text-sm`} data-testid="retention-gst-summary">
+                      <p className={styles.quoteCardTitle}>{"Retention Position"}</p>
+                      <p className="flex items-center justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">{"Current Retention excl. GST"}</span>
+                        <span className="whitespace-nowrap font-medium text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(
+                            gstPresentation.current?.subtotalMinor
+                              ?? currentRetentionCents,
+                          )}
+                        </span>
+                      </p>
+                      <p className="flex items-center justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">
+                          {gstLabel(gstPresentation.current?.effectiveRate)}
+                        </span>
+                        <span className="whitespace-nowrap font-medium text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(gstPresentation.current?.taxMinor)}
+                        </span>
+                      </p>
+                      <p className="flex items-center justify-between gap-4 pt-1">
+                        <span className="text-[15px] font-semibold text-[var(--text-primary)]">{"Current Retention incl. GST"}</span>
+                        <span className="whitespace-nowrap text-[15px] font-semibold text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(gstPresentation.current?.totalMinor)}
+                        </span>
+                      </p>
+
+                      <div className="h-px bg-[var(--border)]" />
+                      <p className={styles.quoteCardTitle}>{"Xero Position"}</p>
+                      <p className="flex items-center justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">{"Pushed to Xero incl. GST"}</span>
+                        <span className="whitespace-nowrap font-medium text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(gstPresentation.pushed?.totalMinor)}
+                        </span>
+                      </p>
+                      <p className="flex items-center justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">{"New Since Last Push incl. GST"}</span>
+                        <span className="whitespace-nowrap font-medium text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(gstPresentation.newSincePush?.totalMinor)}
+                        </span>
+                      </p>
+
+                      <div className="h-px bg-[var(--border)]" />
+                      <p className={styles.quoteCardTitle}>{"Payment Position"}</p>
+                      <p className="flex items-center justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">{"Paid incl. GST"}</span>
+                        <span className="whitespace-nowrap font-medium text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(gstPresentation.payment?.paidMinor)}
+                        </span>
+                      </p>
+                      <p className="flex items-center justify-between gap-4 pt-1">
+                        <span className="text-[15px] font-semibold text-[var(--text-primary)]">{"Outstanding incl. GST"}</span>
+                        <span className="whitespace-nowrap text-[15px] font-semibold text-[var(--text-primary)] [font-variant-numeric:tabular-nums]">
+                          {minorMoney(gstPresentation.payment?.outstandingMinor)}
+                        </span>
+                      </p>
                     </div>
                   </div>
 

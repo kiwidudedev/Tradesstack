@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { XeroActionTiming } from "@/lib/xero/action-performance";
+import { shouldXeroFailureAffectConnectionHealth } from "@/lib/xero/job-report";
 import { getXeroAccounts, getXeroTaxRates, listXeroConnections, XeroRequestError } from "@/lib/xero/client";
 import {
   exportPreparedXeroDraftBill,
@@ -155,13 +156,29 @@ type TaxRateUpsert = {
 class XeroSyncError extends Error {
   isRetryable: boolean;
   requiresAttention: boolean;
+  affectsConnectionHealth: boolean;
 
-  constructor(message: string, options?: { isRetryable?: boolean; requiresAttention?: boolean }) {
+  constructor(message: string, options?: {
+    isRetryable?: boolean;
+    requiresAttention?: boolean;
+    affectsConnectionHealth?: boolean;
+  }) {
     super(message);
     this.name = "XeroSyncError";
     this.isRetryable = options?.isRetryable ?? false;
     this.requiresAttention = options?.requiresAttention ?? false;
+    this.affectsConnectionHealth = options?.affectsConnectionHealth
+      ?? /invalid[_ ]grant|refresh token|revoked|unauthori[sz]ed|tenant (access|mismatch|denied)|http[_ ]?(401|403)/i.test(message);
   }
+}
+
+function jobFailureAffectsConnectionHealth(job: SyncJobRow, error: unknown) {
+  return shouldXeroFailureAffectConnectionHealth({
+    jobKind: job.job_kind,
+    message: error instanceof Error ? error.message : "",
+    httpStatus: error instanceof XeroRequestError ? error.status : null,
+    explicitImpact: error instanceof XeroSyncError ? error.affectsConnectionHealth : null,
+  });
 }
 
 function toUniqueCostCode(params: {
@@ -960,6 +977,12 @@ async function runClaimedJob(job: SyncJobRow) {
             error instanceof PaymentClaimAccountingUpdateWorkerError
               ? error.uncertain || !error.retryable
               : true,
+          affectsConnectionHealth:
+            error instanceof XeroRequestError
+              ? error.status === 401 || error.status === 403
+              : error instanceof PaymentClaimAccountingUpdateWorkerError
+                ? error.code === "tenant_mismatch"
+                : false,
         },
       );
     }
@@ -1552,7 +1575,11 @@ export async function runXeroSyncWorker(params: {
         await finalizeFailedJob();
       }
 
-      if (job.connection_id && !job.job_kind.startsWith("xero.bill.")) {
+      if (
+        job.connection_id
+        && !job.job_kind.startsWith("xero.bill.")
+        && jobFailureAffectsConnectionHealth(job, error)
+      ) {
         await admin
           .from("organization_xero_connections" as never)
           .update({

@@ -206,13 +206,13 @@
       {
         "learningId": "con-001",
         "title": "A MAT cost type allocation (structural timber) is routed to the Labour cost code",
-        "statement": "Allocation 93eab4f4 has cost_type: MAT and internal_cost_code: 05.04.MAT (Structural timber materials) but tradesstack_cost_code: 200 (Labour). The cost type and routing code are misaligned.",
+        "statement": "Allocation 93eab4f4 routes structural timber materials to tradesstack_cost_code: 200 (Labour), which conflicts with the commercial evidence.",
         "whyItMatters": "A materials purchase being routed under the Labour cost code is a cost classification inconsistency. This could distort labour vs materials cost reporting on the project. This is an operational observation only — routing codes are immutable and no change is recommended.",
         "confidence": "medium",
         "evidence": [
           {
             "sourceId": "93eab4f4",
-            "reason": "cost_type: MAT, internal_cost_code: 05.04.MAT, tradesstack_cost_code: 200 (Labour), $1,000 structural timber"
+            "reason": "tradesstack_cost_code: 200 (Labour), $1,000 structural timber, and conflicting commercial evidence"
           }
         ],
         "relationshipToExistingMemory": {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const detailPath = "app/app/(workspace)/projects/[projectId]/preconstruction/claims/[claimId]/page.tsx";
+const detailPath = "app/app/(workspace)/projects/[projectId]/preconstruction/claims/[claimId]/PaymentClaimDetailClient.tsx";
 const source = readFileSync(detailPath, "utf8");
 
 function assertOrdered(snippets: string[]) {
@@ -82,13 +82,17 @@ describe("Payment Claim detail protected UI contract", () => {
     ]);
   });
 
-  it("keeps save, local-state PDF, safe-delete RPC, and Accounting Sync actions", () => {
+  it("keeps save, local-state Payment Claim PDF, server Invoice PDF, safe-delete RPC, and Accounting Sync actions", () => {
     expect(source).toContain('"Save Claim"');
-    expect(source).toContain('"Export PDF"');
+    expect(source).toContain('"Export Payment Claim"');
+    expect(source).toContain('"Export Invoice"');
     expect(source).toContain("composePaymentClaimPdfExport({");
+    expect(source).toContain("/api/payment-claims/${encodeURIComponent(claimId)}/invoice-pdf");
     expect(source).toContain('.rpc("delete_project_claim_safe"');
     expect(source).toContain("This will permanently delete this payment claim and its line items.");
-    expect(source).toContain("<PaymentClaimXeroPanel claimId={claimId} savedRevision={claimUpdatedAt} />");
+    expect(source).toContain("<PaymentClaimXeroPanel");
+    expect(source).toContain("claimId={claimId}");
+    expect(source).toContain("savedRevision={claimUpdatedAt}");
   });
 
   it("captures the existing responsive layout primitives without introducing a second financial model", () => {

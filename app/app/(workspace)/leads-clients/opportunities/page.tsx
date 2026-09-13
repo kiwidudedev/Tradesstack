@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ibmPlexSans } from "@/lib/fonts";
 import { getLiveOpportunitiesForCurrentUser, type LiveOpportunityRow } from "@/lib/leads-clients-server";
+import { getOpportunityCreationDependenciesForCurrentUser } from "@/lib/opportunity-creation-dependencies-server";
 import type { QuoteStatus } from "@/lib/supabase/types";
 import { OpportunitiesTable } from "./OpportunitiesTable";
 import { NewOpportunityDialog } from "./NewOpportunityDialog";
@@ -51,7 +52,10 @@ export default async function LeadsClientsOpportunitiesPage({
   const searchQuery = q.toLowerCase();
 
   const now = new Date();
-  const allRows = await getLiveOpportunitiesForCurrentUser();
+  const [allRows, creationDependencies] = await Promise.all([
+    getLiveOpportunitiesForCurrentUser(),
+    getOpportunityCreationDependenciesForCurrentUser(),
+  ]);
   const activeRows: LiveOpportunityRow[] = [];
   const sentRows: LiveOpportunityRow[] = [];
   const wonRowsByQuote: LiveOpportunityRow[] = [];
@@ -141,7 +145,7 @@ export default async function LeadsClientsOpportunitiesPage({
       <OperationalModuleHeader
         title="Opportunities"
         description="Manage your sales pipeline and track quotes"
-        actions={<NewOpportunityDialog />}
+        actions={<NewOpportunityDialog {...creationDependencies} />}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

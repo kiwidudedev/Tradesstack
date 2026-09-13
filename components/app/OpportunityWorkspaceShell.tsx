@@ -1,33 +1,30 @@
 "use client";
 
-import { useMemo } from "react";
+import { useRef } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ArrowLeft, FileText, FolderOpen, LayoutGrid, Ruler } from "lucide-react";
 import { ibmPlexSans } from "@/lib/fonts";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { buildTakeoffHref } from "@/lib/takeoff/navigation";
+import { buildTakeoffHref, buildTakeoffRegisterHref } from "@/lib/takeoff/navigation";
+import { prefetchFilesOnIntent } from "@/lib/documents/files-intent-prefetch";
 
-type OpportunityTab = "overview" | "generate-trade-pack" | "build-scope" | "start-pricing" | "takeoff" | "pricing-worksheet";
+type OpportunityTab = "overview" | "files" | "generate-trade-pack" | "build-scope" | "start-pricing" | "takeoff" | "pricing-worksheet";
 
 const TAB_BASE_CLASS =
   "group -mx-[0.35rem] inline-flex items-center gap-2 border-b-2 px-[0.35rem] py-3 text-[15px] font-medium leading-none transition-colors";
 const TAB_ACTIVE_CLASS = "border-[var(--orange-primary)] text-[var(--brand-blue)]";
 const TAB_INACTIVE_CLASS = "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]";
 
-interface StoredMeasureContext {
-  drawingSetId: string;
-  pageId: string | null;
-  calibrationStatus: "saved" | "replaced" | "error" | null;
-  measurementStatus: "created" | "archived" | "deleted" | "restored" | "error" | null;
-}
-
 export function OpportunityWorkspaceShell({
   title,
   opportunityId,
   activeTab,
   quoteHref,
+  filesHref,
+  filesPrefetchKind,
+  filesPrefetchSlug,
   children,
   titleClassName,
   contentClassName = "bg-[var(--background)] px-5 pt-6",
@@ -36,55 +33,34 @@ export function OpportunityWorkspaceShell({
   opportunityId: string;
   activeTab: OpportunityTab;
   quoteHref?: string;
+  filesHref: string;
+  filesPrefetchKind: "project" | "opportunity";
+  filesPrefetchSlug: string;
   children: React.ReactNode;
   titleClassName?: string;
   contentClassName?: string;
 }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const router = useRouter();
+  const prefetchedFilesHrefsRef = useRef(new Set<string>());
   const takeoffBasePath = `/app/leads-clients/opportunities/${opportunityId}/takeoff`;
   const isTakeoffActive = pathname.startsWith(takeoffBasePath);
-  const isMeasureActive = pathname.startsWith(`${takeoffBasePath}/measure`);
   const isQuantitiesActive = pathname.startsWith(`${takeoffBasePath}/quantities`);
-  const currentUrlContext = useMemo<StoredMeasureContext | null>(() => {
-    const drawingSetId = searchParams.get("drawingSetId");
-    if (!drawingSetId) {
-      return null;
-    }
-
-    return {
-      drawingSetId,
-      pageId: searchParams.get("pageId"),
-      calibrationStatus: searchParams.get("calibrationStatus") as "saved" | "replaced" | "error" | null,
-      measurementStatus: searchParams.get("measurementStatus") as "created" | "archived" | "deleted" | "restored" | "error" | null,
-    };
-  }, [searchParams]);
-  const currentMeasureContext = useMemo<StoredMeasureContext | null>(() => {
-    if (!isMeasureActive) {
-      return null;
-    }
-
-    return currentUrlContext;
-  }, [currentUrlContext, isMeasureActive]);
-  const measureNavContext = currentUrlContext ?? currentMeasureContext;
-  const quantitiesQuery = isTakeoffActive
-    ? {
-        drawingSetId: searchParams.get("drawingSetId"),
-        pageId: searchParams.get("pageId"),
-        calibrationStatus: searchParams.get("calibrationStatus") as "saved" | "replaced" | "error" | null,
-        measurementStatus: searchParams.get("measurementStatus") as "created" | "archived" | "deleted" | "restored" | "error" | null,
-      }
-    : {};
-  const measureHref = measureNavContext?.drawingSetId
-    ? buildTakeoffHref(opportunityId, "measure", measureNavContext)
-    : `/app/leads-clients/opportunities/${opportunityId}/takeoff`;
-  const quantitiesHref = buildTakeoffHref(opportunityId, "quantities", quantitiesQuery);
+  const isMeasureActive = isTakeoffActive && !isQuantitiesActive;
+  const takeoffHref = buildTakeoffRegisterHref(opportunityId);
+  const quantitiesHref = buildTakeoffHref(opportunityId, "quantities", {});
   const navItems = [
     {
       label: "Overview",
       href: `/app/leads-clients/opportunities/${opportunityId}`,
       icon: LayoutGrid,
       active: activeTab === "overview",
+    },
+    {
+      label: "Files",
+      href: filesHref,
+      icon: FileText,
+      active: activeTab === "files",
     },
     {
       label: "Generate Trade Pack",
@@ -148,6 +124,20 @@ export function OpportunityWorkspaceShell({
                         key={item.label}
                         href={item.href}
                         prefetch
+                        onMouseEnter={item.label === "Files" ? () => prefetchFilesOnIntent({
+                          href: item.href,
+                          kind: filesPrefetchKind,
+                          slug: filesPrefetchSlug,
+                          prefetchedHrefs: prefetchedFilesHrefsRef.current,
+                          prefetch: (target) => router.prefetch(target),
+                        }) : undefined}
+                        onFocus={item.label === "Files" ? () => prefetchFilesOnIntent({
+                          href: item.href,
+                          kind: filesPrefetchKind,
+                          slug: filesPrefetchSlug,
+                          prefetchedHrefs: prefetchedFilesHrefsRef.current,
+                          prefetch: (target) => router.prefetch(target),
+                        }) : undefined}
                         className={`${TAB_BASE_CLASS} ${item.active ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS}`}
                       >
                         <Icon strokeWidth={2.2} className="h-4 w-4 shrink-0" />
@@ -177,7 +167,7 @@ export function OpportunityWorkspaceShell({
                         isMeasureActive ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : "text-[var(--text-primary)]"
                       }`}
                     >
-                      <Link href={measureHref} prefetch>
+                      <Link href={takeoffHref} prefetch={false}>
                         Measure
                       </Link>
                     </DropdownMenuItem>
@@ -187,7 +177,7 @@ export function OpportunityWorkspaceShell({
                         isQuantitiesActive ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : "text-[var(--text-primary)]"
                       }`}
                     >
-                      <Link href={quantitiesHref} prefetch>
+                      <Link href={quantitiesHref} prefetch={false}>
                         Quantities
                       </Link>
                     </DropdownMenuItem>

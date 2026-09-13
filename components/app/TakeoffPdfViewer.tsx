@@ -20,6 +20,7 @@ import {
   CircleDot,
   Hash,
   Lightbulb,
+  MoreHorizontal,
   Settings2,
 } from "lucide-react";
 import {
@@ -56,6 +57,12 @@ import {
 import type { TakeoffActionResult } from "@/lib/takeoff/actions";
 import { MeasureBottomToolbar } from "@/components/app/MeasureBottomToolbar";
 import {
+  TakeoffMeasureSummary,
+  type TakeoffMeasureSummaryRow,
+} from "@/components/app/TakeoffMeasureSummary";
+import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import {
   ConfigurableTool,
   MeasureToolSetupState,
   MeasurementColorSelector,
@@ -69,18 +76,51 @@ import {
   secondaryButtonClassName,
 } from "@/components/app/TradesstackDialogPrimitives";
 import { Input } from "@/components/ui/input";
-import { downloadTakeoffPdf } from "@/lib/exports/takeoff-pdf-download";
+import { Button } from "@/components/ui/button";
 import {
-  buildTakeoffPdfExportFileName,
-  exportTakeoffPageToPdf,
-} from "@/lib/exports/takeoff-pdf-export";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { downloadTakeoffPdf } from "@/lib/exports/takeoff-pdf-download";
 import type {
   ExportTakeoffCalibration,
   ExportTakeoffLegendRow,
   ExportTakeoffMeasurement,
   ExportTakeoffRotation,
 } from "@/lib/exports/takeoff-pdf-export-types";
-import { ibmPlexSans } from "@/lib/fonts";
+import {
+  PendingTakeoffMeasurementRegistry,
+  isTemporaryTakeoffMeasurementId,
+} from "@/lib/takeoff/measurement-lifecycle";
+import { DEFAULT_TAKEOFF_MEASUREMENT_COLORS } from "@/lib/takeoff/measurement-display";
+import {
+  mergeDrawingSetSummaryWithLocalMeasurements,
+  type TakeoffDrawingSetSummaryMeasurement,
+} from "@/lib/takeoff/measurement-summary";
+import {
+  isTakeoffMeasurementIncludedInPdfExport,
+  isTakeoffMeasurementVisibleInLiveWorkspace,
+} from "@/lib/takeoff/measurement-visibility";
+import {
+  assertTakeoffUnitConsistency,
+  convertTakeoffDisplayLengthToBase,
+  getTakeoffBaseUnit,
+  inferTakeoffUnitSystem,
+  isTakeoffDisplayUnit,
+  type TakeoffDisplayUnit,
+  type TakeoffUnitSystem,
+} from "@/lib/takeoff/units";
 
 interface TakeoffMeasurementPoint {
   id: string;
@@ -133,7 +173,7 @@ interface TakeoffLinePath {
 interface TakeoffMeasurement {
   id: string;
   measurement_kind: "line" | "area" | "count";
-  status: string;
+  status: "active" | "archived" | "deleted";
   name: string;
   description: string;
   color_hex: string | null;
@@ -145,10 +185,11 @@ interface TakeoffMeasurement {
   page_bbox_min_y?: number | null;
   page_bbox_max_x?: number | null;
   page_bbox_max_y?: number | null;
-  metadata?: Record<string, unknown> | null;
+  metadata?: unknown;
   points: TakeoffMeasurementPoint[];
   area_shapes: TakeoffAreaShape[];
   line_paths: TakeoffLinePath[];
+  created_at?: string;
 }
 
 interface TakeoffMeasurementReadiness {
@@ -166,10 +207,27 @@ interface TakeoffCalibration {
   name: string;
   display_unit: string;
   reference_length_input: number;
+  reference_length_base: number;
+  scale_ratio: number;
+  unit_system: string;
+  is_active: boolean;
+  superseded_by: string | null;
+  notes: string;
+  created_at: string;
+  updated_at: string;
   point_a_x: number;
   point_a_y: number;
   point_b_x: number;
   point_b_y: number;
+}
+
+interface TakeoffCalibrationHistoryItem extends TakeoffCalibration {
+  dependent_measurement_count: number;
+}
+
+interface DeleteTakeoffCalibrationResult {
+  deletedCalibrationId: string;
+  activeCalibration: TakeoffCalibration | null;
 }
 
 interface TakeoffPdfViewerProps {
@@ -186,10 +244,12 @@ interface TakeoffPdfViewerProps {
   nextPageId: string | null;
   isPageLoading: boolean;
   pageLoadError: string | null;
+  pdfReloadKey: number;
   pageWidthPts: number;
   pageHeightPts: number;
   rotationDegrees: number;
   measurements: TakeoffMeasurement[];
+  summaryMeasurements: TakeoffDrawingSetSummaryMeasurement[];
   measurementReadiness: TakeoffMeasurementReadiness;
   activeCalibration: TakeoffCalibration | null;
   drawingSetId: string;
@@ -197,6 +257,8 @@ interface TakeoffPdfViewerProps {
   exitHref: string;
   saveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration>>;
   setActiveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration | null>>;
+  getCalibrationHistoryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibrationHistoryItem[]>>;
+  deleteCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<DeleteTakeoffCalibrationResult>>;
   createLineMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createAreaMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createCountMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
@@ -213,7 +275,13 @@ interface TakeoffPdfViewerProps {
   updateMeasurementStatusAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   onMeasurementCommitted?: (pageId: string, measurement: TakeoffMeasurement) => void;
   onCalibrationCommitted?: (pageId: string, calibration: TakeoffCalibration | null) => void;
+  onPageUsable?: (pageId: string) => void;
+  onRetryPage: () => void;
+  onRetryPdf: () => void;
   onPageChange: (pageId: string) => void;
+  onAddMeasurementToQuote?: (measurementId: string) => void;
+  onAddMeasurementToPurchaseOrder?: (measurementId: string) => void;
+  onAddMeasurementToVariation?: (measurementId: string) => void;
 }
 
 interface PdfJsRenderTask {
@@ -240,7 +308,15 @@ interface PdfJsLoadingTask {
 interface PdfJsModule {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (source: { url: string; withCredentials?: boolean }) => PdfJsLoadingTask;
+  version?: string;
 }
+
+type PdfViewerFailurePhase =
+  | "pdfjs-module-import"
+  | "worker-configuration"
+  | "document-load"
+  | "page-load"
+  | "page-render";
 
 type ToolMode = "select" | "calibrate" | "distance" | "polyline" | "area" | "count";
 type SelectionState = { type: "calibration" } | { type: "measurement"; measurementId: string } | null;
@@ -277,6 +353,7 @@ interface SummaryContextMenuState {
   measurementColor: string;
   isHiddenFromExportLegend: boolean;
   canAddDeduction: boolean;
+  canAddToQuote: boolean;
   x: number;
   y: number;
 }
@@ -322,11 +399,19 @@ const HIT_TOLERANCE_PX = 16;
 const SELECTION_HIT_TOLERANCE_PX = 28;
 const SNAP_TOLERANCE_PX = 18;
 const SNAP_STICKINESS_MULTIPLIER = 1.45;
-const DEFAULT_DISTANCE_COLOR = "#F15A29";
-const DEFAULT_AREA_COLOR = "#0F766E";
-const DEFAULT_COUNT_COLOR = "#2563EB";
+const DEFAULT_DISTANCE_COLOR = DEFAULT_TAKEOFF_MEASUREMENT_COLORS.line;
+const DEFAULT_AREA_COLOR = DEFAULT_TAKEOFF_MEASUREMENT_COLORS.area;
+const DEFAULT_COUNT_COLOR = DEFAULT_TAKEOFF_MEASUREMENT_COLORS.count;
 const HISTORY_LIMIT = 60;
 const DEFAULT_CALIBRATION_NAME = "Scale calibration";
+const calibrationHistoryDateFormatter = new Intl.DateTimeFormat("en-NZ", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
 
 const INITIAL_TOOL_SETUP: MeasureToolSetupState = {
   calibrate: {
@@ -367,6 +452,7 @@ interface DisplayMeasurement {
   name: string;
   description: string;
   measurementKind: "line" | "area" | "count";
+  status: "active" | "archived" | "deleted";
   color: string;
   documentPoints: Point2D[];
   countPointIds: string[];
@@ -587,23 +673,6 @@ function getMeasuredPerimeterBaseFromDocumentPoints(
   });
 }
 
-function getTakeoffSummaryDescription(measurement: DisplayMeasurement) {
-  const trimmedName = measurement.name.trim();
-  if (trimmedName) {
-    return trimmedName;
-  }
-
-  if (measurement.measurementKind === "area") {
-    return "Area";
-  }
-
-  if (measurement.measurementKind === "count") {
-    return "Count";
-  }
-
-  return measurement.isPolyline ? "Polyline" : "Distance";
-}
-
 function formatZoomLabel(zoom: number) {
   return `${Math.round(zoom * 100)}%`;
 }
@@ -732,7 +801,7 @@ function buildExportLegendRows(params: {
     }));
 }
 
-function getMeasurementMetadataObject(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
+function getMeasurementMetadataObject(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {};
   }
@@ -880,19 +949,6 @@ function cloneMeasurement(measurement: TakeoffMeasurement): TakeoffMeasurement {
   };
 }
 
-function isMeasurementIncludedInPdfExport(
-  measurement: Pick<TakeoffMeasurement, "id" | "status" | "measurement_kind">,
-  hiddenMeasurementIds: Set<string>
-) {
-  return (
-    measurement.status !== "deleted" &&
-    (measurement.measurement_kind === "line" ||
-      measurement.measurement_kind === "area" ||
-      measurement.measurement_kind === "count") &&
-    !hiddenMeasurementIds.has(measurement.id)
-  );
-}
-
 function getMeasurementGeometryOverrideKey(measurementId: string, child?: { kind: MeasurementChildKind; childId: string }) {
   if (!child) {
     return measurementId;
@@ -1022,6 +1078,36 @@ function getPdfSourceKey(pdfUrl: string | null): string | null {
   }
 }
 
+function reportPdfViewerFailure(params: {
+  phase: PdfViewerFailurePhase;
+  error: unknown;
+  drawingSetId: string;
+  pageId: string;
+  pageNumber: number;
+  pdfUrl: string | null;
+  pdfjsVersion?: string;
+}) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  const error = params.error instanceof Error
+    ? params.error
+    : new Error(typeof params.error === "string" ? params.error : "Unknown PDF viewer error");
+
+  console.error("[TakeoffPdfViewer] PDF runtime failure", {
+    phase: params.phase,
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    drawingSetId: params.drawingSetId,
+    pageId: params.pageId,
+    pageNumber: params.pageNumber,
+    pdfjsVersion: params.pdfjsVersion ?? null,
+    pdfSource: getPdfSourceKey(params.pdfUrl),
+  });
+}
+
 function getMeasurementTag(measurement: Pick<TakeoffMeasurement, "metadata">) {
   const rawValue =
     measurement.metadata && typeof measurement.metadata === "object"
@@ -1122,7 +1208,7 @@ function serializeNormalizedPoints(points: Array<{ x: number; y: number }>) {
 }
 
 function inferUnitSystem(displayUnit: string): "metric" | "imperial" {
-  return displayUnit === "ft" || displayUnit === "in" ? "imperial" : "metric";
+  return isTakeoffDisplayUnit(displayUnit) ? inferTakeoffUnitSystem(displayUnit) : "metric";
 }
 
 function MeasureEditorSidebar({
@@ -1164,7 +1250,7 @@ function MeasureSidebarFooter({
         className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
       >
         <ArrowLeft className="h-4 w-4" />
-        <span>Back to Quantities</span>
+        <span>Back to Takeoff</span>
       </Link>
     </div>
   );
@@ -1351,13 +1437,23 @@ function MeasureSidebarInspector({
 }
 
 async function loadPdfJsModule(): Promise<PdfJsModule> {
-  const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsModule;
+  return (await import("pdfjs-dist/legacy/build/pdf.min.mjs")) as unknown as PdfJsModule;
+}
 
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+async function withPdfLoadTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: number | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error("The PDF load timed out.")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
   }
-
-  return pdfjs;
 }
 
 export function TakeoffPdfViewer({
@@ -1372,6 +1468,7 @@ export function TakeoffPdfViewer({
   pageHeightPts,
   rotationDegrees,
   measurements,
+  summaryMeasurements,
   measurementReadiness,
   activeCalibration,
   drawingSetId,
@@ -1379,6 +1476,8 @@ export function TakeoffPdfViewer({
   exitHref,
   saveCalibrationAction,
   setActiveCalibrationAction,
+  getCalibrationHistoryAction,
+  deleteCalibrationAction,
   createLineMeasurementAction,
   createAreaMeasurementAction,
   createCountMeasurementAction,
@@ -1401,17 +1500,26 @@ export function TakeoffPdfViewer({
   nextPageId,
   isPageLoading,
   pageLoadError,
+  pdfReloadKey,
+  onPageUsable,
+  onRetryPage,
+  onRetryPdf,
   onPageChange,
+  onAddMeasurementToQuote,
+  onAddMeasurementToPurchaseOrder,
+  onAddMeasurementToVariation,
 }: TakeoffPdfViewerProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<PdfJsRenderTask | null>(null);
   const loadingTaskRef = useRef<PdfJsLoadingTask | null>(null);
   const documentRef = useRef<PdfJsDocumentProxy | null>(null);
+  const pdfJsVersionRef = useRef<string | null>(null);
   const pageProxyCacheRef = useRef(new Map<number, PdfJsPageProxy>());
   const inFlightPageProxyRequestsRef = useRef(new Map<number, Promise<PdfJsPageProxy>>());
   const loadedPdfSourceRef = useRef<string | null>(getPdfSourceKey(pdfUrl));
   const loadedDrawingSetIdRef = useRef<string | null>(drawingSetId);
+  const loadedPdfReloadKeyRef = useRef(pdfReloadKey);
   const settleTimeoutRef = useRef<number | null>(null);
   const transientZoomRef = useRef(1);
   const pendingCommittedZoomRef = useRef<number | null>(null);
@@ -1458,10 +1566,11 @@ export function TakeoffPdfViewer({
   const [selection, setSelection] = useState<SelectionState>(null);
   const [selectedChild, setSelectedChild] = useState<MeasurementChildSelection | null>(null);
   const [summaryContextMenu, setSummaryContextMenu] = useState<SummaryContextMenuState | null>(null);
+  const summaryMenuElementRef = useRef<HTMLDivElement | null>(null);
   const [summaryMeasurementEdit, setSummaryMeasurementEdit] = useState<SummaryMeasurementEditState | null>(null);
   const [isSummaryMeasurementEditSaving, setIsSummaryMeasurementEditSaving] = useState(false);
   const [measurementsShowingPerimeter, setMeasurementsShowingPerimeter] = useState<Set<string>>(() => new Set());
-  // Legacy name, but this now drives both PDF export visibility and live canvas visibility.
+  // Export-only preference. Live canvas visibility and interaction use savedMeasurements.
   const [hiddenFromExportLegendMeasurementIds, setHiddenFromExportLegendMeasurementIds] = useState<Set<string>>(() => new Set());
   const [appendMeasurementId, setAppendMeasurementId] = useState<string | null>(null);
   const [appendAreaMode, setAppendAreaMode] = useState<AreaShapeRole>("include");
@@ -1483,11 +1592,20 @@ export function TakeoffPdfViewer({
   });
   const [localMeasurements, setLocalMeasurements] = useState<TakeoffMeasurement[]>(measurements);
   const [localActiveCalibration, setLocalActiveCalibration] = useState<TakeoffCalibration | null>(activeCalibration);
+  const [isCalibrationManagerOpen, setIsCalibrationManagerOpen] = useState(false);
+  const [calibrationHistory, setCalibrationHistory] = useState<TakeoffCalibrationHistoryItem[]>([]);
+  const [isCalibrationHistoryLoading, setIsCalibrationHistoryLoading] = useState(false);
+  const [calibrationDeleteCandidate, setCalibrationDeleteCandidate] = useState<TakeoffCalibrationHistoryItem | null>(null);
+  const [calibrationManagerMessage, setCalibrationManagerMessage] = useState<string | null>(null);
+  const calibrationManagerReturnFocusRef = useRef<HTMLElement | null>(null);
   const [measurementPointOverrides, setMeasurementPointOverrides] = useState<Record<string, Point2D[]>>({});
-  const [calibrationName, setCalibrationName] = useState("");
-  const [calibrationLengthInput, setCalibrationLengthInput] = useState("");
-  const [calibrationDisplayUnit, setCalibrationDisplayUnit] = useState("mm");
-  const [calibrationUnitSystem, setCalibrationUnitSystem] = useState<"metric" | "imperial">("metric");
+  const [calibrationDraft, setCalibrationDraft] = useState<MeasureToolSetupState["calibrate"]>({
+    ...INITIAL_TOOL_SETUP.calibrate,
+  });
+  const calibrationName = calibrationDraft.name;
+  const calibrationLengthInput = calibrationDraft.referenceLengthInput;
+  const calibrationDisplayUnit = calibrationDraft.displayUnit;
+  const calibrationUnitSystem = calibrationDraft.unitSystem;
   const [measurementNameInput, setMeasurementNameInput] = useState("");
   const [measurementTagInput, setMeasurementTagInput] = useState("");
   const [measurementNoteInput, setMeasurementNoteInput] = useState("");
@@ -1513,9 +1631,17 @@ export function TakeoffPdfViewer({
   const pendingPolylineAppendPathsRef = useRef<Record<string, PendingPolylineAppendPath[]>>({});
   const countAppendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingCountAppendItemsRef = useRef<Record<string, PendingCountAppendItem[]>>({});
+  const pendingMeasurementsRef = useRef(new PendingTakeoffMeasurementRegistry());
+  const pendingStatusMutationsRef = useRef(new Set<string>());
   const measurementRenderKeysRef = useRef<Record<string, string>>({});
   const saveFeedbackTimeoutRef = useRef<number | null>(null);
   const previousNavigationContextRef = useRef<{ drawingSetId: string; pageId: string } | null>(null);
+  const savedMeasurementsRef = useRef<DisplayMeasurement[]>([]);
+  const summaryMeasurementClickRef = useRef<(measurementId: string) => void>(() => undefined);
+  const summaryMeasurementContextMenuRef = useRef<(
+    event: React.MouseEvent<HTMLButtonElement>,
+    measurementId: string,
+  ) => void>(() => undefined);
   const getMeasurementRenderKey = useCallback((measurementId: string) => {
     const existingKey = measurementRenderKeysRef.current[measurementId];
     if (existingKey) {
@@ -1548,6 +1674,7 @@ export function TakeoffPdfViewer({
 
     window.addEventListener("pointerdown", handleClose);
     window.addEventListener("scroll", handleClose, true);
+    requestAnimationFrame(() => summaryMenuElementRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus({ preventScroll: true }));
 
     return () => {
       window.removeEventListener("pointerdown", handleClose);
@@ -1656,7 +1783,9 @@ export function TakeoffPdfViewer({
         ? {
             name: localActiveCalibration.name || DEFAULT_CALIBRATION_NAME,
             referenceLengthInput: String(localActiveCalibration.reference_length_input),
-            displayUnit: localActiveCalibration.display_unit,
+            displayUnit: isTakeoffDisplayUnit(localActiveCalibration.display_unit)
+              ? localActiveCalibration.display_unit
+              : "mm",
             unitSystem: inferUnitSystem(localActiveCalibration.display_unit),
           }
         : {
@@ -1739,6 +1868,21 @@ export function TakeoffPdfViewer({
   }, [hasValidViewportSize]);
 
   useEffect(() => {
+    setCalibrationDraft(
+      localActiveCalibration
+        ? {
+            name: localActiveCalibration.name,
+            referenceLengthInput: String(localActiveCalibration.reference_length_input),
+            displayUnit: isTakeoffDisplayUnit(localActiveCalibration.display_unit)
+              ? localActiveCalibration.display_unit
+              : "mm",
+            unitSystem: inferUnitSystem(localActiveCalibration.display_unit),
+          }
+        : { ...INITIAL_TOOL_SETUP.calibrate }
+    );
+  }, [localActiveCalibration, pageId]);
+
+  useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       if (!localActiveCalibration) {
         setDraftGeometry((currentDraft) =>
@@ -1746,10 +1890,6 @@ export function TakeoffPdfViewer({
             ? { tool: "calibrate", points: [], hasChanges: false }
             : currentDraft
         );
-        setCalibrationName("");
-        setCalibrationLengthInput("");
-        setCalibrationDisplayUnit("mm");
-        setCalibrationUnitSystem("metric");
         setSelection((currentSelection) => (currentSelection?.type === "calibration" ? null : currentSelection));
         return;
       }
@@ -1764,10 +1904,6 @@ export function TakeoffPdfViewer({
           ? currentDraft
           : { tool: "calibrate", points: savedCalibrationPoints, hasChanges: false }
       );
-      setCalibrationName(localActiveCalibration.name);
-      setCalibrationLengthInput(String(localActiveCalibration.reference_length_input));
-      setCalibrationDisplayUnit(localActiveCalibration.display_unit);
-      setCalibrationUnitSystem(inferUnitSystem(localActiveCalibration.display_unit));
     });
 
     return () => {
@@ -1779,11 +1915,7 @@ export function TakeoffPdfViewer({
     () =>
       localMeasurements
         .filter(
-          (measurement) =>
-            measurement.status !== "deleted" &&
-          (measurement.measurement_kind === "line" ||
-              measurement.measurement_kind === "area" ||
-              measurement.measurement_kind === "count")
+          (measurement) => isTakeoffMeasurementVisibleInLiveWorkspace(measurement)
         )
         .map((measurement) => {
           const baseDocumentPoints =
@@ -1916,6 +2048,7 @@ export function TakeoffPdfViewer({
             name: measurement.name,
             description: measurement.description,
             measurementKind: measurement.measurement_kind,
+            status: measurement.status,
             color:
               measurement.color_hex?.trim() ||
               (measurement.measurement_kind === "area"
@@ -1946,104 +2079,8 @@ export function TakeoffPdfViewer({
         }),
     [getMeasurementRenderKey, localMeasurements, measurementPointOverrides, transform]
   );
-  const canvasVisibleMeasurements = useMemo(
-    () =>
-      savedMeasurements.filter(
-        (measurement) => !hiddenFromExportLegendMeasurementIds.has(measurement.id)
-      ),
-    [hiddenFromExportLegendMeasurementIds, savedMeasurements]
-  );
-  useEffect(() => {
-    if (hiddenFromExportLegendMeasurementIds.size === 0) {
-      return;
-    }
-
-    const hiddenSelectionMeasurementId =
-      selection?.type === "measurement" &&
-      hiddenFromExportLegendMeasurementIds.has(selection.measurementId)
-        ? selection.measurementId
-        : null;
-    const hiddenAppendMeasurementId =
-      appendMeasurementId && hiddenFromExportLegendMeasurementIds.has(appendMeasurementId)
-        ? appendMeasurementId
-        : null;
-
-    if (hiddenSelectionMeasurementId) {
-      setSelection(null);
-    }
-
-    if (
-      selectedChild &&
-      hiddenFromExportLegendMeasurementIds.has(selectedChild.measurementId)
-    ) {
-      setSelectedChild(null);
-    }
-
-    if (hiddenAppendMeasurementId) {
-      appendSaveTargetMeasurementIdRef.current = null;
-      setAppendMeasurementId(null);
-      setAppendAreaMode("include");
-      setToolMode("select");
-      setDraftGeometry({ tool: null, points: [], hasChanges: false });
-    }
-
-    if (hiddenSelectionMeasurementId || hiddenAppendMeasurementId) {
-      setMeasurementPointOverrides((currentOverrides) => {
-        const nextOverrides = Object.fromEntries(
-          Object.entries(currentOverrides).filter(([overrideKey]) => {
-            if (hiddenSelectionMeasurementId) {
-              return (
-                overrideKey !== hiddenSelectionMeasurementId &&
-                !overrideKey.startsWith(`${hiddenSelectionMeasurementId}:`)
-              );
-            }
-
-            if (hiddenAppendMeasurementId) {
-              return (
-                overrideKey !== hiddenAppendMeasurementId &&
-                !overrideKey.startsWith(`${hiddenAppendMeasurementId}:`)
-              );
-            }
-
-            return true;
-          })
-        );
-
-        return Object.keys(nextOverrides).length === Object.keys(currentOverrides).length
-          ? currentOverrides
-          : nextOverrides;
-      });
-    }
-
-    if (
-      interactionRef.current.kind === "edit" &&
-      hiddenFromExportLegendMeasurementIds.has(interactionRef.current.target.measurementId)
-    ) {
-      interactionRef.current = { kind: "idle" };
-      setIsDragging(false);
-    }
-
-    setHoverState((currentHoverState) => {
-      if (
-        currentHoverState.hitTarget &&
-        "measurementId" in currentHoverState.hitTarget &&
-        hiddenFromExportLegendMeasurementIds.has(currentHoverState.hitTarget.measurementId)
-      ) {
-        return {
-          ...currentHoverState,
-          hitTarget: null,
-          snapCandidate: null,
-        };
-      }
-
-      return currentHoverState;
-    });
-  }, [
-    appendMeasurementId,
-    hiddenFromExportLegendMeasurementIds,
-    selectedChild,
-    selection,
-  ]);
+  savedMeasurementsRef.current = savedMeasurements;
+  const liveCanvasMeasurements = savedMeasurements;
   useEffect(() => {
     if (selection?.type !== "measurement") {
       setMeasurementNameInput("");
@@ -2240,7 +2277,7 @@ export function TakeoffPdfViewer({
   const pdfExportMeasurements = useMemo(
     () =>
       localMeasurements.filter((measurement) =>
-        isMeasurementIncludedInPdfExport(measurement, hiddenFromExportLegendMeasurementIds)
+        isTakeoffMeasurementIncludedInPdfExport(measurement, hiddenFromExportLegendMeasurementIds)
       ),
     [hiddenFromExportLegendMeasurementIds, localMeasurements]
   );
@@ -2438,30 +2475,66 @@ export function TakeoffPdfViewer({
         : null,
     [appendMeasurement, appendMeasurementId, toolMode]
   );
-  const getAreaPerimeterLabel = useCallback(
-    (measurement: DisplayMeasurement) => {
-      if (
-        measurement.measurementKind !== "area" ||
-        measurement.measuredPerimeterBase === null ||
-        !localActiveCalibration
-      ) {
-        return null;
-      }
+  const drawingSetSummaryRows = useMemo<TakeoffMeasureSummaryRow[]>(() => {
+    const activePageMeasurementsById = new Map(
+      localMeasurements.map((measurement) => [measurement.id, measurement] as const),
+    );
+    const mergedSummaryMeasurements = mergeDrawingSetSummaryWithLocalMeasurements({
+      summaryMeasurements,
+      localMeasurements,
+      activePage: {
+        id: pageId,
+        number: pageNumber,
+        label: pageLabel,
+      },
+    });
 
-      const displayValue = convertBaseLengthToDisplayValue({
-        baseUnit: localActiveCalibration.base_unit,
-        displayUnit: localActiveCalibration.display_unit,
-        value: measurement.measuredPerimeterBase,
+    return mergedSummaryMeasurements
+      .map((measurement) => {
+        const activePageMeasurement = measurement.pageId === pageId
+          ? activePageMeasurementsById.get(measurement.id) ?? null
+          : null;
+        const isPolyline = activePageMeasurement?.measurement_kind === "line" && (
+          activePageMeasurement.line_paths.length > 0 || activePageMeasurement.points.length > 2
+        );
+        const fallbackLabel = measurement.measurementKind === "area"
+          ? "Area"
+          : measurement.measurementKind === "count"
+            ? "Count"
+            : isPolyline
+              ? "Polyline"
+              : "Distance";
+        const showPerimeter = Boolean(
+          activePageMeasurement?.measurement_kind === "area" &&
+          measurementsShowingPerimeter.has(measurement.id),
+        );
+        const perimeterValue = showPerimeter &&
+          typeof activePageMeasurement?.measured_perimeter_base === "number" &&
+          localActiveCalibration
+          ? convertBaseLengthToDisplayValue({
+              baseUnit: localActiveCalibration.base_unit,
+              displayUnit: localActiveCalibration.display_unit,
+              value: activePageMeasurement.measured_perimeter_base,
+            })
+          : null;
+
+        return {
+          id: measurement.id,
+          pageId: measurement.pageId,
+          pageLabel: measurement.pageLabel,
+          name: measurement.name,
+          measurementKind: measurement.measurementKind,
+          color: activePageMeasurement?.color_hex?.trim() || measurement.colorHex?.trim() ||
+            DEFAULT_TAKEOFF_MEASUREMENT_COLORS[measurement.measurementKind],
+          label: formatMeasurementValue(measurement.displayValue, measurement.displayUnit, fallbackLabel),
+          isPolyline: Boolean(isPolyline),
+          showPerimeter,
+          perimeterLabel: perimeterValue === null || !localActiveCalibration
+            ? null
+            : formatMeasurementValue(perimeterValue, localActiveCalibration.display_unit, "Perimeter"),
+        };
       });
-
-      if (displayValue === null) {
-        return null;
-      }
-
-      return formatMeasurementValue(displayValue, localActiveCalibration.display_unit, "Perimeter");
-    },
-    [localActiveCalibration]
-  );
+  }, [localActiveCalibration, localMeasurements, measurementsShowingPerimeter, pageId, pageLabel, pageNumber, summaryMeasurements]);
   const openSummaryContextMenu = useCallback(
     (measurement: DisplayMeasurement, x: number, y: number) => {
       setSummaryMeasurementEdit(null);
@@ -2473,6 +2546,7 @@ export function TakeoffPdfViewer({
         measurementColor: measurement.color,
         isHiddenFromExportLegend: hiddenFromExportLegendMeasurementIds.has(measurement.id),
         canAddDeduction: measurement.measurementKind === "area",
+        canAddToQuote: measurement.status === "active" && !isTemporaryTakeoffMeasurementId(measurement.id),
         x,
         y,
       });
@@ -2487,6 +2561,18 @@ export function TakeoffPdfViewer({
     },
     [openSummaryContextMenu]
   );
+  summaryMeasurementContextMenuRef.current = (event, measurementId) => {
+    const measurement = savedMeasurementsRef.current.find((item) => item.id === measurementId);
+    if (measurement) {
+      handleSummaryMeasurementContextMenu(event, measurement);
+    }
+  };
+  const handleDrawingSetSummaryMeasurementContextMenu = useCallback((
+    event: React.MouseEvent<HTMLButtonElement>,
+    measurementId: string,
+  ) => {
+    summaryMeasurementContextMenuRef.current(event, measurementId);
+  }, []);
   const handleCanvasContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (toolMode !== "select") {
       return;
@@ -2560,7 +2646,7 @@ export function TakeoffPdfViewer({
     () =>
       buildExportLegendRows({
         measurements: savedMeasurements.filter((measurement) =>
-          isMeasurementIncludedInPdfExport(
+          isTakeoffMeasurementIncludedInPdfExport(
             {
               id: measurement.id,
               status: "active",
@@ -2641,6 +2727,10 @@ export function TakeoffPdfViewer({
     setIsExportingPdf(true);
 
     try {
+      const {
+        buildTakeoffPdfExportFileName,
+        exportTakeoffPageToPdf,
+      } = await import("@/lib/exports/takeoff-pdf-export");
       const pdfBytes = await exportTakeoffPageToPdf({
         pdfUrl,
         pageNumber,
@@ -2872,6 +2962,17 @@ export function TakeoffPdfViewer({
       });
       return nextOverrides;
     });
+    setSelection((currentSelection) =>
+      currentSelection?.type === "measurement" && currentSelection.measurementId === previousId
+        ? { type: "measurement", measurementId: nextMeasurement.id }
+        : currentSelection
+    );
+    setSelectedChild((currentChild) =>
+      currentChild?.measurementId === previousId
+        ? { ...currentChild, measurementId: nextMeasurement.id }
+        : currentChild
+    );
+    setAppendMeasurementId((currentId) => (currentId === previousId ? nextMeasurement.id : currentId));
   }, [getMeasurementRenderKey]);
 
   const replaceMeasurementStatusLocally = useCallback((nextMeasurement: TakeoffMeasurement) => {
@@ -2892,6 +2993,63 @@ export function TakeoffPdfViewer({
     return localMeasurementsRef.current.find((measurement) => measurement.id === measurementId) ?? null;
   }, []);
 
+  const registerPendingMeasurement = useCallback((params: {
+    tempId: string;
+    measurementKind: TakeoffMeasurement["measurement_kind"];
+  }) => {
+    pendingMeasurementsRef.current.register({
+      tempId: params.tempId,
+      measurementKind: params.measurementKind,
+      pageId,
+    });
+  }, [pageId]);
+
+  const settleCreatedMeasurement = useCallback(async (
+    tempId: string,
+    nextMeasurement: TakeoffMeasurement
+  ): Promise<{ measurement: TakeoffMeasurement; cancelled: boolean }> => {
+    const pending = pendingMeasurementsRef.current.resolve(tempId, nextMeasurement.id);
+    if (!pending) {
+      throw new Error("Unable to reconcile the saved measurement.");
+    }
+
+    if (pending.state !== "cancelled") {
+      replaceLocalMeasurementId(tempId, nextMeasurement);
+      onMeasurementCommitted?.(pending.pageId, nextMeasurement);
+      pendingMeasurementsRef.current.settle(tempId);
+      return { measurement: nextMeasurement, cancelled: false };
+    }
+
+    removeLocalMeasurement(tempId);
+    setSelection((currentSelection) =>
+      currentSelection?.type === "measurement" && currentSelection.measurementId === tempId
+        ? null
+        : currentSelection
+    );
+
+    const statusFormData = new FormData();
+    statusFormData.set("drawingSetId", drawingSetId);
+    statusFormData.set("pageId", pending.pageId);
+    statusFormData.set("measurementId", nextMeasurement.id);
+    statusFormData.set("action", "delete");
+    pendingStatusMutationsRef.current.add(nextMeasurement.id);
+    try {
+      const deleteResult = await updateMeasurementStatusAction(statusFormData);
+      if (!deleteResult.ok || !deleteResult.data) {
+        pendingMeasurementsRef.current.fail(tempId);
+        upsertLocalMeasurement(nextMeasurement);
+        onMeasurementCommitted?.(pending.pageId, nextMeasurement);
+        throw new Error("Unable to delete measurement. Please try again.");
+      }
+
+      onMeasurementCommitted?.(pending.pageId, deleteResult.data);
+      pendingMeasurementsRef.current.settle(tempId);
+      return { measurement: deleteResult.data, cancelled: true };
+    } finally {
+      pendingStatusMutationsRef.current.delete(nextMeasurement.id);
+    }
+  }, [drawingSetId, onMeasurementCommitted, removeLocalMeasurement, replaceLocalMeasurementId, updateMeasurementStatusAction, upsertLocalMeasurement]);
+
   const performSetActiveCalibration = useCallback(async (calibrationId: string | null) => {
     const formData = new FormData();
     formData.set("drawingSetId", drawingSetId);
@@ -2907,6 +3065,7 @@ export function TakeoffPdfViewer({
 
     const nextCalibration = result.data ?? null;
     setLocalActiveCalibration(nextCalibration);
+    onCalibrationCommitted?.(pageId, nextCalibration);
 
     if (nextCalibration) {
       setDraftGeometry({
@@ -2917,20 +3076,79 @@ export function TakeoffPdfViewer({
         ],
         hasChanges: false,
       });
-      setCalibrationName(nextCalibration.name);
-      setCalibrationLengthInput(String(nextCalibration.reference_length_input));
-      setCalibrationDisplayUnit(nextCalibration.display_unit);
-      setCalibrationUnitSystem(inferUnitSystem(nextCalibration.display_unit));
+      setCalibrationDraft({
+        name: nextCalibration.name,
+        referenceLengthInput: String(nextCalibration.reference_length_input),
+        displayUnit: isTakeoffDisplayUnit(nextCalibration.display_unit) ? nextCalibration.display_unit : "mm",
+        unitSystem: inferUnitSystem(nextCalibration.display_unit),
+      });
     } else {
       setDraftGeometry({ tool: "calibrate", points: [], hasChanges: false });
-      setCalibrationName("");
-      setCalibrationLengthInput("");
-      setCalibrationDisplayUnit("mm");
-      setCalibrationUnitSystem("metric");
+      setCalibrationDraft({ ...INITIAL_TOOL_SETUP.calibrate });
     }
 
     return nextCalibration;
-  }, [drawingSetId, pageId, transform]);
+  }, [drawingSetId, onCalibrationCommitted, pageId, setActiveCalibrationAction, transform]);
+
+  const loadCalibrationHistory = useCallback(async () => {
+    setIsCalibrationHistoryLoading(true);
+    const formData = new FormData();
+    formData.set("drawingSetId", drawingSetId);
+    formData.set("pageId", pageId);
+    try {
+      const result = await getCalibrationHistoryAction(formData);
+      if (!result.ok || !result.data) {
+        throw new Error("Unable to load calibration history. Please try again.");
+      }
+      setCalibrationHistory(result.data);
+    } catch (historyError) {
+      markSaveError(historyError instanceof Error ? historyError.message : "Unable to load calibration history. Please try again.");
+    } finally {
+      setIsCalibrationHistoryLoading(false);
+    }
+  }, [drawingSetId, getCalibrationHistoryAction, markSaveError, pageId]);
+
+  const openCalibrationManager = useCallback(() => {
+    calibrationManagerReturnFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setCalibrationDeleteCandidate(null);
+    setCalibrationManagerMessage(null);
+    setIsCalibrationManagerOpen(true);
+    void loadCalibrationHistory();
+  }, [loadCalibrationHistory]);
+
+  const activateHistoricalCalibration = useCallback((calibrationId: string) => {
+    void runMutation({
+      savingMessage: "Activating calibration...",
+      successMessage: "Calibration activated.",
+      run: async () => {
+        await performSetActiveCalibration(calibrationId);
+        await loadCalibrationHistory();
+      },
+    });
+  }, [loadCalibrationHistory, performSetActiveCalibration, runMutation]);
+
+  const deleteCalibration = useCallback((calibration: TakeoffCalibrationHistoryItem) => {
+    void runMutation({
+      savingMessage: "Deleting calibration...",
+      successMessage: "Calibration deleted.",
+      run: async () => {
+        const formData = new FormData();
+        formData.set("drawingSetId", drawingSetId);
+        formData.set("pageId", pageId);
+        formData.set("calibrationId", calibration.id);
+        const result = await deleteCalibrationAction(formData);
+        if (!result.ok || !result.data) {
+          throw new Error(result.error ?? "Unable to delete calibration. Please try again.");
+        }
+        setLocalActiveCalibration(result.data.activeCalibration);
+        onCalibrationCommitted?.(pageId, result.data.activeCalibration);
+        setCalibrationDeleteCandidate(null);
+        await loadCalibrationHistory();
+      },
+    });
+  }, [deleteCalibrationAction, drawingSetId, loadCalibrationHistory, onCalibrationCommitted, pageId, runMutation]);
 
   useEffect(() => {
     const viewportElement = viewportRef.current;
@@ -3001,7 +3219,8 @@ export function TakeoffPdfViewer({
       documentRef.current &&
       nextPdfSource &&
       loadedPdfSourceRef.current === nextPdfSource &&
-      loadedDrawingSetIdRef.current === drawingSetId;
+      loadedDrawingSetIdRef.current === drawingSetId &&
+      loadedPdfReloadKeyRef.current === pdfReloadKey;
 
     if (hasLoadedCurrentDocument) {
       return;
@@ -3029,19 +3248,59 @@ export function TakeoffPdfViewer({
       setIsPageBitmapReady(false);
       setError(null);
       setPageProxy(null);
+      pdfJsVersionRef.current = null;
 
+      let pdfjs: PdfJsModule;
       try {
-        const pdfjs = await loadPdfJsModule();
+        pdfjs = await loadPdfJsModule();
+        pdfJsVersionRef.current = pdfjs.version ?? null;
+      } catch (loadError) {
         if (cancelled) {
           return;
         }
+        reportPdfViewerFailure({
+          phase: "pdfjs-module-import",
+          error: loadError,
+          drawingSetId,
+          pageId,
+          pageNumber,
+          pdfUrl,
+        });
+        setLoadState("error");
+        setError("Unable to load the selected drawing page.");
+        return;
+      }
 
+      if (cancelled) {
+        return;
+      }
+
+      try {
+        if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+          pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+        }
+      } catch (workerError) {
+        reportPdfViewerFailure({
+          phase: "worker-configuration",
+          error: workerError,
+          drawingSetId,
+          pageId,
+          pageNumber,
+          pdfUrl,
+          pdfjsVersion: pdfjs.version,
+        });
+        setLoadState("error");
+        setError("Unable to load the selected drawing page.");
+        return;
+      }
+
+      try {
         const loadingTask = pdfjs.getDocument({
           url: pdfUrl,
           withCredentials: false,
         });
         loadingTaskRef.current = loadingTask;
-        const pdfDocument = await loadingTask.promise;
+        const pdfDocument = await withPdfLoadTimeout(loadingTask.promise, 20_000);
         if (cancelled) {
           await pdfDocument.destroy?.();
           return;
@@ -3052,14 +3311,31 @@ export function TakeoffPdfViewer({
         inFlightPageProxyRequestsRef.current.clear();
         loadedPdfSourceRef.current = nextPdfSource;
         loadedDrawingSetIdRef.current = drawingSetId;
+        loadedPdfReloadKeyRef.current = pdfReloadKey;
         setLoadState("ready");
       } catch (loadError) {
         if (cancelled) {
           return;
         }
 
+        try {
+          await loadingTaskRef.current?.destroy?.();
+        } catch {
+          // The loading task may already be terminal.
+        }
+        loadingTaskRef.current = null;
+
+        reportPdfViewerFailure({
+          phase: "document-load",
+          error: loadError,
+          drawingSetId,
+          pageId,
+          pageNumber,
+          pdfUrl,
+          pdfjsVersion: pdfjs.version,
+        });
         setLoadState("error");
-        setError(loadError instanceof Error ? loadError.message : "Unable to load the selected drawing page.");
+        setError("Unable to load the selected drawing page.");
       }
     }
 
@@ -3068,7 +3344,7 @@ export function TakeoffPdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [drawingSetId, pdfUrl]);
+  }, [drawingSetId, pageId, pageNumber, pdfReloadKey, pdfUrl]);
 
   useEffect(() => {
     const pdfDocument = documentRef.current;
@@ -3104,8 +3380,17 @@ export function TakeoffPdfViewer({
           return;
         }
 
+        reportPdfViewerFailure({
+          phase: "page-load",
+          error: pageError,
+          drawingSetId,
+          pageId,
+          pageNumber,
+          pdfUrl,
+          pdfjsVersion: pdfJsVersionRef.current ?? undefined,
+        });
         setLoadState("error");
-        setError(pageError instanceof Error ? pageError.message : "Unable to load the selected drawing page.");
+        setError("Unable to load the selected drawing page.");
       }
     }
 
@@ -3114,10 +3399,10 @@ export function TakeoffPdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [getOrLoadPdfPage, loadState, pageNumber, rotationDegrees]);
+  }, [drawingSetId, getOrLoadPdfPage, loadState, pageId, pageNumber, pdfUrl, rotationDegrees]);
 
   useEffect(() => {
-    if (loadState !== "ready" || !documentRef.current) {
+    if (loadState !== "ready" || !documentRef.current || !isPageBitmapReady) {
       return;
     }
 
@@ -3131,7 +3416,13 @@ export function TakeoffPdfViewer({
         // Ignore background priming failures. The active page load path handles errors visibly.
       });
     });
-  }, [getOrLoadPdfPage, loadState, nextPageId, pageNumber, previousPageId]);
+  }, [getOrLoadPdfPage, isPageBitmapReady, loadState, nextPageId, pageNumber, previousPageId]);
+
+  useEffect(() => {
+    if (isPageBitmapReady) {
+      onPageUsable?.(pageId);
+    }
+  }, [isPageBitmapReady, onPageUsable, pageId]);
 
   useEffect(() => {
     const previousNavigationContext = previousNavigationContextRef.current;
@@ -3313,9 +3604,18 @@ export function TakeoffPdfViewer({
           return;
         }
 
+        reportPdfViewerFailure({
+          phase: "page-render",
+          error: renderError,
+          drawingSetId,
+          pageId,
+          pageNumber,
+          pdfUrl,
+          pdfjsVersion: pdfJsVersionRef.current ?? undefined,
+        });
         setIsRendering(false);
         setLoadState("error");
-        setError(renderError instanceof Error ? renderError.message : "Unable to render the selected drawing page.");
+        setError("Unable to render the selected drawing page.");
       });
 
     return () => {
@@ -3324,9 +3624,12 @@ export function TakeoffPdfViewer({
     };
   }, [
     devicePixelRatio,
+    drawingSetId,
     loadState,
     pageId,
+    pageNumber,
     pageProxy,
+    pdfUrl,
     pendingCommittedZoom,
     rotationDegrees,
     hasValidViewportSize,
@@ -3464,7 +3767,7 @@ export function TakeoffPdfViewer({
     }
 
     if (!shouldDisableMeasurementVertexSnap) {
-      canvasVisibleMeasurements.forEach((measurement) => {
+      liveCanvasMeasurements.forEach((measurement) => {
         measurement.documentPoints.forEach((point, index) => {
           if (
             params.mode === "edit" &&
@@ -3563,7 +3866,7 @@ export function TakeoffPdfViewer({
       }
     }
 
-    canvasVisibleMeasurements.forEach((measurement) => {
+    liveCanvasMeasurements.forEach((measurement) => {
       if (measurement.measurementKind === "area") {
         measurement.areaShapes.forEach((shape) => {
           const nearestPointHit = getNearestPointHit({
@@ -3839,6 +4142,12 @@ export function TakeoffPdfViewer({
     if (!measurement || !isMeasurementAppendSupported(measurement)) {
       return;
     }
+    if (measurement.id.startsWith("temp-")) {
+      setSelection({ type: "measurement", measurementId });
+      setSelectedChild(null);
+      setToolMode("select");
+      return;
+    }
 
     const nextTool =
       measurement.measurementKind === "area"
@@ -3900,6 +4209,18 @@ export function TakeoffPdfViewer({
     setActionError(null);
     clearSaveFeedback();
   }, [appendMeasurementId, clearSaveFeedback, isMeasurementAppendSupported, savedMeasurements, selection, startAppendMeasurement, toolMode]);
+  summaryMeasurementClickRef.current = handleSummaryMeasurementClick;
+
+  const handleDrawingSetSummaryMeasurementClick = useCallback((measurementId: string, measurementPageId: string) => {
+    if (measurementPageId !== pageId) {
+      setSummaryContextMenu(null);
+      setSummaryMeasurementEdit(null);
+      onPageChange(measurementPageId);
+      return;
+    }
+
+    summaryMeasurementClickRef.current(measurementId);
+  }, [onPageChange, pageId]);
 
   const handleToolSetupConfirm = useCallback((values: MeasureToolSetupState[ConfigurableTool]) => {
     if (!activeSetupTool) {
@@ -3912,10 +4233,10 @@ export function TakeoffPdfViewer({
         ...current,
         calibrate: calibrateValues,
       }));
-      setCalibrationName(calibrateValues.name || DEFAULT_CALIBRATION_NAME);
-      setCalibrationLengthInput(calibrateValues.referenceLengthInput);
-      setCalibrationDisplayUnit(calibrateValues.displayUnit);
-      setCalibrationUnitSystem(calibrateValues.unitSystem);
+      setCalibrationDraft({
+        ...calibrateValues,
+        name: calibrateValues.name || DEFAULT_CALIBRATION_NAME,
+      });
     } else if (activeSetupTool === "distance") {
       setToolSetup((current) => ({
         ...current,
@@ -3952,6 +4273,7 @@ export function TakeoffPdfViewer({
 
   const handleToolbarToolSelect = useCallback((tool: ToolMode) => {
     if (tool === "calibrate" && localActiveCalibration) {
+      openCalibrationManager();
       return;
     }
 
@@ -3970,7 +4292,7 @@ export function TakeoffPdfViewer({
     }
 
     openToolSetupDialog(tool);
-  }, [beginToolMode, localActiveCalibration, openToolSetupDialog, selectedMeasurement, selection, startAppendMeasurement]);
+  }, [beginToolMode, localActiveCalibration, openCalibrationManager, openToolSetupDialog, selectedMeasurement, selection, startAppendMeasurement]);
 
   const clearMeasurementDraft = useCallback(() => {
     activeSnapCandidateRef.current = null;
@@ -3988,10 +4310,18 @@ export function TakeoffPdfViewer({
       points: savedCalibrationPoints,
       hasChanges: false,
     });
-    setCalibrationName(localActiveCalibration?.name ?? "");
-    setCalibrationLengthInput(localActiveCalibration ? String(localActiveCalibration.reference_length_input) : "");
-    setCalibrationDisplayUnit(localActiveCalibration?.display_unit ?? "mm");
-    setCalibrationUnitSystem(inferUnitSystem(localActiveCalibration?.display_unit ?? "mm"));
+    setCalibrationDraft(
+      localActiveCalibration
+        ? {
+            name: localActiveCalibration.name,
+            referenceLengthInput: String(localActiveCalibration.reference_length_input),
+            displayUnit: isTakeoffDisplayUnit(localActiveCalibration.display_unit)
+              ? localActiveCalibration.display_unit
+              : "mm",
+            unitSystem: inferUnitSystem(localActiveCalibration.display_unit),
+          }
+        : { ...INITIAL_TOOL_SETUP.calibrate }
+    );
     setSelection({ type: "calibration" });
   }, [localActiveCalibration, savedCalibrationPoints]);
 
@@ -4033,6 +4363,26 @@ export function TakeoffPdfViewer({
 
     const measurement = getCurrentMeasurementById(selection.measurementId);
     if (!measurement) {
+      return;
+    }
+
+    if (isTemporaryTakeoffMeasurementId(measurement.id)) {
+      const pending = pendingMeasurementsRef.current.get(measurement.id);
+      if (pending) {
+        pendingMeasurementsRef.current.cancel(measurement.id);
+      }
+      removeLocalMeasurement(measurement.id);
+      setSelection(null);
+      setSelectedChild(null);
+      setSummaryContextMenu(null);
+      setSummaryMeasurementEdit(null);
+      if (!pending) {
+        markSaveError("Unable to reconcile the pending measurement. Please try again.");
+      }
+      return;
+    }
+
+    if (pendingStatusMutationsRef.current.has(measurement.id)) {
       return;
     }
 
@@ -4185,6 +4535,8 @@ export function TakeoffPdfViewer({
     });
     setSelection(null);
     setSelectedChild(null);
+    setSummaryContextMenu(null);
+    setSummaryMeasurementEdit(null);
 
     const runDelete = async () => {
       const formData = new FormData();
@@ -4192,12 +4544,17 @@ export function TakeoffPdfViewer({
       formData.set("pageId", pageId);
       formData.set("measurementId", selection.measurementId);
       formData.set("action", "delete");
-      const result = await updateMeasurementStatusAction(formData);
-      if (!result.ok || !result.data) {
-        throw new Error(result.error ?? "Unable to delete measurement.");
+      pendingStatusMutationsRef.current.add(measurement.id);
+      try {
+        const result = await updateMeasurementStatusAction(formData);
+        if (!result.ok || !result.data) {
+          throw new Error("Unable to delete measurement. Please try again.");
+        }
+        onMeasurementCommitted?.(pageId, result.data);
+        return result.data;
+      } finally {
+        pendingStatusMutationsRef.current.delete(measurement.id);
       }
-      onMeasurementCommitted?.(pageId, result.data);
-      return result.data;
     };
 
     void runMutation({
@@ -4248,8 +4605,10 @@ export function TakeoffPdfViewer({
     localActiveCalibration,
     onMeasurementCommitted,
     pageId,
+    markSaveError,
     pushHistoryCommand,
     replaceMeasurementStatusLocally,
+    removeLocalMeasurement,
     runMutation,
     selection,
     selectedMeasurementChild,
@@ -4501,13 +4860,36 @@ export function TakeoffPdfViewer({
 
   function submitCalibration(points: Point2D[]) {
     const normalizedPoints = documentPointsToNormalizedPoints(points, documentPageSize);
-    const calibrationSetup = toolSetup.calibrate;
-    const resolvedCalibrationName = calibrationName.trim() || calibrationSetup.name || DEFAULT_CALIBRATION_NAME;
-    const resolvedCalibrationLength = calibrationLengthInput || calibrationSetup.referenceLengthInput || "0";
-    const resolvedCalibrationDisplayUnit = calibrationDisplayUnit || calibrationSetup.displayUnit;
-    const resolvedCalibrationUnitSystem = calibrationUnitSystem || calibrationSetup.unitSystem;
+    const resolvedCalibrationName = calibrationDraft.name.trim() || DEFAULT_CALIBRATION_NAME;
+    const resolvedCalibrationLength = calibrationDraft.referenceLengthInput.trim();
+    const resolvedCalibrationUnitSystem: TakeoffUnitSystem = calibrationDraft.unitSystem;
+    let resolvedCalibrationDisplayUnit: TakeoffDisplayUnit;
+    try {
+      resolvedCalibrationDisplayUnit = assertTakeoffUnitConsistency({
+        displayUnit: calibrationDraft.displayUnit,
+        unitSystem: resolvedCalibrationUnitSystem,
+      });
+    } catch (error) {
+      markSaveError(error instanceof Error ? error.message : "Calibration unit selection is invalid.");
+      return;
+    }
     const successMessage = `Scale set to ${resolvedCalibrationLength} ${resolvedCalibrationDisplayUnit}`;
     const parsedReferenceLength = Number(resolvedCalibrationLength);
+    let referenceLengthBase: number;
+    try {
+      referenceLengthBase = convertTakeoffDisplayLengthToBase({
+        displayUnit: resolvedCalibrationDisplayUnit,
+        value: parsedReferenceLength,
+      });
+    } catch (error) {
+      markSaveError(error instanceof Error ? error.message : "Reference length is invalid.");
+      return;
+    }
+    const calibrationDistancePts = getPolylineLength(points);
+    if (!Number.isFinite(calibrationDistancePts) || calibrationDistancePts <= 0) {
+      markSaveError("Calibration points must define a measurable distance.");
+      return;
+    }
     const formData = new FormData();
     formData.set("drawingSetId", drawingSetId);
     formData.set("pageId", pageId);
@@ -4523,10 +4905,18 @@ export function TakeoffPdfViewer({
     const previousCalibration = localActiveCalibrationRef.current ? { ...localActiveCalibrationRef.current } : null;
     const optimisticCalibration: TakeoffCalibration = {
       id: previousCalibration?.id ?? `optimistic-calibration-${crypto.randomUUID()}`,
-      base_unit: resolvedCalibrationUnitSystem === "imperial" ? "in" : "mm",
+      base_unit: getTakeoffBaseUnit(resolvedCalibrationUnitSystem),
       name: resolvedCalibrationName,
       display_unit: resolvedCalibrationDisplayUnit,
       reference_length_input: Number.isFinite(parsedReferenceLength) ? parsedReferenceLength : 0,
+      reference_length_base: referenceLengthBase,
+      scale_ratio: referenceLengthBase / calibrationDistancePts,
+      unit_system: resolvedCalibrationUnitSystem,
+      is_active: true,
+      superseded_by: null,
+      notes: "",
+      created_at: previousCalibration?.created_at ?? new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       point_a_x: normalizedPoints[0]?.x ?? 0,
       point_a_y: normalizedPoints[0]?.y ?? 0,
       point_b_x: normalizedPoints[1]?.x ?? 0,
@@ -4633,6 +5023,7 @@ export function TakeoffPdfViewer({
     formData.set("colorHex", resolvedColor);
     formData.set("points", serializeNormalizedPoints(normalizedPoints));
 
+    registerPendingMeasurement({ tempId: tempMeasurementId, measurementKind: "line" });
     upsertLocalMeasurement(optimisticMeasurement);
 
     void runMutation({
@@ -4651,8 +5042,10 @@ export function TakeoffPdfViewer({
           }
 
           const nextMeasurement = cloneMeasurement(result.data);
-          replaceLocalMeasurementId(tempMeasurementId, nextMeasurement);
-          onMeasurementCommitted?.(pageId, nextMeasurement);
+          const settled = await settleCreatedMeasurement(tempMeasurementId, nextMeasurement);
+          if (settled.cancelled) {
+            return settled.measurement;
+          }
           pushHistoryCommand({
             id: `create:${nextMeasurement.id}:${Date.now()}`,
             label: points.length > 2 ? "Create polyline" : "Create distance",
@@ -4688,7 +5081,11 @@ export function TakeoffPdfViewer({
 
           return nextMeasurement;
         } catch (error) {
-          removeLocalMeasurement(tempMeasurementId);
+          const pending = pendingMeasurementsRef.current.get(tempMeasurementId);
+          if (pending?.state !== "failed") {
+            pendingMeasurementsRef.current.settle(tempMeasurementId);
+            removeLocalMeasurement(tempMeasurementId);
+          }
           throw error;
         }
       },
@@ -4696,6 +5093,10 @@ export function TakeoffPdfViewer({
   }
 
   function submitAppendPolylinePath(measurementId: string, points: Point2D[]) {
+    if (measurementId.startsWith("temp-")) {
+      markSaveError("Wait for the measurement to finish saving before editing it.");
+      return;
+    }
     const previousMeasurement = getCurrentMeasurementById(measurementId);
     if (!previousMeasurement || previousMeasurement.measurement_kind !== "line") {
       return;
@@ -4855,6 +5256,7 @@ export function TakeoffPdfViewer({
     formData.set("colorHex", resolvedColor);
     formData.set("points", serializeNormalizedPoints(normalizedPoints));
 
+    registerPendingMeasurement({ tempId: tempMeasurementId, measurementKind: "area" });
     flushSync(() => {
       upsertLocalMeasurement(optimisticMeasurement);
     });
@@ -4875,8 +5277,10 @@ export function TakeoffPdfViewer({
           }
 
           const nextMeasurement = cloneMeasurement(result.data);
-          replaceLocalMeasurementId(tempMeasurementId, nextMeasurement);
-          onMeasurementCommitted?.(pageId, nextMeasurement);
+          const settled = await settleCreatedMeasurement(tempMeasurementId, nextMeasurement);
+          if (settled.cancelled) {
+            return settled.measurement;
+          }
           pushHistoryCommand({
             id: `create:${nextMeasurement.id}:${Date.now()}`,
             label: "Create area",
@@ -4912,7 +5316,11 @@ export function TakeoffPdfViewer({
 
           return nextMeasurement;
         } catch (error) {
-          removeLocalMeasurement(tempMeasurementId);
+          const pending = pendingMeasurementsRef.current.get(tempMeasurementId);
+          if (pending?.state !== "failed") {
+            pendingMeasurementsRef.current.settle(tempMeasurementId);
+            removeLocalMeasurement(tempMeasurementId);
+          }
           throw error;
         }
       },
@@ -4920,6 +5328,10 @@ export function TakeoffPdfViewer({
   }
 
   function submitAppendAreaShape(measurementId: string, points: Point2D[], role: AreaShapeRole) {
+    if (measurementId.startsWith("temp-")) {
+      markSaveError("Wait for the measurement to finish saving before editing it.");
+      return;
+    }
     const previousMeasurement = getCurrentMeasurementById(measurementId);
     if (!previousMeasurement || previousMeasurement.measurement_kind !== "area") {
       return;
@@ -5066,6 +5478,7 @@ export function TakeoffPdfViewer({
     formData.set("countValue", String(resolvedCountValue));
     formData.set("points", serializeNormalizedPoints(normalizedPoints));
 
+    registerPendingMeasurement({ tempId: tempMeasurementId, measurementKind: "count" });
     flushSync(() => {
       upsertLocalMeasurement(optimisticMeasurement);
     });
@@ -5086,8 +5499,10 @@ export function TakeoffPdfViewer({
           }
 
           const nextMeasurement = cloneMeasurement(result.data);
-          replaceLocalMeasurementId(tempMeasurementId, nextMeasurement);
-          onMeasurementCommitted?.(pageId, nextMeasurement);
+          const settled = await settleCreatedMeasurement(tempMeasurementId, nextMeasurement);
+          if (settled.cancelled) {
+            return settled.measurement;
+          }
           pushHistoryCommand({
             id: `create:${nextMeasurement.id}:${Date.now()}`,
             label: "Create count",
@@ -5123,7 +5538,11 @@ export function TakeoffPdfViewer({
 
           return nextMeasurement;
         } catch (error) {
-          removeLocalMeasurement(tempMeasurementId);
+          const pending = pendingMeasurementsRef.current.get(tempMeasurementId);
+          if (pending?.state !== "failed") {
+            pendingMeasurementsRef.current.settle(tempMeasurementId);
+            removeLocalMeasurement(tempMeasurementId);
+          }
           throw error;
         }
       },
@@ -5131,6 +5550,10 @@ export function TakeoffPdfViewer({
   }
 
   function submitAppendCountItem(measurementId: string, point: Point2D) {
+    if (measurementId.startsWith("temp-")) {
+      markSaveError("Wait for the measurement to finish saving before editing it.");
+      return;
+    }
     const previousMeasurement = getCurrentMeasurementById(measurementId);
     if (!previousMeasurement || previousMeasurement.measurement_kind !== "count") {
       return;
@@ -5230,6 +5653,10 @@ export function TakeoffPdfViewer({
     childKind?: MeasurementChildKind;
     points: Point2D[];
   }) {
+    if (params.measurementId.startsWith("temp-")) {
+      markSaveError("Wait for the measurement to finish saving before editing it.");
+      return;
+    }
     const previousMeasurement = getCurrentMeasurementById(params.measurementId);
     if (!previousMeasurement) {
       return;
@@ -5396,6 +5823,7 @@ export function TakeoffPdfViewer({
 
           const nextMeasurement = cloneMeasurement(result.data);
           upsertLocalMeasurement(nextMeasurement);
+          onMeasurementCommitted?.(pageId, nextMeasurement);
 
           return nextMeasurement;
         } catch (error) {
@@ -5419,6 +5847,10 @@ export function TakeoffPdfViewer({
       onSettled?: () => void;
     }
   ) {
+    if (measurementId.startsWith("temp-")) {
+      markSaveError("Wait for the measurement to finish saving before editing it.");
+      return;
+    }
     const previousMeasurement = getCurrentMeasurementById(measurementId);
     if (!previousMeasurement) {
       return;
@@ -5869,7 +6301,10 @@ export function TakeoffPdfViewer({
         return;
       }
 
-      if (interaction.hitTarget?.type === "calibration-point" || interaction.hitTarget?.type === "measurement-point") {
+      if (
+        interaction.hitTarget?.type === "measurement-point" ||
+        (interaction.hitTarget?.type === "calibration-point" && toolMode === "calibrate")
+      ) {
         interactionRef.current = {
           kind: "edit",
           pointerId: event.pointerId,
@@ -6060,6 +6495,13 @@ export function TakeoffPdfViewer({
     }
 
     if (interaction.kind === "edit" && interaction.dirty) {
+      if (interaction.target.type === "calibration-point") {
+        const points = draftGeometryRef.current.points;
+        if (points.length >= 2) {
+          submitCalibration(points);
+        }
+        return;
+      }
       if (interaction.target.type === "measurement-point") {
         const overrideKey = getMeasurementGeometryOverrideKey(
           interaction.target.measurementId,
@@ -6213,6 +6655,183 @@ export function TakeoffPdfViewer({
         };
   return (
     <>
+      <Dialog
+        open={isCalibrationManagerOpen}
+        onOpenChange={(open) => {
+          setIsCalibrationManagerOpen(open);
+          if (!open) {
+            setCalibrationManagerMessage(null);
+            setCalibrationDeleteCandidate(null);
+            window.requestAnimationFrame(() => {
+              calibrationManagerReturnFocusRef.current?.focus();
+              calibrationManagerReturnFocusRef.current = null;
+            });
+          }
+        }}
+      >
+        <DialogContent
+          className="max-h-[90vh] w-full max-w-[560px] overflow-hidden p-0"
+          data-testid="calibration-manager"
+        >
+          <DialogHeader className="border-b border-[var(--app-border)] px-5 pb-4 pt-5 pr-14 sm:px-6 sm:pt-6">
+            <DialogTitle>Calibration</DialogTitle>
+            <DialogDescription>Manage the active drawing scale and previous versions.</DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[calc(90vh-92px)] space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+            {calibrationManagerMessage ? (
+              <OperationalAlert variant="error" role="alert">
+                {calibrationManagerMessage}
+              </OperationalAlert>
+            ) : null}
+
+            {localActiveCalibration ? (
+              <section aria-labelledby="active-calibration-heading" className="space-y-2.5">
+                <h3 id="active-calibration-heading" className="text-sm font-semibold text-[var(--text-primary)]">
+                  Active calibration
+                </h3>
+                <div className="rounded-[var(--radius-md)] border border-[var(--app-border)] bg-[var(--surface)] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{localActiveCalibration.name}</p>
+                      <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                        {localActiveCalibration.reference_length_input} {localActiveCalibration.display_unit} · Scale {Number(localActiveCalibration.scale_ratio).toPrecision(6)}
+                      </p>
+                    </div>
+                    <StatusBadge status="active" className="shrink-0 px-2 py-0.5">Active</StatusBadge>
+                  </div>
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setIsCalibrationManagerOpen(false);
+                        openToolSetupDialog("calibrate");
+                      }}
+                    >
+                      Recalibrate
+                    </Button>
+                  </div>
+                  <p className="mt-2.5 text-xs text-[var(--text-secondary)]">
+                    Existing measurements will not be recalculated.
+                  </p>
+                </div>
+              </section>
+            ) : null}
+
+            <section aria-labelledby="calibration-history-heading" className="space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 id="calibration-history-heading" className="text-sm font-semibold text-[var(--text-primary)]">
+                  Calibration history
+                </h3>
+                {isCalibrationHistoryLoading ? <span className="text-xs text-[var(--text-secondary)]">Loading…</span> : null}
+              </div>
+
+              <div className="space-y-2">
+                {calibrationHistory.map((calibration) => (
+                  <div
+                    key={calibration.id}
+                    className="rounded-[var(--radius-md)] border border-[var(--app-border)] bg-[var(--surface)] p-3"
+                    data-testid={`calibration-history-${calibration.id}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{calibration.name}</p>
+                          {calibration.is_active ? (
+                            <StatusBadge status="active" className="px-2 py-0.5">Active</StatusBadge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">
+                          {calibration.reference_length_input} {calibration.display_unit} · {calibration.base_unit} base · Scale {Number(calibration.scale_ratio).toPrecision(6)}
+                        </p>
+                        <p className="text-xs leading-5 text-[var(--text-secondary)]">
+                          {calibrationHistoryDateFormatter.format(new Date(calibration.created_at))} · {calibration.dependent_measurement_count} measurement{calibration.dependent_measurement_count === 1 ? "" : "s"}
+                        </p>
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label={`Actions for ${calibration.name}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-[10rem]">
+                          {!calibration.is_active ? (
+                            <>
+                              <DropdownMenuItem onSelect={() => activateHistoricalCalibration(calibration.id)}>
+                                Make active
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          ) : null}
+                          <DropdownMenuItem
+                            className="text-[var(--error)] focus:text-[var(--error)]"
+                            onSelect={() => {
+                              if (calibration.dependent_measurement_count > 0) {
+                                const message = `This calibration is used by ${calibration.dependent_measurement_count} measurement${calibration.dependent_measurement_count === 1 ? "" : "s"} and cannot be deleted.`;
+                                setCalibrationManagerMessage(message);
+                                markSaveError(message);
+                                return;
+                              }
+                              setCalibrationManagerMessage(null);
+                              setCalibrationDeleteCandidate(calibration);
+                            }}
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                ))}
+
+                {!isCalibrationHistoryLoading && calibrationHistory.length === 0 ? (
+                  <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--app-border)] px-4 py-4 text-center text-sm text-[var(--text-secondary)]">
+                    No calibration history is available.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(calibrationDeleteCandidate)}
+        onOpenChange={(open) => {
+          if (!open) setCalibrationDeleteCandidate(null);
+        }}
+      >
+        <DialogContent className="w-full max-w-md p-6 sm:p-6" data-testid="calibration-delete-confirmation" hideClose>
+          <DialogHeader>
+            <DialogTitle>Delete calibration?</DialogTitle>
+            <DialogDescription>
+              {calibrationDeleteCandidate?.name} is unused. This permanently removes this calibration version.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-5 flex flex-row justify-end gap-2 border-t border-[var(--app-border)] pt-4">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setCalibrationDeleteCandidate(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => calibrationDeleteCandidate && deleteCalibration(calibrationDeleteCandidate)}
+            >
+              Delete calibration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex h-full min-h-0 w-full bg-[#FBFEFE] p-4">
       <MeasureEditorSidebar
         isCollapsed={isSidebarCollapsed}
@@ -6224,93 +6843,39 @@ export function TakeoffPdfViewer({
         }
       >
         <div className="min-h-full px-4 py-4">
-          <div className="space-y-5">
-            <div className="mb-6">
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#334155]">
-                Takeoff
-              </p>
-              <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.02em] text-slate-900">Summary</h1>
-            </div>
-
-            <section className="min-w-0 overflow-hidden rounded-[14px] border border-slate-200 bg-white">
-              {savedMeasurements.length > 0 ? (
-                <div className="divide-y divide-slate-100">
-                  {savedMeasurements.map((measurement) => {
-                    const isAppending = appendMeasurementId === measurement.id;
-                    const isSelected = selection?.type === "measurement" && selection.measurementId === measurement.id;
-
-                    return (
-                      <div
-                        key={measurement.renderKey}
-                        className={`${
-                          isAppending ? "bg-[#FFF7ED]" : isSelected ? "bg-[#F8FAFC]" : "bg-white"
-                        } transition-colors`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => handleSummaryMeasurementClick(measurement.id)}
-                          onContextMenu={(event) => handleSummaryMeasurementContextMenu(event, measurement)}
-                          className={`flex w-full items-center justify-between gap-4 px-5 py-[18px] text-left transition-colors ${
-                            isAppending
-                              ? "hover:bg-[#FFEDD5]"
-                              : isSelected
-                                ? "hover:bg-[#F1F5F9]"
-                                : "hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1 py-0.5">
-                            <div className="flex items-center gap-3">
-                              <span
-                                className="h-2 w-2 shrink-0 rounded-full"
-                                style={{ backgroundColor: measurement.color }}
-                                aria-label={`${getTakeoffSummaryDescription(measurement)} colour`}
-                                title={measurement.color}
-                              />
-                              <span className={`${ibmPlexSans.className} truncate text-sm font-medium text-slate-800`}>
-                                {getTakeoffSummaryDescription(measurement)}
-                              </span>
-                            </div>
-                            {isAppending ? (
-                              <p className="mt-1.5 pl-[20px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#C2410C]">
-                                Adding
-                              </p>
-                            ) : isSelected ? (
-                              <p className="mt-1.5 pl-[20px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748B]">
-                                {selectedMeasurementChild?.measurementId === measurement.id ? "Child Selected" : "Selected"}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="min-w-0 shrink-0 py-0.5 text-right">
-                            <p className={`${ibmPlexSans.className} text-sm font-semibold text-slate-900`}>
-                              {measurement.label}
-                            </p>
-                            {measurement.measurementKind === "area" && measurementsShowingPerimeter.has(measurement.id) ? (
-                              <p className="mt-1.5 text-[11px] font-semibold text-[#64748B]">
-                                {getAreaPerimeterLabel(measurement) ?? "Perimeter unavailable"}
-                              </p>
-                            ) : null}
-                          </div>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="px-5 py-6 text-center text-sm font-medium text-[#4B5D79]">
-                  No takeoff items saved yet.
-                </div>
-              )}
-            </section>
-          </div>
+          <TakeoffMeasureSummary
+            measurements={drawingSetSummaryRows}
+            currentPageId={pageId}
+            selectedMeasurementId={selection?.type === "measurement" ? selection.measurementId : null}
+            selectedChildMeasurementId={selectedMeasurementChild?.measurementId ?? null}
+            appendMeasurementId={appendMeasurementId}
+            onMeasurementClick={handleDrawingSetSummaryMeasurementClick}
+            onMeasurementContextMenu={handleDrawingSetSummaryMeasurementContextMenu}
+          />
           {summaryContextMenu ? (
             <div
+              ref={summaryMenuElementRef}
+              role="menu"
+              aria-label={`${summaryContextMenu.measurementName} actions`}
               className="fixed z-40 min-w-[11rem] rounded-xl border border-[#E2E8F0] bg-white py-1 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
               style={{ left: `${summaryContextMenu.x}px`, top: `${summaryContextMenu.y}px` }}
               onPointerDown={stopViewerEventPropagation}
               onClick={stopViewerEventPropagation}
+              onKeyDown={(event) => {
+                const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
+                const index = items.indexOf(document.activeElement as HTMLButtonElement);
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSummaryContextMenu(null);
+                } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  const offset = event.key === "ArrowDown" ? 1 : -1;
+                  items[(index + offset + items.length) % items.length]?.focus();
+                }
+              }}
             >
               <button
+                role="menuitem"
                 type="button"
                 className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
                 onClick={() => {
@@ -6328,6 +6893,7 @@ export function TakeoffPdfViewer({
                 Edit
               </button>
               <button
+                role="menuitem"
                 type="button"
                 className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
                 onClick={() => {
@@ -6354,8 +6920,55 @@ export function TakeoffPdfViewer({
                   </span>
                 </span>
               </button>
+              {summaryContextMenu.canAddToQuote && (onAddMeasurementToQuote || onAddMeasurementToPurchaseOrder || onAddMeasurementToVariation) ? (
+                <div className="mt-1 border-t border-[#E2E8F0] pt-1">
+                  {onAddMeasurementToQuote ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]"
+                      onClick={() => {
+                        const measurementId = summaryContextMenu.measurementId;
+                        setSummaryContextMenu(null);
+                        onAddMeasurementToQuote(measurementId);
+                      }}
+                    >
+                      Add to Quote
+                    </button>
+                  ) : null}
+                  {onAddMeasurementToPurchaseOrder ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]"
+                      onClick={() => {
+                        const measurementId = summaryContextMenu.measurementId;
+                        setSummaryContextMenu(null);
+                        onAddMeasurementToPurchaseOrder(measurementId);
+                      }}
+                    >
+                      Add to Purchase Order
+                    </button>
+                  ) : null}
+                  {onAddMeasurementToVariation ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]"
+                      onClick={() => {
+                        const measurementId = summaryContextMenu.measurementId;
+                        setSummaryContextMenu(null);
+                        onAddMeasurementToVariation(measurementId);
+                      }}
+                    >
+                      Add to Variation
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {summaryContextMenu.canAddDeduction ? (
                 <button
+                  role="menuitem"
                   type="button"
                   className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
                   onClick={() => handleAddDeduction(summaryContextMenu.measurementId)}
@@ -6365,6 +6978,7 @@ export function TakeoffPdfViewer({
               ) : null}
               {summaryContextMenu.measurementKind === "area" ? (
               <button
+                role="menuitem"
                 type="button"
                 className="block w-full px-3 py-2 text-left text-[13px] font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC]"
                 onClick={() => {
@@ -6535,6 +7149,7 @@ export function TakeoffPdfViewer({
                 >
                   <canvas
                     ref={canvasRef}
+                    data-testid="takeoff-pdf-canvas"
                     className={`absolute inset-0 block h-full w-full select-none rounded-[6px] bg-white shadow-[0_16px_44px_rgba(15,23,42,0.16)] transition-opacity ${
                       isPdfVisualReady ? "opacity-100" : "opacity-0"
                     }`}
@@ -6593,8 +7208,11 @@ export function TakeoffPdfViewer({
                       />
                     ) : null}
 
-                    {canvasVisibleMeasurements.map((measurement) => (
-                      <g key={measurement.renderKey}>
+                    {liveCanvasMeasurements.map((measurement) => (
+                      <g
+                        key={measurement.renderKey}
+                        data-testid={`takeoff-live-measurement-${measurement.id}`}
+                      >
                         {measurement.measurementKind === "count" ? (
                           measurement.documentPoints.length > 0 ? (
                             <>
@@ -6874,7 +7492,7 @@ export function TakeoffPdfViewer({
                       })()
                     ) : null}
 
-                    {canvasVisibleMeasurements.map((measurement) => {
+                    {liveCanvasMeasurements.map((measurement) => {
                       if (!measurement.labelAnchor) {
                         return null;
                       }
@@ -7004,7 +7622,22 @@ export function TakeoffPdfViewer({
                   <div className="max-w-lg rounded-[16px] border border-white/80 bg-white/92 px-5 py-4 shadow-[0_18px_44px_rgba(15,23,42,0.10)] backdrop-blur-sm">
                     <p className="text-[15px] font-semibold text-[#1d2433]">{!pdfUrl ? "Viewer unavailable" : "Unable to load drawing"}</p>
                     <p className="mt-2 text-[14px] leading-[1.6] text-[#6B7C93]">{error ?? "The selected takeoff page could not be opened for Measure."}</p>
+                    <button type="button" onClick={onRetryPdf} className="mt-4 rounded-lg bg-[#f15a29] px-4 py-2 text-sm font-semibold text-white">
+                      Retry drawing
+                    </button>
                   </div>
+                </div>
+              ) : null}
+
+              {isPageLoading || pageLoadError ? (
+                <div className="absolute left-1/2 top-5 z-40 -translate-x-1/2 rounded-xl border border-white/80 bg-white/95 px-4 py-3 text-center shadow-lg">
+                  <p className="text-sm font-semibold text-slate-800">{isPageLoading ? "Loading page…" : "Page change failed"}</p>
+                  {pageLoadError ? <p className="mt-1 max-w-sm text-xs text-red-700">{pageLoadError}</p> : null}
+                  {pageLoadError ? (
+                    <button type="button" onClick={onRetryPage} className="mt-2 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
+                      Retry page
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -7039,7 +7672,7 @@ export function TakeoffPdfViewer({
                 <MeasureBottomToolbar
                   activeTool={toolMode}
                   disabledTools={{
-                    calibrate: Boolean(localActiveCalibration),
+                    calibrate: false,
                     distance: !effectiveMeasurementReadiness.canCreateLine,
                     polyline: !effectiveMeasurementReadiness.canCreateLine,
                     area: !effectiveMeasurementReadiness.canCreateArea,
@@ -7166,24 +7799,14 @@ export function TakeoffPdfViewer({
             </div>
           </div>
         </div>
-        <div
-          className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-4"
-          style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
-          onPointerDown={stopViewerEventPropagation}
-          onClick={stopViewerEventPropagation}
-          onDoubleClick={stopViewerEventPropagation}
-          onWheel={stopViewerEventPropagation}
-        >
-          <div className="pointer-events-auto w-full max-w-[400px]">
-            <TakeoffMeasureToolDialog
-              open={isToolDialogOpen}
-              tool={activeSetupTool}
-              initialValues={toolSetup}
-              onOpenChange={handleToolDialogOpenChange}
-              onConfirm={handleToolSetupConfirm}
-            />
-          </div>
-        </div>
+        <TakeoffMeasureToolDialog
+          open={isToolDialogOpen}
+          tool={activeSetupTool}
+          resetKey={`${drawingSetId}:${pageId}:${activeSetupTool ?? "none"}`}
+          initialValues={toolSetup}
+          onOpenChange={handleToolDialogOpenChange}
+          onConfirm={handleToolSetupConfirm}
+        />
       </MeasureCanvasViewport>
       </div>
     </>

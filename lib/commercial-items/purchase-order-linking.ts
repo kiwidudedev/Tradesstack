@@ -9,21 +9,28 @@ import type {
   CommercialItemsClient,
 } from "@/lib/commercial-items/types";
 import type { Json } from "@/lib/supabase/types";
+import { buildTakeoffHref } from "@/lib/takeoff/navigation";
 
 export interface PurchaseOrderCommercialItemLink {
   commercialItemId: string;
   commercialItemDescription: string;
   sourceStatus: CommercialItemPayload["sourceStatus"];
-  sourceRange: string;
-  sourceWorkbookId: string;
-  sourceWorksheetId: string;
-  sourceSheetId: string;
+  sourceType: CommercialItemPayload["sourceType"];
+  sourceRange: string | null;
+  sourceWorkbookId: string | null;
+  sourceWorksheetId: string | null;
+  sourceSheetId: string | null;
+  sourceTakeoffMeasurementId: string | null;
   sourceWorksheetName: string | null;
   sourceSheetName: string | null;
   sourceOwnerType: "opportunity" | "variation" | null;
   sourceOpportunitySlug: string | null;
   sourceProjectSlug: string | null;
   sourceVariationId: string | null;
+  sourceTakeoffOwnerType: "opportunity" | "project" | null;
+  sourceTakeoffOwnerSlug: string | null;
+  sourceDrawingSetId: string | null;
+  sourcePageId: string | null;
   snapshotAtLinkJson: Json;
 }
 
@@ -58,6 +65,7 @@ function buildSafeSourceLinkSnapshot(item: CommercialItemPayload): Json {
   return {
     version: 1,
     sourceType: item.sourceType,
+    measurementId: item.sourceTakeoffMeasurementId ?? null,
     ownerType: asString(sourceLink?.ownerType),
     opportunityId: asString(sourceLink?.opportunityId),
     opportunitySlug: asString(sourceLink?.opportunitySlug),
@@ -73,6 +81,9 @@ function buildSafeSourceLinkSnapshot(item: CommercialItemPayload): Json {
     range: item.sourceRange,
     worksheetVersion: typeof sourceLink?.worksheetVersion === "number" ? sourceLink.worksheetVersion : null,
     capturedAt: asString(sourceLink?.capturedAt),
+    ownerSlug: asString(sourceLink?.ownerSlug),
+    drawingSetId: asString(sourceLink?.drawingSetId),
+    pageId: asString(sourceLink?.pageId),
   };
 }
 
@@ -96,15 +107,32 @@ function toLinkSnapshot(item: CommercialItemPayload): Json {
 
 export function buildPurchaseOrderCommercialItemLink(item: CommercialItemPayload): PurchaseOrderCommercialItemLink {
   const sourceLink = asRecord(item.sourceLinkJson);
+  if (item.sourceType === "worksheet_selection" && (!item.sourceRange || !item.sourceWorkbookId || !item.sourceWorksheetId || !item.sourceSheetId)) {
+    throw new Error("Purchase Order commercial links require worksheet source provenance.");
+  }
+  const takeoffOwnerType = sourceLink?.ownerType === "opportunity" || sourceLink?.ownerType === "project"
+    ? sourceLink.ownerType
+    : null;
+  if (item.sourceType === "takeoff_measurement" && (
+    !item.sourceTakeoffMeasurementId
+    || !takeoffOwnerType
+    || !asString(sourceLink?.ownerSlug)
+    || !asString(sourceLink?.drawingSetId)
+    || !asString(sourceLink?.pageId)
+  )) {
+    throw new Error("Purchase Order Takeoff links require measurement, owner, drawing, and page provenance.");
+  }
 
   return {
     commercialItemId: item.id,
     commercialItemDescription: item.description,
     sourceStatus: item.sourceStatus,
+    sourceType: item.sourceType,
     sourceRange: item.sourceRange,
     sourceWorkbookId: item.sourceWorkbookId,
     sourceWorksheetId: item.sourceWorksheetId,
     sourceSheetId: item.sourceSheetId,
+    sourceTakeoffMeasurementId: item.sourceTakeoffMeasurementId ?? null,
     sourceWorksheetName: asString(sourceLink?.worksheetName),
     sourceSheetName: asString(sourceLink?.sheetName),
     sourceOwnerType:
@@ -114,6 +142,10 @@ export function buildPurchaseOrderCommercialItemLink(item: CommercialItemPayload
     sourceOpportunitySlug: asString(sourceLink?.opportunitySlug),
     sourceProjectSlug: asString(sourceLink?.projectSlug),
     sourceVariationId: asString(sourceLink?.variationId),
+    sourceTakeoffOwnerType: takeoffOwnerType,
+    sourceTakeoffOwnerSlug: asString(sourceLink?.ownerSlug),
+    sourceDrawingSetId: asString(sourceLink?.drawingSetId),
+    sourcePageId: asString(sourceLink?.pageId),
     snapshotAtLinkJson: toLinkSnapshot(item),
   };
 }
@@ -125,6 +157,22 @@ export function buildPurchaseOrderCommercialItemSourceHref(
   if (!link) {
     return null;
   }
+
+  if (
+    link.sourceType === "takeoff_measurement"
+    && link.sourceTakeoffOwnerType
+    && link.sourceTakeoffOwnerSlug
+    && link.sourceDrawingSetId
+    && link.sourcePageId
+  ) {
+    return buildTakeoffHref(
+      { kind: link.sourceTakeoffOwnerType, slug: link.sourceTakeoffOwnerSlug },
+      "measure",
+      { drawingSetId: link.sourceDrawingSetId, pageId: link.sourcePageId },
+    );
+  }
+
+  if (!link.sourceSheetId || !link.sourceWorksheetId) return null;
 
   const query = `?sheetId=${encodeURIComponent(link.sourceSheetId)}`;
 
@@ -159,7 +207,7 @@ export async function persistCommercialItemPurchaseOrderLinks(params: {
     }
 
     if (item.sourceCostItemId) {
-      throw new Error("Purchase order worksheet source links cannot be attached to lines that already use cost item source lineage.");
+      throw new Error("Purchase order commercial source links cannot be attached to lines that already use cost item source lineage.");
     }
 
     createdLinks.push(await linkCommercialItemToPurchaseOrderLine(params.client, {

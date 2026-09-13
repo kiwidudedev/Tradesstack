@@ -1,5 +1,6 @@
 import type { QuantityTableGroup } from "@/components/app/TakeoffQuantitiesTable";
 import type { QuantityTableRow } from "@/lib/takeoff/quantities-adapter";
+import type { Workbook, Worksheet } from "exceljs";
 
 export interface QuantitiesExcelExportContext {
   organizationName: string;
@@ -7,6 +8,7 @@ export interface QuantitiesExcelExportContext {
   organizationBrandPrimaryColor: string | null;
   projectName: string;
   drawingSetName: string | null;
+  drawingScope?: "current" | "all";
   exportDateIso: string;
   pageFilterLabel?: string | null;
 }
@@ -42,6 +44,24 @@ function formatGroupLabel(group: QuantityTableGroup) {
   return group.totalsLabel ? `${group.label} - ${group.totalsLabel}` : group.label;
 }
 
+export function buildQuantitiesExportRowValues(row: QuantityTableRow, groupLabel?: string | null, includeDrawing = false) {
+  const values: Array<string | number | null> = [
+    groupLabel ?? "",
+  ];
+  if (includeDrawing) values.push(row.drawingDisplayName);
+  values.push(
+    row.name,
+    row.description ?? "",
+    formatQuantityNumber(row.quantityValue),
+    row.unitLabel,
+    formatQuantityNumber(row.secondaryQuantityValue),
+    row.secondaryUnitLabel ?? "",
+    row.pageLabel,
+    "",
+  );
+  return values;
+}
+
 function toFileSafeSegment(value: string) {
   return value
     .trim()
@@ -51,12 +71,8 @@ function toFileSafeSegment(value: string) {
 }
 
 async function addLogoImage(params: {
-  workbook: {
-    addImage: (image: unknown) => number;
-  };
-  worksheet: {
-    addImage: (imageId: number, range: string) => void;
-  };
+  workbook: Pick<Workbook, "addImage">;
+  worksheet: Pick<Worksheet, "addImage">;
   logoUrl: string | null;
 }) {
   if (!params.logoUrl) {
@@ -77,7 +93,9 @@ async function addLogoImage(params: {
 
     const bytes = await response.arrayBuffer();
     const imageId = params.workbook.addImage({
-      buffer: new Uint8Array(bytes),
+      // ExcelJS accepts Uint8Array in browsers, while its declaration still
+      // narrows this field to Node's Buffer type.
+      buffer: new Uint8Array(bytes) as never,
       extension,
     });
 
@@ -105,8 +123,10 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
   const mutedFillArgb = "FFF8FAFB";
   const sectionFillArgb = "FFEEF3F8";
   const tableHeaderRow = 7;
+  const includeDrawing = params.context.drawingScope === "all";
   const tableColumns = [
     { header: "Group", key: "group", width: 24 },
+    ...(includeDrawing ? [{ header: "Drawing", key: "drawing", width: 26 }] : []),
     { header: "Measurement / Item", key: "measurement", width: 30 },
     { header: "Description", key: "description", width: 34 },
     { header: "Primary Qty", key: "primaryQty", width: 14 },
@@ -115,7 +135,8 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
     { header: "Secondary Unit", key: "secondaryUnit", width: 15 },
     { header: "Drawing/Page", key: "page", width: 22 },
     { header: "Notes", key: "notes", width: 26 },
-  ] as const;
+  ];
+  const lastColumnLetter = includeDrawing ? "J" : "I";
 
   workbook.creator = "Tradesstack";
   workbook.created = new Date();
@@ -149,12 +170,12 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
     logoUrl: params.context.organizationLogoUrl,
   });
 
-  worksheet.mergeCells("C1:I1");
+  worksheet.mergeCells(`C1:${lastColumnLetter}1`);
   worksheet.getCell("C1").value = params.context.organizationName.trim() || "Tradesstack";
   worksheet.getCell("C1").font = { name: "Inter", size: 16, bold: true, color: { argb: brandPrimaryArgb } };
   worksheet.getCell("C1").alignment = { vertical: "middle", horizontal: "left" };
 
-  worksheet.mergeCells("C2:I2");
+  worksheet.mergeCells(`C2:${lastColumnLetter}2`);
   worksheet.getCell("C2").value = params.context.projectName.trim() || "Project";
   worksheet.getCell("C2").font = { name: "Inter", size: 14, bold: true, color: { argb: "FF1F2937" } };
 
@@ -167,16 +188,16 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
   worksheet.getCell("H3").font = { name: "Inter", size: 11, color: { argb: "FF4B5563" } };
   worksheet.getCell("H3").alignment = { horizontal: "right" };
 
-  worksheet.mergeCells("C4:I4");
+  worksheet.mergeCells(`C4:${lastColumnLetter}4`);
   worksheet.getCell("C4").value = [
-    params.context.drawingSetName ? `Drawing Set: ${params.context.drawingSetName}` : "",
+    includeDrawing ? "Drawing Set: All drawings" : params.context.drawingSetName ? `Drawing Set: ${params.context.drawingSetName}` : "",
     params.context.pageFilterLabel ? `View: ${params.context.pageFilterLabel}` : "",
   ]
     .filter(Boolean)
     .join("   |   ");
   worksheet.getCell("C4").font = { name: "Inter", size: 10, color: { argb: "FF6B7280" } };
 
-  for (let columnIndex = 1; columnIndex <= 9; columnIndex += 1) {
+  for (let columnIndex = 1; columnIndex <= tableColumns.length; columnIndex += 1) {
     const cell = worksheet.getRow(6).getCell(columnIndex);
     cell.border = {
       top: { style: "thin", color: { argb: borderColorArgb } },
@@ -212,15 +233,9 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
 
   const appendDataRow = (row: QuantityTableRow, groupLabel?: string | null) => {
     const worksheetRow = worksheet.getRow(currentRowNumber);
-    worksheetRow.getCell(1).value = groupLabel ?? "";
-    worksheetRow.getCell(2).value = row.name;
-    worksheetRow.getCell(3).value = row.description ?? "";
-    worksheetRow.getCell(4).value = formatQuantityNumber(row.quantityValue);
-    worksheetRow.getCell(5).value = row.unitLabel;
-    worksheetRow.getCell(6).value = formatQuantityNumber(row.secondaryQuantityValue);
-    worksheetRow.getCell(7).value = row.secondaryUnitLabel ?? "";
-    worksheetRow.getCell(8).value = row.pageLabel;
-    worksheetRow.getCell(9).value = "";
+    buildQuantitiesExportRowValues(row, groupLabel, includeDrawing).forEach((value, index) => {
+      worksheetRow.getCell(index + 1).value = value;
+    });
 
     worksheetRow.eachCell((cell, columnNumber) => {
       cell.border = {
@@ -231,8 +246,10 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
       };
       cell.alignment = {
         vertical: "top",
-        wrapText: columnNumber === 1 || columnNumber === 2 || columnNumber === 3 || columnNumber === 8 || columnNumber === 9,
-        horizontal: columnNumber === 4 || columnNumber === 6 ? "right" : "left",
+        wrapText: includeDrawing
+          ? [1, 2, 3, 4, 9, 10].includes(columnNumber)
+          : [1, 2, 3, 8, 9].includes(columnNumber),
+        horizontal: columnNumber === (includeDrawing ? 5 : 4) || columnNumber === (includeDrawing ? 7 : 6) ? "right" : "left",
       };
       cell.font = { name: "Inter", size: 10, color: { argb: "FF1F2937" } };
       if (row.status === "archived") {
@@ -244,8 +261,8 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
       }
     });
 
-    worksheetRow.getCell(4).numFmt = '#,##0.00';
-    worksheetRow.getCell(6).numFmt = '#,##0.00';
+    worksheetRow.getCell(includeDrawing ? 5 : 4).numFmt = '#,##0.00';
+    worksheetRow.getCell(includeDrawing ? 7 : 6).numFmt = '#,##0.00';
     currentRowNumber += 1;
   };
 
@@ -253,7 +270,7 @@ export async function exportQuantitiesWorkbook(params: ExportQuantitiesWorkbookP
     params.groups.forEach((group) => {
       const groupHeaderRow = worksheet.getRow(currentRowNumber);
       groupHeaderRow.getCell(1).value = formatGroupLabel(group);
-      worksheet.mergeCells(`A${currentRowNumber}:I${currentRowNumber}`);
+      worksheet.mergeCells(`A${currentRowNumber}:${lastColumnLetter}${currentRowNumber}`);
       const firstCell = groupHeaderRow.getCell(1);
       firstCell.font = { name: "Inter", size: 10, bold: true, color: { argb: "FF10283B" } };
       firstCell.fill = {

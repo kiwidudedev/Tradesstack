@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ibmPlexSans } from "@/lib/fonts";
+import { getVisibleProjectIds } from "@/lib/opportunity-lifecycle-compatibility-server";
 import { requirePermission } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -209,7 +210,15 @@ export default async function LeadsClientsClientsPage({ searchParams }: LeadsCli
   }
 
   const clients = clientsResult.data ?? [];
-  const projects = projectsResult.data ?? [];
+  const projectRows = projectsResult.data ?? [];
+  const visibleProjectIds = await getVisibleProjectIds({
+    client: supabase,
+    organizationId: member.organization_id,
+    candidateProjectIds: projectRows.map((project) => project.id),
+  });
+  const projects = visibleProjectIds
+    ? projectRows.filter((project) => visibleProjectIds.has(project.id))
+    : projectRows;
   const opportunities = opportunitiesResult.data ?? [];
   const xeroConnection = xeroConnectionResult.error ? null : xeroConnectionResult.data;
 

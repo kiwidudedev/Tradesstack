@@ -46,6 +46,26 @@ interface LimiterRpcClient {
   ) => Promise<{ data: boolean | null; error: { message: string } | null }>;
 }
 
+interface DocumentDownloadGuardRpcClient {
+  rpc(
+    fn: "enforce_shared_rate_limit" | "acquire_shared_concurrency_slot" | "release_shared_concurrency_slot",
+    args: Record<string, unknown>,
+  ): Promise<{ data: boolean | null; error: { message: string } | null }>;
+  rpc(
+    fn: "acquire_document_download_guard",
+    args: { p_ip_subject_key: string },
+  ): Promise<{
+    data: Array<{
+      allowed: boolean;
+      rejected_by: string | null;
+      ip_limit_ms: number;
+      user_limit_ms: number;
+      concurrency_ms: number;
+    }> | null;
+    error: { message: string } | null;
+  }>;
+}
+
 async function enforceSharedRateLimit(
   limiterClient: LimiterRpcClient,
   routeKey: string,
@@ -183,5 +203,53 @@ export async function enforceRouteGuard(options: RouteGuardOptions): Promise<Rou
   return {
     ok: true,
     release: async () => {},
+  };
+}
+
+export async function enforceDocumentDownloadGuard(options: {
+  request: Request;
+  userId: string;
+  onTiming?: (stage: "ip-rate-limit" | "user-rate-limit" | "concurrency-acquire" | "guard-rpc", durationMs: number) => void;
+}): Promise<RouteGuardResult> {
+  const supabase = await createServerSupabaseClient();
+  const limiterClient = supabase as unknown as DocumentDownloadGuardRpcClient;
+  const ipSubjectKey = `ip:document-download:${getClientIp(options.request)}`;
+  const started = performance.now();
+  const result = await limiterClient.rpc("acquire_document_download_guard", {
+    p_ip_subject_key: ipSubjectKey,
+  });
+  options.onTiming?.("guard-rpc", performance.now() - started);
+
+  const row = result.data?.[0];
+  if (result.error || !row) {
+    console.error("[abuse-guard] atomic document download guard failed", result.error);
+    return { ok: false, status: 503, error: "Request guard is unavailable. Please retry." };
+  }
+  options.onTiming?.("ip-rate-limit", Number(row.ip_limit_ms));
+  options.onTiming?.("user-rate-limit", Number(row.user_limit_ms));
+  options.onTiming?.("concurrency-acquire", Number(row.concurrency_ms));
+
+  if (!row.allowed) {
+    return {
+      ok: false,
+      status: 429,
+      error: row.rejected_by === "concurrency"
+        ? "Too many concurrent requests. Please wait for current jobs to finish."
+        : "Too many requests. Please retry in a minute.",
+    };
+  }
+
+  let released = false;
+  return {
+    ok: true,
+    release: async () => {
+      if (released) return;
+      released = true;
+      await releaseSharedConcurrencySlot(
+        limiterClient as unknown as LimiterRpcClient,
+        "document-download",
+        `active:document-download:${options.userId}`,
+      );
+    },
   };
 }

@@ -476,7 +476,10 @@ function getNumericDisplayValue(cell: WorksheetCell | undefined) {
   return null;
 }
 
-function formatNumberWithStyle(value: number, format: NonNullable<WorksheetCellFormat["number"]>) {
+export function formatWorksheetNumberValue(
+  value: number,
+  format: NonNullable<WorksheetCellFormat["number"]>,
+) {
   const kind = format.kind ?? "general";
   const negativeStyle = format.negativeStyle ?? "minus";
   const useGrouping = format.useGrouping ?? kind !== "general";
@@ -507,6 +510,43 @@ function formatNumberWithStyle(value: number, format: NonNullable<WorksheetCellF
   }
 
   return negativeStyle === "parentheses" ? `(${formatted})` : `-${formatted}`;
+}
+
+const worksheetSelectionSummaryGeneralFormatter = new Intl.NumberFormat("en-NZ", {
+  maximumFractionDigits: 15,
+  useGrouping: true,
+});
+
+function normalizeWorksheetSelectionSummaryDisplayNumber(value: number) {
+  if (value === 0 || Number.isInteger(value)) {
+    return value;
+  }
+
+  return Number(value.toPrecision(15));
+}
+
+export function formatWorksheetSelectionSummaryValue(
+  value: number,
+  format: NonNullable<WorksheetCellFormat["number"]>,
+) {
+  const kind = format.kind ?? "general";
+  const usesCompactNumericDisplay =
+    (kind === "general" || kind === "number") && typeof format.decimalPlaces !== "number";
+  if (!usesCompactNumericDisplay) {
+    return formatWorksheetNumberValue(value, format);
+  }
+
+  const normalizedDisplayValue = normalizeWorksheetSelectionSummaryDisplayNumber(value);
+  const isNegative = normalizedDisplayValue < 0 || Object.is(normalizedDisplayValue, -0);
+  const formatted = worksheetSelectionSummaryGeneralFormatter.format(
+    Math.abs(normalizedDisplayValue),
+  );
+
+  if (!isNegative) {
+    return formatted;
+  }
+
+  return format.negativeStyle === "parentheses" ? `(${formatted})` : `-${formatted}`;
 }
 
 function getCachedNumberFormatter(
@@ -547,7 +587,7 @@ export function getFormattedCellDisplayValue(cell: WorksheetCell | undefined) {
     return typeof cell.displayValue === "string" ? cell.displayValue : "";
   }
 
-  return formatNumberWithStyle(numericValue, numberFormat);
+  return formatWorksheetNumberValue(numericValue, numberFormat);
 }
 
 export function applyFormattingToRange(

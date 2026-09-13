@@ -3,6 +3,7 @@
 # Node / Next
 node_modules/
 .next/
+.next-*/
 .next-payment-claims/
 .next-retention-proof/
 out/

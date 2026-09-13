@@ -4,6 +4,8 @@ import {
   recalculateWorksheetFormulas,
 } from "@/lib/opportunity-pricing-worksheet-formulas";
 import { startPricingWorksheetPerformanceMeasure } from "@/lib/pricing-worksheet-performance";
+import { invalidateChangedWorksheetMaterialPricing } from "@/lib/worksheet-material-pricing-provenance";
+import { invalidateChangedWorksheetMeasureProvenance } from "@/lib/worksheet-measure-provenance";
 
 export type WorksheetMutationResult = {
   previousWorksheet: WorksheetData;
@@ -50,12 +52,16 @@ export function applyWorksheetMutation(
     columnCount: currentWorksheet.columns.length,
     cellCount: Object.keys(currentWorksheet.cells).length,
   });
-  const previousWorksheet = cloneWorksheetData(currentWorksheet);
+  const previousWorksheet = currentWorksheet;
   const mutatedWorksheet = mutator(cloneWorksheetData(currentWorksheet));
-  const nextWorksheet =
+  const recalculatedWorksheet =
     options?.recalculateFormulas === false
       ? mutatedWorksheet
       : recalculateWorksheetFormulas(mutatedWorksheet);
+  const nextWorksheet = invalidateChangedWorksheetMeasureProvenance(
+    previousWorksheet,
+    invalidateChangedWorksheetMaterialPricing(previousWorksheet, recalculatedWorksheet),
+  );
   const changed = JSON.stringify(previousWorksheet) !== JSON.stringify(nextWorksheet);
   const formulaErrors = options?.validateFormulaOutputs
     ? findWorksheetFormulaErrors(nextWorksheet)

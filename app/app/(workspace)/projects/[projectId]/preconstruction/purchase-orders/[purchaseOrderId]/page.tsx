@@ -18,6 +18,7 @@ import {
   CommercialLineItemsCell,
   CommercialLineItemsRow,
   CommercialLineItemsTable,
+  CommercialLinePrefixedNumberInput,
   CommercialLineTextInput,
   CommercialSummaryCard,
   CommercialSummaryRow,
@@ -27,6 +28,13 @@ import { SupplierInvoiceTeamReviewModal } from "@/components/app/SupplierInvoice
 import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { SupplierPicker } from "@/components/app/SupplierPicker";
+import { PurchaseOrderSupplierPricingDrawer } from "@/components/app/PurchaseOrderSupplierPricingDrawer";
+import { PurchaseOrderImportQuoteDrawer } from "@/components/app/PurchaseOrderImportQuoteDrawer";
+import { PurchaseOrderImportVariationDrawer } from "@/components/app/PurchaseOrderImportVariationDrawer";
+import {
+  COMMERCIAL_LINE_GRID_WITH_SOURCE,
+  COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITH_SOURCE,
+} from "@/components/app/commercial-line-table-layout";
 import { createPurchaseOrderInlineSupplierAction } from "@/app/app/(workspace)/company/suppliers/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,7 +46,6 @@ import {
   enrichPurchaseOrderLineItemsWithCommercialItems,
   type PurchaseOrderCommercialItemLink,
 } from "@/lib/commercial-items/purchase-order-linking";
-import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import {
   createPurchaseOrderDraft,
@@ -63,19 +70,37 @@ import {
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import {
+  buildPurchaseOrderSelectionFromSupplierPrice,
+  canUsePurchaseOrderSupplierPricing,
+} from "@/lib/materials/purchase-order-supplier-pricing";
+import type { PricingWorksheetMaterialPickerItem } from "@/lib/pricing-worksheet-material-picker";
+import {
+  buildPurchaseOrderDraftLineFromSource,
+  selectNewPurchaseOrderImportLines,
+  type PurchaseOrderImportLine,
+  type PurchaseOrderQuoteImportSource,
+  type PurchaseOrderVariationImportOption,
+} from "@/lib/purchase-orders/source-import";
+import {
   getSupplierDisplayName,
   type OrganizationSupplierRow,
 } from "@/lib/suppliers";
 import styles from "@/components/app/trade-pack-builder.module.css";
 import {
   decideSupplierInvoiceSiteReviewAction,
+  loadPurchaseOrderQuoteImportSourceAction,
+  loadPurchaseOrderSupplierPricingPermissionsAction,
   loadPurchaseOrderSupplierInvoiceDetailAction,
   loadPurchaseOrderSupplierInvoiceSummaryAction,
+  loadPurchaseOrderVariationImportLinesAction,
+  loadPurchaseOrderVariationImportOptionsAction,
+  type PurchaseOrderSupplierPricingPermissions,
 } from "./actions";
 
 type VariationStatus = "Draft" | "Pending Approval" | "Approved" | "Issued" | "Received" | "Invoiced" | "Cancelled";
 type VariationOrigin = "Material Supply" | "Subcontract Work" | "Plant / Equipment Hire" | "Site Expense" | "Freight / Delivery" | "Variation Order" | "General Purchase" | "Other";
 type CostSection = "Labour" | "Materials" | "Subcontractors" | "Plant" | "Margin";
+type PurchaseOrderDrawerType = "quote" | "variation" | "materials" | null;
 
 interface CostLine {
   id: string;
@@ -191,7 +216,6 @@ const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Pending Approval", "Approve
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Material Supply", "Subcontract Work", "Plant / Equipment Hire", "Site Expense", "Freight / Delivery", "Variation Order", "General Purchase", "Other"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
 const NEW_SUPPLIER_OPTION = "__new_supplier__";
-const LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 140px 120px 72px 72px 104px 104px";
 const PURCHASE_ORDER_ATTACHMENTS_BUCKET = "project-variation-attachments";
 function toMoney(value: number) {
   return new Intl.NumberFormat(undefined, {
@@ -363,6 +387,19 @@ export default function ProjectVariationsPage() {
   const router = useRouter();
   const { session } = useAuth();
   const canManagePurchaseOrder = canManageCommercialData(session?.role);
+  const [supplierPricingPermissions, setSupplierPricingPermissions] = useState<PurchaseOrderSupplierPricingPermissions | null>(null);
+  const [activePurchaseOrderDrawer, setActivePurchaseOrderDrawer] = useState<PurchaseOrderDrawerType>(null);
+  const [quoteImportSource, setQuoteImportSource] = useState<PurchaseOrderQuoteImportSource | null>(null);
+  const [selectedQuoteImportLineIds, setSelectedQuoteImportLineIds] = useState<Set<string>>(new Set());
+  const [isLoadingQuoteImport, setIsLoadingQuoteImport] = useState(false);
+  const [quoteImportError, setQuoteImportError] = useState<string | null>(null);
+  const [variationImportOptions, setVariationImportOptions] = useState<PurchaseOrderVariationImportOption[]>([]);
+  const [selectedVariationImportId, setSelectedVariationImportId] = useState("");
+  const [variationImportLines, setVariationImportLines] = useState<PurchaseOrderImportLine[]>([]);
+  const [selectedVariationImportLineIds, setSelectedVariationImportLineIds] = useState<Set<string>>(new Set());
+  const [isLoadingVariationImports, setIsLoadingVariationImports] = useState(false);
+  const [isLoadingVariationImportLines, setIsLoadingVariationImportLines] = useState(false);
+  const [variationImportError, setVariationImportError] = useState<string | null>(null);
 
   const [variations, setVariations] = useState<VariationItem[]>([]);
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
@@ -416,6 +453,8 @@ export default function ProjectVariationsPage() {
   const isCreatingPurchaseOrderRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const supplierBillTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const materialsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const activeDrawerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const hydratingPurchaseOrderIdsRef = useRef<Set<string>>(new Set());
   const supabase = useMemo(() => {
     try {
@@ -430,6 +469,20 @@ export default function ProjectVariationsPage() {
       setIsLoadingVariations(false);
     }
   }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadPurchaseOrderSupplierPricingPermissionsAction()
+      .then((permissions) => {
+        if (!cancelled) setSupplierPricingPermissions(permissions);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSupplierPricingPermissions({ canViewMaterials: false, canWritePurchaseOrder: false });
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const refreshSummary = useCallback(async (nextOrganizationId: string, nextProjectId: string) => {
     if (!supabase) {
@@ -815,6 +868,31 @@ export default function ProjectVariationsPage() {
     () => variations.find((variation) => variation.id === activeVariationId) ?? variations[0] ?? null,
     [activeVariationId, variations]
   );
+  const canUseMaterials = canManagePurchaseOrder
+    && supplierPricingPermissions?.canViewMaterials === true
+    && supplierPricingPermissions.canWritePurchaseOrder
+    && canUsePurchaseOrderSupplierPricing(activeVariation?.origin ?? "");
+  const canImportPurchaseOrderSources = canManagePurchaseOrder && activeVariation?.status === "Draft";
+  const importedSourceCostItemIds = useMemo(
+    () => new Set(
+      (activeVariation?.costLines ?? [])
+        .map((line) => line.sourceCostItemId)
+        .filter((value): value is string => Boolean(value)),
+    ),
+    [activeVariation?.costLines],
+  );
+
+  useEffect(() => {
+    if (!canUsePurchaseOrderSupplierPricing(activeVariation?.origin ?? "") && activePurchaseOrderDrawer === "materials") {
+      setActivePurchaseOrderDrawer(null);
+    }
+  }, [activePurchaseOrderDrawer, activeVariation?.origin]);
+
+  useEffect(() => {
+    setActivePurchaseOrderDrawer(null);
+    setSelectedQuoteImportLineIds(new Set());
+    setSelectedVariationImportLineIds(new Set());
+  }, [activeVariation?.id]);
 
   const refreshAuthoritativeInvoiceSummary = useCallback(async () => {
     if (!activeVariation?.id || !persistedVariationIds.has(activeVariation.id)) {
@@ -1290,6 +1368,129 @@ export default function ProjectVariationsPage() {
     updateActiveVariation("costLines", [...activeVariation.costLines, makeDefaultCostLine(section)]);
   };
 
+  const closeActivePurchaseOrderDrawer = () => {
+    setActivePurchaseOrderDrawer(null);
+    window.requestAnimationFrame(() => activeDrawerTriggerRef.current?.focus());
+  };
+
+  const openMaterials = () => {
+    if (!canUseMaterials) return;
+    activeDrawerTriggerRef.current = materialsTriggerRef.current;
+    setIsSupplierMenuOpen(false);
+    setSupplierBillDialogOpen(false);
+    setActivePurchaseOrderDrawer("materials");
+  };
+
+  const openQuoteImport = async (trigger: HTMLButtonElement) => {
+    if (!canImportPurchaseOrderSources || !dbProjectId) return;
+    activeDrawerTriggerRef.current = trigger;
+    setActivePurchaseOrderDrawer("quote");
+    setSelectedQuoteImportLineIds(new Set());
+    setQuoteImportError(null);
+    setIsLoadingQuoteImport(true);
+    const result = await loadPurchaseOrderQuoteImportSourceAction({ projectId: dbProjectId });
+    setIsLoadingQuoteImport(false);
+    if (!result.ok) {
+      setQuoteImportSource(null);
+      setQuoteImportError(result.error);
+      return;
+    }
+    setQuoteImportSource(result.data);
+  };
+
+  const openVariationImport = async (trigger: HTMLButtonElement) => {
+    if (!canImportPurchaseOrderSources || !dbProjectId) return;
+    activeDrawerTriggerRef.current = trigger;
+    setActivePurchaseOrderDrawer("variation");
+    setSelectedVariationImportLineIds(new Set());
+    setSelectedVariationImportId("");
+    setVariationImportLines([]);
+    setVariationImportError(null);
+    setIsLoadingVariationImports(true);
+    const result = await loadPurchaseOrderVariationImportOptionsAction({ projectId: dbProjectId });
+    setIsLoadingVariationImports(false);
+    if (!result.ok) {
+      setVariationImportOptions([]);
+      setVariationImportError(result.error);
+      return;
+    }
+    setVariationImportOptions(result.data);
+  };
+
+  const changeVariationImportSource = async (variationId: string) => {
+    setSelectedVariationImportId(variationId);
+    setSelectedVariationImportLineIds(new Set());
+    setVariationImportLines([]);
+    setVariationImportError(null);
+    if (!variationId || !dbProjectId) return;
+    setIsLoadingVariationImportLines(true);
+    const result = await loadPurchaseOrderVariationImportLinesAction({ projectId: dbProjectId, variationId });
+    setIsLoadingVariationImportLines(false);
+    if (!result.ok) {
+      setVariationImportError(result.error);
+      return;
+    }
+    setVariationImportLines(result.data);
+  };
+
+  const toggleSourceImportLine = (lineId: string, source: "quote" | "variation") => {
+    const update = (current: Set<string>) => {
+      const next = new Set(current);
+      if (next.has(lineId)) next.delete(lineId); else next.add(lineId);
+      return next;
+    };
+    if (source === "quote") setSelectedQuoteImportLineIds(update);
+    else setSelectedVariationImportLineIds(update);
+  };
+
+  const importSourceLines = (source: "quote" | "variation") => {
+    if (!activeVariation || !canImportPurchaseOrderSources) return;
+    const sourceLines = source === "quote" ? quoteImportSource?.lines ?? [] : variationImportLines;
+    const selectedLineIds = source === "quote" ? selectedQuoteImportLineIds : selectedVariationImportLineIds;
+    const eligibleLines = selectNewPurchaseOrderImportLines({
+      lines: sourceLines,
+      selectedLineIds,
+      existingSourceCostItemIds: importedSourceCostItemIds,
+    });
+    if (eligibleLines.length === 0) return;
+    updateActiveVariation("costLines", [
+      ...activeVariation.costLines,
+      ...eligibleLines.map((line) => buildPurchaseOrderDraftLineFromSource(line) as CostLine),
+    ]);
+    if (source === "quote") setSelectedQuoteImportLineIds(new Set());
+    else setSelectedVariationImportLineIds(new Set());
+    setSaveMessage(`${eligibleLines.length} ${source === "quote" ? "Quote" : "Variation"} line${eligibleLines.length === 1 ? "" : "s"} added. Save Purchase Order to persist.`);
+  };
+
+  const addSupplierMaterial = (item: PricingWorksheetMaterialPickerItem) => {
+    if (!activeVariation || !canUseMaterials || !canUsePurchaseOrderSupplierPricing(activeVariation.origin)) {
+      setError("Supplier-priced materials can only be added to an editable Material Supply Purchase Order.");
+      return;
+    }
+    try {
+      const selection = buildPurchaseOrderSelectionFromSupplierPrice({
+        item,
+        purchaseOrderSupplierId: activeVariation.issuedToSupplierId || null,
+        purchaseOrderSupplierLabel: activeVariation.issuedToLabel,
+      });
+      setVariations((current) => current.map((purchaseOrder) => (
+        purchaseOrder.id === activeVariation.id
+          ? {
+              ...purchaseOrder,
+              issuedToSupplierId: selection.supplierId,
+              issuedToLabel: selection.supplierLabel,
+              costLines: [...purchaseOrder.costLines, selection.line],
+            }
+          : purchaseOrder
+      )));
+      setSupplierSearchQuery(selection.supplierLabel);
+      setError(null);
+      setSaveMessage("Material added to the Purchase Order. Save Purchase Order to persist this line.");
+    } catch (selectionError) {
+      setError(selectionError instanceof Error ? selectionError.message : "This supplier price cannot be added to the Purchase Order.");
+    }
+  };
+
   const updateCostLine = <K extends keyof CostLine>(lineId: string, key: K, value: CostLine[K]) => {
     if (!activeVariation) return;
     updateActiveVariation("costLines", activeVariation.costLines.map((line) => (line.id === lineId ? { ...line, [key]: value } : line)));
@@ -1543,10 +1744,6 @@ export default function ProjectVariationsPage() {
       }
       const nextTotal = Number(savedRow?.totalPurchaseOrderPrice ?? pricingSummary.grandTotal);
 
-      triggerDocumentClassification({
-        documentKind: "project_purchase_order",
-        documentId: savedPurchaseOrderId,
-      });
 
       setPersistedVariationIds((current) => new Set([...current, savedPurchaseOrderId]));
       setVariations((current) =>
@@ -2329,7 +2526,32 @@ export default function ProjectVariationsPage() {
           <section className="py-5">
             <div className="flex items-center justify-between">
               <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Line Items</h2>
-              <div className="h-10" />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canImportPurchaseOrderSources ? (
+                  <>
+                    <Button type="button" variant="outline" onClick={(event) => void openQuoteImport(event.currentTarget)} className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}>
+                      <Plus className="mr-1 h-4 w-4" />
+                      Import From Quote
+                    </Button>
+                    <Button type="button" variant="outline" onClick={(event) => void openVariationImport(event.currentTarget)} className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}>
+                      <Plus className="mr-1 h-4 w-4" />
+                      Import From Variation
+                    </Button>
+                  </>
+                ) : null}
+                {canUseMaterials ? (
+                  <Button
+                    ref={materialsTriggerRef}
+                    type="button"
+                    variant="outline"
+                    onClick={openMaterials}
+                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Materials
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             <div className="mt-4">
@@ -2344,12 +2566,13 @@ export default function ProjectVariationsPage() {
                   { key: "amount", label: "Amount", align: "right" },
                   { key: "actions", label: "" },
                 ]}
-                gridTemplateColumns={`${LINE_GRID_TEMPLATE} 44px`}
+                gridTemplateColumns={COMMERCIAL_LINE_GRID_WITH_SOURCE}
+                minWidthClassName={COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITH_SOURCE}
               >
                 {activeVariation.costLines.map((line) => (
                   <CommercialLineItemsRow
                     key={line.id}
-                    gridTemplateColumns={`${LINE_GRID_TEMPLATE} 44px`}
+                    gridTemplateColumns={COMMERCIAL_LINE_GRID_WITH_SOURCE}
                   >
                     <CommercialLineItemsCell>
                       <CommercialLineTextInput
@@ -2484,20 +2707,16 @@ export default function ProjectVariationsPage() {
                       />
                     </CommercialLineItemsCell>
                     <CommercialLineItemsCell withBorder>
-                          <div className="relative w-full">
-                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>$</span>
-                            <CommercialLineTextInput
-                              type="number"
-                              value={line.rate === 0 ? "" : line.rate}
-                              onChange={(value) => updateCostLine(line.id, "rate", numberOrZero(value))}
-                              disabled={Boolean(line.sourceTimeSheetEntryId) ? !canManagePurchaseOrder : false}
-                              className="pl-4 pr-0"
-                              title={line.sourceTimeSheetEntryId ? "Synced from timesheet: rate is editable, other fields are locked." : undefined}
-                            />
-                          </div>
+                      <CommercialLinePrefixedNumberInput
+                        prefix="$"
+                        value={line.rate === 0 ? "" : String(line.rate)}
+                        onChange={(value) => updateCostLine(line.id, "rate", numberOrZero(value))}
+                        disabled={Boolean(line.sourceTimeSheetEntryId) ? !canManagePurchaseOrder : false}
+                        title={line.sourceTimeSheetEntryId ? "Synced from timesheet: rate is editable, other fields are locked." : undefined}
+                      />
                     </CommercialLineItemsCell>
                     <CommercialLineItemsCell withBorder className="justify-end">
-                          <div className={`${interMedium.className} text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
+                          <div className={`${interMedium.className} whitespace-nowrap text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
                     </CommercialLineItemsCell>
                     <CommercialLineItemsCell withBorder className="justify-center px-0">
                           <CommercialLineItemActionButton
@@ -2823,6 +3042,42 @@ export default function ProjectVariationsPage() {
           </CardContent>
         </Card>
       )}
+      {activePurchaseOrderDrawer === "quote" && canImportPurchaseOrderSources ? (
+        <PurchaseOrderImportQuoteDrawer
+          source={quoteImportSource}
+          selectedLineIds={selectedQuoteImportLineIds}
+          alreadyImportedSourceCostItemIds={importedSourceCostItemIds}
+          isLoading={isLoadingQuoteImport}
+          error={quoteImportError}
+          onToggleLine={(lineId) => toggleSourceImportLine(lineId, "quote")}
+          onImportSelected={() => importSourceLines("quote")}
+          onClose={closeActivePurchaseOrderDrawer}
+        />
+      ) : null}
+      {activePurchaseOrderDrawer === "variation" && canImportPurchaseOrderSources ? (
+        <PurchaseOrderImportVariationDrawer
+          variations={variationImportOptions}
+          selectedVariationId={selectedVariationImportId}
+          lines={variationImportLines}
+          selectedLineIds={selectedVariationImportLineIds}
+          alreadyImportedSourceCostItemIds={importedSourceCostItemIds}
+          isLoadingVariations={isLoadingVariationImports}
+          isLoadingLines={isLoadingVariationImportLines}
+          error={variationImportError}
+          onVariationChange={(variationId) => void changeVariationImportSource(variationId)}
+          onToggleLine={(lineId) => toggleSourceImportLine(lineId, "variation")}
+          onImportSelected={() => importSourceLines("variation")}
+          onClose={closeActivePurchaseOrderDrawer}
+        />
+      ) : null}
+      {activePurchaseOrderDrawer === "materials" && canUseMaterials && activeVariation ? (
+        <PurchaseOrderSupplierPricingDrawer
+          purchaseOrderSupplierId={activeVariation.issuedToSupplierId || null}
+          purchaseOrderSupplierLabel={activeVariation.issuedToLabel}
+          onClose={closeActivePurchaseOrderDrawer}
+          onSelectPrice={addSupplierMaterial}
+        />
+      ) : null}
     </div>
   );
 }

@@ -13,8 +13,6 @@ const DRAFT_CLAIM_ID = randomUUID();
 const SUBMITTED_CLAIM_ID = randomUUID();
 const PAID_CLAIM_ID = randomUUID();
 const PROJECT_SLUG = `phase-0-payment-claim-visual-${process.pid}`;
-const E2E_EMAIL = "supplier-invoice-e2e@tradesstack.local";
-const E2E_PASSWORD = "TradesstackE2E!234";
 
 async function setRetentionFixtureState({
   enabled,
@@ -267,8 +265,9 @@ async function gotoAuthenticated(page: import("@playwright/test").Page, path: st
   await page.waitForTimeout(500);
   const email = page.getByLabel("Work email*");
   if (await email.isVisible().catch(() => false)) {
-    await email.fill(E2E_EMAIL);
-    await page.getByLabel("Password*").fill(E2E_PASSWORD);
+    const credentials = await ensureSupplierInvoiceE2EContext();
+    await email.fill(credentials.email);
+    await page.getByLabel("Password*").fill(credentials.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/app\//);
     await page.goto(path);

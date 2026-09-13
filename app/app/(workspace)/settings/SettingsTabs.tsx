@@ -13,16 +13,19 @@ const tabs = [
   { href: "/app/settings/platform-preferences", label: "Platform Preferences" },
 ];
 
-export function SettingsTabs() {
+export function SettingsTabs({ canViewQATemplates = false }: { canViewQATemplates?: boolean }) {
   const pathname = usePathname();
   const { session } = useAuth();
-  const visibleTabs = tabs.filter((tab) => tab.href !== "/app/settings/users-permissions" || session?.role === "owner");
+  const visibleTabs = [
+    ...tabs,
+    ...(canViewQATemplates ? [{ href: "/app/settings/qa-templates", label: "QA Templates" }] : []),
+  ].filter((tab) => tab.href !== "/app/settings/users-permissions" || session?.role === "owner");
 
   return (
     <section className="w-full">
       <nav className="flex flex-col gap-1.5">
         {visibleTabs.map((tab) => {
-          const isActive = pathname === tab.href;
+          const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
           return (
             <Link
               key={tab.href}

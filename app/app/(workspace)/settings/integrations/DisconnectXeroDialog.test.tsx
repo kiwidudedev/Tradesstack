@@ -15,16 +15,17 @@ import { describe, expect, it } from "vitest";
 import { DisconnectXeroDialog } from "./DisconnectXeroDialog";
 
 describe("DisconnectXeroDialog", () => {
-  it("renders the explicit Phase 1 disconnect warning copy", () => {
+  it("accurately describes the current disconnect behavior", () => {
     const markup = renderToStaticMarkup(
       <DisconnectXeroDialog action={async () => undefined} disabled={false} />,
     );
 
     expect(markup).toContain("Disconnect Xero?");
-    expect(markup).toContain("stored token secrets will be removed");
-    expect(markup).toContain("Imported accounts and tax rates will remain");
-    expect(markup).toContain("Existing TradesStack accounting mappings will remain");
-    expect(markup).toContain("No Supplier Invoices or Payment Claims are exported to Xero in Phase 1.");
+    expect(markup).toContain("stored token credentials will be removed");
+    expect(markup).toContain("Imported accounts, tax rates, and contacts will remain");
+    expect(markup).toContain("Existing TradesStack accounting mappings and historical accounting records will remain");
+    expect(markup).toContain("Queued Xero jobs that can no longer run will be ended");
+    expect(markup).not.toContain("Phase 1");
     expect(markup).toContain('name="disconnect_confirmation"');
     expect(markup).toContain("Cancel");
     expect(markup).toContain("Disconnect");

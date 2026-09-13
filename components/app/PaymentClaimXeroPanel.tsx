@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   ACCOUNTING_PAYMENT_BADGE_CLASSES,
@@ -98,6 +99,12 @@ export function PaymentClaimXeroPanel(props: {
   };
 
   const onRefresh = async () => {
+    if (
+      !state?.canRefresh
+      || refreshing
+      || pushing
+      || state.refreshInProgress
+    ) return;
     setRefreshing(true);
     setActionError(null);
     const result = await enqueuePaymentClaimXeroRefreshAction({
@@ -111,6 +118,10 @@ export function PaymentClaimXeroPanel(props: {
 
   const hasPendingRow = state?.status === "queued"
     || state?.status === "syncing";
+  const showRefresh = Boolean(
+    state?.canManage
+    && state.invoiceId,
+  );
   const paymentBadgeClass = state?.paymentStatus
     ? PAYMENT_BADGES[state.paymentStatus]
     : null;
@@ -127,13 +138,16 @@ export function PaymentClaimXeroPanel(props: {
       renderState={Boolean(state)}
       actions={state ? (
         <>
-          {state.canRefresh ? (
+          {showRefresh ? (
             <Button
               type="button"
               variant="secondary"
               onClick={() => void onRefresh()}
               disabled={
-                refreshing || pushing || state.refreshInProgress
+                !state.canRefresh
+                || refreshing
+                || pushing
+                || state.refreshInProgress
               }
             >
               {refreshing || state.refreshInProgress
@@ -170,6 +184,30 @@ export function PaymentClaimXeroPanel(props: {
       fullyPaidAt={state?.fullyPaidAt ?? null}
       xeroUrl={state?.xeroUrl ?? null}
       safeErrorMessage={state?.safeErrorMessage}
+      guidance={state && state.blockers.length > 0 ? (
+        <div className="space-y-2" data-testid="payment-claim-xero-readiness-blockers">
+          <p className="font-semibold text-[var(--text-primary)]">Readiness items</p>
+          <ul className="list-disc space-y-1 pl-5">
+            {state.blockers.map((blocker) => (
+              <li key={blocker.code}>
+                {blocker.code === "xero_disconnected"
+                  ? "Xero connection needs reauthorization."
+                  : blocker.code === "client_contact_missing"
+                    ? "Client is not linked to a Xero Contact."
+                    : blocker.message}
+                {blocker.code === "xero_disconnected" ? (
+                  <>{" "}<Link className="font-semibold text-[var(--brand-blue)] hover:underline" href="/app/settings/integrations">Open Integrations</Link></>
+                ) : null}
+                {blocker.code === "client_contact_missing" && state.clientId ? (
+                  <>{" "}<Link className="font-semibold text-[var(--brand-blue)] hover:underline" href={`/app/leads-clients/clients/${state.clientId}`}>
+                    Client → {state.clientName ?? "client"} → Xero Contact
+                  </Link></>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       attachmentFailureMessage={
         state?.invoiceNumber && state.attachmentStatus === "failed"
           ? `Xero invoice ${state.invoiceNumber} was created successfully, but its PDF attachment failed. Do not push the invoice again.${state.attachmentErrorMessage ? ` ${state.attachmentErrorMessage}` : ""}`

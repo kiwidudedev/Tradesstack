@@ -3,7 +3,7 @@ import type { Database, Json } from "@/lib/supabase/types";
 
 export type CommercialItemsClient = SupabaseClient<Database>;
 
-export type CommercialItemSourceType = "worksheet_selection";
+export type CommercialItemSourceType = "worksheet_selection" | "takeoff_measurement";
 export type CommercialItemSourceStatus = "current" | "stale" | "broken" | "needs_review";
 export type CommercialItemUclValidationStatus = "not_reviewed" | "valid" | "invalid";
 export type CommercialItemDocumentKind =
@@ -21,10 +21,11 @@ export interface CommercialItemRow {
   opportunity_id: string;
   project_id: string | null;
   source_type: string;
-  source_workbook_id: string;
-  source_worksheet_id: string;
-  source_sheet_id: string;
-  source_range: string;
+  source_workbook_id: string | null;
+  source_worksheet_id: string | null;
+  source_sheet_id: string | null;
+  source_takeoff_measurement_id?: string | null;
+  source_range: string | null;
   source_signature: string;
   source_version: number;
   source_status: string;
@@ -65,10 +66,11 @@ export interface CommercialItemPayload {
   opportunityId: string;
   projectId: string | null;
   sourceType: CommercialItemSourceType;
-  sourceWorkbookId: string;
-  sourceWorksheetId: string;
-  sourceSheetId: string;
-  sourceRange: string;
+  sourceWorkbookId: string | null;
+  sourceWorksheetId: string | null;
+  sourceSheetId: string | null;
+  sourceTakeoffMeasurementId?: string | null;
+  sourceRange: string | null;
   sourceSignature: string;
   sourceVersion: number;
   sourceStatus: CommercialItemSourceStatus;
@@ -107,7 +109,7 @@ export interface CreateCommercialItemInput {
   organizationId: string;
   opportunityId: string;
   projectId?: string | null;
-  sourceType?: CommercialItemSourceType;
+  sourceType?: "worksheet_selection";
   sourceWorkbookId: string;
   sourceWorksheetId?: string | null;
   sourceSheetId: string;
@@ -128,6 +130,16 @@ export interface CreateCommercialItemInput {
   lockedMetadataJson: Json;
   uclClassification?: string | null;
   uclValidationStatus?: CommercialItemUclValidationStatus;
+}
+
+export interface CreateTakeoffCommercialItemInput {
+  organizationId: string;
+  opportunityId: string;
+  projectId?: string | null;
+  dataProjectId: string;
+  measurementId: string;
+  description: string;
+  rate: number;
 }
 
 export interface GetCommercialItemInput {

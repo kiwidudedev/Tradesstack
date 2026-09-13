@@ -34,7 +34,7 @@ export function TakeoffSourceDrawingUpload({
     onFileChange,
     uploadFile,
   } = useTakeoffSourceDrawingUpload({
-    opportunityId,
+    owner: { kind: "opportunity", slug: opportunityId },
     organizationId,
     projectId,
   });

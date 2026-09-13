@@ -33,12 +33,16 @@ vi.mock("@/lib/xero/payment-claim-initial-push-proposal", () => ({
 
 import {
   enqueuePaymentClaimXeroRefreshForCurrentUser,
+  enqueueEligibleXeroSalesInvoiceRefreshes,
   enqueueXeroSalesInvoiceRefresh,
   normalizeXeroSalesInvoicePaymentState,
   recordXeroSalesInvoiceRefreshError,
   refreshXeroSalesInvoiceStatus,
 } from "./payment-claim-sales-invoice-refresh";
 import type { XeroInvoice } from "./types";
+import { XeroRequestError } from "./client";
+import { derivePaymentClaimAccountingIdentity } from "./payment-claim-accounting-identity";
+import { derivePaymentClaimXeroPanelState } from "./payment-claim-sales-invoice-panel";
 
 type Row = Record<string, unknown>;
 
@@ -240,6 +244,186 @@ describe("ACCREC status refresh", () => {
     expect(admin.updates.filter((entry) => entry.table === "organization_accounting_documents")).toHaveLength(1);
   });
 
+  it("projects a paid revision-backed Xero observation through to the accounting panel", async () => {
+    const payload = {
+      Type: "ACCREC" as const,
+      Contact: { ContactID: "contact-1" },
+      Date: "2026-07-22",
+      DueDate: "2026-08-20",
+      LineAmountTypes: "Exclusive" as const,
+      LineItems: [{
+        Description: "Payment Claim",
+        Quantity: 1,
+        UnitAmount: 100,
+        AccountCode: "200",
+        TaxType: "OUTPUT2",
+      }],
+      Reference: "Project One",
+      Status: "AUTHORISED" as const,
+      InvoiceNumber: "PC-0042",
+      CurrencyCode: "NZD",
+    };
+    const document = accountingDocument({
+      integration_contract: "payment_claim_revision_v1",
+      active_accounting_revision_id: "revision-1",
+      last_synced_hash: "hash-current",
+      export_status: "queued",
+    });
+    const revision: Row = {
+      id: "revision-1",
+      organization_id: "org-1",
+      accounting_document_id: "document-1",
+      source_document_id: "claim-1",
+      provider: "xero",
+      connection_id: "conn-1",
+      tenant_id: "tenant-1",
+      external_document_id: "invoice-1",
+      external_document_number: "PC-0042",
+      lifecycle_state: "succeeded",
+      payload_snapshot: payload,
+      provider_content_hash: "content-hash",
+      subtotal_minor: 10000,
+      tax_minor: 1500,
+      total_minor: 11500,
+    };
+    const claim = {
+      id: "claim-1",
+      organization_id: "org-1",
+      project_id: "project-1",
+      claim_number: "PC-0042",
+      status: "Submitted",
+      due_date: "2026-08-20",
+      claim_amount: 100,
+      total_payable: 115,
+      paid_amount: 0,
+      updated_at: "2026-07-22T00:00:00Z",
+    };
+    const paidInvoice = xeroInvoice({
+      ...payload,
+      Status: "PAID",
+      LineItems: [{
+        ...payload.LineItems[0],
+        LineAmount: 100,
+      }],
+      SubTotal: 100,
+      TotalTax: 15,
+      Total: 115,
+      AmountPaid: 115,
+      AmountDue: 0,
+      AmountCredited: 0,
+      Payments: [{ Amount: 115 }],
+      FullyPaidOnDate: "2026-07-27",
+    });
+    let observation: Row | null = null;
+    let projection: Row | null = null;
+    const client = {
+      async rpc(functionName: string, args: Row) {
+        if (functionName !== "record_accounting_remote_observation_phase2a") {
+          return { data: null, error: { message: "Unexpected RPC" } };
+        }
+        const input = args.p_input as Row;
+        observation = {
+          id: "observation-paid",
+          accounting_document_id: "document-1",
+          accounting_revision_id: "revision-1",
+          tenant_id: "tenant-1",
+          external_document_id: "invoice-1",
+          content_hash: input.contentHash,
+          settlement_hash: input.settlementHash,
+          observed_at: "2026-07-27T08:30:00Z",
+          raw_status: input.rawStatus,
+          normalized_status: input.normalizedStatus,
+          raw_observation: input.rawObservation,
+        };
+        projection = {
+          id: "projection-paid",
+          accounting_revision_id: "revision-1",
+          remote_observation_id: "observation-paid",
+          normalized_invoice_status: input.normalizedInvoiceStatus,
+          normalized_payment_status: input.normalizedPaymentStatus,
+          amount_paid_minor: input.amountPaidMinor,
+          amount_due_minor: input.amountDueMinor,
+          amount_credited_minor: input.amountCreditedMinor,
+          projected_at: "2026-07-27T08:30:00Z",
+          divergent: false,
+        };
+        return { data: observation, error: null };
+      },
+      from(table: string) {
+        const row = table === "organization_accounting_documents"
+          ? document
+          : table === "organization_accounting_document_revisions"
+            ? revision
+            : table === "project_claims"
+              ? claim
+              : null;
+        const builder = {
+          select() { return builder; },
+          eq() { return builder; },
+          maybeSingle: async () => ({ data: row, error: null }),
+        };
+        return builder;
+      },
+    };
+    mocks.createAdminSupabaseClient.mockResolvedValue(client);
+    mocks.getXeroInvoice.mockResolvedValue([paidInvoice]);
+
+    const refreshed = await refreshXeroSalesInvoiceStatus({
+      organizationId: "org-1",
+      documentId: "document-1",
+      workerJobId: "refresh-job-paid",
+    });
+
+    expect(refreshed).toMatchObject({
+      normalizedStatus: "paid",
+      paymentProjection: "paid",
+      amountPaid: 115,
+      amountDue: 0,
+    });
+    expect(observation).toMatchObject({
+      raw_status: "PAID",
+      normalized_status: "paid",
+    });
+    expect(projection).toMatchObject({
+      normalized_payment_status: "paid",
+      amount_paid_minor: 11500,
+      amount_due_minor: 0,
+    });
+
+    const identity = derivePaymentClaimAccountingIdentity({
+      organizationId: "org-1",
+      claimId: "claim-1",
+      document,
+      activeRevision: revision,
+      currentConnection: {
+        id: "conn-1",
+        tenant_id: "tenant-1",
+        status: "connected",
+      },
+      jobs: [],
+    });
+    const panel = derivePaymentClaimXeroPanelState({
+      canManage: true,
+      readiness: { ready: true, blockers: [] },
+      document,
+      activeJob: null,
+      latestJob: null,
+      currentHash: "hash-current",
+      activeRevision: revision,
+      latestObservation: observation,
+      projection,
+      resolvedIdentity: identity,
+    });
+    expect(panel).toMatchObject({
+      status: "synced",
+      statusLabel: "Synced",
+      paymentStatus: "paid",
+      paymentStatusLabel: "Paid",
+      amountPaid: 115,
+      amountOutstanding: 0,
+    });
+  });
+
   it.each([
     ["Submitted becomes Unpaid", { status: "Submitted", due_date: "2099-07-30" }, xeroInvoice(), "Unpaid", 0],
     ["full payment becomes Paid", { status: "Unpaid", due_date: "2099-07-30" }, xeroInvoice({ Status: "PAID", AmountPaid: 115, AmountDue: 0 }), "Paid", 100],
@@ -358,6 +542,20 @@ describe("ACCREC status refresh", () => {
     expect(document.last_status_sync_error).toContain("no longer matches");
   });
 
+  it("maps a true Xero 404 to the missing-invoice result", async () => {
+    const admin = createRefreshAdmin(accountingDocument());
+    mocks.createAdminSupabaseClient.mockResolvedValue(admin.client);
+    mocks.getXeroInvoice.mockRejectedValue(
+      new XeroRequestError("Not found.", { status: 404 }),
+    );
+
+    await expect(refreshXeroSalesInvoiceStatus({
+      organizationId: "org-1",
+      documentId: "document-1",
+      workerJobId: "job-404",
+    })).rejects.toMatchObject({ code: "missing_invoice" });
+  });
+
   it("records a safe failure without changing previous successful payment values or claim fields", async () => {
     const document = accountingDocument({ amount_paid: 25, amount_due: 90 });
     const admin = createRefreshAdmin(document);
@@ -384,6 +582,7 @@ function createEnqueueAdmin(document: Row, initialJobs: Row[] = []) {
             select() { return builder; },
             eq() { return builder; },
             in() { return builder; },
+            order: async () => ({ data: [document], error: null }),
             maybeSingle: async () => ({ data: document, error: null }),
           };
           return builder;
@@ -423,17 +622,44 @@ describe("ACCREC refresh enqueue", () => {
     mocks.isPaymentClaimInitialPushEnabled.mockResolvedValue(true);
   });
 
-  it("deduplicates repeated refresh clicks", async () => {
+  it("reports an already queued refresh as workflow-blocked", async () => {
     const admin = createEnqueueAdmin(accountingDocument());
     mocks.createAdminSupabaseClient.mockResolvedValue(admin.client);
     const first = await enqueueXeroSalesInvoiceRefresh({
       organizationId: "org-1", documentId: "document-1", createdByUserId: "user-1", triggerSource: "manual_refresh",
     });
-    const second = await enqueueXeroSalesInvoiceRefresh({
+    const second = enqueueXeroSalesInvoiceRefresh({
       organizationId: "org-1", documentId: "document-1", createdByUserId: "user-1", triggerSource: "manual_refresh",
     });
     expect(first.created).toBe(true);
-    expect(second).toMatchObject({ jobId: first.jobId, created: false });
+    await expect(second).rejects.toMatchObject({
+      code: "refresh_in_progress",
+    });
+    expect(admin.jobs).toHaveLength(1);
+  });
+
+  it("returns an already queued refresh to the scheduled worker for recovery", async () => {
+    const admin = createEnqueueAdmin(accountingDocument({
+      export_status: "queued",
+    }), [{
+      id: "refresh-job",
+      job_kind: "xero.sales_invoice.refresh",
+      queue_state: "pending",
+      request_payload: { accountingDocumentId: "document-1" },
+    }]);
+    mocks.createAdminSupabaseClient.mockResolvedValue(admin.client);
+
+    await expect(enqueueXeroSalesInvoiceRefresh({
+      organizationId: "org-1",
+      documentId: "document-1",
+      createdByUserId: null,
+      triggerSource: "scheduled",
+    })).resolves.toEqual({
+      jobId: "refresh-job",
+      documentId: "document-1",
+      currentStatus: "pending",
+      created: false,
+    });
     expect(admin.jobs).toHaveLength(1);
   });
 
@@ -448,6 +674,33 @@ describe("ACCREC refresh enqueue", () => {
     })).rejects.toMatchObject({ code: "sync_in_progress" });
     expect(admin.jobs).toHaveLength(1);
   });
+
+  it.each([
+    ["xero.payment_claim.initial_push", "initial_push_in_progress"],
+    ["xero.payment_claim.replacement", "replacement_in_progress"],
+    ["xero.payment_claim.accounting_update", "accounting_update_in_progress"],
+  ] as const)(
+    "keeps valid identity but blocks refresh during %s",
+    async (jobKind, code) => {
+      const admin = createEnqueueAdmin(
+        accountingDocument({ export_status: "queued" }),
+        [{
+          id: "financial-job",
+          job_kind: jobKind,
+          queue_state: "pending",
+          request_payload: { accountingDocumentId: "document-1" },
+        }],
+      );
+      mocks.createAdminSupabaseClient.mockResolvedValue(admin.client);
+
+      await expect(enqueueXeroSalesInvoiceRefresh({
+        organizationId: "org-1",
+        documentId: "document-1",
+        createdByUserId: "user-1",
+        triggerSource: "manual_refresh",
+      })).rejects.toMatchObject({ code });
+    },
+  );
 
   it("allows immediate status verification while an attachment job is pending", async () => {
     const admin = createEnqueueAdmin(accountingDocument(), [{
@@ -476,5 +729,39 @@ describe("ACCREC refresh enqueue", () => {
       job_kind: "xero.sales_invoice.refresh",
       request_payload: { accountingDocumentId: "document-1" },
     });
+  });
+
+  it("schedules linked invoices independently of document workflow status", async () => {
+    const filters: Array<[string, string, unknown]> = [];
+    const builder = {
+      select() { return builder; },
+      eq(field: string, value: unknown) {
+        filters.push(["eq", field, value]);
+        return builder;
+      },
+      not(field: string, operator: string, value: unknown) {
+        filters.push(["not", field, `${operator}:${String(value)}`]);
+        return builder;
+      },
+      or(value: string) {
+        filters.push(["or", value, null]);
+        return builder;
+      },
+      order() { return builder; },
+      limit: async () => ({ data: [], error: null }),
+    };
+    mocks.createAdminSupabaseClient.mockResolvedValue({
+      from: () => builder,
+    });
+
+    await expect(
+      enqueueEligibleXeroSalesInvoiceRefreshes(),
+    ).resolves.toEqual([]);
+    expect(filters).toContainEqual([
+      "not",
+      "external_document_id",
+      "is:null",
+    ]);
+    expect(filters.some(([, field]) => field === "export_status")).toBe(false);
   });
 });

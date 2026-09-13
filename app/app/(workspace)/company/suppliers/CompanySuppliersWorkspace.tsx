@@ -1,12 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Globe, Link2, Mail, Phone, Plus, RefreshCcw, Search, ShieldAlert, Users } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { AddSupplierDialog } from "@/components/app/AddSupplierDialog";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
 import {
@@ -82,7 +83,6 @@ type SupplierFormState = {
 };
 
 type ModalState =
-  | { type: "create" }
   | { type: "detail"; supplierId: string }
   | { type: "edit"; supplierId: string };
 
@@ -241,6 +241,8 @@ export function CompanySuppliersWorkspace({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<SupplierStatusFilter>("all");
   const [modalState, setModalState] = useState<ModalState | null>(null);
+  const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+  const addSupplierTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [formState, setFormState] = useState<SupplierFormState>(emptyFormState);
   const [isSaving, setIsSaving] = useState(false);
   const [isXeroLoading, setIsXeroLoading] = useState(false);
@@ -500,9 +502,16 @@ export function CompanySuppliersWorkspace({
   }
 
   function openCreateModal() {
-    setFormState(emptyFormState);
     resetFeedback();
-    setModalState({ type: "create" });
+    setIsAddSupplierOpen(true);
+  }
+
+  function handleSupplierCreated(supplier: OrganizationSupplierRow) {
+    upsertSupplier(supplier);
+    setFormState(toFormState(supplier));
+    setIsAddSupplierOpen(false);
+    setModalState({ type: "detail", supplierId: supplier.id });
+    setMessage("Supplier created.");
   }
 
   function openDetailModal(supplier: OrganizationSupplierRow) {
@@ -526,7 +535,7 @@ export function CompanySuppliersWorkspace({
 
     try {
       const result = await saveSupplierAction({
-        supplierId: modalState?.type === "edit" ? selectedSupplier?.id ?? null : null,
+        supplierId: selectedSupplier?.id ?? null,
         confirmPotentialDuplicates: duplicateWarnings.length > 0,
         input: {
           name: formState.name,
@@ -563,7 +572,7 @@ export function CompanySuppliersWorkspace({
         upsertSupplier(result.supplier);
         setFormState(toFormState(result.supplier));
         setModalState({ type: "detail", supplierId: result.supplier.id });
-        setMessage(modalState?.type === "edit" ? "Supplier updated." : "Supplier created.");
+        setMessage("Supplier updated.");
       }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save supplier.");
@@ -608,13 +617,8 @@ export function CompanySuppliersWorkspace({
     }
   }
 
-  const isEditMode = modalState?.type === "create" || modalState?.type === "edit";
-  const modalTitle =
-    modalState?.type === "create"
-      ? "Add Supplier"
-      : modalState?.type === "edit"
-        ? "Edit Supplier"
-        : null;
+  const isEditMode = modalState?.type === "edit";
+  const modalTitle = isEditMode ? "Edit Supplier" : null;
 
   return (
     <main className={`${ibmPlexSans.variable} ${ibmPlexSans.className} space-y-6 bg-[var(--background)] pb-8`}>
@@ -629,7 +633,7 @@ export function CompanySuppliersWorkspace({
                 Refresh Xero Contacts
               </Button>
             ) : null}
-            <Button type="button" onClick={openCreateModal} disabled={!canEdit}>
+            <Button ref={addSupplierTriggerRef} type="button" onClick={openCreateModal} disabled={!canEdit}>
               <Plus className="h-4 w-4" strokeWidth={2.3} />
               Add Supplier
             </Button>
@@ -826,6 +830,13 @@ export function CompanySuppliersWorkspace({
           </OperationalTable>
         )}
       </OperationalPanel>
+
+      <AddSupplierDialog
+        open={isAddSupplierOpen}
+        onOpenChange={setIsAddSupplierOpen}
+        onCreated={handleSupplierCreated}
+        returnFocusRef={addSupplierTriggerRef}
+      />
 
       <Dialog open={modalState !== null} onOpenChange={(open) => (!open ? closeModal() : undefined)}>
         <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto p-0">
@@ -1275,9 +1286,7 @@ export function CompanySuppliersWorkspace({
                       ? "Saving..."
                       : duplicateWarnings.length > 0
                         ? "Save Anyway"
-                        : modalState?.type === "edit"
-                          ? "Save Changes"
-                          : "Add Supplier"}
+                        : "Save Changes"}
                   </Button>
                 </div>
               </div>

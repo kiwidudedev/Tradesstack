@@ -2,6 +2,10 @@ import "server-only";
 
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getOrganizationXeroConnection } from "@/lib/xero/service";
+import {
+  resolvePaymentClaimRevenueTax,
+  type ResolvedPaymentClaimRevenueTax,
+} from "@/lib/xero/payment-claim-revenue-tax";
 
 export type PaymentClaimXeroReadinessBlockerCode =
   | "organization_not_found"
@@ -28,6 +32,10 @@ export type PaymentClaimXeroReadinessBlockerCode =
   | "retention_account_tenant_mismatch"
   | "retention_account_classification_invalid"
   | "revenue_tax_type_missing"
+  | "sales_account_tax_type_missing"
+  | "sales_tax_rate_missing"
+  | "sales_tax_rate_ambiguous"
+  | "sales_tax_rate_gst_mismatch"
   | "claim_not_submitted"
   | "unsupported_jurisdiction"
   | "unsupported_tax_registration"
@@ -65,6 +73,9 @@ export type PaymentClaimXeroReadinessSnapshot = {
   contactLinks: Row[];
   importedContacts: Row[];
   mappings: Row[];
+  /** Named mappings are authoritative for new claims. `mappings` is retained
+   * only as an explicit legacy 600/700 compatibility read. */
+  routeMappings?: Row[];
   costCodes: Row[];
   taxRates: Row[];
   accountingDocuments: Row[];
@@ -81,6 +92,7 @@ export type PaymentClaimXeroResolvedDependencies = {
   retentionMapping: Row | null;
   retentionAccount: Row | null;
   revenueTaxRate: Row | null;
+  revenueTaxResolution: ResolvedPaymentClaimRevenueTax;
   accountingDocument: Row | null;
 };
 
@@ -102,17 +114,21 @@ const BLOCKER_MESSAGES: Record<PaymentClaimXeroReadinessBlockerCode, string> = {
   client_contact_connection_mismatch: "The client Xero Contact link belongs to another Xero connection.",
   client_contact_tenant_mismatch: "The client Xero Contact link belongs to another Xero tenant.",
   client_contact_inactive: "The linked client Xero Contact is archived, stale, or inactive.",
-  sales_mapping_missing: "Missing Sales mapping for route 600 Payment Claims.",
-  sales_mapping_archived: "The Sales mapping for route 600 Payment Claims is archived.",
+  sales_mapping_missing: "Payment Claims revenue account is not configured.",
+  sales_mapping_archived: "The Payment Claims revenue account mapping is archived.",
   sales_account_inactive: "The mapped Sales account is missing, archived, or inactive.",
   sales_account_tenant_mismatch: "The mapped Sales account belongs to another Xero tenant.",
-  sales_account_classification_invalid: "Route 600 must map to a Xero Revenue account.",
-  retention_mapping_missing: "Missing Retention mapping for route 700 Retentions.",
-  retention_mapping_archived: "The Retention mapping for route 700 Retentions is archived.",
+  sales_account_classification_invalid: "Payment Claims must map to a Xero Revenue account.",
+  retention_mapping_missing: "Retention Receivable account is not configured.",
+  retention_mapping_archived: "The Retention Receivable account mapping is archived.",
   retention_account_inactive: "The mapped Retention account is missing, archived, or inactive.",
   retention_account_tenant_mismatch: "The mapped Retention account belongs to another Xero tenant.",
-  retention_account_classification_invalid: "Route 700 must map to a Xero Current Asset account.",
+  retention_account_classification_invalid: "Retention Receivable must map to a Xero Current Asset account.",
   revenue_tax_type_missing: "Missing a synchronized revenue TaxType that reconciles with this claim for the selected Xero tenant.",
+  sales_account_tax_type_missing: "The mapped Sales account does not declare a synchronized Xero TaxType.",
+  sales_tax_rate_missing: "No active revenue tax rate matches the mapped Sales account TaxType.",
+  sales_tax_rate_ambiguous: "More than one active revenue tax rate matches the mapped Sales account TaxType.",
+  sales_tax_rate_gst_mismatch: "The mapped Sales account TaxType does not reconcile to the persisted claim GST within one cent.",
   claim_not_submitted: "Payment Claim must be Submitted before it can synchronize to Xero.",
   unsupported_jurisdiction: "The organisation jurisdiction is not configured.",
   unsupported_tax_registration: "The organisation tax registration is not configured.",
@@ -154,9 +170,21 @@ function addBlocker(
   }
 }
 
-function relevantMappings(snapshot: PaymentClaimXeroReadinessSnapshot, route: 600 | 700) {
-  return snapshot.mappings
-    .filter((row) => row.provider === "xero" && Number(row.tradesstack_cost_code) === route)
+type ClaimAccountingRoute = "payment_claim_revenue" | "retention_receivable";
+
+function legacyRoute(accountingRoute: ClaimAccountingRoute) {
+  return accountingRoute === "payment_claim_revenue" ? 600 : 700;
+}
+
+function relevantMappings(snapshot: PaymentClaimXeroReadinessSnapshot, accountingRoute: ClaimAccountingRoute) {
+  const named = (snapshot.routeMappings ?? [])
+    .filter((row) => row.provider === "xero" && row.accounting_route === accountingRoute);
+  const candidates = named.length > 0
+    ? named
+    : snapshot.mappings.filter((row) =>
+        row.provider === "xero" && Number(row.tradesstack_cost_code) === legacyRoute(accountingRoute),
+      );
+  return candidates
     .filter((row) => row.project_id === snapshot.project.id || row.project_id == null)
     .sort((left, right) => {
       const leftProject = left.project_id === snapshot.project.id ? 0 : 1;
@@ -166,8 +194,8 @@ function relevantMappings(snapshot: PaymentClaimXeroReadinessSnapshot, route: 60
     });
 }
 
-function resolveMapping(snapshot: PaymentClaimXeroReadinessSnapshot, route: 600 | 700) {
-  const mappings = relevantMappings(snapshot, route);
+function resolveMapping(snapshot: PaymentClaimXeroReadinessSnapshot, accountingRoute: ClaimAccountingRoute) {
+  const mappings = relevantMappings(snapshot, accountingRoute);
   const activeMapping = mappings.find((row) => row.is_active === true) ?? null;
   const account = activeMapping
     ? snapshot.costCodes.find((row) => row.id === activeMapping.organization_cost_code_id) ?? null
@@ -191,24 +219,21 @@ export function resolvePaymentClaimXeroDependencies(
         && row.tenant_id === tenantId,
       ) ?? null
     : null;
-  const sales = resolveMapping(snapshot, 600);
-  const retention = resolveMapping(snapshot, 700);
-  const revenueTaxRate = connectionId && tenantId
-    ? snapshot.taxRates.find((row) => {
-        const rowMetadata = metadata(row);
-        return row.organization_id === snapshot.organization.id
-          && row.provider === "xero"
-          && row.accounting_connection_id === connectionId
-          && row.tenant_id === tenantId
-          && row.is_active === true
-          && text(row.status)?.toUpperCase() === "ACTIVE"
-          && Boolean(text(row.tax_type))
-          && Number.isFinite(Number(row.effective_rate))
-          && Number(row.effective_rate) >= 0
-          && rowMetadata.canApplyToRevenue === true
-          && Boolean(text(row.synced_at));
-      }) ?? null
-    : null;
+  const sales = resolveMapping(snapshot, "payment_claim_revenue");
+  const retention = resolveMapping(snapshot, "retention_receivable");
+  const revenueTaxResolution = resolvePaymentClaimRevenueTax({
+    organizationId: String(snapshot.organization.id),
+    connectionId,
+    tenantId,
+    salesAccount: sales.account,
+    taxRates: snapshot.taxRates,
+    claim: snapshot.claim,
+  });
+  const revenueTaxRate = revenueTaxResolution.status === "resolved"
+    ? revenueTaxResolution.taxRate
+    : revenueTaxResolution.code === "sales_tax_rate_gst_mismatch"
+      ? revenueTaxResolution.matchedTaxRate
+      : null;
 
   return {
     connectionId,
@@ -222,20 +247,21 @@ export function resolvePaymentClaimXeroDependencies(
     retentionMapping: retention.activeMapping,
     retentionAccount: retention.account,
     revenueTaxRate,
+    revenueTaxResolution,
     accountingDocument: snapshot.accountingDocuments[0] ?? null,
   };
 }
 
 function evaluateMapping(params: {
   snapshot: PaymentClaimXeroReadinessSnapshot;
-  route: 600 | 700;
+  accountingRoute: ClaimAccountingRoute;
   required: boolean;
   currentTenantId: string | null;
   blockers: PaymentClaimXeroReadinessBlocker[];
 }) {
   if (!params.required) return;
-  const prefix = params.route === 600 ? "sales" : "retention";
-  const { mappings, activeMapping, account } = resolveMapping(params.snapshot, params.route);
+  const prefix = params.accountingRoute === "payment_claim_revenue" ? "sales" : "retention";
+  const { mappings, activeMapping, account } = resolveMapping(params.snapshot, params.accountingRoute);
   if (!activeMapping) {
     addBlocker(
       params.blockers,
@@ -279,7 +305,7 @@ function evaluateMapping(params: {
 
   const accountClass = text(accountMetadata.class)?.toUpperCase();
   const accountType = text(accountMetadata.type)?.toUpperCase();
-  const validClassification = params.route === 600
+  const validClassification = params.accountingRoute === "payment_claim_revenue"
     ? accountClass === "REVENUE"
     : accountClass === "ASSET" && accountType === "CURRENT";
   addBlocker(
@@ -326,11 +352,11 @@ export function evaluatePaymentClaimXeroReadinessSnapshot(
     }
   }
 
-  evaluateMapping({ snapshot, route: 600, required: true, currentTenantId: tenantId, blockers });
-  evaluateMapping({ snapshot, route: 700, required: resolved.retentionRequired, currentTenantId: tenantId, blockers });
+  evaluateMapping({ snapshot, accountingRoute: "payment_claim_revenue", required: true, currentTenantId: tenantId, blockers });
+  evaluateMapping({ snapshot, accountingRoute: "retention_receivable", required: resolved.retentionRequired, currentTenantId: tenantId, blockers });
 
-  if (connectionId && tenantId) {
-    addBlocker(blockers, "revenue_tax_type_missing", !resolved.revenueTaxRate);
+  if (connectionId && tenantId && resolved.salesAccount && resolved.revenueTaxResolution.status === "blocked") {
+    addBlocker(blockers, resolved.revenueTaxResolution.code);
   }
 
   const documents = snapshot.accountingDocuments;
@@ -380,7 +406,8 @@ export async function resolvePaymentClaimXeroReadinessContext(params: {
     organizationResult,
     claimResult,
     connection,
-    mappingsResult,
+    routeMappingsResult,
+    legacyMappingsResult,
     taxRatesResult,
     documentsResult,
   ] = await Promise.all([
@@ -393,6 +420,10 @@ export async function resolvePaymentClaimXeroReadinessContext(params: {
       .eq("id", params.claimId)
       .maybeSingle(),
     getOrganizationXeroConnection(params.organizationId) as Promise<Row | null>,
+    db.from("organization_accounting_route_mappings").select("*")
+      .eq("organization_id", params.organizationId)
+      .eq("provider", "xero")
+      .in("accounting_route", ["payment_claim_revenue", "retention_receivable"]),
     db.from("organization_tradesstack_accounting_mappings").select("*")
       .eq("organization_id", params.organizationId)
       .eq("provider", "xero")
@@ -414,16 +445,18 @@ export async function resolvePaymentClaimXeroReadinessContext(params: {
     return { snapshot: null, terminalReadiness: terminal("organization_mismatch") };
   }
   const firstWaveError = [
-    mappingsResult.error,
+    routeMappingsResult.error,
+    legacyMappingsResult.error,
     taxRatesResult.error,
     documentsResult.error,
   ].find(Boolean);
   if (firstWaveError) throw new Error(firstWaveError.message);
 
-  const mappings = (mappingsResult.data ?? []) as Row[];
+  const routeMappings = (routeMappingsResult.data ?? []) as Row[];
+  const mappings = (legacyMappingsResult.data ?? []) as Row[];
   const costCodeIds = [
     ...new Set(
-      mappings
+      [...routeMappings, ...mappings]
         .map((row) => text(row.organization_cost_code_id))
         .filter((value): value is string => Boolean(value)),
     ),
@@ -492,6 +525,7 @@ export async function resolvePaymentClaimXeroReadinessContext(params: {
     contactLinks: links,
     importedContacts: (importedContactsResult.data ?? []) as Row[],
     mappings,
+    routeMappings,
     costCodes: (costCodesResult.data ?? []) as Row[],
     taxRates: (taxRatesResult.data ?? []) as Row[],
     accountingDocuments: (documentsResult.data ?? []) as Row[],

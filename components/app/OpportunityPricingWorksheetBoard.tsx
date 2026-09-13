@@ -4,14 +4,19 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type CSSProperties,
   type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type Ref,
+  type SyntheticEvent as ReactSyntheticEvent,
+  type UIEvent as ReactUIEvent,
 } from "react";
 import {
   Bold as BoldIcon,
@@ -23,8 +28,10 @@ import {
   Italic as ItalicIcon,
   LayoutGrid,
   Minus,
+  Boxes,
   PaintBucket,
   Plus,
+  Ruler,
   RotateCcw,
   Sparkles,
   Strikethrough,
@@ -41,6 +48,18 @@ import {
   type PricingWorksheetAiValidationWarning,
 } from "@/components/app/PricingWorksheetAiAssistDialog";
 import { PricingWorksheetAiChatPanel } from "@/components/app/PricingWorksheetAiChatPanel";
+import {
+  PricingWorksheetCommercialMappingDrawer,
+  PricingWorksheetVariationMappingDrawer,
+} from "@/components/app/PricingWorksheetCommercialMappingDrawer";
+import {
+  PricingWorksheetMaterialLibraryDrawer,
+  type PricingWorksheetMaterialTarget,
+} from "@/components/app/PricingWorksheetMaterialLibraryDrawer";
+import {
+  PricingWorksheetMeasureDrawer,
+  type PricingWorksheetMeasureInsertResult,
+} from "@/components/app/PricingWorksheetMeasureDrawer";
 import { WorkbookPagesTray } from "@/components/app/WorkbookPagesTray";
 import { usePricingWorksheetOwner } from "@/components/app/PricingWorksheetOwnerProvider";
 import {
@@ -74,6 +93,12 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import {
+  useWorksheetCommercialMapping,
+  useWorksheetVariationCommercialMapping,
+} from "@/hooks/use-worksheet-commercial-mapping";
+import { useRouter } from "next/navigation";
+import { useWorksheetFieldMapping } from "@/hooks/use-worksheet-field-mapping";
+import {
   createDefaultWorksheetData,
   createDefaultWorksheetExtractedPricingData,
   createDefaultWorksheetPricingSummary,
@@ -86,7 +111,14 @@ import {
   type WorksheetPricingSummary,
   type WorksheetRow,
 } from "@/lib/opportunity-pricing-worksheet-defaults";
-import { resolveWorksheetPersistenceName } from "@/lib/opportunity-pricing-worksheet-title";
+import {
+  PricingWorksheetTitleAutosaveController,
+  normalizePricingWorksheetTitle,
+  resolveWorksheetPersistenceName,
+  shouldSynchronizeLoadedWorksheetTitle,
+  type PricingWorksheetTitleAutosaveState,
+  type PricingWorksheetTitleSaveResult,
+} from "@/lib/opportunity-pricing-worksheet-title";
 import { deriveWorksheetPricingSummary } from "@/lib/opportunity-pricing-worksheet-summary";
 import {
   applyWorksheetAutoLayout,
@@ -118,6 +150,29 @@ import {
 } from "@/lib/opportunity-pricing-worksheet-formulas";
 import { applyWorksheetMutation } from "@/lib/opportunity-pricing-worksheet-mutations";
 import {
+  buildMaterialEstimatingRateWorksheetCell,
+  buildMaterialPriceWorksheetCell,
+  type PricingWorksheetMaterialPickerItem,
+} from "@/lib/pricing-worksheet-material-picker";
+import {
+  type PricingWorksheetMeasureField,
+  type PricingWorksheetMeasureSource,
+} from "@/lib/pricing-worksheet-measure-picker";
+import {
+  applyPricingWorksheetMeasureMappings,
+  buildPricingWorksheetMeasureConflictSignature,
+  buildPricingWorksheetMeasureInsertConflicts,
+  PRICING_WORKSHEET_MEASURE_MAPPING_FIELDS,
+  validatePricingWorksheetMeasureMappings,
+} from "@/lib/pricing-worksheet-measure-mapping";
+import type { WorksheetFieldMappingOptions } from "@/lib/worksheet-cell-mapping";
+import {
+  buildMaterialPriceReviewOverlay,
+  type MaterialPriceReviewBindingTarget,
+  type MaterialPriceReviewGroup,
+} from "@/lib/pricing-worksheet-material-price-review";
+import { getWorksheetCellMaterialPricingProvenance } from "@/lib/worksheet-material-pricing-provenance";
+import {
   buildWorksheetTsvFromRange,
   extendRangeFromAnchor,
   getWorksheetSelectionRange,
@@ -148,6 +203,10 @@ import {
   resolveWorksheetRangeSelectionPointerState,
 } from "@/lib/opportunity-pricing-worksheet-selection";
 import {
+  deriveWorksheetSelectionAggregate,
+  type WorksheetSelectionAggregate,
+} from "@/lib/opportunity-pricing-worksheet-selection-aggregate";
+import {
   applyWorksheetPasteToCells,
   buildWorksheetCellKey,
   expandWorksheetToFitPaste,
@@ -156,7 +215,21 @@ import {
   parseWorksheetClipboardText,
 } from "@/lib/opportunity-pricing-worksheet-paste";
 import { shiftFormulaForFill } from "@/lib/opportunity-pricing-worksheet-formula-shift";
-import { extractPricingWorksheetFormulaReferences } from "@/lib/pricing-worksheet-formula-references";
+import {
+  buildPricingWorksheetFormulaPresentation,
+  getWorksheetCaretIndexFromTextMetrics,
+} from "@/lib/pricing-worksheet-formula-presentation";
+import {
+  applyWorksheetFormulaReferencePickTransaction,
+  canHandleWorksheetNavigation,
+  getApproximateWorksheetCaretIndex,
+  getWorksheetFormulaReferencePickContext,
+  getWorksheetCommitMovement,
+  insertTextAtWorksheetSelection,
+  shouldApplyWorksheetSaveSnapshot,
+  shouldShowFormulaReferenceHighlights,
+  type WorksheetTextSelection,
+} from "@/lib/pricing-worksheet-interaction";
 import {
   deleteWorksheetColumns,
   deleteWorksheetRows,
@@ -228,6 +301,8 @@ import {
 } from "@/lib/commercial-items/purchase-order-destination-adapter";
 import {
   quoteDestinationAdapter,
+  resolveInitialQuotePublishTargetIds,
+  resolveInitialQuotePublishTargetMode,
   resolveQuotePublishOptions,
   resolveQuotePublishTarget,
   type QuotePublishOption,
@@ -251,6 +326,19 @@ import {
   interpretWorksheetSelectionForPublish,
   type InterpretedWorksheetSelection,
 } from "@/lib/commercial-items/worksheet-publish-v2";
+import {
+  buildExplicitMappedCommercialSelection,
+  buildWorksheetStructureKey,
+  combineExplicitMappedCommercialSelections,
+  getWorksheetCommercialFieldSource,
+  resolveWorksheetCommercialMapping,
+  type CommercialMappingField,
+} from "@/lib/commercial-items/worksheet-commercial-mapping";
+import {
+  normalizeCommercialMoney,
+  normalizeCommercialQuantity,
+  normalizeCommercialRate,
+} from "@/lib/commercial-items/precision";
 
 type WorksheetContextMenuState =
   | {
@@ -373,6 +461,30 @@ type PurchaseOrderPublishDialogState = {
   draftPurchaseOrders: PurchaseOrderPublishOption[];
 };
 
+type CommercialMappingPublishContext =
+  | {
+      destination: "quote";
+      projectId: string | null;
+      quotes: QuotePublishOption[];
+    }
+  | {
+      destination: "purchase_order";
+      projectId: string;
+      projectSlug: string | null;
+      suppliers: Array<{ id: string; label: string }>;
+      draftPurchaseOrders: PurchaseOrderPublishOption[];
+    };
+
+type VariationCommercialMappingContext = {
+  opportunityId: string;
+  projectId: string;
+  projectSlug: string | null;
+  variationId: string;
+  variationNumber: string;
+  variationTitle: string;
+  variationStatus: string;
+};
+
 type VariationPublishDialogState = {
   context: {
     opportunityId: string;
@@ -409,8 +521,24 @@ type WorksheetCommitResult =
   | { committed: false; changed: boolean; message: string | null }
   | { committed: true; changed: boolean; worksheet: WorksheetData };
 
+type WorksheetSidePanelType = "materials" | "measures" | null;
+
+const MEASURE_MAPPING_OPTIONS: WorksheetFieldMappingOptions<PricingWorksheetMeasureField> = {
+  fields: PRICING_WORKSHEET_MEASURE_MAPPING_FIELDS,
+  fieldLabel: (field) => field === "description" ? "Description" : field === "quantity" ? "Quantity" : "Unit",
+  validateAssignment: ({ field, cellKey, session }) => {
+    const duplicateField = PRICING_WORKSHEET_MEASURE_MAPPING_FIELDS.find(
+      (candidate) => candidate !== field && session.mappings[candidate]?.cellKey === cellKey,
+    );
+    if (!duplicateField) return null;
+    const duplicateLabel = duplicateField === "description" ? "Description" : duplicateField === "quantity" ? "Quantity" : "Unit";
+    const fieldName = field === "description" ? "Description" : field === "quantity" ? "Quantity" : "Unit";
+    return `${cellKey} is already mapped to ${duplicateLabel}. Select another cell for ${fieldName}.`;
+  },
+};
+
 const CELL_INPUT_CLASS =
-  "h-full w-full min-w-0 border-0 bg-transparent px-2.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]";
+  "relative z-20 block h-full w-full min-w-0 appearance-none rounded-none border-0 bg-transparent px-2.5 py-1.5 text-sm leading-5 text-[var(--text-primary)] shadow-none outline-none placeholder:text-[var(--text-muted)]";
 const WORKSHEET_HISTORY_LIMIT = 50;
 const MIN_COLUMN_WIDTH = 80;
 const MAX_COLUMN_WIDTH = 640;
@@ -442,11 +570,6 @@ function parseWorksheetPublishDraftNumber(value: string) {
 function normalizeWorksheetPublishDraftText(value: string) {
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
-}
-
-function roundWorksheetPublishNumber(value: number, decimals: number) {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
 }
 
 function normalizeVariationPublishSection(
@@ -520,29 +643,31 @@ const TEXT_COLOR_PALETTE = [
 const FORMULA_REFERENCE_HIGHLIGHT_STYLES = [
   {
     outlineColor: "rgb(59 130 246 / 0.95)",
-    backgroundColor: "rgb(219 234 254 / 0.55)",
+    tokenColor: "rgb(37 99 235)",
   },
   {
     outlineColor: "rgb(147 51 234 / 0.95)",
-    backgroundColor: "rgb(243 232 255 / 0.6)",
+    tokenColor: "rgb(126 34 206)",
   },
   {
     outlineColor: "rgb(34 197 94 / 0.95)",
-    backgroundColor: "rgb(220 252 231 / 0.65)",
+    tokenColor: "rgb(22 163 74)",
   },
   {
     outlineColor: "rgb(249 115 22 / 0.95)",
-    backgroundColor: "rgb(255 237 213 / 0.7)",
+    tokenColor: "rgb(234 88 12)",
   },
   {
     outlineColor: "rgb(236 72 153 / 0.95)",
-    backgroundColor: "rgb(252 231 243 / 0.7)",
+    tokenColor: "rgb(219 39 119)",
   },
   {
     outlineColor: "rgb(13 148 136 / 0.95)",
-    backgroundColor: "rgb(204 251 241 / 0.7)",
+    tokenColor: "rgb(13 148 136)",
   },
 ] as const;
+const EMPTY_FORMULA_REFERENCE_HIGHLIGHTS = new Map<string, { colorIndex: number }>();
+const EMPTY_FORMULA_REFERENCE_RANGES: FormulaReferenceRangeHighlight[] = [];
 const WORKSHEET_CELL_HORIZONTAL_PADDING = 20;
 const WORKSHEET_CELL_VERTICAL_PADDING = 12;
 const WORKSHEET_CELL_FONT_SIZE = 14;
@@ -949,6 +1074,16 @@ function focusElementWithoutScroll(element: HTMLElement | null) {
   }
 }
 
+function useStableWorksheetEvent<TArgs extends unknown[], TResult>(
+  callback: (...args: TArgs) => TResult
+) {
+  const callbackRef = useRef(callback);
+  useLayoutEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+  return useCallback((...args: TArgs) => callbackRef.current(...args), []);
+}
+
 function getRangeEdgeFlagsByIndex(
   rowIndex: number,
   columnIndex: number,
@@ -979,11 +1114,93 @@ function getRangeEdgeFlagsByIndex(
   };
 }
 
+export const PricingWorksheetFormulaTextLayer = memo(function PricingWorksheetFormulaTextLayer({
+  value,
+  className,
+  measureRef,
+  style,
+}: {
+  value: string;
+  className: string;
+  measureRef?: Ref<HTMLDivElement>;
+  style?: CSSProperties;
+}) {
+  const presentation = useMemo(
+    () => buildPricingWorksheetFormulaPresentation(value),
+    [value],
+  );
+
+  return (
+    <div aria-hidden="true" className={className} ref={measureRef} style={style}>
+      {presentation.segments.map((segment, index) => {
+        const referenceStyle = segment.colorIndex === null
+          ? null
+          : FORMULA_REFERENCE_HIGHLIGHT_STYLES[
+              segment.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_STYLES.length
+            ];
+        return (
+          <span
+            key={`${index}:${segment.normalizedRef ?? "plain"}`}
+            data-formula-token-color={segment.colorIndex ?? undefined}
+            style={{ color: referenceStyle?.tokenColor }}
+          >
+            {segment.text}
+          </span>
+        );
+      })}
+    </div>
+  );
+});
+
+export function getPricingWorksheetFittedFormulaFontSize(
+  baseFontSize: number,
+  availableWidth: number,
+  contentWidth: number,
+): number {
+  if (contentWidth <= 0 || contentWidth <= availableWidth) {
+    return baseFontSize;
+  }
+
+  return Math.max(
+    1,
+    Math.floor((baseFontSize * Math.max(availableWidth, 1) / contentWidth) * 100) / 100,
+  );
+}
+
+export const PricingWorksheetSelectionSum = memo(function PricingWorksheetSelectionSum({
+  aggregate,
+}: {
+  aggregate: WorksheetSelectionAggregate | null;
+}) {
+  if (!aggregate) {
+    return null;
+  }
+
+  return (
+    <output
+      aria-label={`Selection sum ${aggregate.displayValue}`}
+      aria-live="polite"
+      data-testid="pricing-worksheet-selection-sum"
+      className="pointer-events-none absolute right-4 bottom-4 z-20 inline-flex h-10 w-max items-center justify-center overflow-hidden rounded-[10px] border border-[var(--border)] bg-white px-3.5 text-center text-[12px] font-medium text-[var(--text-secondary)] shadow-[0_10px_28px_rgba(15,23,42,0.14)]"
+      style={{ maxWidth: "min(22rem, calc(100% - 2rem))" }}
+      title={`Sum: ${aggregate.displayValue}`}
+    >
+      <span className="inline-flex min-w-0 max-w-full items-baseline whitespace-nowrap leading-none">
+        <span className="shrink-0">Sum:&nbsp;</span>
+        <span className="min-w-0 truncate font-semibold tabular-nums text-[var(--text-primary)]">
+          {aggregate.displayValue}
+        </span>
+      </span>
+    </output>
+  );
+});
+
 type WorksheetCellViewProps = {
   activeSelectedRange: WorksheetSelectionRange | null;
   activeCellKey: string | null;
   activeEditor: "cell" | "formulaBar" | null;
   canWriteWorksheet: boolean;
+  commercialMappingHighlight?: boolean;
   cell: WorksheetCell | undefined;
   cellKey: string;
   columnIndex: number;
@@ -994,23 +1211,31 @@ type WorksheetCellViewProps = {
   rowHeight: number;
   rowIndex: number;
   selectedRanges: WorksheetSelectionArea[];
-  onBeginCellEdit: (cellKey: string, cell: WorksheetCell | undefined) => void;
+  showCommercialMappingDragHandle?: boolean;
+  onBeginCellEdit: (
+    cellKey: string,
+    cell: WorksheetCell | undefined,
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => void;
   onBeginFillDrag: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onCellClick: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellContextMenu: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellMouseDown: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellMouseEnter: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCommercialMappingDragStart?: (cellKey: string, event: ReactDragEvent<HTMLButtonElement>) => void;
   onInputBlur: (cellKey: string) => void;
-  onInputChange: (value: string) => void;
+  onInputChange: (value: string, selection: WorksheetTextSelection) => void;
   onInputKeyDown: (cellKey: string, event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onInputSelect: (event: ReactSyntheticEvent<HTMLInputElement>) => void;
   setInputRef: (cellKey: string, node: HTMLInputElement | null) => void;
 };
 
-const WorksheetCellView = memo(function WorksheetCellView({
+export const WorksheetCellView = memo(function WorksheetCellView({
   activeSelectedRange,
   activeCellKey,
   activeEditor,
   canWriteWorksheet,
+  commercialMappingHighlight = false,
   cell,
   cellKey,
   columnIndex,
@@ -1021,20 +1246,63 @@ const WorksheetCellView = memo(function WorksheetCellView({
   rowHeight,
   rowIndex,
   selectedRanges,
+  showCommercialMappingDragHandle = false,
   onBeginCellEdit,
   onBeginFillDrag,
   onCellClick,
   onCellContextMenu,
   onCellMouseDown,
   onCellMouseEnter,
+  onCommercialMappingDragStart,
   onInputBlur,
   onInputChange,
   onInputKeyDown,
+  onInputSelect,
   setInputRef,
 }: WorksheetCellViewProps) {
   const cellFormat = getCellFormat(cell);
   const isEditing = activeCellKey === cellKey && activeEditor === "cell";
   const inputValue = isEditing ? editingCellValue : getFormattedCellDisplayValue(cell);
+  const isEditingFormula = isEditing && inputValue.trimStart().startsWith("=");
+  const baseEditorFontSize = cellFormat.text?.fontSize ?? 14;
+  const formulaTextLayerRef = useRef<HTMLDivElement>(null);
+  const formulaInputRef = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (!isEditingFormula) {
+      return;
+    }
+
+    const formulaLayer = formulaTextLayerRef.current;
+    const formulaInput = formulaInputRef.current;
+    if (!formulaLayer || !formulaInput) {
+      return;
+    }
+
+    const fitFormulaToCell = () => {
+      formulaLayer.style.fontSize = `${baseEditorFontSize}px`;
+      const computedStyle = window.getComputedStyle(formulaLayer);
+      const horizontalPadding =
+        Number.parseFloat(computedStyle.paddingLeft) + Number.parseFloat(computedStyle.paddingRight);
+      const availableWidth = Math.max(formulaLayer.clientWidth - horizontalPadding, 1);
+      const contentWidth = Math.max(formulaLayer.scrollWidth - horizontalPadding, 1);
+      const nextFontSize = getPricingWorksheetFittedFormulaFontSize(
+        baseEditorFontSize,
+        availableWidth,
+        contentWidth,
+      );
+      formulaLayer.style.fontSize = `${nextFontSize}px`;
+      formulaInput.style.fontSize = `${nextFontSize}px`;
+    };
+
+    fitFormulaToCell();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(fitFormulaToCell);
+    resizeObserver.observe(formulaLayer);
+    return () => resizeObserver.disconnect();
+  }, [baseEditorFontSize, inputValue, isEditingFormula]);
   const selectionEdgeFlags = selectedRanges
     .map((range) => ({
       range,
@@ -1060,11 +1328,11 @@ const WorksheetCellView = memo(function WorksheetCellView({
         formulaReferenceHighlight.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_STYLES.length
       ]
     : null;
-  const formulaReferenceShadow = formulaReferenceStyle
-    ? `inset 0 0 0 2px ${formulaReferenceStyle.outlineColor}`
-    : undefined;
-  const formulaReferenceRangeShadows: string[] = [];
-  let formulaReferenceRangeBackgroundColor: string | undefined;
+  const formulaReferenceRangeDecorations: Array<{
+    colorIndex: number;
+    edgeFlags: ReturnType<typeof getRangeEdgeFlagsByIndex>;
+    outlineColor: string;
+  }> = [];
   for (const range of formulaReferenceRanges) {
     const rangeEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, {
       startRowIndex: range.startRowIndex,
@@ -1078,28 +1346,55 @@ const WorksheetCellView = memo(function WorksheetCellView({
 
     const rangeStyle =
       FORMULA_REFERENCE_HIGHLIGHT_STYLES[range.colorIndex % FORMULA_REFERENCE_HIGHLIGHT_STYLES.length];
-    const rangeShadow = buildSelectionShadow(rangeEdgeFlags, rangeStyle.outlineColor);
-    if (rangeShadow) {
-      formulaReferenceRangeShadows.push(rangeShadow);
-    }
-    if (!formulaReferenceRangeBackgroundColor) {
-      formulaReferenceRangeBackgroundColor = rangeStyle.backgroundColor;
-    }
+    formulaReferenceRangeDecorations.push({
+      colorIndex: range.colorIndex,
+      edgeFlags: rangeEdgeFlags,
+      outlineColor: rangeStyle.outlineColor,
+    });
   }
   const isSelectedRangeCorner =
+    canWriteWorksheet &&
     Boolean(activeSelectedRange) &&
     activeSelectionEdgeFlags.isBottomEdge &&
     activeSelectionEdgeFlags.isRightEdge &&
     !activeCellKey;
   const cellTextAlign = cellFormat.text?.align ?? "left";
-  const cellFillColor = selectionEdgeFlags.length > 0 || fillPreviewEdgeFlags.isInRange
+  const cellFillColor = (!isEditing && selectionEdgeFlags.length > 0) || fillPreviewEdgeFlags.isInRange
     ? undefined
-    : cellFormat.fill?.color ?? formulaReferenceStyle?.backgroundColor ?? formulaReferenceRangeBackgroundColor;
+    : cellFormat.fill?.color;
+  const formulaReferenceColorIndex = formulaReferenceHighlight?.colorIndex
+    ?? formulaReferenceRangeDecorations[0]?.colorIndex;
+  const formulaEditorStyle: CSSProperties = {
+    textAlign: cellTextAlign,
+    fontWeight: cellFormat.text?.bold ? 700 : undefined,
+    fontStyle: cellFormat.text?.italic ? "italic" : undefined,
+    textDecoration:
+      [
+        cellFormat.text?.underline ? "underline" : null,
+        cellFormat.text?.strikethrough ? "line-through" : null,
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined,
+    fontSize: isEditingFormula
+      ? `${baseEditorFontSize}px`
+      : cellFormat.text?.fontSize
+        ? `${cellFormat.text.fontSize}px`
+        : undefined,
+  };
 
   return (
     <div
+      id={`worksheet-cell-${cellKey}`}
+      role="gridcell"
+      aria-selected={selectionEdgeFlags.length > 0}
+      data-worksheet-cell={cellKey}
+      data-editing={isEditing ? "true" : "false"}
+      data-formula-reference={
+        formulaReferenceHighlight || formulaReferenceRangeDecorations.length > 0 ? "true" : "false"
+      }
+      data-formula-reference-color={formulaReferenceColorIndex}
       className={`relative border-r border-[var(--border-subtle)] last:border-r-0 ${
-        selectionEdgeFlags.length > 0
+        selectionEdgeFlags.length > 0 && !isEditing
           ? "bg-[rgba(49,91,255,0.07)]"
           : fillPreviewEdgeFlags.isInRange
             ? "bg-[rgba(244,93,34,0.08)]"
@@ -1110,45 +1405,84 @@ const WorksheetCellView = memo(function WorksheetCellView({
         height: `${rowHeight}px`,
         boxShadow: [
           fillPreviewShadow,
-          ...selectionShadows,
+          ...(isEditing ? [] : selectionShadows),
           formatBorderShadow,
-          ...formulaReferenceRangeShadows,
-          formulaReferenceShadow,
         ].filter(Boolean).join(", ") || undefined,
       }}
       onMouseDown={(event) => onCellMouseDown(cellKey, event)}
       onContextMenu={(event) => onCellContextMenu(cellKey, event)}
       onMouseEnter={(event) => onCellMouseEnter(cellKey, event)}
-      onDoubleClick={() => onBeginCellEdit(cellKey, cell)}
+      onDoubleClick={isEditing ? undefined : (event) => onBeginCellEdit(cellKey, cell, event)}
     >
-      {isEditing ? (
-        <input
-          ref={(node) => setInputRef(cellKey, node)}
-          type="text"
-          value={inputValue}
-          onChange={(event) => onInputChange(event.target.value)}
-          onBlur={() => onInputBlur(cellKey)}
-          onKeyDown={(event) => onInputKeyDown(cellKey, event)}
-          className={CELL_INPUT_CLASS}
-          style={{
-            height: `${rowHeight}px`,
-            textAlign: cellTextAlign,
-            fontWeight: cellFormat.text?.bold ? 700 : undefined,
-            fontStyle: cellFormat.text?.italic ? "italic" : undefined,
-            textDecoration:
-              [
-                cellFormat.text?.underline ? "underline" : null,
-                cellFormat.text?.strikethrough ? "line-through" : null,
-              ]
-                .filter(Boolean)
-                .join(" ") || undefined,
-            fontSize: cellFormat.text?.fontSize ? `${cellFormat.text.fontSize}px` : undefined,
-            color: cellFormat.text?.color,
-          }}
-          placeholder=""
-          disabled={!canWriteWorksheet}
-          inputMode={cell?.type === "number" ? "decimal" : undefined}
+      {formulaReferenceStyle && !isEditing ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 border-[1.5px] border-dashed"
+          style={{ borderColor: formulaReferenceStyle.outlineColor }}
         />
+      ) : null}
+      {commercialMappingHighlight && !isEditing ? (
+        <div aria-hidden="true" data-commercial-mapping-highlight="true" className="pointer-events-none absolute inset-0 z-10 border-2 border-[var(--orange-primary)] bg-[color-mix(in_srgb,var(--orange-primary)_10%,transparent)]" />
+      ) : null}
+      {formulaReferenceRangeDecorations.map(({ colorIndex, edgeFlags, outlineColor }) => (
+        <div
+          key={`${colorIndex}:${outlineColor}`}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10"
+          style={{
+            borderTop: edgeFlags.isTopEdge ? `1.5px dashed ${outlineColor}` : undefined,
+            borderRight: edgeFlags.isRightEdge ? `1.5px dashed ${outlineColor}` : undefined,
+            borderBottom: edgeFlags.isBottomEdge ? `1.5px dashed ${outlineColor}` : undefined,
+            borderLeft: edgeFlags.isLeftEdge ? `1.5px dashed ${outlineColor}` : undefined,
+          }}
+        />
+      ))}
+      {isEditing ? (
+        <div
+          aria-hidden="true"
+          data-formula-edit-outline="true"
+          className="pointer-events-none absolute inset-0 z-30 shadow-[inset_0_0_0_2px_var(--brand-blue)]"
+        />
+      ) : null}
+      {isEditing ? (
+        <>
+          {isEditingFormula ? (
+            <PricingWorksheetFormulaTextLayer
+              value={inputValue}
+              className="pointer-events-none absolute inset-0 z-10 overflow-hidden whitespace-pre px-2.5 py-1.5 text-sm leading-5 text-[var(--text-primary)]"
+              measureRef={formulaTextLayerRef}
+              style={formulaEditorStyle}
+            />
+          ) : null}
+          <input
+            ref={(node) => {
+              formulaInputRef.current = node;
+              setInputRef(cellKey, node);
+            }}
+            type="text"
+            value={inputValue}
+            onChange={(event) => onInputChange(event.target.value, {
+              start: event.currentTarget.selectionStart ?? event.currentTarget.value.length,
+              end: event.currentTarget.selectionEnd ?? event.currentTarget.value.length,
+            })}
+            onBlur={() => onInputBlur(cellKey)}
+            onKeyDown={(event) => onInputKeyDown(cellKey, event)}
+            onSelect={onInputSelect}
+            data-inline-worksheet-editor="true"
+            className={CELL_INPUT_CLASS}
+            style={{
+              ...formulaEditorStyle,
+              height: `${rowHeight}px`,
+              color: isEditingFormula
+                ? "transparent"
+                : cellFormat.text?.color,
+              caretColor: cellFormat.text?.color ?? "var(--text-primary)",
+            }}
+            placeholder=""
+            disabled={!canWriteWorksheet}
+            inputMode={cell?.type === "number" ? "decimal" : undefined}
+          />
+        </>
       ) : (
         <div
           className="flex h-full min-w-0 items-start px-2.5 py-1.5 text-sm text-[var(--text-primary)]"
@@ -1158,6 +1492,7 @@ const WorksheetCellView = memo(function WorksheetCellView({
           onClick={(event) => onCellClick(cellKey, event)}
         >
           <div
+            data-worksheet-cell-display-text="true"
             className={`min-w-0 w-full leading-5 ${
               cellFormat.text?.wrap === "clip"
                 ? "overflow-hidden whitespace-nowrap"
@@ -1192,6 +1527,19 @@ const WorksheetCellView = memo(function WorksheetCellView({
           onMouseDown={onBeginFillDrag}
         />
       ) : null}
+      {showCommercialMappingDragHandle && !isEditing ? (
+        <button
+          type="button"
+          draggable
+          aria-label={`Drag worksheet cell ${cellKey} to a commercial mapping field`}
+          title="Drag to a mapping field"
+          className="absolute right-1 top-1 z-30 hidden h-5 w-5 cursor-grab items-center justify-center rounded-full border border-white bg-[var(--orange-primary)] text-[10px] font-bold text-white shadow-sm md:flex"
+          onMouseDown={(event) => event.stopPropagation()}
+          onDragStart={(event) => onCommercialMappingDragStart?.(cellKey, event)}
+        >
+          ↗
+        </button>
+      ) : null}
     </div>
   );
 });
@@ -1201,6 +1549,7 @@ type WorksheetRowViewProps = {
   activeCellKey: string | null;
   activeEditor: "cell" | "formulaBar" | null;
   canWriteWorksheet: boolean;
+  commercialMappingHighlightCellKeys: Set<string>;
   editingCellValue: string;
   fillPreviewRange: WorksheetSelectionRange | null;
   formulaReferenceHighlightByCellKey: Map<string, { colorIndex: number }>;
@@ -1212,9 +1561,14 @@ type WorksheetRowViewProps = {
   rowIndex: number;
   rightSpacerWidth: number;
   selectedRanges: WorksheetSelectionArea[];
+  commercialMappingDragCellKey: string | null;
   visibleColumnStartIndex: number;
   visibleColumns: WorksheetColumn[];
-  onBeginCellEdit: (cellKey: string, cell: WorksheetCell | undefined) => void;
+  onBeginCellEdit: (
+    cellKey: string,
+    cell: WorksheetCell | undefined,
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => void;
   onBeginFillDrag: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onAutoFitRow: (event: ReactMouseEvent<HTMLButtonElement>, rowId: string) => void;
   onBeginRowResize: (event: ReactMouseEvent<HTMLButtonElement>, rowId: string, height: number) => void;
@@ -1222,9 +1576,11 @@ type WorksheetRowViewProps = {
   onCellContextMenu: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellMouseDown: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   onCellMouseEnter: (cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+  onCommercialMappingDragStart: (cellKey: string, event: ReactDragEvent<HTMLButtonElement>) => void;
   onInputBlur: (cellKey: string) => void;
-  onInputChange: (value: string) => void;
+  onInputChange: (value: string, selection: WorksheetTextSelection) => void;
   onInputKeyDown: (cellKey: string, event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onInputSelect: (event: ReactSyntheticEvent<HTMLInputElement>) => void;
   onRowClick: (event: ReactMouseEvent<HTMLDivElement>, rowIndex: number) => void;
   onRowContextMenu: (event: ReactMouseEvent<HTMLDivElement>, rowIndex: number) => void;
   setInputRef: (cellKey: string, node: HTMLInputElement | null) => void;
@@ -1235,6 +1591,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
   activeCellKey,
   activeEditor,
   canWriteWorksheet,
+  commercialMappingHighlightCellKeys,
   editingCellValue,
   fillPreviewRange,
   formulaReferenceHighlightByCellKey,
@@ -1246,6 +1603,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
   rowIndex,
   rightSpacerWidth,
   selectedRanges,
+  commercialMappingDragCellKey,
   visibleColumnStartIndex,
   visibleColumns,
   onBeginCellEdit,
@@ -1256,9 +1614,11 @@ const WorksheetRowView = memo(function WorksheetRowView({
   onCellContextMenu,
   onCellMouseDown,
   onCellMouseEnter,
+  onCommercialMappingDragStart,
   onInputBlur,
   onInputChange,
   onInputKeyDown,
+  onInputSelect,
   onRowClick,
   onRowContextMenu,
   setInputRef,
@@ -1266,6 +1626,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
   const isRowSelected = isRowIndexSelected(selectedRanges, rowIndex);
   return (
     <div
+      role="row"
       className="grid border-b border-[var(--border-subtle)] last:border-b-0"
       style={{
         gridTemplateColumns,
@@ -1273,6 +1634,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
       }}
     >
       <div
+        role="rowheader"
         className={`relative sticky left-0 z-10 border-r border-[var(--border)] px-3 py-1.5 text-[11px] font-medium ${
           isRowSelected
             ? "bg-[rgba(49,91,255,0.12)] text-[var(--brand-blue)]"
@@ -1286,7 +1648,8 @@ const WorksheetRowView = memo(function WorksheetRowView({
         <button
           type="button"
           aria-label={`Resize row ${row.id}`}
-          className="absolute bottom-0 left-0 h-2 w-full translate-y-1/2 cursor-row-resize"
+          disabled={!canWriteWorksheet}
+          className={`absolute bottom-0 left-0 h-2 w-full translate-y-1/2 ${canWriteWorksheet ? "cursor-row-resize" : "cursor-default"}`}
           onMouseDown={(event) => onBeginRowResize(event, row.id, row.height)}
           onDoubleClick={(event) => onAutoFitRow(event, row.id)}
           onContextMenu={(event) => {
@@ -1310,6 +1673,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
             activeCellKey={activeCellKey}
             activeEditor={activeEditor}
             canWriteWorksheet={canWriteWorksheet}
+            commercialMappingHighlight={commercialMappingHighlightCellKeys.has(cellKey)}
             cell={cell}
             cellKey={cellKey}
             columnIndex={visibleColumnStartIndex + columnOffset}
@@ -1320,15 +1684,18 @@ const WorksheetRowView = memo(function WorksheetRowView({
             rowHeight={row.height}
             rowIndex={rowIndex}
             selectedRanges={selectedRanges}
+            showCommercialMappingDragHandle={commercialMappingDragCellKey === cellKey}
             onBeginCellEdit={onBeginCellEdit}
             onBeginFillDrag={onBeginFillDrag}
             onCellClick={onCellClick}
             onCellContextMenu={onCellContextMenu}
             onCellMouseDown={onCellMouseDown}
             onCellMouseEnter={onCellMouseEnter}
+            onCommercialMappingDragStart={onCommercialMappingDragStart}
             onInputBlur={onInputBlur}
             onInputChange={onInputChange}
             onInputKeyDown={onInputKeyDown}
+            onInputSelect={onInputSelect}
             setInputRef={setInputRef}
           />
         );
@@ -1341,21 +1708,87 @@ const WorksheetRowView = memo(function WorksheetRowView({
     </div>
   );
 }, (previousProps, nextProps) => {
+  const previousActiveRowId = previousProps.activeCellKey
+    ? parseWorksheetCellKey(previousProps.activeCellKey)?.rowId
+    : null;
+  const nextActiveRowId = nextProps.activeCellKey
+    ? parseWorksheetCellKey(nextProps.activeCellKey)?.rowId
+    : null;
+  const isEditorRelevant = previousActiveRowId === previousProps.row.id || nextActiveRowId === nextProps.row.id;
   if (
-    previousProps.activeCellKey !== nextProps.activeCellKey ||
-    previousProps.activeEditor !== nextProps.activeEditor ||
+    isEditorRelevant &&
+    (previousProps.activeCellKey !== nextProps.activeCellKey ||
+      previousProps.activeEditor !== nextProps.activeEditor ||
+      previousProps.editingCellValue !== nextProps.editingCellValue)
+  ) {
+    return false;
+  }
+
+  const buildRangeSignature = (
+    ranges: Array<WorksheetSelectionRange & { kind?: string }>,
+    rowIndex: number,
+  ) => ranges
+    .filter((range) => rowIndex >= range.startRowIndex && rowIndex <= range.endRowIndex)
+    .map((range) => [
+      range.kind ?? "cells",
+      range.startColumnIndex,
+      range.endColumnIndex,
+      rowIndex === range.startRowIndex,
+      rowIndex === range.endRowIndex,
+    ].join(":"))
+    .join("|");
+  const previousSelectionSignature = buildRangeSignature(previousProps.selectedRanges, previousProps.rowIndex);
+  const nextSelectionSignature = buildRangeSignature(nextProps.selectedRanges, nextProps.rowIndex);
+  const previousActiveSignature = previousProps.activeSelectedRange
+    ? buildRangeSignature([previousProps.activeSelectedRange], previousProps.rowIndex)
+    : "";
+  const nextActiveSignature = nextProps.activeSelectedRange
+    ? buildRangeSignature([nextProps.activeSelectedRange], nextProps.rowIndex)
+    : "";
+  const previousFillSignature = previousProps.fillPreviewRange
+    ? buildRangeSignature([previousProps.fillPreviewRange], previousProps.rowIndex)
+    : "";
+  const nextFillSignature = nextProps.fillPreviewRange
+    ? buildRangeSignature([nextProps.fillPreviewRange], nextProps.rowIndex)
+    : "";
+  const buildFormulaRangeSignature = (ranges: FormulaReferenceRangeHighlight[], rowIndex: number) => ranges
+    .filter((range) => rowIndex >= range.startRowIndex && rowIndex <= range.endRowIndex)
+    .map((range) => [
+      range.startColumnIndex,
+      range.endColumnIndex,
+      range.colorIndex,
+      rowIndex === range.startRowIndex,
+      rowIndex === range.endRowIndex,
+    ].join(":"))
+    .join("|");
+  const previousFormulaRangeSignature = buildFormulaRangeSignature(
+    previousProps.formulaReferenceRanges,
+    previousProps.rowIndex,
+  );
+  const nextFormulaRangeSignature = buildFormulaRangeSignature(
+    nextProps.formulaReferenceRanges,
+    nextProps.rowIndex,
+  );
+  const buildDirectFormulaSignature = (props: WorksheetRowViewProps) => props.visibleColumns
+    .map((column) => props.formulaReferenceHighlightByCellKey.get(
+      buildWorksheetCellKey(column.id, props.row.id),
+    )?.colorIndex ?? "")
+    .join(":");
+
+  if (
     previousProps.canWriteWorksheet !== nextProps.canWriteWorksheet ||
-    previousProps.editingCellValue !== nextProps.editingCellValue ||
-    previousProps.fillPreviewRange !== nextProps.fillPreviewRange ||
-    previousProps.formulaReferenceHighlightByCellKey !== nextProps.formulaReferenceHighlightByCellKey ||
-    previousProps.formulaReferenceRanges !== nextProps.formulaReferenceRanges ||
+    previousProps.commercialMappingDragCellKey !== nextProps.commercialMappingDragCellKey ||
+    previousProps.commercialMappingHighlightCellKeys !== nextProps.commercialMappingHighlightCellKeys ||
+    previousFillSignature !== nextFillSignature ||
+    previousFormulaRangeSignature !== nextFormulaRangeSignature ||
+    buildDirectFormulaSignature(previousProps) !== buildDirectFormulaSignature(nextProps) ||
     previousProps.gridTemplateColumns !== nextProps.gridTemplateColumns ||
     previousProps.leftSpacerWidth !== nextProps.leftSpacerWidth ||
     previousProps.row !== nextProps.row ||
     previousProps.rowIndex !== nextProps.rowIndex ||
     previousProps.rightSpacerWidth !== nextProps.rightSpacerWidth ||
-    previousProps.activeSelectedRange !== nextProps.activeSelectedRange ||
-    previousProps.selectedRanges !== nextProps.selectedRanges
+    previousActiveSignature !== nextActiveSignature ||
+    previousSelectionSignature !== nextSelectionSignature
   ) {
     return false;
   }
@@ -1389,6 +1822,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
     previousProps.onInputBlur === nextProps.onInputBlur &&
     previousProps.onInputChange === nextProps.onInputChange &&
     previousProps.onInputKeyDown === nextProps.onInputKeyDown &&
+    previousProps.onInputSelect === nextProps.onInputSelect &&
     previousProps.onRowClick === nextProps.onRowClick &&
     previousProps.onRowContextMenu === nextProps.onRowContextMenu &&
     previousProps.setInputRef === nextProps.setInputRef
@@ -1589,6 +2023,7 @@ export function OpportunityPricingWorksheetBoard({
   onClose?: () => void;
   onDirtyStateChange?: (isDirty: boolean) => void;
 }) {
+  const router = useRouter();
   const worksheetOwner = usePricingWorksheetOwner();
   const { session, isLoading: isAuthLoading } = useAuth();
   const worksheetOpportunityId = worksheetOwner.opportunityId;
@@ -1599,7 +2034,14 @@ export function OpportunityPricingWorksheetBoard({
   const [workbookSheets, setWorkbookSheets] = useState<OpportunityPricingWorkbookSheet[]>([]);
   const [worksheetName, setWorksheetName] = useState<string | null>(null);
   const [isWorksheetNameEditorOpen, setIsWorksheetNameEditorOpen] = useState(false);
-  const [worksheetNameDraft, setWorksheetNameDraft] = useState("");
+  const [worksheetTitleAutosave, setWorksheetTitleAutosave] = useState<PricingWorksheetTitleAutosaveState>({
+    confirmedTitle: "Pricing Worksheet",
+    draftTitle: "Pricing Worksheet",
+    error: null,
+    lastSavedAt: null,
+    status: "idle",
+  });
+  const [worksheetTitleDraft, setWorksheetTitleDraft] = useState("Pricing Worksheet");
   const [worksheetTradePackage, setWorksheetTradePackage] = useState<string | null>(null);
   const [worksheet, setWorksheet] = useState<WorksheetData>(() => createDefaultWorksheetData());
   const worksheetRef = useRef<WorksheetData>(worksheet);
@@ -1632,6 +2074,19 @@ export function OpportunityPricingWorksheetBoard({
   const [aiFollowUpPrompt, setAiFollowUpPrompt] = useState("");
   const [isSubmittingAiFollowUp, setIsSubmittingAiFollowUp] = useState(false);
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
+  const [activeSidePanel, setActiveSidePanel] = useState<WorksheetSidePanelType>(null);
+  const [materialTarget, setMaterialTarget] = useState<PricingWorksheetMaterialTarget | null>(null);
+  const commercialMapping = useWorksheetCommercialMapping();
+  const variationCommercialMapping = useWorksheetVariationCommercialMapping();
+  const measureMapping = useWorksheetFieldMapping(MEASURE_MAPPING_OPTIONS);
+  const [commercialMappingContext, setCommercialMappingContext] = useState<CommercialMappingPublishContext | null>(null);
+  const [variationCommercialMappingContext, setVariationCommercialMappingContext] = useState<VariationCommercialMappingContext | null>(null);
+  const [commercialMappingHighlightField, setCommercialMappingHighlightField] = useState<CommercialMappingField | null>(null);
+  const [variationCommercialMappingHighlight, setVariationCommercialMappingHighlight] = useState<{ lineId: string; field: CommercialMappingField } | null>(null);
+  const [measureMappingHighlightField, setMeasureMappingHighlightField] = useState<PricingWorksheetMeasureField | null>(null);
+  const [isNarrowCommercialCellPicker, setIsNarrowCommercialCellPicker] = useState(false);
+  const [purchaseOrderMappingSection, setPurchaseOrderMappingSection] = useState<WorksheetPublishConfirmationLineDraft["purchaseOrderSection"]>("");
+  const consumedMaterialTargetRef = useRef<string | null>(null);
   const aiPreApplySnapshotRef = useRef<{
     worksheet: WorksheetData;
     name: string | null;
@@ -1649,6 +2104,13 @@ export function OpportunityPricingWorksheetBoard({
   const [selectionState, setSelectionState] = useState<WorksheetMultiSelectionState>(() =>
     createEmptyWorksheetMultiSelectionState(),
   );
+  const selectionStateRef = useRef(selectionState);
+  const editorTextSelectionRef = useRef<WorksheetTextSelection | null>(null);
+  const editingSessionRef = useRef<{
+    cellKey: string;
+    originalValue: string;
+  } | null>(null);
+  const worksheetMutationRevisionRef = useRef(0);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
   const [isDraggingFill, setIsDraggingFill] = useState(false);
   const [fillSourceRange, setFillSourceRange] = useState<WorksheetSelectionRange | null>(null);
@@ -1672,7 +2134,7 @@ export function OpportunityPricingWorksheetBoard({
   const [purchaseOrderPublishDialog, setPurchaseOrderPublishDialog] = useState<PurchaseOrderPublishDialogState | null>(null);
   const [variationPublishDialog, setVariationPublishDialog] = useState<VariationPublishDialogState | null>(null);
   const [quotePublishTargetMode, setQuotePublishTargetMode] = useState<"new" | "existing">("new");
-  const [quotePublishTargetId, setQuotePublishTargetId] = useState("");
+  const [quotePublishTargetIds, setQuotePublishTargetIds] = useState<string[]>([]);
   const [purchaseOrderPublishSupplierId, setPurchaseOrderPublishSupplierId] = useState("");
   const [purchaseOrderPublishTitle, setPurchaseOrderPublishTitle] = useState("Worksheet Purchase Order");
   const [purchaseOrderPublishTargetMode, setPurchaseOrderPublishTargetMode] = useState<"new" | "existing">("new");
@@ -1699,6 +2161,7 @@ export function OpportunityPricingWorksheetBoard({
   const suppressBlurCommitCellKeyRef = useRef<string | null>(null);
   const suppressFormulaBarBlurCommitRef = useRef(false);
   const editingCellValueRef = useRef("");
+  const isFormulaReferencePickArmedRef = useRef(false);
   const isDraggingSelectionRef = useRef(false);
   const pendingSelectionDragRef = useRef<{
     anchorCellKey: string;
@@ -1710,6 +2173,7 @@ export function OpportunityPricingWorksheetBoard({
   const rangeDragAnchorCellKeyRef = useRef<string | null>(null);
   const formulaReferenceDragAnchorCellKeyRef = useRef<string | null>(null);
   const formulaReferenceDragBaseValueRef = useRef<string | null>(null);
+  const formulaReferenceDragSelectionRef = useRef<WorksheetTextSelection | null>(null);
   const didDragSelectionRef = useRef(false);
   const workbookSheetsRef = useRef<OpportunityPricingWorkbookSheet[]>([]);
   const worksheetIdRef = useRef<string | null>(null);
@@ -1725,6 +2189,56 @@ export function OpportunityPricingWorksheetBoard({
   const persistedLastActiveWorkbookIdRef = useRef<string | null>(null);
   const persistedLastActiveSheetIdRef = useRef<string | null>(null);
   const pendingLearningWritesRef = useRef<PendingWorksheetLearningWrite[]>([]);
+  const isWorksheetTitleEditingRef = useRef(false);
+  const worksheetTitleDraftRef = useRef("Pricing Worksheet");
+  const worksheetTitleSheetIdRef = useRef<string | null>(null);
+  const persistWorksheetTitleRef = useRef<(title: string) => Promise<PricingWorksheetTitleSaveResult>>(async () => {
+    throw new Error("Pricing worksheet title save is not ready. Please refresh and try again.");
+  });
+  const worksheetTitleAutosaveControllerRef = useRef<PricingWorksheetTitleAutosaveController | null>(null);
+  if (!worksheetTitleAutosaveControllerRef.current) {
+    worksheetTitleAutosaveControllerRef.current = new PricingWorksheetTitleAutosaveController({
+      initialTitle: "Pricing Worksheet",
+      onError: (message) => setError(message),
+      onStateChange: (state) => {
+        setWorksheetTitleAutosave(state);
+        if (!isWorksheetTitleEditingRef.current) {
+          worksheetTitleDraftRef.current = state.draftTitle;
+          setWorksheetTitleDraft(state.draftTitle);
+        }
+      },
+      persist: (title) => persistWorksheetTitleRef.current(title),
+    });
+  }
+
+  const synchronizeLoadedWorksheetTitle = useCallback((params: {
+    sheetId: string | null;
+    title: string;
+    updatedAt: string | null;
+  }) => {
+    const controller = worksheetTitleAutosaveControllerRef.current;
+    if (!controller) {
+      return;
+    }
+
+    const snapshot = controller.getSnapshot();
+    if (!shouldSynchronizeLoadedWorksheetTitle({
+      confirmedTitle: snapshot.confirmedTitle,
+      currentSheetId: worksheetTitleSheetIdRef.current,
+      draftTitle: worksheetTitleDraftRef.current,
+      isEditing: isWorksheetTitleEditingRef.current,
+      nextSheetId: params.sheetId,
+      status: snapshot.status,
+    })) {
+      return;
+    }
+
+    worksheetTitleSheetIdRef.current = params.sheetId;
+    controller.reset(params.title, params.updatedAt);
+    const nextDraft = controller.getSnapshot().draftTitle;
+    worksheetTitleDraftRef.current = nextDraft;
+    setWorksheetTitleDraft(nextDraft);
+  }, []);
 
   useEffect(() => {
     if (didCountBoardMountRef.current) {
@@ -1749,13 +2263,17 @@ export function OpportunityPricingWorksheetBoard({
         window.clearTimeout(aiJobPollTimeoutRef.current);
         aiJobPollTimeoutRef.current = null;
       }
+      const titleAutosaveController = worksheetTitleAutosaveControllerRef.current;
+      if (titleAutosaveController) {
+        void titleAutosaveController.flush();
+      }
       isWorksheetBoardMountedRef.current = false;
     };
   }, []);
 
   useEffect(() => {
-    onDirtyStateChange?.(isDirty);
-  }, [isDirty, onDirtyStateChange]);
+    onDirtyStateChange?.(isDirty || worksheetTitleAutosave.status !== "idle");
+  }, [isDirty, onDirtyStateChange, worksheetTitleAutosave.status]);
 
   useEffect(() => {
     workbookSheetsRef.current = workbookSheets;
@@ -1770,13 +2288,22 @@ export function OpportunityPricingWorksheetBoard({
   }, [worksheetSheetId]);
 
   const canWriteWorksheet = useMemo(() => {
-    return (
+    return !worksheetOwner.readOnly && (
       session?.role === "owner" ||
       session?.role === "admin" ||
       session?.role === "qs" ||
       session?.role === "project_manager"
     );
-  }, [session?.role]);
+  }, [session?.role, worksheetOwner.readOnly]);
+  const isWorksheetMappingMode = commercialMapping.session !== null || variationCommercialMapping.session !== null || measureMapping.session !== null;
+  const activeWorksheetMapping = commercialMapping.session
+    ? { kind: "commercial" as const, session: commercialMapping.session }
+    : variationCommercialMapping.session
+      ? { kind: "commercial" as const, session: variationCommercialMapping.session }
+    : measureMapping.session
+      ? { kind: "measure" as const, session: measureMapping.session }
+      : null;
+  const canMutateWorksheet = canWriteWorksheet && !isWorksheetMappingMode;
 
   const supabase = useMemo(() => {
     try {
@@ -1785,10 +2312,56 @@ export function OpportunityPricingWorksheetBoard({
       return null;
     }
   }, []);
+  const hasUnsavedWorksheetChanges = isDirty || worksheetTitleAutosave.status !== "idle";
+
+  persistWorksheetTitleRef.current = async (nextTitle) => {
+    const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+    const sheetId = worksheetSheetIdRef.current;
+    const organizationId = session?.organizationId;
+    const userId = session?.id;
+    if (!supabase || !organizationId || !userId || !workbookId || !sheetId || !worksheetOpportunityId) {
+      throw new Error("Pricing worksheet title save is not ready. Please refresh and try again.");
+    }
+    if (!canWriteWorksheet) {
+      throw new Error("You do not have permission to edit pricing worksheets.");
+    }
+
+    setError(null);
+    const renamedSheet = await renameOpportunityPricingWorkbookSheet({
+      supabase,
+      organizationId,
+      opportunityId: worksheetOpportunityId,
+      projectId: worksheetProjectId,
+      projectOwned: worksheetOwner.ownerType === "project",
+      quoteId: worksheetOwner.quoteId,
+      variationId: worksheetOwner.variationId,
+      workbookId,
+      sheetId,
+      nextName: nextTitle,
+      tradePackage: worksheetTradePackage,
+      userId,
+    });
+    const title = "sheetName" in renamedSheet ? renamedSheet.sheetName : renamedSheet.name;
+    const updatedAt = renamedSheet.updatedAt ?? new Date().toISOString();
+    const currentWorksheet = worksheetRef.current;
+    if (worksheetSheetIdRef.current === sheetId) {
+      const nextWorksheet = { ...currentWorksheet, sheetName: title };
+      worksheetRef.current = nextWorksheet;
+      setWorksheet(nextWorksheet);
+      setWorksheetName(title);
+      setLastSavedAt(updatedAt);
+    }
+    const nextSheets = workbookSheetsRef.current.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, name: title, updatedAt, worksheet: { ...sheet.worksheet, sheetName: title } }
+      : sheet);
+    workbookSheetsRef.current = nextSheets;
+    setWorkbookSheets(nextSheets);
+    return { title, updatedAt };
+  };
 
   useEffect(() => {
     const currentWorkbookId = worksheetId;
-    if (!supabase || !session?.organizationId || !currentWorkbookId) {
+    if (!supabase || !session?.organizationId || !currentWorkbookId || worksheetOwner.readOnly) {
       return;
     }
 
@@ -1814,6 +2387,7 @@ export function OpportunityPricingWorksheetBoard({
       organizationId: session.organizationId,
       opportunityId: worksheetOpportunityId,
       projectId: worksheetProjectId,
+      projectOwned: worksheetOwner.ownerType === "project",
       quoteId: worksheetOwner.quoteId,
       variationId: worksheetOwner.variationId,
       workbookId: currentWorkbookId,
@@ -1831,6 +2405,7 @@ export function OpportunityPricingWorksheetBoard({
     worksheetSheetId,
     worksheetOpportunityId,
     worksheetOwner.quoteId,
+    worksheetOwner.readOnly,
     worksheetOwner.variationId,
     worksheetProjectId,
   ]);
@@ -2114,6 +2689,10 @@ export function OpportunityPricingWorksheetBoard({
     () => getActiveWorksheetSelectionArea(selectionState),
     [selectionState],
   );
+  const selectionAggregate = useMemo(
+    () => deriveWorksheetSelectionAggregate({ worksheet, selectionState }),
+    [selectionState, worksheet],
+  );
   const activeWorkbookSheet = useMemo(
     () => workbookSheets.find((sheet) => sheet.id === worksheetSheetId) ?? workbookSheets[0] ?? null,
     [workbookSheets, worksheetSheetId],
@@ -2127,19 +2706,81 @@ export function OpportunityPricingWorksheetBoard({
       ? selectionAnchorCellKey
       : null;
 
+  const materialPriceReviewOverlay = useMemo(
+    () => buildMaterialPriceReviewOverlay(worksheet),
+    [worksheet],
+  );
+
   const selectedWorksheetCellKey =
     selectionFocusCellKey ??
     selectionAnchorCellKey ??
     buildWorksheetCellKey("A", "1");
+
+  const worksheetStructureKey = useMemo(
+    () => buildWorksheetStructureKey(worksheet),
+    [worksheet],
+  );
+  const commercialMappingResolved = useMemo(() => {
+    const mappingSession = commercialMapping.session;
+    const workbookId = explicitWorksheetId ?? worksheetId;
+    if (!mappingSession || !workbookId || !worksheetSheetId) return null;
+    return resolveWorksheetCommercialMapping({
+      session: mappingSession,
+      worksheet,
+      workbookId,
+      sheetId: worksheetSheetId,
+    });
+  }, [commercialMapping.session, explicitWorksheetId, worksheet, worksheetId, worksheetSheetId]);
+  const variationCommercialMappingResolved = useMemo(() => {
+    const mappingSession = variationCommercialMapping.session;
+    const workbookId = explicitWorksheetId ?? worksheetId;
+    if (!mappingSession || !workbookId || !worksheetSheetId) return [];
+    return mappingSession.lines.map((line) => ({
+      line,
+      resolved: resolveWorksheetCommercialMapping({
+        session: line.mapping,
+        worksheet,
+        workbookId,
+        sheetId: worksheetSheetId,
+      }),
+    }));
+  }, [explicitWorksheetId, variationCommercialMapping.session, worksheet, worksheetId, worksheetSheetId]);
+  const commercialMappingHighlightCellKeys = useMemo(() => {
+    if (measureMapping.session) {
+      const fieldsToHighlight = measureMappingHighlightField
+        ? [measureMappingHighlightField]
+        : PRICING_WORKSHEET_MEASURE_MAPPING_FIELDS;
+      return new Set(fieldsToHighlight.flatMap((field) => {
+        const target = measureMapping.session?.mappings[field];
+        return target ? [target.cellKey] : [];
+      }));
+    }
+    if (variationCommercialMapping.session && variationCommercialMappingHighlight) {
+      const line = variationCommercialMapping.session.lines.find((candidate) => candidate.id === variationCommercialMappingHighlight.lineId);
+      const source = line ? getWorksheetCommercialFieldSource(line.mapping, variationCommercialMappingHighlight.field) : null;
+      return source ? new Set([source.cellKey]) : new Set<string>();
+    }
+    if (!commercialMapping.session || !commercialMappingHighlightField) return new Set<string>();
+    const source = getWorksheetCommercialFieldSource(commercialMapping.session, commercialMappingHighlightField);
+    return source ? new Set([source.cellKey]) : new Set<string>();
+  }, [commercialMapping.session, commercialMappingHighlightField, measureMapping.session, measureMappingHighlightField, variationCommercialMapping.session, variationCommercialMappingHighlight]);
 
   const replaceSelection = useCallback((
     anchorCellKey: string | null,
     focusCellKey: string | null,
     kind: WorksheetSelectionKind = "cells",
   ) => {
-    setSelectionState((current) =>
-      replaceWorksheetSelectionFromCellKeys(current, worksheetRef.current, anchorCellKey, focusCellKey, kind),
-    );
+    setSelectionState((current) => {
+      const next = replaceWorksheetSelectionFromCellKeys(
+        current,
+        worksheetRef.current,
+        anchorCellKey,
+        focusCellKey,
+        kind,
+      );
+      selectionStateRef.current = next;
+      return next;
+    });
   }, []);
 
   const formulaBarCellKey = activeCellKey ?? selectedWorksheetCellKey;
@@ -2152,32 +2793,36 @@ export function OpportunityPricingWorksheetBoard({
     formulaReferenceHighlightByCellKey,
     formulaReferenceRanges,
   } = useMemo(() => {
-    const trimmedFormulaBarValue = formulaBarValue.trim();
-    if (!trimmedFormulaBarValue.startsWith("=")) {
+    if (!shouldShowFormulaReferenceHighlights({
+      activeCellKey,
+      activeEditor,
+      editingValue: editingCellValue,
+    })) {
       return {
-        formulaReferenceHighlightByCellKey: new Map<string, { colorIndex: number }>(),
-        formulaReferenceRanges: [] as FormulaReferenceRangeHighlight[],
+        formulaReferenceHighlightByCellKey: EMPTY_FORMULA_REFERENCE_HIGHLIGHTS,
+        formulaReferenceRanges: EMPTY_FORMULA_REFERENCE_RANGES,
       };
     }
 
-    const colorIndexByReference = new Map<string, number>();
+    const trimmedFormulaBarValue = formulaBarValue.trim();
+    if (!trimmedFormulaBarValue.startsWith("=")) {
+      return {
+        formulaReferenceHighlightByCellKey: EMPTY_FORMULA_REFERENCE_HIGHLIGHTS,
+        formulaReferenceRanges: EMPTY_FORMULA_REFERENCE_RANGES,
+      };
+    }
+
     const highlights = new Map<string, { colorIndex: number }>();
     const ranges: FormulaReferenceRangeHighlight[] = [];
     const rangeKeys = new Set<string>();
 
-    for (const reference of extractPricingWorksheetFormulaReferences(trimmedFormulaBarValue)) {
-      let colorIndex = colorIndexByReference.get(reference.normalizedRef);
-      if (typeof colorIndex !== "number") {
-        colorIndex = colorIndexByReference.size;
-        colorIndexByReference.set(reference.normalizedRef, colorIndex);
-      }
-
+    for (const reference of buildPricingWorksheetFormulaPresentation(trimmedFormulaBarValue).references) {
       if (reference.kind === "cell") {
         if (highlights.has(reference.normalizedRef)) {
           continue;
         }
 
-        highlights.set(reference.normalizedRef, { colorIndex });
+        highlights.set(reference.normalizedRef, { colorIndex: reference.colorIndex });
         continue;
       }
 
@@ -2188,7 +2833,7 @@ export function OpportunityPricingWorksheetBoard({
       rangeKeys.add(rangeKey);
 
       ranges.push({
-        colorIndex,
+        colorIndex: reference.colorIndex,
         startRowIndex: reference.startRowIndex,
         startColumnIndex: reference.startColumnIndex,
         endRowIndex: reference.endRowIndex,
@@ -2200,9 +2845,11 @@ export function OpportunityPricingWorksheetBoard({
       formulaReferenceHighlightByCellKey: highlights,
       formulaReferenceRanges: ranges,
     };
-  }, [formulaBarValue]);
+  }, [activeCellKey, activeEditor, editingCellValue, formulaBarValue]);
   const worksheetDisplayName =
-    worksheetName?.trim() || worksheet.sheetName.trim() || "Pricing Worksheet";
+    worksheetTitleAutosave.status !== "idle"
+      ? normalizePricingWorksheetTitle(worksheetTitleDraft) || worksheetTitleAutosave.confirmedTitle
+      : worksheetName?.trim() || worksheet.sheetName.trim() || worksheetTitleAutosave.confirmedTitle;
   const getWorksheetPersistenceName = useCallback(() => resolveWorksheetPersistenceName({
     worksheet: worksheetRef.current,
     worksheetName,
@@ -2299,6 +2946,7 @@ export function OpportunityPricingWorksheetBoard({
     setActiveCellKey(null);
     setActiveEditor(null);
     setEditingCellValue("");
+    isFormulaReferencePickArmedRef.current = false;
     setContextMenu(null);
     setMessage(null);
     setError(null);
@@ -2307,6 +2955,7 @@ export function OpportunityPricingWorksheetBoard({
     setWorksheetViewportHeight(WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
     setWorksheetViewportWidth(WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
     worksheetRef.current = nextWorksheet;
+    worksheetMutationRevisionRef.current = 0;
   }, [replaceSelection]);
 
   const hydrateWorkbookEditorState = useCallback((
@@ -2332,6 +2981,7 @@ export function OpportunityPricingWorksheetBoard({
     setWorksheetName(editorRecord.sheetName);
     setWorksheetTradePackage(editorRecord.tradePackage);
     setWorksheet(loadedWorksheet);
+    worksheetMutationRevisionRef.current = 0;
     const nextPricingSummary = deriveWorksheetPricingSummary(loadedWorksheet, editorRecord.pricingSummary, {
       calculatedAt: editorRecord.pricingSummary.lastCalculatedAt,
     });
@@ -2340,12 +2990,16 @@ export function OpportunityPricingWorksheetBoard({
     setExtractedPricingData(editorRecord.extractedPricingData);
     setLastSavedAt(editorRecord.updatedAt ?? null);
     setIsDirty(false);
-    setWorksheetNameDraft(editorRecord.sheetName);
+    synchronizeLoadedWorksheetTitle({
+      sheetId: editorRecord.sheetId,
+      title: editorRecord.sheetName,
+      updatedAt: editorRecord.updatedAt ?? null,
+    });
     resetWorksheetViewState(loadedWorksheet);
     resetAiPreviewState();
     setIsAiDialogOpen(false);
     return editorRecord;
-  }, [resetAiPreviewState, resetWorksheetViewState]);
+  }, [resetAiPreviewState, resetWorksheetViewState, synchronizeLoadedWorksheetTitle]);
 
   const openAiDialog = useCallback(() => {
     setAiPreviewError(null);
@@ -2357,9 +3011,13 @@ export function OpportunityPricingWorksheetBoard({
     setAiAppliedSuggestedEditGroupIds([]);
     setAiFollowUpPrompt("");
     setIsAiChatOpen(false);
+    setActiveSidePanel(null);
+    setMaterialTarget(null);
+    measureMapping.cancel();
+    setMeasureMappingHighlightField(null);
     aiPreApplySnapshotRef.current = null;
     setIsAiDialogOpen(true);
-  }, [worksheetDisplayName, worksheetTradePackage]);
+  }, [measureMapping, worksheetDisplayName, worksheetTradePackage]);
 
   const handleAiDialogOpenChange = useCallback((nextOpen: boolean) => {
     if (isGeneratingAiPreview || isSubmittingAiReview) {
@@ -2372,6 +3030,306 @@ export function OpportunityPricingWorksheetBoard({
 
     setIsAiDialogOpen(nextOpen);
   }, [aiPreviewResponse, isAiChatOpen, isGeneratingAiPreview, isSubmittingAiReview, resetAiPreviewState]);
+
+  const closeCommercialMapping = useCallback(() => {
+    commercialMapping.cancel();
+    setCommercialMappingContext(null);
+    setCommercialMappingHighlightField(null);
+    setIsNarrowCommercialCellPicker(false);
+    setPurchaseOrderMappingSection("");
+    requestAnimationFrame(() => worksheetSurfaceRef.current?.focus({ preventScroll: true }));
+  }, [commercialMapping]);
+
+  const closeVariationCommercialMapping = useCallback(() => {
+    variationCommercialMapping.cancel();
+    setVariationCommercialMappingContext(null);
+    setVariationCommercialMappingHighlight(null);
+    setIsNarrowCommercialCellPicker(false);
+    requestAnimationFrame(() => worksheetSurfaceRef.current?.focus({ preventScroll: true }));
+  }, [variationCommercialMapping]);
+
+  const armCommercialMappingField = useCallback((field: CommercialMappingField) => {
+    commercialMapping.armField(field);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      setIsNarrowCommercialCellPicker(true);
+      requestAnimationFrame(() => worksheetSurfaceRef.current?.focus({ preventScroll: true }));
+    }
+  }, [commercialMapping]);
+
+  const escapeCommercialMapping = useCallback(() => {
+    if (commercialMapping.session?.activeField) {
+      commercialMapping.armField(null);
+      setIsNarrowCommercialCellPicker(false);
+      return;
+    }
+    closeCommercialMapping();
+  }, [closeCommercialMapping, commercialMapping]);
+
+  const armVariationCommercialMappingField = useCallback((lineId: string, field: CommercialMappingField) => {
+    variationCommercialMapping.armField(lineId, field);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      setIsNarrowCommercialCellPicker(true);
+      requestAnimationFrame(() => worksheetSurfaceRef.current?.focus({ preventScroll: true }));
+    }
+  }, [variationCommercialMapping]);
+
+  const escapeVariationCommercialMapping = useCallback(() => {
+    const activeLine = variationCommercialMapping.session?.lines.find((line) => line.mapping.activeField);
+    if (activeLine) {
+      variationCommercialMapping.armField(activeLine.id, null);
+      setIsNarrowCommercialCellPicker(false);
+      return;
+    }
+    closeVariationCommercialMapping();
+  }, [closeVariationCommercialMapping, variationCommercialMapping]);
+
+  const prepareCommercialMappingSurface = useCallback(() => {
+    if (activeCellKey) {
+      editingSessionRef.current = null;
+      editorTextSelectionRef.current = null;
+      isFormulaReferencePickArmedRef.current = false;
+      setActiveCellKey(null);
+      setActiveEditor(null);
+      setEditingCellValue("");
+    }
+    setIsAiChatOpen(false);
+    setIsAiDialogOpen(false);
+    setActiveSidePanel(null);
+    setMaterialTarget(null);
+    measureMapping.cancel();
+    setMeasureMappingHighlightField(null);
+    setIsDraggingSelection(false);
+    setIsDraggingFill(false);
+    setResizingColumnId(null);
+    setResizingRowId(null);
+  }, [activeCellKey, measureMapping]);
+
+  const startQuoteCommercialMapping = useCallback(async (
+    range: WorksheetSelectionRange | null,
+    selectionRanges: WorksheetSelectionRange[],
+    startingCell: string,
+  ) => {
+    if (!range || !supabase || !session?.organizationId || !worksheetOpportunityId || !canWriteWorksheet) {
+      setError("Select a worksheet cell and confirm you have permission to add it to a Quote.");
+      return;
+    }
+    prepareCommercialMappingSurface();
+    setError(null);
+    try {
+      if (!worksheetIdRef.current && !(await saveWorksheetRef.current?.({ silent: true }))) {
+        throw new Error("Save the worksheet before starting Commercial Mapping Mode.");
+      }
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      if (!workbookId || !sheetId) throw new Error("Worksheet source identity is unavailable.");
+      const publishContext = await resolveWorksheetQuotePublishContext({ organizationId: session.organizationId, opportunityId: worksheetOpportunityId });
+      const resolution = await resolveQuotePublishTarget({ client: supabase, organizationId: session.organizationId, opportunityId: worksheetOpportunityId, projectId: publishContext.projectId });
+      if (resolution.kind === "blocked") throw new Error(resolution.message);
+      const quotes = resolution.kind === "choose" ? resolution.quotes : await resolveQuotePublishOptions({ client: supabase, organizationId: session.organizationId, opportunityId: worksheetOpportunityId });
+      setQuotePublishTargetMode(resolveInitialQuotePublishTargetMode(resolution));
+      setQuotePublishTargetIds(resolveInitialQuotePublishTargetIds(resolution));
+      setCommercialMappingContext({ destination: "quote", projectId: publishContext.projectId, quotes });
+      commercialMapping.start({ destination: "quote", workbookId, sheetId, structureKey: worksheetStructureKey, startingCell, capturedSelection: range, capturedSelections: selectionRanges.length ? selectionRanges : [range] });
+    } catch (mappingError) {
+      setError(mapWorksheetQuotePublishErrorMessage(mappingError instanceof Error ? mappingError.message : "Unable to start Quote mapping."));
+      closeCommercialMapping();
+    }
+  }, [canWriteWorksheet, closeCommercialMapping, commercialMapping, explicitWorksheetId, prepareCommercialMappingSurface, session?.organizationId, supabase, worksheetOpportunityId, worksheetStructureKey]);
+
+  const startPurchaseOrderCommercialMapping = useCallback(async (
+    range: WorksheetSelectionRange | null,
+    selectionRanges: WorksheetSelectionRange[],
+    startingCell: string,
+  ) => {
+    if (!range || !supabase || !session?.organizationId || !canWriteWorksheet) {
+      setError("Select a worksheet cell and confirm you have permission to add it to a Purchase Order.");
+      return;
+    }
+    prepareCommercialMappingSurface();
+    setError(null);
+    try {
+      if (!worksheetIdRef.current && !(await saveWorksheetRef.current?.({ silent: true }))) throw new Error("Save the worksheet before starting Commercial Mapping Mode.");
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      if (!workbookId || !sheetId) throw new Error("Worksheet source identity is unavailable.");
+      const publishContext = await resolveWorksheetPurchaseOrderPublishContext({ owner: worksheetOwner });
+      const options = await resolvePurchaseOrderPublishOptions({ client: supabase, organizationId: session.organizationId, projectId: publishContext.projectId });
+      setPurchaseOrderPublishSupplierId("");
+      setPurchaseOrderPublishTitle("Worksheet Purchase Order");
+      setPurchaseOrderPublishTargetMode("new");
+      setPurchaseOrderPublishTargetId("");
+      setPurchaseOrderMappingSection("");
+      setCommercialMappingContext({ destination: "purchase_order", projectId: publishContext.projectId, projectSlug: publishContext.projectSlug, suppliers: options.suppliers.map((supplier) => ({ id: supplier.id, label: supplier.label })), draftPurchaseOrders: options.draftPurchaseOrders });
+      commercialMapping.start({ destination: "purchase_order", workbookId, sheetId, structureKey: worksheetStructureKey, startingCell, capturedSelection: range, capturedSelections: selectionRanges.length ? selectionRanges : [range] });
+    } catch (mappingError) {
+      setError(mapWorksheetPurchaseOrderPublishErrorMessage(mappingError instanceof Error ? mappingError.message : "Unable to start Purchase Order mapping."));
+      closeCommercialMapping();
+    }
+  }, [canWriteWorksheet, closeCommercialMapping, commercialMapping, explicitWorksheetId, prepareCommercialMappingSurface, session?.organizationId, supabase, worksheetOwner, worksheetStructureKey]);
+
+  const startVariationCommercialMapping = useCallback(async (
+    range: WorksheetSelectionRange | null,
+    selectionRanges: WorksheetSelectionRange[],
+    startingCell: string,
+  ) => {
+    if (!range || !supabase || !canWriteWorksheet || !canPublishToVariation) {
+      setError("Select a worksheet cell and confirm you have permission to add it to the Variation.");
+      return;
+    }
+    prepareCommercialMappingSurface();
+    setError(null);
+    setMessage(null);
+    try {
+      if (!worksheetIdRef.current && !(await saveWorksheetRef.current?.({ silent: true }))) {
+        throw new Error("Save the worksheet before starting Commercial Mapping Mode.");
+      }
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      if (!workbookId || !sheetId) throw new Error("Worksheet source identity is unavailable.");
+      const publishContext = await resolveWorksheetVariationPublishContext({ owner: worksheetOwner });
+      setVariationCommercialMappingContext(publishContext);
+      variationCommercialMapping.start({
+        workbookId,
+        sheetId,
+        structureKey: worksheetStructureKey,
+        startingCell,
+        capturedSelection: range,
+        capturedSelections: selectionRanges.length ? selectionRanges : [range],
+      });
+    } catch (mappingError) {
+      setError(mapWorksheetVariationPublishErrorMessage(mappingError instanceof Error ? mappingError.message : "Unable to start Variation mapping."));
+      closeVariationCommercialMapping();
+    }
+  }, [canPublishToVariation, canWriteWorksheet, closeVariationCommercialMapping, explicitWorksheetId, prepareCommercialMappingSurface, supabase, variationCommercialMapping, worksheetOwner, worksheetStructureKey]);
+
+  const executeCommercialMappingPublish = useCallback(async () => {
+    const mappingSession = commercialMapping.session;
+    const mappingContext = commercialMappingContext;
+    if (!mappingSession || !mappingContext || !commercialMappingResolved || !supabase || !session?.organizationId || !worksheetOpportunityId || isPublishingWorksheetSelection) return;
+    setIsPublishingWorksheetSelection(true);
+    setError(null);
+    try {
+      if (mappingContext.destination === "quote" && quotePublishTargetMode === "existing" && quotePublishTargetIds.length === 0) {
+        throw new Error("Select at least one draft Quote that should receive this mapped line.");
+      }
+      if (mappingContext.destination === "purchase_order") {
+        if (!purchaseOrderPublishSupplierId) throw new Error("Select a supplier.");
+        if (!purchaseOrderMappingSection) throw new Error("Select a procurement section.");
+        if (purchaseOrderPublishTargetMode === "existing" && !purchaseOrderPublishTargetId) throw new Error("Select a draft Purchase Order.");
+        if (purchaseOrderPublishTargetMode === "new" && !purchaseOrderPublishTitle.trim()) throw new Error("Enter a Purchase Order title.");
+      }
+      if (isDirty && !(await saveWorksheetRef.current?.({ silent: true }))) throw new Error("Unable to save the worksheet before publishing.");
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      if (!workbookId || !sheetId || workbookId !== mappingSession.workbookId || sheetId !== mappingSession.sheetId || worksheetStructureKey !== mappingSession.structureKey) throw new Error("Worksheet source changed during mapping. Cancel and map the cells again.");
+      const resolved = resolveWorksheetCommercialMapping({ session: mappingSession, worksheet: worksheetRef.current, workbookId, sheetId });
+      const explicit = buildExplicitMappedCommercialSelection({ session: mappingSession, worksheet: worksheetRef.current, resolved });
+      const roundedConfirmedLine = {
+        ...explicit.confirmedLine,
+        quantity: explicit.confirmedLine.quantity === null ? null : normalizeCommercialQuantity(explicit.confirmedLine.quantity),
+        rate: explicit.confirmedLine.rate === null ? null : normalizeCommercialRate(explicit.confirmedLine.rate),
+        total: explicit.confirmedLine.total === null ? null : normalizeCommercialMoney(explicit.confirmedLine.total),
+      };
+      const sheetName = workbookSheetsRef.current.find((sheet) => sheet.id === sheetId)?.name?.trim() || worksheetDisplayName;
+      const selection = buildPublishedWorksheetSelectionFromConfirmedLines({ destination: mappingSession.destination, worksheet: worksheetRef.current, selectionRange: mappingSession.capturedSelection, selectionRanges: mappingSession.capturedSelections, workbookId, worksheetId: workbookId, sheetId, worksheetName: worksheetDisplayName, sheetName, owner: worksheetOwner, interpretedSelection: explicit.interpretedSelection, confirmedLines: [roundedConfirmedLine] });
+      if (mappingContext.destination === "quote" && mappingSession.destination === "quote") {
+        const target: QuotePublishTarget = quotePublishTargetMode === "existing" ? { mode: "existing", quoteIds: quotePublishTargetIds } : { mode: "new" };
+        const result = await publishWorksheetSelection({ client: supabase, organizationId: session.organizationId, opportunityId: worksheetOpportunityId, projectId: mappingContext.projectId, workbookId, worksheetId: workbookId, sheetId, worksheetName: worksheetDisplayName, sheetName, worksheet: worksheetRef.current, selectionRange: mappingSession.capturedSelection, owner: worksheetOwner, selection, adapter: quoteDestinationAdapter, target });
+        setMessage(result.result.message);
+      } else if (mappingContext.destination === "purchase_order" && mappingSession.destination === "purchase_order") {
+        const lineSelections = [{ rowId: explicit.confirmedLine.proposalId, purchaseOrderSection: purchaseOrderMappingSection as Exclude<WorksheetPublishConfirmationLineDraft["purchaseOrderSection"], ""> }];
+        const target: PurchaseOrderPublishTarget = purchaseOrderPublishTargetMode === "existing" ? { mode: "existing", purchaseOrderId: purchaseOrderPublishTargetId, supplierId: purchaseOrderPublishSupplierId, lineSelections } : { mode: "new", supplierId: purchaseOrderPublishSupplierId, purchaseOrderTitle: purchaseOrderPublishTitle.trim(), lineSelections };
+        const result = await publishWorksheetSelection({ client: supabase, organizationId: session.organizationId, opportunityId: worksheetOpportunityId, projectId: mappingContext.projectId, workbookId, worksheetId: workbookId, sheetId, worksheetName: worksheetDisplayName, sheetName, worksheet: worksheetRef.current, selectionRange: mappingSession.capturedSelection, owner: worksheetOwner, selection, adapter: purchaseOrderDestinationAdapter, target });
+        setMessage(result.result.message);
+      } else {
+        throw new Error("Commercial mapping destination changed unexpectedly.");
+      }
+      closeCommercialMapping();
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : "Unable to publish the mapped commercial line.");
+    } finally {
+      setIsPublishingWorksheetSelection(false);
+    }
+  }, [commercialMapping.session, commercialMappingContext, commercialMappingResolved, closeCommercialMapping, explicitWorksheetId, isDirty, isPublishingWorksheetSelection, purchaseOrderMappingSection, purchaseOrderPublishSupplierId, purchaseOrderPublishTargetId, purchaseOrderPublishTargetMode, purchaseOrderPublishTitle, quotePublishTargetIds, quotePublishTargetMode, session?.organizationId, supabase, worksheetDisplayName, worksheetOpportunityId, worksheetOwner, worksheetStructureKey]);
+
+  const executeVariationCommercialMappingPublish = useCallback(async () => {
+    const mappingSession = variationCommercialMapping.session;
+    const mappingContext = variationCommercialMappingContext;
+    if (!mappingSession || !mappingContext || !supabase || !session?.organizationId || isPublishingWorksheetSelection) return;
+    setIsPublishingWorksheetSelection(true);
+    setError(null);
+    setMessage(null);
+    try {
+      if (isDirty && !(await saveWorksheetRef.current?.({ silent: true }))) {
+        throw new Error("Unable to save the worksheet before publishing.");
+      }
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      const sheetId = worksheetSheetIdRef.current;
+      const firstMapping = mappingSession.lines[0]?.mapping;
+      if (!workbookId || !sheetId || !firstMapping || workbookId !== firstMapping.workbookId || sheetId !== firstMapping.sheetId || worksheetStructureKey !== firstMapping.structureKey) {
+        throw new Error("Worksheet source changed during mapping. Cancel and map the cells again.");
+      }
+      const explicitLines = mappingSession.lines.map((line) => {
+        if (line.mapping.workbookId !== workbookId || line.mapping.sheetId !== sheetId || line.mapping.structureKey !== worksheetStructureKey) {
+          throw new Error("Worksheet source changed during mapping. Cancel and map the cells again.");
+        }
+        const resolved = resolveWorksheetCommercialMapping({ session: line.mapping, worksheet: worksheetRef.current, workbookId, sheetId });
+        const explicit = buildExplicitMappedCommercialSelection({ session: line.mapping, worksheet: worksheetRef.current, resolved, proposalId: line.id });
+        return { line, resolved, explicit };
+      });
+      const interpretedSelection = combineExplicitMappedCommercialSelections(explicitLines.map(({ explicit }) => explicit));
+      const confirmedLines = explicitLines.map(({ line, resolved, explicit }) => ({
+        ...explicit.confirmedLine,
+        proposalId: line.id,
+        quantity: resolved.line.quantity === null ? null : normalizeCommercialQuantity(resolved.line.quantity),
+        rate: resolved.line.rate === null ? null : normalizeCommercialRate(resolved.line.rate),
+        total: resolved.effective?.total === null || resolved.effective?.total === undefined ? null : normalizeCommercialMoney(resolved.effective.total),
+      }));
+      const sheetName = workbookSheetsRef.current.find((sheet) => sheet.id === sheetId)?.name?.trim() || worksheetDisplayName;
+      const selection = buildPublishedWorksheetSelectionFromConfirmedLines({
+        destination: "variation",
+        worksheet: worksheetRef.current,
+        selectionRange: firstMapping.capturedSelection,
+        selectionRanges: firstMapping.capturedSelections,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        owner: worksheetOwner,
+        interpretedSelection,
+        confirmedLines,
+      });
+      const target: VariationPublishTarget = {
+        variationId: mappingContext.variationId,
+        lineSelections: explicitLines.map(({ line }) => ({ rowId: line.id, section: line.section })),
+      };
+      const result = await publishWorksheetSelection({
+        client: supabase,
+        organizationId: session.organizationId,
+        opportunityId: mappingContext.opportunityId,
+        projectId: mappingContext.projectId,
+        workbookId,
+        worksheetId: workbookId,
+        sheetId,
+        worksheetName: worksheetDisplayName,
+        sheetName,
+        worksheet: worksheetRef.current,
+        selectionRange: firstMapping.capturedSelection,
+        owner: worksheetOwner,
+        selection,
+        adapter: variationDestinationAdapter,
+        target,
+      });
+      setMessage(result.result.message);
+      closeVariationCommercialMapping();
+      router.refresh();
+    } catch (publishError) {
+      setError(mapWorksheetVariationPublishErrorMessage(publishError instanceof Error ? publishError.message : "Unable to publish the mapped Variation lines."));
+    } finally {
+      setIsPublishingWorksheetSelection(false);
+    }
+  }, [closeVariationCommercialMapping, explicitWorksheetId, isDirty, isPublishingWorksheetSelection, router, session?.organizationId, supabase, variationCommercialMapping.session, variationCommercialMappingContext, worksheetDisplayName, worksheetOwner, worksheetStructureKey]);
 
   const executeWorksheetPublishToQuote = useCallback(async () => {
     if (!quotePublishDialog || !supabase || !session?.organizationId || !worksheetOpportunityId || !canWriteWorksheet) {
@@ -2387,8 +3345,8 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (quotePublishTargetMode === "existing" && !quotePublishTargetId) {
-      setError("Select the draft quote that should receive these worksheet rows.");
+    if (quotePublishTargetMode === "existing" && quotePublishTargetIds.length === 0) {
+      setError("Select at least one draft quote that should receive these worksheet rows.");
       setMessage(null);
       return;
     }
@@ -2403,12 +3361,12 @@ export function OpportunityPricingWorksheetBoard({
         const quantityValue = parseWorksheetPublishDraftNumber(line.quantity);
         const rateValue = parseWorksheetPublishDraftNumber(line.rate);
         const explicitTotal = parseWorksheetPublishDraftNumber(line.total);
-        const quantity = quantityValue === null ? null : roundWorksheetPublishNumber(quantityValue, 4);
-        const rate = rateValue === null ? null : roundWorksheetPublishNumber(rateValue, 2);
+        const quantity = quantityValue === null ? null : normalizeCommercialQuantity(quantityValue);
+        const rate = rateValue === null ? null : normalizeCommercialRate(rateValue);
         const total = explicitTotal !== null
-          ? roundWorksheetPublishNumber(explicitTotal, 2)
+          ? normalizeCommercialMoney(explicitTotal)
           : quantity !== null && rate !== null
-          ? roundWorksheetPublishNumber(quantity * rate, 2)
+          ? normalizeCommercialMoney(quantity * rate)
           : null;
 
         if (!description) {
@@ -2469,7 +3427,7 @@ export function OpportunityPricingWorksheetBoard({
       const target: QuotePublishTarget = quotePublishTargetMode === "existing"
         ? {
             mode: "existing",
-            quoteId: quotePublishTargetId,
+            quoteIds: quotePublishTargetIds,
           }
         : {
             mode: "new",
@@ -2496,7 +3454,7 @@ export function OpportunityPricingWorksheetBoard({
       const destinationResult = publishResult.result;
       setQuotePublishDialog(null);
       setQuotePublishTargetMode("new");
-      setQuotePublishTargetId("");
+      setQuotePublishTargetIds([]);
       setMessage(
         destinationResult.partialLinkFailureMessage
           ? `${destinationResult.message} ${mapWorksheetQuotePublishErrorMessage(destinationResult.partialLinkFailureMessage)}`
@@ -2516,7 +3474,7 @@ export function OpportunityPricingWorksheetBoard({
     explicitWorksheetId,
     isDirty,
     quotePublishDialog,
-    quotePublishTargetId,
+    quotePublishTargetIds,
     quotePublishTargetMode,
     session?.organizationId,
     worksheetOpportunityId,
@@ -2576,12 +3534,8 @@ export function OpportunityPricingWorksheetBoard({
             organizationId: session.organizationId,
             opportunityId: worksheetOpportunityId,
           });
-      const initialTargetMode = resolution.kind === "ready" && resolution.target.mode === "existing"
-        ? "existing"
-        : "new";
-      const initialTargetId = resolution.kind === "ready" && resolution.target.mode === "existing"
-        ? resolution.target.quoteId
-        : "";
+      const initialTargetMode = resolveInitialQuotePublishTargetMode(resolution);
+      const initialTargetIds = resolveInitialQuotePublishTargetIds(resolution);
       const firstProposal = interpretedSelection.proposedLines[0];
 
       setQuotePublishDialog({
@@ -2602,7 +3556,7 @@ export function OpportunityPricingWorksheetBoard({
         quotes,
       });
       setQuotePublishTargetMode(initialTargetMode);
-      setQuotePublishTargetId(initialTargetId);
+      setQuotePublishTargetIds(initialTargetIds);
     } catch (publishError) {
       setError(mapWorksheetQuotePublishErrorMessage(
         publishError instanceof Error ? publishError.message : "Unable to prepare quote publishing.",
@@ -2611,7 +3565,6 @@ export function OpportunityPricingWorksheetBoard({
     }
   }, [
     canWriteWorksheet,
-    executeWorksheetPublishToQuote,
     session?.organizationId,
     worksheetOpportunityId,
     supabase,
@@ -2659,12 +3612,12 @@ export function OpportunityPricingWorksheetBoard({
         const quantityValue = parseWorksheetPublishDraftNumber(line.quantity);
         const rateValue = parseWorksheetPublishDraftNumber(line.rate);
         const explicitTotal = parseWorksheetPublishDraftNumber(line.total);
-        const quantity = quantityValue === null ? null : roundWorksheetPublishNumber(quantityValue, 4);
-        const rate = rateValue === null ? null : roundWorksheetPublishNumber(rateValue, 2);
+        const quantity = quantityValue === null ? null : normalizeCommercialQuantity(quantityValue);
+        const rate = rateValue === null ? null : normalizeCommercialRate(rateValue);
         const total = explicitTotal !== null
-          ? roundWorksheetPublishNumber(explicitTotal, 2)
+          ? normalizeCommercialMoney(explicitTotal)
           : quantity !== null && rate !== null
-          ? roundWorksheetPublishNumber(quantity * rate, 2)
+          ? normalizeCommercialMoney(quantity * rate)
           : null;
 
         if (!description) {
@@ -2882,6 +3835,11 @@ export function OpportunityPricingWorksheetBoard({
     worksheetOwner,
   ]);
 
+  // Retained for the legacy inferred-selection dialogs; commercial mapping uses
+  // the explicit publishers above and never routes through inference.
+  void beginWorksheetPublishToQuote;
+  void beginWorksheetPublishToPurchaseOrder;
+
   const executeWorksheetPublishToVariation = useCallback(async () => {
     if (!variationPublishDialog || !supabase || !session?.organizationId || !canWriteWorksheet) {
       setError("You do not have permission to publish worksheet rows to a variation.");
@@ -2906,12 +3864,12 @@ export function OpportunityPricingWorksheetBoard({
         const quantityValue = parseWorksheetPublishDraftNumber(line.quantity);
         const rateValue = parseWorksheetPublishDraftNumber(line.rate);
         const explicitTotal = parseWorksheetPublishDraftNumber(line.total);
-        const quantity = quantityValue === null ? null : roundWorksheetPublishNumber(quantityValue, 4);
-        const rate = rateValue === null ? null : roundWorksheetPublishNumber(rateValue, 2);
+        const quantity = quantityValue === null ? null : normalizeCommercialQuantity(quantityValue);
+        const rate = rateValue === null ? null : normalizeCommercialRate(rateValue);
         const total = explicitTotal !== null
-          ? roundWorksheetPublishNumber(explicitTotal, 2)
+          ? normalizeCommercialMoney(explicitTotal)
           : quantity !== null && rate !== null
-          ? roundWorksheetPublishNumber(quantity * rate, 2)
+          ? normalizeCommercialMoney(quantity * rate)
           : null;
 
         if (!description) {
@@ -3055,7 +4013,7 @@ export function OpportunityPricingWorksheetBoard({
 
       const firstProposal = interpretedSelection.proposedLines[0];
       const defaultSection = normalizeVariationPublishSection(
-        firstProposal?.rowCategoryHint ?? firstProposal?.sectionHeading ?? null,
+        firstProposal?.sectionHeading ?? null,
       );
 
       setVariationPublishDialog({
@@ -3094,16 +4052,19 @@ export function OpportunityPricingWorksheetBoard({
     supabase,
     worksheetOwner,
   ]);
+  // Retained until the explicit Variation mapping browser and regression suites
+  // prove the inferred-selection path can be deleted safely.
+  void beginWorksheetPublishToVariation;
 
   const confirmDiscardUnsavedChanges = useCallback(() => {
-    if (!isDirty) {
+    if (!hasUnsavedWorksheetChanges) {
       return true;
     }
 
     return window.confirm(
       "You have unsaved pricing worksheet changes. Leave this page and discard those local edits?"
     );
-  }, [isDirty]);
+  }, [hasUnsavedWorksheetChanges]);
 
   const handleAiPromptChange = useCallback((value: string) => {
     setAiPrompt(value);
@@ -3143,7 +4104,7 @@ export function OpportunityPricingWorksheetBoard({
   }, [aiAppliedSuggestedEditGroupIds, aiFindingStates, aiFollowUpPrompt, aiPreviewResponse]);
 
   useEffect(() => {
-    if (!isDirty) {
+    if (!hasUnsavedWorksheetChanges) {
       return;
     }
 
@@ -3156,11 +4117,11 @@ export function OpportunityPricingWorksheetBoard({
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [isDirty]);
+  }, [hasUnsavedWorksheetChanges]);
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
-      if (!isDirty || event.defaultPrevented) {
+      if (!hasUnsavedWorksheetChanges || event.defaultPrevented) {
         return;
       }
 
@@ -3200,7 +4161,7 @@ export function OpportunityPricingWorksheetBoard({
     return () => {
       document.removeEventListener("click", handleDocumentClick, true);
     };
-  }, [confirmDiscardUnsavedChanges, isDirty]);
+  }, [confirmDiscardUnsavedChanges, hasUnsavedWorksheetChanges]);
 
   useEffect(() => {
     if (onDirtyStateChange) {
@@ -3212,7 +4173,7 @@ export function OpportunityPricingWorksheetBoard({
       const nextHref = window.location.href;
       locationHrefRef.current = nextHref;
 
-      if (!isDirty) {
+      if (!hasUnsavedWorksheetChanges) {
         return;
       }
 
@@ -3228,7 +4189,7 @@ export function OpportunityPricingWorksheetBoard({
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [confirmDiscardUnsavedChanges, isDirty, onDirtyStateChange]);
+  }, [confirmDiscardUnsavedChanges, hasUnsavedWorksheetChanges, onDirtyStateChange]);
 
   const effectiveColumns = useMemo(
     () =>
@@ -3310,6 +4271,20 @@ export function OpportunityPricingWorksheetBoard({
       ])
     );
   }, [virtualColumns.visibleColumns, virtualRows.virtualRows, worksheet.cells]);
+  const activeDescendantCellId = useMemo(() => {
+    if (!selectedSingleCellKey) {
+      return undefined;
+    }
+    const parsed = parseWorksheetCellKey(selectedSingleCellKey);
+    if (
+      !parsed ||
+      !virtualRows.virtualRows.some(({ row }) => row.id === parsed.rowId) ||
+      !virtualColumns.visibleColumns.some((column) => column.id === parsed.columnId)
+    ) {
+      return undefined;
+    }
+    return `worksheet-cell-${selectedSingleCellKey}`;
+  }, [selectedSingleCellKey, virtualColumns.visibleColumns, virtualRows.virtualRows]);
 
   useEffect(() => {
     if (isLoadingWorksheet) {
@@ -3353,6 +4328,10 @@ export function OpportunityPricingWorksheetBoard({
   }, [worksheet]);
 
   useEffect(() => {
+    selectionStateRef.current = selectionState;
+  }, [selectionState]);
+
+  useEffect(() => {
     pricingSummaryRef.current = pricingSummary;
   }, [pricingSummary]);
 
@@ -3387,7 +4366,9 @@ export function OpportunityPricingWorksheetBoard({
         return;
       }
 
+      isWorksheetTitleEditingRef.current = false;
       setIsWorksheetNameEditorOpen(false);
+      void worksheetTitleAutosaveControllerRef.current?.flush();
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -3411,6 +4392,7 @@ export function OpportunityPricingWorksheetBoard({
     rangeDragAnchorCellKeyRef.current = null;
     formulaReferenceDragAnchorCellKeyRef.current = null;
     formulaReferenceDragBaseValueRef.current = null;
+    formulaReferenceDragSelectionRef.current = null;
     setIsDraggingSelection(false);
   }, []);
 
@@ -3660,6 +4642,7 @@ export function OpportunityPricingWorksheetBoard({
           organizationId,
           opportunityId: worksheetOpportunityId,
           projectId: worksheetProjectId,
+          projectOwned: worksheetOwner.ownerType === "project",
           quoteId: worksheetOwner.quoteId,
           variationId: worksheetOwner.variationId,
           workbookId: explicitWorksheetId ?? null,
@@ -3703,6 +4686,11 @@ export function OpportunityPricingWorksheetBoard({
           persistedLastActiveSheetIdRef.current = null;
           setWorkbookSheets([]);
           setWorksheetName(null);
+          synchronizeLoadedWorksheetTitle({
+            sheetId: null,
+            title: "Pricing Worksheet",
+            updatedAt: null,
+          });
           setWorksheetTradePackage(null);
           setWorksheet(blankWorksheet);
           loadedWorksheetScopeKeyRef.current = scopeKey;
@@ -3781,6 +4769,7 @@ export function OpportunityPricingWorksheetBoard({
     session?.organizationId,
     worksheetOpportunityId,
     supabase,
+    synchronizeLoadedWorksheetTitle,
     updateSheetUrlState,
   ]);
 
@@ -3791,8 +4780,18 @@ export function OpportunityPricingWorksheetBoard({
       validateFormulaOutputs?: boolean;
       trackLearning?: boolean;
       occurredAt?: string;
+      mappedAction?: "measure";
     }
   ) => {
+    const isAuthorizedMappedMeasureCommit =
+      options?.mappedAction === "measure" && activeWorksheetMapping?.kind === "measure" && canWriteWorksheet;
+    if (!canMutateWorksheet && !isAuthorizedMappedMeasureCommit) {
+      return {
+        committed: false,
+        changed: false,
+        message: isWorksheetMappingMode ? "Worksheet changes are disabled during Mapping Mode." : "You do not have permission to edit this worksheet.",
+      } satisfies WorksheetCommitResult;
+    }
     const endMutationMeasure = startPricingWorksheetPerformanceMeasure("committed-change", {
       recalculateFormulas: options?.recalculateFormulas !== false,
       validateFormulaOutputs: options?.validateFormulaOutputs === true,
@@ -3851,6 +4850,7 @@ export function OpportunityPricingWorksheetBoard({
     historyPastRef.current = nextHistory.past;
     historyFutureRef.current = nextHistory.future;
     worksheetRef.current = committedWorksheet;
+    worksheetMutationRevisionRef.current += 1;
     const nextPricingSummary = deriveWorksheetPricingSummary(committedWorksheet, pricingSummaryRef.current, {
       calculatedAt: new Date().toISOString(),
     });
@@ -3873,7 +4873,7 @@ export function OpportunityPricingWorksheetBoard({
       changed: true,
       worksheet: committedWorksheet,
     } satisfies WorksheetCommitResult;
-  }, [explicitWorksheetId, persistWorksheetLearningArtifacts, worksheetId]);
+  }, [activeWorksheetMapping?.kind, canMutateWorksheet, canWriteWorksheet, explicitWorksheetId, isWorksheetMappingMode, persistWorksheetLearningArtifacts, worksheetId]);
 
   const updateCell = useCallback((cellKey: string, nextValue: string) => {
     if (isCellCommitNoOp(worksheetRef.current.cells[cellKey], nextValue)) {
@@ -3931,6 +4931,7 @@ export function OpportunityPricingWorksheetBoard({
     historyPastRef.current = nextPast;
     historyFutureRef.current = nextFuture;
     worksheetRef.current = restoredWorksheet;
+    worksheetMutationRevisionRef.current += 1;
 
     setHistoryPast(nextPast);
     setHistoryFuture(nextFuture);
@@ -3946,10 +4947,14 @@ export function OpportunityPricingWorksheetBoard({
     setActiveCellKey(null);
     setActiveEditor(null);
     setEditingCellValue("");
+    isFormulaReferencePickArmedRef.current = false;
     focusWorksheetSurface();
   }, [focusWorksheetSurface]);
 
-  const focusFormulaBar = useCallback((options?: { selectAll?: boolean }) => {
+  const focusFormulaBar = useCallback((options?: {
+    selectAll?: boolean;
+    selection?: WorksheetTextSelection;
+  }) => {
     requestAnimationFrame(() => {
       const input = formulaBarRef.current;
       if (!input) {
@@ -3958,7 +4963,9 @@ export function OpportunityPricingWorksheetBoard({
 
       focusElementWithoutScroll(input);
 
-      if (options?.selectAll) {
+      if (options?.selection) {
+        input.setSelectionRange(options.selection.start, options.selection.end);
+      } else if (options?.selectAll) {
         input.select();
       } else {
         const end = input.value.length;
@@ -3967,7 +4974,10 @@ export function OpportunityPricingWorksheetBoard({
     });
   }, []);
 
-  const focusInputCell = useCallback((cellKey: string | null, options?: { selectAll?: boolean }) => {
+  const focusInputCell = useCallback((cellKey: string | null, options?: {
+    selectAll?: boolean;
+    selection?: WorksheetTextSelection;
+  }) => {
     if (!cellKey) {
       return;
     }
@@ -3979,6 +4989,11 @@ export function OpportunityPricingWorksheetBoard({
       }
 
       focusElementWithoutScroll(input);
+
+      if (options?.selection) {
+        input.setSelectionRange(options.selection.start, options.selection.end);
+        return;
+      }
 
       if (options?.selectAll === false) {
         const end = input.value.length;
@@ -4017,11 +5032,25 @@ export function OpportunityPricingWorksheetBoard({
     return buildWorksheetCellKey(nextColumn.id, nextRow.id);
   }, [worksheet.columns, worksheet.rows]);
 
-  const isFormulaEditing =
-    activeCellKey !== null && editingCellValue.trim().startsWith("=");
+  const isFormulaEditing = shouldShowFormulaReferenceHighlights({
+    activeCellKey,
+    activeEditor,
+    editingValue: editingCellValue,
+  });
 
   const isFormulaReferenceMode =
     isFormulaEditing && activeCellKey !== null;
+
+  const updateFormulaReferencePickState = useCallback((
+    value: string,
+    selection: WorksheetTextSelection,
+  ) => {
+    editingCellValueRef.current = value;
+    editorTextSelectionRef.current = selection;
+    isFormulaReferencePickArmedRef.current = Boolean(
+      getWorksheetFormulaReferencePickContext(value, selection),
+    );
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -4061,45 +5090,84 @@ export function OpportunityPricingWorksheetBoard({
   const beginCellEdit = useCallback((
     cellKey: string,
     cell: WorksheetCell | undefined,
-    options?: { editor?: "cell" | "formulaBar"; focus?: boolean }
+    options?: {
+      editor?: "cell" | "formulaBar";
+      focus?: boolean;
+      selection?: WorksheetTextSelection;
+    }
   ) => {
-    if (!canWriteWorksheet) {
+    if (!canMutateWorksheet) {
       return;
     }
 
     const nextEditor = options?.editor ?? "cell";
+    const originalValue = getRawCellInput(cell);
+    editingSessionRef.current = {
+      cellKey,
+      originalValue,
+    };
+    const nextSelection = options?.selection ?? {
+      start: originalValue.length,
+      end: originalValue.length,
+    };
+    updateFormulaReferencePickState(originalValue, nextSelection);
     setActiveCellKey(cellKey);
     setActiveEditor(nextEditor);
     replaceSelection(cellKey, cellKey);
-    setEditingCellValue(
-      cell?.formula ??
-        (typeof cell?.value === "number"
-          ? String(cell.value)
-          : typeof cell?.value === "string"
-          ? cell.value
-          : "")
-    );
+    setEditingCellValue(originalValue);
 
     if (options?.focus === false) {
       return;
     }
 
     if (nextEditor === "formulaBar") {
-      focusFormulaBar({ selectAll: false });
+      focusFormulaBar({ selectAll: false, selection: nextSelection });
       return;
     }
 
-    focusInputCell(cellKey);
-  }, [canWriteWorksheet, focusFormulaBar, focusInputCell, replaceSelection]);
+    focusInputCell(cellKey, {
+      selectAll: false,
+      selection: nextSelection,
+    });
+  }, [canMutateWorksheet, focusFormulaBar, focusInputCell, replaceSelection, updateFormulaReferencePickState]);
+
+  const cancelCellEdit = useCallback((cellKey?: string | null) => {
+    const session = editingSessionRef.current;
+    const targetCellKey = session?.cellKey ?? cellKey ?? activeCellKey;
+    const formulaBar = formulaBarRef.current;
+    if (activeEditor === "formulaBar" && formulaBar && formulaBar === document.activeElement) {
+      suppressFormulaBarBlurCommitRef.current = true;
+      formulaBar.blur();
+    }
+    if (targetCellKey) {
+      const input = inputRefs.current[targetCellKey];
+      if (input && input === document.activeElement) {
+        suppressBlurCommitCellKeyRef.current = targetCellKey;
+        input.blur();
+      }
+    }
+
+    editingSessionRef.current = null;
+    editorTextSelectionRef.current = null;
+    isFormulaReferencePickArmedRef.current = false;
+    setActiveCellKey(null);
+    setActiveEditor(null);
+    setEditingCellValue("");
+    if (targetCellKey) {
+      replaceSelection(targetCellKey, targetCellKey);
+    }
+    focusWorksheetSurface();
+  }, [activeCellKey, activeEditor, focusWorksheetSurface, replaceSelection]);
 
   const commitCellEdit = useCallback((cellKey: string, nextValue: string, nextSelectedCellKey?: string | null) => {
-    if (formulaBarRef.current === document.activeElement) {
+    const formulaBar = formulaBarRef.current;
+    if (formulaBar && formulaBar === document.activeElement) {
       suppressFormulaBarBlurCommitRef.current = true;
-      formulaBarRef.current.blur();
+      formulaBar.blur();
     }
 
     const activeInput = inputRefs.current[cellKey];
-    if (activeInput === document.activeElement) {
+    if (activeInput && activeInput === document.activeElement) {
       suppressBlurCommitCellKeyRef.current = cellKey;
       activeInput.blur();
     }
@@ -4110,19 +5178,25 @@ export function OpportunityPricingWorksheetBoard({
     setActiveCellKey((current) => (current === cellKey ? null : current));
     setActiveEditor(null);
     setEditingCellValue("");
+    editingSessionRef.current = null;
+    editorTextSelectionRef.current = null;
+    isFormulaReferencePickArmedRef.current = false;
     replaceSelection(nextSelectedCellKey ?? cellKey, nextSelectedCellKey ?? cellKey);
     focusWorksheetSurface({ immediate: true });
   }, [focusWorksheetSurface, replaceSelection, updateCell]);
 
   const handleWorksheetPaste = (event: ReactClipboardEvent<HTMLElement>) => {
-    if (!canWriteWorksheet) {
+    if (!canMutateWorksheet) {
       return;
     }
 
     const target = event.target;
     const isTextEditingTarget =
       target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-    if (isTextEditingTarget) {
+    if (!canHandleWorksheetNavigation({
+      hasActiveEditor: Boolean(activeCellKey),
+      isTextEditingTarget,
+    })) {
       return;
     }
 
@@ -4187,28 +5261,48 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     handledFormulaReferenceMouseDownRef.current = true;
+    if (cellReference === activeCellKey) {
+      return;
+    }
+    if (!isFormulaReferencePickArmedRef.current) {
+      return;
+    }
+
+    const baseValue = editingCellValueRef.current;
+    const baseSelection = editorTextSelectionRef.current;
+    const insertion = applyWorksheetFormulaReferencePickTransaction({
+      value: baseValue,
+      selection: baseSelection,
+      reference: cellReference,
+    });
+    isFormulaReferencePickArmedRef.current = false;
+    if (insertion.action === "noop") {
+      return;
+    }
+
     didDragSelectionRef.current = false;
     isDraggingSelectionRef.current = true;
     rangeDragAnchorCellKeyRef.current = cellReference;
     formulaReferenceDragAnchorCellKeyRef.current = cellReference;
-    formulaReferenceDragBaseValueRef.current = editingCellValueRef.current;
+    formulaReferenceDragBaseValueRef.current = baseValue;
+    formulaReferenceDragSelectionRef.current = baseSelection;
     setIsDraggingSelection(true);
-    setEditingCellValue(`${editingCellValueRef.current}${cellReference}`);
-    replaceSelection(cellReference, cellReference);
+    editorTextSelectionRef.current = insertion.selection;
+    editingCellValueRef.current = insertion.value;
+    setEditingCellValue(insertion.value);
 
     if (activeEditor === "formulaBar") {
-      focusFormulaBar({ selectAll: false });
+      focusFormulaBar({ selectAll: false, selection: insertion.selection });
       return;
     }
 
-    focusInputCell(activeCellKey, { selectAll: false });
+    focusInputCell(activeCellKey, { selectAll: false, selection: insertion.selection });
   }, [
     activeCellKey,
     activeEditor,
     focusFormulaBar,
     focusInputCell,
     isFormulaReferenceMode,
-    replaceSelection,
   ]);
 
   const handleCellBlur = (cellKey: string) => {
@@ -4355,35 +5449,35 @@ export function OpportunityPricingWorksheetBoard({
   }, [applyCommittedWorksheetChange, measureWorksheetCellLayout, preserveWorksheetViewportScroll]);
 
   const openWorksheetNameEditor = () => {
-    setWorksheetNameDraft(worksheetDisplayName);
+    if (!canMutateWorksheet) return;
+    isWorksheetTitleEditingRef.current = true;
     setIsWorksheetNameEditorOpen(true);
   };
 
+  const updateWorksheetNameDraft = (nextTitle: string) => {
+    worksheetTitleDraftRef.current = nextTitle;
+    setWorksheetTitleDraft(nextTitle);
+    worksheetTitleAutosaveControllerRef.current?.setDraft(nextTitle);
+  };
+
   const applyWorksheetNameDraft = () => {
-    const nextName = worksheetNameDraft.trim();
-    if (!nextName || nextName === worksheetDisplayName) {
-      setIsWorksheetNameEditorOpen(false);
-      setWorksheetNameDraft(worksheetDisplayName);
-      return;
-    }
+    isWorksheetTitleEditingRef.current = false;
+    setIsWorksheetNameEditorOpen(false);
+    void worksheetTitleAutosaveControllerRef.current?.flush();
+  };
 
-    const commitResult = applyCommittedWorksheetChange(
-      (current) => ({
-        ...current,
-        sheetName: nextName,
-      }),
-      { recalculateFormulas: false }
-    );
-
-    if (commitResult.committed) {
-      setWorksheetName(nextName);
-      setMessage(null);
-    }
-
+  const restoreConfirmedWorksheetName = () => {
+    const confirmedTitle = worksheetTitleAutosaveControllerRef.current?.getSnapshot().confirmedTitle
+      ?? worksheetTitleAutosave.confirmedTitle;
+    isWorksheetTitleEditingRef.current = false;
+    worksheetTitleAutosaveControllerRef.current?.escape();
+    worksheetTitleDraftRef.current = confirmedTitle;
+    setWorksheetTitleDraft(confirmedTitle);
     setIsWorksheetNameEditorOpen(false);
   };
 
   const beginColumnResize = (event: ReactMouseEvent<HTMLButtonElement>, columnId: string, width: number) => {
+    if (!canMutateWorksheet) return;
     event.preventDefault();
     event.stopPropagation();
     preserveWorksheetViewportScroll();
@@ -4394,6 +5488,7 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const beginRowResize = useCallback((event: ReactMouseEvent<HTMLButtonElement>, rowId: string, height: number) => {
+    if (!canMutateWorksheet) return;
     event.preventDefault();
     event.stopPropagation();
     preserveWorksheetViewportScroll();
@@ -4401,16 +5496,248 @@ export function OpportunityPricingWorksheetBoard({
     setRowResizeStartY(event.clientY);
     setRowResizeStartHeight(height);
     setRowResizePreviewHeight(height);
-  }, [preserveWorksheetViewportScroll]);
+  }, [canMutateWorksheet, preserveWorksheetViewportScroll]);
 
-  const commitActiveEditIfNeeded = () => {
+  const commitActiveEditIfNeeded = useCallback(() => {
     if (!activeCellKey) {
       return;
     }
 
     suppressBlurCommitCellKeyRef.current = activeCellKey;
     commitCellEdit(activeCellKey, editingCellValue);
-  };
+  }, [activeCellKey, commitCellEdit, editingCellValue]);
+
+  const captureSidePanelTarget = useCallback((cellAddress: string): PricingWorksheetMaterialTarget | null => {
+    const currentWorkbookId = explicitWorksheetId ?? worksheetIdRef.current;
+    const currentSheetId = worksheetSheetIdRef.current;
+    if (!currentWorkbookId || !currentSheetId || !getWorksheetAnchorPosition(worksheetRef.current, cellAddress)) {
+      return null;
+    }
+    const current = worksheetRef.current;
+    return {
+      workbookId: currentWorkbookId,
+      sheetId: currentSheetId,
+      cellAddress,
+      cell: current.cells[cellAddress]
+        ? { ...current.cells[cellAddress], metadata: { ...current.cells[cellAddress]?.metadata } } as WorksheetCell
+        : null,
+      structureKey: `${current.columns.map((column) => column.id).join(",")}|${current.rows.map((row) => row.id).join(",")}`,
+    };
+  }, [explicitWorksheetId]);
+
+  const openMaterialLibrary = useCallback(() => {
+    if (commercialMapping.session || variationCommercialMapping.session) {
+      setError("Cancel Commercial Mapping Mode before opening the Material Library.");
+      return;
+    }
+    commitActiveEditIfNeeded();
+    setIsAiChatOpen(false);
+    measureMapping.cancel();
+    setMeasureMappingHighlightField(null);
+    consumedMaterialTargetRef.current = null;
+    setMaterialTarget(selectedSingleCellKey ? captureSidePanelTarget(selectedSingleCellKey) : null);
+    setActiveSidePanel("materials");
+  }, [captureSidePanelTarget, commercialMapping.session, commitActiveEditIfNeeded, measureMapping, selectedSingleCellKey, variationCommercialMapping.session]);
+
+  const closeMaterialLibrary = useCallback(() => {
+    setActiveSidePanel(null);
+    setMaterialTarget(null);
+    consumedMaterialTargetRef.current = null;
+  }, []);
+
+  const openMeasureDrawer = useCallback(() => {
+    if (commercialMapping.session) {
+      closeCommercialMapping();
+    }
+    if (variationCommercialMapping.session) {
+      closeVariationCommercialMapping();
+    }
+    commitActiveEditIfNeeded();
+    setIsAiChatOpen(false);
+    setIsAiDialogOpen(false);
+    consumedMaterialTargetRef.current = null;
+    setMaterialTarget(null);
+    const currentWorkbookId = explicitWorksheetId ?? worksheetIdRef.current;
+    const currentSheetId = worksheetSheetIdRef.current;
+    if (!currentWorkbookId || !currentSheetId) {
+      setError("Save the pricing workbook before mapping Measures.");
+      return;
+    }
+    measureMapping.start({ workbookId: currentWorkbookId, sheetId: currentSheetId, structureKey: buildWorksheetStructureKey(worksheetRef.current) });
+    setMeasureMappingHighlightField(null);
+    setActiveSidePanel("measures");
+  }, [closeCommercialMapping, closeVariationCommercialMapping, commercialMapping.session, commitActiveEditIfNeeded, explicitWorksheetId, measureMapping, variationCommercialMapping.session]);
+
+  const closeMeasureDrawer = useCallback(() => {
+    setActiveSidePanel(null);
+    measureMapping.cancel();
+    setMeasureMappingHighlightField(null);
+    requestAnimationFrame(() => worksheetSurfaceRef.current?.focus({ preventScroll: true }));
+  }, [measureMapping]);
+
+  const insertMaterialPrice = useCallback((item: PricingWorksheetMaterialPickerItem) => {
+    const target = materialTarget;
+    if (!target || !canMutateWorksheet) return false;
+    const currentSheetId = worksheetSheetIdRef.current;
+    const current = worksheetRef.current;
+    const currentStructureKey = `${current.columns.map((column) => column.id).join(",")}|${current.rows.map((row) => row.id).join(",")}`;
+    if (
+      currentSheetId !== target.sheetId ||
+      currentStructureKey !== target.structureKey ||
+      !getWorksheetAnchorPosition(current, target.cellAddress)
+    ) {
+      setError("The selected Material insertion cell is no longer available. Select a new cell and try again.");
+      return false;
+    }
+    try {
+      const commitResult = applyCommittedWorksheetChange((worksheetData) => ({
+        ...worksheetData,
+        cells: {
+          ...worksheetData.cells,
+          [target.cellAddress]: buildMaterialEstimatingRateWorksheetCell({
+            existingCell: worksheetData.cells[target.cellAddress],
+            item,
+            bindingId: crypto.randomUUID(),
+          }),
+        },
+      }), { trackLearning: true });
+      if (!commitResult.committed || !commitResult.changed) return false;
+      replaceSelection(target.cellAddress, target.cellAddress);
+      consumedMaterialTargetRef.current = `${target.sheetId}:${target.cellAddress}`;
+      setMaterialTarget(null);
+      setMessage(`${item.materialName} price inserted into ${target.cellAddress}. Save the workbook to preserve its source.`);
+      return true;
+    } catch (insertionError) {
+      setError(insertionError instanceof Error ? insertionError.message : "Unable to insert the Material price.");
+      return false;
+    }
+  }, [applyCommittedWorksheetChange, canMutateWorksheet, materialTarget, replaceSelection]);
+
+  const insertMeasureValue = useCallback((
+    source: PricingWorksheetMeasureSource,
+    confirmedConflictSignature?: string,
+  ): PricingWorksheetMeasureInsertResult => {
+    const mappingSession = measureMapping.session;
+    if (!mappingSession || !canWriteWorksheet) return { status: "blocked" };
+    const currentSheetId = worksheetSheetIdRef.current;
+    const current = worksheetRef.current;
+    const currentWorkbookId = explicitWorksheetId ?? worksheetIdRef.current;
+    const validation = validatePricingWorksheetMeasureMappings({
+      session: mappingSession,
+      worksheet: current,
+      workbookId: currentWorkbookId,
+      sheetId: currentSheetId,
+    });
+    if (validation.error) {
+      setError(validation.error);
+      return { status: "blocked" };
+    }
+    const targetKeys = validation.entries.map(({ target }) => target.cellKey);
+    const conflicts = buildPricingWorksheetMeasureInsertConflicts(current, validation.entries);
+    const conflictSignature = buildPricingWorksheetMeasureConflictSignature(conflicts);
+    if (conflicts.length > 0 && confirmedConflictSignature !== conflictSignature) {
+      return { status: "conflicts", conflicts, signature: conflictSignature };
+    }
+    if (confirmedConflictSignature !== undefined && confirmedConflictSignature !== conflictSignature) {
+      setError("A mapped worksheet cell changed while confirmation was open. Review the destinations and try again.");
+      return { status: "blocked" };
+    }
+    const insertedAt = new Date().toISOString();
+    const commitResult = applyCommittedWorksheetChange((worksheetData) => applyPricingWorksheetMeasureMappings({
+      worksheet: worksheetData,
+      entries: validation.entries,
+      source,
+      insertedAt,
+    }), { trackLearning: true, mappedAction: "measure" });
+    if (!commitResult.committed || !commitResult.changed) return { status: "blocked" };
+    replaceSelection(targetKeys[0] ?? null, targetKeys[0] ?? null);
+    measureMapping.reset();
+    setMeasureMappingHighlightField(null);
+    setMessage(`${source.name} inserted into ${targetKeys.join(", ")}. Save the workbook to preserve its source.`);
+    return { status: "inserted" };
+  }, [applyCommittedWorksheetChange, canWriteWorksheet, explicitWorksheetId, measureMapping, replaceSelection]);
+
+  const updateReviewedMaterialPrice = useCallback((
+    group: MaterialPriceReviewGroup,
+    target: MaterialPriceReviewBindingTarget,
+  ) => {
+    const currentSheetId = worksheetSheetIdRef.current;
+    const currentPrice = group.currentPrice;
+    const current = worksheetRef.current;
+    const currentCell = current.cells[target.cellAddress];
+    const provenance = getWorksheetCellMaterialPricingProvenance(currentCell);
+    if (
+      !canMutateWorksheet || !currentPrice || !["price_changed", "estimating_unit_mismatch"].includes(group.classification) ||
+      target.sheetId !== currentSheetId || !currentCell || provenance?.bindingId !== target.bindingId ||
+      provenance.supplierProductId !== group.supplierProductId || currentCell.formula ||
+      currentCell.type !== "number" || typeof currentCell.value !== "number"
+    ) return false;
+
+    const pricing = group.currentPricing ?? {
+      sourcePricing: {
+        supplierPriceId: currentPrice.id, unitCost: currentPrice.unitCost, unit: currentPrice.unit,
+        currency: currentPrice.currency, sourceTaxBasis: currentPrice.sourceTaxBasis,
+        sourceTaxRate: currentPrice.sourceTaxRate, taxJurisdictionCode: currentPrice.taxJurisdictionCode,
+        comparisonTaxBasis: null, comparisonTaxRate: null, effectiveFrom: currentPrice.effectiveFrom,
+      },
+      estimatingPricing: {
+        status: "available" as const, derivationKind: "direct_unit_match" as const,
+        normalizedSourceUnitCost: currentPrice.unitCost, unitCost: currentPrice.unitCost,
+        unit: currentPrice.unit, currency: currentPrice.currency, taxBasis: null,
+        calculationVersion: "material_estimating_price_v1" as const, evaluatedAt: currentPrice.evaluatedAt,
+      },
+      conversion: null,
+    };
+    const item: PricingWorksheetMaterialPickerItem = {
+      materialId: group.materialId,
+      materialName: group.materialName,
+      materialDescription: null,
+      category: null,
+      defaultUnit: pricing.estimatingPricing.unit,
+      supplierId: group.supplierId,
+      supplierName: group.supplierName,
+      supplierProductId: group.supplierProductId,
+      supplierProductDescription: group.supplierProductDescription,
+      supplierSku: group.supplierSku,
+      supplierUnit: currentPrice.unit,
+      isPreferred: false,
+      pricing,
+    };
+    const buildCell = provenance.version === 2 || group.classification === "estimating_unit_mismatch"
+      ? buildMaterialEstimatingRateWorksheetCell : buildMaterialPriceWorksheetCell;
+    const result = applyCommittedWorksheetChange((worksheetData) => ({
+      ...worksheetData,
+      cells: {
+        ...worksheetData.cells,
+        [target.cellAddress]: buildCell({
+          existingCell: worksheetData.cells[target.cellAddress],
+          item,
+          bindingId: crypto.randomUUID(),
+        }),
+      },
+    }), { trackLearning: true });
+    if (!result.committed || !result.changed) return false;
+    replaceSelection(target.cellAddress, target.cellAddress);
+    setMessage(`${group.materialName} updated to the current Supplier Price in ${target.cellAddress}. Save the workbook to preserve the update.`);
+    return true;
+  }, [applyCommittedWorksheetChange, canMutateWorksheet, replaceSelection]);
+
+  useEffect(() => {
+    if (activeSidePanel !== "materials" || materialTarget || !selectedSingleCellKey || !worksheetSheetId) return;
+    if (consumedMaterialTargetRef.current === `${worksheetSheetId}:${selectedSingleCellKey}`) return;
+    setMaterialTarget(captureSidePanelTarget(selectedSingleCellKey));
+  }, [activeSidePanel, captureSidePanelTarget, materialTarget, selectedSingleCellKey, worksheetSheetId]);
+
+  useEffect(() => {
+    if (!materialTarget || activeSidePanel !== "materials") return;
+    if (
+      materialTarget.sheetId === worksheetSheetId &&
+      materialTarget.structureKey === worksheetStructureKey &&
+      getWorksheetAnchorPosition(worksheet, materialTarget.cellAddress)
+    ) return;
+    consumedMaterialTargetRef.current = `${materialTarget.sheetId}:${materialTarget.cellAddress}`;
+    setMaterialTarget(null);
+  }, [activeSidePanel, materialTarget, worksheet, worksheetSheetId, worksheetStructureKey]);
 
   const applyFormattingPatchToSelection = (patch: WorksheetCellFormat | ((format: WorksheetCellFormat) => WorksheetCellFormat)) => {
     if (!selectedRange) {
@@ -4704,7 +6031,7 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const insertRowAtSelection = (position: "above" | "below") => {
-    if (!canWriteWorksheet) {
+    if (!canMutateWorksheet) {
       return;
     }
 
@@ -4730,7 +6057,7 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const insertColumnAtSelection = (position: "left" | "right") => {
-    if (!canWriteWorksheet) {
+    if (!canMutateWorksheet) {
       return;
     }
 
@@ -4804,12 +6131,12 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const canDeleteRowRange = (startRowIndex: number, endRowIndex: number) =>
-    canWriteWorksheet &&
+    canMutateWorksheet &&
     worksheetRef.current.rowCount > 1 &&
     endRowIndex - startRowIndex + 1 < worksheetRef.current.rowCount;
 
   const canDeleteColumnRange = (startColumnIndex: number, endColumnIndex: number) =>
-    canWriteWorksheet &&
+    canMutateWorksheet &&
     worksheetRef.current.columnCount > 1 &&
     endColumnIndex - startColumnIndex + 1 < worksheetRef.current.columnCount;
 
@@ -5108,7 +6435,8 @@ export function OpportunityPricingWorksheetBoard({
     event.stopPropagation();
     const preservedRange = cloneWorksheetSelectionRange(range);
     const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));
-    runContextMenuAction(() => beginWorksheetPublishToQuote(preservedRange, preservedSelectionRanges), {
+    const startingCell = contextMenu?.type === "cell" ? contextMenu.cellKey : selectedWorksheetCellKey;
+    runContextMenuAction(() => startQuoteCommercialMapping(preservedRange, preservedSelectionRanges, startingCell), {
       preserveUntilNextFrame: true,
     });
   };
@@ -5121,7 +6449,8 @@ export function OpportunityPricingWorksheetBoard({
     event.stopPropagation();
     const preservedRange = cloneWorksheetSelectionRange(range);
     const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));
-    runContextMenuAction(() => beginWorksheetPublishToPurchaseOrder(preservedRange, preservedSelectionRanges), {
+    const startingCell = contextMenu?.type === "cell" ? contextMenu.cellKey : selectedWorksheetCellKey;
+    runContextMenuAction(() => startPurchaseOrderCommercialMapping(preservedRange, preservedSelectionRanges, startingCell), {
       preserveUntilNextFrame: true,
     });
   };
@@ -5134,7 +6463,8 @@ export function OpportunityPricingWorksheetBoard({
     event.stopPropagation();
     const preservedRange = cloneWorksheetSelectionRange(range);
     const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));
-    runContextMenuAction(() => beginWorksheetPublishToVariation(preservedRange, preservedSelectionRanges), {
+    const startingCell = contextMenu?.type === "cell" ? contextMenu.cellKey : selectedWorksheetCellKey;
+    runContextMenuAction(() => startVariationCommercialMapping(preservedRange, preservedSelectionRanges, startingCell), {
       preserveUntilNextFrame: true,
     });
   };
@@ -5150,10 +6480,19 @@ export function OpportunityPricingWorksheetBoard({
     rangeDragAnchorCellKeyRef.current = cellKey;
     formulaReferenceDragAnchorCellKeyRef.current = null;
     formulaReferenceDragBaseValueRef.current = null;
+    formulaReferenceDragSelectionRef.current = null;
     replaceSelection(cellKey, cellKey);
     setIsDraggingSelection(false);
     focusWorksheetSurface();
   }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode, replaceSelection]);
+
+  const goToMaterialPriceCell = useCallback((cellAddress: string) => {
+    if (!getWorksheetAnchorPosition(worksheetRef.current, cellAddress)) return;
+    selectSingleCell(cellAddress);
+    requestAnimationFrame(() => {
+      inputRefs.current[cellAddress]?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    });
+  }, [selectSingleCell]);
 
   const startPendingRangeSelection = useCallback((
     cellKey: string,
@@ -5171,7 +6510,7 @@ export function OpportunityPricingWorksheetBoard({
 
     const nextMode = options?.mode ?? "replace";
     const nextAnchorCellKey =
-      nextMode === "extend" && options.anchorCellKey
+      nextMode === "extend" && options?.anchorCellKey
         ? options.anchorCellKey
         : cellKey;
 
@@ -5198,6 +6537,7 @@ export function OpportunityPricingWorksheetBoard({
     if (isFormulaReferenceMode) {
       const formulaReferenceAnchorCellKey = formulaReferenceDragAnchorCellKeyRef.current;
       const formulaReferenceBaseValue = formulaReferenceDragBaseValueRef.current;
+      const formulaReferenceBaseSelection = formulaReferenceDragSelectionRef.current;
       if (
         !isDraggingSelectionRef.current ||
         !formulaReferenceAnchorCellKey ||
@@ -5215,8 +6555,14 @@ export function OpportunityPricingWorksheetBoard({
         formulaReferenceAnchorCellKey,
         cellKey
       );
-      replaceSelection(formulaReferenceAnchorCellKey, cellKey);
-      setEditingCellValue(`${formulaReferenceBaseValue}${nextReference}`);
+      const insertion = insertTextAtWorksheetSelection(
+        formulaReferenceBaseValue,
+        formulaReferenceBaseSelection,
+        nextReference,
+      );
+      editorTextSelectionRef.current = insertion.selection;
+      editingCellValueRef.current = insertion.value;
+      setEditingCellValue(insertion.value);
       return;
     }
 
@@ -5304,7 +6650,7 @@ export function OpportunityPricingWorksheetBoard({
   ]);
 
   const beginFillDrag = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (!selectedRange || activeCellKey || isFormulaEditing) {
+    if (!canMutateWorksheet || !selectedRange || activeCellKey || isFormulaEditing) {
       return;
     }
 
@@ -5314,11 +6660,50 @@ export function OpportunityPricingWorksheetBoard({
     setFillSourceRange(selectedRange);
     setFillPreviewFocusCellKey(null);
     focusWorksheetSurface();
-  }, [activeCellKey, focusWorksheetSurface, isFormulaEditing, selectedRange]);
+  }, [activeCellKey, canMutateWorksheet, focusWorksheetSurface, isFormulaEditing, selectedRange]);
 
-  const handleBeginGridCellEdit = useCallback((cellKey: string, cell: WorksheetCell | undefined) => {
-    beginCellEdit(cellKey, cell, { editor: "cell" });
-  }, [beginCellEdit]);
+  const handleBeginGridCellEdit = useCallback((
+    cellKey: string,
+    cell: WorksheetCell | undefined,
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    const rawValue = getRawCellInput(cell);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const horizontalPadding = 10;
+    const displayText = event.currentTarget.querySelector<HTMLElement>(
+      "[data-worksheet-cell-display-text]",
+    );
+    const computedStyle = displayText ? window.getComputedStyle(displayText) : null;
+    const canvasContext = document.createElement("canvas").getContext("2d");
+    let caret: number;
+    if (computedStyle && canvasContext) {
+      canvasContext.font = computedStyle.font || [
+        computedStyle.fontStyle,
+        computedStyle.fontWeight,
+        computedStyle.fontSize,
+        computedStyle.fontFamily,
+      ].filter(Boolean).join(" ");
+      const letterSpacing = Number.parseFloat(computedStyle.letterSpacing) || 0;
+      caret = getWorksheetCaretIndexFromTextMetrics({
+        value: rawValue,
+        contentX: event.clientX - bounds.left - horizontalPadding,
+        scale: worksheetZoom,
+        measureText: (value) =>
+          canvasContext.measureText(value).width + Math.max(0, value.length - 1) * letterSpacing,
+      });
+    } else {
+      caret = getApproximateWorksheetCaretIndex({
+        clientX: event.clientX,
+        contentLeft: bounds.left + horizontalPadding,
+        contentWidth: Math.max(1, bounds.width - horizontalPadding * 2),
+        valueLength: rawValue.length,
+      });
+    }
+    beginCellEdit(cellKey, cell, {
+      editor: "cell",
+      selection: { start: caret, end: caret },
+    });
+  }, [beginCellEdit, worksheetZoom]);
 
   const handleCellContextMenu = useCallback((cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => {
     openCellContextMenu(event, cellKey);
@@ -5478,6 +6863,7 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const handleUndo = () => {
+    if (!canMutateWorksheet) return;
     const undoState = buildWorksheetUndoState({
       currentWorksheet: worksheetRef.current,
       future: historyFutureRef.current,
@@ -5492,6 +6878,7 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const handleRedo = () => {
+    if (!canMutateWorksheet) return;
     const redoState = buildWorksheetRedoState({
       currentWorksheet: worksheetRef.current,
       future: historyFutureRef.current,
@@ -5529,6 +6916,47 @@ export function OpportunityPricingWorksheetBoard({
       target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable);
     if (isTextEditingTarget) {
+      return;
+    }
+
+    if (event.key === "Escape" && commercialMapping.session) {
+      event.preventDefault();
+      if (commercialMapping.session.activeField) {
+        commercialMapping.armField(null);
+        setIsNarrowCommercialCellPicker(false);
+      } else {
+        commercialMapping.cancel();
+        setCommercialMappingContext(null);
+        setCommercialMappingHighlightField(null);
+        setIsNarrowCommercialCellPicker(false);
+        focusWorksheetSurface({ immediate: true });
+      }
+      return;
+    }
+
+    if (event.key === "Escape" && variationCommercialMapping.session) {
+      event.preventDefault();
+      const activeLine = variationCommercialMapping.session.lines.find((line) => line.mapping.activeField);
+      if (activeLine) {
+        variationCommercialMapping.armField(activeLine.id, null);
+        setIsNarrowCommercialCellPicker(false);
+      } else {
+        variationCommercialMapping.cancel();
+        setVariationCommercialMappingContext(null);
+        setVariationCommercialMappingHighlight(null);
+        setIsNarrowCommercialCellPicker(false);
+        focusWorksheetSurface({ immediate: true });
+      }
+      return;
+    }
+
+    if (event.key === "Escape" && measureMapping.session) {
+      event.preventDefault();
+      if (measureMapping.session.activeField) {
+        measureMapping.armField(null);
+      } else {
+        closeMeasureDrawer();
+      }
       return;
     }
 
@@ -5573,33 +7001,19 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (!canWriteWorksheet) {
-      return;
-    }
-
-    if (isUndoShortcut) {
+    if (isUndoShortcut && canMutateWorksheet) {
       event.preventDefault();
       handleUndo();
       return;
     }
 
-    if (isRedoShortcut) {
+    if (isRedoShortcut && canMutateWorksheet) {
       event.preventDefault();
       handleRedo();
       return;
     }
 
     if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    if (activeCellKey) {
-      return;
-    }
-
-    if ((event.key === "Delete" || event.key === "Backspace") && selectedRange) {
-      event.preventDefault();
-      clearContentsInRange(selectedRange);
       return;
     }
 
@@ -5664,9 +7078,39 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
+    if ((event.key === "Enter" || event.key === " ") && commercialMapping.session?.activeField && selectedSingleCellKey) {
+      event.preventDefault();
+      commercialMapping.assignCell(selectedSingleCellKey);
+      setIsNarrowCommercialCellPicker(false);
+      return;
+    }
+
+    if ((event.key === "Enter" || event.key === " ") && variationCommercialMapping.session?.lines.some((line) => line.mapping.activeField) && selectedSingleCellKey) {
+      event.preventDefault();
+      variationCommercialMapping.assignCell(selectedSingleCellKey);
+      setIsNarrowCommercialCellPicker(false);
+      return;
+    }
+
+    if ((event.key === "Enter" || event.key === " ") && measureMapping.session?.activeField && selectedSingleCellKey) {
+      event.preventDefault();
+      measureMapping.assignCell(selectedSingleCellKey);
+      return;
+    }
+
     if (event.key === "Enter") {
       event.preventDefault();
       moveSelection(event.shiftKey ? "up" : "down");
+      return;
+    }
+
+    if (!canMutateWorksheet) {
+      return;
+    }
+
+    if ((event.key === "Delete" || event.key === "Backspace") && selectedRange) {
+      event.preventDefault();
+      clearContentsInRange(selectedRange);
       return;
     }
 
@@ -5675,10 +7119,18 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     event.preventDefault();
+    editingSessionRef.current = {
+      cellKey: selectedSingleCellKey,
+      originalValue: getRawCellInput(worksheetRef.current.cells[selectedSingleCellKey]),
+    };
+    updateFormulaReferencePickState(event.key, { start: 1, end: 1 });
     setActiveCellKey(selectedSingleCellKey);
     setActiveEditor("cell");
     setEditingCellValue(event.key);
-    focusInputCell(selectedSingleCellKey, { selectAll: false });
+    focusInputCell(selectedSingleCellKey, {
+      selectAll: false,
+      selection: { start: 1, end: 1 },
+    });
   };
 
   useEffect(() => {
@@ -5899,10 +7351,10 @@ export function OpportunityPricingWorksheetBoard({
       }
 
       const syncedWorksheet = worksheetValidation.worksheet;
+      const saveRevision = worksheetMutationRevisionRef.current;
       const nextPricingSummary = deriveWorksheetPricingSummary(syncedWorksheet, pricingSummaryRef.current, {
         calculatedAt: new Date().toISOString(),
       });
-      pricingSummaryRef.current = nextPricingSummary;
       const saveRequestId = crypto.randomUUID();
 
       const targetWorksheetId = explicitWorksheetId ?? worksheetId;
@@ -5921,6 +7373,7 @@ export function OpportunityPricingWorksheetBoard({
             organizationId,
             opportunityId: worksheetOpportunityId,
             projectId: worksheetProjectId,
+            projectOwned: worksheetOwner.ownerType === "project",
             quoteId: worksheetOwner.quoteId,
             variationId: worksheetOwner.variationId,
             workbookId: targetWorksheetId,
@@ -5966,8 +7419,11 @@ export function OpportunityPricingWorksheetBoard({
         setWorksheetSheetId(editorRecord.sheetId);
         worksheetSheetIdRef.current = editorRecord.sheetId;
         setWorksheetName(editorRecord.sheetName);
-        pricingSummaryRef.current = editorRecord.pricingSummary;
-        setPricingSummary(editorRecord.pricingSummary);
+        synchronizeLoadedWorksheetTitle({
+          sheetId: editorRecord.sheetId,
+          title: editorRecord.sheetName,
+          updatedAt: editorRecord.updatedAt ?? null,
+        });
         setLastSavedAt(editorRecord.updatedAt ?? null);
       } else {
         const endSaveRequestMeasure = startPricingWorksheetPerformanceMeasure("worksheet-save-request", {
@@ -5982,6 +7438,7 @@ export function OpportunityPricingWorksheetBoard({
             organizationId,
             opportunityId: worksheetOpportunityId,
             projectId: worksheetProjectId,
+            projectOwned: worksheetOwner.ownerType === "project",
             quoteId: worksheetOwner.quoteId,
             variationId: worksheetOwner.variationId,
             workbookId: null,
@@ -6026,17 +7483,26 @@ export function OpportunityPricingWorksheetBoard({
         worksheetIdRef.current = editorRecord.workbookId;
         setWorksheetSheetId(editorRecord.sheetId);
         worksheetSheetIdRef.current = editorRecord.sheetId;
-        setWorkbookSheets(savedWorkbook.sheets);
         setWorksheetName(editorRecord.sheetName);
-        pricingSummaryRef.current = editorRecord.pricingSummary;
-        setPricingSummary(editorRecord.pricingSummary);
+        synchronizeLoadedWorksheetTitle({
+          sheetId: editorRecord.sheetId,
+          title: editorRecord.sheetName,
+          updatedAt: editorRecord.updatedAt ?? null,
+        });
         setLastSavedAt(editorRecord.updatedAt ?? null);
       }
 
-      setWorksheet(syncedWorksheet);
-      worksheetRef.current = syncedWorksheet;
-      setPricingSummary(nextPricingSummary);
-      if (persistedWorkbook) {
+      const shouldApplySavedSnapshot = shouldApplyWorksheetSaveSnapshot({
+        currentRevision: worksheetMutationRevisionRef.current,
+        savedRevision: saveRevision,
+      });
+      if (shouldApplySavedSnapshot) {
+        setWorksheet(syncedWorksheet);
+        worksheetRef.current = syncedWorksheet;
+        pricingSummaryRef.current = nextPricingSummary;
+        setPricingSummary(nextPricingSummary);
+      }
+      if (persistedWorkbook && shouldApplySavedSnapshot) {
         const savedSheet = persistedWorkbook.sheets[0] ?? null;
         if (savedSheet) {
           setWorkbookSheets((current) => {
@@ -6058,11 +7524,15 @@ export function OpportunityPricingWorksheetBoard({
           });
         }
       }
-      setIsDirty(false);
+      setIsDirty(!shouldApplySavedSnapshot);
       if (!options?.silent) {
-        setMessage("Pricing worksheet saved.");
+        setMessage(
+          shouldApplySavedSnapshot
+            ? null
+            : "Earlier changes saved. Newer worksheet edits remain unsaved.",
+        );
       }
-      return true;
+      return shouldApplySavedSnapshot;
     } catch (saveWorksheetError) {
       setError(mapPricingWorksheetUiErrorMessage(saveWorksheetError, "Unable to save the pricing worksheet."));
       return false;
@@ -6072,7 +7542,12 @@ export function OpportunityPricingWorksheetBoard({
   };
 
   const closeWorksheet = async () => {
-    if (isSavingWorksheet) {
+    if (isSavingWorksheet || worksheetTitleAutosave.status === "saving") {
+      return;
+    }
+
+    const didSaveTitle = await worksheetTitleAutosaveControllerRef.current?.flush();
+    if (didSaveTitle === false) {
       return;
     }
 
@@ -6086,6 +7561,14 @@ export function OpportunityPricingWorksheetBoard({
     onClose?.();
   };
 
+  const saveWorksheetAndTitle = async () => {
+    const didSaveTitle = await worksheetTitleAutosaveControllerRef.current?.flush();
+    if (didSaveTitle === false) {
+      return false;
+    }
+    return isDirty ? saveWorksheet() : true;
+  };
+
   saveWorksheetRef.current = saveWorksheet;
 
   const switchToWorkbookSheet = useCallback(async (nextSheetId: string) => {
@@ -6096,6 +7579,26 @@ export function OpportunityPricingWorksheetBoard({
     if (isSavingWorksheet) {
       return;
     }
+
+    if (commercialMapping.session) {
+      closeCommercialMapping();
+    }
+    if (variationCommercialMapping.session) {
+      closeVariationCommercialMapping();
+    }
+    if (measureMapping.session) {
+      measureMapping.cancel();
+      setMeasureMappingHighlightField(null);
+    }
+
+    const didSaveTitle = await worksheetTitleAutosaveControllerRef.current?.flush();
+    if (didSaveTitle === false) {
+      return;
+    }
+
+    setActiveSidePanel(null);
+    setMaterialTarget(null);
+    consumedMaterialTargetRef.current = null;
 
     if (isDirty) {
       const didSave = await saveWorksheetRef.current?.({ silent: true });
@@ -6118,6 +7621,7 @@ export function OpportunityPricingWorksheetBoard({
         organizationId: session.organizationId,
         opportunityId: worksheetOpportunityId,
         projectId: worksheetProjectId,
+        projectOwned: worksheetOwner.ownerType === "project",
         quoteId: worksheetOwner.quoteId,
         variationId: worksheetOwner.variationId,
         workbookId: currentWorkbookId,
@@ -6157,10 +7661,14 @@ export function OpportunityPricingWorksheetBoard({
     updateSheetUrlState(nextSheetId);
   }, [
     cancelActiveAiJob,
+    closeCommercialMapping,
+    closeVariationCommercialMapping,
+    commercialMapping.session,
     explicitWorksheetId,
     hydrateWorkbookEditorState,
     isDirty,
     isSavingWorksheet,
+    measureMapping,
     session?.organizationId,
     worksheetOpportunityId,
     supabase,
@@ -6169,6 +7677,7 @@ export function OpportunityPricingWorksheetBoard({
     worksheetSheetId,
     worksheetTradePackage,
     updateSheetUrlState,
+    variationCommercialMapping.session,
   ]);
 
   const addBlankWorkbookSheet = useCallback(async () => {
@@ -6196,6 +7705,7 @@ export function OpportunityPricingWorksheetBoard({
         organizationId: session.organizationId,
         opportunityId: worksheetOpportunityId,
         projectId: worksheetProjectId,
+        projectOwned: worksheetOwner.ownerType === "project",
         quoteId: worksheetOwner.quoteId,
         variationId: worksheetOwner.variationId,
         workbookId: worksheetId,
@@ -6251,6 +7761,7 @@ export function OpportunityPricingWorksheetBoard({
         organizationId: session.organizationId,
         opportunityId: worksheetOpportunityId,
         projectId: worksheetProjectId,
+        projectOwned: worksheetOwner.ownerType === "project",
         quoteId: worksheetOwner.quoteId,
         variationId: worksheetOwner.variationId,
         workbookId: worksheetId,
@@ -6297,33 +7808,9 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     if (pageDialog.sheetId === worksheetSheetId) {
-      setWorksheetNameDraft(nextName);
       setPageDialog(null);
-      const commitResult = applyCommittedWorksheetChange(
-        (current) => ({
-          ...current,
-          sheetName: nextName,
-        }),
-        { recalculateFormulas: false },
-      );
-
-      if (commitResult.committed) {
-        setWorksheetName(nextName);
-        const nextSheets = workbookSheetsRef.current.map((sheet) =>
-          sheet.id === pageDialog.sheetId
-            ? {
-                ...sheet,
-                name: nextName,
-                worksheet: {
-                  ...sheet.worksheet,
-                  sheetName: nextName,
-                },
-              }
-            : sheet,
-        );
-        workbookSheetsRef.current = nextSheets;
-        setWorkbookSheets(nextSheets);
-      }
+      worksheetTitleAutosaveControllerRef.current?.setDraft(nextName);
+      await worksheetTitleAutosaveControllerRef.current?.flush();
       return;
     }
 
@@ -6335,6 +7822,7 @@ export function OpportunityPricingWorksheetBoard({
         organizationId: session.organizationId,
         opportunityId: worksheetOpportunityId,
         projectId: worksheetProjectId,
+        projectOwned: worksheetOwner.ownerType === "project",
         quoteId: worksheetOwner.quoteId,
         variationId: worksheetOwner.variationId,
         workbookId: worksheetId,
@@ -6364,7 +7852,6 @@ export function OpportunityPricingWorksheetBoard({
       setIsMutatingPages(false);
     }
   }, [
-    applyCommittedWorksheetChange,
     pageDialog,
     session?.id,
     session?.organizationId,
@@ -6412,6 +7899,7 @@ export function OpportunityPricingWorksheetBoard({
         organizationId: session.organizationId,
         opportunityId: worksheetOpportunityId,
         projectId: worksheetProjectId,
+        projectOwned: worksheetOwner.ownerType === "project",
         quoteId: worksheetOwner.quoteId,
         variationId: worksheetOwner.variationId,
         workbookId: worksheetId,
@@ -6575,7 +8063,7 @@ export function OpportunityPricingWorksheetBoard({
       (operation) => operation.type !== "explain_formula"
     );
 
-    if (hasMutatingOperations && canWriteWorksheet) {
+    if (hasMutatingOperations && canMutateWorksheet) {
       // Keep the snapshot pinned to the true pre-AI sheet so Reject (and a final
       // reject after several follow-ups) always restores the original. A
       // follow-up's preview.worksheet is the complete revised sheet, so it
@@ -6622,7 +8110,7 @@ export function OpportunityPricingWorksheetBoard({
     aiPrompt,
     applyAiProvenanceToWorksheet,
     autoLayoutWorksheet,
-    canWriteWorksheet,
+    canMutateWorksheet,
     logAiReviewIntelligenceEvents,
     replaceSelection,
     worksheetName,
@@ -7092,7 +8580,7 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (!canWriteWorksheet) {
+    if (!canMutateWorksheet) {
       setAiPreviewError("You can review this AI suggestion, but applying worksheet edits requires write permission.");
       return;
     }
@@ -7189,7 +8677,7 @@ export function OpportunityPricingWorksheetBoard({
     applyAiProvenanceToWorksheet,
     autoLayoutWorksheet,
     applyCommittedWorksheetChange,
-    canWriteWorksheet,
+    canMutateWorksheet,
     logAiReviewIntelligenceEvent,
     replaceSelection,
     resetAiPreviewState,
@@ -7217,7 +8705,7 @@ export function OpportunityPricingWorksheetBoard({
 
     const hasMutatingOperations =
       (aiPreviewResponse.preview.assistant?.operations ?? []).some((operation) => operation.type !== "explain_formula") ?? false;
-    if (hasMutatingOperations && !canWriteWorksheet) {
+    if (hasMutatingOperations && !canMutateWorksheet) {
       setAiPreviewError("You can review this AI suggestion, but applying worksheet edits requires write permission.");
       return;
     }
@@ -7471,7 +8959,7 @@ export function OpportunityPricingWorksheetBoard({
     autoLayoutWorksheet,
     applyAiPreviewPayload,
     applyCommittedWorksheetChange,
-    canWriteWorksheet,
+    canMutateWorksheet,
     handleAiDialogOpenChange,
     logAiPreviewOutcomeEvent,
     replaceSelection,
@@ -7489,6 +8977,13 @@ export function OpportunityPricingWorksheetBoard({
     event: ReactMouseEvent<HTMLDivElement>
   ) => {
     if (event.button !== 0) {
+      return;
+    }
+
+    if (
+      activeCellKey === cellKey &&
+      (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
+    ) {
       return;
     }
 
@@ -7552,8 +9047,17 @@ export function OpportunityPricingWorksheetBoard({
 
     if (event.detail === 1) {
       selectSingleCell(cellKey);
+      if (commercialMapping.session?.activeField) {
+        commercialMapping.assignCell(cellKey);
+        setIsNarrowCommercialCellPicker(false);
+      } else if (variationCommercialMapping.session?.lines.some((line) => line.mapping.activeField)) {
+        variationCommercialMapping.assignCell(cellKey);
+        setIsNarrowCommercialCellPicker(false);
+      } else if (measureMapping.session?.activeField) {
+        measureMapping.assignCell(cellKey);
+      }
     }
-  }, [appendCellReferenceToFormula, isFormulaReferenceMode, replaceSelection, selectSingleCell, selectionAnchorCellKey]);
+  }, [appendCellReferenceToFormula, commercialMapping, isFormulaReferenceMode, measureMapping, replaceSelection, selectSingleCell, selectionAnchorCellKey, variationCommercialMapping]);
 
   const handleGridCellKeyDown = useCallback((
     cellKey: string,
@@ -7561,19 +9065,16 @@ export function OpportunityPricingWorksheetBoard({
   ) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      suppressBlurCommitCellKeyRef.current = cellKey;
-      setActiveCellKey(null);
-      setActiveEditor(null);
-      setEditingCellValue("");
-      focusWorksheetSurface();
+      cancelCellEdit(cellKey);
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
-      const nextCellKey = getAdjacentCellKey(cellKey, {
-        rowDelta: event.shiftKey ? -1 : 1,
-      });
+      const nextCellKey = getAdjacentCellKey(
+        cellKey,
+        getWorksheetCommitMovement("Enter", event.shiftKey),
+      );
       suppressBlurCommitCellKeyRef.current = cellKey;
       commitCellEdit(cellKey, editingCellValue, nextCellKey);
       return;
@@ -7581,19 +9082,128 @@ export function OpportunityPricingWorksheetBoard({
 
     if (event.key === "Tab") {
       event.preventDefault();
-      const nextCellKey = getAdjacentCellKey(cellKey, {
-        columnDelta: event.shiftKey ? -1 : 1,
-      });
+      const nextCellKey = getAdjacentCellKey(
+        cellKey,
+        getWorksheetCommitMovement("Tab", event.shiftKey),
+      );
       suppressBlurCommitCellKeyRef.current = cellKey;
       commitCellEdit(cellKey, editingCellValue, nextCellKey);
     }
-  }, [commitCellEdit, editingCellValue, focusWorksheetSurface, getAdjacentCellKey]);
+  }, [cancelCellEdit, commitCellEdit, editingCellValue, getAdjacentCellKey]);
+
+  const handleEditorTextSelect = useCallback((event: ReactSyntheticEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const selection = {
+      start: event.currentTarget.selectionStart ?? event.currentTarget.value.length,
+      end: event.currentTarget.selectionEnd ?? event.currentTarget.value.length,
+    };
+    updateFormulaReferencePickState(event.currentTarget.value, selection);
+  }, [updateFormulaReferencePickState]);
+
+  const handleEditingCellValueChange = useCallback((
+    value: string,
+    selection: WorksheetTextSelection,
+  ) => {
+    updateFormulaReferencePickState(value, selection);
+    setEditingCellValue(value);
+  }, [updateFormulaReferencePickState]);
+
+  const handleCommercialMappingDragStart = useCallback((cellKey: string, event: ReactDragEvent<HTMLButtonElement>) => {
+    if (!commercialMapping.session && !variationCommercialMapping.session) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-tradesstack-worksheet-cell", cellKey);
+    event.dataTransfer.setData("text/plain", cellKey);
+  }, [commercialMapping.session, variationCommercialMapping.session]);
+
+  const stableBeginGridCellEdit = useStableWorksheetEvent(handleBeginGridCellEdit);
+  const stableBeginFillDrag = useStableWorksheetEvent(beginFillDrag);
+  const stableAutoFitRow = useStableWorksheetEvent(autoFitRow);
+  const stableBeginRowResize = useStableWorksheetEvent(beginRowResize);
+  const stableGridCellClick = useStableWorksheetEvent(handleGridCellClick);
+  const stableCellContextMenu = useStableWorksheetEvent(handleCellContextMenu);
+  const stableGridCellMouseDown = useStableWorksheetEvent(handleGridCellMouseDown);
+  const stableRangeSelectionUpdate = useStableWorksheetEvent(updateRangeSelection);
+  const stableCellBlur = useStableWorksheetEvent(handleCellBlur);
+  const stableGridCellKeyDown = useStableWorksheetEvent(handleGridCellKeyDown);
+  const stableRowHeaderClick = useStableWorksheetEvent(handleRowHeaderClick);
+  const stableRowContextMenu = useStableWorksheetEvent(openRowContextMenu);
+  const handleWorksheetViewportScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
+    const viewport = event.currentTarget;
+    const nextHeight = viewport.clientHeight || WORKSHEET_VIEWPORT_FALLBACK_HEIGHT;
+    const nextWidth = viewport.clientWidth || WORKSHEET_VIEWPORT_FALLBACK_WIDTH;
+    const zoom = worksheetZoom > 0 ? worksheetZoom : 1;
+    const nextRowWindow = getRowVirtualizationWindow(
+      effectiveRows,
+      rowOffsets,
+      viewport.scrollTop / zoom,
+      nextHeight / zoom,
+      WORKSHEET_ROW_OVERSCAN,
+    );
+    const nextColumnWindow = getColumnVirtualizationWindow(
+      effectiveColumns,
+      columnOffsets,
+      viewport.scrollLeft / zoom,
+      Math.max(0, nextWidth / zoom - WORKSHEET_ROW_GUTTER_WIDTH),
+      WORKSHEET_COLUMN_OVERSCAN,
+    );
+
+    setWorksheetViewportHeight((current) => current === nextHeight ? current : nextHeight);
+    setWorksheetViewportWidth((current) => current === nextWidth ? current : nextWidth);
+    if (
+      nextRowWindow.startIndex !== virtualRows.startIndex ||
+      nextRowWindow.endIndex !== virtualRows.endIndex
+    ) {
+      setWorksheetViewportScrollTop(viewport.scrollTop);
+    }
+    if (
+      nextColumnWindow.startIndex !== virtualColumns.startIndex ||
+      nextColumnWindow.endIndex !== virtualColumns.endIndex
+    ) {
+      setWorksheetViewportScrollLeft(viewport.scrollLeft);
+    }
+  }, [
+    columnOffsets,
+    effectiveColumns,
+    effectiveRows,
+    rowOffsets,
+    virtualColumns.endIndex,
+    virtualColumns.startIndex,
+    virtualRows.endIndex,
+    virtualRows.startIndex,
+    worksheetZoom,
+  ]);
 
   const worksheetZoomSliderPercent = (() => {
     const minZoom = WORKSHEET_ZOOM_LEVELS[0];
     const maxZoom = WORKSHEET_ZOOM_LEVELS[WORKSHEET_ZOOM_LEVELS.length - 1];
     return Math.min(100, Math.max(0, ((worksheetZoom - minZoom) / (maxZoom - minZoom)) * 100));
   })();
+  const hasUnsavedTitle = worksheetTitleAutosave.status !== "idle";
+  const isWorksheetSaveInProgress = isSavingWorksheet || worksheetTitleAutosave.status === "saving";
+  const worksheetSaveStatusLabel = worksheetTitleAutosave.status === "error"
+    ? "Save failed"
+    : isWorksheetSaveInProgress
+      ? "Saving..."
+      : isDirty || worksheetTitleAutosave.status === "pending"
+        ? "Unsaved changes"
+        : lastSavedAt
+          ? `Last saved ${new Date(lastSavedAt).toLocaleTimeString("en-NZ", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}`
+          : "Not saved yet";
+  const materialTargetIssue = materialTarget && (
+    materialTarget.sheetId !== worksheetSheetId ||
+    materialTarget.structureKey !== worksheetStructureKey ||
+    !getWorksheetAnchorPosition(worksheet, materialTarget.cellAddress)
+  )
+    ? "The selected cell is no longer available. Select a new cell to continue."
+    : !materialTarget && selectedRanges.length > 0 && !selectedSingleCellKey
+      ? "Material prices can only be inserted into one selected cell."
+      : null;
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 flex-1">
@@ -7609,8 +9219,8 @@ export function OpportunityPricingWorksheetBoard({
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 {isWorksheetNameEditorOpen ? (
                   <input
-                    value={worksheetNameDraft}
-                    onChange={(event) => setWorksheetNameDraft(event.target.value)}
+                    value={worksheetTitleDraft}
+                    onChange={(event) => updateWorksheetNameDraft(event.target.value)}
                     onBlur={applyWorksheetNameDraft}
                     onKeyDown={(event) => {
                       event.stopPropagation();
@@ -7619,8 +9229,8 @@ export function OpportunityPricingWorksheetBoard({
                         applyWorksheetNameDraft();
                       } else if (event.key === "Escape") {
                         event.preventDefault();
-                        setIsWorksheetNameEditorOpen(false);
-                        setWorksheetNameDraft(worksheetDisplayName);
+                        restoreConfirmedWorksheetName();
+                        event.currentTarget.blur();
                       }
                     }}
                     autoFocus
@@ -7631,6 +9241,7 @@ export function OpportunityPricingWorksheetBoard({
                   <button
                     type="button"
                     onClick={openWorksheetNameEditor}
+                    disabled={!canMutateWorksheet}
                     className="min-w-0 truncate rounded-[6px] px-1 py-0.5 text-left text-[14px] font-medium leading-5 text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 sm:text-[16px]"
                     aria-label="Edit worksheet name"
                   >
@@ -7640,16 +9251,15 @@ export function OpportunityPricingWorksheetBoard({
                 <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-white/75">
                   <span
                     aria-hidden="true"
-                    className={`inline-block h-2 w-2 rounded-full ${isDirty ? "bg-[var(--orange-primary)]" : "bg-[var(--success)]"}`}
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      worksheetTitleAutosave.status === "error"
+                        ? "bg-[var(--error)]"
+                        : isDirty || hasUnsavedTitle
+                          ? "bg-[var(--orange-primary)]"
+                          : "bg-[var(--success)]"
+                    }`}
                   />
-                  <span>
-                    {lastSavedAt
-                      ? `Last saved ${new Date(lastSavedAt).toLocaleTimeString("en-NZ", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}`
-                      : "Not saved yet"}
-                  </span>
+                  <span>{worksheetSaveStatusLabel}</span>
                 </div>
               </div>
             </div>
@@ -7712,13 +9322,13 @@ export function OpportunityPricingWorksheetBoard({
               <Button
                 type="button"
                 size="sm"
-                onClick={() => void saveWorksheet()}
+                onClick={() => void saveWorksheetAndTitle()}
                 disabled={
-                  !canWriteWorksheet || isSavingWorksheet || isLoadingWorksheet || !isDirty
+                  !canMutateWorksheet || isWorksheetSaveInProgress || isLoadingWorksheet || (!isDirty && !hasUnsavedTitle)
                 }
                 className="h-9 rounded-[10px] border-0 bg-white/10 px-3 text-[12px] font-semibold text-white shadow-none hover:bg-white/15 disabled:bg-white/10 disabled:text-white/45"
               >
-                {isSavingWorksheet ? "Saving..." : "Save"}
+                {isWorksheetSaveInProgress ? "Saving..." : "Save"}
               </Button>
               {onClose ? (
                 <Button
@@ -7736,12 +9346,26 @@ export function OpportunityPricingWorksheetBoard({
         </div>
         <div
           ref={worksheetSurfaceRef}
-          className="relative flex min-h-0 flex-1 flex-col space-y-0 bg-[var(--surface-muted)] outline-none"
+          role="grid"
+          aria-label="Pricing worksheet"
+          aria-activedescendant={activeDescendantCellId}
+          className="relative flex min-h-0 flex-1 flex-col space-y-0 bg-[var(--surface-muted)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]"
           tabIndex={0}
           onPasteCapture={handleWorksheetPaste}
           onCopy={handleWorksheetCopy}
           onKeyDown={handleWorksheetKeyDown}
         >
+          {commercialMapping.session ? (
+            <div data-testid="commercial-mapping-mode-banner" className="mx-3 mt-2 flex shrink-0 items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--brand-blue)_35%,var(--border))] bg-[var(--primary-soft)] px-3 py-2 text-xs text-[var(--text-primary)]">
+              <span><strong>{commercialMapping.session.destination === "quote" ? "Quote" : "Purchase Order"} Mapping Mode.</strong> Select worksheet cells to populate the fields. Esc to cancel.</span>
+              {isNarrowCommercialCellPicker ? <Button type="button" size="sm" variant="secondary" onClick={() => setIsNarrowCommercialCellPicker(false)}>Back to mappings</Button> : null}
+            </div>
+          ) : null}
+          {variationCommercialMapping.session && isNarrowCommercialCellPicker ? (
+            <div className="mx-3 mt-2 flex shrink-0 justify-end">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setIsNarrowCommercialCellPicker(false)}>Back to mappings</Button>
+            </div>
+          ) : null}
           {error ? <OperationalAlert variant="error" className="mx-3 mt-3">{error}</OperationalAlert> : null}
           {message ? <OperationalAlert variant="success" className="mx-3 mt-3">{message}</OperationalAlert> : null}
 
@@ -7772,7 +9396,7 @@ export function OpportunityPricingWorksheetBoard({
                   }`}
                   aria-label="Currency format"
                   onClick={() => applyNumberFormatKindToSelection("currency")}
-                  disabled={!canWriteWorksheet || !selectedRange}
+                  disabled={!canMutateWorksheet || !selectedRange}
                 >
                   $
                 </Button>
@@ -7784,7 +9408,7 @@ export function OpportunityPricingWorksheetBoard({
                   }`}
                   aria-label="Percent format"
                   onClick={() => applyNumberFormatKindToSelection("percent")}
-                  disabled={!canWriteWorksheet || !selectedRange}
+                  disabled={!canMutateWorksheet || !selectedRange}
                 >
                   %
                 </Button>
@@ -7794,7 +9418,7 @@ export function OpportunityPricingWorksheetBoard({
                   className="flex h-8 w-[46px] items-center justify-center gap-1 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                   aria-label="Decrease decimal places"
                   onClick={() => adjustNumberDecimalPlacesForSelection("decrease")}
-                  disabled={!canWriteWorksheet || !selectedRange}
+                  disabled={!canMutateWorksheet || !selectedRange}
                 >
                   <span className="text-[14px] font-medium leading-none">.0</span>
                   <span className="text-[12px] leading-none text-[var(--text-secondary)]">←</span>
@@ -7805,7 +9429,7 @@ export function OpportunityPricingWorksheetBoard({
                   className="flex h-8 w-[54px] items-center justify-center gap-1 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                   aria-label="Increase decimal places"
                   onClick={() => adjustNumberDecimalPlacesForSelection("increase")}
-                  disabled={!canWriteWorksheet || !selectedRange}
+                  disabled={!canMutateWorksheet || !selectedRange}
                 >
                   <span className="text-[14px] font-medium leading-none">.00</span>
                   <span className="text-[12px] leading-none text-[var(--text-secondary)]">→</span>
@@ -7818,7 +9442,7 @@ export function OpportunityPricingWorksheetBoard({
                   }`}
                   aria-label="Number format"
                   onClick={() => applyNumberFormatKindToSelection("number")}
-                  disabled={!canWriteWorksheet || !selectedRange}
+                  disabled={!canMutateWorksheet || !selectedRange}
                 >
                   123
                 </Button>
@@ -7826,12 +9450,12 @@ export function OpportunityPricingWorksheetBoard({
               <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
                 <DropdownMenu>
-                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
                     className="h-8 rounded-[8px] border-0 bg-transparent px-2 text-[13px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                   >
                     <Grid2X2 className="h-5 w-5" strokeWidth={1.75} />
                     Insert
@@ -7840,28 +9464,28 @@ export function OpportunityPricingWorksheetBoard({
                 <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="min-w-[9rem] rounded-[10px] p-1">
                   <DropdownMenuItem
                     onSelect={() => insertRowAtSelection("above")}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Row above
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => insertRowAtSelection("below")}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Row below
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => insertColumnAtSelection("left")}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Column left
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => insertColumnAtSelection("right")}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Column right
@@ -7869,16 +9493,50 @@ export function OpportunityPricingWorksheetBoard({
                 </DropdownMenuContent>
               </DropdownMenu>
               </div>
+              <Tooltip label="Browse Material Library">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={openMaterialLibrary}
+                  disabled={isLoadingWorksheet || isSavingWorksheet}
+                  aria-label="Open Material Library"
+                  aria-pressed={activeSidePanel === "materials"}
+                  className={`h-9 rounded-[8px] border-0 bg-transparent px-2.5 text-[13px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                    activeSidePanel === "materials" ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                  }`}
+                >
+                  <Boxes className="h-4 w-4" strokeWidth={1.75} />
+                  Materials
+                </Button>
+              </Tooltip>
+              <Tooltip label="Browse Project Measures">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={openMeasureDrawer}
+                  disabled={isLoadingWorksheet || isSavingWorksheet}
+                  aria-label="Open Measures"
+                  aria-pressed={activeSidePanel === "measures"}
+                  className={`h-9 rounded-[8px] border-0 bg-transparent px-2.5 text-[13px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)] ${
+                    activeSidePanel === "measures" ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
+                  }`}
+                >
+                  <Ruler className="h-4 w-4" strokeWidth={1.75} />
+                  Measures
+                </Button>
+              </Tooltip>
               <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
                 <Tooltip label="Fill colour">
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                  <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
                     <Button
                       variant="secondary"
                       size="sm"
                       className="h-9 w-9 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                      disabled={!canWriteWorksheet || !selectedRange}
+                      disabled={!canMutateWorksheet || !selectedRange}
                       aria-label="Fill color"
                     >
                       <span className="relative flex h-6 w-6 translate-y-0.5 items-center justify-center">
@@ -7897,7 +9555,7 @@ export function OpportunityPricingWorksheetBoard({
                         <DropdownMenuItem
                           key={`fill-${color}`}
                           onSelect={() => applyFormattingPatchToSelection({ fill: { color } })}
-                          disabled={!canWriteWorksheet || !selectedRange}
+                          disabled={!canMutateWorksheet || !selectedRange}
                           className="flex h-6 w-6 items-center justify-center rounded-full p-0 focus:bg-transparent"
                         >
                           <span
@@ -7935,7 +9593,7 @@ export function OpportunityPricingWorksheetBoard({
                         }}
                         onClick={(event) => event.stopPropagation()}
                         placeholder="#DBEAFE"
-                        disabled={!canWriteWorksheet || !selectedRange}
+                        disabled={!canMutateWorksheet || !selectedRange}
                         aria-label="Custom fill colour hex"
                         className="h-8 min-w-0 flex-1 rounded-[8px] border border-[var(--border)] bg-white px-2 text-[12px] font-medium text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] disabled:opacity-50"
                       />
@@ -7943,7 +9601,7 @@ export function OpportunityPricingWorksheetBoard({
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={!canWriteWorksheet || !selectedRange || !normalizedCustomFillColor}
+                        disabled={!canMutateWorksheet || !selectedRange || !normalizedCustomFillColor}
                         onClick={applyCustomFillColorForSelection}
                         className="h-8 rounded-[8px] border-[var(--border)] px-2 text-[12px] font-medium shadow-none"
                       >
@@ -7953,7 +9611,7 @@ export function OpportunityPricingWorksheetBoard({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onSelect={() => applyFormattingPatchToSelection((format) => clearCellFill(format))}
-                      disabled={!canWriteWorksheet || !selectedRange}
+                      disabled={!canMutateWorksheet || !selectedRange}
                       className="flex h-9 items-center gap-2 rounded-[6px] px-2 text-[13px] font-medium"
                     >
                       <Eraser className="h-4 w-4" />
@@ -7964,12 +9622,12 @@ export function OpportunityPricingWorksheetBoard({
                 </Tooltip>
                 <Tooltip label="Borders">
                 <DropdownMenu>
-                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
                     className="h-9 w-9 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     aria-label="Borders"
                   >
                     <Grid2X2 className="h-5 w-5" strokeWidth={1.75} />
@@ -7994,7 +9652,7 @@ export function OpportunityPricingWorksheetBoard({
                         <DropdownMenuItem
                           key={mode}
                           onSelect={() => applyBorderModeToSelection(mode)}
-                          disabled={!canWriteWorksheet || !selectedRange}
+                          disabled={!canMutateWorksheet || !selectedRange}
                           aria-label={`${mode} border`}
                           className="flex h-9 w-9 items-center justify-center rounded-[8px] p-0 focus:bg-[var(--surface-muted)] data-[highlighted]:bg-[var(--surface-muted)]"
                         >
@@ -8005,7 +9663,7 @@ export function OpportunityPricingWorksheetBoard({
                     <div className="w-px self-stretch bg-[var(--border)]" />
                     <DropdownMenuItem
                       onSelect={() => applyBorderModeToSelection("clear")}
-                      disabled={!canWriteWorksheet || !selectedRange}
+                      disabled={!canMutateWorksheet || !selectedRange}
                       aria-label="Clear borders"
                       className="flex h-9 w-9 items-center justify-center self-start rounded-[8px] p-0 text-[var(--text-primary)] focus:bg-[var(--surface-muted)] data-[highlighted]:bg-[var(--surface-muted)]"
                     >
@@ -8046,7 +9704,7 @@ export function OpportunityPricingWorksheetBoard({
                   size="sm"
                   className="h-7 w-7 rounded-[6px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                   onClick={() => adjustFontSizeForSelection(-1)}
-                  disabled={!canWriteWorksheet || !selectedRange || selectedFontSize <= MIN_WORKSHEET_FONT_SIZE}
+                  disabled={!canMutateWorksheet || !selectedRange || selectedFontSize <= MIN_WORKSHEET_FONT_SIZE}
                   aria-label="Decrease font size"
                 >
                   <Minus className="h-4 w-4" strokeWidth={1.75} />
@@ -8059,7 +9717,7 @@ export function OpportunityPricingWorksheetBoard({
                   size="sm"
                   className="h-7 w-7 rounded-[6px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
                   onClick={() => adjustFontSizeForSelection(1)}
-                  disabled={!canWriteWorksheet || !selectedRange || selectedFontSize >= MAX_WORKSHEET_FONT_SIZE}
+                  disabled={!canMutateWorksheet || !selectedRange || selectedFontSize >= MAX_WORKSHEET_FONT_SIZE}
                   aria-label="Increase font size"
                 >
                   <Plus className="h-4 w-4" strokeWidth={1.75} />
@@ -8068,12 +9726,12 @@ export function OpportunityPricingWorksheetBoard({
               <div className="flex items-center gap-1">
               <Tooltip label="Text colour">
               <DropdownMenu>
-                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
                     className="h-9 w-9 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     aria-label="Text color"
                   >
                     <span className="relative flex h-6 w-6 flex-col items-center justify-center">
@@ -8097,7 +9755,7 @@ export function OpportunityPricingWorksheetBoard({
                       <DropdownMenuItem
                         key={`text-${color}`}
                         onSelect={() => applyFormattingPatchToSelection({ text: { color } })}
-                        disabled={!canWriteWorksheet || !selectedRange}
+                        disabled={!canMutateWorksheet || !selectedRange}
                         className="flex h-6 w-6 items-center justify-center rounded-full p-0 focus:bg-transparent"
                       >
                         <span
@@ -8137,7 +9795,7 @@ export function OpportunityPricingWorksheetBoard({
                       }}
                       onClick={(event) => event.stopPropagation()}
                       placeholder="#1F2937"
-                      disabled={!canWriteWorksheet || !selectedRange}
+                      disabled={!canMutateWorksheet || !selectedRange}
                       aria-label="Custom text colour hex"
                       className="h-8 min-w-0 flex-1 rounded-[8px] border border-[var(--border)] bg-white px-2 text-[12px] font-medium text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] disabled:opacity-50"
                     />
@@ -8145,7 +9803,7 @@ export function OpportunityPricingWorksheetBoard({
                       type="button"
                       variant="secondary"
                       size="sm"
-                      disabled={!canWriteWorksheet || !selectedRange || !normalizedCustomTextColor}
+                      disabled={!canMutateWorksheet || !selectedRange || !normalizedCustomTextColor}
                       onClick={applyCustomTextColorForSelection}
                       className="h-8 rounded-[8px] border-[var(--border)] px-2 text-[12px] font-medium shadow-none"
                     >
@@ -8155,7 +9813,7 @@ export function OpportunityPricingWorksheetBoard({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={clearTextColorForSelection}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="flex h-9 items-center gap-2 rounded-[6px] px-2 text-[13px] font-medium"
                   >
                     <Eraser className="h-4 w-4" />
@@ -8174,7 +9832,7 @@ export function OpportunityPricingWorksheetBoard({
                     : ""
                 }`}
                 onClick={() => toggleTextStyle("bold")}
-                disabled={!canWriteWorksheet || !selectedRange}
+                disabled={!canMutateWorksheet || !selectedRange}
                 aria-label="Bold"
               >
                 <BoldIcon className="h-5 w-5" strokeWidth={2.1} />
@@ -8188,7 +9846,7 @@ export function OpportunityPricingWorksheetBoard({
                   selectedTextItalic ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
                 }`}
                 onClick={() => toggleTextStyle("italic")}
-                disabled={!canWriteWorksheet || !selectedRange}
+                disabled={!canMutateWorksheet || !selectedRange}
                 aria-label="Italic"
               >
                 <ItalicIcon className="h-5 w-5" strokeWidth={1.75} />
@@ -8202,7 +9860,7 @@ export function OpportunityPricingWorksheetBoard({
                   selectedTextUnderline ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
                 }`}
                 onClick={() => toggleTextStyle("underline")}
-                disabled={!canWriteWorksheet || !selectedRange}
+                disabled={!canMutateWorksheet || !selectedRange}
                 aria-label="Underline"
               >
                 <UnderlineIcon className="h-5 w-5" strokeWidth={1.75} />
@@ -8216,7 +9874,7 @@ export function OpportunityPricingWorksheetBoard({
                   selectedTextStrikethrough ? "bg-[var(--surface-muted)] text-[var(--brand-blue)]" : ""
                 }`}
                 onClick={() => toggleTextStyle("strikethrough")}
-                disabled={!canWriteWorksheet || !selectedRange}
+                disabled={!canMutateWorksheet || !selectedRange}
                 aria-label="Strikethrough"
               >
                 <Strikethrough className="h-5 w-5" strokeWidth={1.75} />
@@ -8227,7 +9885,7 @@ export function OpportunityPricingWorksheetBoard({
                 variant="secondary"
                 size="sm"
                 className="h-9 w-9 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                disabled={!canWriteWorksheet || !selectedRange}
+                disabled={!canMutateWorksheet || !selectedRange}
                 aria-label={`Text alignment: ${selectedTextAlign}`}
                 onClick={() => {
                   const currentIndex = TEXT_ALIGN_OPTIONS.findIndex((option) => option.value === selectedTextAlign);
@@ -8271,7 +9929,7 @@ export function OpportunityPricingWorksheetBoard({
                 variant="secondary"
                 size="sm"
                 className="h-9 w-9 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                disabled={!canWriteWorksheet || !selectedRange}
+                disabled={!canMutateWorksheet || !selectedRange}
                 aria-label={`Text wrapping: ${selectedTextWrapMode}`}
                 onClick={cycleTextWrapMode}
               >
@@ -8310,12 +9968,12 @@ export function OpportunityPricingWorksheetBoard({
               <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
               <DropdownMenu>
-                <DropdownMenuTrigger asChild disabled={!canWriteWorksheet || !selectedRange}>
+                <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
                   <Button
                     variant="secondary"
                     size="sm"
                     className="h-9 w-9 rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none hover:bg-[var(--surface-muted)]"
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     aria-label="Clear formatting"
                   >
                     <Eraser className="h-5 w-5" strokeWidth={1.75} />
@@ -8326,21 +9984,21 @@ export function OpportunityPricingWorksheetBoard({
                     onSelect={() =>
                       applyFormattingPatchToSelection((format) => clearCellFill(format))
                     }
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Clear fill
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={clearNumberFormatForSelection}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Clear number format
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => applyBorderModeToSelection("clear")}
-                    disabled={!canWriteWorksheet || !selectedRange}
+                    disabled={!canMutateWorksheet || !selectedRange}
                     className="h-8 rounded-[4px] px-2 text-[12px] font-medium"
                   >
                     Clear borders
@@ -8358,22 +10016,35 @@ export function OpportunityPricingWorksheetBoard({
             <div className="flex h-8 w-8 shrink-0 items-center justify-center text-[14px] font-medium italic text-[var(--text-muted)]">
               fx
             </div>
-            <textarea
+            <div className="relative min-h-8 min-w-0 flex-1 overflow-hidden rounded-[8px] border border-[var(--border)] bg-white focus-within:ring-2 focus-within:ring-[var(--brand-blue)]">
+              {isFormulaEditing ? (
+                <PricingWorksheetFormulaTextLayer
+                  value={formulaBarValue}
+                  className="pointer-events-none absolute inset-0 z-10 overflow-hidden whitespace-pre px-2.5 py-1.5 text-[14px] leading-[20px] text-[var(--text-primary)]"
+                />
+              ) : null}
+              <textarea
               ref={formulaBarRef}
               value={formulaBarValue}
               rows={1}
-              onFocus={() => {
-                if (!formulaBarCellKey || !canWriteWorksheet) {
+              data-testid="pricing-worksheet-formula-bar"
+              onFocus={(event) => {
+                if (!formulaBarCellKey || !canMutateWorksheet) {
                   return;
                 }
 
                 beginCellEdit(formulaBarCellKey, formulaBarCell, {
                   editor: "formulaBar",
                   focus: false,
+                  selection: {
+                    start: event.currentTarget.selectionStart ?? event.currentTarget.value.length,
+                    end: event.currentTarget.selectionEnd ?? event.currentTarget.value.length,
+                  },
                 });
               }}
+              onSelect={handleEditorTextSelect}
               onChange={(event) => {
-                if (!formulaBarCellKey || !canWriteWorksheet) {
+                if (!formulaBarCellKey || !canMutateWorksheet) {
                   return;
                 }
 
@@ -8383,6 +10054,11 @@ export function OpportunityPricingWorksheetBoard({
                   replaceSelection(formulaBarCellKey, formulaBarCellKey);
                 }
 
+                const selection = {
+                  start: event.currentTarget.selectionStart ?? event.currentTarget.value.length,
+                  end: event.currentTarget.selectionEnd ?? event.currentTarget.value.length,
+                };
+                updateFormulaReferencePickState(event.target.value, selection);
                 setEditingCellValue(event.target.value);
               }}
               onBlur={() => {
@@ -8406,23 +10082,39 @@ export function OpportunityPricingWorksheetBoard({
 
                 if (event.key === "Escape") {
                   event.preventDefault();
-                  setActiveCellKey(null);
-                  setActiveEditor(null);
-                  setEditingCellValue("");
-                  focusWorksheetSurface();
+                  cancelCellEdit(formulaBarCellKey);
                   return;
                 }
 
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key === "Enter") {
                   event.preventDefault();
-                  commitCellEdit(formulaBarCellKey, editingCellValue);
+                  const nextCellKey = getAdjacentCellKey(
+                    formulaBarCellKey,
+                    getWorksheetCommitMovement("Enter", event.shiftKey),
+                  );
+                  commitCellEdit(formulaBarCellKey, editingCellValue, nextCellKey);
+                  return;
+                }
+
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  const nextCellKey = getAdjacentCellKey(
+                    formulaBarCellKey,
+                    getWorksheetCommitMovement("Tab", event.shiftKey),
+                  );
+                  commitCellEdit(formulaBarCellKey, editingCellValue, nextCellKey);
                 }
               }}
-              className="min-h-8 w-full resize-none rounded-[8px] border border-[var(--border)] bg-white px-2.5 py-1.5 text-[14px] leading-[20px] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+              className="relative z-20 block min-h-8 w-full resize-none rounded-none border-0 bg-transparent px-2.5 py-1.5 text-[14px] leading-[20px] outline-none"
+              style={{
+                color: isFormulaEditing ? "transparent" : "var(--text-primary)",
+                caretColor: "var(--text-primary)",
+              }}
               placeholder="Enter a value or formula"
-              disabled={!canWriteWorksheet}
+              disabled={!canMutateWorksheet}
               spellCheck={false}
-            />
+              />
+            </div>
           </div>
 
           {isAiChatOpen ? (
@@ -8440,7 +10132,7 @@ export function OpportunityPricingWorksheetBoard({
                 changedCellCount={aiPreviewResponse?.preview.assistant?.diffSummary.changedCells.length ?? 0}
                 isAnswerOnly={aiPreviewResponse?.preview.assistant?.mode === "answer_only"}
                 canApply={
-                  (canWriteWorksheet || aiPreviewResponse?.preview.assistant?.mode === "answer_only") &&
+                  (canMutateWorksheet || aiPreviewResponse?.preview.assistant?.mode === "answer_only") &&
                   !getBlockingAiPreviewIssue(aiPreviewResponse?.preview)
                 }
                 hasBlockingWarning={
@@ -8465,20 +10157,14 @@ export function OpportunityPricingWorksheetBoard({
             </div>
           ) : null}
 
-          <div className="mx-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-[var(--border)] bg-white shadow-[0_2px_8px_rgba(15,23,42,0.03)]">
+          <div
+            data-testid="pricing-worksheet-grid-shell"
+            className="relative mx-3 min-h-0 flex-1 overflow-hidden rounded-[10px] border border-[var(--border)] bg-white shadow-[0_2px_8px_rgba(15,23,42,0.03)]"
+          >
             <div
               ref={worksheetViewportRef}
               className="h-full overflow-auto"
-              onScroll={(event) => {
-                setWorksheetViewportScrollLeft(event.currentTarget.scrollLeft);
-                setWorksheetViewportScrollTop(event.currentTarget.scrollTop);
-                setWorksheetViewportHeight(
-                  event.currentTarget.clientHeight || WORKSHEET_VIEWPORT_FALLBACK_HEIGHT
-                );
-                setWorksheetViewportWidth(
-                  event.currentTarget.clientWidth || WORKSHEET_VIEWPORT_FALLBACK_WIDTH
-                );
-              }}
+              onScroll={handleWorksheetViewportScroll}
             >
               <div
                 style={{
@@ -8520,7 +10206,8 @@ export function OpportunityPricingWorksheetBoard({
                       <button
                         type="button"
                         aria-label={`Resize column ${column.label}`}
-                        className="absolute right-0 top-0 h-full w-2 translate-x-1/2 cursor-col-resize"
+                        disabled={!canMutateWorksheet}
+                        className={`absolute right-0 top-0 h-full w-2 translate-x-1/2 ${canMutateWorksheet ? "cursor-col-resize" : "cursor-default"}`}
                         onMouseDown={(event) => beginColumnResize(event, column.id, column.width)}
                         onDoubleClick={(event) => autoFitColumn(event, column.id)}
                         onContextMenu={(event) => {
@@ -8550,7 +10237,9 @@ export function OpportunityPricingWorksheetBoard({
                         activeSelectedRange={selectedRange}
                         activeCellKey={activeCellKey}
                         activeEditor={activeEditor}
-                        canWriteWorksheet={canWriteWorksheet}
+                        canWriteWorksheet={canMutateWorksheet}
+                        commercialMappingHighlightCellKeys={commercialMappingHighlightCellKeys}
+                        commercialMappingDragCellKey={commercialMapping.session || variationCommercialMapping.session ? selectedSingleCellKey : null}
                         editingCellValue={editingCellValue}
                         fillPreviewRange={fillPreview?.range ?? null}
                         formulaReferenceHighlightByCellKey={formulaReferenceHighlightByCellKey}
@@ -8564,19 +10253,21 @@ export function OpportunityPricingWorksheetBoard({
                         selectedRanges={selectedRanges}
                         visibleColumnStartIndex={virtualColumns.startIndex}
                         visibleColumns={virtualColumns.visibleColumns}
-                        onBeginCellEdit={handleBeginGridCellEdit}
-                        onBeginFillDrag={beginFillDrag}
-                        onAutoFitRow={autoFitRow}
-                        onBeginRowResize={beginRowResize}
-                        onCellClick={handleGridCellClick}
-                        onCellContextMenu={handleCellContextMenu}
-                        onCellMouseDown={handleGridCellMouseDown}
-                        onCellMouseEnter={updateRangeSelection}
-                        onInputBlur={handleCellBlur}
-                        onInputChange={setEditingCellValue}
-                        onInputKeyDown={handleGridCellKeyDown}
-                        onRowClick={handleRowHeaderClick}
-                        onRowContextMenu={openRowContextMenu}
+                        onBeginCellEdit={stableBeginGridCellEdit}
+                        onBeginFillDrag={stableBeginFillDrag}
+                        onAutoFitRow={stableAutoFitRow}
+                        onBeginRowResize={stableBeginRowResize}
+                        onCellClick={stableGridCellClick}
+                        onCellContextMenu={stableCellContextMenu}
+                        onCellMouseDown={stableGridCellMouseDown}
+                        onCellMouseEnter={stableRangeSelectionUpdate}
+                        onCommercialMappingDragStart={handleCommercialMappingDragStart}
+                        onInputBlur={stableCellBlur}
+                        onInputChange={handleEditingCellValueChange}
+                        onInputKeyDown={stableGridCellKeyDown}
+                        onInputSelect={handleEditorTextSelect}
+                        onRowClick={stableRowHeaderClick}
+                        onRowContextMenu={stableRowContextMenu}
                         setInputRef={setWorksheetInputRef}
                       />
                     ))}
@@ -8587,10 +10278,11 @@ export function OpportunityPricingWorksheetBoard({
                 )}
               </div>
             </div>
+            <PricingWorksheetSelectionSum aggregate={selectionAggregate} />
           </div>
 
           <WorkbookPagesTray
-            canWriteWorksheet={canWriteWorksheet}
+            canWriteWorksheet={canMutateWorksheet}
             isLoadingWorksheet={isLoadingWorksheet}
             isMutatingPages={isMutatingPages}
             isOpen={isPagesTrayOpen}
@@ -8815,18 +10507,18 @@ export function OpportunityPricingWorksheetBoard({
             lines={quotePublishDialog?.lines ?? []}
             quotes={quotePublishDialog?.quotes ?? []}
             selectedTargetMode={quotePublishTargetMode}
-            selectedQuoteId={quotePublishTargetId}
+            selectedQuoteIds={quotePublishTargetIds}
             sourceRangeLabel={quotePublishDialog?.interpretedSelection.selectionRangeLabel ?? ""}
             selectedValues={quotePublishDialog?.interpretedSelection.visibleSelectedValues ?? []}
             onOpenChange={(open) => {
               if (!open && !isPublishingWorksheetSelection) {
                 setQuotePublishDialog(null);
                 setQuotePublishTargetMode("new");
-                setQuotePublishTargetId("");
+                setQuotePublishTargetIds([]);
               }
             }}
             onTargetModeChange={setQuotePublishTargetMode}
-            onQuoteChange={setQuotePublishTargetId}
+            onQuotesChange={setQuotePublishTargetIds}
             onLineChange={(lineId, patch) =>
               setQuotePublishDialog((current) =>
                 current
@@ -8913,7 +10605,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         const range = getContextMenuRange(contextMenu);
@@ -8930,7 +10622,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    disabled={!canMutateWorksheet || isPublishingWorksheetSelection}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -8947,7 +10639,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    disabled={!canMutateWorksheet || isPublishingWorksheetSelection}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -8966,7 +10658,7 @@ export function OpportunityPricingWorksheetBoard({
                         type="button"
                         role="menuitem"
                         className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                        disabled={!canMutateWorksheet || isPublishingWorksheetSelection}
                         onMouseDown={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -8985,7 +10677,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         const range = getContextMenuRange(contextMenu);
@@ -8999,7 +10691,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         const range = getContextMenuRange(contextMenu);
@@ -9013,7 +10705,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         const range = getContextMenuRange(contextMenu);
@@ -9027,7 +10719,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         const range = getContextMenuRange(contextMenu);
@@ -9055,7 +10747,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    disabled={!canMutateWorksheet || isPublishingWorksheetSelection}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -9072,7 +10764,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                    disabled={!canMutateWorksheet || isPublishingWorksheetSelection}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -9091,7 +10783,7 @@ export function OpportunityPricingWorksheetBoard({
                         type="button"
                         role="menuitem"
                         className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!canWriteWorksheet || isPublishingWorksheetSelection}
+                        disabled={!canMutateWorksheet || isPublishingWorksheetSelection}
                         onMouseDown={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -9110,7 +10802,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         commitActiveEditIfNeeded();
@@ -9124,7 +10816,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         commitActiveEditIfNeeded();
@@ -9138,7 +10830,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => clearContentsInRange(getRowRange(contextMenu.rowIndex)))
                     }
@@ -9182,7 +10874,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         commitActiveEditIfNeeded();
@@ -9196,7 +10888,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => {
                         commitActiveEditIfNeeded();
@@ -9210,7 +10902,7 @@ export function OpportunityPricingWorksheetBoard({
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canWriteWorksheet}
+                    disabled={!canMutateWorksheet}
                     onClick={() =>
                       runContextMenuAction(() => clearContentsInRange(getColumnRange(contextMenu.columnIndex)))
                     }
@@ -9251,10 +10943,98 @@ export function OpportunityPricingWorksheetBoard({
           ) : null}
         </div>
       </div>
+      {commercialMapping.session && commercialMappingResolved && commercialMappingContext && !isNarrowCommercialCellPicker ? (
+        <PricingWorksheetCommercialMappingDrawer
+          session={commercialMapping.session}
+          resolved={commercialMappingResolved}
+          sheetName={worksheetDisplayName}
+          quoteOptions={commercialMappingContext.destination === "quote" ? commercialMappingContext.quotes : []}
+          quoteTargetMode={quotePublishTargetMode}
+          quoteTargetIds={quotePublishTargetIds}
+          purchaseOrderOptions={commercialMappingContext.destination === "purchase_order" ? commercialMappingContext.draftPurchaseOrders : []}
+          suppliers={commercialMappingContext.destination === "purchase_order" ? commercialMappingContext.suppliers : []}
+          purchaseOrderTargetMode={purchaseOrderPublishTargetMode}
+          purchaseOrderTargetId={purchaseOrderPublishTargetId}
+          purchaseOrderSupplierId={purchaseOrderPublishSupplierId}
+          purchaseOrderTitle={purchaseOrderPublishTitle}
+          purchaseOrderSection={purchaseOrderMappingSection}
+          isPublishing={isPublishingWorksheetSelection}
+          onClose={closeCommercialMapping}
+          onEscape={escapeCommercialMapping}
+          onArmField={armCommercialMappingField}
+          onClearField={commercialMapping.clearField}
+          onAssignField={commercialMapping.assignCellToField}
+          onHighlightField={setCommercialMappingHighlightField}
+          onBeginDescriptionEdit={commercialMapping.beginDescriptionEdit}
+          onCommitDescription={commercialMapping.commitDescription}
+          onQuoteTargetModeChange={setQuotePublishTargetMode}
+          onQuoteTargetIdsChange={setQuotePublishTargetIds}
+          onPurchaseOrderTargetModeChange={setPurchaseOrderPublishTargetMode}
+          onPurchaseOrderTargetIdChange={setPurchaseOrderPublishTargetId}
+          onPurchaseOrderSupplierIdChange={setPurchaseOrderPublishSupplierId}
+          onPurchaseOrderTitleChange={setPurchaseOrderPublishTitle}
+          onPurchaseOrderSectionChange={setPurchaseOrderMappingSection}
+          onPublish={() => void executeCommercialMappingPublish()}
+        />
+      ) : null}
+      {variationCommercialMapping.session && variationCommercialMappingContext && !isNarrowCommercialCellPicker ? (
+        <PricingWorksheetVariationMappingDrawer
+          variationNumber={variationCommercialMappingContext.variationNumber}
+          variationTitle={variationCommercialMappingContext.variationTitle}
+          variationStatus={variationCommercialMappingContext.variationStatus}
+          sheetName={worksheetDisplayName}
+          lines={variationCommercialMappingResolved}
+          isPublishing={isPublishingWorksheetSelection}
+          onClose={closeVariationCommercialMapping}
+          onEscape={escapeVariationCommercialMapping}
+          onArmField={armVariationCommercialMappingField}
+          onClearField={variationCommercialMapping.clearField}
+          onAssignField={variationCommercialMapping.assignCellToField}
+          onHighlightField={(lineId, field) => setVariationCommercialMappingHighlight(field ? { lineId, field } : null)}
+          onBeginDescriptionEdit={variationCommercialMapping.beginDescriptionEdit}
+          onCommitDescription={variationCommercialMapping.commitDescription}
+          onSectionChange={variationCommercialMapping.setSection}
+          onAddLine={variationCommercialMapping.addLine}
+          onRemoveLine={variationCommercialMapping.removeLine}
+          onPublish={() => void executeVariationCommercialMappingPublish()}
+        />
+      ) : null}
+      {activeSidePanel === "materials" ? (
+        <PricingWorksheetMaterialLibraryDrawer
+          workbookId={explicitWorksheetId ?? worksheetId}
+          activeSheetId={worksheetSheetId}
+          isDirty={isDirty}
+          localBindings={materialPriceReviewOverlay}
+          target={materialTarget}
+          targetIssue={materialTargetIssue}
+          canWrite={canMutateWorksheet}
+          onClose={closeMaterialLibrary}
+          onGoToCell={goToMaterialPriceCell}
+          onInsert={insertMaterialPrice}
+          onUpdatePrice={updateReviewedMaterialPrice}
+        />
+      ) : null}
+      {activeSidePanel === "measures" ? (
+        <PricingWorksheetMeasureDrawer
+          workbookId={explicitWorksheetId ?? worksheetId}
+          mappingSession={measureMapping.session}
+          canWrite={canWriteWorksheet}
+          onClose={closeMeasureDrawer}
+          onEscape={() => {
+            if (measureMapping.session?.activeField) measureMapping.armField(null);
+            else closeMeasureDrawer();
+          }}
+          onArmField={measureMapping.armField}
+          onClearField={measureMapping.clearField}
+          onAssignField={measureMapping.assignCellToField}
+          onHighlightField={setMeasureMappingHighlightField}
+          onInsert={insertMeasureValue}
+        />
+      ) : null}
       <PricingWorksheetAiAssistDialog
         open={isAiDialogOpen}
         canApply={
-          (canWriteWorksheet ||
+          (canMutateWorksheet ||
             aiPreviewResponse?.preview.assistant?.mode === "answer_only") &&
           !getBlockingAiPreviewIssue(aiPreviewResponse?.preview)
         }

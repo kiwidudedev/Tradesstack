@@ -39,12 +39,12 @@ describe("WorksheetPublishToQuoteDialog", () => {
           },
         ]}
         selectedTargetMode="existing"
-        selectedQuoteId="quote-1"
+        selectedQuoteIds={["quote-1"]}
         sourceRangeLabel="A2:B4"
         selectedValues={["Board Supply Cost", "92", "Sheets", "30", "2760"]}
         onOpenChange={() => undefined}
         onTargetModeChange={() => undefined}
-        onQuoteChange={() => undefined}
+        onQuotesChange={() => undefined}
         onLineChange={() => undefined}
         onAddLine={() => undefined}
         onRemoveLine={() => undefined}
@@ -55,7 +55,8 @@ describe("WorksheetPublishToQuoteDialog", () => {
 
     expect(markup).toContain("Add to Quote");
     expect(markup).toContain("Quote destination");
-    expect(markup).toContain("Create New Draft Quote");
+    expect(markup).toContain("Need another client quote?");
+    expect(markup).toContain("Opportunity Quotation Register");
     expect(markup).toContain("Append Existing Draft Quote");
     expect(markup).toContain("Board Supply Cost");
     expect(markup).toContain("Add another line");

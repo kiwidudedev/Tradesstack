@@ -59,6 +59,10 @@ type AllocationRow = {
   allocation_status: string;
   approval_status: string;
   accounting_mapping_id: string | null;
+  accounting_route: string | null;
+  accounting_route_mapping_id: string | null;
+  organization_cost_code_id: string | null;
+  account_override_organization_cost_code_id: string | null;
   tradesstack_cost_code: number | null;
   accounting_tax_rate_id: string | null;
   tax_resolution_status: string;
@@ -393,7 +397,7 @@ export async function getSupplierInvoiceCommercialComparison(params: {
     requireRows<AllocationRow>(
       db
         .from("supplier_invoice_line_allocations")
-        .select("id, supplier_invoice_id, supplier_invoice_line_id, purchase_order_id, purchase_order_line_item_id, project_id, allocated_quantity, allocated_amount, allocation_status, approval_status, accounting_mapping_id, tradesstack_cost_code, accounting_tax_rate_id, tax_resolution_status, approval_notes")
+        .select("id, supplier_invoice_id, supplier_invoice_line_id, purchase_order_id, purchase_order_line_item_id, project_id, allocated_quantity, allocated_amount, allocation_status, approval_status, accounting_mapping_id, accounting_route, accounting_route_mapping_id, organization_cost_code_id, account_override_organization_cost_code_id, tradesstack_cost_code, accounting_tax_rate_id, tax_resolution_status, approval_notes")
         .eq("organization_id", params.organizationId)
         .eq("supplier_invoice_id", params.supplierInvoiceId)
     ),
@@ -458,6 +462,7 @@ export async function getSupplierInvoiceCommercialComparison(params: {
     purchaseOrderLines,
     historicalSnapshots,
     mappings,
+    routeMappings,
     taxRates,
     releaseLines,
     duplicateCandidates,
@@ -496,6 +501,19 @@ export async function getSupplierInvoiceCommercialComparison(params: {
         .select("id, is_active, tradesstack_cost_code, project_id")
         .eq("organization_id", params.organizationId)
     ),
+    requireRows<{
+      id: string;
+      is_active: boolean;
+      accounting_route: string;
+      organization_cost_code_id: string;
+      project_id: string | null;
+    }>(
+      db
+        .from("organization_accounting_route_mappings")
+        .select("id, is_active, accounting_route, organization_cost_code_id, project_id")
+        .eq("organization_id", params.organizationId)
+        .eq("accounting_route", "supplier_bill_expense")
+    ),
     requireRows<AccountingTaxRateRow>(
       db
         .from("organization_accounting_tax_rates")
@@ -527,6 +545,9 @@ export async function getSupplierInvoiceCommercialComparison(params: {
     mappings
       .filter((mapping) => mapping.is_active)
       .map((mapping) => [mapping.id, mapping])
+  );
+  const activeRouteMappingById = new Map(
+    routeMappings.filter((mapping) => mapping.is_active).map((mapping) => [mapping.id, mapping]),
   );
   const activeTaxRateById = new Map(
     taxRates
@@ -742,20 +763,33 @@ export async function getSupplierInvoiceCommercialComparison(params: {
         allocationId: allocation.id,
       });
     }
-    if (
-      !allocation.accounting_mapping_id ||
-      !allocation.tradesstack_cost_code ||
-      !activeMappingById.has(allocation.accounting_mapping_id) ||
-      activeMappingById.get(allocation.accounting_mapping_id)
-        ?.tradesstack_cost_code !== allocation.tradesstack_cost_code ||
-      (activeMappingById.get(allocation.accounting_mapping_id)?.project_id !==
-        null &&
-        activeMappingById.get(allocation.accounting_mapping_id)?.project_id !==
-          allocation.project_id)
-    ) {
+    const namedMapping = allocation.accounting_route_mapping_id
+      ? activeRouteMappingById.get(allocation.accounting_route_mapping_id) ?? null
+      : null;
+    const legacyMapping = allocation.accounting_mapping_id
+      ? activeMappingById.get(allocation.accounting_mapping_id) ?? null
+      : null;
+    const explicitAccount = allocation.account_override_organization_cost_code_id;
+    const namedReady = Boolean(
+      allocation.accounting_route === "supplier_bill_expense"
+      && allocation.organization_cost_code_id
+      && (
+        (explicitAccount && explicitAccount === allocation.organization_cost_code_id)
+        || (namedMapping
+          && namedMapping.organization_cost_code_id === allocation.organization_cost_code_id
+          && (namedMapping.project_id === null || namedMapping.project_id === allocation.project_id))
+      ),
+    );
+    const legacyReady = Boolean(
+      legacyMapping
+      && allocation.tradesstack_cost_code
+      && legacyMapping.tradesstack_cost_code === allocation.tradesstack_cost_code
+      && (legacyMapping.project_id === null || legacyMapping.project_id === allocation.project_id),
+    );
+    if (!namedReady && !legacyReady) {
       blockers.push({
         code: "missing_accounting_mapping",
-        message: "Every allocation requires an active accounting mapping.",
+        message: "Every allocation requires a configured Supplier Bills account or explicit line account.",
         invoiceLineId: allocation.supplier_invoice_line_id,
         allocationId: allocation.id,
       });

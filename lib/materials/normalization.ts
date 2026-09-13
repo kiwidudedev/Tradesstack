@@ -1,9 +1,10 @@
 import type {
+  EffectiveSupplierProductPrice,
   MaterialImportRowAction,
   MaterialListSummary,
   OrganizationMaterialRow,
-  OrganizationMaterialSupplierPriceRow,
 } from "@/lib/materials/types";
+import { resolveComparableBestCost } from "@/lib/materials/effective-price";
 
 export function normalizeMaterialName(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -18,16 +19,46 @@ export function normalizeCurrency(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : "NZD";
 }
 
-export function formatMaterialMoney(value: number | null | undefined, currency = "NZD") {
+export function resolveCompanyCurrency(params: {
+  country?: string | null;
+  defaultCurrency?: string | null;
+}) {
+  const country = (params.country ?? "").trim().toUpperCase();
+  if (["NEW ZEALAND", "NZ", "NZL"].includes(country)) return "NZD";
+  if (["AUSTRALIA", "AU", "AUS"].includes(country)) return "AUD";
+
+  const configuredCurrency = (params.defaultCurrency ?? "").trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(configuredCurrency) ? configuredCurrency : "NZD";
+}
+
+export function formatMaterialMoney(
+  value: number | null | undefined,
+  currency: string | null | undefined = "NZD",
+  fallbackCurrency: string | null | undefined = "NZD",
+) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "—";
   }
 
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
+  const normalizedCurrency = (currency ?? "").trim().toUpperCase();
+  const normalizedFallback = (fallbackCurrency ?? "").trim().toUpperCase();
+  const safeFallback = /^[A-Z]{3}$/.test(normalizedFallback) ? normalizedFallback : "NZD";
+  const displayCurrency = /^[A-Z]{3}$/.test(normalizedCurrency) ? normalizedCurrency : safeFallback;
+
+  try {
+    return new Intl.NumberFormat("en-NZ", {
+      style: "currency",
+      currency: displayCurrency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    // Currency is editable in review forms. A partial draft must not crash the page.
+    return new Intl.NumberFormat("en-NZ", {
+      style: "currency",
+      currency: safeFallback,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
 }
 
 export function formatMaterialDate(value: string | null | undefined) {
@@ -61,20 +92,10 @@ export function toMaterialImportActionLabel(value: MaterialImportRowAction) {
 }
 
 export function buildMaterialStatus(params: {
-  material: Pick<OrganizationMaterialRow, "is_active" | "archived_at" | "needs_review">;
-  currentPrices: OrganizationMaterialSupplierPriceRow[];
+  material: Pick<OrganizationMaterialRow, "is_active" | "archived_at">;
 }) {
   if (!params.material.is_active || params.material.archived_at) {
     return "Archived" as const;
-  }
-
-  if (params.material.needs_review) {
-    return "Needs Review" as const;
-  }
-
-  const hasPreferred = params.currentPrices.some((price) => price.is_current && price.is_preferred);
-  if (!hasPreferred || params.currentPrices.length === 0) {
-    return "Needs Review" as const;
   }
 
   return "Active" as const;
@@ -82,35 +103,46 @@ export function buildMaterialStatus(params: {
 
 export function buildMaterialSummary(params: {
   material: OrganizationMaterialRow;
-  currentPrices: OrganizationMaterialSupplierPriceRow[];
+  effectiveSupplierProducts: EffectiveSupplierProductPrice[];
   supplierNameById: Map<string, string>;
   costCodeLabelById: Map<string, string>;
 }): MaterialListSummary {
-  const preferredPrice =
-    params.currentPrices.find((price) => price.is_current && price.is_preferred) ??
-    params.currentPrices[0] ??
-    null;
-
-  const lowestCurrentCost =
-    params.currentPrices.length > 0
-      ? params.currentPrices.reduce((lowest, price) => Math.min(lowest, Number(price.unit_cost)), Number(params.currentPrices[0].unit_cost))
-      : null;
+  const preferredOffering =
+    params.effectiveSupplierProducts.find((offering) => offering.supplierProduct.is_preferred) ?? null;
+  const preferredSupplierProduct = preferredOffering?.supplierProduct ?? null;
+  const preferredPrice = preferredOffering?.effectivePrice ?? null;
+  const currentPrices = params.effectiveSupplierProducts.flatMap((offering) =>
+    offering.effectivePrice ? [offering.effectivePrice] : []
+  );
+  const effectiveSupplierIds = new Set(currentPrices.map((price) => price.supplier_id));
+  const preferredEffectiveSupplierId = preferredPrice?.supplier_id ?? null;
+  const bestCost = resolveComparableBestCost(params.effectiveSupplierProducts);
 
   return {
     material: params.material,
+    preferredSupplierProduct,
     preferredPrice,
-    currentPrices: params.currentPrices,
-    otherSupplierCount: Math.max(0, params.currentPrices.length - (preferredPrice ? 1 : 0)),
-    lowestCurrentCost,
-    preferredSupplierName: preferredPrice
-      ? params.supplierNameById.get(preferredPrice.supplier_id) ?? null
+    effectiveSupplierProducts: params.effectiveSupplierProducts,
+    currentPrices,
+    supplierProductCount: params.effectiveSupplierProducts.length,
+    supplierCount: effectiveSupplierIds.size,
+    otherSupplierCount: Math.max(
+      0,
+      effectiveSupplierIds.size -
+        (preferredEffectiveSupplierId && effectiveSupplierIds.has(preferredEffectiveSupplierId) ? 1 : 0)
+    ),
+    bestCost,
+    lowestCurrentCost: bestCost.status === "comparable"
+      ? Number(bestCost.comparableUnitCost ?? bestCost.price.unit_cost)
+      : null,
+    preferredSupplierName: preferredSupplierProduct
+      ? params.supplierNameById.get(preferredSupplierProduct.supplier_id) ?? null
       : null,
     costCodeLabel: params.material.organization_cost_code_id
       ? params.costCodeLabelById.get(params.material.organization_cost_code_id) ?? null
       : null,
     status: buildMaterialStatus({
       material: params.material,
-      currentPrices: params.currentPrices,
     }),
   };
 }

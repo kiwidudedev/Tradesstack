@@ -27,7 +27,11 @@ function getInitials(name: string) {
     .join("");
 }
 
-export function Topbar() {
+export function Topbar({
+  canViewPaymentClaims = false,
+}: {
+  canViewPaymentClaims?: boolean;
+}) {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -87,7 +91,10 @@ export function Topbar() {
               side="left"
               className="w-[280px] rounded-r-none border-0 bg-[var(--sidebar)] p-0"
             >
-              <SidebarNavContent onNavigate={() => setIsNavOpen(false)} />
+              <SidebarNavContent
+                onNavigate={() => setIsNavOpen(false)}
+                canViewPaymentClaims={canViewPaymentClaims}
+              />
             </SheetContent>
           </Sheet>
 

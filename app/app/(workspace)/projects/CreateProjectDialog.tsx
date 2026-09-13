@@ -14,7 +14,7 @@ import { FormLabel } from "@/components/app/FormLabel";
 import { Input } from "@/components/ui/input";
 
 const NEW_CLIENT_OPTION = "__new_client__";
-type OrganizationClient = Database["public"]["Tables"]["organization_clients"]["Row"];
+type OrganizationClient = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "company_name">;
 
 function toProjectCreationErrorMessage(message: string): string {
   if (message.includes("organization_projects_stage_check")) {

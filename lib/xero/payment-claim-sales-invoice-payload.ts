@@ -15,13 +15,28 @@ export type PaymentClaimXeroPayloadErrorCode =
   | "gst_mismatch"
   | "total_mismatch";
 
+export type PaymentClaimXeroPayloadDiagnostics = {
+  organizationId: string | null;
+  claimId: string | null;
+  accountTaxType: string | null;
+  selectedTaxType: string | null;
+  selectedTaxRateId: string | null;
+  selectedEffectiveRate: number | null;
+};
+
 export class PaymentClaimXeroPayloadError extends Error {
   readonly code: PaymentClaimXeroPayloadErrorCode;
+  readonly diagnostics: PaymentClaimXeroPayloadDiagnostics | null;
 
-  constructor(code: PaymentClaimXeroPayloadErrorCode, message: string) {
+  constructor(
+    code: PaymentClaimXeroPayloadErrorCode,
+    message: string,
+    diagnostics: PaymentClaimXeroPayloadDiagnostics | null = null,
+  ) {
     super(message);
     this.name = "PaymentClaimXeroPayloadError";
     this.code = code;
+    this.diagnostics = diagnostics;
   }
 }
 
@@ -145,15 +160,35 @@ function assertNonNegative(cents: number, field: string) {
 export function buildPaymentClaimXeroPayloadFromResolvedSnapshot(
   snapshot: PaymentClaimXeroReadinessSnapshot,
 ): PaymentClaimXeroPayloadResult {
+  const resolved = resolvePaymentClaimXeroDependencies(snapshot);
+  const taxDiagnostics = (): PaymentClaimXeroPayloadDiagnostics => ({
+    organizationId: typeof snapshot.organization.id === "string" ? snapshot.organization.id : null,
+    claimId: typeof snapshot.claim.id === "string" ? snapshot.claim.id : null,
+    accountTaxType: resolved.revenueTaxResolution.status === "resolved"
+      ? resolved.revenueTaxResolution.externalTaxType
+      : resolved.revenueTaxResolution.accountTaxType,
+    selectedTaxType: typeof resolved.revenueTaxRate?.tax_type === "string"
+      ? resolved.revenueTaxRate.tax_type
+      : null,
+    selectedTaxRateId: typeof resolved.revenueTaxRate?.id === "string"
+      ? resolved.revenueTaxRate.id
+      : null,
+    selectedEffectiveRate: Number.isFinite(Number(resolved.revenueTaxRate?.effective_rate))
+      ? Number(resolved.revenueTaxRate?.effective_rate)
+      : null,
+  });
   const readiness = evaluatePaymentClaimXeroReadinessSnapshot(snapshot);
-  if (!readiness.ready) {
+  const nonGstReadinessBlocker = readiness.blockers.find(
+    (blocker) => blocker.code !== "sales_tax_rate_gst_mismatch",
+  );
+  if (nonGstReadinessBlocker) {
     throw new PaymentClaimXeroPayloadError(
       "not_ready",
-      "Payment Claim is not ready to synchronize to Xero.",
+      nonGstReadinessBlocker.message,
+      taxDiagnostics(),
     );
   }
 
-  const resolved = resolvePaymentClaimXeroDependencies(snapshot);
   if (
     !resolved.importedContact
     || !resolved.salesMapping
@@ -161,7 +196,11 @@ export function buildPaymentClaimXeroPayloadFromResolvedSnapshot(
     || !resolved.revenueTaxRate
     || (resolved.retentionRequired && (!resolved.retentionMapping || !resolved.retentionAccount))
   ) {
-    throw new PaymentClaimXeroPayloadError("not_ready", "Resolved Xero accounting dependencies are incomplete.");
+    throw new PaymentClaimXeroPayloadError(
+      "not_ready",
+      "Resolved Xero accounting dependencies are incomplete.",
+      taxDiagnostics(),
+    );
   }
 
   const claim = snapshot.claim;
@@ -171,9 +210,9 @@ export function buildPaymentClaimXeroPayloadFromResolvedSnapshot(
   const invoiceDate = requiredDate(claim.claim_date, "Payment Claim date");
   const dueDate = requiredDate(claim.due_date, "Payment Claim due date");
   const contactId = requiredText(resolved.importedContact.contact_id, "client Xero ContactID");
-  const salesAccountCode = requiredText(resolved.salesAccount.external_code, "route 600 Xero AccountCode");
+  const salesAccountCode = requiredText(resolved.salesAccount.external_code, "Payment Claims Xero AccountCode");
   const retentionAccountCode = resolved.retentionAccount
-    ? requiredText(resolved.retentionAccount.external_code, "route 700 Xero AccountCode")
+    ? requiredText(resolved.retentionAccount.external_code, "Retention Receivable Xero AccountCode")
     : null;
   const taxType = requiredText(resolved.revenueTaxRate.tax_type, "synchronized revenue TaxType");
 
@@ -215,6 +254,7 @@ export function buildPaymentClaimXeroPayloadFromResolvedSnapshot(
     throw new PaymentClaimXeroPayloadError(
       "gst_mismatch",
       "The synchronized Xero TaxType does not reconcile to persisted gst_amount within one cent.",
+      taxDiagnostics(),
     );
   }
   if (persistedSubtotalCents + persistedGstCents !== persistedTotalCents) {

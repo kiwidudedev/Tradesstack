@@ -7,16 +7,10 @@ export interface QuantityTableGroup {
   label: string;
   rows: QuantityTableRow[];
   totalsLabel: string;
-  totals: {
-    areaQuantityTotal: number | null;
-    areaSecondaryTotal: number | null;
-    areaSecondaryUnit: string | null;
-    linearQuantityTotal: number | null;
-    countQuantityTotal: number | null;
-  };
+  totals: import("@/lib/takeoff/quantity-totals").QuantityGroupTotal[];
 }
 
-function renderQuantityRow(row: QuantityTableRow) {
+function renderQuantityRow(row: QuantityTableRow, showDrawing: boolean) {
   const isArchived = row.status === "archived";
   const secondaryDisplayValue = row.secondaryQuantityDisplay.startsWith("Perimeter ")
     ? row.secondaryQuantityDisplay.replace(/^Perimeter\s+/, "")
@@ -29,6 +23,12 @@ function renderQuantityRow(row: QuantityTableRow) {
         isArchived ? "bg-[#FCFDFE]" : ""
       }`}
     >
+      {showDrawing ? (
+        <td className="px-6 py-4">
+          <p className={`${ibmPlexSans.className} text-[14px] font-medium text-[#44556C]`}>{row.drawingDisplayName}</p>
+          <p className={`${ibmPlexSans.className} mt-1 text-[12px] text-[#7A8A98]`}>{row.pageLabel}</p>
+        </td>
+      ) : null}
       <td className="px-6 py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -77,10 +77,12 @@ export function TakeoffQuantitiesTable({
   rows,
   groups,
   emptyMessage = "No takeoff items saved yet.",
+  showDrawing = false,
 }: {
   rows: QuantityTableRow[];
   groups?: QuantityTableGroup[] | null;
   emptyMessage?: string;
+  showDrawing?: boolean;
 }) {
   const shouldRenderGroups = Boolean(groups && groups.length > 0);
 
@@ -97,13 +99,14 @@ export function TakeoffQuantitiesTable({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] border-collapse">
               <colgroup>
-                <col className="w-[48%]" />
-                <col className="w-[26%]" />
-                <col className="w-[26%]" />
+                {showDrawing ? <col className="w-[22%]" /> : null}
+                <col className={showDrawing ? "w-[36%]" : "w-[48%]"} />
+                <col className={showDrawing ? "w-[21%]" : "w-[26%]"} />
+                <col className={showDrawing ? "w-[21%]" : "w-[26%]"} />
               </colgroup>
               <thead>
                 <tr className="border-b border-[#E2E8F1] bg-[#F8FAFB]">
-                  {["Description", "Quantity", "Secondary"].map((heading) => (
+                  {(showDrawing ? ["Drawing", "Description", "Quantity", "Secondary"] : ["Description", "Quantity", "Secondary"]).map((heading) => (
                     <th
                       key={heading}
                       className={`${ibmPlexSans.className} px-6 py-3 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-[#44556C] ${
@@ -119,7 +122,7 @@ export function TakeoffQuantitiesTable({
                 {shouldRenderGroups
                   ? groups!.flatMap((group) => [
                       <tr key={`${group.key}-header`} className="border-b border-[#E2E8F1] bg-[#FCFDFE]">
-                        <td colSpan={3} className="px-6 py-3">
+                        <td colSpan={showDrawing ? 4 : 3} className="px-6 py-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <p className={`${ibmPlexSans.className} text-[14px] font-semibold text-[#10283B]`}>{group.label}</p>
                             {group.totalsLabel ? (
@@ -128,9 +131,9 @@ export function TakeoffQuantitiesTable({
                           </div>
                         </td>
                       </tr>,
-                      ...group.rows.map((row) => renderQuantityRow(row)),
+                      ...group.rows.map((row) => renderQuantityRow(row, showDrawing)),
                     ])
-                  : rows.map((row) => renderQuantityRow(row))}
+                  : rows.map((row) => renderQuantityRow(row, showDrawing))}
               </tbody>
             </table>
           </div>

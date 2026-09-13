@@ -153,6 +153,22 @@ export async function getProjectWorkContextForCurrentUser(params: {
     };
   }
 
+  // A promoted workspace is the final Project itself. Resolve it once and do
+  // not enter the historical final-Project-to-workspace fallback path.
+  if (opportunityResult.data.workspace_project_id === project.id) {
+    return {
+      effectiveFeatureProjectId: project.id,
+      effectiveReadProjectId: project.id,
+      workspaceProjectId: project.id,
+      sourceOpportunityId,
+      origin: "project",
+      organizationId: project.organization_id,
+      projectSlug: project.slug,
+      projectName: project.name,
+      projectStage: project.stage,
+    };
+  }
+
   const projectHasFeatureData = await hasFeatureDataForProject({
     supabase,
     organizationId: project.organization_id,

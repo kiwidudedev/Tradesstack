@@ -23,6 +23,8 @@ export type PurchaseOrderOrigin =
   | "Other";
 
 export type PurchaseOrderCostSection = "Labour" | "Materials" | "Subcontractors" | "Plant" | "Margin";
+export const PURCHASE_ORDER_SOURCE_SECTIONS = ["Labour", "Materials", "Subcontractors", "Plant"] as const;
+export type PurchaseOrderSourceSection = (typeof PURCHASE_ORDER_SOURCE_SECTIONS)[number];
 export type PurchaseOrderAttachmentKind = "Drawing" | "Email" | "Site Instruction" | "Other";
 
 export type PurchaseOrderRow = Database["public"]["Tables"]["project_purchase_orders"]["Row"];

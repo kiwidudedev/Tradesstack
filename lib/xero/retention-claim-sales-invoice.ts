@@ -86,7 +86,7 @@ const MESSAGES: Record<string, string> = {
   invoice_scope_missing: "Reconnect Xero to grant invoice access.",
   attachment_scope_missing: "Reconnect Xero to grant invoice attachment access.",
   client_contact_missing: "Link the project client to an active Xero Contact.",
-  retention_mapping_missing: "Map route 700 Retentions to an active Xero Current Asset account.",
+  retention_mapping_missing: "Configure Retention Receivable with an active Xero Current Asset account.",
   revenue_tax_type_missing: "Synchronize an active revenue TaxType for the selected Xero tenant.",
   accounting_document_invalid: "The Retention Claim Xero accounting identity is invalid.",
   multiple_origins_unsupported:
@@ -260,10 +260,10 @@ export async function loadRetentionClaimXeroResolved(
       .eq("provider", "xero")
       .eq("local_entity_type", "client")
       .eq("local_entity_id", project.data?.client_id ?? ""),
-    admin.from("organization_tradesstack_accounting_mappings").select("*")
+    admin.from("organization_accounting_route_mappings").select("*")
       .eq("organization_id", source.claim.organizationId)
       .eq("provider", "xero")
-      .eq("tradesstack_cost_code", 700)
+      .eq("accounting_route", "retention_receivable")
       .eq("is_active", true),
     admin.from("organization_accounting_tax_rates").select("*")
       .eq("organization_id", source.claim.organizationId)

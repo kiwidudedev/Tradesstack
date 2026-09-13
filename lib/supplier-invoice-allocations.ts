@@ -8,7 +8,6 @@ import {
   buildSupplierInvoiceLineAllocationPayload,
   deriveAllocationReviewStatus,
 } from "@/lib/supplier-invoice-lineage";
-import { routeFinancialLineItem } from "@/lib/tradesstack-financial-routing";
 
 export type SupplierInvoiceLineAllocationRow =
   Database["public"]["Tables"]["supplier_invoice_line_allocations"]["Row"];
@@ -65,6 +64,8 @@ export function createUnmatchedSupplierInvoiceLineAllocationDraft(params: {
   allocatedQuantity?: number | null;
   projectId?: string | null;
   organizationCostCodeId?: string | null;
+  accountingRouteMappingId?: string | null;
+  accountOverrideOrganizationCostCodeId?: string | null;
   description?: string | null;
   supplierName?: string | null;
   taxResolution?: {
@@ -72,22 +73,11 @@ export function createUnmatchedSupplierInvoiceLineAllocationDraft(params: {
     taxResolutionStatus: "resolved" | "not_applicable" | "unresolved";
   };
 }): SupplierInvoiceLineAllocationInsert {
-  const routing = routeFinancialLineItem({
-    sourceModule: "supplier_invoice",
-    documentType: "supplier_invoice",
-    transactionType: "supplier_invoice",
-    objectType: "supplier_invoice_line_allocation",
-    description: params.description ?? null,
-    supplierName: params.supplierName ?? null,
-    amount: params.allocatedAmount,
-  });
-  const reviewStatus =
-    routing.reviewStatus === "auto_approved" ? "needs_accounting_mapping" : routing.reviewStatus;
-
   return {
     organization_id: params.organizationId,
     supplier_invoice_id: params.supplierInvoiceId,
     supplier_invoice_line_id: params.supplierInvoiceLineId,
+    allocation_group_id: crypto.randomUUID(),
     purchase_order_id: null,
     purchase_order_line_item_id: null,
     project_id: params.projectId ?? null,
@@ -97,27 +87,35 @@ export function createUnmatchedSupplierInvoiceLineAllocationDraft(params: {
     matched_amount: 0,
     cost_item_id: null,
     source_cost_item_id: null,
-    tradesstack_cost_code: routing.tradesstackCostCode,
-    tradesstack_cost_code_label: routing.tradesstackCostCodeLabel,
-    work_type: null,
-    cost_type: null,
-    internal_cost_code: null,
-    classification_status:
-      reviewStatus === "needs_routing_review" || reviewStatus === "high_value_review"
-        ? "needs_review"
-        : "pending",
-    organization_cost_code_id: params.organizationCostCodeId ?? null,
+    tradesstack_cost_code: null,
+    tradesstack_cost_code_label: null,
+    financial_routing_confidence: null,
+    financial_routing_source: null,
+    organization_cost_code_id:
+      params.accountOverrideOrganizationCostCodeId ?? params.organizationCostCodeId ?? null,
     accounting_mapping_id: null,
-    accounting_resolution_status: "pending",
+    accounting_route: "supplier_bill_expense",
+    accounting_route_mapping_id: params.accountingRouteMappingId ?? null,
+    account_override_organization_cost_code_id:
+      params.accountOverrideOrganizationCostCodeId ?? null,
+    accounting_resolution_status:
+      params.accountOverrideOrganizationCostCodeId || params.accountingRouteMappingId
+        ? "resolved"
+        : "needs_accounting_setup",
     accounting_tax_rate_id: params.taxResolution?.accountingTaxRateId ?? null,
     tax_resolution_status: params.taxResolution?.taxResolutionStatus ?? "unresolved",
     allocation_status: "unmatched",
     match_status: "suggested",
-    review_status: reviewStatus,
+    review_status:
+      params.accountOverrideOrganizationCostCodeId || params.accountingRouteMappingId
+        ? "resolved"
+        : "needs_accounting_mapping",
     review_reason:
-      reviewStatus === "needs_accounting_mapping"
-        ? "missing_accounting_mapping"
-        : "unmatched_supplier_invoice_line",
+      params.accountOverrideOrganizationCostCodeId
+        ? "explicit_line_account_override"
+        : params.accountingRouteMappingId
+          ? "mapped_accounting_route"
+          : "missing_accounting_route",
     approval_status: "pending",
     allocation_source: "manual",
   };
@@ -138,7 +136,7 @@ export function canUserSaveDraftAllocation(params: {
     accountingResolution: params.accountingResolution,
   });
 
-  if (reviewStatus === "auto_approved" || reviewStatus === "resolved") {
+  if (reviewStatus === "auto_approved") {
     return true;
   }
 

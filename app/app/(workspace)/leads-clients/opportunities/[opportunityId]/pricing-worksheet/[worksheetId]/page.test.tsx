@@ -35,6 +35,8 @@ describe("pricing worksheet deep route", () => {
       opportunityId: "opp-db-1",
       slug: "long-bay-apartment",
       name: "Long Bay Apartment",
+      stage: "New",
+      convertedProjectId: null,
       clientId: null,
       clientName: "Unassigned",
       ownerUserId: null,

@@ -18,6 +18,7 @@ import {
   listCommercialItemsByIds,
 } from "@/lib/commercial-items/service";
 import type { CommercialItemPayload, CommercialItemsClient } from "@/lib/commercial-items/types";
+import type { VariationLineCommercialItemShape } from "@/lib/commercial-items/variation-linking";
 
 function buildCommercialItem(overrides: Partial<CommercialItemPayload> = {}): CommercialItemPayload {
   return {
@@ -79,6 +80,43 @@ describe("variation linking", () => {
     })).toBe(
       "/app/projects/airport-fitout/preconstruction/variations/variation-1/pricing-worksheet/workbook-1?sheetId=sheet-1",
     );
+  });
+
+  it("builds a Takeoff source href without inventing worksheet provenance", () => {
+    const link = buildVariationCommercialItemLink(buildCommercialItem({
+      sourceType: "takeoff_measurement",
+      sourceWorkbookId: null,
+      sourceWorksheetId: null,
+      sourceSheetId: null,
+      sourceRange: null,
+      sourceTakeoffMeasurementId: "measurement-1",
+      sourceLinkJson: {
+        ownerType: "project",
+        ownerSlug: "airport-fitout",
+        drawingSetId: "drawing-set-1",
+        pageId: "page-1",
+      },
+    }));
+
+    expect(buildVariationCommercialItemSourceHref({ commercialItemLink: link })).toBe(
+      "/app/projects/airport-fitout/takeoff/measure?drawingSetId=drawing-set-1&pageId=page-1",
+    );
+    expect(link.sourceWorksheetId).toBeNull();
+    expect(link.sourceTakeoffMeasurementId).toBe("measurement-1");
+  });
+
+  it("rejects incomplete provenance for both source kinds", () => {
+    expect(() => buildVariationCommercialItemLink(buildCommercialItem({ sourceRange: null })))
+      .toThrow("worksheet source provenance");
+    expect(() => buildVariationCommercialItemLink(buildCommercialItem({
+      sourceType: "takeoff_measurement",
+      sourceWorkbookId: null,
+      sourceWorksheetId: null,
+      sourceSheetId: null,
+      sourceRange: null,
+      sourceTakeoffMeasurementId: "measurement-1",
+      sourceLinkJson: {},
+    }))).toThrow("measurement, owner, drawing, and page provenance");
   });
 
   it("persists valid variation links through the existing rpc", async () => {
@@ -157,7 +195,7 @@ describe("variation linking", () => {
     vi.mocked(listCommercialItemsByIds).mockResolvedValueOnce([buildCommercialItem()]);
 
     const variationLinking = await import("@/lib/commercial-items/variation-linking");
-    const enriched = await variationLinking.enrichVariationLineItemsWithCommercialItems({
+    const enriched = await variationLinking.enrichVariationLineItemsWithCommercialItems<VariationLineCommercialItemShape>({
       client,
       organizationId: "org-1",
       variationId: "variation-1",

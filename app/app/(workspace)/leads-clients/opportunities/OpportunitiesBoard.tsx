@@ -343,29 +343,51 @@ export function OpportunitiesBoard({
 
     try {
       if (targetColumn === "won") {
-        const response = await fetch(`/api/leads-clients/opportunities/${current.slug}/convert`, { method: "POST" });
+        const supabase = createBrowserSupabaseClient();
+        const { data: acceptedQuote, error: acceptedQuoteError } = await supabase
+          .from("project_quotes")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .eq("originating_opportunity_id", current.opportunityId)
+          .eq("status", "Accepted")
+          .order("updated_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (acceptedQuoteError) {
+          throw new Error(acceptedQuoteError.message);
+        }
+        if (!acceptedQuote?.id) {
+          throw new Error("Accept a quote before moving this opportunity to won.");
+        }
+
+        const response = await fetch(
+          `/api/leads-clients/opportunities/${current.slug}/convert`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ acceptedQuoteId: acceptedQuote.id }),
+          },
+        );
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
           throw new Error(payload?.error ?? "Unable to move opportunity to won.");
         }
       } else {
+        if (current.stage === "Won" || current.convertedProjectId) {
+          throw new Error("Awarded opportunities cannot be moved out of Won through the board.");
+        }
         const supabase = createBrowserSupabaseClient();
         const payload: {
           stage: OpportunityStage;
           quoted_at?: string;
-          converted_project_id?: null;
-          converted_at?: null;
         } = {
           stage: nextStage,
         };
 
         if (targetColumn === "submitted" && !current.quotedDateIso) {
           payload.quoted_at = new Date().toISOString().slice(0, 10);
-        }
-
-        if (current.stage === "Won" || current.convertedProjectId) {
-          payload.converted_project_id = null;
-          payload.converted_at = null;
         }
 
         const { error } = await supabase

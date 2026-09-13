@@ -2,11 +2,11 @@ import "server-only";
 
 import { cache } from "react";
 import {
-  getOrganizationProjectBySlugForCurrentUser,
   getOrganizationProjectsForCurrentUser,
   getProjectDashboardMetricsForCurrentUser,
   getProjectDrawingSetsForCurrentUser,
   getRecentActivityForCurrentUser,
+  getVisibleOrganizationProjectBySlugForCurrentUser,
 } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { TradePackPlanTier } from "@/lib/trade-pack-workspaces";
@@ -22,7 +22,7 @@ export interface TradePackWorkspaceQuota {
 
 export const getTradePackWorkspacesForCurrentUser = getOrganizationProjectsForCurrentUser;
 export const getTradePackWorkspaceBySlugForCurrentUser = cache(
-  getOrganizationProjectBySlugForCurrentUser,
+  getVisibleOrganizationProjectBySlugForCurrentUser,
 );
 export const getTradePackWorkspaceDrawingSetsForCurrentUser = getProjectDrawingSetsForCurrentUser;
 export const getTradePackWorkspaceDashboardMetricsForCurrentUser = getProjectDashboardMetricsForCurrentUser;

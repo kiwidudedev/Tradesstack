@@ -142,7 +142,10 @@ export async function evaluateUniversalLearningScheduleCandidate(input: {
     },
   });
   const recordCount = builderResult.records.length;
-  if (recordCount < rolloutConfig.minimumRecordCount) {
+  const isSupplierBillContinuation =
+    input.containerType === "supplier_invoice"
+    && (cursor.updatedAt !== null || cursor.id !== null);
+  if (recordCount < rolloutConfig.minimumRecordCount && !isSupplierBillContinuation) {
     return {
       ...baseDecision,
       recordCount,

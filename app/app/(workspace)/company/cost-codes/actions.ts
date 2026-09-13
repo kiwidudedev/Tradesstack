@@ -19,6 +19,7 @@ export type SaveTradesstackAccountingMappingActionResult = {
 };
 
 const COST_CODES_PATH = "/app/company/cost-codes";
+const COST_ITEM_REVIEW_PATH = "/app/company/cost-items/review";
 
 async function requireCostCodeMappingWriteContext(organizationId: string) {
   const currentMember = await getCurrentOrganizationMember();
@@ -99,6 +100,7 @@ export async function saveTradesstackAccountingMappingAction(params: {
     });
 
     revalidatePath(COST_CODES_PATH);
+    revalidatePath(COST_ITEM_REVIEW_PATH);
     return {
       ok: true,
       notice: `Saved ${params.tradesstackCostCode} mapping for ${formatProviderLabel(params.provider)}.`,
@@ -126,6 +128,7 @@ export async function archiveTradesstackAccountingMappingAction(params: {
     });
 
     revalidatePath(COST_CODES_PATH);
+    revalidatePath(COST_ITEM_REVIEW_PATH);
     return {
       ok: true,
       notice: `Removed ${params.tradesstackCostCode} mapping for ${formatProviderLabel(params.provider)}.`,

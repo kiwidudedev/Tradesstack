@@ -163,6 +163,31 @@ describe("Universal Construction Learning monthly scheduler", () => {
     expect(enqueueLearningReviewQueue).not.toHaveBeenCalled();
   });
 
+  it("keeps a deferred Supplier Bill suffix eligible below the initial threshold", async () => {
+    getUniversalLearningCursor.mockResolvedValueOnce({
+      updatedAt: "2026-05-20T00:00:00.000Z",
+      id: "invoice-12",
+    });
+    buildUniversalLearningContainerRecords.mockResolvedValueOnce({
+      records: [{ source: { sourceId: "invoice-13" } }],
+      nextCursorCandidate: { updatedAt: "2026-05-21T00:00:00.000Z", id: "invoice-13" },
+    });
+
+    const { scheduleUniversalLearningMonthlyReviews } = await import("./scheduler");
+    const result = await scheduleUniversalLearningMonthlyReviews({
+      reviewMonth: "2026-05",
+      containerType: "supplier_invoice",
+      dryRun: true,
+    });
+
+    expect(result.decisions[0]).toMatchObject({
+      eligible: true,
+      reason: "eligible_dry_run",
+      recordCount: 1,
+      minimumRecordCount: 3,
+    });
+  });
+
   it("does not enqueue if a completed review already exists", async () => {
     hasCompletedUniversalLearningReviewRun.mockResolvedValueOnce(true);
 

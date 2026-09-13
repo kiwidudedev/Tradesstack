@@ -328,19 +328,40 @@ export async function getSupplierInvoiceXeroBillReadiness(params: {
   const mappingIds = snapshots
     .map((row) => String(row.accounting_mapping_id ?? ""))
     .filter(Boolean);
+  const routeMappingIds = snapshots
+    .map((row) => String(row.accounting_route_mapping_id ?? ""))
+    .filter(Boolean);
+  const namedAccountIds = snapshots
+    .filter((row) => row.accounting_route === "supplier_bill_expense")
+    .map((row) => String(row.organization_cost_code_id ?? ""))
+    .filter(Boolean);
   const taxRateIds = snapshots
     .map((row) => String(row.accounting_tax_rate_id ?? ""))
     .filter(Boolean);
   const poIds = snapshots
     .map((row) => String(row.purchase_order_id ?? ""))
     .filter(Boolean);
-  const [mappingsResult, taxRatesResult, purchaseOrdersResult] = await Promise.all([
+  const [mappingsResult, routeMappingsResult, namedAccountsResult, taxRatesResult, purchaseOrdersResult] = await Promise.all([
     mappingIds.length
       ? db
           .from("organization_tradesstack_accounting_mappings")
           .select("id, tradesstack_cost_code, organization_cost_code_id, is_active, organization_cost_codes(*)")
           .eq("organization_id", params.organizationId)
           .in("id", mappingIds)
+      : Promise.resolve({ data: [], error: null }),
+    routeMappingIds.length
+      ? db
+          .from("organization_accounting_route_mappings")
+          .select("id, accounting_route, organization_cost_code_id, project_id, is_active")
+          .eq("organization_id", params.organizationId)
+          .in("id", routeMappingIds)
+      : Promise.resolve({ data: [], error: null }),
+    namedAccountIds.length
+      ? db
+          .from("organization_cost_codes")
+          .select("*")
+          .eq("organization_id", params.organizationId)
+          .in("id", namedAccountIds)
       : Promise.resolve({ data: [], error: null }),
     taxRateIds.length
       ? db
@@ -357,13 +378,22 @@ export async function getSupplierInvoiceXeroBillReadiness(params: {
           .in("id", poIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
-  const relatedError = [mappingsResult.error, taxRatesResult.error, purchaseOrdersResult.error].find(Boolean);
+  const relatedError = [mappingsResult.error, routeMappingsResult.error, namedAccountsResult.error, taxRatesResult.error, purchaseOrdersResult.error].find(Boolean);
   if (relatedError) {
     throw new Error(relatedError.message);
   }
 
   const mappingById = new Map(
     ((mappingsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [String(row.id), row]),
+  );
+  const routeMappingById = new Map(
+    ((routeMappingsResult.data ?? []) as Array<Record<string, unknown>>)
+      .filter((row) => row.is_active === true && row.accounting_route === "supplier_bill_expense")
+      .map((row) => [String(row.id), row]),
+  );
+  const namedAccountById = new Map(
+    ((namedAccountsResult.data ?? []) as Array<Record<string, unknown>>)
+      .map((row) => [String(row.id), row]),
   );
   const taxById = new Map(
     ((taxRatesResult.data ?? []) as Array<Record<string, unknown>>)
@@ -381,11 +411,20 @@ export async function getSupplierInvoiceXeroBillReadiness(params: {
   );
   const lines: XeroBillResolvedLine[] = snapshots.map((snapshot) => {
     const mapping = mappingById.get(String(snapshot.accounting_mapping_id ?? "")) ?? null;
+    const routeMapping = routeMappingById.get(String(snapshot.accounting_route_mapping_id ?? "")) ?? null;
     const costCodeValue = mapping?.organization_cost_codes;
-    const costCode =
+    const legacyCostCode =
       costCodeValue && typeof costCodeValue === "object" && !Array.isArray(costCodeValue)
         ? (costCodeValue as Record<string, unknown>)
         : null;
+    const namedCostCode = namedAccountById.get(String(snapshot.organization_cost_code_id ?? "")) ?? null;
+    const costCode = snapshot.accounting_route === "supplier_bill_expense"
+      && (
+        routeMapping?.organization_cost_code_id === snapshot.organization_cost_code_id
+        || snapshot.account_override_organization_cost_code_id === snapshot.organization_cost_code_id
+      )
+      ? namedCostCode
+      : legacyCostCode;
     const taxRate = snapshot.accounting_tax_rate_id
       ? taxById.get(String(snapshot.accounting_tax_rate_id)) ?? null
       : null;

@@ -205,9 +205,8 @@ type SupplierInvoiceAllocationPreviewData = {
   sourceCostItemId: string | null;
   tradesstackCostCode: string | null;
   tradesstackCostCodeLabel: string | null;
-  workType: string | null;
-  costType: string | null;
-  internalCostCode: string | null;
+  financialRoutingConfidence: number | null;
+  financialRoutingSource: string | null;
   organizationCostCodeId: string | null;
   organizationCostCode: string | null;
   organizationCostCodeName: string | null;
@@ -739,7 +738,11 @@ export function SupplierInvoiceDetailWorkspace({
       initialDraftAllocations.map((allocation) => [
         allocation.id,
         {
-          accountingMappingId: allocation.accounting_mapping_id ?? "",
+          accountingMappingId:
+            (allocation as unknown as { accounting_route_mapping_id?: string | null })
+              .accounting_route_mapping_id
+            ?? allocation.accounting_mapping_id
+            ?? "",
           accountingTaxRateId: allocation.accounting_tax_rate_id ?? "",
           taxResolutionStatus:
             allocation.tax_resolution_status === "not_applicable"
@@ -781,7 +784,11 @@ export function SupplierInvoiceDetailWorkspace({
         nextAllocations.map((allocation) => [
           allocation.id,
           {
-            accountingMappingId: allocation.accounting_mapping_id ?? "",
+            accountingMappingId:
+              (allocation as unknown as { accounting_route_mapping_id?: string | null })
+                .accounting_route_mapping_id
+              ?? allocation.accounting_mapping_id
+              ?? "",
             accountingTaxRateId: allocation.accounting_tax_rate_id ?? "",
             taxResolutionStatus:
               allocation.tax_resolution_status === "not_applicable"
@@ -1394,7 +1401,7 @@ export function SupplierInvoiceDetailWorkspace({
   async function saveCommercialCoding(allocationId: string) {
     const draft = commercialCodingDrafts[allocationId];
     if (!draft?.accountingMappingId) {
-      setError("Select an accounting mapping.");
+      setError("Select a Supplier Bills account.");
       return;
     }
     if (
@@ -1747,9 +1754,8 @@ export function SupplierInvoiceDetailWorkspace({
           sourceCostItemId: null,
           tradesstackCostCode: null,
           tradesstackCostCodeLabel: null,
-          workType: null,
-          costType: null,
-          internalCostCode: null,
+          financialRoutingConfidence: null,
+          financialRoutingSource: null,
           organizationCostCodeId: null,
           organizationCostCode: null,
           organizationCostCodeName: null,
@@ -1786,9 +1792,8 @@ export function SupplierInvoiceDetailWorkspace({
                     ? null
                     : String(savedUnmatchedAllocation.tradesstack_cost_code),
                 tradesstackCostCodeLabel: savedUnmatchedAllocation.tradesstack_cost_code_label,
-                workType: null,
-                costType: null,
-                internalCostCode: null,
+                financialRoutingConfidence: null,
+                financialRoutingSource: null,
                 organizationCostCodeId: savedUnmatchedAllocation.organization_cost_code_id,
                 organizationCostCode:
                   costCodes.find((costCode) => costCode.id === savedUnmatchedAllocation.organization_cost_code_id)
@@ -4317,7 +4322,11 @@ export function SupplierInvoiceDetailWorkspace({
                         onChange={(event) => setCommercialCodingDrafts((current) => ({
                           ...current,
                           [allocation.id]: {
-                            accountingMappingId: allocation.accounting_mapping_id ?? "",
+                            accountingMappingId:
+                              (allocation as unknown as { accounting_route_mapping_id?: string | null })
+                                .accounting_route_mapping_id
+                              ?? allocation.accounting_mapping_id
+                              ?? "",
                             accountingTaxRateId: event.target.value,
                             taxResolutionStatus: "resolved",
                           },
@@ -6272,7 +6281,7 @@ export function SupplierInvoiceDetailWorkspace({
                         }
                         disabled={!canReview}
                       >
-                        <option value="">Select accounting mapping</option>
+                        <option value="">Select Supplier Bills account</option>
                         {accountingMappings.map((mapping) => (
                           <option key={mapping.id} value={mapping.id}>
                             {mapping.label}

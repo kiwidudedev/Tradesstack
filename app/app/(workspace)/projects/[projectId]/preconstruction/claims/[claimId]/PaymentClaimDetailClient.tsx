@@ -16,12 +16,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import { canManageCommercialData } from "@/lib/role-permissions";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
+import { resolveAuthoritativeContractualBaseline } from "@/lib/opportunity-lifecycle-compatibility-client";
 import styles from "@/components/app/trade-pack-builder.module.css";
 import {
   composePaymentClaimPdfExport,
   downloadPaymentClaimPdf,
 } from "@/lib/exports/payment-claim-pdf";
+import { createPdfExportTiming } from "@/lib/exports/pdf-export-timing";
 import { getPaymentClaimStatutoryDocuments } from "@/lib/legal/payment-claim-statutory-documents";
 import { resolveAccountingIdentityPresentation } from "@/lib/accounting/accounting-identity-presentation";
 import type { PaymentClaimXeroPanelState } from "@/lib/xero/payment-claim-sales-invoice-panel";
@@ -542,7 +543,8 @@ export function PaymentClaimDetailClient(props: {
   const [clientContactName, setClientContactName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [isExportingPaymentClaim, setIsExportingPaymentClaim] = useState(false);
+  const [isExportingInvoice, setIsExportingInvoice] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCreatingClaim, setIsCreatingClaim] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -660,25 +662,25 @@ export function PaymentClaimDetailClient(props: {
   }, []);
 
   const loadClaimSourceRows = useCallback(async (resolvedOrganizationId: string, applyToState = true): Promise<ClaimLineItem[]> => {
-    if (!supabase) {
+    if (!supabase || !projectDbId) {
       return [];
     }
 
-      const { data: quoteRows } = await supabase
-        .from("project_quotes")
-        .select("id, quote_number, quote_title, status, updated_at")
-        .eq("organization_id", resolvedOrganizationId)
-        .eq("project_id", projectDbId)
-        .order("updated_at", { ascending: false });
-
-      const baseQuote = (quoteRows ?? []).sort((left, right) => {
-        const leftRank = left.status === "Accepted" ? 0 : left.status === "Sent" ? 1 : 2;
-        const rightRank = right.status === "Accepted" ? 0 : right.status === "Sent" ? 1 : 2;
-        if (leftRank !== rightRank) {
-          return leftRank - rightRank;
-        }
-        return 0;
-      })[0];
+      const baseline = await resolveAuthoritativeContractualBaseline({
+        client: supabase,
+        organizationId: resolvedOrganizationId,
+        projectId: projectDbId,
+      });
+      const baseQuoteResult = baseline.isValid && baseline.quoteId
+        ? await supabase
+            .from("project_quotes")
+            .select("id, quote_number, quote_title")
+            .eq("organization_id", resolvedOrganizationId)
+            .eq("project_id", projectDbId)
+            .eq("id", baseline.quoteId)
+            .maybeSingle()
+        : { data: null };
+      const baseQuote = baseQuoteResult.data;
 
       const quoteLineItems = baseQuote
         ? await supabase
@@ -817,13 +819,22 @@ export function PaymentClaimDetailClient(props: {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claimsTable = (supabase as any).from("project_claims");
-    const [{ data: quoteRows }, { data: variationRows }, { data: claimsRowsRaw }] = await Promise.all([
-      supabase
-        .from("project_quotes")
-        .select("status, subtotal, margin_percent, discount_amount, contingency_amount, updated_at")
-        .eq("organization_id", resolvedOrganizationId)
-        .eq("project_id", resolvedProjectId)
-        .order("updated_at", { ascending: false }),
+    const [{ data: authoritativeQuote }, { data: variationRows }, { data: claimsRowsRaw }] = await Promise.all([
+      (async () => {
+        const baseline = await resolveAuthoritativeContractualBaseline({
+          client: supabase,
+          organizationId: resolvedOrganizationId,
+          projectId: resolvedProjectId,
+        });
+        if (!baseline.isValid || !baseline.quoteId) return { data: null };
+        return supabase
+          .from("project_quotes")
+          .select("subtotal, margin_percent, discount_amount, contingency_amount")
+          .eq("organization_id", resolvedOrganizationId)
+          .eq("project_id", resolvedProjectId)
+          .eq("id", baseline.quoteId)
+          .maybeSingle();
+      })(),
       supabase
         .from("project_variations")
         .select("status, subtotal, margin_percent, discount_amount, contingency_amount")
@@ -835,16 +846,9 @@ export function PaymentClaimDetailClient(props: {
         .eq("project_id", resolvedProjectId),
     ]);
 
-    const bestQuote = (quoteRows ?? []).sort((left, right) => {
-      const leftRank = left.status === "Accepted" ? 0 : left.status === "Sent" ? 1 : 2;
-      const rightRank = right.status === "Accepted" ? 0 : right.status === "Sent" ? 1 : 2;
-      if (leftRank !== rightRank) {
-        return leftRank - rightRank;
-      }
-      return 0;
-    })[0];
-
-    const quoteValue = bestQuote ? calculateQuotePreGstTotal(bestQuote as Record<string, unknown>) : 0;
+    const quoteValue = authoritativeQuote
+      ? calculateQuotePreGstTotal(authoritativeQuote as Record<string, unknown>)
+      : 0;
     const approvedVariations = (variationRows ?? [])
       .filter((row) => row.status === "Approved")
       .reduce((sum, row) => sum + calculateVariationPreGstTotal(row as Record<string, unknown>), 0);
@@ -1134,6 +1138,12 @@ export function PaymentClaimDetailClient(props: {
   const parsedPercentComplete = revisedContractValue > 0 ? Math.min(100, Math.max(0, (valueEarnedToDate / revisedContractValue) * 100)) : 0;
   const paidAmountNumber = Number(paidAmount || 0);
   const isSubmittedLocked = status === "Submitted";
+  const canExportInvoice = (
+    status === "Submitted"
+    || status === "Unpaid"
+    || status === "Paid"
+    || status === "Overdue"
+  );
   const accountingIdentity = useMemo(
     () => resolveAccountingIdentityPresentation({
       commercialClaimNumber: claimNumber,
@@ -1447,11 +1457,6 @@ export function PaymentClaimDetailClient(props: {
         throw new Error("Claim was saved but no version timestamp was returned.");
       }
 
-      triggerDocumentClassification({
-        documentKind: "project_claim",
-        documentId: savedRow.id,
-        keepalive: true,
-      });
 
       setClaimUpdatedAt(savedRow.updated_at);
       setStatus(savedRow.status ?? status);
@@ -1537,71 +1542,164 @@ export function PaymentClaimDetailClient(props: {
   const includesNzForm1 = statutoryDocuments.length > 0;
 
   const exportClaimPdf = async () => {
-    if (!claimId || typeof window === "undefined" || isExporting) {
+    if (!claimId || typeof window === "undefined" || isExportingPaymentClaim) {
       return;
     }
 
-    setIsExporting(true);
+    const timing = createPdfExportTiming({
+      enabled: process.env.NEXT_PUBLIC_PDF_EXPORT_TIMING === "1",
+      exportId: crypto.randomUUID(),
+      kind: "payment-claim",
+    });
+    timing.mark("handler-start");
+    setIsExportingPaymentClaim(true);
+    timing.mark("loading-state-set");
     setError(null);
+    let timingOutcome = "success";
 
     try {
+      timing.start("model-preparation");
+      timing.mark("model-preparation-start");
       const printableOrgName = organizationName.trim() || "Tradesstack";
       const printableProjectName = projectName || routeProjectSlug?.replaceAll("-", " ") || "Project";
       const legalNoticeText = includesNzForm1
         ? "This is a Payment Claim under the Construction Contracts Act 2002."
         : null;
+      const model = {
+        organizationCountry,
+        organizationName: printableOrgName,
+        organizationLogoUrl,
+        organizationBrandPrimaryColor,
+        organizationBusinessNumber,
+        organizationBankAccountDetails,
+        organizationGstNumber,
+        organizationContactName,
+        organizationContactEmail,
+        organizationContactPhone,
+        projectName: printableProjectName,
+        projectLocation,
+        clientCompanyName,
+        clientContactName,
+        claimNumber,
+        issueDateIso: claimDate || null,
+        issueDateLabel: toDayMonthYearLabel(claimDate || new Date().toISOString().slice(0, 10)),
+        dueDateLabel: toDayMonthYearLabel(dueDate || null),
+        periodRangeLabel: toPeriodRangeLabel(periodStart || null, periodEnd || null),
+        notes,
+        legalNoticeText,
+        originalContractLabel: toMoney(summaryOriginalContract),
+        approvedVariationsLabel: toMoney(summaryApprovedVariations),
+        revisedContractValueLabel: toMoney(summaryRevisedContractValue),
+        valueEarnedToDateLabel: toMoney(summaryValueEarnedToDate),
+        previousClaimsTotalLabel: toMoney(summaryPreviousClaimsTotal),
+        grossCurrentClaimLabel: toMoney(summaryGrossCurrentClaim),
+        retentionWithheldLabel: toMoney(summaryRetentionWithheldAmount),
+        retentionHeldToDateLabel: toMoney(summaryRetentionHeldToDate),
+        netCurrentClaimLabel: toMoney(summaryNetClaimExclGst),
+        gstLabel: `GST (${(claimGstRate * 100).toFixed(0)}%)`,
+        gstAmountLabel: toMoney(summaryGstAmount),
+        totalPayableLabel: toMoney(summaryTotalPayable),
+        lineItems: claimLineItemsComputed.map((line) => ({
+          id: line.id,
+          description: getClaimLineDescriptionText(line),
+          sourceLabel: getClaimLineSourceText(line),
+          secondaryLabel: line.sourceKind === "Variation" && line.sourceTitle ? line.sourceTitle : null,
+          contractValueLabel: toMoney(line.sourceTotal),
+          progressLabel: `${line.cumulativeClaimedPercent.toFixed(2)}%`,
+          totalLabel: toMoney(line.cumulativeClaimedAmount),
+        })),
+      };
+      timing.end("model-preparation");
+      timing.mark("model-preparation-end");
+      timing.mark("composer-start");
       const result = await composePaymentClaimPdfExport({
-        model: {
-          organizationCountry,
-          organizationName: printableOrgName,
-          organizationLogoUrl,
-          organizationBrandPrimaryColor,
-          organizationBusinessNumber,
-          organizationBankAccountDetails,
-          organizationGstNumber,
-          organizationContactName,
-          organizationContactEmail,
-          organizationContactPhone,
-          projectName: printableProjectName,
-          projectLocation,
-          clientCompanyName,
-          clientContactName,
-          claimNumber,
-          issueDateIso: claimDate || null,
-          issueDateLabel: toDayMonthYearLabel(claimDate || new Date().toISOString().slice(0, 10)),
-          dueDateLabel: toDayMonthYearLabel(dueDate || null),
-          periodRangeLabel: toPeriodRangeLabel(periodStart || null, periodEnd || null),
-          notes,
-          legalNoticeText,
-          originalContractLabel: toMoney(summaryOriginalContract),
-          approvedVariationsLabel: toMoney(summaryApprovedVariations),
-          revisedContractValueLabel: toMoney(summaryRevisedContractValue),
-          valueEarnedToDateLabel: toMoney(summaryValueEarnedToDate),
-          previousClaimsTotalLabel: toMoney(summaryPreviousClaimsTotal),
-          grossCurrentClaimLabel: toMoney(summaryGrossCurrentClaim),
-          retentionWithheldLabel: toMoney(summaryRetentionWithheldAmount),
-          retentionHeldToDateLabel: toMoney(summaryRetentionHeldToDate),
-          netCurrentClaimLabel: toMoney(summaryNetClaimExclGst),
-          gstLabel: `GST (${(claimGstRate * 100).toFixed(0)}%)`,
-          gstAmountLabel: toMoney(summaryGstAmount),
-          totalPayableLabel: toMoney(summaryTotalPayable),
-          lineItems: claimLineItemsComputed.map((line) => ({
-            id: line.id,
-            description: getClaimLineDescriptionText(line),
-            sourceLabel: getClaimLineSourceText(line),
-            secondaryLabel: line.sourceKind === "Variation" && line.sourceTitle ? line.sourceTitle : null,
-            contractValueLabel: toMoney(line.sourceTotal),
-            progressLabel: `${line.cumulativeClaimedPercent.toFixed(2)}%`,
-            totalLabel: toMoney(line.cumulativeClaimedAmount),
-          })),
-        },
+        model,
+        timing,
       });
 
-      downloadPaymentClaimPdf(result.bytes, result.fileName);
+      downloadPaymentClaimPdf(result.bytes, result.fileName, timing);
     } catch (exportError) {
+      timingOutcome = "error";
       setError(exportError instanceof Error ? exportError.message : "Unable to export payment claim PDF.");
     } finally {
-      setIsExporting(false);
+      setIsExportingPaymentClaim(false);
+      timing.report({ outcome: timingOutcome });
+    }
+  };
+
+  const exportInvoicePdf = async () => {
+    if (!claimId || typeof window === "undefined" || isExportingInvoice) {
+      return;
+    }
+
+    const timing = createPdfExportTiming({
+      enabled: process.env.NEXT_PUBLIC_PDF_EXPORT_TIMING === "1",
+      exportId: crypto.randomUUID(),
+      kind: "invoice-browser",
+    });
+    timing.mark("click");
+    setIsExportingInvoice(true);
+    timing.mark("loading-state-set");
+    setError(null);
+    let timingOutcome = "success";
+    let serverTiming: string | null = null;
+    try {
+      timing.mark("request-start");
+      const response = await fetch(
+        `/api/payment-claims/${encodeURIComponent(claimId)}/invoice-pdf`,
+        {
+          method: "GET",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/pdf",
+            "X-Pdf-Export-Id": timing.exportId,
+          },
+        },
+      );
+      timing.mark("response-headers-received");
+      serverTiming = response.headers.get("server-timing");
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as {
+          message?: string;
+        } | null;
+        throw new Error(
+          body?.message
+          || `Unable to export invoice PDF (HTTP ${response.status}).`,
+        );
+      }
+
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const fileNameMatch = disposition.match(/filename="([^"]+)"/i);
+      const fallbackNumber =
+        accountingIdentity.displayAccountingNumber || claimNumber || "Invoice";
+      const fileName = fileNameMatch?.[1]
+        || `Invoice-${fallbackNumber.replace(/[\\/:*?"<>|\r\n]+/g, " ").trim()}.pdf`;
+      timing.mark("response-blob-start");
+      const blob = await response.blob();
+      timing.mark("response-blob-end");
+      const objectUrl = URL.createObjectURL(blob);
+      timing.mark("object-url-created");
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      timing.mark("download-triggered");
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (exportError) {
+      timingOutcome = "error";
+      setError(
+        exportError instanceof Error
+          ? exportError.message
+          : "Unable to export invoice PDF.",
+      );
+    } finally {
+      setIsExportingInvoice(false);
+      timing.report({
+        outcome: timingOutcome,
+        serverTiming,
+      });
     }
   };
   if (isLoading) {
@@ -1618,7 +1716,6 @@ export function PaymentClaimDetailClient(props: {
           actions={
             <>
               <Button type="button" variant="secondary" disabled>Save Claim</Button>
-              <Button type="button" disabled>Export PDF</Button>
               <Button type="button" variant="secondary" size="sm" disabled className="h-9 px-3">
                 <ChevronDown className="h-4 w-4" />
               </Button>
@@ -1711,15 +1808,6 @@ export function PaymentClaimDetailClient(props: {
             >
               {isSaving ? "Saving..." : "Save Claim"}
             </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                void exportClaimPdf();
-              }}
-              disabled={!claimId || isExporting}
-            >
-              {isExporting ? "Exporting..." : "Export PDF"}
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="secondary" size="sm" className="h-9 px-3">
@@ -1760,11 +1848,22 @@ export function PaymentClaimDetailClient(props: {
                     event.preventDefault();
                     void exportClaimPdf();
                   }}
-                  disabled={!claimId || isExporting}
+                  disabled={!claimId || isExportingPaymentClaim}
                   className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
                 >
                   <FileDown className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
-                  {isExporting ? "Exporting..." : "Export PDF"}
+                  {isExportingPaymentClaim ? "Exporting..." : "Export Payment Claim"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    void exportInvoicePdf();
+                  }}
+                  disabled={!claimId || !canExportInvoice || isExportingInvoice}
+                  className="h-10 cursor-pointer rounded-[var(--radius-sm)] px-3 text-sm font-medium text-[var(--text-primary)] focus:bg-[var(--surface-muted)]"
+                >
+                  <FileDown className="mr-2 h-4 w-4 text-[var(--text-secondary)]" />
+                  {isExportingInvoice ? "Exporting Invoice..." : "Export Invoice"}
                 </DropdownMenuItem>
                 {claimId && canManageClaim ? (
                   <>
@@ -2253,10 +2352,10 @@ export function PaymentClaimDetailClient(props: {
                       onClick={() => {
                         void exportClaimPdf();
                       }}
-                      disabled={!claimId || isExporting}
+                      disabled={!claimId || isExportingPaymentClaim}
                       className={`${styles.quoteButtonLabel} h-10 w-full rounded-full bg-[var(--navy-primary)] !text-white hover:bg-[var(--navy-primary)]`}
                     >
-                      {isExporting ? "Exporting..." : "Export PDF"}
+                      {isExportingPaymentClaim ? "Exporting..." : "Export Payment Claim"}
                     </Button>
                   </div>
                 </div>

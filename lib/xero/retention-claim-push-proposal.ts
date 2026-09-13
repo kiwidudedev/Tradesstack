@@ -275,7 +275,7 @@ export async function buildRetentionClaimPushProposal(params: {
   };
   const routingSnapshot = {
     retention: {
-      route: 700,
+      accountingRoute: "retention_receivable",
       mappingId: resolved.mapping.id,
       organizationCostCodeId: resolved.costCode.id,
       accountId: metadata(resolved.costCode).accountId,
@@ -465,11 +465,11 @@ export async function validateRetentionClaimProposalStillCurrent(
         .eq("organization_id", proposal.organizationId)
         .eq("id", proposal.connectionId)
         .maybeSingle(),
-      client.from("organization_tradesstack_accounting_mappings")
+      client.from("organization_accounting_route_mappings")
         .select("id,organization_id,project_id,organization_cost_code_id,is_active,updated_at")
         .eq("organization_id", proposal.organizationId)
         .eq("provider", "xero")
-        .eq("tradesstack_cost_code", 700)
+        .eq("accounting_route", "retention_receivable")
         .eq("is_active", true),
       client.from("organization_accounting_tax_rates")
         .select("id,organization_id,accounting_connection_id,tenant_id,tax_type,effective_rate,status,is_active,metadata,synced_at")

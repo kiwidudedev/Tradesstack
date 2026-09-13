@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { hasOrganizationPermission } from "@/lib/permissions-server";
+import { getOrganizationPermissionsBatch, hasOrganizationPermission } from "@/lib/permissions-server";
 import {
   getSupplierInvoiceCommercialComparison,
   getPurchaseOrderInvoicingProgress,
@@ -14,6 +14,13 @@ import {
 } from "@/lib/purchase-order-supplier-invoice-summary-server";
 import { getPurchaseOrderSupplierInvoiceDetail } from "@/lib/purchase-order-supplier-invoice-detail-server";
 import type { PurchaseOrderSupplierInvoiceDetail } from "@/lib/purchase-order-supplier-invoice-detail";
+import {
+  normalizePurchaseOrderImportSection,
+  type PurchaseOrderImportLine,
+  type PurchaseOrderQuoteImportSource,
+  type PurchaseOrderSourceActionResult,
+  type PurchaseOrderVariationImportOption,
+} from "@/lib/purchase-orders/source-import";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export type PurchaseOrderCommercialActionResult = {
@@ -33,6 +40,196 @@ export type PurchaseOrderSupplierInvoiceDetailActionResult = {
   data?: PurchaseOrderSupplierInvoiceDetail;
   error?: string;
 };
+
+export type PurchaseOrderSupplierPricingPermissions = {
+  canViewMaterials: boolean;
+  canWritePurchaseOrder: boolean;
+};
+
+export async function loadPurchaseOrderSupplierPricingPermissionsAction(): Promise<PurchaseOrderSupplierPricingPermissions> {
+  const member = await getCurrentOrganizationMember();
+  if (!member) return { canViewMaterials: false, canWritePurchaseOrder: false };
+  const permissions = await getOrganizationPermissionsBatch({
+    organizationId: member.organization_id,
+    permissions: ["materials.view", "purchase_orders.write"],
+  });
+  return {
+    canViewMaterials: permissions["materials.view"] === true,
+    canWritePurchaseOrder: permissions["purchase_orders.write"] === true,
+  };
+}
+
+async function requirePurchaseOrderImportContext(projectId: string) {
+  const currentMember = await getCurrentOrganizationMember();
+  if (!currentMember) throw new Error("You do not have access to this Project.");
+  if (!(await hasOrganizationPermission(currentMember.organization_id, "purchase_orders.write"))) {
+    throw new Error("You do not have permission to edit Purchase Orders.");
+  }
+  const supabase = await createServerSupabaseClient();
+  const { data: project, error } = await supabase
+    .from("organization_projects")
+    .select("id")
+    .eq("organization_id", currentMember.organization_id)
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error || !project) throw new Error("Project not found.");
+  return { currentMember, supabase };
+}
+
+export async function loadPurchaseOrderQuoteImportSourceAction(params: {
+  projectId: string;
+}): Promise<PurchaseOrderSourceActionResult<PurchaseOrderQuoteImportSource | null>> {
+  try {
+    const { currentMember, supabase } = await requirePurchaseOrderImportContext(params.projectId);
+    const { data: baselineRows, error: baselineError } = await supabase.rpc(
+      "resolve_project_contractual_baseline_v1",
+      { p_organization_id: currentMember.organization_id, p_project_id: params.projectId },
+    );
+    if (baselineError) throw new Error(baselineError.message);
+    const baseline = baselineRows?.[0] ?? null;
+    if (!baseline?.is_valid || !baseline.quote_id) return { ok: true, data: null };
+
+    const { data: quote, error: quoteError } = await supabase
+      .from("project_quotes")
+      .select("id, quote_number, quote_title, revision_number, status")
+      .eq("organization_id", currentMember.organization_id)
+      .eq("project_id", params.projectId)
+      .eq("id", baseline.quote_id)
+      .eq("status", "Accepted")
+      .maybeSingle();
+    if (quoteError) throw new Error(quoteError.message);
+    if (!quote) return { ok: true, data: null };
+
+    const [{ data: sourceLines, error: linesError }, { data: costItems, error: costsError }] = await Promise.all([
+      supabase
+        .from("project_quote_line_items")
+        .select("id, section, description, quantity, unit, rate, sort_order")
+        .eq("organization_id", currentMember.organization_id)
+        .eq("project_id", params.projectId)
+        .eq("quote_id", quote.id)
+        .eq("is_optional", false)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("cost_items")
+        .select("id, linked_quote_line_item_id")
+        .eq("organization_id", currentMember.organization_id)
+        .eq("project_id", params.projectId)
+        .eq("source_document_kind", "project_quote")
+        .eq("source_document_id", quote.id)
+        .eq("is_current", true),
+    ]);
+    if (linesError) throw new Error(linesError.message);
+    if (costsError) throw new Error(costsError.message);
+    const costItemByLineId = new Map((costItems ?? []).map((item) => [item.linked_quote_line_item_id, item.id]));
+    const lines: PurchaseOrderImportLine[] = (sourceLines ?? []).flatMap((line) => {
+      const sourceCostItemId = costItemByLineId.get(line.id);
+      if (!sourceCostItemId) return [];
+      return [{
+        id: line.id,
+        sourceCostItemId,
+        sourceSection: line.section,
+        section: normalizePurchaseOrderImportSection(line.section),
+        description: line.description ?? "",
+        quantity: Number(line.quantity ?? 0),
+        unit: line.unit ?? "",
+        rate: Number(line.rate ?? 0),
+      }];
+    });
+    return { ok: true, data: {
+      id: quote.id,
+      quoteNumber: quote.quote_number,
+      quoteTitle: quote.quote_title,
+      revisionNumber: quote.revision_number,
+      status: "Accepted",
+      lines,
+    } };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Unable to load the accepted contractual Quote." };
+  }
+}
+
+export async function loadPurchaseOrderVariationImportOptionsAction(params: {
+  projectId: string;
+}): Promise<PurchaseOrderSourceActionResult<PurchaseOrderVariationImportOption[]>> {
+  try {
+    const { currentMember, supabase } = await requirePurchaseOrderImportContext(params.projectId);
+    const { data, error } = await supabase
+      .from("project_variations")
+      .select("id, variation_number, variation_title, status")
+      .eq("organization_id", currentMember.organization_id)
+      .eq("project_id", params.projectId)
+      .eq("status", "Approved")
+      .order("updated_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { ok: true, data: (data ?? []).map((variation) => ({
+      id: variation.id,
+      variationNumber: variation.variation_number,
+      variationTitle: variation.variation_title,
+      status: "Approved",
+    })) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Unable to load Approved Variations." };
+  }
+}
+
+export async function loadPurchaseOrderVariationImportLinesAction(params: {
+  projectId: string;
+  variationId: string;
+}): Promise<PurchaseOrderSourceActionResult<PurchaseOrderImportLine[]>> {
+  try {
+    const { currentMember, supabase } = await requirePurchaseOrderImportContext(params.projectId);
+    const { data: variation, error: variationError } = await supabase
+      .from("project_variations")
+      .select("id")
+      .eq("organization_id", currentMember.organization_id)
+      .eq("project_id", params.projectId)
+      .eq("id", params.variationId)
+      .eq("status", "Approved")
+      .maybeSingle();
+    if (variationError) throw new Error(variationError.message);
+    if (!variation) return { ok: false, error: "The selected Variation is not Approved or is unavailable." };
+
+    const [{ data: sourceLines, error: linesError }, { data: costItems, error: costsError }] = await Promise.all([
+      supabase
+        .from("project_variation_line_items")
+        .select("id, section, description, quantity, unit, rate, sort_order")
+        .eq("organization_id", currentMember.organization_id)
+        .eq("project_id", params.projectId)
+        .eq("variation_id", variation.id)
+        .neq("section", "Margin")
+        .is("source_purchase_order_line_item_id", null)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("cost_items")
+        .select("id, linked_variation_line_item_id")
+        .eq("organization_id", currentMember.organization_id)
+        .eq("project_id", params.projectId)
+        .eq("source_document_kind", "project_variation")
+        .eq("source_document_id", variation.id)
+        .eq("is_current", true),
+    ]);
+    if (linesError) throw new Error(linesError.message);
+    if (costsError) throw new Error(costsError.message);
+    const costItemByLineId = new Map((costItems ?? []).map((item) => [item.linked_variation_line_item_id, item.id]));
+    const lines: PurchaseOrderImportLine[] = (sourceLines ?? []).flatMap((line) => {
+      const sourceCostItemId = costItemByLineId.get(line.id);
+      if (!sourceCostItemId) return [];
+      return [{
+        id: line.id,
+        sourceCostItemId,
+        sourceSection: line.section,
+        section: normalizePurchaseOrderImportSection(line.section),
+        description: line.description ?? "",
+        quantity: Number(line.quantity ?? 0),
+        unit: line.unit ?? "",
+        rate: Number(line.rate ?? 0),
+      }];
+    });
+    return { ok: true, data: lines };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Unable to load Variation lines." };
+  }
+}
 
 export async function loadPurchaseOrderSupplierInvoiceSummaryAction(params: {
   purchaseOrderId: string;

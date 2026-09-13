@@ -53,6 +53,10 @@ export async function POST(
       return NextResponse.json({ error: message }, { status: 404 });
     }
 
+    if (message === "Lifecycle-managed opportunities cannot be deleted through the ordinary delete action.") {
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+
     console.error("[opportunity/delete] unexpected failure", error);
     return NextResponse.json({ error: "Unable to delete opportunity." }, { status: 500 });
   } finally {

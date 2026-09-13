@@ -3,8 +3,10 @@ import "server-only";
 import { cache } from "react";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { QuoteStatus } from "@/lib/supabase/types";
 import type { OpportunityWorkspaceData } from "@/lib/opportunity-workspace";
+import { resolveOpportunityWorkspaceEnrichment } from "@/lib/opportunity-workspace-enrichment";
+
+const OPPORTUNITY_WORKSPACE_REQUEST_TIMEOUT_MS = 10_000;
 
 export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string): Promise<OpportunityWorkspaceData | null> => {
   const member = await getCurrentOrganizationMember();
@@ -12,10 +14,12 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
     return null;
   }
 
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient({
+    requestTimeoutMs: OPPORTUNITY_WORKSPACE_REQUEST_TIMEOUT_MS,
+  });
   const opportunityResult = await supabase
     .from("organization_opportunities")
-    .select("id, slug, name, client_id, owner_user_id, created_by, workspace_project_id")
+    .select("id, slug, name, stage, converted_project_id, client_id, owner_user_id, created_by, workspace_project_id")
     .eq("organization_id", member.organization_id)
     .eq("slug", opportunitySlug)
     .maybeSingle();
@@ -49,6 +53,7 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
       .select("total_quote_price, status, quote_date, updated_at")
       .eq("organization_id", member.organization_id)
       .eq("originating_opportunity_id", opportunity.id)
+      .not("quote_series_id", "is", null)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -62,14 +67,17 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  if (clientResult.error || ownerResult.error || latestQuoteResult.error || workspaceProjectResult.error) {
-    throw new Error(
-      clientResult.error?.message ??
-      ownerResult.error?.message ??
-      latestQuoteResult.error?.message ??
-      workspaceProjectResult.error?.message ??
-      "Unable to load opportunity workspace data."
-    );
+  const enrichment = resolveOpportunityWorkspaceEnrichment({
+    client: clientResult,
+    owner: ownerResult,
+    latestQuote: latestQuoteResult,
+    workspaceProject: workspaceProjectResult,
+  });
+  if (enrichment.warnings.length > 0) {
+    console.warn("[opportunity/workspace] Optional metadata unavailable; rendering core workspace.", {
+      opportunityId: opportunity.id,
+      failures: enrichment.warnings,
+    });
   }
 
   return {
@@ -77,22 +85,14 @@ export const getOpportunityWorkspaceData = cache(async (opportunitySlug: string)
     opportunityId: opportunity.id,
     slug: opportunity.slug,
     name: opportunity.name,
+    stage: opportunity.stage,
+    convertedProjectId: opportunity.converted_project_id,
     clientId: opportunity.client_id,
-    clientName: clientResult.data?.company_name?.trim() || "Unassigned",
+    clientName: enrichment.clientName,
     ownerUserId,
-    ownerName: ownerResult.data?.display_name || "Unassigned",
+    ownerName: enrichment.ownerName,
     workspaceProjectId: opportunity.workspace_project_id,
-    workspaceProjectSlug: workspaceProjectResult.data?.slug ?? null,
-    latestQuoteSummary: latestQuoteResult.data
-      ? {
-          totalQuotePrice:
-            typeof latestQuoteResult.data.total_quote_price === "number"
-              ? latestQuoteResult.data.total_quote_price
-              : null,
-          status: (latestQuoteResult.data.status as QuoteStatus | null) ?? null,
-          quoteDate: latestQuoteResult.data.quote_date ?? null,
-          updatedAt: latestQuoteResult.data.updated_at ?? null,
-        }
-      : null,
+    workspaceProjectSlug: enrichment.workspaceProjectSlug,
+    latestQuoteSummary: enrichment.latestQuoteSummary,
   };
 });

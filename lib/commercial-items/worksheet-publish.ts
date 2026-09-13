@@ -20,10 +20,10 @@ import type { PricingWorksheetOwnerContextValue } from "@/lib/pricing-worksheet-
 import type { Json } from "@/lib/supabase/types";
 
 function buildReuseKey(params: {
-  sourceWorkbookId: string;
-  sourceWorksheetId: string;
-  sourceSheetId: string;
-  sourceRange: string;
+  sourceWorkbookId: string | null;
+  sourceWorksheetId: string | null;
+  sourceSheetId: string | null;
+  sourceRange: string | null;
   sourceSignature: string;
   projectId: string | null;
 }) {
@@ -222,6 +222,26 @@ export async function publishWorksheetSelection<TTarget, TResult>(params: {
 
   if (publishedSelection.commercialRows.length === 0) {
     throw new Error("No valid commercial rows were found in the selected worksheet rows.");
+  }
+
+  if (params.adapter.publishSelection) {
+    const atomic = await params.adapter.publishSelection({
+      client: params.client,
+      organizationId: params.organizationId,
+      opportunityId: params.opportunityId,
+      projectId: params.projectId,
+      workbookId: params.workbookId,
+      worksheetId: params.worksheetId,
+      sheetId: params.sheetId,
+      worksheetVersion: params.worksheet.version,
+      publishedSelection,
+      target: params.target,
+    });
+    return {
+      publishedSelection,
+      publishedRows: atomic.publishedRows,
+      result: atomic.result,
+    };
   }
 
   const publishedRows = await findOrCreatePublishedCommercialRows({

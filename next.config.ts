@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   ...(process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR
     ? { distDir: process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR }
     : {}),
+  serverExternalPackages: ["pdfjs-dist"],
   images: {
     remotePatterns: [
       {

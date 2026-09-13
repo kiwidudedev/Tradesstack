@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
-import { getInspectionProgress, getInspectionStatus, inspectionStatusTone } from "@/lib/quality-assurance/helpers";
+import { formatTimestamp, getInspectionProgress, getInspectionStatus, inspectionStatusTone } from "@/lib/quality-assurance/helpers";
 import type { QualityInspection } from "@/lib/quality-assurance/types";
 import { cn } from "@/lib/utils";
 import { QualityEmptyState } from "./QualityEmptyState";

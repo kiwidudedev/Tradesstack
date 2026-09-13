@@ -6,6 +6,7 @@ import { ProjectSecondaryNav } from "@/components/app/ProjectSecondaryNav";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 
 const SECTION_MAP: { segment: string; label: string }[] = [
+  { segment: "files", label: "Files" },
   { segment: "preconstruction/quote", label: "Quotation" },
   { segment: "preconstruction/variations", label: "Variations" },
   { segment: "preconstruction/purchase-orders", label: "Purchase Orders" },
@@ -24,10 +25,16 @@ export default function ProjectLayoutShell({
   children,
   projectName,
   projectStage,
+  quoteHref,
+  pricingWorksheetHref,
+  canViewQA,
 }: {
   children: React.ReactNode;
   projectName: string;
   projectStage?: string | null;
+  quoteHref: string;
+  pricingWorksheetHref: string;
+  canViewQA?: boolean;
 }) {
   const pathname = usePathname();
   const params = useParams<{ projectId: string }>();
@@ -48,6 +55,9 @@ export default function ProjectLayoutShell({
         <ProjectSecondaryNav
           projectName={projectName}
           projectStage={projectStage}
+          quoteHref={quoteHref}
+          pricingWorksheetHref={pricingWorksheetHref}
+          canViewQA={canViewQA}
         />
         <div className="min-w-0 flex-1 bg-[var(--background)] px-5">
           {sectionLabel && !isAiChatbotRoute ? (

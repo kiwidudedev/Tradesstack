@@ -162,6 +162,19 @@ describe("Universal Construction Learning queue worker", () => {
     expect(result.deadLetteredCount).toBe(1);
   });
 
+  it("classifies Supplier Bill prompt compaction failures as deterministic", async () => {
+    const { classifyUniversalLearningWorkerFailure } = await import("./worker");
+    const error = Object.assign(new Error("Supplier Bill prompt projection exceeded its byte limit."), {
+      code: "supplier_bill_prompt_compaction_failed",
+    });
+
+    expect(classifyUniversalLearningWorkerFailure(error)).toEqual({
+      retryable: false,
+      errorCode: "supplier_bill_prompt_compaction_failed",
+      errorMessage: "Supplier Bill prompt projection exceeded its byte limit.",
+    });
+  });
+
   it("dead-letters transient failures after the final attempt", async () => {
     claimLearningReviewBatch.mockResolvedValue([queueRow({ attemptCount: 3, maxAttempts: 3 })]);
     runUniversalConstructionLearningReview.mockRejectedValue(new Error("network timeout"));

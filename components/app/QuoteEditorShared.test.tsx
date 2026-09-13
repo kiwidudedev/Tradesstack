@@ -1,4 +1,6 @@
 import { vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 vi.mock("@/lib/fonts", () => ({
   ibmPlexSans: {
@@ -12,6 +14,8 @@ vi.mock("@/lib/fonts", () => ({
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { QuoteEditorLayout, type LineItem, type PricingSummary } from "@/components/app/QuoteEditorShared";
+
+const quoteEditorSource = readFileSync(resolve(process.cwd(), "components/app/QuoteEditorShared.tsx"), "utf8");
 
 const pricingSummary: PricingSummary = {
   baseSubtotal: 325,
@@ -46,7 +50,7 @@ const linkedLineItem: LineItem = {
 };
 
 describe("QuoteEditorShared", () => {
-  it("renders only the source action for linked lines", () => {
+  it("hides the worksheet-source capability while preserving linked-line provenance", () => {
     const markup = renderToStaticMarkup(
       <QuoteEditorLayout
         heroTitle="Quote"
@@ -89,20 +93,8 @@ describe("QuoteEditorShared", () => {
         setIsLineItemsOpen={vi.fn()}
         isTermsOpen
         setIsTermsOpen={vi.fn()}
-        isScopeImportOpen={false}
-        setIsScopeImportOpen={vi.fn()}
-        isLoadingScopeItems={false}
-        availableScopeCostItems={[]}
-        selectedScopeCostItemIds={[]}
-        toggleScopeCostItem={vi.fn()}
-        importSelectedScopeItems={vi.fn()}
-        isCommercialItemsOpen={false}
-        setIsCommercialItemsOpen={vi.fn()}
-        isLoadingCommercialItems={false}
-        availableCommercialItems={[]}
-        selectedCommercialItemIds={[]}
-        toggleCommercialItem={vi.fn()}
-        importSelectedCommercialItems={vi.fn()}
+        onOpenScopeImport={vi.fn()}
+        showWorksheetSources={false}
         getCommercialItemSourceHref={() => "/app/leads-clients/opportunities/long-bay-apartment/pricing-worksheet/workbook-1?sheetId=sheet-1"}
         sectionSubtotals={new Map()}
         validityPeriod="30 days"
@@ -134,9 +126,16 @@ describe("QuoteEditorShared", () => {
         includeContingencyInExport={false}
         setIncludeContingencyInExport={vi.fn()}
         pricingSummary={pricingSummary}
+        primaryAction={<button type="button">Create Revision</button>}
       />,
     );
 
+    expect(markup).toContain("Create Revision");
+    expect(markup).toContain("Export PDF");
+    expect(markup).not.toContain("Edit Quote");
+    expect(markup).toContain('value="32.50"');
+    expect(markup).not.toContain("Add from Worksheet Sources");
+    expect(markup).not.toContain("No worksheet sources are available for this quote yet.");
     expect(markup).not.toContain(">Worksheet Source<");
     expect(markup).not.toContain("Commercial Item");
     expect(markup).toContain("View Source");
@@ -189,13 +188,8 @@ describe("QuoteEditorShared", () => {
         setIsLineItemsOpen={vi.fn()}
         isTermsOpen
         setIsTermsOpen={vi.fn()}
-        isScopeImportOpen={false}
-        setIsScopeImportOpen={vi.fn()}
-        isLoadingScopeItems={false}
-        availableScopeCostItems={[]}
-        selectedScopeCostItemIds={[]}
-        toggleScopeCostItem={vi.fn()}
-        importSelectedScopeItems={vi.fn()}
+        onOpenScopeImport={vi.fn()}
+        showWorksheetSources
         isCommercialItemsOpen
         setIsCommercialItemsOpen={vi.fn()}
         isLoadingCommercialItems={false}
@@ -203,6 +197,8 @@ describe("QuoteEditorShared", () => {
         selectedCommercialItemIds={[]}
         toggleCommercialItem={vi.fn()}
         importSelectedCommercialItems={vi.fn()}
+        canUseMaterials
+        onOpenMaterials={vi.fn()}
         getCommercialItemSourceHref={() => "/app/leads-clients/opportunities/long-bay-apartment/pricing-worksheet/workbook-1?sheetId=sheet-1"}
         sectionSubtotals={new Map()}
         validityPeriod="30 days"
@@ -238,7 +234,43 @@ describe("QuoteEditorShared", () => {
     );
 
     expect(markup).toContain("Add from Worksheet Sources");
+    expect(markup).toContain("Import Scope Items");
+    expect(markup).toContain("Materials");
+    expect(markup).not.toContain("Cost Breakdown Categories");
+    expect(markup).not.toContain("Loading Scope Builder items");
     expect(markup).toContain("Worksheet Sources");
+    expect(markup).toContain("No worksheet sources are available for this quote yet.");
     expect(markup).not.toContain("Commercial Item");
+    expect(markup.match(/h-10 rounded-full border-\[var\(--border\)\] bg-\[var\(--surface\)\] px-4/g)).toHaveLength(3);
+    expect(markup.match(/mr-1 h-4 w-4/g)).toHaveLength(3);
+    expect(markup).toContain("flex flex-wrap items-center gap-3 pb-4 pt-6");
+    expect(markup).toContain("ml-auto flex flex-wrap items-center justify-end gap-2");
+  });
+
+  it("preserves the three Quote action handlers while keeping Scope presentation outside the layout", () => {
+    const headerStart = quoteEditorSource.indexOf('className="flex flex-wrap items-center gap-3 pb-4 pt-6"');
+    const headerEnd = quoteEditorSource.indexOf("\n\n            <section>", headerStart);
+    const actionHeader = quoteEditorSource.slice(headerStart, headerEnd);
+
+    expect(headerStart).toBeGreaterThan(-1);
+    expect(headerEnd).toBeGreaterThan(headerStart);
+    expect(actionHeader).toContain("showWorksheetSources ? (");
+    expect(actionHeader).toContain("setIsCommercialItemsOpen?.((current) => !current)");
+    expect(actionHeader).toContain("onClick={onOpenScopeImport}");
+    expect(actionHeader).toContain("ref={scopeImportTriggerRef}");
+    expect(actionHeader).toContain("canUseMaterials && onOpenMaterials");
+    expect(actionHeader).toContain("onClick={onOpenMaterials}");
+    expect(actionHeader.match(/variant="outline"/g)).toHaveLength(3);
+    expect(actionHeader.match(/styles\.quoteButtonLabel/g)).toHaveLength(3);
+    expect(quoteEditorSource).not.toContain("Cost Breakdown Categories");
+  });
+
+  it("uses the shared no-source grid for normal and optional tables without changing mobile cards", () => {
+    expect(quoteEditorSource).toContain("COMMERCIAL_LINE_GRID_WITHOUT_SOURCE");
+    expect(quoteEditorSource).toContain("COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITHOUT_SOURCE");
+    expect(quoteEditorSource.match(/gridTemplateColumns: COMMERCIAL_LINE_GRID_WITHOUT_SOURCE/g)).toHaveLength(4);
+    expect(quoteEditorSource.match(/className=\{COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITHOUT_SOURCE\}/g)).toHaveLength(2);
+    expect(quoteEditorSource.match(/className="space-y-2 md:hidden"/g)).toHaveLength(2);
+    expect(quoteEditorSource).not.toContain("min-w-[820px]");
   });
 });

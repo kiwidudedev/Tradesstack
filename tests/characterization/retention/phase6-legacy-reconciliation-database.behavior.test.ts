@@ -391,7 +391,7 @@ describeDatabase("Phase 6 legacy reconciliation database behavior", () => {
     );
   });
 
-  it("consumes migrated allocations without rewriting Payment Claims or restoring availability", async () => {
+  it("consumes migrated allocations without rewriting Payment Claims, restoring availability, or creating a second master", async () => {
     const claims = await client.query(
       `select id,retention_withheld_amount,retention_released_amount,
         retention_balance,status from public.project_claims
@@ -463,55 +463,54 @@ describeDatabase("Phase 6 legacy reconciliation database behavior", () => {
     ) as unknown as typeof schedule;
     expect(schedule.succeeded).toBe(true);
 
-    let native = await rpc(
+    const native = await rpc(
       `select public.create_retention_claim_draft(
         $1,'Post-reconciliation claim','phase6','2026-06-01','2026-06-30','phase6'
       ) result`,
       [PROJECT_ID],
     );
-    let nativeClaim = native.claim as unknown as {
+    expect(native).toMatchObject({
+      succeeded: true,
+      reused: true,
+      masterRetentionClaim: true,
+      claim: { status: "submitted" },
+    });
+    const nativeClaim = native.claim as unknown as {
       id: string;
       draftRevision: number;
-      lastPositionStateHash: string;
     };
-    native = await rpc(
+    const rejectedAllocation = await rpc(
       `select public.add_retention_claim_allocation(
         $1,$2,$3,40,null,'phase6'
       ) result`,
       [nativeClaim.id, nativeClaim.draftRevision, ORIGIN_B_ID],
     );
-    nativeClaim = native.claim as unknown as typeof nativeClaim;
-    native = await rpc(
-      "select public.refresh_retention_claim_eligibility_state($1,$2,'phase6') result",
-      [nativeClaim.id, nativeClaim.draftRevision],
-    );
-    nativeClaim = native.claim as unknown as typeof nativeClaim;
-    native = await rpc(
-      "select public.submit_retention_claim($1,$2,$3,'phase6',$4) result",
-      [
-        nativeClaim.id,
-        nativeClaim.draftRevision,
-        nativeClaim.lastPositionStateHash,
-        native.eligibilityStateHash,
-      ],
-    );
-    expect(native.succeeded).toBe(true);
-    const frozen = await client.query<{
-      existing_submitted_allocation_before: string;
-      remaining_after_allocation: string;
-    }>(
-      `select existing_submitted_allocation_before,remaining_after_allocation
-       from public.retention_claim_allocations
-       where retention_claim_id=$1 and originating_payment_claim_id=$2`,
-      [nativeClaim.id, ORIGIN_B_ID],
-    );
-    expect(frozen.rows[0]).toEqual({
-      existing_submitted_allocation_before: "20.00",
-      remaining_after_allocation: "0.00",
+    expect(rejectedAllocation).toMatchObject({
+      succeeded: false,
+      errorCode: "claim_not_draft",
     });
+
+    const eligibilityAfterSchedule = await rpc(
+      "select public.get_project_retention_eligibility($1) result",
+      [PROJECT_ID],
+    ) as unknown as {
+      origins: Array<Record<string, unknown>>;
+    };
+    expect(eligibilityAfterSchedule.origins).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originatingPaymentClaimId: ORIGIN_A_ID,
+        legacyCommittedRetention: 100,
+        availableRetention: 0,
+      }),
+      expect.objectContaining({
+        originatingPaymentClaimId: ORIGIN_B_ID,
+        legacyCommittedRetention: 20,
+        availableRetention: 40,
+      }),
+    ]));
   });
 
-  it("marks changed historical source state unresolved and blocks native submission", async () => {
+  it("marks changed historical source state unresolved and prevents a second mutable claim", async () => {
     await client.query(
       `update public.project_claims
        set retention_released_amount=110,retention_released_to_date=110,
@@ -536,45 +535,36 @@ describeDatabase("Phase 6 legacy reconciliation database behavior", () => {
       [PROJECT_ID],
     );
     expect(draft.succeeded).toBe(true);
+    expect(draft).toMatchObject({
+      reused: true,
+      masterRetentionClaim: true,
+      claim: { status: "submitted" },
+    });
     const claim = draft.claim as unknown as {
       id: string;
       draftRevision: number;
-      lastPositionStateHash: string;
     };
     const refreshed = await rpc(
       "select public.refresh_retention_claim_eligibility_state($1,$2,'phase6') result",
       [claim.id, claim.draftRevision],
     );
-    const refreshedClaim = refreshed.claim as unknown as {
-      id: string;
-      draftRevision: number;
-      lastPositionStateHash: string;
-    };
-    await client.query(
-      `insert into public.retention_claim_allocations(
-        organization_id,project_id,retention_claim_id,
-        originating_payment_claim_id,allocation_sequence,allocation_amount,
-        draft_origin_state_hash,draft_origin_updated_at,
-        draft_origin_retention_owned,created_by
-      )
-      select $1,$2,$3,p.id,1,1,private.retention_claim_origin_state_hash(p.id),
-        p.updated_at,greatest(p.retention_withheld_amount,0),$4
-      from public.project_claims p where p.id=$5`,
-      [ORGANIZATION_ID, PROJECT_ID, refreshedClaim.id, OWNER_ID, ORIGIN_B_ID],
-    );
+    expect(refreshed).toMatchObject({
+      succeeded: false,
+      errorCode: "claim_not_draft",
+    });
     const submitted = await rpc(
       `select public.submit_retention_claim_phase3_pre_schedule(
         $1,$2,$3,'phase6'
       ) result`,
       [
-        refreshedClaim.id,
-        refreshedClaim.draftRevision,
-        refreshedClaim.lastPositionStateHash,
+        claim.id,
+        claim.draftRevision,
+        "",
       ],
     );
     expect(submitted).toMatchObject({
       succeeded: false,
-      errorCode: "unresolved_legacy_release",
+      errorCode: "submitted_claim_immutable",
     });
   });
 

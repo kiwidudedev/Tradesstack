@@ -13,6 +13,7 @@ vi.mock("@/lib/xero/service", () => ({ getOrganizationXeroConnection }));
 import {
   evaluatePaymentClaimXeroReadiness,
   evaluatePaymentClaimXeroReadinessSnapshot,
+  resolvePaymentClaimXeroDependencies,
   type PaymentClaimXeroReadinessBlockerCode,
   type PaymentClaimXeroReadinessSnapshot,
 } from "./payment-claim-readiness";
@@ -52,7 +53,10 @@ function baseSnapshot(): PaymentClaimXeroReadinessSnapshot {
     costCodes: [
       {
         id: "account-600", organization_id: "org-1", is_active: true, external_provider: "xero", external_code: "200",
-        metadata: { accountId: "xero-account-600", tenantId: "tenant-1", status: "ACTIVE", class: "REVENUE", type: "REVENUE" },
+        metadata: {
+          accountId: "xero-account-600", tenantId: "tenant-1", status: "ACTIVE",
+          class: "REVENUE", type: "REVENUE", taxType: "OUTPUT2",
+        },
       },
       {
         id: "account-700", organization_id: "org-1", is_active: true, external_provider: "xero", external_code: "620",
@@ -91,10 +95,34 @@ describe("Payment Claim Xero readiness snapshot", () => {
     expect(evaluatePaymentClaimXeroReadinessSnapshot(baseSnapshot())).toEqual({ ready: true, blockers: [] });
   });
 
+  it("prefers named Claim and Retention routes without numeric runtime mappings", () => {
+    const snapshot = cloneSnapshot();
+    snapshot.routeMappings = [
+      {
+        id: "route-revenue", organization_id: "org-1", provider: "xero",
+        accounting_route: "payment_claim_revenue", organization_cost_code_id: "account-600",
+        project_id: null, is_active: true, updated_at: "2026-08-24T00:00:00Z",
+      },
+      {
+        id: "route-retention", organization_id: "org-1", provider: "xero",
+        accounting_route: "retention_receivable", organization_cost_code_id: "account-700",
+        project_id: null, is_active: true, updated_at: "2026-08-24T00:00:00Z",
+      },
+    ];
+    snapshot.mappings = [];
+
+    expect(evaluatePaymentClaimXeroReadinessSnapshot(snapshot)).toEqual({ ready: true, blockers: [] });
+    expect(resolvePaymentClaimXeroDependencies(snapshot)).toMatchObject({
+      salesMapping: { id: "route-revenue", accounting_route: "payment_claim_revenue" },
+      retentionMapping: { id: "route-retention", accounting_route: "retention_receivable" },
+    });
+  });
+
   it("does not require route 700 when signed retention is zero", () => {
     const snapshot = cloneSnapshot();
     snapshot.claim.retention_withheld_amount = 100;
     snapshot.claim.retention_released_amount = 100;
+    snapshot.claim.gst_amount = 150;
     snapshot.mappings = snapshot.mappings.filter((row) => row.tradesstack_cost_code !== 700);
     snapshot.costCodes = snapshot.costCodes.filter((row) => row.id !== "account-700");
     expect(evaluatePaymentClaimXeroReadinessSnapshot(snapshot)).toEqual({ ready: true, blockers: [] });
@@ -120,7 +148,66 @@ describe("Payment Claim Xero readiness snapshot", () => {
     expectBlocker("client_contact_tenant_mismatch", (snapshot) => { snapshot.contactLinks[0].tenant_id = "tenant-2"; });
     expectBlocker("client_contact_inactive", (snapshot) => { snapshot.importedContacts[0].contact_status = "ARCHIVED"; });
     expectBlocker("unsupported_currency", (snapshot) => { snapshot.organization.default_currency = ""; });
-    expectBlocker("revenue_tax_type_missing", (snapshot) => { snapshot.taxRates = []; });
+    expectBlocker("sales_tax_rate_missing", (snapshot) => { snapshot.taxRates = []; });
+  });
+
+  it.each([
+    ["NONE first", ["NONE", "OUTPUT2"]],
+    ["OUTPUT2 first", ["OUTPUT2", "NONE"]],
+  ])("resolves the Sales account TaxType independently of row order: %s", (_label, order) => {
+    const snapshot = cloneSnapshot();
+    const rows = {
+      NONE: {
+        ...snapshot.taxRates[0], id: "tax-none", tax_type: "NONE", effective_rate: 0,
+      },
+      OUTPUT2: {
+        ...snapshot.taxRates[0], id: "tax-output2", tax_type: "OUTPUT2", effective_rate: 15,
+      },
+    };
+    snapshot.taxRates = order.map((taxType) => rows[taxType as keyof typeof rows]);
+
+    const result = evaluatePaymentClaimXeroReadinessSnapshot(snapshot);
+    expect(result).toEqual({ ready: true, blockers: [] });
+    expect(resolvePaymentClaimXeroDependencies(snapshot).revenueTaxResolution).toMatchObject({
+      status: "resolved",
+      externalTaxType: "OUTPUT2",
+      rate: 15,
+      taxRateId: "tax-output2",
+    });
+  });
+
+  it("blocks when the Sales account does not declare a TaxType", () => {
+    expectBlocker("sales_account_tax_type_missing", (snapshot) => {
+      delete (snapshot.costCodes[0].metadata as Row).taxType;
+    });
+  });
+
+  it("blocks when no active exact TaxType match exists", () => {
+    expectBlocker("sales_tax_rate_missing", (snapshot) => {
+      snapshot.taxRates[0].tax_type = "NONE";
+      snapshot.taxRates[0].effective_rate = 0;
+    });
+  });
+
+  it("blocks ambiguous active exact TaxType matches", () => {
+    expectBlocker("sales_tax_rate_ambiguous", (snapshot) => {
+      snapshot.taxRates.push({ ...snapshot.taxRates[0], id: "tax-duplicate" });
+    });
+  });
+
+  it("blocks when the exact TaxType does not reconcile to persisted GST", () => {
+    expectBlocker("sales_tax_rate_gst_mismatch", (snapshot) => {
+      snapshot.taxRates[0].effective_rate = 10;
+    });
+  });
+
+  it("accepts an exact NONE TaxType for a legitimate zero-GST claim", () => {
+    const snapshot = cloneSnapshot();
+    (snapshot.costCodes[0].metadata as Row).taxType = " none ";
+    snapshot.taxRates[0].tax_type = "NONE";
+    snapshot.taxRates[0].effective_rate = 0;
+    snapshot.claim.gst_amount = 0;
+    expect(evaluatePaymentClaimXeroReadinessSnapshot(snapshot)).toEqual({ ready: true, blockers: [] });
   });
 
   it("does not block a configured non-NZ organisation solely by country", () => {
@@ -131,6 +218,8 @@ describe("Payment Claim Xero readiness snapshot", () => {
     snapshot.taxRates[0].jurisdiction_code = "AU";
     snapshot.taxRates[0].tax_type = "OUTPUT";
     snapshot.taxRates[0].effective_rate = 10;
+    (snapshot.costCodes[0].metadata as Row).taxType = "OUTPUT";
+    snapshot.claim.gst_amount = 90;
     expect(evaluatePaymentClaimXeroReadinessSnapshot(snapshot)).toEqual({
       ready: true,
       blockers: [],
@@ -220,6 +309,7 @@ function snapshotTables(snapshot: PaymentClaimXeroReadinessSnapshot) {
     organization_external_contacts: snapshot.contactLinks,
     organization_xero_contacts: snapshot.importedContacts,
     organization_tradesstack_accounting_mappings: snapshot.mappings,
+    organization_accounting_route_mappings: snapshot.routeMappings ?? [],
     organization_cost_codes: snapshot.costCodes,
     organization_accounting_tax_rates: snapshot.taxRates,
     organization_accounting_documents: snapshot.accountingDocuments,

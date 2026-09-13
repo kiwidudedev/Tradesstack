@@ -59,7 +59,7 @@ function buildPromptPacket(
       suppliers: [],
       clients: [],
     },
-    newBusinessActivity: [
+    newBusinessActivity: containerType === "project_claim" ? [] : [
       {
         containerType,
         source: {
@@ -160,6 +160,51 @@ describe("Universal learning domain intelligence", () => {
     expect(result.userPrompt).toContain("Based on this company's recent estimating activity, what appears to be becoming true about how they price work, structure scope, use margins, manage exclusions, carry risk, and prepare commercial offers?");
   });
 
+  it("frames Payment Claim reviews as learning company methodology without evaluation or recommendations", () => {
+    const result = buildUniversalConstructionLearningPrompt(buildPromptPacket("project_claim"));
+    const domainLayer = getUniversalLearningDomainPromptLayer("project_claim");
+
+    expect(domainLayer.role).toBe(
+      "You are an experienced Quantity Surveyor, Commercial Manager, Contract Administrator and Project Manager reviewing many months of this company's commercial history. Your responsibility is to understand how this company normally prepares, administers and manages payment claims so another experienced construction professional could understand the company's standard commercial methodology.",
+    );
+    expect(domainLayer.objective).toBe(
+      "Your task is to learn this company's commercial administration methodology. Determine how the business consistently values completed work, structures payment claims, incorporates variations, administers retention, supports claims, manages certification and follows claims through to payment. Learn the company's methodology, not individual projects. Observe established behaviour only; do not recommend changes.",
+    );
+    expect(domainLayer.primaryReviewQuestion).toBe(
+      "Based on all reviewed payment claims, what appears to be this company's normal commercial methodology for preparing, submitting, certifying and recovering payment claims? Distinguish repeatable company practice from one-off project behaviour.",
+    );
+
+    for (const prompt of [result.systemPrompt, result.userPrompt]) {
+      expect(prompt).toContain(domainLayer.role);
+      expect(prompt).toContain(domainLayer.objective);
+      expect(prompt).toContain(domainLayer.primaryReviewQuestion);
+      expect(prompt).toContain(
+        "Do not compare this company with industry standards, best practice or how other contractors operate.",
+      );
+      expect(prompt).toContain(
+        "Do not judge whether the company's approach is good, poor, typical, unusual, commercially sound or commercially weak.",
+      );
+      expect(prompt).toContain(
+        "Your responsibility is to understand the company, not evaluate it.",
+      );
+      expect(prompt).toContain(
+        "Write exactly as an experienced Quantity Surveyor, Commercial Manager, Contract Administrator or Project Manager would when explaining how a contractor normally operates.",
+      );
+      expect(prompt).toContain(
+        "Avoid consultant language, academic language, AI terminology and benchmarking language.",
+      );
+      expect(prompt).toContain(
+        "If another experienced Commercial Manager joined this company tomorrow, what would they quickly learn about how this company normally manages payment claims?",
+      );
+      expect(prompt).toContain(
+        "Do not recommend how claims should be prepared, valued, certified, or collected.",
+      );
+    }
+
+    expect(result.promptPacket).toEqual(buildPromptPacket("project_claim"));
+    expect(result.userPrompt).toContain("Universal Construction Learning Response Contract v2");
+  });
+
   it("uses realistic identities, the observational mindset, and the refined wording across every domain", () => {
     for (const containerType of [
       "project_quote",
@@ -176,7 +221,7 @@ describe("Universal learning domain intelligence", () => {
       expect(result.systemPrompt).toContain("Before creating durable company knowledge, ask yourself:");
       expect(result.systemPrompt).toContain("Your responsibility is not to tell the company what they should do.");
       expect(result.systemPrompt).toContain("Every project has its own unique challenges, constraints and commercial circumstances.");
-      expect(result.systemPrompt).toContain("Your task is to understand how this company normally");
+      expect(result.systemPrompt).toContain("Your task is to");
       expect(result.systemPrompt).not.toContain("world's most experienced");
       expect(result.systemPrompt).not.toContain("Distinguish signal from noise.");
       expect(result.systemPrompt).not.toContain("Pay particular attention to:");
@@ -187,7 +232,7 @@ describe("Universal learning domain intelligence", () => {
       expect(result.userPrompt).toContain("Before creating durable company knowledge, ask yourself:");
       expect(result.userPrompt).toContain("Your responsibility is not to tell the company what they should do.");
       expect(result.userPrompt).toContain("Every project has its own unique challenges, constraints and commercial circumstances.");
-      expect(result.userPrompt).toContain("Your task is to understand how this company normally");
+      expect(result.userPrompt).toContain("Your task is to");
       expect(result.userPrompt).not.toContain("world's most experienced");
       expect(result.userPrompt).not.toContain("Distinguish signal from noise.");
       expect(result.userPrompt).not.toContain("Pay particular attention to:");

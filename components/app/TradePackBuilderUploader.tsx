@@ -103,7 +103,7 @@ type TradePackReasonSnapshotInsert = Database["public"]["Tables"]["project_trade
 type TradePackInsert = Database["public"]["Tables"]["trade_packs"]["Insert"];
 
 const PROJECT_DRAWING_SET_SELECT =
-  "id, organization_id, project_id, uploaded_by, file_name, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
+  "id, organization_id, project_id, uploaded_by, file_name, display_name, sort_order, archived_at, archived_by, source_type, source_revision, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
 
 function formatUploadedAt(value: string): string {
   const date = new Date(value);
@@ -537,6 +537,8 @@ async function saveGeneratedTradePackToProject(params: {
       project_id: params.projectId,
       uploaded_by: params.sessionUserId,
       file_name: params.outputDisplayName,
+      display_name: params.outputDisplayName.replace(/\.pdf$/i, "").trim() || "Trade Pack",
+      source_type: "generated_trade_pack",
       storage_path: storagePath,
       file_size_bytes: outputFile.size,
       mime_type: "application/pdf",
@@ -1076,7 +1078,7 @@ export function TradePackBuilderUploader({
 
       const [{ PDFDocument }, pdfjs] = await Promise.all([
         import("pdf-lib"),
-        import("pdfjs-dist/legacy/build/pdf.mjs"),
+        import("pdfjs-dist/legacy/build/pdf.min.mjs"),
       ]);
 
       // Required for browser builds in Next.js so pdf.js can spawn its worker.

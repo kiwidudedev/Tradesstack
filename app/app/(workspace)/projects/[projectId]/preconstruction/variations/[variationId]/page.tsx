@@ -15,18 +15,24 @@ import {
   Upload,
 } from "lucide-react";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
+import { CommercialLinePrefixedNumberInput } from "@/components/app/CommercialLineItemsTable";
+import {
+  COMMERCIAL_LINE_GRID_WITH_SOURCE,
+  COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITH_SOURCE,
+} from "@/components/app/commercial-line-table-layout";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
 import { PricingWorksheetOverlayDialog } from "@/components/app/PricingWorksheetOverlayDialog";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { VariationPricingWorksheetEntryPanel } from "@/components/app/VariationPricingWorksheetEntryPanel";
 import { VariationRecordTabs } from "@/components/app/VariationRecordTabs";
+import { VariationImportPurchaseOrderLinesDrawer } from "@/components/app/VariationImportPurchaseOrderLinesDrawer";
+import { VariationSupplierPricingDrawer } from "@/components/app/VariationSupplierPricingDrawer";
 import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
-import { triggerDocumentClassification } from "@/lib/cost-items/trigger-document-classification";
 import { interMedium } from "@/lib/fonts";
 import {
   createOpportunityPricingWorkbook,
@@ -40,16 +46,23 @@ import { buildVariationPricingWorksheetOwner } from "@/lib/pricing-worksheet-own
 import { mapPricingWorksheetUiErrorMessage } from "@/lib/pricing-worksheet-ui-errors";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
+import { buildVariationLineFromSupplierPrice } from "@/lib/materials/variation-supplier-pricing";
+import type { PricingWorksheetMaterialPickerItem } from "@/lib/pricing-worksheet-material-picker";
 import {
   buildVariationCommercialItemSourceHref,
   enrichVariationLineItemsWithCommercialItems,
   type VariationCommercialItemLink,
 } from "@/lib/commercial-items/variation-linking";
 import styles from "@/components/app/trade-pack-builder.module.css";
+import {
+  loadVariationSupplierPricingPermissionsAction,
+  type VariationSupplierPricingPermissions,
+} from "./actions";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
 type VariationOrigin = "Client Request" | "Drawing Revision" | "Site Instruction" | "RFI" | "Unknown";
 type CostSection = "Labour" | "Materials" | "Subcontractors" | "Plant" | "Margin";
+type VariationDrawerType = "purchase-order" | "materials" | null;
 
 interface CostLine {
   id: string;
@@ -160,28 +173,11 @@ interface PurchaseOrderLineOption {
   rate: number;
 }
 
-interface ProjectQuoteOption {
-  id: string;
-  quote_number: string;
-}
-
-interface ProjectQuoteLineOption {
-  id: string;
-  quote_id: string;
-  quote_number: string;
-  section: string;
-  description: string;
-  quantity: number;
-  unit: string;
-  rate: number;
-}
-
 type RpcResultRow = Record<string, unknown>;
 
 const STATUS_OPTIONS: VariationStatus[] = ["Draft", "Priced", "Sent", "Client Review", "Approved", "Rejected", "Invoiced"];
 const ORIGIN_OPTIONS: VariationOrigin[] = ["Client Request", "Drawing Revision", "Site Instruction", "RFI", "Unknown"];
 const COST_SECTIONS: CostSection[] = ["Labour", "Materials", "Subcontractors", "Plant", "Margin"];
-const LINE_GRID_TEMPLATE = "minmax(170px, 1.3fr) 140px 120px 72px 72px 104px 104px 44px";
 const VARIATION_ATTACHMENTS_BUCKET = "project-variation-attachments";
 
 function DescriptionInputWithPreview({
@@ -452,6 +448,13 @@ export default function ProjectVariationsPage() {
   const pathname = usePathname();
   const { session } = useAuth();
   const canManageVariation = canManageCommercialData(session?.role);
+  const [supplierPricingPermissions, setSupplierPricingPermissions] = useState<VariationSupplierPricingPermissions | null>(null);
+  const [activeVariationDrawer, setActiveVariationDrawer] = useState<VariationDrawerType>(null);
+  const materialsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const activeDrawerTriggerRef = useRef<HTMLElement | null>(null);
+  const canUseMaterials = canManageVariation
+    && supplierPricingPermissions?.canViewMaterials === true
+    && supplierPricingPermissions.canWriteVariation;
 
   const [variations, setVariations] = useState<VariationItem[]>([]);
   const [activeVariationId, setActiveVariationId] = useState<string | null>(null);
@@ -468,15 +471,8 @@ export default function ProjectVariationsPage() {
   const [organizationBrandPrimaryColor, setOrganizationBrandPrimaryColor] = useState("");
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderOption[]>([]);
   const [purchaseOrderLines, setPurchaseOrderLines] = useState<PurchaseOrderLineOption[]>([]);
-  const [projectQuotes, setProjectQuotes] = useState<ProjectQuoteOption[]>([]);
-  const [projectQuoteLines, setProjectQuoteLines] = useState<ProjectQuoteLineOption[]>([]);
   const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState("");
   const [selectedPurchaseOrderLineIds, setSelectedPurchaseOrderLineIds] = useState<Set<string>>(new Set());
-  const [isPurchaseOrderImportOpen, setIsPurchaseOrderImportOpen] = useState(false);
-  const [selectedProjectQuoteId, setSelectedProjectQuoteId] = useState("");
-  const [selectedProjectQuoteLineId, setSelectedProjectQuoteLineId] = useState("");
-  const [quoteLinkTargetLineId, setQuoteLinkTargetLineId] = useState<string | null>(null);
-  const [isQuoteLinkOpen, setIsQuoteLinkOpen] = useState(false);
   const [isLoadingVariations, setIsLoadingVariations] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -486,6 +482,7 @@ export default function ProjectVariationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [existingVariationWorksheetId, setExistingVariationWorksheetId] = useState<string | null>(null);
   const [variationWorksheetId, setVariationWorksheetId] = useState<string | null>(null);
+  const [isVariationWorksheetClosePending, setIsVariationWorksheetClosePending] = useState(false);
   const [isVariationWorksheetDirty, setIsVariationWorksheetDirty] = useState(false);
   const [persistedVariationIds, setPersistedVariationIds] = useState<Set<string>>(new Set());
   const [isCostBuildUpOpen, setIsCostBuildUpOpen] = useState(true);
@@ -493,6 +490,7 @@ export default function ProjectVariationsPage() {
   const [isDocsOpen, setIsDocsOpen] = useState(true);
   const [pendingAttachmentType, setPendingAttachmentType] = useState<AttachmentItem["type"] | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const variationWorksheetClosePendingRef = useRef(false);
   const hasAutoCreatedOnNewRoute = useRef(false);
   const variationDetailPath = activeVariationId && routeProjectSlug
     ? `/app/projects/${routeProjectSlug}/preconstruction/variations/${activeVariationId}`
@@ -522,6 +520,20 @@ export default function ProjectVariationsPage() {
     } catch {
       return null;
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadVariationSupplierPricingPermissionsAction()
+      .then((permissions) => {
+        if (!cancelled) setSupplierPricingPermissions(permissions);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSupplierPricingPermissions({ canViewMaterials: false, canWriteVariation: false });
+        }
+      });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -626,17 +638,10 @@ export default function ProjectVariationsPage() {
       const purchaseOrdersTable = (supabase as any).from("project_purchase_orders");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const purchaseOrderLineItemsTable = (supabase as any).from("project_purchase_order_line_items");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const projectQuotesTable = (supabase as any).from("project_quotes");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const projectQuoteLineItemsTable = (supabase as any).from("project_quote_line_items");
-
       const [
         { data: variationRowsRaw, error: variationError },
         { data: purchaseOrderRowsRaw },
         { data: purchaseOrderLineRowsRaw },
-        { data: projectQuoteRowsRaw },
-        { data: projectQuoteLineRowsRaw },
       ] = await Promise.all([
         variationsTable
           .select(
@@ -655,16 +660,6 @@ export default function ProjectVariationsPage() {
           .eq("organization_id", resolvedOrganizationId)
           .eq("project_id", projectRow.id)
           .order("sort_order", { ascending: true }),
-        projectQuotesTable
-          .select("id, quote_number")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .order("updated_at", { ascending: false }),
-        projectQuoteLineItemsTable
-          .select("id, quote_id, section, description, quantity, unit, rate")
-          .eq("organization_id", resolvedOrganizationId)
-          .eq("project_id", projectRow.id)
-          .order("sort_order", { ascending: true }),
       ]);
 
       if (variationError) {
@@ -676,33 +671,6 @@ export default function ProjectVariationsPage() {
       const variationRows = (variationRowsRaw ?? []) as VariationRow[];
       setPurchaseOrders((purchaseOrderRowsRaw ?? []) as PurchaseOrderOption[]);
       setPurchaseOrderLines((purchaseOrderLineRowsRaw ?? []) as PurchaseOrderLineOption[]);
-      const projectQuoteRows = (projectQuoteRowsRaw ?? []) as ProjectQuoteOption[];
-      const projectQuoteRowsById = new Map(projectQuoteRows.map((row) => [row.id, row]));
-      setProjectQuotes(projectQuoteRows);
-      setProjectQuoteLines(
-        ((projectQuoteLineRowsRaw ?? []) as Array<{
-          id: string;
-          quote_id: string;
-          section: string;
-          description: string;
-          quantity: number;
-          unit: string;
-          rate: number;
-        }>)
-          .map((lineRow) => {
-            const quoteRow = projectQuoteRowsById.get(lineRow.quote_id);
-            return {
-              id: lineRow.id,
-              quote_id: lineRow.quote_id,
-              quote_number: quoteRow?.quote_number ?? "Quote",
-              section: lineRow.section ?? "Labour",
-              description: lineRow.description ?? "",
-              quantity: Number(lineRow.quantity ?? 0),
-              unit: lineRow.unit ?? "",
-              rate: Number(lineRow.rate ?? 0),
-            } satisfies ProjectQuoteLineOption;
-          })
-      );
       if (variationRows.length === 0) {
         setVariations([]);
         setActiveVariationId(null);
@@ -930,17 +898,13 @@ export default function ProjectVariationsPage() {
     () => purchaseOrderLines.filter((line) => line.purchase_order_id === selectedPurchaseOrderId),
     [purchaseOrderLines, selectedPurchaseOrderId]
   );
-  const selectedProjectQuote = useMemo(
-    () => projectQuotes.find((quote) => quote.id === selectedProjectQuoteId) ?? null,
-    [projectQuotes, selectedProjectQuoteId]
-  );
-  const selectedProjectQuoteLineOptions = useMemo(
-    () => projectQuoteLines.filter((line) => line.quote_id === selectedProjectQuoteId),
-    [projectQuoteLines, selectedProjectQuoteId]
-  );
-  const quoteLinkTargetLine = useMemo(
-    () => activeVariation?.costLines.find((line) => line.id === quoteLinkTargetLineId) ?? null,
-    [activeVariation, quoteLinkTargetLineId]
+  const alreadyImportedPurchaseOrderLineIds = useMemo(
+    () => new Set(
+      activeVariation?.costLines
+        .map((line) => line.sourcePurchaseOrderLineItemId)
+        .filter((value): value is string => Boolean(value)) ?? [],
+    ),
+    [activeVariation?.costLines],
   );
 
   useEffect(() => {
@@ -1032,24 +996,6 @@ export default function ProjectVariationsPage() {
   }, [selectedPurchaseOrderId]);
 
   useEffect(() => {
-    if (selectedProjectQuoteId && projectQuotes.some((quote) => quote.id === selectedProjectQuoteId)) {
-      return;
-    }
-    setSelectedProjectQuoteId(projectQuotes[0]?.id ?? "");
-  }, [projectQuotes, selectedProjectQuoteId]);
-
-  useEffect(() => {
-    if (!selectedProjectQuoteId) {
-      setSelectedProjectQuoteLineId("");
-      return;
-    }
-    if (selectedProjectQuoteLineId && selectedProjectQuoteLineOptions.some((line) => line.id === selectedProjectQuoteLineId)) {
-      return;
-    }
-    setSelectedProjectQuoteLineId("");
-  }, [selectedProjectQuoteId, selectedProjectQuoteLineId, selectedProjectQuoteLineOptions]);
-
-  useEffect(() => {
     if (!routeVariationId || variations.length === 0) {
       return;
     }
@@ -1065,6 +1011,8 @@ export default function ProjectVariationsPage() {
 
     const targetPath = `${variationWorksheetTabPath}/${worksheetId}`;
     const nextState = { pricingWorksheetOverlay: true, worksheetId };
+    variationWorksheetClosePendingRef.current = false;
+    setIsVariationWorksheetClosePending(false);
     setIsVariationWorksheetDirty(false);
     setVariationWorksheetId(worksheetId);
     writePersistedOverlayWorksheetId(variationWorksheetStorageKey, worksheetId);
@@ -1077,18 +1025,61 @@ export default function ProjectVariationsPage() {
   }, [variationDetailPath, variationWorksheetStorageKey, variationWorksheetTabPath]);
 
   const closeVariationWorksheetOverlay = useCallback(() => {
-    if (!variationDetailPath || !variationWorksheetStorageKey) {
+    if (
+      !variationDetailPath
+      || !variationWorksheetStorageKey
+      || !variationWorksheetId
+      || variationWorksheetClosePendingRef.current
+    ) {
       return;
     }
 
     setIsVariationWorksheetDirty(false);
-    setVariationWorksheetId(null);
+    variationWorksheetClosePendingRef.current = true;
+    setIsVariationWorksheetClosePending(true);
+    // The local worksheet id remains authoritative while the route request is
+    // pending. Clearing only persisted restoration here prevents a cold route
+    // remount from reopening an overlay that the user has already closed.
     writePersistedOverlayWorksheetId(variationWorksheetStorageKey, null);
-    router.replace(variationDetailPath, { scroll: false });
-  }, [router, variationDetailPath, variationWorksheetStorageKey]);
+    try {
+      router.replace(variationDetailPath, { scroll: false });
+    } catch (navigationError) {
+      variationWorksheetClosePendingRef.current = false;
+      setIsVariationWorksheetClosePending(false);
+      writePersistedOverlayWorksheetId(variationWorksheetStorageKey, variationWorksheetId);
+      throw navigationError;
+    }
+  }, [router, variationDetailPath, variationWorksheetId, variationWorksheetStorageKey]);
 
   useEffect(() => {
-    if (!variationWorksheetId || !variationDetailPath || pathname !== variationDetailPath) {
+    if (
+      !isVariationWorksheetClosePending
+      || !variationDetailPath
+      || pathname !== variationDetailPath
+    ) {
+      return;
+    }
+
+    variationWorksheetClosePendingRef.current = false;
+    setVariationWorksheetId(null);
+    if (variationWorksheetStorageKey) {
+      writePersistedOverlayWorksheetId(variationWorksheetStorageKey, null);
+    }
+    setIsVariationWorksheetClosePending(false);
+  }, [
+    isVariationWorksheetClosePending,
+    pathname,
+    variationDetailPath,
+    variationWorksheetStorageKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      isVariationWorksheetClosePending
+      || !variationWorksheetId
+      || !variationDetailPath
+      || pathname !== variationDetailPath
+    ) {
       return;
     }
 
@@ -1106,7 +1097,13 @@ export default function ProjectVariationsPage() {
       "",
       targetPath,
     );
-  }, [pathname, variationDetailPath, variationWorksheetId, variationWorksheetTabPath]);
+  }, [
+    isVariationWorksheetClosePending,
+    pathname,
+    variationDetailPath,
+    variationWorksheetId,
+    variationWorksheetTabPath,
+  ]);
 
   useEffect(() => {
     if (!variationWorksheetId || !variationDetailPath || !variationWorksheetStorageKey) {
@@ -1127,6 +1124,8 @@ export default function ProjectVariationsPage() {
       }
 
       setIsVariationWorksheetDirty(false);
+      variationWorksheetClosePendingRef.current = false;
+      setIsVariationWorksheetClosePending(false);
       setVariationWorksheetId(null);
       writePersistedOverlayWorksheetId(variationWorksheetStorageKey, null);
     };
@@ -1351,6 +1350,37 @@ export default function ProjectVariationsPage() {
     updateActiveVariation("costLines", [...activeVariation.costLines, makeDefaultCostLine(section)]);
   };
 
+  const closeActiveVariationDrawer = () => {
+    setActiveVariationDrawer(null);
+    const trigger = activeDrawerTriggerRef.current;
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+
+  const openMaterials = (trigger: HTMLElement | null = materialsTriggerRef.current) => {
+    if (!canUseMaterials) return;
+    activeDrawerTriggerRef.current = trigger;
+    setActiveVariationDrawer("materials");
+  };
+
+  const addSupplierMaterial = (item: PricingWorksheetMaterialPickerItem) => {
+    if (!activeVariation || !canUseMaterials) {
+      setError("You do not have permission to add supplier-priced materials to this Variation.");
+      return;
+    }
+    try {
+      const line = buildVariationLineFromSupplierPrice(item);
+      setVariations((current) => current.map((variation) => (
+        variation.id === activeVariation.id
+          ? { ...variation, costLines: [...variation.costLines, line] }
+          : variation
+      )));
+      setError(null);
+      setSaveMessage("Material added to the Variation. Save Variation to persist this line.");
+    } catch (selectionError) {
+      setError(selectionError instanceof Error ? selectionError.message : "This supplier price cannot be added to the Variation.");
+    }
+  };
+
   const togglePurchaseOrderLine = (lineId: string) => {
     setSelectedPurchaseOrderLineIds((current) => {
       const next = new Set(current);
@@ -1361,6 +1391,11 @@ export default function ProjectVariationsPage() {
       }
       return next;
     });
+  };
+
+  const openPurchaseOrderImport = (trigger: HTMLElement) => {
+    activeDrawerTriggerRef.current = trigger;
+    setActiveVariationDrawer("purchase-order");
   };
 
   const importSelectedPurchaseOrderLines = () => {
@@ -1396,88 +1431,6 @@ export default function ProjectVariationsPage() {
 
     updateActiveVariation("costLines", [...activeVariation.costLines, ...importedLines]);
     setSelectedPurchaseOrderLineIds(new Set());
-  };
-
-  const openQuoteLinkPicker = (lineId: string) => {
-    if (!activeVariation) {
-      return;
-    }
-
-    const targetLine = activeVariation.costLines.find((line) => line.id === lineId) ?? null;
-    if (!targetLine) {
-      return;
-    }
-
-    setQuoteLinkTargetLineId(lineId);
-    setSelectedProjectQuoteId(targetLine.sourceProjectQuoteId ?? projectQuotes[0]?.id ?? "");
-    setSelectedProjectQuoteLineId(targetLine.sourceProjectQuoteLineItemId ?? "");
-    setIsQuoteLinkOpen(true);
-  };
-
-  const openQuoteLinkPanel = () => {
-    if (!activeVariation) {
-      return;
-    }
-
-    const fallbackLine = activeVariation.costLines[0] ?? null;
-    if (!fallbackLine) {
-      return;
-    }
-
-    openQuoteLinkPicker(fallbackLine.id);
-  };
-
-  const assignSelectedProjectQuoteLine = () => {
-    if (!activeVariation || !quoteLinkTargetLineId) {
-      return;
-    }
-
-    const selectedLine = projectQuoteLines.find((line) => line.id === selectedProjectQuoteLineId) ?? null;
-    if (!selectedLine) {
-      return;
-    }
-
-    updateActiveVariation(
-      "costLines",
-      activeVariation.costLines.map((line) =>
-        line.id === quoteLinkTargetLineId
-          ? {
-              ...line,
-              sourceProjectQuoteId: selectedLine.quote_id,
-              sourceProjectQuoteLineItemId: selectedLine.id,
-              sourceProjectQuoteNumber: selectedLine.quote_number,
-              sourcePurchaseOrderId: null,
-              sourcePurchaseOrderLineItemId: null,
-              sourcePurchaseOrderNumber: "",
-            }
-          : line
-      )
-    );
-    setIsQuoteLinkOpen(false);
-  };
-
-  const clearProjectQuoteLink = (lineId: string) => {
-    if (!activeVariation) {
-      return;
-    }
-
-    updateActiveVariation(
-      "costLines",
-      activeVariation.costLines.map((line) =>
-        line.id === lineId
-          ? {
-              ...line,
-              sourceProjectQuoteId: null,
-              sourceProjectQuoteLineItemId: null,
-              sourceProjectQuoteNumber: "",
-            }
-          : line
-      )
-    );
-
-    if (quoteLinkTargetLineId === lineId) {
-      setSelectedProjectQuoteLineId("");
-    }
   };
 
   const updateCostLine = <K extends keyof CostLine>(lineId: string, key: K, value: CostLine[K]) => {
@@ -1689,10 +1642,6 @@ export default function ProjectVariationsPage() {
         throw new Error("Variation was saved but no updated timestamp was returned.");
       }
 
-      triggerDocumentClassification({
-        documentKind: "project_variation",
-        documentId: savedVariationId,
-      });
 
       persistedCostLinesByVariationRef.current.set(
         savedVariationId,
@@ -2406,30 +2355,33 @@ export default function ProjectVariationsPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={openQuoteLinkPanel}
-                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
-                >
-                  <Plus className="mr-1 h-4 w-4" />
-                  Link Quoted Item
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsPurchaseOrderImportOpen((current) => !current)}
+                  onClick={(event) => openPurchaseOrderImport(event.currentTarget)}
                   className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
                 >
                   <Plus className="mr-1 h-4 w-4" />
                   Import PO Items
                 </Button>
+                {canUseMaterials ? (
+                  <Button
+                    ref={materialsTriggerRef}
+                    type="button"
+                    variant="outline"
+                    onClick={(event) => openMaterials(event.currentTarget)}
+                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Materials
+                  </Button>
+                ) : null}
               </div>
             </div>
 
             <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
-              <div>
-                <div>
+              <div className="overflow-x-auto">
+                <div className={COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITH_SOURCE}>
                   <div
                     className={`${interMedium.className} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
-                    style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}
+                    style={{ gridTemplateColumns: COMMERCIAL_LINE_GRID_WITH_SOURCE }}
                   >
                     <span className="px-3 py-2.5 font-semibold">Description</span>
                     <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Source</span>
@@ -2442,7 +2394,7 @@ export default function ProjectVariationsPage() {
                   </div>
                   <div className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
                     {activeVariation.costLines.map((line) => (
-                      <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: LINE_GRID_TEMPLATE }}>
+                      <div key={line.id} className="group grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: COMMERCIAL_LINE_GRID_WITH_SOURCE }}>
                         <div className="flex items-center px-3 py-1.5">
                           <DescriptionInputWithPreview
                             value={line.description}
@@ -2458,29 +2410,9 @@ export default function ProjectVariationsPage() {
                               className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
                             />
                           ) : (
-                            <div className="flex min-w-0 flex-col gap-0.5">
-                              <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
-                                {line.sourceProjectQuoteNumber || line.sourcePurchaseOrderNumber || "Manual"}
-                              </span>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openQuoteLinkPicker(line.id)}
-                                  className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
-                                >
-                                  {line.sourceProjectQuoteLineItemId ? "Change" : "Link"}
-                                </button>
-                                {line.sourceProjectQuoteLineItemId ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => clearProjectQuoteLink(line.id)}
-                                    className={`${interMedium.className} text-[11px] text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline`}
-                                  >
-                                    Clear
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
+                            <span className={`${interMedium.className} truncate text-[12px] text-[var(--text-secondary)]`}>
+                              {line.sourceProjectQuoteNumber || line.sourcePurchaseOrderNumber || "Manual"}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
@@ -2495,13 +2427,14 @@ export default function ProjectVariationsPage() {
                           <Input value={line.unit ?? ""} onChange={(event) => updateCostLine(line.id, "unit", event.target.value || null)} className="h-9 w-full !border-0 !bg-transparent px-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                         </div>
                         <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <div className="relative w-full">
-                            <span className={`${interMedium.className} pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-[var(--text-secondary)]`}>$</span>
-                            <Input type="number" value={line.rate ?? ""} onChange={(event) => updateCostLine(line.id, "rate", event.target.value === "" ? null : numberOrZero(event.target.value))} className="h-9 w-full !border-0 !bg-transparent pl-4 pr-0 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
-                          </div>
+                          <CommercialLinePrefixedNumberInput
+                            prefix="$"
+                            value={line.rate === null ? "" : String(line.rate)}
+                            onChange={(value) => updateCostLine(line.id, "rate", value === "" ? null : numberOrZero(value))}
+                          />
                         </div>
                         <div className="flex items-center justify-end border-l border-[var(--border-subtle)] px-3 py-1.5">
-                          <div className={`${interMedium.className} text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
+                          <div className={`${interMedium.className} whitespace-nowrap text-right text-sm text-[var(--text-primary)]`}>{toMoney(lineTotal(line))}</div>
                         </div>
                         <div className="flex items-center justify-center border-l border-[var(--border-subtle)] px-0 py-1.5">
                           <Button
@@ -2533,226 +2466,6 @@ export default function ProjectVariationsPage() {
               </Button>
             </div>
 
-            {isQuoteLinkOpen ? (
-              <div className="mt-3 min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-4">
-                  <div className="space-y-1">
-                    <h3 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Link To Quoted Item</h3>
-                    <p className={styles.quoteBodyLabel}>Choose an existing quoted item to link to this variation line.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsQuoteLinkOpen(false)}
-                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
-                    >
-                      Close
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={assignSelectedProjectQuoteLine}
-                      disabled={!quoteLinkTargetLineId || !selectedProjectQuoteLineId}
-                      className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4 disabled:opacity-50`}
-                    >
-                      Link Selected Quote Line
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className={styles.quoteBodyLabel}>Variation line</label>
-                    <select
-                      value={quoteLinkTargetLineId ?? ""}
-                      onChange={(event) => openQuoteLinkPicker(event.target.value)}
-                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}
-                    >
-                      {activeVariation.costLines.map((line, index) => (
-                        <option key={line.id} value={line.id}>
-                          {`Line ${index + 1} - ${line.description.trim() || line.section}`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className={styles.quoteBodyLabel}>Quote</label>
-                    <select
-                      value={selectedProjectQuoteId}
-                      onChange={(event) => setSelectedProjectQuoteId(event.target.value)}
-                      className={`${interMedium.className} h-10 w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}
-                    >
-                      <option value="">Select quote</option>
-                      {projectQuotes.map((quote) => (
-                        <option key={quote.id} value={quote.id}>
-                          {quote.quote_number}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {selectedProjectQuote ? (
-                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
-                    <table className="min-w-full border-collapse">
-                      <thead>
-                        <tr className={`${interMedium.className} border-b border-[var(--border)] bg-[var(--surface-muted)] text-[13px] font-semibold text-[var(--text-secondary)]`}>
-                          <th className="w-[44px] px-3 py-2.5 text-left" />
-                          <th className="px-3 py-2.5 text-left">Description</th>
-                          <th className="w-[140px] px-3 py-2.5 text-left">Item</th>
-                          <th className="w-[90px] px-3 py-2.5 text-left">Qty.</th>
-                          <th className="w-[110px] px-3 py-2.5 text-left">Price</th>
-                          <th className="w-[120px] px-3 py-2.5 text-right">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
-                        {selectedProjectQuoteLineOptions.length > 0 ? (
-                          selectedProjectQuoteLineOptions.map((line) => (
-                            <tr key={line.id} className="transition-colors">
-                              <td className="px-3 py-3 align-middle">
-                                <label className="flex items-center justify-center">
-                                  <input
-                                    type="radio"
-                                    name="selected-project-quote-line"
-                                    checked={selectedProjectQuoteLineId === line.id}
-                                    onChange={() => setSelectedProjectQuoteLineId(line.id)}
-                                    className="h-4 w-4 border-[var(--border)]"
-                                  />
-                                </label>
-                              </td>
-                              <td className="min-w-0 px-3 py-3 align-middle">
-                                <span className={`${interMedium.className} block truncate text-sm font-medium text-[var(--text-primary)]`}>
-                                  {line.description || "Untitled line item"}
-                                </span>
-                              </td>
-                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.section}</td>
-                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.quantity}</td>
-                              <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{toMoney(line.rate)}</td>
-                              <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[var(--text-primary)] align-middle`}>
-                                {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[var(--text-secondary)]`}>
-                              No quote line items available to link.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className={`${interMedium.className} mt-4 text-sm text-[var(--text-secondary)]`}>
-                    Select a quote to choose a source line.
-                  </p>
-                )}
-
-                {quoteLinkTargetLine ? (
-                  <p className={`${interMedium.className} mt-3 text-[12px] text-[var(--text-secondary)]`}>
-                    Linking to: {quoteLinkTargetLine.description.trim() || quoteLinkTargetLine.section}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {isPurchaseOrderImportOpen ? (
-              <div className="mt-3 min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-4">
-                  <div className="space-y-1">
-                    <h3 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>Import From Purchase Order</h3>
-                    <p className={styles.quoteBodyLabel}>Select purchase order lines to add into this variation.</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={importSelectedPurchaseOrderLines}
-                    disabled={selectedPurchaseOrderLineIds.size === 0}
-                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4 disabled:opacity-50`}
-                  >
-                    Import Selected PO Lines
-                  </Button>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <select
-                    value={selectedPurchaseOrderId}
-                    onChange={(event) => setSelectedPurchaseOrderId(event.target.value)}
-                    className={`${interMedium.className} h-10 min-w-[260px] flex-1 rounded-[6px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--text-primary)]`}
-                  >
-                    <option value="">Select purchase order</option>
-                    {purchaseOrders.map((purchaseOrder) => (
-                      <option key={purchaseOrder.id} value={purchaseOrder.id}>
-                        {purchaseOrder.purchase_order_number} - {purchaseOrder.purchase_order_title || "Untitled purchase order"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedPurchaseOrder ? (
-                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--surface)]">
-                    <table className="min-w-full border-collapse">
-                      <thead>
-                        <tr className={`${interMedium.className} border-b border-[var(--border)] bg-[var(--surface-muted)] text-[13px] font-semibold text-[var(--text-secondary)]`}>
-                          <th className="w-[44px] px-3 py-2.5 text-left" />
-                          <th className="px-3 py-2.5 text-left">Description</th>
-                          <th className="w-[140px] px-3 py-2.5 text-left">Item</th>
-                          <th className="w-[90px] px-3 py-2.5 text-left">Qty.</th>
-                          <th className="w-[110px] px-3 py-2.5 text-left">Price</th>
-                          <th className="w-[120px] px-3 py-2.5 text-right">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--border-subtle)] bg-[var(--surface)]">
-                        {selectedPurchaseOrderLineOptions.length > 0 ? (
-                          selectedPurchaseOrderLineOptions.map((line) => {
-                            const alreadyImported = activeVariation?.costLines.some((costLine) => costLine.sourcePurchaseOrderLineItemId === line.id) ?? false;
-                            return (
-                              <tr key={line.id} className="transition-colors">
-                                <td className="px-3 py-3 align-middle">
-                                  <label className="flex items-center justify-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedPurchaseOrderLineIds.has(line.id)}
-                                      onChange={() => togglePurchaseOrderLine(line.id)}
-                                      disabled={alreadyImported}
-                                      className="h-4 w-4 rounded border-[var(--border)]"
-                                    />
-                                  </label>
-                                </td>
-                                <td className="min-w-0 px-3 py-3 align-middle">
-                                  <span className={`${interMedium.className} block truncate text-sm font-medium text-[var(--text-primary)]`}>
-                                    {line.description || "Untitled line item"}
-                                  </span>
-                                  {alreadyImported ? (
-                                    <span className={`${interMedium.className} mt-0.5 block text-[11px] text-[var(--text-secondary)]`}>
-                                      Already imported into this variation
-                                    </span>
-                                  ) : null}
-                                </td>
-                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.section}</td>
-                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{line.quantity}</td>
-                                <td className={`${interMedium.className} px-3 py-3 text-sm text-[var(--text-secondary)] align-middle`}>{toMoney(line.rate)}</td>
-                                <td className={`${interMedium.className} px-3 py-3 text-right text-sm font-semibold text-[var(--text-primary)] align-middle`}>
-                                  {toMoney(Number((line.quantity * line.rate).toFixed(2)))}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr>
-                            <td colSpan={6} className={`${interMedium.className} px-3 py-6 text-center text-sm text-[var(--text-secondary)]`}>
-                              No purchase order line items available to import.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </section>
 
           <div className="border-t border-[var(--border-subtle)] py-6">
@@ -3002,6 +2715,22 @@ export default function ProjectVariationsPage() {
           onClose={closeVariationWorksheetOverlay}
           onDirtyStateChange={setIsVariationWorksheetDirty}
         />
+      ) : null}
+      {activeVariationDrawer === "purchase-order" && activeVariation ? (
+        <VariationImportPurchaseOrderLinesDrawer
+          purchaseOrders={purchaseOrders}
+          selectedPurchaseOrderId={selectedPurchaseOrderId}
+          purchaseOrderLines={selectedPurchaseOrderLineOptions}
+          selectedLineIds={selectedPurchaseOrderLineIds}
+          alreadyImportedLineIds={alreadyImportedPurchaseOrderLineIds}
+          onPurchaseOrderChange={setSelectedPurchaseOrderId}
+          onToggleLine={togglePurchaseOrderLine}
+          onImportSelected={importSelectedPurchaseOrderLines}
+          onClose={closeActiveVariationDrawer}
+        />
+      ) : null}
+      {activeVariationDrawer === "materials" && canUseMaterials ? (
+        <VariationSupplierPricingDrawer onClose={closeActiveVariationDrawer} onSelectPrice={addSupplierMaterial} />
       ) : null}
     </div>
   );

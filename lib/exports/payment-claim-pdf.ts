@@ -3,6 +3,7 @@ import {
   StandardFonts,
   rgb,
   type PDFFont,
+  type PDFImage,
   type PDFPage,
 } from "pdf-lib";
 import {
@@ -14,6 +15,7 @@ import {
   getPaymentClaimStatutoryDocuments,
   type StatutoryDocument,
 } from "@/lib/legal/payment-claim-statutory-documents";
+import type { PdfExportTiming } from "@/lib/exports/pdf-export-timing";
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -178,41 +180,53 @@ function wrapText(params: {
   return lines;
 }
 
-async function loadImageBytes(logoUrl: string | null, fetchImpl: typeof fetch) {
+async function loadImageBytes(
+  logoUrl: string | null,
+  fetchImpl: typeof fetch,
+  timing?: PdfExportTiming,
+) {
   if (!logoUrl) {
     return null;
   }
 
   try {
+    timing?.start("logo-fetch");
+    timing?.mark("logo-fetch-start");
     const response = await fetchImpl(logoUrl);
+    timing?.mark("logo-response-received");
     if (!response.ok) {
+      timing?.end("logo-fetch");
       return null;
     }
 
     const bytes = new Uint8Array(await response.arrayBuffer());
+    timing?.mark("logo-bytes-loaded");
+    timing?.end("logo-fetch");
     const contentType = response.headers.get("content-type") ?? "";
     return { bytes, contentType };
   } catch {
+    timing?.end("logo-fetch");
     return null;
   }
 }
 
-async function embedLogo(params: {
+async function resolveEmbeddedLogo(params: {
   pdf: PDFDocument;
-  page: PDFPage;
   logoUrl: string | null;
   fetchImpl: typeof fetch;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}) {
-  const image = await loadImageBytes(params.logoUrl, params.fetchImpl);
+  timing?: PdfExportTiming;
+}): Promise<PDFImage | null> {
+  const image = await loadImageBytes(
+    params.logoUrl,
+    params.fetchImpl,
+    params.timing,
+  );
   if (!image) {
-    return false;
+    return null;
   }
 
   try {
+    params.timing?.start("logo-embed");
     const embeddedImage = image.contentType.includes("png")
       ? await params.pdf.embedPng(image.bytes)
       : image.contentType.includes("jpeg") || image.contentType.includes("jpg")
@@ -220,20 +234,35 @@ async function embedLogo(params: {
         : null;
 
     if (!embeddedImage) {
-      return false;
+      params.timing?.end("logo-embed");
+      return null;
     }
-
-    const scaled = embeddedImage.scaleToFit(params.width, params.height);
-    params.page.drawImage(embeddedImage, {
-      x: params.x,
-      y: params.y + (params.height - scaled.height) / 2,
-      width: scaled.width,
-      height: scaled.height,
-    });
-    return true;
+    params.timing?.end("logo-embed");
+    params.timing?.mark("logo-embedded");
+    return embeddedImage;
   } catch {
-    return false;
+    params.timing?.end("logo-embed");
+    return null;
   }
+}
+
+function drawEmbeddedLogo(params: {
+  image: PDFImage | null;
+  page: PDFPage;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}) {
+  if (!params.image) return false;
+  const scaled = params.image.scaleToFit(params.width, params.height);
+  params.page.drawImage(params.image, {
+    x: params.x,
+    y: params.y + (params.height - scaled.height) / 2,
+    width: scaled.width,
+    height: scaled.height,
+  });
+  return true;
 }
 
 function createPage(pdf: PDFDocument) {
@@ -342,8 +371,10 @@ function drawSummaryRow(params: {
 async function renderPaymentClaimDocument(params: {
   model: PaymentClaimPdfExportModel;
   fetchImpl: typeof fetch;
+  timing?: PdfExportTiming;
 }) {
   const pdf = await PDFDocument.create();
+  params.timing?.mark("pdf-created");
   applyDeterministicPdfMetadata(pdf, paymentClaimPdfMetadata(params.model));
 
   const fonts: PdfFonts = {
@@ -351,12 +382,16 @@ async function renderPaymentClaimDocument(params: {
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),
     italic: await pdf.embedFont(StandardFonts.HelveticaOblique),
   };
+  params.timing?.mark("fonts-embedded");
   const brandColor = hexToRgb(sanitizeHexColor(params.model.organizationBrandPrimaryColor));
 
   const quotedRows = params.model.lineItems.filter((line) => line.sourceLabel.startsWith("Quote"));
   const variationRows = params.model.lineItems.filter((line) => line.sourceLabel.startsWith("Variation"));
 
   let state = createPage(pdf);
+  params.timing?.start("drawing");
+  params.timing?.mark("drawing-start");
+  let embeddedLogoPromise: Promise<PDFImage | null> | null = null;
 
   async function drawPageHeader(currentState: PdfPageState) {
     currentState.page.drawRectangle({
@@ -370,11 +405,15 @@ async function renderPaymentClaimDocument(params: {
 
     const logoBoxWidth = 160;
     const logoBoxHeight = 54;
-    const logoDrawn = await embedLogo({
+    embeddedLogoPromise ??= resolveEmbeddedLogo({
       pdf,
-      page: currentState.page,
       logoUrl: params.model.organizationLogoUrl,
       fetchImpl: params.fetchImpl,
+      timing: params.timing,
+    });
+    const logoDrawn = drawEmbeddedLogo({
+      image: await embeddedLogoPromise,
+      page: currentState.page,
       x: PAGE_MARGIN_X,
       y: currentState.y - logoBoxHeight + 6,
       width: logoBoxWidth,
@@ -827,25 +866,52 @@ async function renderPaymentClaimDocument(params: {
     });
   });
 
-  return pdf.save();
+  params.timing?.end("drawing");
+  params.timing?.mark("drawing-end");
+  params.timing?.start("base-save");
+  params.timing?.mark("base-save-start");
+  const bytes = await pdf.save();
+  params.timing?.end("base-save");
+  params.timing?.mark("base-save-end");
+  return bytes;
 }
 
 async function fetchRequiredStatutoryPdf(params: {
   document: StatutoryDocument;
   fetchImpl: typeof fetch;
+  timing?: PdfExportTiming;
 }) {
+  params.timing?.start("form1-fetch");
+  params.timing?.mark("form1-fetch-start");
   const response = await params.fetchImpl(params.document.publicPath);
+  params.timing?.mark("form1-response-received");
   if (!response.ok) {
+    params.timing?.end("form1-fetch");
+    throw new Error(
+      "Payment claim export could not be completed because the required New Zealand Form 1 notice could not be attached. No incomplete document was exported.",
+    );
+  }
+
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await response.arrayBuffer());
+    params.timing?.mark("form1-bytes-loaded");
+    params.timing?.end("form1-fetch");
+  } catch {
+    params.timing?.end("form1-fetch");
     throw new Error(
       "Payment claim export could not be completed because the required New Zealand Form 1 notice could not be attached. No incomplete document was exported.",
     );
   }
 
   try {
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    params.timing?.start("form1-validation");
     await PDFDocument.load(bytes);
+    params.timing?.end("form1-validation");
+    params.timing?.mark("form1-validation-end");
     return bytes;
   } catch {
+    params.timing?.end("form1-validation");
     throw new Error(
       "Payment claim export could not be completed because the required New Zealand Form 1 notice could not be attached. No incomplete document was exported.",
     );
@@ -855,39 +921,57 @@ async function fetchRequiredStatutoryPdf(params: {
 export async function composePaymentClaimPdfExport(params: {
   model: PaymentClaimPdfExportModel;
   fetchImpl?: typeof fetch;
+  timing?: PdfExportTiming;
 }) {
   const fetchImpl = params.fetchImpl ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const statutoryDocuments = getPaymentClaimStatutoryDocuments({
     organisationCountry: params.model.organizationCountry,
   });
+  params.timing?.mark("statutory-resolution-end");
+  const statutoryPdfPartsPromise = Promise.all(
+    statutoryDocuments.map((statutoryDocument) => fetchRequiredStatutoryPdf({
+      document: statutoryDocument,
+      fetchImpl,
+      timing: params.timing,
+    })),
+  ).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
 
-  const claimPdfBytes = await renderPaymentClaimDocument({
-    model: params.model,
-    fetchImpl,
-  });
+  let claimPdfBytes: Uint8Array;
+  try {
+    claimPdfBytes = await renderPaymentClaimDocument({
+      model: params.model,
+      fetchImpl,
+      timing: params.timing,
+    });
+  } catch (error) {
+    await statutoryPdfPartsPromise;
+    throw error;
+  }
 
   if (statutoryDocuments.length === 0) {
     return {
-      bytes: Uint8Array.from(claimPdfBytes),
+      bytes: claimPdfBytes,
       fileName: buildPaymentClaimPdfFileName(params.model.claimNumber),
       statutoryDocumentsIncluded: [] as StatutoryDocument[],
     };
   }
 
-  const statutoryPdfParts: Uint8Array[] = [];
-  for (const statutoryDocument of statutoryDocuments) {
-    statutoryPdfParts.push(await fetchRequiredStatutoryPdf({
-      document: statutoryDocument,
-      fetchImpl,
-    }));
+  const statutoryPdfPartsResult = await statutoryPdfPartsPromise;
+  if ("error" in statutoryPdfPartsResult) {
+    throw statutoryPdfPartsResult.error;
   }
+  const statutoryPdfParts = statutoryPdfPartsResult.value;
 
   const mergedBytes = await mergePdfDocuments(
     [
-      Uint8Array.from(claimPdfBytes),
+      claimPdfBytes,
       ...statutoryPdfParts,
     ],
     paymentClaimPdfMetadata(params.model),
+    params.timing,
   );
 
   return {
@@ -897,15 +981,21 @@ export async function composePaymentClaimPdfExport(params: {
   };
 }
 
-export function downloadPaymentClaimPdf(bytes: Uint8Array, fileName: string) {
+export function downloadPaymentClaimPdf(
+  bytes: Uint8Array,
+  fileName: string,
+  timing?: PdfExportTiming,
+) {
   const safeBytes = Uint8Array.from(bytes);
   const blob = new Blob([safeBytes], { type: "application/pdf" });
+  timing?.mark("blob-created");
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
   anchor.download = fileName;
   document.body.appendChild(anchor);
   anchor.click();
+  timing?.mark("download-triggered");
   document.body.removeChild(anchor);
   URL.revokeObjectURL(objectUrl);
 }

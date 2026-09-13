@@ -33,6 +33,7 @@ export function normalizeCommercialItemRow(row: CommercialItemRow): CommercialIt
     sourceWorkbookId: row.source_workbook_id,
     sourceWorksheetId: row.source_worksheet_id,
     sourceSheetId: row.source_sheet_id,
+    sourceTakeoffMeasurementId: row.source_takeoff_measurement_id ?? null,
     sourceRange: row.source_range,
     sourceSignature: row.source_signature,
     sourceVersion: row.source_version,

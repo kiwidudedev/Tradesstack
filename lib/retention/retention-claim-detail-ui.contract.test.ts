@@ -51,11 +51,16 @@ describe("Retention Claim detail Payment Claim-aligned UI contract", () => {
     expect(source).not.toContain("OperationalKpiCard");
   });
 
-  it("shows claim number and inline status without the former architecture copy", () => {
-    expect(source).toContain("<span>{claim.claimNumber}</span>");
+  it("shows the accounting claim number and inline status without the former architecture copy", () => {
+    expect(source).toContain(
+      "<span>{accountingIdentity.displayAccountingNumber}</span>",
+    );
     expect(source).toContain("<StatusBadge status={statusBadge(claim.status)}>");
     expect(source).toContain(
-      "description={`Cumulative retention position for ${project.name}.`}",
+      "`Master Retention Claim ${accountingIdentity.commercialClaimNumber}`",
+    );
+    expect(source).toContain(
+      "`Cumulative retention position for ${project.name}.`",
     );
     expect(source).not.toContain(
       "A separate financial document that references retention owned by originating Payment Claims",
@@ -152,10 +157,13 @@ describe("Retention Claim detail Payment Claim-aligned UI contract", () => {
   });
 
   it("uses cumulative master submitted-summary semantics", () => {
-    expect(source).toContain('"Pushed to Xero"');
-    expect(source).toContain('"New Since Last Push"');
-    expect(source).toContain('"Cumulative Retention"');
-    expect(source).toContain('"Current Retention"');
+    expect(source).toContain('"Retention Position"');
+    expect(source).toContain('"Current Retention excl. GST"');
+    expect(source).toContain('"Current Retention incl. GST"');
+    expect(source).toContain('"Pushed to Xero incl. GST"');
+    expect(source).toContain('"New Since Last Push incl. GST"');
+    expect(source).toContain('"Payment Position"');
+    expect(source).toContain('"Outstanding incl. GST"');
     expect(source).not.toContain('"Xero Invoice Total');
     expect(source).not.toContain('title="Retention Claim Document"');
     expect(source).not.toContain('["Eligible", eligibleCents]');
@@ -165,7 +173,7 @@ describe("Retention Claim detail Payment Claim-aligned UI contract", () => {
   it("adds presentation aggregation only and no browser financial boundary", () => {
     expect(source).toContain("function toCents");
     expect(source).toContain("const currentRetentionCents");
-    expect(source).toContain("const outstandingCents");
+    expect(source).toContain("providerPayment:");
     expect(source).not.toContain('"use client"');
     expect(source).not.toContain("createBrowserSupabaseClient");
     expect(source).not.toContain("PaymentClaimXeroPanel");
@@ -252,17 +260,31 @@ describe("Retention Claim detail Payment Claim-aligned UI contract", () => {
     for (const heading of [
       "Payment Claim",
       "Date",
-      "Retention Held",
-      "Pushed to Xero",
-      "New Since Last Push",
-      "Cumulative Retention",
-      "Paid",
-      "Outstanding",
+      "Retention excl. GST",
+      "GST",
+      "Total incl. GST",
+      "Pushed to Xero incl. GST",
+      "New Since Last Push incl. GST",
+      "Paid incl. GST",
+      "Outstanding incl. GST",
     ]) {
       expect(source).toContain(heading);
     }
     expect(source).toContain("[font-variant-numeric:tabular-nums]");
     expect(source).toContain("whitespace-nowrap text-right");
+  });
+
+  it("keeps GST presentation authoritative and responsive", () => {
+    expect(source).toContain("resolveRetentionClaimGstPresentation");
+    expect(source).toContain("immutableXeroPanel.currentRetentionTaxMinor");
+    expect(source).toContain("masterAccounting.authoritativeInheritedTax");
+    expect(source).toContain("immutableXeroPanel.amountOutstanding");
+    expect(source).toContain("overflow-x-auto");
+    expect(source).toContain('data-testid="retention-gst-lines-mobile"');
+    expect(source).toContain('className="space-y-3 md:hidden"');
+    expect(source).toContain("md:block");
+    expect(source).not.toContain("claimGstRate");
+    expect(source).not.toContain("0.15");
   });
 
   it("matches Payment Claim Expand and full-screen table controls", () => {
@@ -312,6 +334,6 @@ describe("Retention Claim detail Payment Claim-aligned UI contract", () => {
     expect(source).not.toContain(
       "New retention has accumulated since the last Xero sync.",
     );
-    expect(source).toContain("const newSinceLastPushCents = Math.max(");
+    expect(source).toContain("gstPresentation.newSincePush?.totalMinor");
   });
 });

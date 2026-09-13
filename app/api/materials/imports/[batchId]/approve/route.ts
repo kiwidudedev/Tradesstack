@@ -4,6 +4,7 @@ import { approveMaterialImportRows, rejectMaterialImportRows } from "@/lib/mater
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { MaterialImportReviewDraft } from "@/lib/materials/validation";
+import { isMaterialUnitConversionError } from "@/lib/materials/unit-conversion/errors";
 
 export const runtime = "nodejs";
 
@@ -54,20 +55,31 @@ export async function POST(
         actorUserId: currentMember.user_id,
         rowIds,
       });
+      return NextResponse.json({ ok: true });
     } else {
-      await approveMaterialImportRows({
+      const result = await approveMaterialImportRows({
         supabase,
         organizationId: currentMember.organization_id,
         batchId,
         actorUserId: currentMember.user_id,
         reviews,
       });
+      return NextResponse.json({
+        ok: result.failedRows.length === 0,
+        approvedRows: result.approvedRows,
+        failedRows: result.failedRows,
+      });
     }
-
-    return NextResponse.json({ ok: true });
   } catch (error) {
+    if (isMaterialUnitConversionError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status },
+      );
+    }
+    console.error("material_import_review_request_failed", { batchId, error });
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to review import rows." },
+      { error: "Unable to review import rows. Refresh the import and try again." },
       { status: 500 }
     );
   }

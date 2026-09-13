@@ -15,6 +15,7 @@ import { buildPaymentClaimXeroPayloadFromResolvedSnapshot } from "@/lib/xero/pay
 import { resolvePaymentClaimXeroReadinessContext } from "@/lib/xero/payment-claim-readiness";
 import { hasXeroAttachmentScope, XERO_ATTACHMENT_SCOPE_RECONNECT_MESSAGE } from "@/lib/xero/scopes";
 import { getFreshXeroAccessToken, getOrganizationXeroConnection } from "@/lib/xero/service";
+import { resolvePaymentClaimAccountingIdentity } from "@/lib/xero/payment-claim-accounting-identity";
 
 type Row = Record<string, unknown>;
 type UntypedAdmin = {
@@ -408,18 +409,30 @@ export async function enqueuePaymentClaimXeroAttachmentForCurrentUser(params: {
     throw new XeroSalesInvoiceAttachmentError("unauthorized", "You do not have permission to attach Payment Claim PDFs in Xero.");
   }
   const admin = db(await createAdminSupabaseClient());
-  const result = await admin.from("organization_accounting_documents").select("id")
-    .eq("organization_id", member.organization_id)
-    .eq("provider", "xero")
-    .eq("local_document_type", "project_claim")
-    .eq("project_claim_id", params.claimId)
-    .maybeSingle();
-  if (result.error || !result.data) {
+  const identity = await resolvePaymentClaimAccountingIdentity({
+    organizationId: member.organization_id,
+    claimId: params.claimId,
+    admin,
+  });
+  if (!identity.document) {
     throw new XeroSalesInvoiceAttachmentError("document_not_found", "The linked Xero Sales Invoice was not found.");
+  }
+  if (identity.identityIssue === "missing_invoice_id") {
+    throw new XeroSalesInvoiceAttachmentError(
+      "missing_invoice",
+      "Sync the Payment Claim to Xero before attaching its PDF.",
+    );
+  }
+  if (identity.identityIssue) {
+    throw new XeroSalesInvoiceAttachmentError(
+      "invoice_identity_mismatch",
+      identity.refresh.message
+        ?? "The linked Payment Claim accounting identity is invalid.",
+    );
   }
   return enqueueXeroSalesInvoiceAttachment({
     organizationId: member.organization_id,
-    accountingDocumentId: String(result.data.id),
+    accountingDocumentId: String(identity.document.id),
     createdByUserId: member.user_id,
     triggerSource: params.intent === "retry_attachment" ? "user_retry" : "user_export",
   });

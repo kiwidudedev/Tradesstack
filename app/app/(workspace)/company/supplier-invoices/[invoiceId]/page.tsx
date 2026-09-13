@@ -24,10 +24,12 @@ import type {
   PurchaseOrderLineItemRow,
 } from "@/lib/supplier-invoice-lineage";
 import {
-  buildAccountingResolutionInput,
-  resolveInheritedAccountingCode,
   resolvePurchaseOrderLineLineage,
 } from "@/lib/supplier-invoice-lineage";
+import {
+  resolveAccountingRoute,
+  type OrganizationAccountingRouteMappingRow,
+} from "@/lib/accounting/accounting-routes";
 import type { Database, Json } from "@/lib/supabase/types";
 import {
   formatExternalAccountingCode,
@@ -43,8 +45,6 @@ type SupplierInvoiceDetailPageProps = {
 
 type OrganizationProjectRow = Database["public"]["Tables"]["organization_projects"]["Row"];
 type OrganizationCostCodeRow = Database["public"]["Tables"]["organization_cost_codes"]["Row"];
-type OrganizationTradesstackAccountingMappingRow =
-  Database["public"]["Tables"]["organization_tradesstack_accounting_mappings"]["Row"];
 type OrganizationAccountingTaxRateRow = {
   id: string;
   name: string;
@@ -114,16 +114,10 @@ function scorePreviewCandidate(line: SupplierInvoiceLineRow, purchaseOrderLine: 
 
 function derivePreviewStatus(params: {
   hasPurchaseOrderLine: boolean;
-  tradesstackCostCode: string | null;
-  classificationNeedsReview: boolean;
   accountingResolutionStatus: string | null;
 }) {
   if (!params.hasPurchaseOrderLine) {
     return "No PO line candidate" as const;
-  }
-
-  if (params.classificationNeedsReview || !params.tradesstackCostCode) {
-    return "Needs cost review" as const;
   }
 
   if (params.accountingResolutionStatus !== "resolved") {
@@ -305,9 +299,10 @@ export default async function SupplierInvoiceDetailPage({
   ] =
     await Promise.all([
       supabase
-        .from("organization_tradesstack_accounting_mappings" as never)
+        .from("organization_accounting_route_mappings" as never)
         .select("*")
         .eq("organization_id", currentMember.organization_id)
+        .eq("accounting_route", "supplier_bill_expense")
         .order("provider", { ascending: true })
         .order("updated_at", { ascending: false }),
       supabase
@@ -450,9 +445,8 @@ export default async function SupplierInvoiceDetailPage({
             sourceCostItemId: null,
             tradesstackCostCode: null,
             tradesstackCostCodeLabel: null,
-            workType: null,
-            costType: null,
-            internalCostCode: null,
+            financialRoutingConfidence: null,
+            financialRoutingSource: null,
             organizationCostCodeId: null,
             organizationCostCode: null,
             organizationCostCodeName: null,
@@ -475,28 +469,19 @@ export default async function SupplierInvoiceDetailPage({
               ? costItemById.get(purchaseOrderLine.source_cost_item_id) ?? null
               : null,
           });
-          const accountingInput = buildAccountingResolutionInput({
+          const accountingResolution = resolveAccountingRoute({
+            mappings: (mappings ?? []) as unknown as OrganizationAccountingRouteMappingRow[],
             organizationId: currentMember.organization_id,
-            provider:
-              ((mappings ?? []) as OrganizationTradesstackAccountingMappingRow[]).find((row) => row.is_active)?.provider ??
-              ((costCodes ?? []) as OrganizationCostCodeRow[]).find((row) => row.external_provider)?.external_provider ??
-              "manual",
-            costItemId: lineage.costItemId ?? lineage.sourceCostItemId,
+            provider: "xero",
+            accountingRoute: "supplier_bill_expense",
             projectId: lineage.projectId,
-            title: line.description ?? "Supplier invoice line",
-            description: line.description ?? "",
-            lineage,
           });
-          const accountingResolution = resolveInheritedAccountingCode({
-            costCodes: (costCodes ?? []) as OrganizationCostCodeRow[],
-            mappings: (mappings ?? []) as OrganizationTradesstackAccountingMappingRow[],
-            input: accountingInput,
-          });
+          const accountingCode = ((costCodes ?? []) as OrganizationCostCodeRow[]).find(
+            (row) => row.id === accountingResolution.organizationCostCodeId,
+          ) ?? null;
           const status = derivePreviewStatus({
             hasPurchaseOrderLine: true,
-            tradesstackCostCode: lineage.tradesstackCostCode,
-            classificationNeedsReview: lineage.classificationNeedsReview,
-            accountingResolutionStatus: accountingResolution?.status ?? "pending",
+            accountingResolutionStatus: accountingResolution.status,
           });
           const candidateScore = scorePreviewCandidate(line, purchaseOrderLine);
 
@@ -515,13 +500,12 @@ export default async function SupplierInvoiceDetailPage({
             sourceCostItemId: lineage.sourceCostItemId,
             tradesstackCostCode: lineage.tradesstackCostCode,
             tradesstackCostCodeLabel: lineage.tradesstackCostCodeLabel,
-            workType: lineage.workType,
-            costType: lineage.costType,
-            internalCostCode: lineage.internalCostCode,
-            organizationCostCodeId: accountingResolution?.organizationCostCodeId ?? null,
-            organizationCostCode: accountingResolution?.code ?? null,
-            organizationCostCodeName: accountingResolution?.name ?? null,
-            accountingResolutionStatus: accountingResolution?.status ?? "pending",
+            financialRoutingConfidence: lineage.financialRoutingConfidence,
+            financialRoutingSource: lineage.financialRoutingSource,
+            organizationCostCodeId: accountingResolution.organizationCostCodeId,
+            organizationCostCode: accountingCode?.code ?? null,
+            organizationCostCodeName: accountingCode?.name ?? null,
+            accountingResolutionStatus: accountingResolution.status,
             status,
             candidateScore,
           } satisfies SupplierInvoiceLineAllocationPreviewRow;
@@ -613,7 +597,7 @@ export default async function SupplierInvoiceDetailPage({
       initialXeroBillReadinessError={xeroBillReadinessError}
       initialWorkflowState={workflowState}
       accountingMappings={(
-        (mappings ?? []) as unknown as OrganizationTradesstackAccountingMappingRow[]
+        (mappings ?? []) as unknown as OrganizationAccountingRouteMappingRow[]
       )
         .filter((mapping) => {
           if (!mapping.is_active) {
@@ -638,14 +622,26 @@ export default async function SupplierInvoiceDetailPage({
           return {
             id: mapping.id,
             label: [
-              mapping.tradesstack_cost_code,
+              mapping.project_id ? "Project Supplier Bills" : "Supplier Bills",
               costCode ? formatExternalAccountingCode(costCode) : null,
               mapping.provider,
             ]
               .filter(Boolean)
               .join(" · "),
           };
-        })}
+        })
+        .concat(((costCodes ?? []) as OrganizationCostCodeRow[])
+          .filter((costCode) => costCode.is_active
+            && costCode.external_provider === "xero"
+            && isCostCodeAvailableForAccountingTenant({
+              costCode,
+              provider: "xero",
+              currentXeroTenantId,
+            }))
+          .map((costCode) => ({
+            id: `account:${costCode.id}`,
+            label: `Line override · ${formatExternalAccountingCode(costCode)}`,
+          })))}
       accountingTaxRates={(
         (accountingTaxRates ?? []) as unknown as OrganizationAccountingTaxRateRow[]
       ).filter((taxRate) =>

@@ -55,6 +55,8 @@ import {
   loadPaymentClaimLocalAccountingComparison,
   parseAccountingSyncCompletionEvidence,
 } from "@/lib/xero/accounting-sync-completion-evidence";
+import { PaymentClaimXeroPayloadError } from "@/lib/xero/payment-claim-sales-invoice-payload";
+import { logPaymentClaimProposalValidationError } from "@/lib/xero/payment-claim-action-error-logging";
 
 function paymentCompletionEvidence(
   execution: Awaited<ReturnType<typeof runXeroSyncWorker>>,
@@ -85,7 +87,20 @@ function actionError(
 function safeActionError(
   error: unknown,
   supportReference: string | null = null,
+  identity?: { organizationId: string | null; claimId: string },
 ): PaymentClaimXeroActionError {
+  if (error instanceof PaymentClaimXeroPayloadError) {
+    const reference = logPaymentClaimProposalValidationError({
+      error,
+      supportReference,
+      identity,
+    });
+    return actionError(
+      error.code === "not_ready" ? "payment_claim_not_ready" : error.code,
+      error.message,
+      reference,
+    );
+  }
   if (error instanceof PaymentClaimXeroEnqueueError) {
     return actionError(error.code, error.message, supportReference);
   }
@@ -257,6 +272,7 @@ async function preparePaymentClaimPushProposal(params: {
   proposal?: PaymentClaimInitialPushProposal;
   requestContext?: AccountingSyncRequestContext;
 }> {
+  let organizationId: string | null = null;
   try {
     const member = await getCurrentOrganizationMember();
     if (!member) {
@@ -270,6 +286,7 @@ async function preparePaymentClaimPushProposal(params: {
         },
       };
     }
+    organizationId = member.organization_id;
     const authorisation = timing?.startParallelGroup("authorisation");
     const runAuthorisation = <T>(stage: string, operation: () => Promise<T>) =>
       authorisation ? authorisation.measure(stage, operation) : operation();
@@ -343,7 +360,10 @@ async function preparePaymentClaimPushProposal(params: {
     };
   } catch (error) {
     return {
-      result: { ok: false, error: safeActionError(error) },
+      result: {
+        ok: false,
+        error: safeActionError(error, null, { organizationId, claimId: params.claimId }),
+      },
     };
   }
 }

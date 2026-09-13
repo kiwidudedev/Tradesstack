@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildSupplierBillPromptCompactionFailureRecord,
+  buildSupplierBillTestRecord,
+} from "@/lib/universal-learning/__test-utils__/supplier-bill";
 
 const buildUniversalLearningContainerRecords = vi.fn();
 const loadUniversalLearningConstructionProfile = vi.fn();
@@ -177,6 +181,521 @@ describe("Universal learning runner", () => {
       },
     })).rejects.toThrow("bad source id");
 
+    expect(advanceUniversalLearningCursor).not.toHaveBeenCalled();
+  });
+
+  it("submits a bounded Supplier Bill prefix and advances only through processed records", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const records = Array.from({ length: 15 }, (_, index) =>
+      buildSupplierBillTestRecord({ index: index + 1 }));
+    getUniversalLearningCursor.mockResolvedValue({ updatedAt: null, id: null });
+    buildUniversalLearningContainerRecords.mockResolvedValue({
+      records,
+      nextCursorCandidate: {
+        updatedAt: records.at(-1)!.updatedAt,
+        id: records.at(-1)!.source.sourceId,
+      },
+      reviewScopeContext: {
+        module: "supplier_invoices",
+        workflow: "monthly_supplier_invoice_review",
+        recordCount: records.length,
+        projectCount: 0,
+        supplierCount: 1,
+        clientCount: 0,
+        statusMix: {},
+        projects: [],
+        suppliers: [{ supplierId: "supplier-1" }],
+        clients: [],
+      },
+    });
+    loadUniversalLearningConstructionProfile.mockResolvedValue({
+      rawProfile: "Profile",
+      normalizedProfile: {},
+    });
+    buildUniversalLearningMemoryPack.mockResolvedValue([]);
+    getUniversalLearningBoundaryContext.mockReturnValue({
+      routingIsImmutable: true,
+      lockedFields: [],
+      forbiddenOperationalChanges: [],
+      lockedRoutingCodes: {},
+    });
+    createUniversalLearningReviewRun.mockResolvedValue({ id: "supplier-run-1" });
+    updateUniversalLearningReviewRunStatus.mockResolvedValue(undefined);
+    writeUniversalLearningRunRecords.mockResolvedValue(undefined);
+    advanceUniversalLearningCursor.mockResolvedValue(undefined);
+
+    const { runUniversalConstructionLearningReview } = await import("./runner");
+    const result = await runUniversalConstructionLearningReview({
+      selection: {
+        organizationId: "org-1",
+        containerType: "supplier_invoice",
+        reviewMonth: "2026-07",
+        runType: "monthly",
+        scopeKey: "organization",
+      },
+      modelInvoker: async () => ({
+        provider: "anthropic",
+        model: "test-model",
+        rawText: "{}",
+        parsedJson: {
+          reviewSummary: {
+            overallAssessment: "No durable pattern.",
+            dominantThemes: [],
+            confidenceNotes: "Bounded evidence.",
+          },
+          learnings: {
+            observations: [],
+            emergingPatterns: [],
+            reinforcedPatterns: [],
+            durablePatterns: [],
+            changingBehaviors: [],
+            contradictions: [],
+            needsMoreEvidence: [],
+          },
+          memoryActions: {
+            create: [],
+            reinforce: [],
+            update: [],
+            retireOrDeactivate: [],
+            noAction: [],
+          },
+        },
+        inputTokens: 100,
+        outputTokens: 10,
+        totalTokens: 110,
+      }),
+      applyMemoryActions: async () => ({ appliedCount: 0 }),
+    });
+
+    expect(result.deferredRecordCount).toBe(3);
+    expect(result).not.toHaveProperty("diagnostic");
+    expect(writeUniversalLearningRunRecords).toHaveBeenCalledWith({
+      reviewRunId: "supplier-run-1",
+      records: records.slice(0, 12),
+    });
+    expect(updateUniversalLearningReviewRunStatus).toHaveBeenCalledWith(expect.objectContaining({
+      runStatus: "building",
+      selectedRecordCount: 12,
+      candidateNextCursor: {
+        updatedAt: records[14].updatedAt,
+        id: records[14].source.sourceId,
+      },
+    }));
+    expect(advanceUniversalLearningCursor).toHaveBeenCalledWith(expect.objectContaining({
+      nextCursor: {
+        updatedAt: records[11].updatedAt,
+        id: records[11].source.sourceId,
+      },
+      selectedRecordCount: 12,
+    }));
+    const diagnostics = JSON.stringify(info.mock.calls);
+    expect(diagnostics).toContain("record_count_limit");
+    expect(diagnostics).toContain("supplier_bill.v2");
+    expect(diagnostics).toContain("supplier_bill.contract.v2");
+    expect(diagnostics).toContain("promptBytes");
+    expect(diagnostics).not.toContain("Canonical private line description");
+    expect(diagnostics).not.toContain("notesSummary");
+    expect(diagnostics).not.toContain("externalBillReference");
+    info.mockRestore();
+  });
+
+  it("collects safe transient diagnostics while using the normal three-record Supplier Bill path", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const records = Array.from({ length: 5 }, (_, index) =>
+      buildSupplierBillTestRecord({ index: index + 1, lineCount: 1 }));
+    getUniversalLearningCursor.mockResolvedValue({ updatedAt: null, id: null });
+    buildUniversalLearningContainerRecords.mockResolvedValue({
+      records,
+      nextCursorCandidate: {
+        updatedAt: records.at(-1)!.updatedAt,
+        id: records.at(-1)!.source.sourceId,
+      },
+      reviewScopeContext: {
+        module: "supplier_invoices",
+        workflow: "monthly_supplier_invoice_review",
+        recordCount: records.length,
+        projectCount: 0,
+        supplierCount: 1,
+        clientCount: 0,
+        statusMix: {},
+        projects: [],
+        suppliers: [{ supplierId: "supplier-1" }],
+        clients: [],
+      },
+    });
+    loadUniversalLearningConstructionProfile.mockResolvedValue({
+      rawProfile: "Profile",
+      normalizedProfile: {},
+    });
+    buildUniversalLearningMemoryPack.mockResolvedValue([]);
+    getUniversalLearningBoundaryContext.mockReturnValue({
+      routingIsImmutable: true,
+      lockedFields: [],
+      forbiddenOperationalChanges: [],
+      lockedRoutingCodes: {},
+    });
+    createUniversalLearningReviewRun.mockResolvedValue({ id: "diagnostic-run-1" });
+    updateUniversalLearningReviewRunStatus.mockResolvedValue(undefined);
+    writeUniversalLearningRunRecords.mockResolvedValue(undefined);
+    advanceUniversalLearningCursor.mockResolvedValue(undefined);
+    const modelInvoker = vi.fn(async () => ({
+      provider: "anthropic" as const,
+      model: "test-model",
+      rawText: "RAW_ANTHROPIC_DIAGNOSTIC",
+      parsedJson: {
+        reviewSummary: {
+          overallAssessment: "No durable pattern.",
+          dominantThemes: [],
+          confidenceNotes: "Bounded evidence.",
+        },
+        learnings: {
+          observations: [],
+          emergingPatterns: [],
+          reinforcedPatterns: [],
+          durablePatterns: [],
+          changingBehaviors: [],
+          contradictions: [],
+          needsMoreEvidence: [],
+        },
+        memoryActions: {
+          create: [],
+          reinforce: [],
+          update: [],
+          retireOrDeactivate: [],
+          noAction: [],
+        },
+      },
+      inputTokens: 100,
+      outputTokens: 10,
+      totalTokens: 110,
+      diagnostic: {
+        request: {
+          model: "test-model",
+          max_tokens: 8000,
+          temperature: 0,
+          system: "safe system",
+          messages: [{ role: "user" as const, content: "safe user prompt" }],
+        },
+      },
+    }));
+    const applyMemoryActions = vi.fn(async () => ({ appliedCount: 0 }));
+
+    const { runUniversalConstructionLearningReview } = await import("./runner");
+    const result = await runUniversalConstructionLearningReview({
+      selection: {
+        organizationId: "org-1",
+        containerType: "supplier_invoice",
+        reviewMonth: "2026-07",
+        runType: "monthly",
+        scopeKey: "organization",
+      },
+      diagnostic: true,
+      supplierBillRecordLimit: 3,
+      modelInvoker,
+      applyMemoryActions,
+    });
+
+    expect(modelInvoker).toHaveBeenCalledTimes(1);
+    expect(modelInvoker).toHaveBeenCalledWith(
+      expect.any(Object),
+      { captureDiagnostic: true },
+    );
+    expect(result.deferredRecordCount).toBe(2);
+    expect(result).toHaveProperty("diagnostic");
+    if (!("diagnostic" in result) || !result.diagnostic) {
+      throw new Error("Expected diagnostic artifacts.");
+    }
+    expect(result.diagnostic.schemaVersion).toBe("supplier_bill.v2");
+    expect(result.diagnostic.sourceRecords).toHaveLength(3);
+    expect(result.diagnostic.sourceRecords.map((record) => record.sourceId))
+      .toEqual(records.slice(0, 3).map((record) => record.source.sourceId));
+    expect(result.diagnostic.sourceRecords.every((record) =>
+      /^[0-9a-f]{64}$/.test(record.canonicalContentHash))).toBe(true);
+    expect(result.diagnostic.anthropicRequest).toEqual({
+      model: "test-model",
+      max_tokens: 8000,
+      temperature: 0,
+      system: "safe system",
+      messages: [{ role: "user", content: "safe user prompt" }],
+    });
+    expect(result.diagnostic.anthropicRawText).toBe("RAW_ANTHROPIC_DIAGNOSTIC");
+    expect(result.diagnostic.memoryActions).toEqual({
+      create: [],
+      reinforce: [],
+      update: [],
+      retireOrDeactivate: [],
+      noAction: [],
+    });
+    expect(JSON.stringify(result.diagnostic.sourceRecords))
+      .not.toContain("Canonical private line description");
+    expect(writeUniversalLearningRunRecords).toHaveBeenCalledWith({
+      reviewRunId: "diagnostic-run-1",
+      records: records.slice(0, 3),
+    });
+    expect(advanceUniversalLearningCursor).toHaveBeenCalledWith(expect.objectContaining({
+      nextCursor: {
+        updatedAt: records[2].updatedAt,
+        id: records[2].source.sourceId,
+      },
+      selectedRecordCount: 3,
+    }));
+    expect(applyMemoryActions).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(updateUniversalLearningReviewRunStatus.mock.calls))
+      .not.toContain("RAW_ANTHROPIC_DIAGNOSTIC");
+    expect(JSON.stringify(writeUniversalLearningRunRecords.mock.calls))
+      .not.toContain("RAW_ANTHROPIC_DIAGNOSTIC");
+    expect(JSON.stringify(info.mock.calls)).not.toContain("RAW_ANTHROPIC_DIAGNOSTIC");
+  });
+
+  it("processes shuffled Supplier Bill candidates exactly once across retries and 12/12/3 successful batches", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const records = Array.from({ length: 27 }, (_, offset) => {
+      const index = offset + 1;
+      const updatedAt = [3, 13, 23].includes(index)
+        ? "2026-07-27T01:11:00.000Z"
+        : `2026-07-27T01:${String(27 - index).padStart(2, "0")}:00.000Z`;
+      return buildSupplierBillTestRecord({ index, updatedAt });
+    });
+    const shuffled = [
+      ...records.filter((_, index) => index % 3 === 1),
+      ...records.filter((_, index) => index % 3 === 0).reverse(),
+      ...records.filter((_, index) => index % 3 === 2),
+    ];
+    const cursorOf = (record: (typeof records)[number]) => ({
+      updatedAt: record.updatedAt,
+      id: record.source.sourceId,
+    });
+    const compareCursor = (
+      left: { updatedAt: string | null; id: string | null },
+      right: { updatedAt: string | null; id: string | null },
+    ) => (
+      (left.updatedAt ?? "").localeCompare(right.updatedAt ?? "")
+      || (left.id ?? "").localeCompare(right.id ?? "")
+    );
+    const expected = [...records].sort((left, right) =>
+      compareCursor(cursorOf(left), cursorOf(right)));
+    const sourceNextCursorCandidate = cursorOf(expected.at(-1)!);
+    let persistedCursor = { updatedAt: null as string | null, id: null as string | null };
+    let runNumber = 0;
+
+    getUniversalLearningCursor.mockImplementation(async () => ({ ...persistedCursor }));
+    buildUniversalLearningContainerRecords.mockImplementation(async () => {
+      const eligible = shuffled.filter((record) =>
+        compareCursor(cursorOf(record), persistedCursor) > 0);
+      return {
+        records: eligible,
+        nextCursorCandidate: eligible.length > 0
+          ? sourceNextCursorCandidate
+          : persistedCursor,
+        reviewScopeContext: {
+          module: "supplier_invoices",
+          workflow: "monthly_supplier_invoice_review",
+          recordCount: eligible.length,
+          projectCount: 0,
+          supplierCount: 1,
+          clientCount: 0,
+          statusMix: {},
+          projects: [],
+          suppliers: [{ supplierId: "supplier-1" }],
+          clients: [],
+        },
+      };
+    });
+    loadUniversalLearningConstructionProfile.mockResolvedValue({
+      rawProfile: "Profile",
+      normalizedProfile: {},
+    });
+    buildUniversalLearningMemoryPack.mockResolvedValue([]);
+    getUniversalLearningBoundaryContext.mockReturnValue({
+      routingIsImmutable: true,
+      lockedFields: [],
+      forbiddenOperationalChanges: [],
+      lockedRoutingCodes: {},
+    });
+    createUniversalLearningReviewRun.mockImplementation(async () => ({
+      id: `supplier-run-${++runNumber}`,
+    }));
+    updateUniversalLearningReviewRunStatus.mockResolvedValue(undefined);
+    writeUniversalLearningRunRecords.mockResolvedValue(undefined);
+    advanceUniversalLearningCursor.mockImplementation(async (input) => {
+      persistedCursor = { ...input.nextCursor };
+    });
+
+    const modelResult = {
+      provider: "anthropic" as const,
+      model: "deterministic-no-action",
+      rawText: "{}",
+      parsedJson: {
+        reviewSummary: {
+          overallAssessment: "No durable pattern.",
+          dominantThemes: [],
+          confidenceNotes: "Deterministic fixture boundary.",
+        },
+        learnings: {
+          observations: [],
+          emergingPatterns: [],
+          reinforcedPatterns: [],
+          durablePatterns: [],
+          changingBehaviors: [],
+          contradictions: [],
+          needsMoreEvidence: [],
+        },
+        memoryActions: {
+          create: [],
+          reinforce: [],
+          update: [],
+          retireOrDeactivate: [],
+          noAction: [],
+        },
+      },
+      inputTokens: 100,
+      outputTokens: 10,
+      totalTokens: 110,
+    };
+    const selection = {
+      organizationId: "org-1",
+      containerType: "supplier_invoice" as const,
+      reviewMonth: "2026-07",
+      runType: "monthly" as const,
+      scopeKey: "organization",
+    };
+    const { runUniversalConstructionLearningReview } = await import("./runner");
+    const successfullyApplied: string[][] = [];
+    const applySuccess = async (input: {
+      records: Array<{ source: { sourceId: string } }>;
+    }) => {
+      successfullyApplied.push(input.records.map((record) => record.source.sourceId));
+      return { appliedCount: 0 };
+    };
+
+    await expect(runUniversalConstructionLearningReview({
+      selection,
+      modelInvoker: async () => {
+        throw new Error("deterministic model boundary failure");
+      },
+      applyMemoryActions: applySuccess,
+    })).rejects.toThrow("deterministic model boundary failure");
+    expect(persistedCursor).toEqual({ updatedAt: null, id: null });
+
+    await runUniversalConstructionLearningReview({
+      selection,
+      modelInvoker: async () => modelResult,
+      applyMemoryActions: applySuccess,
+    });
+    const firstSuccessfulCursor = { ...persistedCursor };
+
+    await expect(runUniversalConstructionLearningReview({
+      selection,
+      modelInvoker: async () => modelResult,
+      applyMemoryActions: async () => {
+        throw new Error("deterministic memory action failure");
+      },
+    })).rejects.toThrow("deterministic memory action failure");
+    expect(persistedCursor).toEqual(firstSuccessfulCursor);
+
+    await runUniversalConstructionLearningReview({
+      selection,
+      modelInvoker: async () => modelResult,
+      applyMemoryActions: applySuccess,
+    });
+    await runUniversalConstructionLearningReview({
+      selection,
+      modelInvoker: async () => modelResult,
+      applyMemoryActions: applySuccess,
+    });
+
+    expect(successfullyApplied.map((batch) => batch.length)).toEqual([12, 12, 3]);
+    expect(successfullyApplied.flat()).toEqual(
+      expected.map((record) => record.source.sourceId),
+    );
+    expect(new Set(successfullyApplied.flat()).size).toBe(27);
+    expect(persistedCursor).toEqual(sourceNextCursorCandidate);
+    expect(advanceUniversalLearningCursor).toHaveBeenCalledTimes(3);
+    expect(
+      updateUniversalLearningReviewRunStatus.mock.calls
+        .map(([input]) => input)
+        .filter((input) => input.runStatus === "completed")
+        .map((input) => input.finalNextCursor),
+    ).toEqual([
+      cursorOf(expected[11]),
+      cursorOf(expected[23]),
+      cursorOf(expected[26]),
+    ]);
+  });
+
+  it("does not create a run or advance the cursor when Supplier Bill prompt compaction fails", async () => {
+    const record = buildSupplierBillPromptCompactionFailureRecord();
+    getUniversalLearningCursor.mockResolvedValue({ updatedAt: null, id: null });
+    buildUniversalLearningContainerRecords.mockResolvedValue({
+      records: [record],
+      nextCursorCandidate: { updatedAt: record.updatedAt, id: record.source.sourceId },
+      reviewScopeContext: {
+        module: "supplier_invoices",
+        workflow: "monthly_supplier_invoice_review",
+        recordCount: 1,
+        projectCount: 100,
+        supplierCount: 1,
+        clientCount: 0,
+        statusMix: {},
+        projects: [],
+        suppliers: [],
+        clients: [],
+      },
+    });
+
+    const { runUniversalConstructionLearningReview } = await import("./runner");
+    await expect(runUniversalConstructionLearningReview({
+      selection: {
+        organizationId: "org-1",
+        containerType: "supplier_invoice",
+        reviewMonth: "2026-07",
+        runType: "monthly",
+        scopeKey: "organization",
+      },
+      applyMemoryActions: async () => ({ appliedCount: 0 }),
+    })).rejects.toMatchObject({
+      code: "supplier_bill_prompt_compaction_failed",
+    });
+
+    expect(createUniversalLearningReviewRun).not.toHaveBeenCalled();
+    expect(writeUniversalLearningRunRecords).not.toHaveBeenCalled();
+    expect(advanceUniversalLearningCursor).not.toHaveBeenCalled();
+  });
+
+  it("does not create a run or advance the cursor when canonical Supplier Bill validation fails", async () => {
+    const record = buildSupplierBillTestRecord();
+    record.clientId = "forbidden-client";
+    getUniversalLearningCursor.mockResolvedValue({ updatedAt: null, id: null });
+    buildUniversalLearningContainerRecords.mockResolvedValue({
+      records: [record],
+      nextCursorCandidate: { updatedAt: record.updatedAt, id: record.source.sourceId },
+      reviewScopeContext: {
+        module: "supplier_invoices",
+        workflow: "monthly_supplier_invoice_review",
+        recordCount: 1,
+        projectCount: 0,
+        supplierCount: 1,
+        clientCount: 0,
+        statusMix: {},
+        projects: [],
+        suppliers: [],
+        clients: [],
+      },
+    });
+
+    const { runUniversalConstructionLearningReview } = await import("./runner");
+    await expect(runUniversalConstructionLearningReview({
+      selection: {
+        organizationId: "org-1",
+        containerType: "supplier_invoice",
+        reviewMonth: "2026-07",
+        runType: "monthly",
+        scopeKey: "organization",
+      },
+      applyMemoryActions: async () => ({ appliedCount: 0 }),
+    })).rejects.toThrow("Invalid Supplier Bill UCL Container");
+
+    expect(createUniversalLearningReviewRun).not.toHaveBeenCalled();
     expect(advanceUniversalLearningCursor).not.toHaveBeenCalled();
   });
 
@@ -717,80 +1236,13 @@ describe("Universal learning runner", () => {
 
   it("replays supplier_invoice trust-boundary reviews with a synthetic v2 response and advances the cursor only after success", async () => {
     const sourceId = "invoice-1";
+    const supplierBillRecord = buildSupplierBillTestRecord({
+      updatedAt: "2026-06-21T09:00:00.000Z",
+      lineCount: 1,
+    });
     getUniversalLearningCursor.mockResolvedValue({ updatedAt: null, id: null });
     buildUniversalLearningContainerRecords.mockResolvedValue({
-      records: [
-        {
-          containerType: "supplier_invoice",
-          source: {
-            table: "supplier_invoices",
-            sourceId,
-            sourceVersion: 1,
-          },
-          organizationId: "org-1",
-          projectId: "project-1",
-          opportunityId: null,
-          supplierId: "supplier-1",
-          clientId: "client-1",
-          actorUserId: "user-1",
-          updatedAt: "2026-06-21T09:00:00.000Z",
-          status: { status: "Needs Review", source: "upload" },
-          payload: {
-            sourceEvidence: {
-              supplierInvoice: {
-                sourceId,
-                invoiceNumber: "INV-2406-17",
-                status: "Needs Review",
-              },
-              lineItems: [
-                { lineItemId: "line-1", description: "13mm GIB standard plasterboard", lineTotal: 1000 },
-              ],
-              allocationSummary: {
-                allocationCount: 1,
-                approvedAllocationCount: 1,
-              },
-              actualCostPostingSummary: {
-                postedEventCount: 1,
-                postedAmount: 1150,
-              },
-              reversalCorrectionSummary: {
-                reversalCount: 0,
-              },
-            },
-            operationalContext: {
-              lifecycleStage: "posted",
-              evidenceStrength: "strong",
-            },
-            lineageContext: {
-              organizationId: "org-1",
-              supplierId: "supplier-1",
-              supplierName: "Metro Building Supplies",
-              projectIds: ["project-1"],
-              clientIds: ["client-1"],
-              invoiceId: sourceId,
-              sourceTable: "supplier_invoices",
-            },
-          },
-          linkedContext: {
-            sourceTable: "supplier_invoices",
-            sourceModule: "supplier_invoices",
-            sourceWorkflow: "monthly_supplier_invoice_review",
-            sourceIds: {
-              projectId: "project-1",
-              opportunityId: null,
-              supplierId: "supplier-1",
-              clientId: "client-1",
-            },
-          },
-          routingContext: {
-            readOnly: true,
-            tradesstack_cost_codeValues: [100],
-            tradesstack_cost_code_labelValues: ["Materials"],
-            accounting_mapping_idValues: ["mapping-1"],
-          },
-          signalStrength: "strong",
-        },
-      ],
+      records: [supplierBillRecord],
       nextCursorCandidate: {
         updatedAt: "2026-06-21T09:00:00.000Z",
         id: sourceId,
@@ -799,15 +1251,15 @@ describe("Universal learning runner", () => {
         module: "supplier_invoices",
         workflow: "monthly_supplier_invoice_review",
         recordCount: 1,
-        projectCount: 1,
+        projectCount: 0,
         supplierCount: 1,
-        clientCount: 1,
+        clientCount: 0,
         statusMix: {
           "status:Needs Review": 1,
         },
-        projects: [{ projectId: "project-1", projectName: "Auckland Office Fitout" }],
+        projects: [],
         suppliers: [{ supplierId: "supplier-1", supplierName: "Metro Building Supplies" }],
-        clients: [{ clientId: "client-1", clientName: "Metro Property Group" }],
+        clients: [],
       },
     });
     loadUniversalLearningConstructionProfile.mockResolvedValue({

@@ -125,7 +125,10 @@ describe("accumulated Retention Claim eligibility migration", () => {
     expect(page).not.toContain(
       "toCents(origin.availableRetention) + proposedAmountCents",
     );
-    expect(page).toContain('"Remaining After This Claim"');
+    expect(editor).toContain(
+      "currentRetentionCents - claimedToDateCents",
+    );
+    expect(editor).toContain('"Remaining"');
     expect(editor).toContain('"After This Claim"');
     expect(page).not.toContain("Not contractually eligible");
     expect(page).not.toContain("Only currently eligible retention is available.");
@@ -134,9 +137,9 @@ describe("accumulated Retention Claim eligibility migration", () => {
   it("renders the submitted master claim from cumulative Payment Claim evidence", () => {
     expect(page).toContain("automaticRolling && isDraft");
     expect(page).toContain("getMasterRetentionSource");
-    expect(page).toContain('"Pushed to Xero"');
-    expect(page).toContain('"New Since Last Push"');
-    expect(page).toContain('"Cumulative Retention"');
+    expect(page).toContain('"Pushed to Xero incl. GST"');
+    expect(page).toContain('"New Since Last Push incl. GST"');
+    expect(page).toContain('"Current Retention incl. GST"');
     expect(page).not.toContain(">Eligible at Submission<");
     expect(page).not.toContain('["Eligible", eligibleCents]');
   });

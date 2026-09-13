@@ -104,8 +104,30 @@ describe("Purchase Order commercial presentation", () => {
     });
   });
 
-  it("uses current-PO allocation divided by PO value for each Bill", () => {
-    expect(deriveBillPurchaseOrderAllocationPercent({ allocatedAmount: 700, purchaseOrderValue: 5_000 })).toBe(14);
-    expect(deriveBillPurchaseOrderAllocationPercent({ allocatedAmount: 700, purchaseOrderValue: 0 })).toBe(0);
+  it.each([
+    ["no allocation", 0, 5_000, 0],
+    ["partial allocation", 700, 5_000, 14],
+    ["full allocation", 5_000, 5_000, 100],
+    ["allocation above the PO value", 6_250, 5_000, 125],
+    ["zero-value PO", 700, 0, 0],
+    ["one-decimal percentage rounding", 1, 3, 33.3],
+    ["minor-unit arithmetic", 0.1 + 0.2, 1, 30],
+  ] as const)("derives %s from current-PO allocation divided by PO value", (_case, allocatedAmount, purchaseOrderValue, expected) => {
+    expect(deriveBillPurchaseOrderAllocationPercent({ allocatedAmount, purchaseOrderValue })).toBe(expected);
+  });
+
+  it("returns zero for missing or non-finite runtime values", () => {
+    expect(deriveBillPurchaseOrderAllocationPercent({
+      allocatedAmount: null as unknown as number,
+      purchaseOrderValue: 5_000,
+    })).toBe(0);
+    expect(deriveBillPurchaseOrderAllocationPercent({
+      allocatedAmount: undefined as unknown as number,
+      purchaseOrderValue: 5_000,
+    })).toBe(0);
+    expect(deriveBillPurchaseOrderAllocationPercent({
+      allocatedAmount: Number.NaN,
+      purchaseOrderValue: 5_000,
+    })).toBe(0);
   });
 });

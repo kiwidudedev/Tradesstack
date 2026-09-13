@@ -183,6 +183,45 @@ describe("commercial item quote linking helpers", () => {
     expect(href).toBe("/app/leads-clients/opportunities/long-bay-apartment/pricing-worksheet/workbook-1?sheetId=sheet-1");
   });
 
+  it("routes Takeoff provenance to the authoritative drawing and page", () => {
+    const href = buildCommercialItemSourceHref({
+      commercialItemLink: buildQuoteCommercialItemLink(buildCommercialItem({
+        sourceType: "takeoff_measurement",
+        sourceWorkbookId: null,
+        sourceWorksheetId: null,
+        sourceSheetId: null,
+        sourceRange: null,
+        sourceTakeoffMeasurementId: "measurement-1",
+        sourceLinkJson: {
+          sourceType: "takeoff_measurement",
+          ownerType: "project",
+          ownerSlug: "final-project",
+          drawingSetId: "drawing-1",
+          pageId: "page-2",
+        },
+      })),
+    }, null);
+
+    expect(href).toBe("/app/projects/final-project/takeoff/measure?drawingSetId=drawing-1&pageId=page-2");
+  });
+
+  it("keeps quote-owned worksheet links on the exact Project quote revision", () => {
+    const href = buildCommercialItemSourceHref(
+      {
+        commercialItemLink: buildQuoteCommercialItemLink(buildCommercialItem({
+          sourceLinkJson: {
+            ownerType: "quote",
+            projectSlug: "project-one",
+            quoteId: "quote-2",
+          },
+        })),
+      },
+      "opportunity-one",
+    );
+
+    expect(href).toBe("/app/projects/project-one/preconstruction/quote/quote-2/pricing-worksheet/workbook-1?sheetId=sheet-1");
+  });
+
   it("persists valid quote links through the existing rpc", async () => {
     const client = createMockClient();
     vi.mocked(repairProjectQuoteSourceOpportunityLineage).mockResolvedValueOnce({

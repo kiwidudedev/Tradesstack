@@ -1,4 +1,7 @@
-import type { QuoteStatus } from "@/lib/supabase/types";
+import type { QuoteStatus } from "@/lib/quote-editor-core";
+import type { Database } from "@/lib/supabase/types";
+
+type OpportunityStage = Database["public"]["Tables"]["organization_opportunities"]["Row"]["stage"];
 
 export interface OpportunityWorkspaceLatestQuoteSummary {
   totalQuotePrice: number | null;
@@ -12,6 +15,8 @@ export interface OpportunityWorkspaceData {
   opportunityId: string;
   slug: string;
   name: string;
+  stage: OpportunityStage;
+  convertedProjectId: string | null;
   clientId: string | null;
   clientName: string;
   ownerUserId: string | null;

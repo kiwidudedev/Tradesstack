@@ -6,15 +6,16 @@ import {
 } from "@/lib/commercial-items/service";
 import type { CommercialItemDocumentLinkPayload, CommercialItemPayload, CommercialItemsClient } from "@/lib/commercial-items/types";
 import type { Json } from "@/lib/supabase/types";
+import { buildTakeoffHref } from "@/lib/takeoff/navigation";
 
 export interface QuoteCommercialItemLink {
   commercialItemId: string;
   commercialItemDescription: string;
   sourceStatus: CommercialItemPayload["sourceStatus"];
-  sourceRange: string;
-  sourceWorkbookId: string;
-  sourceWorksheetId: string;
-  sourceSheetId: string;
+  sourceRange: string | null;
+  sourceWorkbookId: string | null;
+  sourceWorksheetId: string | null;
+  sourceSheetId: string | null;
   sourceWorksheetName: string | null;
   sourceSheetName: string | null;
   snapshotAtLinkJson: Json;
@@ -28,10 +29,10 @@ export interface QuoteCommercialItemPickerItem {
   rate: number | null;
   total: number | null;
   sourceStatus: CommercialItemPayload["sourceStatus"];
-  sourceRange: string;
-  sourceWorkbookId: string;
-  sourceWorksheetId: string;
-  sourceSheetId: string;
+  sourceRange: string | null;
+  sourceWorkbookId: string | null;
+  sourceWorksheetId: string | null;
+  sourceSheetId: string | null;
   sourceWorksheetName: string | null;
   sourceSheetName: string | null;
   updatedAt: string;
@@ -72,6 +73,7 @@ function buildSafeSourceLinkSnapshot(item: CommercialItemPayload): Json {
   return {
     version: 1,
     sourceType: item.sourceType,
+    measurementId: item.sourceTakeoffMeasurementId,
     worksheetId: item.sourceWorksheetId,
     workbookId: item.sourceWorkbookId,
     sheetId: item.sourceSheetId,
@@ -87,6 +89,9 @@ function buildSafeSourceLinkSnapshot(item: CommercialItemPayload): Json {
     variationId: asString(sourceLink?.variationId),
     worksheetVersion: typeof sourceLink?.worksheetVersion === "number" ? sourceLink.worksheetVersion : null,
     capturedAt: asString(sourceLink?.capturedAt),
+    ownerSlug: asString(sourceLink?.ownerSlug),
+    drawingSetId: asString(sourceLink?.drawingSetId),
+    pageId: asString(sourceLink?.pageId),
   };
 }
 
@@ -210,10 +215,25 @@ export function buildCommercialItemSourceHref(
   const ownerType = typeof sourceLink?.ownerType === "string" ? sourceLink.ownerType : null;
   const projectSlug = typeof sourceLink?.projectSlug === "string" ? sourceLink.projectSlug : null;
   const variationId = typeof sourceLink?.variationId === "string" ? sourceLink.variationId : null;
+  const quoteId = typeof sourceLink?.quoteId === "string" ? sourceLink.quoteId : null;
   const linkedOpportunitySlug = typeof sourceLink?.opportunitySlug === "string" ? sourceLink.opportunitySlug : null;
+  const sourceType = typeof sourceLink?.sourceType === "string" ? sourceLink.sourceType : null;
+  const ownerSlug = typeof sourceLink?.ownerSlug === "string" ? sourceLink.ownerSlug : null;
+  const drawingSetId = typeof sourceLink?.drawingSetId === "string" ? sourceLink.drawingSetId : null;
+  const pageId = typeof sourceLink?.pageId === "string" ? sourceLink.pageId : null;
+
+  if (sourceType === "takeoff_measurement" && (ownerType === "project" || ownerType === "opportunity") && ownerSlug && drawingSetId && pageId) {
+    return buildTakeoffHref({ kind: ownerType, slug: ownerSlug }, "measure", { drawingSetId, pageId });
+  }
+
+  if (!link.sourceWorksheetId || !link.sourceSheetId) return null;
 
   if (ownerType === "variation" && projectSlug && variationId) {
     return `/app/projects/${projectSlug}/preconstruction/variations/${variationId}/pricing-worksheet/${link.sourceWorksheetId}?sheetId=${encodeURIComponent(link.sourceSheetId)}`;
+  }
+
+  if (ownerType === "quote" && projectSlug && quoteId) {
+    return `/app/projects/${projectSlug}/preconstruction/quote/${quoteId}/pricing-worksheet/${link.sourceWorksheetId}?sheetId=${encodeURIComponent(link.sourceSheetId)}`;
   }
 
   const resolvedOpportunitySlug = opportunitySlug ?? linkedOpportunitySlug;

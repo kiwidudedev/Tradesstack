@@ -106,6 +106,7 @@ export function AccountingSyncPanel(props: {
   attachmentFailureMessage?: string | null;
   permissionMessage?: string | null;
   infoMessage?: string | null;
+  guidance?: ReactNode;
   actionError?: AccountingSyncPanelError;
   actionErrorSupportLabel?: string;
 }) {
@@ -322,6 +323,11 @@ export function AccountingSyncPanel(props: {
                 >
                   {props.infoMessage}
                 </p>
+              ) : null}
+              {props.guidance ? (
+                <div className={`${ibmPlexSans.className} rounded-[10px] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-[12px] text-[var(--text-secondary)]`}>
+                  {props.guidance}
+                </div>
               ) : null}
               {props.safeErrorMessage ? (
                 <p

@@ -98,7 +98,7 @@ export function mapWorksheetVariationPublishErrorMessage(message: string | null 
     normalized.includes("commercial_item_document_links") ||
     normalized.includes("variation_line")
   ) {
-    return "Rows were added to the variation, but worksheet source linking could not be completed.";
+    return "Unable to add rows to the variation because worksheet source validation failed.";
   }
 
   if (

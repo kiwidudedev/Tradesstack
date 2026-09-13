@@ -5,9 +5,20 @@ import { SidebarStateProvider } from "@/components/app/SidebarState";
 import { Topbar } from "@/components/app/Topbar";
 import { WorkspaceSidebarBackdrop } from "@/components/app/WorkspaceSidebarBackdrop";
 import { getCurrentOrganizationBranding } from "@/lib/branding-server";
+import { hasOrganizationPermission } from "@/lib/permissions-server";
+import { getCurrentOrganizationMember } from "@/lib/projects-server";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
-  const branding = await getCurrentOrganizationBranding();
+  const [branding, member] = await Promise.all([
+    getCurrentOrganizationBranding(),
+    getCurrentOrganizationMember(),
+  ]);
+  const canViewPaymentClaims = member
+    ? await hasOrganizationPermission(
+        member.organization_id,
+        "accounting.sales_invoices.view",
+      )
+    : false;
 
   return (
     <BrandThemeProvider
@@ -16,10 +27,10 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
     >
       <SidebarStateProvider>
         <div className="relative min-h-screen bg-[var(--background)]">
-          <Topbar />
+          <Topbar canViewPaymentClaims={canViewPaymentClaims} />
           <div className="relative flex min-h-[calc(100vh-3.5rem)] w-full items-start gap-0 pt-14">
             <WorkspaceSidebarBackdrop />
-            <Sidebar />
+            <Sidebar canViewPaymentClaims={canViewPaymentClaims} />
             <AppShellFrame>{children}</AppShellFrame>
           </div>
         </div>

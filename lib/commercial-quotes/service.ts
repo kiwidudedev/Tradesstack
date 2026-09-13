@@ -8,6 +8,9 @@ export interface CommercialQuoteSummary {
   updatedAt: string | null;
   originatingOpportunityId: string | null;
   projectId: string | null;
+  clientName: string | null;
+  revisionNumber: number;
+  quoteSeriesId: string | null;
   lineItemCount: number;
 }
 
@@ -61,6 +64,11 @@ function toSummary(row: Record<string, unknown>): CommercialQuoteSummary {
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
     originatingOpportunityId: typeof row.originating_opportunity_id === "string" ? row.originating_opportunity_id : null,
     projectId: typeof row.project_id === "string" ? row.project_id : null,
+    clientName: typeof row.company_name === "string" && row.company_name.trim()
+      ? row.company_name
+      : typeof row.client_name === "string" ? row.client_name : null,
+    revisionNumber: typeof row.revision_number === "number" ? row.revision_number : 1,
+    quoteSeriesId: typeof row.quote_series_id === "string" ? row.quote_series_id : null,
     lineItemCount: 0,
   };
 }
@@ -70,18 +78,57 @@ export async function listCommercialQuotesForOpportunity(params: {
   organizationId: string;
   opportunityId: string;
 }): Promise<CommercialQuoteSummary[]> {
+  const seriesClient = params.client as unknown as {
+    from(table: "opportunity_quote_series"): {
+      select(columns: "id, current_revision_id, recipient_client_id"): {
+        eq(column: string, value: string): {
+          eq(column: string, value: string): {
+            is(column: "archived_at", value: null): Promise<{
+              data: Array<{ id: string; current_revision_id: string | null; recipient_client_id: string | null }> | null;
+              error: { message: string } | null;
+            }>;
+          };
+        };
+      };
+    };
+  };
+  const { data: seriesRows, error: seriesError } = await seriesClient
+    .from("opportunity_quote_series")
+    .select("id, current_revision_id, recipient_client_id")
+    .eq("organization_id", params.organizationId)
+    .eq("opportunity_id", params.opportunityId)
+    .is("archived_at", null);
+  if (seriesError) throw new Error(seriesError.message);
+
+  const currentSeriesByRevisionId = new Map<string, string>();
+  for (const series of seriesRows ?? []) {
+    if (series.current_revision_id && series.recipient_client_id) {
+      currentSeriesByRevisionId.set(series.current_revision_id, series.id);
+    }
+  }
+  const currentRevisionIds = [...currentSeriesByRevisionId.keys()];
+  if (currentRevisionIds.length === 0) return [];
+
   const { data, error } = await params.client
     .from("project_quotes")
-    .select("id, quote_number, quote_title, status, updated_at, originating_opportunity_id, project_id")
+    .select("*")
     .eq("organization_id", params.organizationId)
     .eq("originating_opportunity_id", params.opportunityId)
-    .order("updated_at", { ascending: false });
-
+    .in("id", currentRevisionIds)
+    .eq("revision_kind", "tender")
+    .eq("status", "Draft")
+    .is("award_locked_at", null);
   if (error) {
     throw new Error(error.message);
   }
 
-  const summaries = ((data ?? []) as Record<string, unknown>[]).map(toSummary);
+  const summaries = ((data ?? []) as unknown as Record<string, unknown>[])
+    .filter((row) => {
+      const revisionId = typeof row.id === "string" ? row.id : null;
+      const quoteSeriesId = typeof row.quote_series_id === "string" ? row.quote_series_id : null;
+      return Boolean(revisionId && quoteSeriesId && currentSeriesByRevisionId.get(revisionId) === quoteSeriesId);
+    })
+    .map(toSummary);
 
   if (summaries.length === 0) {
     return summaries;

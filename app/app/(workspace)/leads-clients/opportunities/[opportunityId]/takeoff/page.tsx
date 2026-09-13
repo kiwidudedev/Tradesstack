@@ -1,41 +1,43 @@
-import { redirect } from "next/navigation";
-import { buildTakeoffHref } from "@/lib/takeoff/navigation";
-import { getTakeoffMeasurePageData } from "./takeoff-page-data";
-import { getLatestActiveAreaMeasurementForOpportunitySlug, getTakeoffDrawingSetsForOpportunitySlug } from "@/lib/takeoff-server";
+import { notFound, redirect } from "next/navigation";
+import { TakeoffDrawingSetRegister } from "@/components/app/TakeoffDrawingSetRegister";
+import {
+  getTakeoffAuthorizedContextForOwner,
+  getTakeoffDrawingSetsForOpportunitySlug,
+  getTakeoffDrawingTabsForOpportunitySlug,
+} from "@/lib/takeoff-server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildTakeoffRegisterHref } from "@/lib/takeoff/navigation";
 
-export default async function OpportunityTakeoffRedirectPage({
+export default async function OpportunityTakeoffRegisterPage({
   params,
 }: {
   params: Promise<{ opportunityId: string }>;
 }) {
   const { opportunityId } = await params;
-  const latestAreaMeasurement = await getLatestActiveAreaMeasurementForOpportunitySlug(opportunityId);
-
-  if (latestAreaMeasurement?.drawing_set_id && latestAreaMeasurement.page_id) {
-    redirect(
-      buildTakeoffHref(opportunityId, "measure", {
-        drawingSetId: latestAreaMeasurement.drawing_set_id,
-        pageId: latestAreaMeasurement.page_id,
-      })
-    );
+  const owner = { kind: "opportunity" as const, slug: opportunityId };
+  const context = await getTakeoffAuthorizedContextForOwner(owner);
+  if (!context) notFound();
+  if (context.workspace.canonicalProject) {
+    redirect(buildTakeoffRegisterHref({ kind: "project", slug: context.workspace.canonicalProject.slug }));
   }
 
-  const drawingSets = await getTakeoffDrawingSetsForOpportunitySlug(opportunityId);
-  const latestDrawingSetId = drawingSets[0]?.id ?? null;
-
-  if (!latestDrawingSetId) {
-    redirect(buildTakeoffHref(opportunityId, "measure", {}));
-  }
-
-  const pageData = await getTakeoffMeasurePageData({
-    opportunityId,
-    drawingSetId: latestDrawingSetId,
+  const supabase = await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const drawingSets = await getTakeoffDrawingSetsForOpportunitySlug(opportunityId, {
+    resolvedWorkspace: context.workspace,
+    supabase,
+  });
+  const registerRows = await getTakeoffDrawingTabsForOpportunitySlug(opportunityId, {
+    drawingSets,
+    resolvedWorkspace: context.workspace,
+    supabase,
   });
 
-  redirect(
-    buildTakeoffHref(opportunityId, "measure", {
-      drawingSetId: latestDrawingSetId,
-      pageId: pageData?.pageId ?? null,
-    })
+  return (
+    <TakeoffDrawingSetRegister
+      owner={owner}
+      organizationId={context.workspace.organizationId}
+      projectId={context.workspace.projectId}
+      initialDrawingSets={registerRows}
+    />
   );
 }

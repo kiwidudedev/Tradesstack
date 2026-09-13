@@ -60,7 +60,7 @@ describe("worksheet publish error mapping", () => {
     ).toBe("This variation can no longer be changed from the pricing worksheet.");
     expect(
       mapWorksheetVariationPublishErrorMessage("commercial_item_document_links constraint failure"),
-    ).toBe("Rows were added to the variation, but worksheet source linking could not be completed.");
+    ).toBe("Unable to add rows to the variation because worksheet source validation failed.");
     expect(
       mapWorksheetVariationPublishErrorMessage("No valid commercial rows were found in the selected worksheet rows."),
     ).toBe("No priced rows found in this selection.");

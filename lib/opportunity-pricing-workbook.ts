@@ -119,6 +119,7 @@ type CreateWorkbookParams = {
   opportunityId: string | null;
   organizationId: string;
   projectId?: string | null;
+  projectOwned?: boolean;
   pricingSummary: WorksheetPricingSummary;
   quoteId?: string | null;
   saveRequestId?: string | null;
@@ -137,11 +138,12 @@ type SaveWorkbookSheetParams = CreateWorkbookParams & {
 type PricingWorkbookOwnerScope = {
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
 };
 
-type PricingWorkbookOwnerKind = "opportunity" | "quote" | "variation";
+type PricingWorkbookOwnerKind = "opportunity" | "project" | "quote" | "variation";
 
 type NormalizedPricingWorkbookOwnerScope = {
   kind: PricingWorkbookOwnerKind;
@@ -371,9 +373,11 @@ export function deriveOpportunityPricingWorkbookRegisterName(params: {
 
 export function buildOpportunityPricingWorkbookRegisterRows(params: {
   workbooks: Array<
-    Pick<PricingWorkbookParentRow, "id" | "name" | "trade_package" | "updated_at" | "variation_id" | "worksheet_data">
+    Pick<PricingWorkbookParentRow, "id" | "name" | "trade_package" | "updated_at" | "variation_id" | "worksheet_data"> &
+      Partial<Pick<PricingWorkbookParentRow, "project_id" | "quote_id">>
   >;
   sheets?: Array<Pick<PricingWorkbookSheetRow, "created_at" | "is_default" | "name" | "sheet_order" | "workbook_id">>;
+  scope?: "opportunity" | "project";
 }) {
   const sheetsByWorkbookId = new Map<string, Array<Pick<PricingWorkbookSheetRow, "created_at" | "is_default" | "name" | "sheet_order">>>();
   for (const sheet of params.sheets ?? []) {
@@ -383,7 +387,11 @@ export function buildOpportunityPricingWorkbookRegisterRows(params: {
   }
 
   return params.workbooks
-    .filter((workbook) => workbook.variation_id == null)
+    .filter((workbook) =>
+      params.scope === "project"
+        ? workbook.project_id != null && workbook.variation_id == null
+        : workbook.project_id == null && workbook.quote_id == null && workbook.variation_id == null,
+    )
     .map((workbook) => ({
       id: workbook.id,
       name: deriveOpportunityPricingWorkbookRegisterName({
@@ -533,6 +541,20 @@ function normalizePricingWorkbookOwnerScope(
     };
   }
 
+  if (projectId && owner.projectOwned === true) {
+    if (!opportunityId) {
+      throw new Error("Project pricing worksheets require originating opportunity lineage.");
+    }
+
+    return {
+      kind: "project",
+      opportunityId,
+      projectId,
+      quoteId: null,
+      variationId: null,
+    };
+  }
+
   if (!opportunityId) {
     throw new Error("Opportunity pricing worksheets require originating opportunity lineage.");
   }
@@ -557,12 +579,17 @@ function applyWorkbookOwnerFilters(query: any, owner: PricingWorkbookOwnerScope)
   } else if (normalizedOwner.kind === "quote") {
     query.eq("quote_id", normalizedOwner.quoteId);
     query.is("variation_id", null);
+  } else if (normalizedOwner.kind === "project") {
+    query.eq("project_id", normalizedOwner.projectId);
+    query.is("variation_id", null);
+    query.or("quote_id.is.null,clone_kind.eq.project_working");
   } else {
+    query.is("project_id", null);
     query.is("quote_id", null);
     query.is("variation_id", null);
   }
 
-  if (normalizedOwner.projectId) {
+  if (normalizedOwner.projectId && normalizedOwner.kind !== "project") {
     query.eq("project_id", normalizedOwner.projectId);
   }
 
@@ -574,6 +601,7 @@ async function loadWorkbookParentRow(params: {
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
   workbookId?: string | null;
@@ -589,6 +617,7 @@ async function loadWorkbookParentRow(params: {
     {
       opportunityId: params.opportunityId,
       projectId: params.projectId,
+      projectOwned: params.projectOwned,
       quoteId: params.quoteId,
       variationId: params.variationId,
     },
@@ -636,6 +665,7 @@ export async function loadOpportunityPricingWorkbook(params: {
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
   workbookId?: string | null;
@@ -652,6 +682,7 @@ export async function loadOpportunityPricingWorkbook(params: {
     owner: {
       opportunityId: params.opportunityId,
       projectId: params.projectId,
+      projectOwned: params.projectOwned,
       quoteId: params.quoteId,
       variationId: params.variationId,
     },
@@ -668,6 +699,7 @@ export async function setOpportunityPricingWorkbookLastActiveSheet(params: {
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
   workbookId: string;
@@ -690,6 +722,7 @@ export async function setOpportunityPricingWorkbookLastActiveSheet(params: {
     {
       opportunityId: params.opportunityId,
       projectId: params.projectId,
+      projectOwned: params.projectOwned,
       quoteId: params.quoteId,
       variationId: params.variationId,
     },
@@ -708,6 +741,7 @@ export async function createOpportunityPricingWorkbook(
   const normalizedOwner = normalizePricingWorkbookOwnerScope({
     opportunityId: params.opportunityId,
     projectId: params.projectId,
+    projectOwned: params.projectOwned,
     quoteId: params.quoteId,
     variationId: params.variationId,
   });
@@ -751,6 +785,7 @@ export async function saveOpportunityPricingWorkbookActiveSheet(
   const normalizedOwner = normalizePricingWorkbookOwnerScope({
     opportunityId: params.opportunityId,
     projectId: params.projectId,
+    projectOwned: params.projectOwned,
     quoteId: params.quoteId,
     variationId: params.variationId,
   });
@@ -761,11 +796,29 @@ export async function saveOpportunityPricingWorkbookActiveSheet(
     sheetName,
   };
   const normalizedPricingSummary = normalizePricingSummary(params.pricingSummary as unknown as Json);
+  let persistedQuoteId = normalizedOwner.quoteId;
+  if (normalizedOwner.kind === "project" && params.workbookId) {
+    const { data: ownedWorkbook, error: ownerError } = await params.supabase
+      .from("opportunity_pricing_worksheets")
+      .select("quote_id")
+      .eq("organization_id", params.organizationId)
+      .eq("opportunity_id", normalizedOwner.opportunityId)
+      .eq("project_id", normalizedOwner.projectId)
+      .eq("id", params.workbookId)
+      .is("variation_id", null)
+      .or("quote_id.is.null,clone_kind.eq.project_working")
+      .single();
+
+    if (ownerError) {
+      throw new Error(ownerError.message);
+    }
+    persistedQuoteId = ownedWorkbook.quote_id ?? null;
+  }
   const { data, error } = await params.supabase.rpc("save_pricing_workbook_active_sheet" as never, {
     p_organization_id: params.organizationId,
     p_opportunity_id: normalizedOwner.opportunityId,
     p_project_id: normalizedOwner.projectId,
-    p_quote_id: normalizedOwner.quoteId,
+    p_quote_id: persistedQuoteId,
     p_user_id: params.userId,
     p_variation_id: normalizedOwner.variationId,
     p_workbook_id: params.workbookId ?? null,
@@ -792,17 +845,27 @@ export async function renameOpportunityPricingWorkbook(params: {
   supabase: any;
   organizationId: string;
   opportunityId: string;
+  projectId?: string | null;
   workbookId: string;
   nextName: string;
   userId: string;
 }) {
-  const { data, error } = await params.supabase.rpc("rename_opportunity_pricing_workbook" as never, {
-    p_organization_id: params.organizationId,
-    p_opportunity_id: params.opportunityId,
-    p_workbook_id: params.workbookId,
-    p_user_id: params.userId,
-    p_next_name: params.nextName,
-  } as never);
+  const { data, error } = params.projectId
+    ? await params.supabase.rpc("rename_pricing_workbook_v1" as never, {
+        p_organization_id: params.organizationId,
+        p_opportunity_id: params.opportunityId,
+        p_project_id: params.projectId,
+        p_workbook_id: params.workbookId,
+        p_user_id: params.userId,
+        p_next_name: params.nextName,
+      } as never)
+    : await params.supabase.rpc("rename_opportunity_pricing_workbook" as never, {
+        p_organization_id: params.organizationId,
+        p_opportunity_id: params.opportunityId,
+        p_workbook_id: params.workbookId,
+        p_user_id: params.userId,
+        p_next_name: params.nextName,
+      } as never);
 
   if (error) {
     throw new Error(error.message);
@@ -817,15 +880,24 @@ export async function duplicateOpportunityPricingWorkbook(params: {
   supabase: any;
   organizationId: string;
   opportunityId: string;
+  projectId?: string | null;
   workbookId: string;
   userId: string;
 }) {
-  const { data, error } = await params.supabase.rpc("duplicate_opportunity_pricing_workbook" as never, {
-    p_organization_id: params.organizationId,
-    p_opportunity_id: params.opportunityId,
-    p_workbook_id: params.workbookId,
-    p_user_id: params.userId,
-  } as never);
+  const { data, error } = params.projectId
+    ? await params.supabase.rpc("duplicate_pricing_workbook_v1" as never, {
+        p_organization_id: params.organizationId,
+        p_opportunity_id: params.opportunityId,
+        p_project_id: params.projectId,
+        p_workbook_id: params.workbookId,
+        p_user_id: params.userId,
+      } as never)
+    : await params.supabase.rpc("duplicate_opportunity_pricing_workbook" as never, {
+        p_organization_id: params.organizationId,
+        p_opportunity_id: params.opportunityId,
+        p_workbook_id: params.workbookId,
+        p_user_id: params.userId,
+      } as never);
 
   if (error) {
     throw new Error(error.message);
@@ -841,6 +913,7 @@ export async function createOpportunityPricingWorkbookSheet(params: {
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
   workbookId: string;
@@ -853,6 +926,7 @@ export async function createOpportunityPricingWorkbookSheet(params: {
   const normalizedOwner = normalizePricingWorkbookOwnerScope({
     opportunityId: params.opportunityId,
     projectId: params.projectId,
+    projectOwned: params.projectOwned,
     quoteId: params.quoteId,
     variationId: params.variationId,
   });
@@ -910,6 +984,7 @@ export async function renameOpportunityPricingWorkbookSheet(params: {
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
   workbookId: string;
@@ -921,6 +996,7 @@ export async function renameOpportunityPricingWorkbookSheet(params: {
   const normalizedOwner = normalizePricingWorkbookOwnerScope({
     opportunityId: params.opportunityId,
     projectId: params.projectId,
+    projectOwned: params.projectOwned,
     quoteId: params.quoteId,
     variationId: params.variationId,
   });
@@ -949,6 +1025,7 @@ export async function renameOpportunityPricingWorkbookSheet(params: {
       organizationId: params.organizationId,
       opportunityId: normalizedOwner.opportunityId,
       projectId: normalizedOwner.projectId,
+      projectOwned: normalizedOwner.kind === "project",
       quoteId: normalizedOwner.quoteId,
       variationId: normalizedOwner.variationId,
       workbookId: params.workbookId,
@@ -998,6 +1075,7 @@ export async function deleteOpportunityPricingWorkbookSheet(params: {
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
+  projectOwned?: boolean;
   quoteId?: string | null;
   variationId?: string | null;
   workbookId: string;
@@ -1008,6 +1086,7 @@ export async function deleteOpportunityPricingWorkbookSheet(params: {
   const normalizedOwner = normalizePricingWorkbookOwnerScope({
     opportunityId: params.opportunityId,
     projectId: params.projectId,
+    projectOwned: params.projectOwned,
     quoteId: params.quoteId,
     variationId: params.variationId,
   });

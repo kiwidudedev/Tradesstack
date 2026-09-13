@@ -32,6 +32,7 @@ import {
   derivePaymentClaimXeroPanelState,
   enqueuePaymentClaimXeroSync,
 } from "./payment-claim-sales-invoice-panel";
+import { derivePaymentClaimAccountingIdentity } from "./payment-claim-accounting-identity";
 
 type Row = Record<string, unknown>;
 
@@ -320,6 +321,65 @@ describe("Payment Claim Xero Stage 7 panel state", () => {
       status: "synced",
       statusLabel: "Synced",
       canRefresh: true,
+    });
+  });
+
+  it("keeps active-revision navigation while an accounting update blocks refresh", () => {
+    const documentRow = document({
+      integration_contract: "payment_claim_revision_v1",
+      active_accounting_revision_id: "revision-1",
+      accounting_connection_id: "conn-1",
+      tenant_id: "tenant-1",
+      external_document_id: "invoice-1",
+      external_document_number: "26028-CL-02",
+      export_status: "queued",
+    });
+    const revisionRow = {
+      id: "revision-1",
+      organization_id: "org-1",
+      accounting_document_id: "document-existing",
+      source_document_id: "claim-1",
+      provider: "xero",
+      connection_id: "conn-1",
+      tenant_id: "tenant-1",
+      external_document_id: "invoice-1",
+      external_document_number: "26028-CL-02",
+      lifecycle_state: "succeeded",
+    };
+    const identity = derivePaymentClaimAccountingIdentity({
+      organizationId: "org-1",
+      claimId: "claim-1",
+      document: documentRow,
+      activeRevision: revisionRow,
+      currentConnection: {
+        id: "conn-1",
+        tenant_id: "tenant-1",
+        status: "connected",
+      },
+      jobs: [{
+        id: "update-job",
+        job_kind: "xero.payment_claim.accounting_update",
+        queue_state: "pending",
+      }],
+    });
+    const state = derivePaymentClaimXeroPanelState({
+      canManage: true,
+      readiness: ready as never,
+      document: documentRow,
+      activeRevision: revisionRow,
+      resolvedIdentity: identity,
+      activeJob: identity.activeFinancialJob,
+      latestJob: identity.latestJob,
+      currentHash: "hash-current",
+    });
+
+    expect(state).toMatchObject({
+      status: "queued",
+      invoiceId: "invoice-1",
+      invoiceNumber: "26028-CL-02",
+      xeroUrl:
+        "https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=invoice-1",
+      canRefresh: false,
     });
   });
 

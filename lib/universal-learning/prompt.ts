@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { getUniversalLearningDomainPromptLayer } from "@/lib/universal-learning/domain-intelligence";
+import { compactSupplierBillBusinessRecordForPrompt } from "@/lib/universal-learning/supplier-bill-prompt";
+import { compactPaymentClaimBusinessRecordForPrompt } from "@/lib/universal-learning/payment-claim-prompt";
 import type { UniversalLearningPromptBuildResult, UniversalLearningPromptPacket } from "@/lib/universal-learning/types";
 
 export const UNIVERSAL_CONSTRUCTION_LEARNING_PROMPT_VERSION = "ucl-response-v2";
@@ -120,6 +122,13 @@ function compactQuoteSourceEvidenceForPrompt(sourceEvidence: Record<string, unkn
 }
 
 function compactBusinessActivityRecordForPrompt(record: UniversalLearningPromptPacket["newBusinessActivity"][number]) {
+  if (record.containerType === "supplier_invoice") {
+    return compactSupplierBillBusinessRecordForPrompt(record).projection;
+  }
+  if (record.containerType === "project_claim") {
+    return compactPaymentClaimBusinessRecordForPrompt(record).projection;
+  }
+
   const sourceEvidence = record.payload?.sourceEvidence as Record<string, unknown> | undefined;
   const operationalContext = record.payload?.operationalContext as Record<string, unknown> | undefined;
   const lineageContext = record.payload?.lineageContext as Record<string, unknown> | undefined;

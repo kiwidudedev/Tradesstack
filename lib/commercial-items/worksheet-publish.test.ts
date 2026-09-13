@@ -106,6 +106,15 @@ describe("worksheet publish engine", () => {
 
     vi.mocked(listCommercialItemsForOpportunity).mockResolvedValueOnce([
       buildCommercialItem({
+        id: "takeoff-item",
+        sourceType: "takeoff_measurement",
+        sourceWorkbookId: null,
+        sourceWorksheetId: null,
+        sourceSheetId: null,
+        sourceRange: null,
+        sourceSignature: selection.commercialRows[0]!.sourceSignature,
+      }),
+      buildCommercialItem({
         sourceSignature: selection.commercialRows[0]!.sourceSignature,
       }),
     ]);
@@ -138,6 +147,7 @@ describe("worksheet publish engine", () => {
 
     expect(createCommercialItem).not.toHaveBeenCalled();
     expect(result.publishedRows[0]?.reusedCommercialItem).toBe(true);
+    expect(result.publishedRows[0]?.commercialItem.id).toBe("item-1");
   });
 
   it("creates a new commercial item when the source signature changes", async () => {
@@ -215,5 +225,34 @@ describe("worksheet publish engine", () => {
       opportunityId: "opp-1",
       projectId: null,
     }));
+  });
+
+  it("delegates commercial-item creation to an atomic destination publication boundary", async () => {
+    const worksheet = buildWorksheet();
+    const committedItem = buildCommercialItem();
+    const publishSelection = vi.fn().mockResolvedValue({
+      publishedRows: [{
+        ...buildPublishedWorksheetSelection({ destination: "variation", worksheet, selectionRange: { startRowIndex: 1, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 4 }, workbookId: "workbook-1", worksheetId: "workbook-1", sheetId: "sheet-1", worksheetName: "Pricing worksheet", sheetName: "Sheet 1" }).commercialRows[0],
+        commercialItem: committedItem,
+        reusedCommercialItem: false,
+      }],
+      result: { ok: true },
+    });
+    const adapter: WorksheetPublishDestinationAdapter<{ variationId: string }, { ok: boolean }> = {
+      destination: "variation",
+      publishSelection,
+      publish: vi.fn(),
+    };
+
+    const result = await publishWorksheetSelection({
+      client: createMockClient(), organizationId: "org-1", opportunityId: "opp-1", projectId: "project-1", workbookId: "workbook-1", worksheetId: "workbook-1", sheetId: "sheet-1", worksheetName: "Pricing worksheet", sheetName: "Sheet 1", worksheet,
+      selectionRange: { startRowIndex: 1, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 4 }, adapter, target: { variationId: "variation-1" },
+    });
+
+    expect(publishSelection).toHaveBeenCalledWith(expect.objectContaining({ worksheetVersion: worksheet.version }));
+    expect(listCommercialItemsForOpportunity).not.toHaveBeenCalled();
+    expect(createCommercialItem).not.toHaveBeenCalled();
+    expect(adapter.publish).not.toHaveBeenCalled();
+    expect(result.publishedRows[0]?.commercialItem.id).toBe("item-1");
   });
 });

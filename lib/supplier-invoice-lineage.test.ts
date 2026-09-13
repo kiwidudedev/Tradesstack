@@ -22,12 +22,10 @@ describe("supplier invoice lineage", () => {
         sourceCostItemId: null,
         tradesstackCostCode: "100",
         tradesstackCostCodeLabel: "Materials",
-        workType: null,
-        costType: null,
-        internalCostCode: null,
-        classificationNeedsReview: false,
-        classificationConfidence: 0.93,
-        classificationSource: "material_library",
+        financialRoutingConfidence: 0.93,
+        financialRoutingSource: "database_rule",
+        reviewStatus: "resolved",
+        reviewReason: null,
       },
     });
 
@@ -49,12 +47,10 @@ describe("supplier invoice lineage", () => {
         sourceCostItemId: null,
         tradesstackCostCode: "100",
         tradesstackCostCodeLabel: "Materials",
-        workType: null,
-        costType: null,
-        internalCostCode: null,
-        classificationNeedsReview: false,
-        classificationConfidence: 0.91,
-        classificationSource: "supplier_invoice",
+        financialRoutingConfidence: 0.91,
+        financialRoutingSource: "database_rule",
+        reviewStatus: "resolved",
+        reviewReason: null,
       },
       accountingResolution: {
         status: "resolved",
@@ -71,7 +67,7 @@ describe("supplier invoice lineage", () => {
       },
     });
 
-    expect(payload.tradesstack_cost_code).toBe("100");
+    expect(payload.tradesstack_cost_code).toBe(100);
     expect(payload.accounting_mapping_id).toBe("mapping-1");
     expect(
       deriveAllocationReviewStatus({
@@ -83,12 +79,10 @@ describe("supplier invoice lineage", () => {
           sourceCostItemId: null,
           tradesstackCostCode: "100",
           tradesstackCostCodeLabel: "Materials",
-          workType: null,
-          costType: null,
-          internalCostCode: null,
-          classificationNeedsReview: false,
-          classificationConfidence: 0.91,
-          classificationSource: "supplier_invoice",
+          financialRoutingConfidence: 0.91,
+          financialRoutingSource: "database_rule",
+          reviewStatus: "resolved",
+          reviewReason: null,
         },
         accountingResolution: {
           status: "resolved",
@@ -107,7 +101,7 @@ describe("supplier invoice lineage", () => {
     ).toBe("auto_approved");
   });
 
-  it("derives fallback routing from purchase order context when legacy taxonomy is absent", async () => {
+  it("requires routing review when a PO line has no routed Cost Item", async () => {
     const { resolvePurchaseOrderLineLineage } = await import("@/lib/supplier-invoice-lineage");
     const lineage = resolvePurchaseOrderLineLineage({
       purchaseOrderLine: {
@@ -125,6 +119,7 @@ describe("supplier invoice lineage", () => {
         rate: 18.5,
         total: 185,
         line_uid: "line-uid-1",
+        sort_order: 0,
         created_at: "2026-06-21T00:00:00.000Z",
         updated_at: "2026-06-21T00:00:00.000Z",
       },
@@ -133,9 +128,9 @@ describe("supplier invoice lineage", () => {
     });
 
     expect(lineage).toMatchObject({
-      tradesstackCostCode: "100",
-      tradesstackCostCodeLabel: "Materials",
-      classificationNeedsReview: false,
+      tradesstackCostCode: null,
+      tradesstackCostCodeLabel: null,
+      reviewStatus: null,
     });
   });
 });

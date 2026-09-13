@@ -17,7 +17,7 @@ function DisconnectSubmitButton() {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" variant="destructive" disabled={pending}>
+    <Button type="submit" variant="destructive" disabled={pending} aria-disabled={pending} aria-busy={pending}>
       {pending ? "Disconnecting..." : "Disconnect Xero"}
     </Button>
   );
@@ -35,23 +35,23 @@ export function DisconnectXeroDialog({
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !disabled && setOpen(nextOpen)}>
       <DialogTrigger asChild>
-        <Button type="button" variant="secondary" disabled={disabled}>
-          Disconnect
+        <Button type="button" variant="destructive" disabled={disabled}>
+          Disconnect Xero
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-xl p-6 sm:p-6" hideClose={disabled}>
         <DialogHeader className="pr-8">
           <DialogTitle>Disconnect Xero?</DialogTitle>
           <DialogDescription className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-            This will disconnect the current Xero authorization for this TradesStack organization. Future Xero imports
-            will stop and the stored token secrets will be removed.
+            This disconnects the current Xero authorization for this TradesStack organization. Future Xero imports
+            and accounting actions will stop until Xero is connected again, and the stored token credentials will be removed.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 text-sm text-[var(--text-secondary)]">
-          <p>Imported accounts and tax rates will remain for historical and reference purposes.</p>
-          <p>Existing TradesStack accounting mappings will remain and are not deleted by this Phase 1 disconnect.</p>
-          <p>No Supplier Invoices or Payment Claims are exported to Xero in Phase 1.</p>
+          <p>Imported accounts, tax rates, and contacts will remain for historical and reference purposes.</p>
+          <p>Existing TradesStack accounting mappings and historical accounting records will remain.</p>
+          <p>Queued Xero jobs that can no longer run will be ended during disconnect.</p>
         </div>
 
         <form action={action}>

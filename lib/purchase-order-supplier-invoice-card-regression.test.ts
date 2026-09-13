@@ -91,7 +91,7 @@ describe("Purchase Order Supplier Invoice card regression", () => {
   });
 
   it("renders a compact Supplier Bills table and moves long evidence into the dialog", () => {
-    ["Bill / Invoice", "Supplier", "Invoice date", "Due date", "Allocated to this PO", "Site status", "Payment status", "Action"].forEach((heading) => {
+    ["Bill / Invoice", "Supplier", "Invoice date", "Due date", "Allocated to this PO", "Team Approval", "Payment status", "Action"].forEach((heading) => {
       expect(page).toContain(heading);
     });
     expect(page).not.toContain("PO allocation");
@@ -100,8 +100,8 @@ describe("Purchase Order Supplier Invoice card regression", () => {
     expect(page).not.toContain("summary.siteReviewNote");
     expect(page).not.toContain("summary.accountsApprovedAt");
     expect(page).not.toContain("summary.lastStatusSyncedAt");
-    expect(page).toContain("deriveBillPurchaseOrderAllocationPercent");
-    expect(page).toContain("PurchaseOrderSupplierBillDialog");
+    expect(page.match(/\{toMoney\(summary\.poAllocatedAmount\)\}/g)).toHaveLength(2);
+    expect(page).toContain("SupplierInvoiceTeamReviewModal");
     expect(page).toContain('{toMoney(invoiceSummary.metrics.paidAgainstPurchaseOrder)}');
     expect(page).toContain('{purchaseOrderStatusPresentation.paidPercent}%');
     expect(page).toContain('{toMoney(invoiceSummary.metrics.outstandingAgainstPurchaseOrder)}');

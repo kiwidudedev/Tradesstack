@@ -62,4 +62,40 @@ describe("purchase order linking", () => {
 
     expect("lockedMetadataJson" in link).toBe(false);
   });
+
+  it("builds a Takeoff source href without worksheet provenance", () => {
+    const link = buildPurchaseOrderCommercialItemLink(buildCommercialItem({
+      sourceType: "takeoff_measurement",
+      sourceWorkbookId: null,
+      sourceWorksheetId: null,
+      sourceSheetId: null,
+      sourceRange: null,
+      sourceTakeoffMeasurementId: "measurement-1",
+      sourceLinkJson: {
+        ownerType: "project",
+        ownerSlug: "airport-fitout",
+        drawingSetId: "drawing-set-1",
+        pageId: "page-1",
+      },
+    }));
+
+    expect(buildPurchaseOrderCommercialItemSourceHref({ commercialItemLink: link })).toBe(
+      "/app/projects/airport-fitout/takeoff/measure?drawingSetId=drawing-set-1&pageId=page-1",
+    );
+    expect(link.sourceTakeoffMeasurementId).toBe("measurement-1");
+  });
+
+  it("continues rejecting incomplete provenance for each source kind", () => {
+    expect(() => buildPurchaseOrderCommercialItemLink(buildCommercialItem({ sourceRange: null })))
+      .toThrow("worksheet source provenance");
+    expect(() => buildPurchaseOrderCommercialItemLink(buildCommercialItem({
+      sourceType: "takeoff_measurement",
+      sourceWorkbookId: null,
+      sourceWorksheetId: null,
+      sourceSheetId: null,
+      sourceRange: null,
+      sourceTakeoffMeasurementId: "measurement-1",
+      sourceLinkJson: {},
+    }))).toThrow("measurement, owner, drawing, and page provenance");
+  });
 });

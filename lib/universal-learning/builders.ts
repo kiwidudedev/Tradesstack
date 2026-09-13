@@ -2,12 +2,22 @@ import { getUniversalLearningContainerDefinition } from "@/lib/universal-learnin
 import {
   normalizeWorksheetData,
   type WorksheetCell,
-  type WorksheetData,
 } from "@/lib/opportunity-pricing-worksheet-defaults";
 import {
   createDynamicAdminSupabaseClient,
   type DynamicSupabaseAdminClient,
 } from "@/lib/universal-learning/supabase-dynamic-client";
+import { buildSupplierBillUclV2Sections } from "@/lib/universal-learning/supplier-bill-builder";
+import { buildPaymentClaimUclV2Sections } from "@/lib/universal-learning/payment-claim-builder";
+import {
+  assertValidSupplierBillUclBusinessRecord,
+} from "@/lib/universal-learning/supplier-bill-schema";
+import {
+  assertValidPaymentClaimUclBusinessRecord,
+} from "@/lib/universal-learning/payment-claim-schema";
+import { normalizeSupplierBillUclTimestamp } from "@/lib/universal-learning/supplier-bill-timestamps";
+import { resolveEffectivePriceRows } from "@/lib/materials/effective-price";
+import type { OrganizationMaterialSupplierPriceRow } from "@/lib/materials/types";
 import type {
   UniversalLearningBuilderContext,
   UniversalLearningBuilderResult,
@@ -38,6 +48,7 @@ type ContainerBuilderConfig = {
   versionColumn?: string;
   statusColumns: string[];
   childCollections?: ChildConfig[];
+  cursorTimestampNormalizer?: (value: unknown, sourceField: string) => string | null;
 };
 
 type QuoteSourceConfig = {
@@ -134,6 +145,7 @@ const BUILDER_CONFIGS: Record<UniversalLearningContainerType, ContainerBuilderCo
     supplierIdColumn: "supplier_id",
     actorUserIdColumn: "created_by",
     statusColumns: ["status", "source"],
+    cursorTimestampNormalizer: normalizeSupplierBillUclTimestamp,
     childCollections: [
       { key: "lines", table: "supplier_invoice_lines", ownerColumn: "supplier_invoice_id", orderColumn: "sort_order" },
       { key: "documents", table: "supplier_invoice_documents", ownerColumn: "supplier_invoice_id", cursorColumn: "created_at", orderColumn: "created_at" },
@@ -147,7 +159,7 @@ const BUILDER_CONFIGS: Record<UniversalLearningContainerType, ContainerBuilderCo
     projectIdColumn: "project_id",
     supplierIdColumn: undefined,
     actorUserIdColumn: "approved_by_user_id",
-    statusColumns: ["review_status", "approval_status", "allocation_status", "match_status", "classification_status"],
+    statusColumns: ["review_status", "approval_status", "allocation_status", "match_status"],
     childCollections: [
       {
         key: "actualCostEvents",
@@ -184,7 +196,22 @@ const BUILDER_CONFIGS: Record<UniversalLearningContainerType, ContainerBuilderCo
     projectIdColumn: "project_id",
     actorUserIdColumn: "created_by",
     statusColumns: ["status", "claim_type"],
-    childCollections: [{ key: "lineItems", table: "project_claim_line_items", ownerColumn: "claim_id", orderColumn: "sort_order" }],
+    cursorTimestampNormalizer: normalizeSupplierBillUclTimestamp,
+    childCollections: [
+      { key: "lineItems", table: "project_claim_line_items", ownerColumn: "claim_id", orderColumn: "sort_order" },
+      {
+        key: "retentionAllocations",
+        table: "retention_claim_allocations",
+        ownerColumn: "originating_payment_claim_id",
+        orderColumn: "allocation_sequence",
+      },
+      {
+        key: "accountingDocuments",
+        table: "organization_accounting_documents",
+        ownerColumn: "project_claim_id",
+        orderColumn: "updated_at",
+      },
+    ],
   },
   project_time_sheet_entry: {
     ownerTable: "project_time_sheet_entries",
@@ -371,9 +398,8 @@ function extractRoutingContext(row: JsonRecord, children: Record<string, JsonRec
     "cost_code_id",
     "tradesstack_cost_code",
     "tradesstack_cost_code_label",
-    "work_type",
-    "cost_type",
-    "internal_cost_code",
+    "financial_routing_confidence",
+    "financial_routing_source",
   ];
 
   for (const key of keys) {
@@ -469,6 +495,83 @@ async function selectChangedOwnerIds(input: {
     }
   }
 
+  if (input.config.ownerTable === "project_claims" && ownerIds.size < input.limit) {
+    const dependencyStart =
+      input.cursor.updatedAt && input.cursor.updatedAt > input.reviewWindow.start
+        ? input.cursor.updatedAt
+        : input.reviewWindow.start;
+    const loadChangedIds = async (table: string) => {
+      const result = await input.admin
+        .from(table)
+        .select("id")
+        .eq("organization_id", input.organizationId)
+        .gte("updated_at", dependencyStart)
+        .lt("updated_at", input.reviewWindow.end)
+        .order("updated_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(input.limit);
+      if (result.error) throw new Error(result.error.message);
+      return uniqueNonEmpty(
+        toArray(result.data as JsonRecord[] | null).map((row) => toStringOrNull(row.id)),
+      );
+    };
+    const [quoteIds, variationIds, projectIds, clientIds] = await Promise.all([
+      loadChangedIds("project_quotes"),
+      loadChangedIds("project_variations"),
+      loadChangedIds("organization_projects"),
+      loadChangedIds("organization_clients"),
+    ]);
+
+    const sourceDocumentIds = [...quoteIds, ...variationIds];
+    if (sourceDocumentIds.length > 0) {
+      const lineResult = await input.admin
+        .from("project_claim_line_items")
+        .select("claim_id,source_document_id")
+        .eq("organization_id", input.organizationId)
+        .in("source_document_id", sourceDocumentIds)
+        .limit(input.limit);
+      if (lineResult.error) throw new Error(lineResult.error.message);
+      for (const row of toArray(lineResult.data as JsonRecord[] | null)) {
+        const claimId = toStringOrNull(row.claim_id);
+        if (claimId) ownerIds.add(claimId);
+      }
+    }
+
+    const changedProjectIds = new Set(projectIds);
+    if (clientIds.length > 0) {
+      const projectResult = await input.admin
+        .from("organization_projects")
+        .select("id")
+        .eq("organization_id", input.organizationId)
+        .in("client_id", clientIds)
+        .limit(input.limit);
+      if (projectResult.error) throw new Error(projectResult.error.message);
+      for (const row of toArray(projectResult.data as JsonRecord[] | null)) {
+        const projectId = toStringOrNull(row.id);
+        if (projectId) changedProjectIds.add(projectId);
+      }
+    }
+    if (changedProjectIds.size > 0) {
+      const claimResult = await input.admin
+        .from("project_claims")
+        .select("id")
+        .eq("organization_id", input.organizationId)
+        .in("project_id", [...changedProjectIds])
+        .limit(input.limit);
+      if (claimResult.error) throw new Error(claimResult.error.message);
+      for (const row of toArray(claimResult.data as JsonRecord[] | null)) {
+        const claimId = toStringOrNull(row.id);
+        if (claimId) ownerIds.add(claimId);
+      }
+    }
+  }
+
+  if (input.config.ownerTable === "project_claims" && ownerIds.size >= input.limit) {
+    throw new Error(
+      `Payment Claim UCL monthly candidate safety limit (${input.limit}) was reached. The cursor was not advanced; increase the bounded candidate scan or split the review window before retrying.`,
+    );
+  }
+
   return Array.from(ownerIds).slice(0, input.limit);
 }
 
@@ -558,8 +661,20 @@ type ProjectVariationEnrichment = {
 type SupplierInvoiceEnrichment = {
   suppliersById: Map<string, JsonRecord>;
   purchaseOrdersById: Map<string, JsonRecord>;
+  purchaseOrderLinesById: Map<string, JsonRecord>;
   projectsById: Map<string, JsonRecord>;
   clientsById: Map<string, JsonRecord>;
+  extractionsByInvoiceId: Map<string, JsonRecord[]>;
+  commercialApprovalsByInvoiceId: Map<string, JsonRecord[]>;
+  commercialSnapshotsByInvoiceId: Map<string, JsonRecord[]>;
+  historicalApprovedSnapshotsByPurchaseOrderLineId: Map<string, JsonRecord[]>;
+  commercialVariancesByInvoiceId: Map<string, JsonRecord[]>;
+  siteReviewSubmissionsByInvoiceId: Map<string, JsonRecord[]>;
+  siteReviewDecisionsByInvoiceId: Map<string, JsonRecord[]>;
+  accountsApprovalsByInvoiceId: Map<string, JsonRecord[]>;
+  activityEventsByInvoiceId: Map<string, JsonRecord[]>;
+  accountingDocumentsByInvoiceId: Map<string, JsonRecord[]>;
+  accountingDocumentLinesByVersionId: Map<string, JsonRecord[]>;
 };
 
 type SupplierInvoiceAllocationEnrichment = {
@@ -592,6 +707,7 @@ type ProjectActualCostEventEnrichment = {
 
 type OrganizationMaterialEnrichment = {
   suppliersById: Map<string, JsonRecord>;
+  supplierProductsById: Map<string, JsonRecord>;
   importBatchesById: Map<string, JsonRecord>;
   importRowsByMaterialId: Map<string, JsonRecord[]>;
 };
@@ -1089,6 +1205,7 @@ async function loadSupplierInvoiceEnrichment(input: {
   ownerRows: JsonRecord[];
   childCollections: Map<string, Record<string, JsonRecord[]>>;
 }): Promise<SupplierInvoiceEnrichment> {
+  const invoiceIds = uniqueNonEmpty(input.ownerRows.map((row) => toStringOrNull(row.id)));
   const supplierIds = uniqueNonEmpty(input.ownerRows.map((row) => toStringOrNull(row.supplier_id)));
   const lineRows = Object.values(input.childCollections.get("lines") ?? {}).flat();
   const matchRows = Object.values(input.childCollections.get("matches") ?? {}).flat();
@@ -1100,8 +1217,26 @@ async function loadSupplierInvoiceEnrichment(input: {
     ...allocationRows.map((row) => toStringOrNull(row.purchase_order_id)),
     ...actualCostEventRows.map((row) => toStringOrNull(row.purchase_order_id)),
   ]);
+  const purchaseOrderLineIds = uniqueNonEmpty([
+    ...allocationRows.map((row) => toStringOrNull(row.purchase_order_line_item_id)),
+    ...actualCostEventRows.map((row) => toStringOrNull(row.purchase_order_line_item_id)),
+  ]);
 
-  const [supplierResult, purchaseOrderResult] = await Promise.all([
+  const [
+    supplierResult,
+    purchaseOrderResult,
+    purchaseOrderLineResult,
+    extractionResult,
+    commercialApprovalResult,
+    commercialSnapshotResult,
+    historicalSnapshotResult,
+    commercialVarianceResult,
+    siteReviewSubmissionResult,
+    siteReviewDecisionResult,
+    accountsApprovalResult,
+    activityEventResult,
+    accountingDocumentResult,
+  ] = await Promise.all([
     supplierIds.length > 0
       ? input.admin
         .from("organization_suppliers")
@@ -1112,16 +1247,145 @@ async function loadSupplierInvoiceEnrichment(input: {
     purchaseOrderIds.length > 0
       ? input.admin
         .from("project_purchase_orders")
-        .select("id,organization_id,project_id,purchase_order_number,purchase_order_title,status,supplier_id,issued_to_label,supplier_name_snapshot,updated_at")
+        .select("id,organization_id,project_id,purchase_order_number,purchase_order_title,status,supplier_id,issued_to_label,supplier_name_snapshot,total_purchase_order_price,updated_at")
         .eq("organization_id", input.organizationId)
         .in("id", purchaseOrderIds)
+      : Promise.resolve({ data: [], error: null }),
+    purchaseOrderLineIds.length > 0
+      ? input.admin
+        .from("project_purchase_order_line_items")
+        .select("id,organization_id,purchase_order_id,project_id,description,quantity,rate,total,sort_order,created_at,updated_at")
+        .eq("organization_id", input.organizationId)
+        .in("id", purchaseOrderLineIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_document_extractions")
+        .select("id,organization_id,supplier_invoice_id,supplier_invoice_document_id,attempt_number,status,schema_version,warnings_json,error_code,created_at,started_at,completed_at,updated_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_commercial_approvals")
+        .select("id,organization_id,supplier_invoice_id,status,reviewed_at,created_at,invalidated_at,invalidation_reason,invalidation_source")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_commercial_line_snapshots")
+        .select("id,organization_id,supplier_invoice_id,supplier_invoice_line_id,commercial_approval_id,allocation_id,project_id,purchase_order_id,purchase_order_line_item_id,accounting_mapping_id,accounting_tax_rate_id,tax_resolution_status,quantity,unit_rate,amount,tax_amount,created_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    purchaseOrderLineIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_commercial_line_snapshots")
+        .select("id,organization_id,supplier_invoice_id,supplier_invoice_line_id,commercial_approval_id,purchase_order_id,purchase_order_line_item_id,quantity,amount,created_at")
+        .eq("organization_id", input.organizationId)
+        .in("purchase_order_line_item_id", purchaseOrderLineIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_commercial_variances")
+        .select("id,organization_id,supplier_invoice_id,commercial_approval_id,purchase_order_line_item_id,variance_key,variance_type,severity,variance_amount,accepted_at,created_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_site_review_submissions")
+        .select("id,organization_id,supplier_invoice_id,status,submitted_at,invalidated_at,invalidation_reason,created_at,updated_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_site_review_decisions")
+        .select("id,organization_id,supplier_invoice_id,submission_id,project_id,purchase_order_id,decision,reviewed_at,invalidated_at,invalidation_reason,created_at,updated_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_accounts_approvals")
+        .select("id,organization_id,supplier_invoice_id,site_review_submission_id,status,approved_at,invalidated_at,invalidation_reason,created_at,updated_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("supplier_invoice_activity_events")
+        .select("id,organization_id,supplier_invoice_id,event_type,created_at")
+        .eq("organization_id", input.organizationId)
+        .in("supplier_invoice_id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    invoiceIds.length > 0
+      ? input.admin
+        .from("organization_accounting_documents")
+        .select("id,organization_id,local_document_id,local_document_type,current_version_id,export_status,external_document_id,external_document_number,attachment_status,exported_at,last_synced_at,last_status_synced_at,last_error_code,last_status_sync_error,normalized_external_status,amount_paid,amount_due,fully_paid_at,created_at,updated_at")
+        .eq("organization_id", input.organizationId)
+        .eq("local_document_type", "supplier_invoice")
+        .in("local_document_id", invoiceIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (supplierResult.error) throw new Error(supplierResult.error.message);
   if (purchaseOrderResult.error) throw new Error(purchaseOrderResult.error.message);
+  if (purchaseOrderLineResult.error) throw new Error(purchaseOrderLineResult.error.message);
+  if (extractionResult.error) throw new Error(extractionResult.error.message);
+  if (commercialApprovalResult.error) throw new Error(commercialApprovalResult.error.message);
+  if (commercialSnapshotResult.error) throw new Error(commercialSnapshotResult.error.message);
+  if (historicalSnapshotResult.error) throw new Error(historicalSnapshotResult.error.message);
+  if (commercialVarianceResult.error) throw new Error(commercialVarianceResult.error.message);
+  if (siteReviewSubmissionResult.error) throw new Error(siteReviewSubmissionResult.error.message);
+  if (siteReviewDecisionResult.error) throw new Error(siteReviewDecisionResult.error.message);
+  if (accountsApprovalResult.error) throw new Error(accountsApprovalResult.error.message);
+  if (activityEventResult.error) throw new Error(activityEventResult.error.message);
+  if (accountingDocumentResult.error) throw new Error(accountingDocumentResult.error.message);
 
   const purchaseOrders = toArray(purchaseOrderResult.data as JsonRecord[] | null).map(toRecord);
+  const purchaseOrderLines = toArray(purchaseOrderLineResult.data as JsonRecord[] | null).map(toRecord);
+  const accountingDocuments = toArray(accountingDocumentResult.data as JsonRecord[] | null).map(toRecord);
+  const accountingVersionIds = uniqueNonEmpty(
+    accountingDocuments.map((row) => toStringOrNull(row.current_version_id)),
+  );
+  const accountingDocumentLineResult = accountingVersionIds.length > 0
+    ? await input.admin
+      .from("organization_accounting_document_lines")
+      .select("id,organization_id,version_id,source_invoice_line_id,source_allocation_id,organization_cost_code_id,accounting_mapping_id,project_id,purchase_order_id,purchase_order_line_item_id,routing_code,xero_account_code,xero_tax_type,sequence,created_at")
+      .eq("organization_id", input.organizationId)
+      .in("version_id", accountingVersionIds)
+    : { data: [], error: null };
+  if (accountingDocumentLineResult.error) throw new Error(accountingDocumentLineResult.error.message);
+
+  const historicalSnapshots = toArray(historicalSnapshotResult.data as JsonRecord[] | null).map(toRecord);
+  const historicalApprovalIds = uniqueNonEmpty(
+    historicalSnapshots.map((row) => toStringOrNull(row.commercial_approval_id)),
+  );
+  const historicalApprovalResult = historicalApprovalIds.length > 0
+    ? await input.admin
+      .from("supplier_invoice_commercial_approvals")
+      .select("id,organization_id,status,invalidated_at")
+      .eq("organization_id", input.organizationId)
+      .in("id", historicalApprovalIds)
+    : { data: [], error: null };
+  if (historicalApprovalResult.error) throw new Error(historicalApprovalResult.error.message);
+  const approvedHistoricalApprovalIds = new Set(
+    toArray(historicalApprovalResult.data as JsonRecord[] | null)
+      .map(toRecord)
+      .filter((row) =>
+        toStringOrNull(row.status)?.toLowerCase() === "approved"
+        && !toIsoOrNull(row.invalidated_at),
+      )
+      .map((row) => String(row.id)),
+  );
+  const approvedHistoricalSnapshots = historicalSnapshots.filter((row) => {
+    const approvalId = toStringOrNull(row.commercial_approval_id);
+    return approvalId ? approvedHistoricalApprovalIds.has(approvalId) : false;
+  });
+
   const projectIds = uniqueNonEmpty([
     ...lineRows.map((row) => toStringOrNull(row.project_id)),
     ...allocationRows.map((row) => toStringOrNull(row.project_id)),
@@ -1151,11 +1415,39 @@ async function loadSupplierInvoiceEnrichment(input: {
 
   if (clientResult.error) throw new Error(clientResult.error.message);
 
+  const groupBy = (rows: JsonRecord[], key: string) => {
+    const grouped = new Map<string, JsonRecord[]>();
+    for (const row of rows) {
+      const value = toStringOrNull(row[key]);
+      if (value) grouped.set(value, [...(grouped.get(value) ?? []), row]);
+    }
+    return grouped;
+  };
+  const toRows = (value: unknown) => toArray(value as JsonRecord[] | null).map(toRecord);
+
   return {
     suppliersById: new Map(toArray(supplierResult.data as JsonRecord[] | null).map(toRecord).map((row) => [String(row.id), row])),
     purchaseOrdersById: new Map(purchaseOrders.map((row) => [String(row.id), row])),
+    purchaseOrderLinesById: new Map(purchaseOrderLines.map((row) => [String(row.id), row])),
     projectsById: new Map(projects.map((row) => [String(row.id), row])),
     clientsById: new Map(toArray(clientResult.data as JsonRecord[] | null).map(toRecord).map((row) => [String(row.id), row])),
+    extractionsByInvoiceId: groupBy(toRows(extractionResult.data), "supplier_invoice_id"),
+    commercialApprovalsByInvoiceId: groupBy(toRows(commercialApprovalResult.data), "supplier_invoice_id"),
+    commercialSnapshotsByInvoiceId: groupBy(toRows(commercialSnapshotResult.data), "supplier_invoice_id"),
+    historicalApprovedSnapshotsByPurchaseOrderLineId: groupBy(
+      approvedHistoricalSnapshots,
+      "purchase_order_line_item_id",
+    ),
+    commercialVariancesByInvoiceId: groupBy(toRows(commercialVarianceResult.data), "supplier_invoice_id"),
+    siteReviewSubmissionsByInvoiceId: groupBy(toRows(siteReviewSubmissionResult.data), "supplier_invoice_id"),
+    siteReviewDecisionsByInvoiceId: groupBy(toRows(siteReviewDecisionResult.data), "supplier_invoice_id"),
+    accountsApprovalsByInvoiceId: groupBy(toRows(accountsApprovalResult.data), "supplier_invoice_id"),
+    activityEventsByInvoiceId: groupBy(toRows(activityEventResult.data), "supplier_invoice_id"),
+    accountingDocumentsByInvoiceId: groupBy(accountingDocuments, "local_document_id"),
+    accountingDocumentLinesByVersionId: groupBy(
+      toRows(accountingDocumentLineResult.data),
+      "version_id",
+    ),
   };
 }
 
@@ -1526,13 +1818,20 @@ async function loadOrganizationMaterialEnrichment(input: {
   const supplierIds = uniqueNonEmpty(supplierPrices.map((row) => toStringOrNull(row.supplier_id)));
   const importBatchIds = uniqueNonEmpty(supplierPrices.map((row) => toStringOrNull(row.import_batch_id)));
 
-  const [supplierResult, importBatchResult, importRowResult] = await Promise.all([
+  const [supplierResult, supplierProductResult, importBatchResult, importRowResult] = await Promise.all([
     supplierIds.length > 0
       ? input.admin
         .from("organization_suppliers")
         .select("id,organization_id,name,company_name,legal_name,is_active,source,created_at,updated_at")
         .eq("organization_id", input.organizationId)
         .in("id", supplierIds)
+      : Promise.resolve({ data: [], error: null }),
+    materialIds.length > 0
+      ? input.admin
+        .from("organization_material_supplier_products")
+        .select("id,organization_id,material_id,supplier_id,is_preferred,is_active,archived_at,identity_status,supplier_sku,supplier_description,supplier_unit,pack_quantity,pack_unit")
+        .eq("organization_id", input.organizationId)
+        .in("material_id", materialIds)
       : Promise.resolve({ data: [], error: null }),
     importBatchIds.length > 0
       ? input.admin
@@ -1551,6 +1850,7 @@ async function loadOrganizationMaterialEnrichment(input: {
   ]);
 
   if (supplierResult.error) throw new Error(supplierResult.error.message);
+  if (supplierProductResult.error) throw new Error(supplierProductResult.error.message);
   if (importBatchResult.error) throw new Error(importBatchResult.error.message);
   if (importRowResult.error) throw new Error(importRowResult.error.message);
 
@@ -1570,6 +1870,7 @@ async function loadOrganizationMaterialEnrichment(input: {
 
   return {
     suppliersById: new Map(toArray(supplierResult.data as JsonRecord[] | null).map(toRecord).map((row) => [String(row.id), row])),
+    supplierProductsById: new Map(toArray(supplierProductResult.data as JsonRecord[] | null).map(toRecord).map((row) => [String(row.id), row])),
     importBatchesById: new Map(toArray(importBatchResult.data as JsonRecord[] | null).map(toRecord).map((row) => [String(row.id), row])),
     importRowsByMaterialId,
   };
@@ -3383,8 +3684,9 @@ function buildProjectVariationSummary(input: {
 }
 
 function buildSupplierInvoiceSupplierContext(row: JsonRecord, enrichment: SupplierInvoiceEnrichment) {
-  const supplierId = toStringOrNull(row.supplier_id);
-  const supplier = supplierId ? enrichment.suppliersById.get(supplierId) ?? null : null;
+  const storedSupplierId = toStringOrNull(row.supplier_id);
+  const supplier = storedSupplierId ? enrichment.suppliersById.get(storedSupplierId) ?? null : null;
+  const supplierId = supplier ? storedSupplierId : null;
   const supplierName =
     toStringOrNull(supplier?.company_name)
     ?? toStringOrNull(supplier?.name)
@@ -3714,37 +4016,6 @@ function buildProjectQuoteLineEvidence(line: JsonRecord) {
   };
 }
 
-function buildSupplierInvoiceLineEvidence(line: JsonRecord) {
-  return {
-    lineItemId: toStringOrNull(line.id),
-    description: toStringOrNull(line.description),
-    quantity: typeof line.quantity === "number" ? line.quantity : null,
-    unitPrice: typeof line.unit_price === "number" ? line.unit_price : null,
-    lineTotal: typeof line.line_total === "number" ? line.line_total : null,
-    taxAmount: typeof line.tax_amount === "number" ? line.tax_amount : null,
-  };
-}
-
-function buildProjectClaimLineEvidence(line: JsonRecord) {
-  return {
-    claimLineItemId: toStringOrNull(line.id),
-    sourceKind: toStringOrNull(line.source_kind),
-    sourceDocumentId: toStringOrNull(line.source_document_id),
-    sourceLineItemId: toStringOrNull(line.source_line_item_id),
-    sourceNumber: toStringOrNull(line.source_number),
-    sourceTitle: toStringOrNull(line.source_title),
-    description: toStringOrNull(line.description),
-    quantity: typeof line.quantity === "number" ? line.quantity : null,
-    unit: toStringOrNull(line.unit),
-    rate: typeof line.rate === "number" ? line.rate : null,
-    sourceTotal: typeof line.source_total === "number" ? line.source_total : null,
-    previouslyClaimedAmount: typeof line.previously_claimed_amount === "number" ? line.previously_claimed_amount : null,
-    currentClaimPercent: typeof line.claim_percent === "number" ? line.claim_percent : null,
-    currentClaimAmount: typeof line.claim_amount === "number" ? line.claim_amount : null,
-    cumulativeClaimedAmount: typeof line.cumulative_claimed_amount === "number" ? line.cumulative_claimed_amount : null,
-  };
-}
-
 function getProjectPurchaseOrderLineTotal(line: JsonRecord) {
   return toNumberOrZero(line.total)
     || toNumberOrZero(line.line_total)
@@ -3874,382 +4145,8 @@ function countCompletedChecks(value: unknown) {
   return Object.values(record).filter((entry) => entry === true).length;
 }
 
-function buildSupplierInvoiceLifecycleStage(input: {
-  invoiceStatus: string | null;
-  activeMatchCount: number;
-  approvedMatchCount: number;
-  disputedMatchCount: number;
-  allocationCount: number;
-  approvedAllocationCount: number;
-  postedEventCount: number;
-  reversalCount: number;
-}) {
-  if (input.reversalCount > 0) {
-    return "corrected";
-  }
-  if (input.disputedMatchCount > 0 || input.invoiceStatus?.toLowerCase() === "disputed") {
-    return "disputed";
-  }
-  if (input.postedEventCount > 0) {
-    return "posted";
-  }
-  if (input.approvedAllocationCount > 0 || input.approvedMatchCount > 0 || input.invoiceStatus?.toLowerCase() === "approved") {
-    return "approved_pending_posting";
-  }
-  if (input.allocationCount > 0) {
-    return "allocated";
-  }
-  if (input.activeMatchCount > 0) {
-    return "matched_pending_approval";
-  }
-  if (input.invoiceStatus?.toLowerCase() === "needs review") {
-    return "captured_pending_match";
-  }
-  return "captured";
-}
-
-function buildSupplierInvoiceSummary(input: {
-  row: JsonRecord;
-  lines: JsonRecord[];
-  documents: JsonRecord[];
-  matches: JsonRecord[];
-  allocations: JsonRecord[];
-  actualCostEvents: JsonRecord[];
-  supplierContext: ReturnType<typeof buildSupplierInvoiceSupplierContext>;
-}) {
-  const projectIds = new Set<string>();
-  const purchaseOrderIds = new Set<string>();
-  const purchaseOrderLineIds = new Set<string>();
-  const documentTypes = new Set<string>();
-  const allocationGroupsByLineId = new Map<string, number>();
-  let activeMatchCount = 0;
-  let approvedMatchCount = 0;
-  let disputedMatchCount = 0;
-  let pendingMatchCount = 0;
-  let approvedMatchChecksCompleteCount = 0;
-  let allocationCount = input.allocations.length;
-  let approvedAllocationCount = 0;
-  let disputedAllocationCount = 0;
-  let unmatchedAllocationCount = 0;
-  let splitAllocationLineCount = 0;
-  let approvedAllocationAmount = 0;
-  let postedEventCount = 0;
-  let postedAmount = 0;
-  let reversalCount = 0;
-  let correctionRootCount = 0;
-
-  for (const line of input.lines) {
-    addUniqueValue(projectIds, toStringOrNull(line.project_id));
-  }
-
-  for (const document of input.documents) {
-    addUniqueValue(documentTypes, toStringOrNull(document.document_type));
-  }
-
-  for (const match of input.matches) {
-    const matchStatus = toStringOrNull(match.match_status)?.toLowerCase();
-    if (matchStatus === "accepted" || matchStatus === "adjusted") {
-      activeMatchCount += 1;
-      addUniqueValue(purchaseOrderIds, toStringOrNull(match.purchase_order_id));
-      const approvalStatus = toStringOrNull(match.approval_status)?.toLowerCase();
-      if (approvalStatus === "approved") {
-        approvedMatchCount += 1;
-        approvedMatchChecksCompleteCount += countCompletedChecks(match.approval_checks_json);
-      } else if (approvalStatus === "disputed") {
-        disputedMatchCount += 1;
-      } else {
-        pendingMatchCount += 1;
-      }
-    }
-  }
-
-  for (const allocation of input.allocations) {
-    addUniqueValue(projectIds, toStringOrNull(allocation.project_id));
-    addUniqueValue(purchaseOrderIds, toStringOrNull(allocation.purchase_order_id));
-    addUniqueValue(purchaseOrderLineIds, toStringOrNull(allocation.purchase_order_line_item_id));
-
-    const lineId = toStringOrNull(allocation.supplier_invoice_line_id);
-    if (lineId) {
-      allocationGroupsByLineId.set(lineId, (allocationGroupsByLineId.get(lineId) ?? 0) + 1);
-    }
-
-    const approvalStatus = toStringOrNull(allocation.approval_status)?.toLowerCase();
-    if (approvalStatus === "approved") {
-      approvedAllocationCount += 1;
-      approvedAllocationAmount += toNumberOrZero(allocation.allocated_amount);
-    } else if (approvalStatus === "disputed") {
-      disputedAllocationCount += 1;
-    }
-
-    const allocationStatus = toStringOrNull(allocation.allocation_status)?.toLowerCase();
-    if (allocationStatus === "unmatched") {
-      unmatchedAllocationCount += 1;
-    }
-  }
-
-  for (const count of allocationGroupsByLineId.values()) {
-    if (count > 1) {
-      splitAllocationLineCount += 1;
-    }
-  }
-
-  for (const event of input.actualCostEvents) {
-    addUniqueValue(projectIds, toStringOrNull(event.project_id));
-    addUniqueValue(purchaseOrderIds, toStringOrNull(event.purchase_order_id));
-    addUniqueValue(purchaseOrderLineIds, toStringOrNull(event.purchase_order_line_item_id));
-    const eventType = toStringOrNull(event.event_type)?.toLowerCase() ?? "posting";
-    const eventStatus = toStringOrNull(event.event_status)?.toLowerCase();
-    if (eventType === "reversal") {
-      reversalCount += 1;
-    }
-    if (eventType === "posting" && eventStatus === "posted") {
-      postedEventCount += 1;
-      postedAmount += toNumberOrZero(event.total_amount);
-    }
-    if (toStringOrNull(event.correction_root_event_id)) {
-      correctionRootCount += 1;
-    }
-  }
-
-  const lineCount = input.lines.length;
-  const hasSupplier = Boolean(input.supplierContext.supplierId || input.supplierContext.supplierName);
-  const hasProject = projectIds.size > 0;
-  const hasPOReference = purchaseOrderIds.size > 0;
-  const hasAllocations = allocationCount > 0;
-  const total = toNumberOrZero(input.row.total);
-  const hasUsefulLineItems = lineCount > 0 && input.lines.some((line) => Boolean(toStringOrNull(line.description)));
-  const hasDocument = input.documents.length > 0 || Boolean(toStringOrNull(input.row.document_file_path));
-  const approvalComplete = activeMatchCount > 0 && approvedMatchCount === activeMatchCount;
-  const allocatedLineCount = new Set(uniqueNonEmpty(input.allocations.map((row) => toStringOrNull(row.supplier_invoice_line_id)))).size;
-  const fullyAllocated = lineCount > 0 && allocatedLineCount >= lineCount;
-  const unpostedApprovedAllocationCount = Math.max(0, approvedAllocationCount - postedEventCount);
-  const fullyPosted = approvedAllocationCount > 0 && postedEventCount >= approvedAllocationCount;
-  const invoiceStatus = toStringOrNull(input.row.status);
-
-  let evidenceStrength: UniversalLearningRecordStrength = "normal";
-  if (!hasSupplier || !hasUsefulLineItems || total <= 0) {
-    evidenceStrength = "weak";
-  } else if (approvalComplete && hasAllocations && (fullyPosted || postedEventCount > 0 || approvedAllocationCount > 0)) {
-    evidenceStrength = "strong";
-  }
-
-  return {
-    lineCount,
-    hasSupplier,
-    hasProject,
-    hasPOReference,
-    hasAllocations,
-    documentCount: input.documents.length,
-    documentTypes: Array.from(documentTypes).sort(),
-    hasDocument,
-    activeMatchCount,
-    approvedMatchCount,
-    disputedMatchCount,
-    pendingMatchCount,
-    approvedMatchChecksCompleteCount,
-    allocationCount,
-    allocatedLineCount,
-    approvedAllocationCount,
-    disputedAllocationCount,
-    unmatchedAllocationCount,
-    splitAllocationLineCount,
-    approvedAllocationAmount,
-    fullyAllocated,
-    postedEventCount,
-    postedAmount,
-    reversalCount,
-    correctionRootCount,
-    unpostedApprovedAllocationCount,
-    fullyPosted,
-    lifecycleStage: buildSupplierInvoiceLifecycleStage({
-      invoiceStatus,
-      activeMatchCount,
-      approvedMatchCount,
-      disputedMatchCount,
-      allocationCount,
-      approvedAllocationCount,
-      postedEventCount,
-      reversalCount,
-    }),
-    disputeState: {
-      invoiceStatus,
-      hasDisputedMatches: disputedMatchCount > 0,
-      hasDisputedAllocations: disputedAllocationCount > 0,
-      hasReversals: reversalCount > 0,
-    },
-    evidenceStrength,
-  };
-}
-
 function toIsoString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function buildProjectClaimLifecycleStage(input: {
-  row: JsonRecord;
-  projectContext: ReturnType<typeof buildProjectClaimProjectContext>;
-  lineCount: number;
-}) {
-  const status = toStringOrNull(input.row.status)?.toLowerCase() ?? "";
-  if (!input.projectContext.projectId || !input.projectContext.clientId || input.lineCount === 0) {
-    return "incomplete_lineage";
-  }
-  if (status === "cancelled") return "cancelled";
-  if (status === "paid") return "paid";
-  if (status === "overdue") return "submitted_overdue";
-  if (status === "submitted" || status === "unpaid") return "submitted_unpaid";
-  return "draft";
-}
-
-function buildProjectClaimPaymentState(row: JsonRecord) {
-  const status = toStringOrNull(row.status)?.toLowerCase() ?? "";
-  const paidAmount = toNumberOrZero(row.paid_amount);
-  const totalPayable = toNumberOrZero(row.total_payable);
-
-  if (status === "paid" || (totalPayable > 0 && paidAmount >= totalPayable)) {
-    return "paid";
-  }
-  if (status === "overdue") {
-    return "overdue";
-  }
-  if (status === "submitted" || status === "unpaid") {
-    return "awaiting_payment";
-  }
-  if (status === "cancelled") {
-    return "cancelled";
-  }
-  return "draft";
-}
-
-function buildProjectClaimSummary(input: {
-  row: JsonRecord;
-  lineItems: JsonRecord[];
-  projectContext: ReturnType<typeof buildProjectClaimProjectContext>;
-  enrichment: ProjectClaimEnrichment;
-}) {
-  const claimId = toStringOrNull(input.row.id);
-  const quoteIds = new Set<string>();
-  const quoteLineIds = new Set<string>();
-  const variationIds = new Set<string>();
-  const variationLineIds = new Set<string>();
-  let quoteLineCount = 0;
-  let variationLineCount = 0;
-  let quoteClaimAmount = 0;
-  let variationClaimAmount = 0;
-  let claimedLineCount = 0;
-
-  for (const line of input.lineItems) {
-    const kind = toStringOrNull(line.source_kind)?.toLowerCase() ?? "";
-    const claimAmount = toNumberOrZero(line.claim_amount);
-    if (claimAmount > 0) {
-      claimedLineCount += 1;
-    }
-    if (kind === "quote") {
-      addUniqueValue(quoteIds, toStringOrNull(line.source_document_id));
-      addUniqueValue(quoteLineIds, toStringOrNull(line.source_line_item_id));
-      quoteLineCount += 1;
-      quoteClaimAmount += claimAmount;
-    } else if (kind === "variation") {
-      addUniqueValue(variationIds, toStringOrNull(line.source_document_id));
-      addUniqueValue(variationLineIds, toStringOrNull(line.source_line_item_id));
-      variationLineCount += 1;
-      variationClaimAmount += claimAmount;
-    }
-  }
-
-  const lineCount = input.lineItems.length;
-  const claimAmount = toNumberOrZero(input.row.claim_amount);
-  const linkedQuoteValue = toNumberOrZero(input.row.linked_quote_value);
-  const linkedApprovedVariations = toNumberOrZero(input.row.linked_approved_variations);
-  const revisedContractValue = toNumberOrZero(input.row.revised_contract_value);
-  const previousClaimsTotal = toNumberOrZero(input.row.previous_claims_total);
-  const retentionPercent = toNumberOrZero(input.row.retention_percent);
-  const retentionWithheldAmount = toNumberOrZero(input.row.retention_withheld_amount);
-  const retentionReleasedAmount = toNumberOrZero(input.row.retention_released_amount);
-  const lifecycleStage = buildProjectClaimLifecycleStage({
-    row: input.row,
-    projectContext: input.projectContext,
-    lineCount,
-  });
-  const paymentState = buildProjectClaimPaymentState(input.row);
-  const hasQuoteBasis = quoteIds.size > 0 || linkedQuoteValue > 0;
-  const hasVariationBasis = variationIds.size > 0 || linkedApprovedVariations > 0;
-  const commerciallyRecovered = claimAmount > 0 && revisedContractValue > 0;
-  const underRecovered = revisedContractValue > 0 && previousClaimsTotal + claimAmount < revisedContractValue;
-  const awaitingPayment = paymentState === "awaiting_payment" || paymentState === "overdue";
-  const mirroredCostItems = claimId ? input.enrichment.mirroredCostItemsByClaimId.get(claimId) ?? [] : [];
-  const hasRetention = retentionPercent > 0 || retentionWithheldAmount > 0 || retentionReleasedAmount > 0;
-
-  let evidenceStrength: UniversalLearningRecordStrength = "normal";
-  if (!input.projectContext.projectId || !input.projectContext.clientId || lineCount === 0 || claimAmount <= 0) {
-    evidenceStrength = "weak";
-  } else if ((paymentState === "paid" || lifecycleStage === "submitted_unpaid" || lifecycleStage === "submitted_overdue") && hasQuoteBasis) {
-    evidenceStrength = "strong";
-  }
-
-  return {
-    lineCount,
-    claimedLineCount,
-    quoteIds: Array.from(quoteIds).sort(),
-    quoteLineIds: Array.from(quoteLineIds).sort(),
-    variationIds: Array.from(variationIds).sort(),
-    variationLineIds: Array.from(variationLineIds).sort(),
-    quoteLineCount,
-    variationLineCount,
-    quoteClaimAmount,
-    variationClaimAmount,
-    hasQuoteBasis,
-    hasVariationBasis,
-    hasRetention,
-    lifecycleStage,
-    paymentState,
-    commerciallyRecovered,
-    underRecovered,
-    awaitingPayment,
-    evidenceStrength,
-    mirroredCostItemCount: mirroredCostItems.length,
-    retentionCompleteness: {
-      hasRetentionMethod: Boolean(toStringOrNull(input.row.retention_method)),
-      hasRetentionPercent: retentionPercent > 0,
-      hasRetentionBalance: typeof input.row.retention_balance === "number",
-      hasRetentionWithheldSnapshot: typeof input.row.retention_withheld_amount === "number",
-      hasRetentionReleasedSnapshot: typeof input.row.retention_released_amount === "number",
-      complete: hasRetention
-        ? Boolean(toStringOrNull(input.row.retention_method))
-          && typeof input.row.retention_balance === "number"
-          && typeof input.row.retention_held_to_date === "number"
-          && typeof input.row.retention_released_to_date === "number"
-        : true,
-    },
-    claimCompleteness: {
-      hasClaimDate: Boolean(toIsoOrNull(input.row.claim_date)),
-      hasDueDate: Boolean(toIsoOrNull(input.row.due_date)),
-      hasPeriodStart: Boolean(toIsoOrNull(input.row.period_start)),
-      hasPeriodEnd: Boolean(toIsoOrNull(input.row.period_end)),
-      hasCommercialValues: claimAmount > 0 && revisedContractValue > 0,
-      hasClaimLines: lineCount > 0,
-      hasSourceBasis: hasQuoteBasis || hasVariationBasis,
-      complete: Boolean(toIsoOrNull(input.row.claim_date))
-        && lineCount > 0
-        && claimAmount > 0
-        && (hasQuoteBasis || hasVariationBasis),
-    },
-    chronologyCompleteness: {
-      hasClaimDate: Boolean(toIsoOrNull(input.row.claim_date)),
-      hasUpdatedAt: Boolean(toIsoOrNull(input.row.updated_at)),
-      hasPreviousClaimsSnapshot: typeof input.row.previous_claims_total === "number",
-      orderedRecoveryBasis: previousClaimsTotal <= revisedContractValue || revisedContractValue <= 0,
-      complete: Boolean(toIsoOrNull(input.row.claim_date))
-        && Boolean(toIsoOrNull(input.row.updated_at))
-        && typeof input.row.previous_claims_total === "number",
-    },
-    sourceMixSummary: {
-      quoteLineCount,
-      variationLineCount,
-      quoteClaimAmount,
-      variationClaimAmount,
-    },
-  };
 }
 
 function diffDurationSummary(from: string | null, to: string | null) {
@@ -4619,20 +4516,6 @@ function buildProjectVariationReadOnlyRoutingContext(mirroredCostItems: JsonReco
     ...(accountingMappingIds.length > 0 ? { accounting_mapping_idValues: accountingMappingIds } : {}),
     ...(organizationCostCodeIds.length > 0 ? { organization_cost_code_idValues: organizationCostCodeIds } : {}),
   };
-}
-
-function buildSupplierInvoiceReadOnlyRoutingContext(input: {
-  allocations: JsonRecord[];
-  actualCostEvents: JsonRecord[];
-}) {
-  const context: JsonRecord = { readOnly: true };
-  for (const row of [...input.allocations, ...input.actualCostEvents]) {
-    appendUniqueValue(context, "tradesstack_cost_codeValues", row.tradesstack_cost_code);
-    appendUniqueValue(context, "tradesstack_cost_code_labelValues", row.tradesstack_cost_code_label);
-    appendUniqueValue(context, "accounting_mapping_idValues", row.accounting_mapping_id);
-    appendUniqueValue(context, "organization_cost_code_idValues", row.organization_cost_code_id);
-  }
-  return context;
 }
 
 function buildSupplierInvoiceAllocationReadOnlyRoutingContext(row: JsonRecord) {
@@ -5425,20 +5308,35 @@ function buildOrganizationMaterialSummary(input: {
   importRows: JsonRecord[];
   enrichment: OrganizationMaterialEnrichment;
 }) {
+  const effectivePriceByProduct = resolveEffectivePriceRows({
+    prices: input.supplierPrices as unknown as OrganizationMaterialSupplierPriceRow[],
+    evaluationTime: new Date(),
+  });
+  const effectivePriceIds = new Set(
+    [...effectivePriceByProduct.entries()].flatMap(([supplierProductId, price]) => {
+      const supplierProduct = input.enrichment.supplierProductsById.get(supplierProductId);
+      return supplierProduct?.is_active === true && !toIsoOrNull(supplierProduct.archived_at)
+        ? [price.id]
+        : [];
+    })
+  );
+  const productIsPreferred = (price: JsonRecord) =>
+    input.enrichment.supplierProductsById.get(toStringOrNull(price.supplier_product_id) ?? "")
+      ?.is_preferred === true;
   const currentSupplierPrices = input.supplierPrices
-    .filter((price) => price.is_current === true)
+    .filter((price) => effectivePriceIds.has(toStringOrNull(price.id) ?? ""))
     .slice()
     .sort((left, right) =>
-      Number(right.is_preferred === true) - Number(left.is_preferred === true)
+      Number(productIsPreferred(right)) - Number(productIsPreferred(left))
       || String(right.updated_at ?? right.effective_from ?? "").localeCompare(String(left.updated_at ?? left.effective_from ?? ""))
       || String(left.id ?? "").localeCompare(String(right.id ?? "")));
   const historicalSupplierPrices = input.supplierPrices
-    .filter((price) => price.is_current !== true)
+    .filter((price) => !effectivePriceIds.has(toStringOrNull(price.id) ?? ""))
     .slice()
     .sort((left, right) =>
       String(right.effective_to ?? right.updated_at ?? "").localeCompare(String(left.effective_to ?? left.updated_at ?? ""))
       || String(left.id ?? "").localeCompare(String(right.id ?? "")));
-  const preferredSupplierPrices = currentSupplierPrices.filter((price) => price.is_preferred === true);
+  const preferredSupplierPrices = currentSupplierPrices.filter(productIsPreferred);
   const reviewedImportRows = input.importRows.filter((row) =>
     Boolean(toIsoOrNull(row.reviewed_at)) || ["approved", "rejected"].includes((toStringOrNull(row.status)?.toLowerCase() ?? "")));
   const approvedImportRows = reviewedImportRows.filter((row) => (toStringOrNull(row.status)?.toLowerCase() ?? "") === "approved");
@@ -5868,8 +5766,11 @@ function buildOrganizationMaterialTrustBoundaryPayload(input: {
       unit: toStringOrNull(price.unit),
       currency: toStringOrNull(price.currency),
       effectiveFrom: toIsoOrNull(price.effective_from),
-      isCurrent: price.is_current === true,
-      isPreferred: price.is_preferred === true,
+      isCurrent: true,
+      isPreferred:
+        input.enrichment.supplierProductsById.get(
+          toStringOrNull(price.supplier_product_id) ?? ""
+        )?.is_preferred === true,
       priceSource: toStringOrNull(price.source),
       priceSourceType: summarizeOrganizationMaterialPriceSource(toStringOrNull(price.source)),
     };
@@ -6732,363 +6633,27 @@ function buildProjectVariationTrustBoundaryPayload(input: {
   };
 }
 
-function buildProjectClaimTrustBoundaryPayload(input: {
-  row: JsonRecord;
-  lineItems: JsonRecord[];
-  projectContext: ReturnType<typeof buildProjectClaimProjectContext>;
-  enrichment: ProjectClaimEnrichment;
-  claimSummary: ReturnType<typeof buildProjectClaimSummary>;
-  organizationId: string;
-  actorUserId: string | null;
-  updatedAt: string;
-}) {
-  const claimId = toStringOrNull(input.row.id);
-  const mirroredCostItems = claimId ? input.enrichment.mirroredCostItemsByClaimId.get(claimId) ?? [] : [];
-  const quoteBasis = input.claimSummary.quoteIds.map((quoteId) => {
-    const quote = input.enrichment.quotesById.get(quoteId) ?? null;
-    return {
-      quoteId,
-      quoteNumber: toStringOrNull(quote?.quote_number),
-      quoteTitle: toStringOrNull(quote?.quote_title),
-      quoteStatus: toStringOrNull(quote?.status),
-    };
-  });
-  const variationBasis = input.claimSummary.variationIds.map((variationId) => {
-    const variation = input.enrichment.variationsById.get(variationId) ?? null;
-    return {
-      variationId,
-      variationNumber: toStringOrNull(variation?.variation_number),
-      variationTitle: toStringOrNull(variation?.variation_title),
-      variationStatus: toStringOrNull(variation?.status),
-      variationValue: variation ? toNumberOrZero(variation.total_variation_price) : null,
-    };
-  });
-
-  return {
-    sourceEvidence: {
-      claim: {
-        claimId,
-        claimNumber: toStringOrNull(input.row.claim_number),
-        title: toStringOrNull(input.row.claim_title),
-        type: toStringOrNull(input.row.claim_type),
-        status: toStringOrNull(input.row.status),
-        claimDate: toIsoOrNull(input.row.claim_date),
-        dueDate: toIsoOrNull(input.row.due_date),
-        periodStart: toIsoOrNull(input.row.period_start),
-        periodEnd: toIsoOrNull(input.row.period_end),
-      },
-      commercialRecovery: {
-        claimAmount: toNumberOrZero(input.row.claim_amount),
-        gstAmount: toNumberOrZero(input.row.gst_amount),
-        totalPayable: toNumberOrZero(input.row.total_payable),
-        paidAmount: toNumberOrZero(input.row.paid_amount),
-        previousClaimsTotal: toNumberOrZero(input.row.previous_claims_total),
-        revisedContractValue: toNumberOrZero(input.row.revised_contract_value),
-        linkedQuoteValue: toNumberOrZero(input.row.linked_quote_value),
-        linkedApprovedVariationsValue: toNumberOrZero(input.row.linked_approved_variations),
-        sourceMixSummary: input.claimSummary.sourceMixSummary,
-      },
-      retention: {
-        retentionMethod: toStringOrNull(input.row.retention_method),
-        retentionPercent: toNumberOrZero(input.row.retention_percent),
-        retentionWithheldThisClaim: toNumberOrZero(input.row.retention_withheld_amount),
-        retentionReleasedThisClaim: toNumberOrZero(input.row.retention_released_amount),
-        retentionHeldToDate: toNumberOrZero(input.row.retention_held_to_date),
-        retentionReleasedToDate: toNumberOrZero(input.row.retention_released_to_date),
-        retentionBalance: toNumberOrZero(input.row.retention_balance),
-      },
-      claimLines: input.lineItems.map(buildProjectClaimLineEvidence),
-      submissionPaymentStateSummary: {
-        paymentState: input.claimSummary.paymentState,
-        isSubmitted: ["submitted", "unpaid", "overdue", "paid"].includes(toStringOrNull(input.row.status)?.toLowerCase() ?? ""),
-        isPaid: input.claimSummary.paymentState === "paid",
-        isOverdue: input.claimSummary.paymentState === "overdue",
-        awaitingPayment: input.claimSummary.awaitingPayment,
-      },
-      variationRecoverySummary: {
-        hasVariationBasis: input.claimSummary.hasVariationBasis,
-        variationLineCount: input.claimSummary.variationLineCount,
-        variationClaimAmount: input.claimSummary.variationClaimAmount,
-        linkedVariationCount: variationBasis.length,
-        linkedVariations: variationBasis,
-      },
-      quoteBasisSummary: {
-        hasQuoteBasis: input.claimSummary.hasQuoteBasis,
-        quoteLineCount: input.claimSummary.quoteLineCount,
-        quoteClaimAmount: input.claimSummary.quoteClaimAmount,
-        linkedQuoteCount: quoteBasis.length,
-        linkedQuotes: quoteBasis,
-      },
-      claimCompletenessSummary: {
-        lineCount: input.claimSummary.lineCount,
-        claimedLineCount: input.claimSummary.claimedLineCount,
-        commerciallyRecovered: input.claimSummary.commerciallyRecovered,
-        underRecovered: input.claimSummary.underRecovered,
-        claimCompleteness: input.claimSummary.claimCompleteness,
-      },
-      evidenceStrengthSummary: {
-        evidenceStrength: input.claimSummary.evidenceStrength,
-        mirroredCostItemCount: input.claimSummary.mirroredCostItemCount,
-      },
-    },
-    operationalContext: {
-      lifecycleStage: input.claimSummary.lifecycleStage,
-      createdAt: toIsoOrNull(input.row.created_at),
-      updatedAt: input.updatedAt,
-      hasProject: Boolean(input.projectContext.projectId),
-      hasClient: Boolean(input.projectContext.clientId),
-      hasQuoteBasis: input.claimSummary.hasQuoteBasis,
-      hasVariationBasis: input.claimSummary.hasVariationBasis,
-      hasRetention: input.claimSummary.hasRetention,
-      hasPaidAmount: toNumberOrZero(input.row.paid_amount) > 0,
-      isSubmitted: ["submitted", "unpaid", "overdue", "paid"].includes(toStringOrNull(input.row.status)?.toLowerCase() ?? ""),
-      isUnpaid: input.claimSummary.paymentState === "awaiting_payment",
-      isPaid: input.claimSummary.paymentState === "paid",
-      isOverdue: input.claimSummary.paymentState === "overdue",
-      isCancelled: (toStringOrNull(input.row.status)?.toLowerCase() ?? "") === "cancelled",
-      lineCount: input.claimSummary.lineCount,
-      retentionCompleteness: input.claimSummary.retentionCompleteness,
-      claimCompleteness: input.claimSummary.claimCompleteness,
-      recoveryBasisStrength: {
-        commerciallyRecovered: input.claimSummary.commerciallyRecovered,
-        underRecovered: input.claimSummary.underRecovered,
-        quoteBasisLines: input.claimSummary.quoteLineCount,
-        variationBasisLines: input.claimSummary.variationLineCount,
-      },
-      paymentState: input.claimSummary.paymentState,
-      chronologyCompleteness: input.claimSummary.chronologyCompleteness,
-      evidenceStrength: input.claimSummary.evidenceStrength,
-    },
-    lineageContext: {
-      organizationId: input.organizationId,
-      projectId: input.projectContext.projectId,
-      projectName: input.projectContext.projectName,
-      clientId: input.projectContext.clientId,
-      clientName: input.projectContext.clientName,
-      claimId,
-      claimLineItemIds: uniqueNonEmpty(input.lineItems.map((line) => toStringOrNull(line.id))),
-      sourceQuoteIds: input.claimSummary.quoteIds,
-      sourceQuoteLineItemIds: input.claimSummary.quoteLineIds,
-      sourceVariationIds: input.claimSummary.variationIds,
-      sourceVariationLineItemIds: input.claimSummary.variationLineIds,
-      costItemIds: uniqueNonEmpty(input.lineItems.map((line) => toStringOrNull(line.cost_item_id))),
-      sourceCostItemIds: uniqueNonEmpty(input.lineItems.map((line) => toStringOrNull(line.source_cost_item_id))),
-      createdByUserId: input.actorUserId,
-      mirroredCostItemIds: uniqueNonEmpty(mirroredCostItems.map((costItem) => toStringOrNull(costItem.id))),
-      sourceTable: "project_claims",
-    },
-  };
-}
-
-function buildSupplierInvoiceTrustBoundaryPayload(input: {
-  row: JsonRecord;
-  lines: JsonRecord[];
-  documents: JsonRecord[];
-  matches: JsonRecord[];
-  allocations: JsonRecord[];
-  actualCostEvents: JsonRecord[];
-  supplierContext: ReturnType<typeof buildSupplierInvoiceSupplierContext>;
-  enrichment: SupplierInvoiceEnrichment;
-  invoiceSummary: ReturnType<typeof buildSupplierInvoiceSummary>;
-  organizationId: string;
-  actorUserId: string | null;
-  updatedAt: string;
-}) {
-  const sourceId = toStringOrNull(input.row.id);
-  const projectContexts = new Map<string, { projectId: string; projectName: string | null }>();
-  const clientContexts = new Map<string, { clientId: string; clientName: string | null }>();
-
-  for (const projectId of uniqueNonEmpty([
-    ...input.lines.map((line) => toStringOrNull(line.project_id)),
-    ...input.allocations.map((allocation) => toStringOrNull(allocation.project_id)),
-    ...input.actualCostEvents.map((event) => toStringOrNull(event.project_id)),
-    ...input.matches.map((match) => {
-      const purchaseOrder = toStringOrNull(match.purchase_order_id)
-        ? input.enrichment.purchaseOrdersById.get(String(match.purchase_order_id)) ?? null
-        : null;
-      return toStringOrNull(purchaseOrder?.project_id);
-    }),
-  ])) {
-    const project = input.enrichment.projectsById.get(projectId) ?? null;
-    projectContexts.set(projectId, {
-      projectId,
-      projectName: toStringOrNull(project?.name),
-    });
-    const clientId = toStringOrNull(project?.client_id);
-    if (clientId) {
-      const client = input.enrichment.clientsById.get(clientId) ?? null;
-      clientContexts.set(clientId, {
-        clientId,
-        clientName: toStringOrNull(client?.company_name) ?? toStringOrNull(client?.name),
-      });
-    }
-  }
-
-  const activeMatches = input.matches.filter((match) => {
-    const status = toStringOrNull(match.match_status)?.toLowerCase();
-    return status === "accepted" || status === "adjusted";
-  });
-  const postedEvents = input.actualCostEvents.filter((event) =>
-    (toStringOrNull(event.event_type)?.toLowerCase() ?? "posting") === "posting"
-    && toStringOrNull(event.event_status)?.toLowerCase() === "posted",
-  );
-  const reversalEvents = input.actualCostEvents.filter((event) => toStringOrNull(event.event_type)?.toLowerCase() === "reversal");
-
-  return {
-    sourceEvidence: {
-      supplierInvoice: {
-        sourceId,
-        invoiceNumber: toStringOrNull(input.row.invoice_number),
-        invoiceDate: toIsoOrNull(input.row.invoice_date),
-        dueDate: toIsoOrNull(input.row.due_date),
-        status: toStringOrNull(input.row.status),
-        source: toStringOrNull(input.row.source),
-        supplier: {
-          supplierId: input.supplierContext.supplierId,
-          supplierName: input.supplierContext.supplierName,
-        },
-        commercialTotals: {
-          subtotal: toNumberOrZero(input.row.subtotal),
-          gstTotal: toNumberOrZero(input.row.tax_total),
-          total: toNumberOrZero(input.row.total),
-        },
-        notes: toStringOrNull(input.row.notes),
-      },
-      lineItems: input.lines.map(buildSupplierInvoiceLineEvidence),
-      documentSummary: {
-        documentCount: input.invoiceSummary.documentCount,
-        documentTypes: input.invoiceSummary.documentTypes,
-        hasInvoiceDocument: input.invoiceSummary.documentTypes.includes("invoice") || Boolean(toStringOrNull(input.row.document_file_path)),
-        hasSupportingDocument: input.invoiceSummary.documentTypes.includes("supporting_document"),
-        hasCreditNoteDocument: input.invoiceSummary.documentTypes.includes("credit_note"),
-      },
-      purchaseOrderMatches: activeMatches.map((match) => {
-        const purchaseOrderId = toStringOrNull(match.purchase_order_id);
-        const purchaseOrder = purchaseOrderId ? input.enrichment.purchaseOrdersById.get(purchaseOrderId) ?? null : null;
-        const project = toStringOrNull(purchaseOrder?.project_id)
-          ? input.enrichment.projectsById.get(String(purchaseOrder?.project_id)) ?? null
-          : null;
-
-        return {
-          matchId: toStringOrNull(match.id),
-          purchaseOrderId,
-          purchaseOrderNumber: toStringOrNull(purchaseOrder?.purchase_order_number),
-          purchaseOrderTitle: toStringOrNull(purchaseOrder?.purchase_order_title),
-          purchaseOrderStatus: toStringOrNull(purchaseOrder?.status),
-          projectId: toStringOrNull(purchaseOrder?.project_id),
-          projectName: toStringOrNull(project?.name),
-          matchedAmount: toNumberOrZero(match.matched_amount),
-          matchStatus: toStringOrNull(match.match_status),
-          approvalStatus: toStringOrNull(match.approval_status),
-          approvalNotes: toStringOrNull(match.approval_notes),
-          completedApprovalCheckCount: countCompletedChecks(match.approval_checks_json),
-        };
-      }),
-      allocationSummary: {
-        allocationCount: input.invoiceSummary.allocationCount,
-        allocatedLineCount: input.invoiceSummary.allocatedLineCount,
-        approvedAllocationCount: input.invoiceSummary.approvedAllocationCount,
-        disputedAllocationCount: input.invoiceSummary.disputedAllocationCount,
-        unmatchedAllocationCount: input.invoiceSummary.unmatchedAllocationCount,
-        splitAllocationLineCount: input.invoiceSummary.splitAllocationLineCount,
-        approvedAllocationAmount: input.invoiceSummary.approvedAllocationAmount,
-      },
-      actualCostPostingSummary: {
-        postedEventCount: input.invoiceSummary.postedEventCount,
-        postedAmount: input.invoiceSummary.postedAmount,
-        unpostedApprovedAllocationCount: input.invoiceSummary.unpostedApprovedAllocationCount,
-        postedEventIds: uniqueNonEmpty(postedEvents.map((event) => toStringOrNull(event.id))),
-      },
-      reversalCorrectionSummary: {
-        reversalCount: input.invoiceSummary.reversalCount,
-        correctionRootCount: input.invoiceSummary.correctionRootCount,
-        reversalEventIds: uniqueNonEmpty(reversalEvents.map((event) => toStringOrNull(event.id))),
-        correctedAllocationIds: uniqueNonEmpty(
-          input.allocations.flatMap((allocation) => [
-            toStringOrNull(allocation.supersedes_allocation_id),
-            toStringOrNull(allocation.id),
-          ]),
-        ),
-      },
-    },
-    operationalContext: {
-      updatedAt: input.updatedAt,
-      captureSource: toStringOrNull(input.row.source),
-      lifecycleStage: input.invoiceSummary.lifecycleStage,
-      lineCount: input.invoiceSummary.lineCount,
-      documentCompleteness: {
-        documentCount: input.invoiceSummary.documentCount,
-        hasDocument: input.invoiceSummary.hasDocument,
-        hasInvoiceDocument: input.invoiceSummary.documentTypes.includes("invoice") || Boolean(toStringOrNull(input.row.document_file_path)),
-        hasSupportingDocument: input.invoiceSummary.documentTypes.includes("supporting_document"),
-      },
-      hasSupplier: input.invoiceSummary.hasSupplier,
-      hasProject: input.invoiceSummary.hasProject,
-      hasPOReference: input.invoiceSummary.hasPOReference,
-      hasAllocations: input.invoiceSummary.hasAllocations,
-      approvalCompleteness: {
-        activeMatchCount: input.invoiceSummary.activeMatchCount,
-        approvedMatchCount: input.invoiceSummary.approvedMatchCount,
-        disputedMatchCount: input.invoiceSummary.disputedMatchCount,
-        pendingMatchCount: input.invoiceSummary.pendingMatchCount,
-        fullyApproved: input.invoiceSummary.activeMatchCount > 0
-          && input.invoiceSummary.approvedMatchCount === input.invoiceSummary.activeMatchCount,
-      },
-      allocationCompleteness: {
-        allocationCount: input.invoiceSummary.allocationCount,
-        allocatedLineCount: input.invoiceSummary.allocatedLineCount,
-        unmatchedAllocationCount: input.invoiceSummary.unmatchedAllocationCount,
-        splitAllocationLineCount: input.invoiceSummary.splitAllocationLineCount,
-        fullyAllocated: input.invoiceSummary.fullyAllocated,
-      },
-      postingCompleteness: {
-        approvedAllocationCount: input.invoiceSummary.approvedAllocationCount,
-        postedEventCount: input.invoiceSummary.postedEventCount,
-        unpostedApprovedAllocationCount: input.invoiceSummary.unpostedApprovedAllocationCount,
-        fullyPosted: input.invoiceSummary.fullyPosted,
-      },
-      disputeState: input.invoiceSummary.disputeState,
-      evidenceStrength: input.invoiceSummary.evidenceStrength,
-    },
-    lineageContext: {
-      organizationId: input.organizationId,
-      supplierId: input.supplierContext.supplierId,
-      supplierName: input.supplierContext.supplierName,
-      projectIds: Array.from(projectContexts.keys()).sort(),
-      projectNames: Array.from(projectContexts.values()).map((project) => project.projectName).filter((name): name is string => Boolean(name)),
-      clientIds: Array.from(clientContexts.keys()).sort(),
-      clientNames: Array.from(clientContexts.values()).map((client) => client.clientName).filter((name): name is string => Boolean(name)),
-      invoiceId: sourceId,
-      invoiceLineIds: uniqueNonEmpty(input.lines.map((line) => toStringOrNull(line.id))),
-      documentIds: uniqueNonEmpty(input.documents.map((document) => toStringOrNull(document.id))),
-      purchaseOrderIds: uniqueNonEmpty([
-        ...input.matches.map((match) => toStringOrNull(match.purchase_order_id)),
-        ...input.allocations.map((allocation) => toStringOrNull(allocation.purchase_order_id)),
-        ...input.actualCostEvents.map((event) => toStringOrNull(event.purchase_order_id)),
-      ]),
-      purchaseOrderLineIds: uniqueNonEmpty([
-        ...input.allocations.map((allocation) => toStringOrNull(allocation.purchase_order_line_item_id)),
-        ...input.actualCostEvents.map((event) => toStringOrNull(event.purchase_order_line_item_id)),
-      ]),
-      allocationIds: uniqueNonEmpty(input.allocations.map((allocation) => toStringOrNull(allocation.id))),
-      actualCostEventIds: uniqueNonEmpty(input.actualCostEvents.map((event) => toStringOrNull(event.id))),
-      actorUserId: input.actorUserId,
-      sourceTable: "supplier_invoices",
-    },
-  };
-}
-
 function getRecordChangeCursor(row: JsonRecord, childCollections: Map<string, Record<string, JsonRecord[]>>, config: ContainerBuilderConfig) {
+  const normalizeTimestamp = config.cursorTimestampNormalizer
+    ?? ((value: unknown) => toIsoOrNull(value));
+  const ownerCursorColumn = config.ownerCursorColumn ?? "updated_at";
   let cursor: UniversalLearningCursor = {
-    updatedAt: toIsoOrNull(row[config.ownerCursorColumn ?? "updated_at"] ?? row.created_at),
+    updatedAt: normalizeTimestamp(
+      row[ownerCursorColumn] ?? row.created_at,
+      `${config.ownerTable}.${ownerCursorColumn}`,
+    ),
     id: typeof row.id === "string" ? row.id : null,
   };
 
   for (const child of config.childCollections ?? []) {
     const rows = childCollections.get(child.key)?.[String(row.id)] ?? [];
     for (const childRow of rows) {
+      const childCursorColumn = child.cursorColumn ?? "updated_at";
       const next: UniversalLearningCursor = {
-        updatedAt: toIsoOrNull(childRow[child.cursorColumn ?? "updated_at"] ?? childRow.created_at),
+        updatedAt: normalizeTimestamp(
+          childRow[childCursorColumn] ?? childRow.created_at,
+          `${child.table}.${childCursorColumn}`,
+        ),
         id: typeof row.id === "string" ? row.id : null,
       };
       if (compareCursor(next, cursor) > 0) {
@@ -7111,7 +6676,7 @@ async function buildUnifiedProjectQuoteRecords(input: {
   const normalizedLinesBySourceKey = new Map<string, UnifiedQuoteLineRow[]>();
 
   for (const source of QUOTE_SOURCE_CONFIGS) {
-    let ownerQuery = input.admin
+    const ownerQuery = input.admin
       .from(source.sourceTable)
       .select("*")
       .eq("organization_id", input.context.organizationId)
@@ -7125,7 +6690,7 @@ async function buildUnifiedProjectQuoteRecords(input: {
       throw new Error(ownerResult.error.message);
     }
 
-    let changedLineQuery = input.admin
+    const changedLineQuery = input.admin
       .from(source.lineTable)
       .select("quote_id,id,updated_at,created_at")
       .eq("organization_id", input.context.organizationId)
@@ -7410,11 +6975,42 @@ export async function buildUniversalLearningContainerRecords(input: {
   containerType: UniversalLearningContainerType;
   context: UniversalLearningBuilderContext;
   limit?: number;
+  /**
+   * Server-only exact source selection for record-level freshness rebuilds.
+   * It deliberately bypasses the monthly review window/cursor, but retains the
+   * same organization-scoped queries, assembler and full-envelope validation.
+   */
+  sourceIds?: string[];
 }): Promise<UniversalLearningBuilderResult> {
   const admin = createDynamicAdminSupabaseClient();
   const config = BUILDER_CONFIGS[input.containerType];
   const definition = getUniversalLearningContainerDefinition(input.containerType);
-  const limit = Math.max(1, Math.min(input.limit ?? 100, 250));
+  const contextCursor = input.containerType === "supplier_invoice"
+    || input.containerType === "project_claim"
+    ? {
+      updatedAt: normalizeSupplierBillUclTimestamp(
+        input.context.cursor.updatedAt,
+        input.containerType === "supplier_invoice"
+          ? "Stored Supplier Bill UCL cursor"
+          : "Stored Payment Claim UCL cursor",
+      ),
+      id: input.context.cursor.id,
+    }
+    : input.context.cursor;
+  const limit = input.containerType === "project_claim"
+    ? Math.max(1, Math.min(input.limit ?? 1_000, 1_000))
+    : Math.max(1, Math.min(input.limit ?? 100, 250));
+  const targetedSourceIds = uniqueNonEmpty(input.sourceIds ?? []).slice(0, limit);
+  const isTargetedBuild = targetedSourceIds.length > 0;
+  if (
+    isTargetedBuild
+    && input.containerType !== "supplier_invoice"
+    && input.containerType !== "project_claim"
+  ) {
+    throw new Error(
+      "Exact source rebuilds are currently supported only for supplier_invoice and project_claim.",
+    );
+  }
   if (input.containerType === "project_quote") {
     return buildUnifiedProjectQuoteRecords({
       context: input.context,
@@ -7424,19 +7020,21 @@ export async function buildUniversalLearningContainerRecords(input: {
     });
   }
   const reviewWindow = buildUniversalLearningReviewWindow(input.context.reviewMonth);
-  const ownerIds = await selectChangedOwnerIds({
-    admin,
-    organizationId: input.context.organizationId,
-    config,
-    cursor: input.context.cursor,
-    reviewWindow,
-    limit,
-  });
+  const ownerIds = isTargetedBuild
+    ? targetedSourceIds
+    : await selectChangedOwnerIds({
+      admin,
+      organizationId: input.context.organizationId,
+      config,
+      cursor: contextCursor,
+      reviewWindow,
+      limit,
+    });
 
   if (ownerIds.length === 0) {
     return {
       records: [],
-      nextCursorCandidate: input.context.cursor,
+      nextCursorCandidate: contextCursor,
       reviewScopeContext: {
         module: definition.module,
         workflow: definition.workflow,
@@ -7564,16 +7162,9 @@ export async function buildUniversalLearningContainerRecords(input: {
       ownerRows,
     })
     : null;
-    const projectQuoteEnrichment = input.containerType === "project_quote"
-      ? await loadProjectQuoteEnrichment({
-        admin,
-        organizationId: input.context.organizationId,
-        ownerRows,
-      })
-      : null;
 
   const records: UniversalLearningBusinessRecord[] = [];
-  let nextCursorCandidate = input.context.cursor;
+  let nextCursorCandidate = contextCursor;
   const projectIds = new Set<string>();
   const supplierIds = new Set<string>();
   const clientIds = new Set<string>();
@@ -7593,10 +7184,51 @@ export async function buildUniversalLearningContainerRecords(input: {
       childPayload[child.key] = childCollections.get(child.key)?.[ownerId] ?? [];
     }
 
-    const recordCursor = getRecordChangeCursor(row, childCollections, config);
-    const shouldIncludeRecord = shouldIncludeUniversalLearningRecord({
+    let recordCursor = getRecordChangeCursor(row, childCollections, config);
+    if (projectClaimEnrichment) {
+      const projectId = toStringOrNull(row.project_id);
+      const project = projectId
+        ? projectClaimEnrichment.projectsById.get(projectId) ?? null
+        : null;
+      const clientId = toStringOrNull(project?.client_id);
+      const dependencyRows = [
+        project,
+        clientId ? projectClaimEnrichment.clientsById.get(clientId) ?? null : null,
+        ...((childPayload.lineItems ?? []).flatMap((line) => {
+          const sourceId = toStringOrNull(line.source_document_id);
+          const sourceKind = toStringOrNull(line.source_kind)?.toLowerCase();
+          if (!sourceId) return [];
+          if (sourceKind === "quote") {
+            return [projectClaimEnrichment.quotesById.get(sourceId) ?? null];
+          }
+          if (sourceKind === "variation") {
+            return [projectClaimEnrichment.variationsById.get(sourceId) ?? null];
+          }
+          return [];
+        })),
+      ].filter((dependency): dependency is JsonRecord => Boolean(dependency));
+      for (const dependency of dependencyRows) {
+        const dependencyUpdatedAt = normalizeSupplierBillUclTimestamp(
+          dependency.updated_at ?? dependency.created_at,
+          `Payment Claim UCL enrichment dependency for ${ownerId}`,
+        );
+        const dependencyCursor = { updatedAt: dependencyUpdatedAt, id: ownerId };
+        if (compareCursor(dependencyCursor, recordCursor) > 0) {
+          recordCursor = dependencyCursor;
+        }
+      }
+    }
+    if (
+      (input.containerType === "supplier_invoice" || input.containerType === "project_claim")
+      && !recordCursor.updatedAt
+    ) {
+      throw new Error(
+        `${input.containerType === "supplier_invoice" ? "Supplier Bill" : "Payment Claim"} UCL ${ownerId} has no canonical owner or direct-child cursor timestamp.`,
+      );
+    }
+    const shouldIncludeRecord = isTargetedBuild || shouldIncludeUniversalLearningRecord({
       recordCursor,
-      previousCursor: input.context.cursor,
+      previousCursor: contextCursor,
       window: reviewWindow,
     });
     if (shouldIncludeRecord && compareCursor(recordCursor, nextCursorCandidate) > 0) {
@@ -7610,6 +7242,8 @@ export async function buildUniversalLearningContainerRecords(input: {
     let enrichedPayload: JsonRecord = {};
     let enrichedRoutingContext = extractRoutingContext(row, childPayload);
     let signalStrengthOverride: UniversalLearningRecordStrength | null = null;
+    let supplierBillV2Sections: ReturnType<typeof buildSupplierBillUclV2Sections> | null = null;
+    let paymentClaimV2Sections: ReturnType<typeof buildPaymentClaimUclV2Sections> | null = null;
     const supplierInvoiceSupplierContext = supplierInvoiceEnrichment
       ? buildSupplierInvoiceSupplierContext(row, supplierInvoiceEnrichment)
       : null;
@@ -7633,20 +7267,6 @@ export async function buildUniversalLearningContainerRecords(input: {
         row,
         enrichment: pricingWorkbookSheetEnrichment,
         projectContext: pricingWorkbookSheetProjectContext,
-      })
-      : null;
-    const quoteProjectContext = projectQuoteEnrichment
-      ? buildProjectQuoteProjectContext(row, projectQuoteEnrichment)
-      : null;
-    const quoteOpportunityContext = projectQuoteEnrichment
-      ? buildProjectQuoteOpportunityContext(row, projectQuoteEnrichment)
-      : null;
-    const quoteClientContext = projectQuoteEnrichment && quoteProjectContext && quoteOpportunityContext
-      ? buildProjectQuoteClientContext({
-        row,
-        enrichment: projectQuoteEnrichment,
-        projectContext: quoteProjectContext,
-        opportunityContext: quoteOpportunityContext,
       })
       : null;
     const timeSheetProjectContext = projectTimeSheetEntryEnrichment
@@ -7854,56 +7474,34 @@ export async function buildUniversalLearningContainerRecords(input: {
 
     if (projectClaimEnrichment && projectClaimProjectContext) {
       const claimLineItems = childPayload.lineItems ?? [];
-      const claimSummary = buildProjectClaimSummary({
+      const claimRoutingContext = buildProjectClaimReadOnlyRoutingContext({
         row,
         lineItems: claimLineItems,
-        projectContext: projectClaimProjectContext,
         enrichment: projectClaimEnrichment,
       });
-      enrichedPayload = buildProjectClaimTrustBoundaryPayload({
-        row,
-        lineItems: claimLineItems,
-        projectContext: projectClaimProjectContext,
-        enrichment: projectClaimEnrichment,
-        claimSummary,
+      const project = projectClaimProjectContext.projectId
+        ? projectClaimEnrichment.projectsById.get(projectClaimProjectContext.projectId) ?? null
+        : null;
+      const client = projectClaimProjectContext.clientId
+        ? projectClaimEnrichment.clientsById.get(projectClaimProjectContext.clientId) ?? null
+        : null;
+      paymentClaimV2Sections = buildPaymentClaimUclV2Sections({
         organizationId: input.context.organizationId,
-        actorUserId: config.actorUserIdColumn ? (typeof row[config.actorUserIdColumn] === "string" ? row[config.actorUserIdColumn] as string : null) : null,
-        updatedAt: recordCursor.updatedAt ?? new Date().toISOString(),
-      });
-      enrichedRoutingContext = buildProjectClaimReadOnlyRoutingContext({
         row,
-        lineItems: claimLineItems,
-        enrichment: projectClaimEnrichment,
+        lines: claimLineItems,
+        project,
+        client,
+        quotesById: projectClaimEnrichment.quotesById,
+        variationsById: projectClaimEnrichment.variationsById,
+        retentionAllocations: childPayload.retentionAllocations ?? [],
+        accountingDocuments: childPayload.accountingDocuments ?? [],
+        routingContext: claimRoutingContext,
+        assembledAt: new Date().toISOString(),
+        updatedAt: recordCursor.updatedAt!,
       });
-      signalStrengthOverride = claimSummary.evidenceStrength;
-    }
-
-    if (projectQuoteEnrichment && quoteProjectContext && quoteOpportunityContext && quoteClientContext) {
-      const quoteLineItems = childPayload.lineItems ?? [];
-      const quoteSummary = buildProjectQuoteSummary({
-        row,
-        lineItems: quoteLineItems,
-        clientContext: quoteClientContext,
-        projectContext: quoteProjectContext,
-        opportunityContext: quoteOpportunityContext,
-      });
-      enrichedPayload = buildProjectQuoteTrustBoundaryPayload({
-        row,
-        lineItems: quoteLineItems,
-        projectContext: quoteProjectContext,
-        clientContext: quoteClientContext,
-        opportunityContext: quoteOpportunityContext,
-        quoteSummary,
-        organizationId: input.context.organizationId,
-        actorUserId: config.actorUserIdColumn ? (typeof row[config.actorUserIdColumn] === "string" ? row[config.actorUserIdColumn] as string : null) : null,
-        sourceTable: config.ownerTable,
-        sourceModule: definition.module,
-        sourceWorkflow: definition.workflow,
-        quoteSourceType: "project_quote",
-        updatedAt: recordCursor.updatedAt ?? new Date().toISOString(),
-      });
-      enrichedRoutingContext = buildProjectQuoteReadOnlyRoutingContext();
-      signalStrengthOverride = quoteSummary.evidenceStrength;
+      enrichedPayload = paymentClaimV2Sections.payload as JsonRecord;
+      enrichedRoutingContext = paymentClaimV2Sections.routingContext;
+      signalStrengthOverride = paymentClaimV2Sections.signalStrength;
     }
 
     if (supplierInvoiceEnrichment && supplierInvoiceSupplierContext) {
@@ -7912,34 +7510,59 @@ export async function buildUniversalLearningContainerRecords(input: {
       const invoiceMatches = childPayload.matches ?? [];
       const invoiceAllocations = childPayload.allocations ?? [];
       const invoiceActualCostEvents = childPayload.actualCostEvents ?? [];
-      const invoiceSummary = buildSupplierInvoiceSummary({
-        row,
-        lines: invoiceLines,
-        documents: invoiceDocuments,
-        matches: invoiceMatches,
-        allocations: invoiceAllocations,
-        actualCostEvents: invoiceActualCostEvents,
-        supplierContext: supplierInvoiceSupplierContext,
+      const accountingDocuments =
+        supplierInvoiceEnrichment.accountingDocumentsByInvoiceId.get(ownerId) ?? [];
+      const accountingDocumentLines = accountingDocuments.flatMap((document) => {
+        const versionId = toStringOrNull(document.current_version_id);
+        return versionId
+          ? supplierInvoiceEnrichment.accountingDocumentLinesByVersionId.get(versionId) ?? []
+          : [];
       });
-      enrichedPayload = buildSupplierInvoiceTrustBoundaryPayload({
-        row,
-        lines: invoiceLines,
-        documents: invoiceDocuments,
-        matches: invoiceMatches,
-        allocations: invoiceAllocations,
-        actualCostEvents: invoiceActualCostEvents,
-        supplierContext: supplierInvoiceSupplierContext,
-        enrichment: supplierInvoiceEnrichment,
-        invoiceSummary,
+      const invoicePurchaseOrderLineIds = uniqueNonEmpty([
+        ...invoiceAllocations.map((allocation) => toStringOrNull(allocation.purchase_order_line_item_id)),
+        ...invoiceActualCostEvents.map((event) => toStringOrNull(event.purchase_order_line_item_id)),
+      ]);
+      supplierBillV2Sections = buildSupplierBillUclV2Sections({
         organizationId: input.context.organizationId,
-        actorUserId: config.actorUserIdColumn ? (typeof row[config.actorUserIdColumn] === "string" ? row[config.actorUserIdColumn] as string : null) : null,
-        updatedAt: recordCursor.updatedAt ?? new Date().toISOString(),
-      });
-      enrichedRoutingContext = buildSupplierInvoiceReadOnlyRoutingContext({
+        row,
+        lines: invoiceLines,
+        documents: invoiceDocuments,
+        matches: invoiceMatches,
         allocations: invoiceAllocations,
         actualCostEvents: invoiceActualCostEvents,
+        supplier: supplierInvoiceSupplierContext.supplierId
+          ? supplierInvoiceEnrichment.suppliersById.get(supplierInvoiceSupplierContext.supplierId) ?? null
+          : null,
+        purchaseOrdersById: supplierInvoiceEnrichment.purchaseOrdersById,
+        purchaseOrderLinesById: supplierInvoiceEnrichment.purchaseOrderLinesById,
+        projectsById: supplierInvoiceEnrichment.projectsById,
+        extractions: supplierInvoiceEnrichment.extractionsByInvoiceId.get(ownerId) ?? [],
+        commercialApprovals:
+          supplierInvoiceEnrichment.commercialApprovalsByInvoiceId.get(ownerId) ?? [],
+        commercialSnapshots:
+          supplierInvoiceEnrichment.commercialSnapshotsByInvoiceId.get(ownerId) ?? [],
+        historicalApprovedSnapshots: invoicePurchaseOrderLineIds.flatMap(
+          (lineId) =>
+            supplierInvoiceEnrichment.historicalApprovedSnapshotsByPurchaseOrderLineId.get(lineId) ?? [],
+        ),
+        commercialVariances:
+          supplierInvoiceEnrichment.commercialVariancesByInvoiceId.get(ownerId) ?? [],
+        siteReviewSubmissions:
+          supplierInvoiceEnrichment.siteReviewSubmissionsByInvoiceId.get(ownerId) ?? [],
+        siteReviewDecisions:
+          supplierInvoiceEnrichment.siteReviewDecisionsByInvoiceId.get(ownerId) ?? [],
+        accountsApprovals:
+          supplierInvoiceEnrichment.accountsApprovalsByInvoiceId.get(ownerId) ?? [],
+        activityEvents:
+          supplierInvoiceEnrichment.activityEventsByInvoiceId.get(ownerId) ?? [],
+        accountingDocuments,
+        accountingDocumentLines,
+        assembledAt: new Date().toISOString(),
+        updatedAt: recordCursor.updatedAt!,
       });
-      signalStrengthOverride = invoiceSummary.evidenceStrength;
+      enrichedPayload = supplierBillV2Sections.payload as JsonRecord;
+      enrichedRoutingContext = supplierBillV2Sections.routingContext;
+      signalStrengthOverride = supplierBillV2Sections.evidenceStrength;
     }
 
     if (supplierInvoiceAllocationEnrichment && supplierInvoiceAllocationSupplierContext && supplierInvoiceAllocationProjectContext) {
@@ -8162,17 +7785,9 @@ export async function buildUniversalLearningContainerRecords(input: {
       signalStrengthOverride = (enrichedPayload.operationalContext as JsonRecord | undefined)?.evidenceStrength as UniversalLearningRecordStrength | null;
     }
 
-    const supplierInvoiceLineageContext = supplierInvoiceEnrichment
-      ? toRecord(enrichedPayload.lineageContext)
-      : null;
-    const supplierInvoiceProjectIds = supplierInvoiceLineageContext && Array.isArray(supplierInvoiceLineageContext.projectIds)
-      ? supplierInvoiceLineageContext.projectIds.filter((value): value is string => typeof value === "string" && value.length > 0)
-      : [];
-    const supplierInvoiceClientIds = supplierInvoiceLineageContext && Array.isArray(supplierInvoiceLineageContext.clientIds)
-      ? supplierInvoiceLineageContext.clientIds.filter((value): value is string => typeof value === "string" && value.length > 0)
-      : [];
-    const projectId = quoteProjectContext?.projectId
-      ?? pricingWorkbookSheetProjectContext?.projectId
+    const supplierInvoiceProjectIds = supplierBillV2Sections?.projectIds ?? [];
+    const supplierInvoiceClientIds: string[] = [];
+    const projectId = pricingWorkbookSheetProjectContext?.projectId
       ?? takeoffMeasurementProjectContext?.projectId
       ?? projectVariationProjectContext?.projectId
       ?? projectClaimProjectContext?.projectId
@@ -8183,18 +7798,18 @@ export async function buildUniversalLearningContainerRecords(input: {
       ?? projectActualCostEventProjectContext?.projectId
       ?? (supplierInvoiceProjectIds.length === 1 ? supplierInvoiceProjectIds[0] : null)
       ?? (config.projectIdColumn ? (typeof row[config.projectIdColumn] === "string" ? row[config.projectIdColumn] as string : null) : null);
-    const opportunityId = quoteOpportunityContext?.opportunityId
-      ?? pricingWorkbookSheetProjectContext?.opportunityId
+    const opportunityId = pricingWorkbookSheetProjectContext?.opportunityId
       ?? taskProjectContext?.opportunityId
       ?? (config.opportunityIdColumn ? (typeof row[config.opportunityIdColumn] === "string" ? row[config.opportunityIdColumn] as string : null) : null);
-    const supplierId = supplierInvoiceAllocationSupplierContext?.supplierId
-      ?? projectActualCostEventSupplierContext?.supplierId
-      ?? organizationMaterialPrimarySupplierContext?.supplierId
-      ?? supplierInvoiceSupplierContext?.supplierId
-      ?? poSupplierContext?.supplierId
-      ?? (config.supplierIdColumn ? (typeof row[config.supplierIdColumn] === "string" ? row[config.supplierIdColumn] as string : null) : null);
-    const clientId = quoteClientContext?.clientId
-      ?? pricingWorkbookSheetClientContext?.clientId
+    const supplierId = supplierBillV2Sections
+      ? supplierBillV2Sections.payload.lineage.supplierId
+      : supplierInvoiceAllocationSupplierContext?.supplierId
+        ?? projectActualCostEventSupplierContext?.supplierId
+        ?? organizationMaterialPrimarySupplierContext?.supplierId
+        ?? supplierInvoiceSupplierContext?.supplierId
+        ?? poSupplierContext?.supplierId
+        ?? (config.supplierIdColumn ? (typeof row[config.supplierIdColumn] === "string" ? row[config.supplierIdColumn] as string : null) : null);
+    const clientId = pricingWorkbookSheetClientContext?.clientId
       ?? takeoffMeasurementProjectContext?.clientId
       ?? projectVariationProjectContext?.clientId
       ?? projectClaimProjectContext?.clientId
@@ -8226,15 +7841,6 @@ export async function buildUniversalLearningContainerRecords(input: {
         projectName: projectClaimProjectContext.projectName,
         projectCode: projectClaimProjectContext.projectCode,
         projectStatus: projectClaimProjectContext.projectStatus,
-      });
-    }
-    if (quoteProjectContext?.projectId) {
-      projectContexts.set(quoteProjectContext.projectId, {
-        projectId: quoteProjectContext.projectId,
-        projectName: quoteProjectContext.projectName,
-        projectCode: quoteProjectContext.projectCode,
-        projectStatus: quoteProjectContext.projectStatus,
-        siteAddress: quoteProjectContext.siteAddress,
       });
     }
     if (pricingWorkbookSheetProjectContext?.projectId) {
@@ -8301,9 +7907,8 @@ export async function buildUniversalLearningContainerRecords(input: {
       });
     }
     if (supplierInvoiceEnrichment) {
-      const lineageContext = enrichedPayload.lineageContext as JsonRecord | undefined;
-      const projectIdsForInvoice = Array.isArray(lineageContext?.projectIds) ? lineageContext?.projectIds : [];
-      const clientIdsForInvoice = Array.isArray(lineageContext?.clientIds) ? lineageContext?.clientIds : [];
+      const projectIdsForInvoice = supplierBillV2Sections?.projectIds ?? [];
+      const clientIdsForInvoice: string[] = [];
       for (const invoiceProjectId of projectIdsForInvoice) {
         if (typeof invoiceProjectId !== "string") continue;
         const project = supplierInvoiceEnrichment.projectsById.get(invoiceProjectId) ?? null;
@@ -8354,15 +7959,6 @@ export async function buildUniversalLearningContainerRecords(input: {
         clientName: projectActualCostEventProjectContext.clientName,
       });
     }
-    if (quoteClientContext?.clientId) {
-      clientContexts.set(quoteClientContext.clientId, {
-        clientId: quoteClientContext.clientId,
-        clientName: quoteClientContext.clientName,
-        clientCompanyName: quoteClientContext.clientCompanyName,
-        clientType: quoteClientContext.clientType,
-        clientStatus: quoteClientContext.clientStatus,
-      });
-    }
     if (pricingWorkbookSheetClientContext?.clientId) {
       clientContexts.set(pricingWorkbookSheetClientContext.clientId, {
         clientId: pricingWorkbookSheetClientContext.clientId,
@@ -8403,11 +7999,30 @@ export async function buildUniversalLearningContainerRecords(input: {
             auto_clocked_out: row.auto_clocked_out === true,
           }
         : null;
-    const status: UniversalLearningBusinessRecord["status"] = {};
-    for (const column of config.statusColumns) {
-      const statusValue = row[column] !== undefined ? row[column] : derivedStatus?.[column];
-      if (statusValue !== undefined) {
-        status[column] = statusValue as UniversalLearningBusinessRecord["status"][string];
+    const status: UniversalLearningBusinessRecord["status"] = supplierBillV2Sections
+      ? {
+        canonicalStatus: toStringOrNull(row.status) ?? "",
+        workflowState: supplierBillV2Sections.workflowState,
+        approvalState: supplierBillV2Sections.approvalState,
+      }
+      : paymentClaimV2Sections
+        ? {
+          canonicalStatus: toStringOrNull(row.status) ?? "",
+          workflowState: paymentClaimV2Sections.workflowState,
+          approvalState: paymentClaimV2Sections.approvalState,
+        }
+      : {};
+    if (!supplierBillV2Sections && !paymentClaimV2Sections) {
+      for (const column of config.statusColumns) {
+        const statusValue = row[column] !== undefined ? row[column] : derivedStatus?.[column];
+        if (statusValue !== undefined) {
+          status[column] = statusValue as UniversalLearningBusinessRecord["status"][string];
+          const mixKey = `${column}:${String(statusValue)}`;
+          statusMix.set(mixKey, (statusMix.get(mixKey) ?? 0) + 1);
+        }
+      }
+    } else {
+      for (const [column, statusValue] of Object.entries(status)) {
         const mixKey = `${column}:${String(statusValue)}`;
         statusMix.set(mixKey, (statusMix.get(mixKey) ?? 0) + 1);
       }
@@ -8422,7 +8037,7 @@ export async function buildUniversalLearningContainerRecords(input: {
       definition.strongEvidenceStatuses.some((statusValue) => String(value) === statusValue),
     );
 
-    records.push({
+    const businessRecord: UniversalLearningBusinessRecord = {
       containerType: input.containerType,
       source: {
         table: config.ownerTable,
@@ -8436,15 +8051,21 @@ export async function buildUniversalLearningContainerRecords(input: {
       projectId,
       opportunityId,
       supplierId,
+      ...(supplierBillV2Sections
+        ? { supplier: { ...supplierBillV2Sections.payload.sourceEvidence.supplier } }
+        : {}),
       clientId,
       actorUserId,
-      updatedAt: recordCursor.updatedAt ?? new Date().toISOString(),
+      updatedAt:
+        input.containerType === "supplier_invoice"
+        || input.containerType === "project_claim"
+          ? recordCursor.updatedAt!
+          : recordCursor.updatedAt ?? new Date().toISOString(),
       status,
       payload: (
         projectPurchaseOrderEnrichment
         || projectVariationEnrichment
         || projectClaimEnrichment
-        || projectQuoteEnrichment
         || pricingWorkbookSheetEnrichment
         || takeoffMeasurementEnrichment
         || projectTimeSheetEntryEnrichment
@@ -8460,20 +8081,41 @@ export async function buildUniversalLearningContainerRecords(input: {
               ...childPayload,
             }
       ) as UniversalLearningBusinessRecord["payload"],
-      linkedContext: {
-        sourceTable: config.ownerTable,
-        sourceModule: definition.module,
-        sourceWorkflow: definition.workflow,
-        sourceIds: {
-          projectId,
-          opportunityId,
-          supplierId,
-          clientId,
+      linkedContext: supplierBillV2Sections?.linkedContext
+        ?? paymentClaimV2Sections?.linkedContext
+        ?? {
+          sourceTable: config.ownerTable,
+          sourceModule: definition.module,
+          sourceWorkflow: definition.workflow,
+          sourceIds: {
+            projectId,
+            opportunityId,
+            supplierId,
+            clientId,
+          },
         },
-      },
       routingContext: enrichedRoutingContext as UniversalLearningBusinessRecord["routingContext"],
       signalStrength: signalStrengthOverride ?? clampRecordStrength(strongestStatusMatch),
-    });
+    };
+    if (supplierBillV2Sections) {
+      try {
+        assertValidSupplierBillUclBusinessRecord(businessRecord);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown Supplier Bill UCL validation error.";
+        throw new Error(`Supplier Bill UCL validation failed for ${ownerId}: ${message}`);
+      }
+    }
+    if (paymentClaimV2Sections) {
+      try {
+        assertValidPaymentClaimUclBusinessRecord(businessRecord);
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : "Unknown Payment Claim UCL validation error.";
+        throw new Error(`Payment Claim UCL validation failed for ${ownerId}: ${message}`);
+      }
+    }
+    records.push(businessRecord);
   }
 
   return {

@@ -6,6 +6,7 @@ import type {
   CommercialItemRow,
   CommercialItemsClient,
   CreateCommercialItemInput,
+  CreateTakeoffCommercialItemInput,
   GetCommercialItemInput,
   LinkCommercialItemToPurchaseOrderLineInput,
   LinkCommercialItemToQuoteLineInput,
@@ -19,6 +20,7 @@ import type {
   RepairProjectQuoteSourceOpportunityLineagePayload,
 } from "@/lib/commercial-items/types";
 import type { Json } from "@/lib/supabase/types";
+import { syncCommercialItemLineageBestEffort } from "@/lib/commercial-lineage/sync";
 
 async function unwrapRpcRow<T>(
   request: PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
@@ -87,7 +89,33 @@ export async function createCommercialItem(
     throw new Error("Commercial item was not created.");
   }
 
-  return normalizeCommercialItemRow(row);
+  const created = normalizeCommercialItemRow(row);
+  await syncCommercialItemLineageBestEffort(client, created.id);
+  return created;
+}
+
+export async function createTakeoffCommercialItem(
+  client: CommercialItemsClient,
+  input: CreateTakeoffCommercialItemInput,
+): Promise<CommercialItemPayload> {
+  const row = await unwrapRpcRow<CommercialItemRow>(
+    client.rpc("create_takeoff_commercial_item" as never, {
+      p_input: {
+        organizationId: input.organizationId,
+        opportunityId: input.opportunityId,
+        projectId: input.projectId ?? null,
+        dataProjectId: input.dataProjectId,
+        measurementId: input.measurementId,
+        description: input.description,
+        rate: input.rate,
+      },
+    } as never),
+  );
+
+  if (!row) throw new Error("Takeoff commercial item was not created.");
+  const created = normalizeCommercialItemRow(row);
+  await syncCommercialItemLineageBestEffort(client, created.id);
+  return created;
 }
 
 export async function getCommercialItem(
@@ -138,6 +166,7 @@ export async function listCommercialItemsByIds(
       source_workbook_id,
       source_worksheet_id,
       source_sheet_id,
+      source_takeoff_measurement_id,
       source_range,
       source_signature,
       source_version,

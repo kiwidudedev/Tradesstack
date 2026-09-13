@@ -24,6 +24,7 @@ function state(status: PaymentClaimXeroPanelState["status"], label: string): Pay
     statusLabel: label,
     message: `Message for ${label}`,
     blockers: status === "not_ready" ? [{ code: "claim_not_submitted", message: "Payment Claim must be Submitted." }] : [],
+    invoiceId: hasInvoice ? "invoice-1" : null,
     invoiceNumber: hasInvoice ? "PC-0042" : null,
     lastSyncedAt: hasInvoice ? "2026-07-22T01:00:00.000Z" : null,
     safeErrorMessage: status === "attention_required" ? "Safe synchronization error." : null,
@@ -77,6 +78,73 @@ describe("Payment Claim Xero accounting table", () => {
     expect(markup).toContain('aria-label="Open Xero invoice PC-0042"');
   });
 
+  it("renders Refresh whenever an accounting identity exists", () => {
+    const markup = render(state("synced", "Synced"));
+    const refreshButton = markup.match(/<button[^>]*>Refresh<\/button>/)?.[0];
+
+    expect(refreshButton).toBeDefined();
+    expect(refreshButton).not.toMatch(/\sdisabled(?:=|>)/);
+  });
+
+  it.each([
+    ["accounting update", "update_pending", false],
+    ["replacement", "queued", false],
+    ["initial push", "queued", false],
+    ["refresh", "synced", true],
+  ] as const)(
+    "keeps Refresh visible and disabled during %s",
+    (_workflow, status, refreshInProgress) => {
+      const panelState = {
+        ...state(status, status === "update_pending" ? "Update pending" : "Queued"),
+        invoiceId: "invoice-1",
+        invoiceNumber: "PC-0042",
+        xeroUrl: "https://go.xero.com/example",
+        canRefresh: false,
+        refreshInProgress,
+      };
+      const markup = render(panelState);
+      const label = refreshInProgress ? "Refreshing..." : "Refresh";
+      const refreshButton = markup.match(
+        new RegExp(`<button[^>]*>${label.replace(".", "\\.")}<\\/button>`),
+      )?.[0];
+
+      expect(refreshButton).toBeDefined();
+      expect(refreshButton).toMatch(/\sdisabled(?:=|>)/);
+    },
+  );
+
+  it("hides Refresh only when no accounting identity is available", () => {
+    const markup = render({
+      ...state("not_ready", "Not ready"),
+      canRefresh: false,
+      invoiceId: null,
+      invoiceNumber: null,
+      xeroUrl: null,
+    });
+
+    expect(markup).not.toContain(">Refresh</button>");
+    expect(markup).not.toContain(">Refreshing...</button>");
+  });
+
+  it("shows connection and client-contact blockers independently without exporting", () => {
+    const markup = render({
+      ...state("not_ready", "Not ready"),
+      blockers: [
+        { code: "xero_disconnected", message: "Xero is not connected." },
+        { code: "client_contact_missing", message: "Missing client Xero Contact." },
+      ],
+      clientId: "client-1",
+      clientName: "John Andrews",
+      actionLabel: null,
+    });
+
+    expect(markup).toContain("Xero connection needs reauthorization.");
+    expect(markup).toContain("Client is not linked to a Xero Contact.");
+    expect(markup).toContain("Client → John Andrews → Xero Contact");
+    expect(markup).toContain("/app/leads-clients/clients/client-1");
+    expect(markup).not.toContain("Push to Xero");
+  });
+
   it.each([
     ["not_ready", "Not ready"],
     ["ready_to_sync", "Ready to sync"],
@@ -92,7 +160,7 @@ describe("Payment Claim Xero accounting table", () => {
   it("renders compact pre-sync states, pending rows, errors, and contextual sync actions", () => {
     const notReady = render(state("not_ready", "Not ready"));
     expect(notReady).not.toContain("Before this claim can sync");
-    expect(notReady).not.toContain("Payment Claim must be Submitted.");
+    expect(notReady).toContain("Payment Claim must be Submitted.");
     expect(notReady).not.toContain('data-testid="payment-claim-xero-invoice-row"');
 
     const ready = render(state("ready_to_sync", "Ready to sync"));

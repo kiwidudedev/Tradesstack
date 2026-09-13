@@ -35,7 +35,15 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     ".next-payment-claims/types/**/*.ts",
-    ".next-payment-claims/dev/types/**/*.ts"
+    ".next-payment-claims/dev/types/**/*.ts",
+    ".next-files-upload-modal/types/**/*.ts",
+    ".next-files-upload-modal/dev/types/**/*.ts",
+    ".next-files-upload-modal-live/types/**/*.ts",
+    ".next-files-upload-modal-live/dev/types/**/*.ts",
+    ".tmp/next-stage3-e2e/types/**/*.ts",
+    ".tmp/next-stage3-e2e/dev/types/**/*.ts",
+    ".tmp/next-stage6-hosted/types/**/*.ts",
+    ".tmp/next-stage6-hosted/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

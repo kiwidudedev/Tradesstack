@@ -83,7 +83,7 @@ export function buildTakeoffPdfExportFileName(params: {
 }
 
 async function loadPdfJsModule(): Promise<PdfJsModule> {
-  const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsModule;
+  const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.min.mjs")) as unknown as PdfJsModule;
 
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";

@@ -303,7 +303,7 @@ describe("Retention Claim immutable Xero accounting panel", () => {
     expect(payment).not.toContain("pushRetentionClaimToXeroAction");
   });
 
-  it("shows GST-inclusive authoritative values only for an inherited revision", () => {
+  it("does not duplicate the GST summary inside Accounting Sync", () => {
     const markup = render(state({
       status: "synced",
       statusLabel: "Synced",
@@ -314,12 +314,8 @@ describe("Retention Claim immutable Xero accounting panel", () => {
       invoiceTotalMinor: 115000,
       authoritativeInheritedTax: true,
     }));
-    expect(markup).toContain("Retention excl. GST");
-    expect(markup).toContain("GST");
-    expect(markup).toContain("Total incl. GST");
-    expect(markup).toContain("$1,000.00");
-    expect(markup).toContain("$150.00");
-    expect(markup).toContain("$1,150.00");
+    expect(markup).not.toContain("Retention excl. GST");
+    expect(markup).not.toContain("Total incl. GST");
 
     const legacyMarkup = render(state({
       status: "synced",

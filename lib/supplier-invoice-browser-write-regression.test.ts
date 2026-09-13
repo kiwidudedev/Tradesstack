@@ -39,8 +39,8 @@ const purchaseOrderPage = readFileSync(
   "app/app/(workspace)/projects/[projectId]/preconstruction/purchase-orders/[purchaseOrderId]/page.tsx",
   "utf8",
 );
-const purchaseOrderBillDialog = readFileSync(
-  "components/app/PurchaseOrderSupplierBillDialog.tsx",
+const supplierInvoiceTeamReviewModal = readFileSync(
+  "components/app/SupplierInvoiceTeamReviewModal.tsx",
   "utf8",
 );
 const detailActions = readFileSync(
@@ -94,41 +94,45 @@ describe("Supplier Invoice browser mutation boundary", () => {
   });
 
   it("restyles Supplier Invoice lines to the review layout while preserving hidden save fields", () => {
+    const supplierInvoiceLinesHeading =
+      '<h2 className={styles.quoteSectionTitle}>Supplier Invoice Lines</h2>';
+    const supplierInvoiceLinesStart = detailWorkspace.indexOf(supplierInvoiceLinesHeading);
     const supplierInvoiceLinesSection = detailWorkspace.slice(
-      detailWorkspace.indexOf('title="Supplier Invoice Lines"'),
-      detailWorkspace.indexOf('title="Line Allocations and Actual Costs"')
+      supplierInvoiceLinesStart,
+      detailWorkspace.indexOf(
+        '<OperationalPanel\n          id="line-allocation-workspace"',
+        supplierInvoiceLinesStart,
+      ),
     );
 
-    expect(detailWorkspace).toContain('title="Supplier Invoice Lines"');
-    expect(detailWorkspace).toContain('contentClassName="p-5 pt-5"');
-    expect(detailWorkspace).toContain("CommercialLineItemsTable");
-    expect(detailWorkspace).toContain("CommercialLineItemsRow");
-    expect(detailWorkspace).toContain("CommercialLineItemsAddButton");
-    expect(detailWorkspace).toContain("CommercialSummaryCard");
-    expect(detailWorkspace).toContain("CommercialLineDescriptionField");
-    expect(detailWorkspace).toContain("CommercialLinePrefixedNumberInput");
-    expect(detailWorkspace).toContain("formatCommercialDocumentMoney");
-    expect(detailWorkspace).toContain('{ key: "description", label: "Description" }');
-    expect(detailWorkspace).toContain('{ key: "qty", label: "Qty" }');
-    expect(detailWorkspace).toContain('{ key: "unitPrice", label: "Unit Price" }');
-    expect(detailWorkspace).toContain('{ key: "amount", label: "Amount", align: "right" }');
-    expect(detailWorkspace).toContain('{ key: "actions", label: "" }');
-    expect(detailWorkspace).toContain("supplier item code");
-    expect(detailWorkspace).toContain("Invoice Summary");
-    expect(detailWorkspace).toContain("GST (");
-    expect(detailWorkspace).toContain("alwaysVisible");
+    expect(supplierInvoiceLinesSection).toContain(supplierInvoiceLinesHeading);
+    expect(supplierInvoiceLinesSection).toContain("CommercialLineItemsTable");
+    expect(supplierInvoiceLinesSection).toContain("CommercialLineItemsRow");
+    expect(supplierInvoiceLinesSection).toContain("CommercialLineItemsAddButton");
+    expect(supplierInvoiceLinesSection).toContain("CommercialSummaryCard");
+    expect(supplierInvoiceLinesSection).toContain("CommercialLineDescriptionField");
+    expect(supplierInvoiceLinesSection).toContain("CommercialLinePrefixedNumberInput");
+    expect(supplierInvoiceLinesSection).toContain("formatCommercialDocumentMoney");
+    expect(supplierInvoiceLinesSection).toContain('{ key: "description", label: "Description" }');
+    expect(supplierInvoiceLinesSection).toContain('{ key: "qty", label: "Qty." }');
+    expect(supplierInvoiceLinesSection).toContain('{ key: "unitPrice", label: "Price" }');
+    expect(supplierInvoiceLinesSection).toContain('{ key: "amount", label: "Amount", align: "right" }');
+    expect(supplierInvoiceLinesSection).toContain('{ key: "actions", label: "" }');
+    expect(supplierInvoiceLinesSection).toContain("Invoice Summary");
+    expect(supplierInvoiceLinesSection).toContain("GST (");
     expect(supplierInvoiceLinesSection).not.toContain('className="space-y-4"');
-    expect(supplierInvoiceLinesSection).toContain('primaryInputClassName="h-8 leading-4"');
-    expect(supplierInvoiceLinesSection).toContain('secondaryInputClassName="mt-0 h-5 text-[12px] leading-4"');
-    expect(supplierInvoiceLinesSection).toContain('readOnlyClassName="gap-0 py-0.5"');
-    expect(supplierInvoiceLinesSection).toContain('className="mt-5 flex justify-end"');
-    expect(detailWorkspace).not.toContain('{ key: "unit", label: "Unit" }');
-    expect(detailWorkspace).not.toContain('{ key: "tax", label: "Tax" }');
-    expect(detailWorkspace).not.toContain('{ key: "costCode", label: "Cost Code" }');
-    expect(detailWorkspace).not.toContain('{ key: "project", label: "Project" }');
-    expect(detailWorkspace).toContain('prefix="$"');
-    expect(detailWorkspace).toContain('prefix="NZ$"');
-    expect(detailWorkspace).not.toContain('value={line.lineTotal}\n                        onChange={(value) => updateLine({ lineTotal: value })}\n                        disabled={!canEditInvoice}\n                        inputMode="decimal"');
+    expect(supplierInvoiceLinesSection).toContain('primaryAriaLabel={`Line ${index + 1} description`}');
+    expect(supplierInvoiceLinesSection).toContain('aria-label={`Line ${index + 1} quantity`}');
+    expect(supplierInvoiceLinesSection).toContain('aria-label={`Line ${index + 1} unit price`}');
+    expect(supplierInvoiceLinesSection).toContain('aria-label={`Line ${index + 1} amount`}');
+    expect(supplierInvoiceLinesSection).toContain('className="mt-3 flex justify-end pr-3"');
+    expect(supplierInvoiceLinesSection).not.toContain('{ key: "unit", label: "Unit" }');
+    expect(supplierInvoiceLinesSection).not.toContain('{ key: "tax", label: "Tax" }');
+    expect(supplierInvoiceLinesSection).not.toContain('{ key: "costCode", label: "Cost Code" }');
+    expect(supplierInvoiceLinesSection).not.toContain('{ key: "project", label: "Project" }');
+    expect(supplierInvoiceLinesSection).toContain('prefix="$"');
+    expect(supplierInvoiceLinesSection).toContain('prefix="NZ$"');
+    expect(supplierInvoiceLinesSection).not.toContain('value={line.lineTotal}\n                        onChange={(value) => updateLine({ lineTotal: value })}\n                        disabled={!canEditInvoice}\n                        inputMode="decimal"');
     expect(detailWorkspace).toContain("supplierItemCode: line.supplierItemCode || null,");
     expect(detailWorkspace).toContain("taxAmount: numberString(line.taxAmount),");
     expect(detailWorkspace).toContain("costCodeId: line.costCodeId || null,");
@@ -261,8 +265,19 @@ describe("Supplier Invoice browser mutation boundary", () => {
   });
 
   it("refreshes allocation approval state after commercial coding invalidates it", () => {
-    expect(detailWorkspace).toMatch(
-      /setCommercialComparison\(result\.comparison\);\s+await refreshWorkflowState\(\);\s+setMessage\("Commercial coding saved\./,
+    const saveCommercialCoding = detailWorkspace.slice(
+      detailWorkspace.indexOf("async function saveCommercialCoding"),
+      detailWorkspace.indexOf("async function saveAllReadyDraftAllocations"),
+    );
+    expect(saveCommercialCoding).toContain("updateSupplierInvoiceAllocationCommercialCodingAction");
+    expect(saveCommercialCoding).toContain("setCommercialComparison(result.comparison)");
+    expect(saveCommercialCoding).toContain('approval_status: "pending"');
+    expect(saveCommercialCoding).toContain("await refreshWorkflowState()");
+    expect(saveCommercialCoding.indexOf('approval_status: "pending"')).toBeLessThan(
+      saveCommercialCoding.indexOf("await refreshWorkflowState()"),
+    );
+    expect(saveCommercialCoding).toContain(
+      "Commercial coding saved. Re-approve the allocation before commercial approval.",
     );
   });
 
@@ -274,10 +289,16 @@ describe("Supplier Invoice browser mutation boundary", () => {
   it("provides a visible permission-gated PO site-review entry point", () => {
     expect(purchaseOrderPage).toContain("loadPurchaseOrderSupplierInvoiceSummaryAction");
     expect(purchaseOrderPage).toContain("invoiceSummary?.canReviewSiteDecisions");
-    expect(purchaseOrderPage).toContain("selectedSupplierInvoiceSummary");
-    expect(purchaseOrderBillDialog).toContain("detail.canReview");
-    expect(purchaseOrderBillDialog).toContain("Approve allocation");
+    expect(purchaseOrderPage).toContain("selectedSupplierInvoiceId");
+    expect(purchaseOrderPage).toContain("setSelectedSupplierInvoiceId(supplierInvoiceId)");
+    expect(purchaseOrderPage).toContain("void loadSupplierBillDetail(supplierInvoiceId)");
+    expect(purchaseOrderPage).toContain("SupplierInvoiceTeamReviewModal");
+    expect(purchaseOrderPage).toContain("detail={supplierBillDetail}");
+    expect(purchaseOrderPage).toContain('{summary.canReview ? "Review" : "View"}');
+    expect(supplierInvoiceTeamReviewModal).toContain("canReview={detail.canReview}");
+    expect(supplierInvoiceTeamReviewModal).toContain('props.onReview("approved")');
+    expect(supplierInvoiceTeamReviewModal).toContain('props.onReview("disputed")');
     expect(purchaseOrderPage).toContain("await refreshAuthoritativeInvoiceSummary()");
-    expect(purchaseOrderPage).toContain("await loadSupplierBillDetail(summary.supplierInvoiceId)");
+    expect(purchaseOrderPage).toContain("await loadSupplierBillDetail(selectedSupplierInvoiceId)");
   });
 });

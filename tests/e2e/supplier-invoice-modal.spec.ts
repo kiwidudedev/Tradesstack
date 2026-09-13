@@ -6,7 +6,6 @@ import {
   createE2EAdminClient,
   ensureSupplierInvoiceE2EContext,
   ensureSupplierInvoiceLoggedIn,
-  resetSupplierInvoiceOrgState,
 } from "./supplier-invoice-e2e-helpers";
 
 const realFixturePath = join(
@@ -112,8 +111,7 @@ test.describe("Supplier Invoice modal upload flow", () => {
   });
 
   test.beforeEach(async ({ page, baseURL }) => {
-    const context = await ensureSupplierInvoiceE2EContext();
-    await resetSupplierInvoiceOrgState(context.organizationId);
+    await ensureSupplierInvoiceE2EContext();
     await ensureSupplierInvoiceLoggedIn(page, baseURL!);
   });
 

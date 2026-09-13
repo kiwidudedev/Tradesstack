@@ -269,8 +269,16 @@ function createWorkbookSheetSupabaseMock(options?: {
   selectedSheet?: WorkbookSheetRow;
   updatedSheet?: WorkbookSheetRow;
   deleteResult?: Json | null;
+  renameResult?: Json | null;
 }) {
+  const sheetFilters: Array<[string, unknown]> = [];
   const rpc = vi.fn(async (fn: string) => {
+    if (fn === "save_pricing_workbook_active_sheet") {
+      return {
+        data: options?.renameResult ?? null,
+        error: null,
+      };
+    }
     if (fn === "delete_opportunity_pricing_workbook_sheet") {
       return {
         data:
@@ -289,7 +297,8 @@ function createWorkbookSheetSupabaseMock(options?: {
   const workbookSheetTable = {
     select() {
       return {
-        eq() {
+        eq(column: string, value: unknown) {
+          sheetFilters.push([column, value]);
           return this;
         },
         order() {
@@ -333,7 +342,8 @@ function createWorkbookSheetSupabaseMock(options?: {
     },
     update(payload: Record<string, unknown>) {
       return {
-        eq() {
+        eq(column: string, value: unknown) {
+          sheetFilters.push([column, value]);
           return this;
         },
         select() {
@@ -367,6 +377,7 @@ function createWorkbookSheetSupabaseMock(options?: {
       },
     } as never,
     rpc,
+    sheetFilters,
   };
 }
 
@@ -549,6 +560,31 @@ describe("opportunity pricing workbook adapter", () => {
     });
 
     expect(rows.map((row) => row.id)).toEqual(["workbook-opportunity"]);
+  });
+
+  it("keeps Project and Quote continuations out of the Opportunity register", () => {
+    const rows = buildOpportunityPricingWorkbookRegisterRows({
+      workbooks: [
+        buildWorkbookRow({ id: "source", project_id: null, quote_id: null }),
+        buildWorkbookRow({ id: "project-working", project_id: "project-1", quote_id: "quote-1" }),
+        buildWorkbookRow({ id: "project-workspace", project_id: "project-1", quote_id: null }),
+      ],
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["source"]);
+  });
+
+  it("lists Project continuations in the Project register scope", () => {
+    const rows = buildOpportunityPricingWorkbookRegisterRows({
+      scope: "project",
+      workbooks: [
+        buildWorkbookRow({ id: "source", project_id: null, quote_id: null }),
+        buildWorkbookRow({ id: "project-working", project_id: "project-1", quote_id: "quote-1" }),
+        buildWorkbookRow({ id: "project-workspace", project_id: "project-1", quote_id: null }),
+      ],
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["project-working", "project-workspace"]);
   });
 
   it("repairs a corrupted parent workbook register name when it only contains an internal page label", () => {
@@ -1525,7 +1561,64 @@ describe("opportunity pricing workbook adapter", () => {
 
     expect(renamedSheet.name).toBe("Renamed Page");
     expect(renamedSheet.worksheet.sheetName).toBe("Renamed Page");
+    expect(supabaseMock.sheetFilters).toContainEqual(["workbook_id", "workbook-1"]);
+    expect(supabaseMock.sheetFilters).toContainEqual(["id", "sheet-rename"]);
     expect(supabaseMock.rpc).not.toHaveBeenCalled();
+  });
+
+  it("renames a default Project variation sheet through the scoped atomic save path", async () => {
+    const sourceSheet = buildSheetRow({
+      id: "sheet-project",
+      workbook_id: "workbook-project",
+      opportunity_id: "opp-project",
+      is_default: true,
+      name: "Old Project Title",
+      worksheet_data: cloneJson(createDefaultWorksheetData({ sheetName: "Old Project Title" })),
+    });
+    const supabaseMock = createWorkbookSheetSupabaseMock({
+      selectedSheet: sourceSheet,
+      renameResult: buildRpcPayload({
+        workbook: {
+          id: "workbook-project",
+          opportunity_id: "opp-project",
+          project_id: "project-1",
+          variation_id: "variation-1",
+          name: "New Project Title",
+        },
+        sheet: {
+          id: "sheet-project",
+          workbook_id: "workbook-project",
+          opportunity_id: "opp-project",
+          is_default: true,
+          name: "New Project Title",
+          worksheet_data: cloneJson(createDefaultWorksheetData({ sheetName: "New Project Title" })),
+        },
+      }) as unknown as Json,
+    });
+
+    const renamedSheet = await renameOpportunityPricingWorkbookSheet({
+      supabase: supabaseMock.supabase,
+      organizationId: "org-1",
+      opportunityId: "opp-project",
+      projectId: "project-1",
+      variationId: "variation-1",
+      workbookId: "workbook-project",
+      sheetId: "sheet-project",
+      nextName: "New Project Title",
+      userId: "user-1",
+    });
+
+    expect(renamedSheet.sheetName).toBe("New Project Title");
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      "save_pricing_workbook_active_sheet",
+      expect.objectContaining({
+        p_opportunity_id: "opp-project",
+        p_project_id: "project-1",
+        p_variation_id: "variation-1",
+        p_workbook_id: "workbook-project",
+        p_sheet_id: "sheet-project",
+      }),
+    );
   });
 
   it("deletes a worksheet page through the transactional delete rpc", async () => {

@@ -14,6 +14,7 @@ import {
   ensureSupplierInvoiceE2EContext,
   ensureSupplierInvoiceLoggedIn,
 } from "./supplier-invoice-e2e-helpers";
+import { loadE2ETestEnvironment, requireLocalE2ETarget } from "./test-target-guard";
 
 const fixturePdfPath = join(
   process.cwd(),
@@ -37,33 +38,11 @@ function loadEnvValue(key: string) {
     return envCache.get(key)!;
   }
 
-  const envPath = join(process.cwd(), ".env.local");
-  const raw = readFileSync(envPath, "utf8");
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const candidateKey = trimmed.slice(0, separatorIndex).trim();
-    let value = trimmed.slice(separatorIndex + 1).trim();
-    if (
-      (value.startsWith("\"") && value.endsWith("\""))
-      || (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    envCache.set(candidateKey, value);
-  }
-
-  const value = envCache.get(key);
+  loadE2ETestEnvironment();
+  requireLocalE2ETarget();
+  const value = process.env[key];
   if (!value) {
-    throw new Error(`Missing ${key} in .env.local`);
+    throw new Error(`Missing ${key} in .env.test.local`);
   }
   return value;
 }
@@ -88,58 +67,6 @@ async function createAuthenticatedSupplierInvoiceClient() {
   }
 
   return client;
-}
-
-async function resetDeletionVerificationState(admin: AdminClient, organizationId: string) {
-  const { data: documents, error: documentsError } = await admin
-    .from("supplier_invoice_documents")
-    .select("file_path")
-    .eq("organization_id", organizationId);
-  if (documentsError) {
-    throw documentsError;
-  }
-
-  const storagePaths = (documents ?? [])
-    .map((document) => document.file_path)
-    .filter((value): value is string => typeof value === "string" && value.length > 0);
-  if (storagePaths.length > 0) {
-    const { error: storageError } = await admin
-      .storage
-      .from(SUPPLIER_INVOICE_DOCUMENTS_BUCKET)
-      .remove(storagePaths);
-    if (storageError) {
-      throw storageError;
-    }
-  }
-
-  for (const table of [
-    "organization_accounting_documents",
-    "project_actual_cost_events",
-    "supplier_invoice_document_extractions",
-    "supplier_invoice_activity_events",
-    "supplier_invoice_purchase_order_matches",
-    "supplier_invoice_line_allocations",
-    "supplier_invoice_site_review_decisions",
-    "supplier_invoice_accounts_approvals",
-    "supplier_invoice_site_review_submissions",
-    "supplier_invoice_commercial_variances",
-    "supplier_invoice_commercial_line_snapshots",
-    "supplier_invoice_commercial_approvals",
-    "supplier_invoice_approval_steps",
-    "supplier_invoice_documents",
-    "supplier_invoice_lines",
-    "supplier_invoices",
-    "organization_xero_connections",
-    "organization_projects",
-  ] as const) {
-    const { error } = await admin
-      .from(table)
-      .delete()
-      .eq("organization_id", organizationId);
-    if (error) {
-      throw error;
-    }
-  }
 }
 
 async function ensureProject(admin: AdminClient, organizationId: string, userId: string) {
@@ -410,9 +337,7 @@ async function openDeleteDialog(page: Page) {
 
 test.describe("Supplier Invoice deletion RPC", () => {
   test.beforeEach(async ({ page, baseURL }) => {
-    const context = await ensureSupplierInvoiceE2EContext();
-    const admin = createE2EAdminClient();
-    await resetDeletionVerificationState(admin, context.organizationId);
+    await ensureSupplierInvoiceE2EContext();
     await ensureSupplierInvoiceLoggedIn(page, baseURL!);
   });
 

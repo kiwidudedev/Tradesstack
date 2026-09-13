@@ -69,6 +69,20 @@ function buildWorksheet() {
 }
 
 describe("applyWorksheetMutation", () => {
+  it("preserves the input snapshot while cloning only the mutable draft", () => {
+    const worksheet = buildWorksheet();
+    const originalSnapshot = JSON.stringify(worksheet);
+
+    const result = applyWorksheetMutation(worksheet, (current) => {
+      setCell(current, "B2", { value: 99 });
+      return current;
+    });
+
+    expect(JSON.stringify(worksheet)).toBe(originalSnapshot);
+    expect(result.previousWorksheet).toBe(worksheet);
+    expect(getCell(result.nextWorksheet, "B2")?.value).toBe(99);
+  });
+
   it("recalculates formulas when enabled", () => {
     const worksheet = buildWorksheet();
 

@@ -17,9 +17,6 @@ import {
   type PaymentClaimXeroReadinessSnapshot,
 } from "@/lib/xero/payment-claim-readiness";
 import {
-  PAYMENT_CLAIM_INITIAL_PUSH_ATTACHMENT_JOB,
-  PAYMENT_CLAIM_ACCOUNTING_UPDATE_JOB,
-  PAYMENT_CLAIM_INITIAL_PUSH_JOB,
   PAYMENT_CLAIM_INITIAL_PUSH_PERMISSION,
 } from "@/lib/xero/payment-claim-initial-push-contract";
 import { XERO_SALES_INVOICE_MISSING_MESSAGE } from "@/lib/xero/payment-claim-sales-invoice-refresh-contract";
@@ -29,7 +26,6 @@ import {
   resolvePaymentClaimAccountingOperationForState,
 } from "@/lib/xero/payment-claim-accounting-decision-server";
 import type { XeroActionTiming } from "@/lib/xero/action-performance";
-import { getOrganizationXeroConnection } from "@/lib/xero/service";
 import type {
   AccountingSyncRequestContext,
 } from "@/lib/xero/accounting-sync-request-context";
@@ -37,6 +33,13 @@ import type {
   AccountingSyncCompletionEvidence,
   AccountingSyncLocalComparison,
 } from "@/lib/xero/accounting-sync-completion-evidence";
+import {
+  PAYMENT_CLAIM_ATTACHMENT_JOB_KINDS,
+  PAYMENT_CLAIM_FINANCIAL_JOB_KINDS,
+  paymentClaimXeroInvoiceUrl,
+  resolvePaymentClaimAccountingIdentity,
+  type PaymentClaimAccountingIdentitySnapshot,
+} from "@/lib/xero/payment-claim-accounting-identity";
 
 type Row = Record<string, unknown>;
 type UntypedAdmin = {
@@ -67,6 +70,8 @@ export type PaymentClaimXeroPanelState = {
   statusLabel: string;
   message: string;
   blockers: PaymentClaimXeroReadinessBlocker[];
+  clientId?: string | null;
+  clientName?: string | null;
   invoiceId?: string | null;
   invoiceNumber: string | null;
   lastSyncedAt: string | null;
@@ -145,12 +150,6 @@ function object(value: unknown): Row {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Row
     : {};
-}
-
-function invoiceUrl(invoiceId: string | null) {
-  return invoiceId
-    ? `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoiceId)}`
-    : null;
 }
 
 function messageForStatus(status: PaymentClaimXeroPanelStatus) {
@@ -263,24 +262,30 @@ export function derivePaymentClaimXeroPanelState(params: {
   activeRevision?: Row | null;
   latestObservation?: Row | null;
   latestVerificationFailure?: Row | null;
+  resolvedIdentity?: PaymentClaimAccountingIdentitySnapshot | null;
 }): PaymentClaimXeroPanelState {
   const document = params.document;
   const revisionBacked = document?.integration_contract === "payment_claim_revision_v1";
   const activeRevision = params.activeRevision ?? null;
-  const revisionIdentityMatches = Boolean(
-    activeRevision
-    && text(activeRevision.id) === text(document?.active_accounting_revision_id)
-    && text(activeRevision.accounting_document_id) === text(document?.id)
-    && text(activeRevision.external_document_id) === text(document?.external_document_id)
-    && text(activeRevision.external_document_number) === text(document?.external_document_number)
-    && text(activeRevision.tenant_id) === text(document?.tenant_id)
-    && text(activeRevision.connection_id) === text(document?.accounting_connection_id),
-  );
-  const invoiceId = revisionBacked
-    ? revisionIdentityMatches
-      ? text(activeRevision?.external_document_id)
-      : null
-    : text(document?.external_document_id);
+  const revisionIdentityMatches = params.resolvedIdentity
+    ? params.resolvedIdentity.identityIssue === null
+      && params.resolvedIdentity.identitySource === "active_revision"
+    : Boolean(
+      activeRevision
+      && text(activeRevision.id) === text(document?.active_accounting_revision_id)
+      && text(activeRevision.accounting_document_id) === text(document?.id)
+      && text(activeRevision.external_document_id) === text(document?.external_document_id)
+      && text(activeRevision.external_document_number) === text(document?.external_document_number)
+      && text(activeRevision.tenant_id) === text(document?.tenant_id)
+      && text(activeRevision.connection_id) === text(document?.accounting_connection_id),
+    );
+  const invoiceId = params.resolvedIdentity
+    ? params.resolvedIdentity.invoiceId
+    : revisionBacked
+      ? revisionIdentityMatches
+        ? text(activeRevision?.external_document_id)
+        : null
+      : text(document?.external_document_id);
   const activeQueueState = text(params.activeJob?.queue_state);
   const latestQueueState = text(params.latestJob?.queue_state);
   const documentStatus = text(document?.export_status);
@@ -398,14 +403,19 @@ export function derivePaymentClaimXeroPanelState(params: {
     message: params.accountingDecision?.blockers[0]?.message ?? messageForStatus(status),
     blockers: params.readiness.blockers,
     invoiceId,
-    invoiceNumber: revisionBacked && revisionIdentityMatches
-      ? text(activeRevision?.external_document_number)
-      : text(document?.external_document_number),
+    invoiceNumber: params.resolvedIdentity
+      ? params.resolvedIdentity.invoiceNumber
+      : revisionBacked && revisionIdentityMatches
+        ? text(activeRevision?.external_document_number)
+        : text(document?.external_document_number),
     lastSyncedAt: revisionBacked
       ? text(observation?.observed_at) ?? text(document?.last_synced_at) ?? text(document?.exported_at)
       : text(document?.last_synced_at) ?? text(document?.exported_at),
     safeErrorMessage,
-    xeroUrl: missingInXero ? null : invoiceUrl(invoiceId),
+    xeroUrl: missingInXero
+      ? null
+      : params.resolvedIdentity?.navigationUrl
+        ?? paymentClaimXeroInvoiceUrl(invoiceId),
     actionLabel: params.canManage && params.accountingDecision?.canPush ? "Push to Xero" : null,
     accountingDecision: params.accountingDecision,
     initialPushEnabled,
@@ -421,10 +431,22 @@ export function derivePaymentClaimXeroPanelState(params: {
     fullyPaidAt: text(document?.fully_paid_at),
     lastRefreshedAt: text(params.projection?.projected_at) ?? text(document?.last_status_synced_at),
     refreshInProgress: Boolean(params.activeRefreshJob),
-    canRefresh: params.canManage && Boolean(
-      invoiceId
-      || text(document?.active_accounting_revision_id)
-      || (document?.export_status === "exported" && text(document?.external_document_number)),
+    canRefresh: params.canManage && (
+      params.resolvedIdentity
+        ? Boolean(params.resolvedIdentity.invoiceId)
+          && (
+            params.resolvedIdentity.refresh.eligible
+            || params.resolvedIdentity.refresh.blockingReason
+              === "refresh_in_progress"
+          )
+        : Boolean(
+          invoiceId
+          || text(document?.active_accounting_revision_id)
+          || (
+            document?.export_status === "exported"
+            && text(document?.external_document_number)
+          ),
+        )
     ),
     attachmentStatus: attachment.status,
     attachmentStatusLabel: attachment.label,
@@ -511,6 +533,65 @@ function lightweightPaymentReadiness(claim: Row | null): PaymentClaimXeroReadine
   return { ready: true, blockers: [] };
 }
 
+async function loadPaymentClaimXeroRecoveryGuidance(params: {
+  db: UntypedAdmin;
+  organizationId: string;
+  projectId: string | null;
+  connection: Row | null;
+}) {
+  const blockers: PaymentClaimXeroReadinessBlocker[] = [];
+  if (params.connection?.status !== "connected") {
+    blockers.push({
+      code: "xero_disconnected",
+      message: "Xero connection needs reauthorization.",
+    });
+  }
+  if (!params.projectId) return { blockers, clientId: null, clientName: null };
+
+  const project = await params.db
+    .from("organization_projects")
+    .select("client_id")
+    .eq("organization_id", params.organizationId)
+    .eq("id", params.projectId)
+    .maybeSingle();
+  if (project.error || !project.data?.client_id) {
+    return { blockers, clientId: null, clientName: null };
+  }
+
+  const clientId = text(project.data.client_id);
+  if (!clientId) return { blockers, clientId: null, clientName: null };
+  const [client, activeLink] = await Promise.all([
+    params.db
+      .from("organization_clients")
+      .select("id, name, company_name")
+      .eq("organization_id", params.organizationId)
+      .eq("id", clientId)
+      .maybeSingle(),
+    params.db
+      .from("organization_external_contacts")
+      .select("id")
+      .eq("organization_id", params.organizationId)
+      .eq("provider", "xero")
+      .eq("local_entity_type", "client")
+      .eq("local_entity_id", clientId)
+      .eq("accounting_connection_id", text(params.connection?.id) ?? "")
+      .eq("tenant_id", text(params.connection?.tenant_id) ?? "")
+      .in("link_status", ["linked", "attention_required", "external_archived"])
+      .limit(1),
+  ]);
+  if (activeLink.error || (activeLink.data ?? []).length === 0) {
+    blockers.push({
+      code: "client_contact_missing",
+      message: "Client is not linked to a Xero Contact.",
+    });
+  }
+  return {
+    blockers,
+    clientId,
+    clientName: text(client.data?.name) ?? text(client.data?.company_name),
+  };
+}
+
 function optimisticRevisionMatches(
   claimUpdatedAt: unknown,
   revisionOptimisticValue: unknown,
@@ -559,14 +640,9 @@ async function loadJobs(params: {
     .eq("organization_id", params.organizationId)
     .eq("provider", "xero")
     .in("job_kind", [
-      "xero.sales_invoice.sync",
+      ...PAYMENT_CLAIM_FINANCIAL_JOB_KINDS,
       "xero.sales_invoice.refresh",
-      "xero.sales_invoice.attachment",
-      PAYMENT_CLAIM_INITIAL_PUSH_JOB,
-      PAYMENT_CLAIM_INITIAL_PUSH_ATTACHMENT_JOB,
-      "xero.payment_claim.replacement",
-      "xero.payment_claim.replacement.attachment",
-      PAYMENT_CLAIM_ACCOUNTING_UPDATE_JOB,
+      ...PAYMENT_CLAIM_ATTACHMENT_JOB_KINDS,
     ])
     .eq("request_payload->>accountingDocumentId", params.documentId)
     .order("created_at", { ascending: false })
@@ -575,12 +651,9 @@ async function loadJobs(params: {
   const jobs = (result.data ?? []) as Row[];
   return {
     activeJob: jobs.find((job) =>
-      [
-        PAYMENT_CLAIM_INITIAL_PUSH_JOB,
-        "xero.payment_claim.replacement",
-        PAYMENT_CLAIM_ACCOUNTING_UPDATE_JOB,
-        "xero.sales_invoice.sync",
-      ].includes(String(job.job_kind))
+      PAYMENT_CLAIM_FINANCIAL_JOB_KINDS.includes(
+        String(job.job_kind) as (typeof PAYMENT_CLAIM_FINANCIAL_JOB_KINDS)[number],
+      )
       && ["pending", "claimed", "retry_scheduled"].includes(String(job.queue_state)),
     ) ?? null,
     activeRefreshJob: jobs.find((job) =>
@@ -588,11 +661,15 @@ async function loadJobs(params: {
       && ["pending", "claimed", "retry_scheduled"].includes(String(job.queue_state)),
     ) ?? null,
     activeAttachmentJob: jobs.find((job) =>
-      [PAYMENT_CLAIM_INITIAL_PUSH_ATTACHMENT_JOB, "xero.payment_claim.replacement.attachment", "xero.sales_invoice.attachment"].includes(String(job.job_kind))
+      PAYMENT_CLAIM_ATTACHMENT_JOB_KINDS.includes(
+        String(job.job_kind) as (typeof PAYMENT_CLAIM_ATTACHMENT_JOB_KINDS)[number],
+      )
       && ["pending", "claimed", "retry_scheduled"].includes(String(job.queue_state)),
     ) ?? null,
     latestJob: jobs.find((job) =>
-      ![PAYMENT_CLAIM_INITIAL_PUSH_ATTACHMENT_JOB, "xero.payment_claim.replacement.attachment", "xero.sales_invoice.attachment"].includes(String(job.job_kind)),
+      !PAYMENT_CLAIM_ATTACHMENT_JOB_KINDS.includes(
+        String(job.job_kind) as (typeof PAYMENT_CLAIM_ATTACHMENT_JOB_KINDS)[number],
+      ),
     ) ?? null,
   };
 }
@@ -663,7 +740,7 @@ export async function getPaymentClaimXeroPanelState(params: {
   ) => dependencies
     ? dependencies.measure(stage, operation, { databaseOperation })
     : Promise.resolve(operation());
-  const [permissions, settings, claimResult, documentResult, connection] =
+  const [permissions, settings, claimResult, identity] =
     await Promise.all([
       trustedContext
         ? Promise.resolve(trustedContext.permissions)
@@ -704,19 +781,15 @@ export async function getPaymentClaimXeroPanelState(params: {
         .eq("organization_id", member.organization_id)
         .eq("id", params.claimId)
         .maybeSingle(), "project_claims.panel_identity"),
-      runDependency<{ data: Row | null; error: { message: string } | null }>(
-        "accounting_document", () => admin
-        .from("organization_accounting_documents")
-        .select("*")
-        .eq("organization_id", member.organization_id)
-        .eq("provider", "xero")
-        .eq("project_claim_id", params.claimId)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(), "organization_accounting_documents.panel"),
-      runDependency<Row | null>("xero_connection", () =>
-        getOrganizationXeroConnection(member.organization_id),
-      "organization_xero_connections.current"),
+      runDependency<PaymentClaimAccountingIdentitySnapshot>(
+        "accounting_identity",
+        () => resolvePaymentClaimAccountingIdentity({
+          organizationId: member.organization_id,
+          claimId: params.claimId,
+          admin,
+        }),
+        "payment_claim_accounting_identity",
+      ),
     ]);
   dependencies?.complete();
   const canView = permissions["accounting.sales_invoices.view"] === true;
@@ -760,46 +833,46 @@ export async function getPaymentClaimXeroPanelState(params: {
   const initialPushEnabled = !settings.error
     && settings.data?.initial_payment_claim_push_enabled === true;
   if (claimResult.error) throw new Error(claimResult.error.message);
-  if (documentResult.error) throw new Error(documentResult.error.message);
   const claim = claimResult.data as Row | null;
-  const document = documentResult.data as Row | null;
-  const readiness = lightweightPaymentReadiness(claim);
+  const document = identity.document;
+  const lightweightReadiness = lightweightPaymentReadiness(claim);
+  const recoveryGuidance = claim && lightweightReadiness.ready
+    ? await loadPaymentClaimXeroRecoveryGuidance({
+        db: admin,
+        organizationId: member.organization_id,
+        projectId: text(claim.project_id),
+        connection: identity.currentConnection,
+      })
+    : { blockers: [] as PaymentClaimXeroReadinessBlocker[], clientId: null, clientName: null };
+  const readiness = recoveryGuidance.blockers.length > 0
+    ? { ready: false, blockers: recoveryGuidance.blockers }
+    : lightweightReadiness;
   timing?.identify({
     accountingDocumentId: text(document?.id),
     revisionId: text(document?.active_accounting_revision_id),
   });
-  const [jobs, decisionEvidence] = await Promise.all([
-    document
-      ? timing
-        ? timing.span("document_jobs", () => loadJobs({
-            db: admin,
-            organizationId: member.organization_id,
-            documentId: String(document.id),
-          }), { databaseOperation: "payment_claim_document_jobs" })
-        : loadJobs({
-            db: admin,
-            organizationId: member.organization_id,
-            documentId: String(document.id),
-          })
-      : Promise.resolve({
-          activeJob: null,
-          activeRefreshJob: null,
-          activeAttachmentJob: null,
-          latestJob: null,
-        }),
+  const jobs = {
+    activeJob: identity.activeFinancialJob,
+    activeRefreshJob: identity.activeRefreshJob,
+    activeAttachmentJob: identity.activeAttachmentJob,
+    latestJob: identity.latestJob,
+  };
+  const decisionEvidence = await (
     timing
       ? timing.span("accounting_evidence", () =>
           loadPaymentClaimAccountingDecisionEvidence({
             organizationId: member.organization_id,
             document,
             hasActiveWork: false,
+            resolvedActiveRevision: identity.activeRevision,
           }), { databaseOperation: "payment_claim_accounting_evidence" })
       : loadPaymentClaimAccountingDecisionEvidence({
           organizationId: member.organization_id,
           document,
           hasActiveWork: false,
-        }),
-  ]);
+          resolvedActiveRevision: identity.activeRevision,
+        })
+  );
   const activeCommercialHash = text(
     object(decisionEvidence.revision?.commercial_snapshot).currentStateHash,
   );
@@ -819,7 +892,7 @@ export async function getPaymentClaimXeroPanelState(params: {
     readiness,
     currentHash,
     document,
-    connection: connection as unknown as Row | null,
+    connection: identity.currentConnection,
     hasPushPermission: canPush,
     featureEnabled: initialPushEnabled,
     hasActiveWork: Boolean(jobs.activeJob),
@@ -834,7 +907,7 @@ export async function getPaymentClaimXeroPanelState(params: {
         readiness,
         currentHash,
         document,
-        connection: connection as unknown as Row | null,
+        connection: identity.currentConnection,
         hasPushPermission: canPush,
         featureEnabled: initialPushEnabled,
         hasActiveWork: Boolean(jobs.activeJob),
@@ -862,15 +935,20 @@ export async function getPaymentClaimXeroPanelState(params: {
     canPush,
     accountingDecision,
     projection: decisionEvidence.projection,
-    activeRevision: decisionEvidence.revision,
+    activeRevision: identity.activeRevision,
     latestObservation: decisionEvidence.latestObservation,
     latestVerificationFailure,
+    resolvedIdentity: identity,
   });
   presentation?.complete({
     rowsReturned: 1,
     cacheStatus: "not_applicable",
   });
-  return panel;
+  return {
+    ...panel,
+    clientId: recoveryGuidance.clientId,
+    clientName: recoveryGuidance.clientName,
+  };
 }
 
 async function ensureAccountingDocument(params: {

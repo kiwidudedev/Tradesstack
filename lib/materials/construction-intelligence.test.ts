@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -21,6 +22,8 @@ vi.mock("@/lib/cost-construction-intelligence", () => ({
 
 import { buildMaterialConstructionIntelligenceInput } from "@/lib/materials/service";
 import { buildMaterialClassificationPatch } from "@/lib/materials/service";
+
+const materialImportServiceSource = readFileSync("lib/materials/import-service.ts", "utf8");
 
 describe("material construction intelligence inputs", () => {
   it("includes preferred supplier, current price, and import-batch context", () => {
@@ -115,8 +118,91 @@ describe("material construction intelligence inputs", () => {
         finalClassification: null,
       } as never,
       organizationCostCodeId: null,
+      accountingResolution: {
+        status: "needs_accounting_mapping",
+        accountingMappingId: null,
+      },
     });
 
     expect(patch.ai_construction_intelligence).toEqual({});
+  });
+
+  it("does not persist accounting or construction identity on a Material", () => {
+    const classification = {
+      workType: null,
+      costType: "MAT",
+      costCode: "100",
+      confidence: 0.98,
+      needsReview: false,
+      reasoningSummary: "Material library route",
+      classificationSource: "rules",
+      financialRouting: {
+        tradesstackCostCode: "100",
+        tradesstackCostCodeLabel: "Materials",
+        confidence: 0.98,
+        source: "material_library",
+        reviewStatus: "auto_approved",
+      },
+      originalClassification: null,
+      finalClassification: null,
+    } as never;
+
+    const patch = buildMaterialClassificationPatch({
+      classification,
+      organizationCostCodeId: "cost-code-1",
+      accountingResolution: {
+        status: "resolved",
+        accountingMappingId: "mapping-1",
+      },
+    });
+
+    expect(patch).toMatchObject({
+      cost_type: "MAT",
+      tradesstack_cost_code: null,
+      tradesstack_cost_code_label: null,
+      organization_cost_code_id: "cost-code-1",
+      accounting_mapping_id: null,
+      review_status: null,
+    });
+  });
+
+  it("does not create an accounting review for a Material", () => {
+    const patch = buildMaterialClassificationPatch({
+      classification: {
+        workType: null,
+        costType: "MAT",
+        costCode: "100",
+        confidence: 0.98,
+        needsReview: false,
+        reasoningSummary: "Material library route",
+        classificationSource: "rules",
+        financialRouting: {
+          tradesstackCostCode: "100",
+          tradesstackCostCodeLabel: "Materials",
+          confidence: 0.98,
+          source: "material_library",
+          reviewStatus: "auto_approved",
+        },
+        originalClassification: null,
+        finalClassification: null,
+      } as never,
+      organizationCostCodeId: null,
+      accountingResolution: {
+        status: "needs_accounting_mapping",
+        accountingMappingId: null,
+      },
+    });
+
+    expect(patch.accounting_mapping_id).toBeNull();
+    expect(patch.review_status).toBeNull();
+    expect(patch.review_reason).toBeNull();
+  });
+});
+
+describe("material accounting routing persistence", () => {
+  it("passes the authoritative import resolution into material enrichment", () => {
+    expect(materialImportServiceSource).toContain(
+      "accountingResolution: importRowClassification.accountingResolution"
+    );
   });
 });

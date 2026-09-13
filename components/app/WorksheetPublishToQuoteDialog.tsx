@@ -5,6 +5,7 @@ import {
   type CommercialLineDraft,
 } from "@/components/app/WorksheetCommercialLineConfirmationEditor";
 import { Button } from "@/components/ui/button";
+import { QuoteDestinationMultiSelect } from "@/components/app/QuoteDestinationMultiSelect";
 import {
   Dialog,
   DialogContent,
@@ -20,12 +21,12 @@ export function WorksheetPublishToQuoteDialog({
   lines,
   quotes,
   selectedTargetMode,
-  selectedQuoteId,
+  selectedQuoteIds,
   sourceRangeLabel,
   selectedValues,
   onOpenChange,
   onTargetModeChange,
-  onQuoteChange,
+  onQuotesChange,
   onLineChange,
   onAddLine,
   onRemoveLine,
@@ -36,12 +37,12 @@ export function WorksheetPublishToQuoteDialog({
   lines: CommercialLineDraft[];
   quotes: QuotePublishOption[];
   selectedTargetMode: "new" | "existing";
-  selectedQuoteId: string;
+  selectedQuoteIds: string[];
   sourceRangeLabel: string;
   selectedValues: string[];
   onOpenChange: (open: boolean) => void;
   onTargetModeChange: (mode: "new" | "existing") => void;
-  onQuoteChange: (quoteId: string) => void;
+  onQuotesChange: (quoteIds: string[]) => void;
   onLineChange: (lineId: string, patch: Partial<CommercialLineDraft>) => void;
   onAddLine: () => void;
   onRemoveLine: (lineId: string) => void;
@@ -71,20 +72,14 @@ export function WorksheetPublishToQuoteDialog({
           renderDestination={(
             <div className="space-y-3">
               <p className="text-sm font-medium text-[var(--text-primary)]">Quote destination</p>
-              <label className="flex items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white px-4 py-3">
-                <input
-                  type="radio"
-                  checked={selectedTargetMode === "new"}
-                  onChange={() => onTargetModeChange("new")}
-                  className="mt-1"
-                />
+              <div className="flex items-start gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm text-[var(--text-primary)]">Create New Draft Quote</span>
+                  <span className="block text-sm text-[var(--text-primary)]">Need another client quote?</span>
                   <span className="mt-1 block text-xs text-[var(--text-secondary)]">
-                    A new draft quote will be created for these confirmed lines.
+                    Create it in the Opportunity Quotation Register so its recipient and Rev 1 are recorded atomically.
                   </span>
                 </span>
-              </label>
+              </div>
               <label className="flex items-start gap-3 rounded-[12px] border border-[var(--border)] bg-white px-4 py-3">
                 <input
                   type="radio"
@@ -95,21 +90,14 @@ export function WorksheetPublishToQuoteDialog({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-[var(--text-primary)]">Append Existing Draft Quote</span>
-                  <select
-                    value={selectedQuoteId}
-                    onChange={(event) => onQuoteChange(event.target.value)}
+                  <div className="mt-3">
+                    <QuoteDestinationMultiSelect
+                    quotes={quotes}
+                    selectedIds={selectedQuoteIds}
+                    onChange={onQuotesChange}
                     disabled={selectedTargetMode !== "existing" || !hasExistingQuotes}
-                    className="mt-3 h-10 w-full rounded-[10px] border border-[var(--border)] bg-white px-3 text-sm text-[var(--text-primary)] disabled:bg-[var(--surface-muted)]"
-                  >
-                    <option value="">
-                      {hasExistingQuotes ? "Select draft quote" : "No draft quotes available"}
-                    </option>
-                    {quotes.map((quote) => (
-                      <option key={quote.id} value={quote.id}>
-                        {quote.quoteNumber} · {quote.quoteTitle || "Untitled quote"}
-                      </option>
-                    ))}
-                  </select>
+                    />
+                  </div>
                 </span>
               </label>
             </div>
@@ -120,8 +108,8 @@ export function WorksheetPublishToQuoteDialog({
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button type="button" onClick={onConfirm} disabled={isSubmitting}>
-            {isSubmitting ? "Adding..." : "Add to Quote"}
+          <Button type="button" onClick={onConfirm} disabled={isSubmitting || (selectedTargetMode === "existing" && selectedQuoteIds.length === 0)}>
+            {isSubmitting ? "Adding..." : selectedTargetMode === "existing" && selectedQuoteIds.length > 1 ? "Add to Quotes" : "Add to Quote"}
           </Button>
         </DialogFooter>
       </DialogContent>

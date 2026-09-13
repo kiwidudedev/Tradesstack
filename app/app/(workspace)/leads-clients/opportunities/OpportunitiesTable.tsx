@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { opportunityQuoteRevisionLabel } from "@/lib/opportunity-quote-display";
 import { CalendarDays, User } from "lucide-react";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import {
@@ -107,13 +108,14 @@ export function OpportunitiesTable({ rows }: { rows: LiveOpportunityRow[] }) {
       </OperationalTableHeader>
       <OperationalTableBody>
         {rows.map((row) => (
-          <OperationalTableRow key={row.opportunityId}>
+          <OperationalTableRow key={row.quoteSeriesId ?? row.opportunityId}>
             <OperationalTableCell>
-              <Link href={`/app/leads-clients/opportunities/${row.slug}`} className="group block">
+              <Link href={row.quoteRevisionId ? `/app/leads-clients/opportunities/${row.slug}/quote/${row.quoteRevisionId}` : `/app/leads-clients/opportunities/${row.slug}`} className="group block">
                 <p className="text-sm font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--brand-blue)]">
                   {row.name}
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{row.clientName}</p>
+                {row.quoteNumber ? <p className="mt-0.5 text-xs text-[var(--text-muted)]">{row.quoteNumber} · {opportunityQuoteRevisionLabel(row.revisionNumber)}</p> : null}
               </Link>
             </OperationalTableCell>
 
@@ -150,7 +152,7 @@ export function OpportunitiesTable({ rows }: { rows: LiveOpportunityRow[] }) {
             </OperationalTableCell>
 
             <OperationalTableCell>
-              <WinProbabilityBar pct={row.clientWinRatePct} />
+              {row.quoteSeriesId ? <span className="text-xs text-[var(--text-muted)]">—</span> : <WinProbabilityBar pct={row.clientWinRatePct} />}
             </OperationalTableCell>
           </OperationalTableRow>
         ))}

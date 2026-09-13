@@ -18,12 +18,9 @@ type CostItemReviewSourceRow = {
   financial_routing_confidence: number | null;
   financial_routing_source: string | null;
   accounting_mapping_id: string | null;
-  organization_cost_code_id?: string | null;
   review_status: string | null;
   review_reason: string | null;
   ai_construction_intelligence?: JsonObject | null;
-  original_classification?: JsonObject | null;
-  final_classification?: JsonObject | null;
 };
 
 type MaterialReviewSourceRow = {
@@ -45,15 +42,15 @@ type MaterialReviewSourceRow = {
   updated_at: string;
 };
 
-type ProjectRow = {
-  id: string;
-  name: string;
-};
-
 type OrganizationCostCodeRow = {
   id: string;
   code: string;
   name: string;
+};
+
+type AccountingMappingSourceRow = {
+  id: string;
+  organization_cost_code_id: string;
 };
 
 type CostItemsSelectQuery = {
@@ -87,22 +84,24 @@ type GenericTable = {
   };
 };
 
+type OrganizationScopedLookupTable = {
+  select: (columns: string) => {
+    eq: (column: string, value: string) => {
+      in: (column: string, values: string[]) => Promise<{
+        data: Array<Record<string, unknown>> | null;
+        error: { message: string } | null;
+      }>;
+    };
+  };
+};
+
 function isMissingOrganizationMaterialsColumnError(message: string | null | undefined) {
   const normalized = (message ?? "").toLowerCase();
   return normalized.includes("organization_materials.") && normalized.includes("does not exist");
 }
 
-function isMissingCostItemsOrganizationCostCodeIdError(message: string | null | undefined) {
-  const normalized = (message ?? "").toLowerCase();
-  return normalized.includes("cost_items.organization_cost_code_id") && normalized.includes("does not exist");
-}
-
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function toNullableString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function formatDocumentKind(value: string): string {
@@ -170,8 +169,6 @@ async function fetchCostItemReviewRows(organizationId: string) {
     "review_status",
     "review_reason",
     "ai_construction_intelligence",
-    "original_classification",
-    "final_classification",
   ];
   const queryRows = async (columns: string[]) =>
     table
@@ -183,16 +180,7 @@ async function fetchCostItemReviewRows(organizationId: string) {
       .order("updated_at", { ascending: false })
       .limit(100);
 
-  let { data, error } = await queryRows([...baseColumns, "organization_cost_code_id"]);
-
-  if (error && isMissingCostItemsOrganizationCostCodeIdError(error.message)) {
-    const fallbackResult = await queryRows(baseColumns);
-    data = (fallbackResult.data ?? []).map((row) => ({
-      ...row,
-      organization_cost_code_id: null,
-    }));
-    error = fallbackResult.error;
-  }
+  const { data, error } = await queryRows(baseColumns);
 
   if (error) {
     throw new Error(error.message);
@@ -282,6 +270,27 @@ async function fetchOrganizationCostCodeLabels(organizationId: string, ids: stri
   );
 }
 
+async function fetchAccountingMappingCostCodeIds(organizationId: string, ids: string[]) {
+  if (ids.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const table = supabase.from("organization_tradesstack_accounting_mappings") as unknown as OrganizationScopedLookupTable;
+  const { data, error } = await table
+    .select("id, organization_cost_code_id")
+    .eq("organization_id", organizationId)
+    .in("id", ids);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return new Map(
+    ((data ?? []) as unknown as AccountingMappingSourceRow[]).map((row) => [row.id, row.organization_cost_code_id])
+  );
+}
+
 export async function listClassificationReviewRows(organizationId: string): Promise<ClassificationReviewRow[]> {
   const [costItemRows, materialRows] = await Promise.all([
     fetchCostItemReviewRows(organizationId),
@@ -289,10 +298,19 @@ export async function listClassificationReviewRows(organizationId: string): Prom
   ]);
 
   const projectIds = Array.from(new Set(costItemRows.map((row) => row.project_id).filter(Boolean)));
+  const accountingMappingIds = Array.from(
+    new Set(costItemRows.map((row) => row.accounting_mapping_id).filter((value): value is string => Boolean(value)))
+  );
+  const accountingMappingCostCodeIdById = await fetchAccountingMappingCostCodeIds(
+    organizationId,
+    accountingMappingIds
+  );
   const organizationCostCodeIds = Array.from(
     new Set(
-      [...costItemRows, ...materialRows]
-        .map((row) => row.organization_cost_code_id ?? null)
+      [
+        ...materialRows.map((row) => row.organization_cost_code_id ?? null),
+        ...accountingMappingCostCodeIdById.values(),
+      ]
         .filter((value): value is string => Boolean(value))
     )
   );
@@ -302,36 +320,42 @@ export async function listClassificationReviewRows(organizationId: string): Prom
     fetchOrganizationCostCodeLabels(organizationId, organizationCostCodeIds),
   ]);
 
-  const normalizedCostItems: ClassificationReviewRow[] = costItemRows.map((row) => ({
-    entityType: "cost_item",
-    entityId: row.id,
-    organizationId: row.organization_id,
-    title: row.title.trim() || row.description.trim() || "Untitled cost item",
-    description: row.description.trim() || row.title.trim() || "Untitled cost item",
-    sourceLabel: formatDocumentKind(row.source_document_kind),
-    projectName: projectNameById.get(row.project_id) ?? "Unknown project",
-    tradesstackCostCode: row.tradesstack_cost_code,
-    tradesstackCostCodeLabel: row.tradesstack_cost_code_label,
-    mappedOrganizationCostCodeId: row.organization_cost_code_id ?? null,
-    mappedOrganizationCostCodeLabel: row.organization_cost_code_id
-      ? costCodeLabelById.get(row.organization_cost_code_id) ?? null
-      : null,
-    organizationCostCodeId: row.organization_cost_code_id ?? null,
-    confidence: row.financial_routing_confidence,
-    amount: row.line_total ?? null,
-    reviewStatus: row.review_status,
-    reviewReason: row.review_reason,
-    accountingStatus: resolveAccountingStatus({
-      reviewStatus: row.review_status,
+  const normalizedCostItems: ClassificationReviewRow[] = costItemRows.map((row) => {
+    const organizationCostCodeId = row.accounting_mapping_id
+      ? accountingMappingCostCodeIdById.get(row.accounting_mapping_id) ?? null
+      : null;
+
+    return {
+      entityType: "cost_item",
+      entityId: row.id,
+      organizationId: row.organization_id,
+      title: row.title.trim() || row.description.trim() || "Untitled cost item",
+      description: row.description.trim() || row.title.trim() || "Untitled cost item",
+      sourceLabel: formatDocumentKind(row.source_document_kind),
+      projectName: projectNameById.get(row.project_id) ?? "Unknown project",
       tradesstackCostCode: row.tradesstack_cost_code,
-      organizationCostCodeId: row.organization_cost_code_id ?? null,
-      accountingMappingId: row.accounting_mapping_id ?? null,
-    }),
-    classificationSource: row.financial_routing_source,
-    aiConstructionIntelligence: isObject(row.ai_construction_intelligence) ? row.ai_construction_intelligence : null,
-    originalClassification: isObject(row.original_classification) ? row.original_classification : null,
-    finalClassification: isObject(row.final_classification) ? row.final_classification : null,
-  }));
+      tradesstackCostCodeLabel: row.tradesstack_cost_code_label,
+      mappedOrganizationCostCodeId: organizationCostCodeId,
+      mappedOrganizationCostCodeLabel: organizationCostCodeId
+        ? costCodeLabelById.get(organizationCostCodeId) ?? null
+        : null,
+      organizationCostCodeId,
+      confidence: row.financial_routing_confidence,
+      amount: row.line_total ?? null,
+      reviewStatus: row.review_status,
+      reviewReason: row.review_reason,
+      accountingStatus: resolveAccountingStatus({
+        reviewStatus: row.review_status,
+        tradesstackCostCode: row.tradesstack_cost_code,
+        organizationCostCodeId,
+        accountingMappingId: row.accounting_mapping_id ?? null,
+      }),
+      classificationSource: row.financial_routing_source,
+      aiConstructionIntelligence: isObject(row.ai_construction_intelligence) ? row.ai_construction_intelligence : null,
+      originalClassification: null,
+      finalClassification: null,
+    };
+  });
 
   const normalizedMaterials: ClassificationReviewRow[] = materialRows.map((row) => ({
     entityType: "organization_material",

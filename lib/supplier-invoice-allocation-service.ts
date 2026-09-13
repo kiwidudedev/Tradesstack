@@ -10,8 +10,6 @@ import type {
   ResolvedOrganizationAccountingCode,
 } from "@/lib/accounting/types";
 import {
-  buildAccountingResolutionInput,
-  resolveInheritedAccountingCode,
   resolvePurchaseOrderLineLineage,
   type CostItemRow,
   type PurchaseOrderLineItemRow,
@@ -42,6 +40,10 @@ import {
 import type { Database, Json } from "@/lib/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveCurrentSupplierInvoiceTax } from "@/lib/supplier-invoice-tax-resolution-server";
+import {
+  resolveAccountingRoute,
+  type OrganizationAccountingRouteMappingRow,
+} from "@/lib/accounting/accounting-routes";
 
 type ServerSupabase = SupabaseClient<Database>;
 type SupplierInvoiceRow = Database["public"]["Tables"]["supplier_invoices"]["Row"];
@@ -411,7 +413,7 @@ async function loadAccountingMappings(params: {
   supabase: ServerSupabase;
   organizationId: string;
 }) {
-  const [{ data: costCodes, error: costCodesError }, { data: mappings, error: mappingsError }] =
+  const [{ data: costCodes, error: costCodesError }, { data: mappings, error: mappingsError }, routeMappingsResult] =
     await Promise.all([
       params.supabase
         .from("organization_cost_codes")
@@ -421,6 +423,12 @@ async function loadAccountingMappings(params: {
         .from("organization_tradesstack_accounting_mappings")
         .select("*")
         .eq("organization_id", params.organizationId),
+      params.supabase
+        .from("organization_accounting_route_mappings")
+        .select("*")
+        .eq("organization_id", params.organizationId)
+        .eq("provider", "xero")
+        .eq("accounting_route", "supplier_bill_expense"),
     ]);
 
   if (costCodesError) {
@@ -429,10 +437,14 @@ async function loadAccountingMappings(params: {
   if (mappingsError) {
     throw new Error(mappingsError.message);
   }
+  if (routeMappingsResult.error) {
+    throw new Error(routeMappingsResult.error.message);
+  }
 
   return {
     costCodes: (costCodes ?? []) as OrganizationCostCodeRow[],
     mappings: (mappings ?? []) as OrganizationTradesstackAccountingMappingRow[],
+    routeMappings: (routeMappingsResult.data ?? []) as OrganizationAccountingRouteMappingRow[],
   };
 }
 
@@ -828,23 +840,29 @@ async function prepareAcceptedDraftContexts(params: {
       costItem,
       sourceCostItem,
     });
-    const provider =
-      accountingMappings.mappings.find((row) => row.is_active)?.provider ??
-      accountingMappings.costCodes.find((row) => row.external_provider)?.external_provider ??
-      "manual";
-    const accountingResolution = resolveInheritedAccountingCode({
-      costCodes: accountingMappings.costCodes,
-      mappings: accountingMappings.mappings,
-      input: buildAccountingResolutionInput({
-        organizationId: params.organizationId,
-        provider,
-        costItemId: lineage.costItemId ?? lineage.sourceCostItemId,
-        projectId: lineage.projectId,
-        title: invoiceLine.description ?? "Supplier invoice line",
-        description: invoiceLine.description ?? "",
-        lineage,
-      }),
+    const provider = "xero";
+    const namedResolution = resolveAccountingRoute({
+      mappings: accountingMappings.routeMappings,
+      organizationId: params.organizationId,
+      provider,
+      accountingRoute: "supplier_bill_expense",
+      projectId: lineage.projectId,
     });
+    const accountingResolution: ResolvedOrganizationAccountingCode = {
+      status: namedResolution.status === "resolved" ? "resolved" : "needs_accounting_setup",
+      organizationCostCodeId: namedResolution.organizationCostCodeId,
+      accountingMappingId: null,
+      accountingRoute: "supplier_bill_expense",
+      accountingRouteMappingId: namedResolution.accountingRouteMappingId,
+      code: null,
+      name: null,
+      externalCode: null,
+      externalProvider: provider,
+      tradesstackCostCode: null,
+      provider,
+      projectId: namedResolution.resolvedProjectId,
+      reason: namedResolution.status === "resolved" ? "mapped_accounting_route" : "missing_accounting_route",
+    };
 
     return {
       invoice,
@@ -1120,7 +1138,6 @@ async function replaceDraftAllocationsForLines(params: {
               allocationStatus: previousAllocation.allocation_status,
               reviewStatus: previousAllocation.review_status,
               approvalStatus: previousAllocation.approval_status,
-              classificationStatus: previousAllocation.classification_status,
               accountingResolutionStatus: previousAllocation.accounting_resolution_status,
               organizationCostCodeId: previousAllocation.organization_cost_code_id,
               aiConfidenceScore: previousAllocation.ai_confidence_score,
@@ -1136,7 +1153,6 @@ async function replaceDraftAllocationsForLines(params: {
               allocationStatus: nextAllocation.allocation_status,
               reviewStatus: nextAllocation.review_status,
               approvalStatus: nextAllocation.approval_status,
-              classificationStatus: nextAllocation.classification_status,
               accountingResolutionStatus: nextAllocation.accounting_resolution_status,
               organizationCostCodeId: nextAllocation.organization_cost_code_id,
               aiConfidenceScore: nextAllocation.ai_confidence_score,
@@ -1209,7 +1225,6 @@ async function replaceDraftAllocationsForLines(params: {
             allocationStatus: allocation.allocation_status,
             reviewStatus: allocation.review_status,
             approvalStatus: allocation.approval_status,
-            classificationStatus: allocation.classification_status,
             accountingResolutionStatus: allocation.accounting_resolution_status,
             organizationCostCodeId: allocation.organization_cost_code_id,
             aiConfidenceScore: allocation.ai_confidence_score,
@@ -1340,7 +1355,7 @@ export async function markSupplierInvoiceLineAllocationUnmatched(params: {
     throw new Error("The selected supplier invoice line could not be found.");
   }
 
-  const [projectById, supplierById] = await Promise.all([
+  const [projectById, supplierById, accountingMappings] = await Promise.all([
     loadProjectsById({
       supabase: params.supabase,
       organizationId: params.organizationId,
@@ -1351,6 +1366,10 @@ export async function markSupplierInvoiceLineAllocationUnmatched(params: {
       organizationId: params.organizationId,
       supplierIds: invoice.supplier_id ? [invoice.supplier_id] : [],
     }),
+    loadAccountingMappings({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+    }),
   ]);
   const project = invoiceLine.project_id ? projectById.get(invoiceLine.project_id) ?? null : null;
   const supplierName = invoice.supplier_id
@@ -1360,6 +1379,13 @@ export async function markSupplierInvoiceLineAllocationUnmatched(params: {
   const resolvedLineTax = taxResolution.status === "exception"
     ? null
     : taxResolution.lines.find((line) => line.lineId === invoiceLine.id) ?? null;
+  const namedResolution = resolveAccountingRoute({
+    mappings: accountingMappings.routeMappings,
+    organizationId: params.organizationId,
+    provider: "xero",
+    accountingRoute: "supplier_bill_expense",
+    projectId: invoiceLine.project_id,
+  });
 
   validateSupplierInvoiceOrgConsistency(params.organizationId, {
     invoiceOrganizationId: invoice.organization_id,
@@ -1374,7 +1400,9 @@ export async function markSupplierInvoiceLineAllocationUnmatched(params: {
     allocatedAmount: toNumber(invoiceLine.line_total),
     allocatedQuantity: invoiceLine.quantity ?? null,
     projectId: invoiceLine.project_id ?? null,
-    organizationCostCodeId: invoiceLine.cost_code_id ?? null,
+    organizationCostCodeId: namedResolution.organizationCostCodeId,
+    accountingRouteMappingId: namedResolution.accountingRouteMappingId,
+    accountOverrideOrganizationCostCodeId: invoiceLine.cost_code_id ?? null,
     description: invoiceLine.description ?? null,
     supplierName,
     taxResolution: resolvedLineTax
@@ -1415,9 +1443,8 @@ function canApproveAllocation(allocation: SupplierInvoiceLineAllocationRow) {
 
   return (
     (allocation.review_status === "auto_approved" || allocation.review_status === "resolved") &&
-    allocation.classification_status !== "needs_review" &&
     allocation.accounting_resolution_status !== "needs_accounting_mapping" &&
-    allocation.accounting_resolution_status !== "invalid_tradesstack_cost_code"
+    allocation.accounting_resolution_status !== "needs_accounting_setup"
   );
 }
 
@@ -1431,14 +1458,12 @@ function canPostActualCostAllocation(allocation: SupplierInvoiceLineAllocationRo
   }
 
   if (allocation.allocation_status === "unmatched") {
-    return Boolean(allocation.tradesstack_cost_code);
+    return true;
   }
 
   return Boolean(
     allocation.purchase_order_id &&
-      allocation.purchase_order_line_item_id &&
-      allocation.tradesstack_cost_code &&
-      allocation.organization_cost_code_id
+      allocation.purchase_order_line_item_id
   );
 }
 
@@ -1528,7 +1553,6 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
         allocationStatus: context.allocation.allocation_status,
         reviewStatus: "resolved",
         approvalStatus: "approved",
-        classificationStatus: context.allocation.classification_status,
         accountingResolutionStatus: context.allocation.accounting_resolution_status,
     organizationCostCodeId: context.allocation.organization_cost_code_id,
     aiConfidenceScore: context.allocation.ai_confidence_score,
@@ -1554,7 +1578,6 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
         allocationStatus: context.allocation.allocation_status,
         reviewStatus: context.allocation.review_status,
         approvalStatus: context.allocation.approval_status,
-        classificationStatus: context.allocation.classification_status,
         accountingResolutionStatus: context.allocation.accounting_resolution_status,
         organizationCostCodeId: context.allocation.organization_cost_code_id,
         aiConfidenceScore: context.allocation.ai_confidence_score,
@@ -1591,7 +1614,6 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
           allocationStatus: context.allocation.allocation_status,
           reviewStatus: context.allocation.review_status,
           approvalStatus: context.allocation.approval_status,
-          classificationStatus: context.allocation.classification_status,
           accountingResolutionStatus: context.allocation.accounting_resolution_status,
           organizationCostCodeId: context.allocation.organization_cost_code_id,
           aiConfidenceScore: context.allocation.ai_confidence_score,
@@ -1634,7 +1656,6 @@ export async function approveSupplierInvoiceDraftAllocation(params: {
           allocationStatus: context.allocation.allocation_status,
           reviewStatus: context.allocation.review_status,
           approvalStatus: context.allocation.approval_status,
-          classificationStatus: context.allocation.classification_status,
           accountingResolutionStatus: context.allocation.accounting_resolution_status,
           organizationCostCodeId: context.allocation.organization_cost_code_id,
           aiConfidenceScore: context.allocation.ai_confidence_score,
@@ -1736,7 +1757,6 @@ export async function disputeSupplierInvoiceDraftAllocation(params: {
     allocationStatus: context.allocation.allocation_status,
     reviewStatus: context.allocation.review_status,
     approvalStatus: context.allocation.approval_status,
-    classificationStatus: context.allocation.classification_status,
     accountingResolutionStatus: context.allocation.accounting_resolution_status,
     organizationCostCodeId: context.allocation.organization_cost_code_id,
     aiConfidenceScore: context.allocation.ai_confidence_score,
@@ -2026,7 +2046,7 @@ export async function postApprovedSupplierInvoiceActualCosts(params: {
       skippedMessages.push(
         allocation.allocation_status === "unmatched"
           ? `Skipped ${formatInvoiceLineLabel(invoiceLine)} because unmatched allocations require a project before posting actual costs.`
-          : `Skipped ${formatInvoiceLineLabel(invoiceLine)} because the approved allocation is missing required lineage or accounting mapping.`
+          : `Skipped ${formatInvoiceLineLabel(invoiceLine)} because the approved allocation is missing required purchase-order lineage.`
       );
       continue;
     }
@@ -2299,7 +2319,6 @@ export async function reverseSupplierInvoiceActualCostEvent(params: {
           allocationStatus: successorAllocation.allocation_status,
           reviewStatus: successorAllocation.review_status,
           approvalStatus: successorAllocation.approval_status,
-          classificationStatus: successorAllocation.classification_status,
           accountingResolutionStatus: successorAllocation.accounting_resolution_status,
           organizationCostCodeId: successorAllocation.organization_cost_code_id,
           aiConfidenceScore: successorAllocation.ai_confidence_score,

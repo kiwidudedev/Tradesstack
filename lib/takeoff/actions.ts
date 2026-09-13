@@ -5,7 +5,9 @@ import {
   createAreaTakeoffMeasurementForOpportunityPage,
   createCountTakeoffMeasurementForOpportunityPage,
   createLineTakeoffMeasurementForOpportunityPage,
+  deleteUnusedTakeoffCalibrationForOpportunityPage,
   deleteTakeoffMeasurementChildForOpportunity,
+  getTakeoffCalibrationHistoryForOpportunityPage,
   saveTakeoffCalibrationForOpportunityPage,
   setActiveTakeoffCalibrationForOpportunityPage,
   updateTakeoffMeasurementChildGeometryForOpportunity,
@@ -13,6 +15,7 @@ import {
   updateTakeoffMeasurementGeometryForOpportunity,
   updateTakeoffMeasurementStatusForOpportunity,
 } from "@/lib/takeoff-server";
+import { takeoffOwnerKey, type TakeoffRouteOwner } from "@/lib/takeoff/owner";
 
 export interface TakeoffActionResult<TData = void> {
   ok: boolean;
@@ -58,7 +61,11 @@ function parseOptionalNormalizedPointsText(value: string): Array<{ x: number; y:
   return parseNormalizedPointsText(trimmed, 1);
 }
 
-export function createTakeoffPageActions(opportunityId: string) {
+export function createTakeoffPageActions(ownerInput: string | TakeoffRouteOwner) {
+  const owner: TakeoffRouteOwner = typeof ownerInput === "string"
+    ? { kind: "opportunity", slug: ownerInput }
+    : ownerInput;
+  const ownerKey = typeof ownerInput === "string" ? ownerInput : takeoffOwnerKey(owner);
   async function saveCalibrationAction(formData: FormData): Promise<TakeoffActionResult<Awaited<ReturnType<typeof saveTakeoffCalibrationForOpportunityPage>>>> {
     "use server";
 
@@ -73,7 +80,8 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const calibration = await saveTakeoffCalibrationForOpportunityPage({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
+        drawingSetId: String(formData.get("drawingSetId") ?? "").trim(),
         pageId,
         name: String(formData.get("name") ?? ""),
         unitSystem: String(formData.get("unitSystem") ?? "metric") === "imperial" ? "imperial" : "metric",
@@ -115,7 +123,8 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const calibration = await setActiveTakeoffCalibrationForOpportunityPage({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
+        drawingSetId: String(formData.get("drawingSetId") ?? "").trim(),
         pageId,
         calibrationId: calibrationIdRaw || null,
       });
@@ -132,6 +141,47 @@ export function createTakeoffPageActions(opportunityId: string) {
     }
   }
 
+  async function getCalibrationHistoryAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof getTakeoffCalibrationHistoryForOpportunityPage>>>> {
+    "use server";
+
+    try {
+      const history = await getTakeoffCalibrationHistoryForOpportunityPage({
+        opportunitySlug: ownerKey,
+        drawingSetId: String(formData.get("drawingSetId") ?? "").trim(),
+        pageId: String(formData.get("pageId") ?? "").trim(),
+      });
+      return { ok: true, data: history };
+    } catch {
+      return { ok: false, error: "Unable to load calibration history. Please try again." };
+    }
+  }
+
+  async function deleteCalibrationAction(
+    formData: FormData
+  ): Promise<TakeoffActionResult<Awaited<ReturnType<typeof deleteUnusedTakeoffCalibrationForOpportunityPage>>>> {
+    "use server";
+
+    try {
+      const result = await deleteUnusedTakeoffCalibrationForOpportunityPage({
+        opportunitySlug: ownerKey,
+        drawingSetId: String(formData.get("drawingSetId") ?? "").trim(),
+        pageId: String(formData.get("pageId") ?? "").trim(),
+        calibrationId: String(formData.get("calibrationId") ?? "").trim(),
+      });
+      return { ok: true, data: result };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      return {
+        ok: false,
+        error: message.startsWith("This calibration is used by")
+          ? message
+          : "Unable to delete calibration. Please try again.",
+      };
+    }
+  }
+
   async function createLineMeasurementAction(formData: FormData): Promise<TakeoffActionResult<Awaited<ReturnType<typeof createLineTakeoffMeasurementForOpportunityPage>>>> {
     "use server";
 
@@ -139,7 +189,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await createLineTakeoffMeasurementForOpportunityPage({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         pageId,
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -166,7 +216,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await createAreaTakeoffMeasurementForOpportunityPage({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         pageId,
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -193,7 +243,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await createCountTakeoffMeasurementForOpportunityPage({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         pageId,
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -223,9 +273,15 @@ export function createTakeoffPageActions(opportunityId: string) {
     const action = String(formData.get("action") ?? "").trim();
     const normalizedAction = action === "restore" ? "restore" : action === "delete" ? "delete" : "archive";
 
+    if (!measurementId || measurementId.startsWith("temp-")) {
+      return { ok: false, error: "Unable to update a measurement before it has finished saving." };
+    }
+
     try {
       const measurement = await updateTakeoffMeasurementStatusForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
+        drawingSetId: String(formData.get("drawingSetId") ?? "").trim(),
+        pageId: String(formData.get("pageId") ?? "").trim(),
         measurementId,
         action: normalizedAction,
       });
@@ -248,7 +304,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await updateTakeoffMeasurementGeometryForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 1),
       });
@@ -274,7 +330,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await updateTakeoffMeasurementChildGeometryForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         childId,
         childKind: "area-shape",
@@ -302,7 +358,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await updateTakeoffMeasurementChildGeometryForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         childId,
         childKind: "line-path",
@@ -330,7 +386,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await appendAreaShapeToMeasurementForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 3),
         role: role === "deduction" ? "deduction" : "include",
@@ -357,7 +413,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await deleteTakeoffMeasurementChildForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         childId,
         childKind: "area-shape",
@@ -383,7 +439,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await appendCountItemToMeasurementForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 1),
       });
@@ -409,7 +465,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await deleteTakeoffMeasurementChildForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         childId,
         childKind: "count-item",
@@ -435,7 +491,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await appendLinePathToMeasurementForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         points: parseNormalizedPointsText(String(formData.get("points") ?? ""), 2),
       });
@@ -461,7 +517,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await deleteTakeoffMeasurementChildForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         childId,
         childKind: "line-path",
@@ -487,7 +543,7 @@ export function createTakeoffPageActions(opportunityId: string) {
 
     try {
       const measurement = await updateTakeoffMeasurementDetailsForOpportunity({
-        opportunitySlug: opportunityId,
+        opportunitySlug: ownerKey,
         measurementId,
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -509,6 +565,8 @@ export function createTakeoffPageActions(opportunityId: string) {
   return {
     saveCalibrationAction,
     setActiveCalibrationAction,
+    getCalibrationHistoryAction,
+    deleteCalibrationAction,
     createLineMeasurementAction,
     createAreaMeasurementAction,
     createCountMeasurementAction,

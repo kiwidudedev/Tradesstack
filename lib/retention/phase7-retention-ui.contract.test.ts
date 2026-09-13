@@ -77,11 +77,12 @@ describe("Phase 7 Retention UI contract", () => {
   it("shows cumulative submitted Payment Claim evidence", () => {
     for (const label of [
       "Payment Claim",
-      "Retention Held",
-      "Pushed to Xero",
-      "New Since Last Push",
-      "Cumulative Retention",
-      "Outstanding",
+      "Retention excl. GST",
+      "GST",
+      "Total incl. GST",
+      "Pushed to Xero incl. GST",
+      "New Since Last Push incl. GST",
+      "Outstanding incl. GST",
     ]) {
       expect(detail).toContain(label);
     }

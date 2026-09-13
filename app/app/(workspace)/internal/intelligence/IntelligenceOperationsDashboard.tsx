@@ -437,24 +437,24 @@ export function IntelligenceOperationsDashboard({
           )}
         </OperationalPanel>
 
-        <OperationalPanel title="Cost Review Hotspots" description="Most corrected classifications and mapping overrides by work and cost type.">
+        <OperationalPanel title="Financial Routing Hotspots" description="Current Cost Item routing and review outcomes by route and source.">
           {data && correctionHotspots.costRows.length > 0 ? (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th>Event</th>
-                    <th>Work type</th>
-                    <th>Cost type</th>
+                    <th>Route</th>
+                    <th>Routing source</th>
                     <th>Count</th>
                   </tr>
                 </thead>
                 <tbody>
                   {correctionHotspots.costRows.map((row) => (
-                    <tr key={`${row.event_date}-${row.event_type}-${row.work_type ?? "none"}-${row.cost_type ?? "none"}`}>
+                    <tr key={`${row.event_date}-${row.event_type}-${row.tradesstack_cost_code ?? "none"}-${row.financial_routing_source ?? "none"}`}>
                       <td>{row.event_type}</td>
-                      <td>{row.work_type ?? "—"}</td>
-                      <td>{row.cost_type ?? "—"}</td>
+                      <td>{row.tradesstack_cost_code_label ? `${row.tradesstack_cost_code} ${row.tradesstack_cost_code_label}` : row.tradesstack_cost_code ?? "—"}</td>
+                      <td>{row.financial_routing_source ?? "—"}</td>
                       <td>{formatNumber(row.event_count)}</td>
                     </tr>
                   ))}
@@ -674,20 +674,20 @@ export function IntelligenceOperationsDashboard({
                 <thead>
                   <tr>
                     <th>Source document</th>
-                    <th>Work type</th>
-                    <th>Cost type</th>
+                    <th>Route</th>
+                    <th>Review state</th>
                     <th>Unresolved</th>
                     <th>Avg confidence</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.costItemBacklog.slice(0, 12).map((row) => (
-                    <tr key={`${row.project_id}-${row.source_document_kind}-${row.work_type ?? "none"}-${row.cost_type ?? "none"}`}>
+                    <tr key={`${row.project_id}-${row.source_document_kind}-${row.tradesstack_cost_code ?? "none"}-${row.review_status}`}>
                       <td>{row.source_document_kind}</td>
-                      <td>{row.work_type ?? "—"}</td>
-                      <td>{row.cost_type ?? "—"}</td>
+                      <td>{row.tradesstack_cost_code_label ? `${row.tradesstack_cost_code} ${row.tradesstack_cost_code_label}` : row.tradesstack_cost_code ?? "—"}</td>
+                      <td>{row.review_status}</td>
                       <td>{formatNumber(row.unresolved_review_count)}</td>
-                      <td>{formatDecimal(row.avg_classification_confidence, 3)}</td>
+                      <td>{formatDecimal(row.avg_routing_confidence, 3)}</td>
                     </tr>
                   ))}
                 </tbody>

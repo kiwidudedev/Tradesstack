@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  buildPurchaseOrderLineDraft,
   purchaseOrderDestinationAdapter,
   resolvePurchaseOrderPublishOptions,
 } from "@/lib/commercial-items/purchase-order-destination-adapter";
@@ -106,6 +107,16 @@ function buildPublishedRow(overrides: Partial<PublishedWorksheetCommercialRowWit
 describe("purchase order destination adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it.each([
+    ["Description", { description: "Stud", quantity: null, unit: null, rate: null, total: null }, { description: "Stud", quantity: 0, unit: "", rate: 0 }],
+    ["Quantity", { description: "", quantity: 10, unit: null, rate: null, total: null }, { description: "", quantity: 10, unit: "", rate: 0 }],
+    ["Unit", { description: "", quantity: null, unit: "lm", rate: null, total: null }, { description: "", quantity: 0, unit: "lm", rate: 0 }],
+    ["Rate", { description: "", quantity: null, unit: null, rate: 5, total: null }, { description: "", quantity: 0, unit: "", rate: 5 }],
+    ["Total", { description: "", quantity: null, unit: null, rate: null, total: 50 }, { description: "", quantity: 1, unit: "", rate: 50 }],
+  ] as const)("normalizes a %s-only mapping into a valid Purchase Order line", (_field, values, expected) => {
+    expect(buildPurchaseOrderLineDraft({ row: buildPublishedRow(values), purchaseOrderSection: "Materials" })).toMatchObject(expected);
   });
 
   it("returns supplier and draft purchase order options", async () => {
@@ -686,7 +697,7 @@ describe("purchase order destination adapter", () => {
     expect(result.message).toBe("1 row added to PO-001. 1 row skipped.");
   });
 
-  it("does not backfill worksheet purchase order lines with qty 1, unit Item, or derived rate defaults", async () => {
+  it("preserves a total-only worksheet line by deriving quantity 1 and rate", async () => {
     const client = createMockClient();
     let savedLineUid: string | null = null;
     vi.mocked(listOrganizationSuppliers).mockResolvedValue([
@@ -814,9 +825,9 @@ describe("purchase order destination adapter", () => {
     expect(savePurchaseOrderDraft).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       lineItems: [
         expect.objectContaining({
-          quantity: 0,
+          quantity: 1,
           unit: "",
-          rate: 0,
+          rate: 2760,
         }),
       ],
     }));

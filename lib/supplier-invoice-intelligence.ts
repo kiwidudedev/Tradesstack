@@ -160,7 +160,6 @@ export function summarizeSupplierInvoiceAllocation(input: {
   allocationStatus?: string | null;
   reviewStatus?: string | null;
   approvalStatus?: string | null;
-  classificationStatus?: string | null;
   accountingResolutionStatus?: string | null;
   organizationCostCodeId?: string | null;
   aiConfidenceScore?: number | null;
@@ -176,7 +175,6 @@ export function summarizeSupplierInvoiceAllocation(input: {
     allocationStatus: input.allocationStatus ?? null,
     reviewStatus: input.reviewStatus ?? null,
     approvalStatus: input.approvalStatus ?? null,
-    classificationStatus: input.classificationStatus ?? null,
     accountingResolutionStatus: input.accountingResolutionStatus ?? null,
     organizationCostCodeId: input.organizationCostCodeId ?? null,
     aiConfidenceScore: typeof input.aiConfidenceScore === "number" ? input.aiConfidenceScore : null,

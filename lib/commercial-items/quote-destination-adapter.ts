@@ -1,12 +1,34 @@
-import { buildQuoteCommercialItemLink, persistCommercialItemQuoteLinksSafely, type QuoteLineCommercialItemShape } from "@/lib/commercial-items/quote-linking";
+import { buildQuoteCommercialItemLink, type QuoteLineCommercialItemShape } from "@/lib/commercial-items/quote-linking";
 import type { WorksheetPublishDestinationAdapter } from "@/lib/commercial-items/destination-adapter";
+import { resolveEffectiveCommercialLineValues } from "@/lib/commercial-items/commercial-line-effective-values";
 import { buildWorksheetPublishSummaryMessage, type PublishedWorksheetCommercialRowWithItem } from "@/lib/commercial-items/published-worksheet-selection";
 import type { CommercialItemsClient } from "@/lib/commercial-items/types";
+import type { CommercialItemPayload } from "@/lib/commercial-items/types";
 import { getCommercialQuoteDetail, listCommercialQuotesForOpportunity } from "@/lib/commercial-quotes/service";
 
 export type QuotePublishTarget =
-  | { mode: "existing"; quoteId: string }
+  | { mode: "existing"; quoteIds: string[]; quoteId?: never }
+  | { mode: "existing"; quoteId: string; quoteIds?: never }
   | { mode: "new" };
+
+export function getQuotePublishTargetIds(target: QuotePublishTarget) {
+  if (target.mode !== "existing") return [];
+  return Array.from(new Set((target.quoteIds ?? [target.quoteId]).filter((quoteId): quoteId is string => Boolean(quoteId)))).sort();
+}
+
+export function buildQuotePublicationRequestKey(params: {
+  organizationId: string;
+  target: QuotePublishTarget;
+  commercialItemIds: string[];
+  sourceKind?: "worksheet" | "takeoff";
+}) {
+  return [
+    `${params.sourceKind ?? "worksheet"}-quote-v1`,
+    params.organizationId,
+    params.target.mode === "existing" ? getQuotePublishTargetIds(params.target).join(",") : "new",
+    ...[...params.commercialItemIds].sort(),
+  ].join(":");
+}
 
 export interface QuotePublishOption {
   id: string;
@@ -15,12 +37,29 @@ export interface QuotePublishOption {
   status: string | null;
   updatedAt: string | null;
   lineItemCount: number;
+  recipientName?: string;
+  revisionNumber?: number;
 }
 
 export type QuotePublishTargetResolution =
   | { kind: "blocked"; message: string }
   | { kind: "ready"; target: QuotePublishTarget }
   | { kind: "choose"; quotes: QuotePublishOption[] };
+
+export function resolveInitialQuotePublishTargetId(resolution: QuotePublishTargetResolution) {
+  return resolution.kind === "ready" && resolution.target.mode === "existing"
+    ? resolution.target.quoteId
+    : "";
+}
+
+export function resolveInitialQuotePublishTargetIds(resolution: QuotePublishTargetResolution) {
+  const quoteId = resolveInitialQuotePublishTargetId(resolution);
+  return quoteId ? [quoteId] : [];
+}
+
+export function resolveInitialQuotePublishTargetMode(resolution: QuotePublishTargetResolution): QuotePublishTarget["mode"] {
+  return resolution.kind === "ready" && resolution.target.mode === "new" ? "new" : "existing";
+}
 
 type ProjectQuoteRow = {
   id: string;
@@ -148,6 +187,8 @@ async function loadQuotePublishOptions(params: {
     status: row.status,
     updatedAt: row.updatedAt,
     lineItemCount: row.lineItemCount,
+    recipientName: row.clientName ?? "Recipient",
+    revisionNumber: row.revisionNumber,
   }));
 }
 
@@ -157,7 +198,7 @@ export async function resolveQuotePublishOptions(params: {
   opportunityId: string;
 }) {
   const quotes = await loadQuotePublishOptions(params);
-  return selectMeaningfulDraftQuoteTargets(quotes).pickerQuotes;
+  return selectEligibleDraftQuoteTargets(quotes).pickerQuotes;
 }
 
 function compareQuotePublishOptionsByUpdatedAt(left: QuotePublishOption, right: QuotePublishOption) {
@@ -171,7 +212,7 @@ function compareQuotePublishOptionsByUpdatedAt(left: QuotePublishOption, right: 
   return left.quoteNumber.localeCompare(right.quoteNumber);
 }
 
-function selectMeaningfulDraftQuoteTargets(quotes: QuotePublishOption[]) {
+function selectEligibleDraftQuoteTargets(quotes: QuotePublishOption[]) {
   const draftQuotes = quotes
     .filter((quote) => (quote.status ?? "Draft") === "Draft")
     .sort(compareQuotePublishOptionsByUpdatedAt);
@@ -183,23 +224,15 @@ function selectMeaningfulDraftQuoteTargets(quotes: QuotePublishOption[]) {
     };
   }
 
-  const nonEmptyDrafts = draftQuotes.filter((quote) => quote.lineItemCount > 0);
-  if (nonEmptyDrafts.length === 1) {
+  if (draftQuotes.length === 1) {
     return {
-      autoSelectedQuoteId: nonEmptyDrafts[0].id,
-      pickerQuotes: nonEmptyDrafts,
-    };
-  }
-
-  if (nonEmptyDrafts.length > 1) {
-    return {
-      autoSelectedQuoteId: null,
-      pickerQuotes: nonEmptyDrafts,
+      autoSelectedQuoteId: draftQuotes[0].id,
+      pickerQuotes: draftQuotes,
     };
   }
 
   return {
-    autoSelectedQuoteId: draftQuotes[0].id,
+    autoSelectedQuoteId: null,
     pickerQuotes: draftQuotes,
   };
 }
@@ -370,7 +403,7 @@ export async function resolveQuotePublishTarget(params: {
     opportunityId: params.opportunityId,
   });
 
-  const draftResolution = selectMeaningfulDraftQuoteTargets(quotes);
+  const draftResolution = selectEligibleDraftQuoteTargets(quotes);
 
   if (draftResolution.autoSelectedQuoteId) {
     return {
@@ -392,25 +425,37 @@ export async function resolveQuotePublishTarget(params: {
   };
 }
 
-export function buildQuoteLineDraftFromPublishedRow(row: PublishedWorksheetCommercialRowWithItem): QuoteLineCommercialItemShape {
-  const quantity = row.quantity ?? 1;
-  const safeRate = row.rate ?? (row.total !== null ? row.total / Math.max(quantity, 1) : 0);
+export interface CommercialQuotePublishRow {
+  description: string;
+  quantity: number | null;
+  unit: string | null;
+  rate: number | null;
+  total: number | null;
+  commercialItem: CommercialItemPayload;
+}
+
+export function buildQuoteLineDraftFromCommercialRow(row: CommercialQuotePublishRow): QuoteLineCommercialItemShape {
+  const effective = resolveEffectiveCommercialLineValues("quote", row);
 
   return {
     id: crypto.randomUUID(),
     section: "Item",
     description: row.description,
-    quantity,
+    quantity: effective.quantity,
     unit: row.unit ?? "Item",
-    rate: Number.isFinite(safeRate) ? safeRate : 0,
+    rate: effective.rate,
     isOptional: false,
     commercialItemLink: buildQuoteCommercialItemLink(row.commercialItem),
   };
 }
 
+export const buildQuoteLineDraftFromPublishedRow = buildQuoteLineDraftFromCommercialRow;
+
 export interface QuoteDestinationPublishResult {
   quoteId: string;
   quoteNumber: string;
+  quoteIds?: string[];
+  quoteNumbers?: string[];
   targetMode: QuotePublishTarget["mode"];
   addedLineCount: number;
   skippedRowCount: number;
@@ -418,137 +463,225 @@ export interface QuoteDestinationPublishResult {
   message: string;
 }
 
-export const quoteDestinationAdapter: WorksheetPublishDestinationAdapter<QuotePublishTarget, QuoteDestinationPublishResult> = {
-  destination: "quote",
-  async publish(input) {
-    const { opportunity, project, client } = await loadCommercialQuoteContext({
+export async function publishCommercialRowsToQuotes(input: {
+  client: CommercialItemsClient;
+  organizationId: string;
+  opportunityId: string;
+  projectId: string | null;
+  publishedRows: CommercialQuotePublishRow[];
+  target: QuotePublishTarget;
+  skippedRowCount?: number;
+  sourceLabel: string;
+  rpcNames?: { single: string; multi: string };
+}): Promise<QuoteDestinationPublishResult> {
+    const context = await loadCommercialQuoteContext({
       client: input.client,
       organizationId: input.organizationId,
       opportunityId: input.opportunityId,
       projectId: input.projectId,
     });
+    const opportunity = context.opportunity;
+    const project = context.project as {
+      id: string;
+      name: string;
+      project_code: string | null;
+      location: string | null;
+      source_opportunity_id: string | null;
+    } | null;
+    const client = context.client;
 
-    const appendedLineDrafts = input.publishedRows.map(buildQuoteLineDraftFromPublishedRow);
-
-    let existingQuote: ProjectQuoteRow | null = null;
-    let existingLineItems: ProjectQuoteLineItemRow[] = [];
+    const targetQuoteIds = getQuotePublishTargetIds(input.target);
+    const destinations: Array<{ quote: ProjectQuoteRow; lineItems: ProjectQuoteLineItemRow[] }> = [];
 
     if (input.target.mode === "existing") {
+      if (targetQuoteIds.length === 0) {
+        throw new Error("Select at least one draft Quote.");
+      }
+      for (const quoteId of targetQuoteIds) {
+        destinations.push(await loadExistingQuote({
+          client: input.client,
+          organizationId: input.organizationId,
+          quoteId,
+          opportunityId: input.opportunityId,
+        }));
+      }
+    } else {
+      const rpc = input.client as unknown as {
+        rpc(name: "initialize_primary_opportunity_quote_v1", args: {
+          p_organization_id: string;
+          p_opportunity_id: string;
+        }): Promise<{ data: Array<{ revision_id: string }> | null; error: { message: string } | null }>;
+      };
+      const initialized = await rpc.rpc("initialize_primary_opportunity_quote_v1", {
+        p_organization_id: input.organizationId,
+        p_opportunity_id: input.opportunityId,
+      });
+      const revisionId = initialized.data?.[0]?.revision_id;
+      if (initialized.error || !revisionId) {
+        throw new Error(initialized.error?.message ?? "Unable to initialize the Primary Client quote.");
+      }
       const loaded = await loadExistingQuote({
         client: input.client,
         organizationId: input.organizationId,
-        quoteId: input.target.quoteId,
+        quoteId: revisionId,
         opportunityId: input.opportunityId,
       });
-      existingQuote = loaded.quote;
-      existingLineItems = loaded.lineItems;
+      destinations.push(loaded);
     }
 
-    const combinedLineItems = [
-      ...existingLineItems.map((item) => ({
-        id: item.id,
-        section: item.section,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        rate: item.rate,
-        isOptional: item.is_optional,
-        sourceOpportunityQuoteId: item.source_opportunity_quote_id,
-        sourceOpportunityQuoteLineItemId: item.source_opportunity_quote_line_item_id,
-        sourceOpportunityQuoteNumber: item.source_opportunity_quote_number,
-      })),
-      ...appendedLineDrafts.map((item) => ({
-        id: item.id,
-        section: item.section,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        rate: item.rate,
-        isOptional: item.isOptional,
-        sourceOpportunityQuoteId: null,
-        sourceOpportunityQuoteLineItemId: null,
-        sourceOpportunityQuoteNumber: null,
-      })),
-    ];
+    const publicationInputs: Array<{ quoteNumber: string; input: Record<string, unknown> }> = [];
+    for (const destination of destinations) {
+      const existingQuote = destination.quote;
+      const appendedLineDrafts = input.publishedRows.map(buildQuoteLineDraftFromCommercialRow);
+      const combinedLineItems = [
+        ...destination.lineItems.map((item) => ({
+          id: item.id,
+          section: item.section,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          rate: item.rate,
+          isOptional: item.is_optional,
+          sourceOpportunityQuoteId: item.source_opportunity_quote_id,
+          sourceOpportunityQuoteLineItemId: item.source_opportunity_quote_line_item_id,
+          sourceOpportunityQuoteNumber: item.source_opportunity_quote_number,
+        })),
+        ...appendedLineDrafts.map((item) => ({
+          id: item.id,
+          section: item.section,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          rate: item.rate,
+          isOptional: item.isOptional,
+          sourceOpportunityQuoteId: null,
+          sourceOpportunityQuoteLineItemId: null,
+          sourceOpportunityQuoteNumber: null,
+        })),
+      ];
+      const quoteDate = existingQuote.quote_date ?? new Date().toISOString().slice(0, 10);
+      const quoteNumber = existingQuote.quote_number || await resolveNextQuoteNumber(
+        input.client,
+        input.organizationId,
+        project?.project_code ?? opportunity.opportunity_code ?? deriveOpportunityCodeFromSlug(opportunity.name),
+      );
+      const requestKey = buildQuotePublicationRequestKey({
+        organizationId: input.organizationId,
+        target: input.target.mode === "new" ? input.target : { mode: "existing", quoteId: existingQuote.id },
+        commercialItemIds: appendedLineDrafts.map((line) => line.commercialItemLink!.commercialItemId),
+        sourceKind: input.sourceLabel === "worksheet" ? "worksheet" : "takeoff",
+      });
+      publicationInputs.push({
+        quoteNumber,
+        input: {
+          requestKey,
+          organizationId: input.organizationId,
+          originatingOpportunityId: input.opportunityId,
+          projectId: input.projectId,
+          quoteId: existingQuote.id,
+          expectedUpdatedAt: existingQuote.updated_at,
+          quoteTitle: existingQuote.quote_title || `${opportunity.name} Quote`,
+          quoteNumber,
+          clientName: existingQuote.client_name ?? client?.name ?? "",
+          companyName: existingQuote.company_name ?? client?.company_name ?? "",
+          contactPerson: existingQuote.contact_person ?? client?.name ?? "",
+          clientEmail: existingQuote.client_email ?? client?.email ?? "",
+          clientPhone: existingQuote.client_phone ?? client?.phone ?? "",
+          siteAddress: existingQuote.site_address ?? project?.location ?? opportunity.location ?? "",
+          projectName: existingQuote.project_name ?? project?.name ?? opportunity.name,
+          quoteDate,
+          expiryDate: existingQuote.expiry_date ?? (addDays(quoteDate, 30) || null),
+          status: existingQuote.status ?? "Draft",
+          optionalItemsNotes: existingQuote.optional_items_notes ?? "",
+          scopeExclusions: existingQuote.scope_exclusions ?? "",
+          assumptions: existingQuote.assumptions ?? "",
+          scopeNotes: existingQuote.scope_notes ?? "",
+          marginPercent: Number(numberOrZero(existingQuote.margin_percent).toFixed(3)),
+          discountAmount: Number(numberOrZero(existingQuote.discount_amount).toFixed(2)),
+          contingencyAmount: Number(numberOrZero(existingQuote.contingency_amount).toFixed(2)),
+          gstPercent: Number(numberOrZero(existingQuote.gst_percent).toFixed(3)),
+          validityPeriod: existingQuote.validity_period ?? "30 days",
+          paymentTerms: existingQuote.payment_terms ?? "",
+          retentionPercentDefault: 0,
+          leadTime: existingQuote.lead_time ?? "",
+          termsInclusions: existingQuote.terms_inclusions ?? "",
+          termsExclusions: existingQuote.terms_exclusions ?? "",
+          clarifications: existingQuote.clarifications ?? "",
+          acceptanceNotes: existingQuote.acceptance_notes ?? "",
+          lineItems: combinedLineItems,
+          commercialItemLinks: appendedLineDrafts.map((line) => ({
+            commercialItemId: line.commercialItemLink!.commercialItemId,
+            quoteLineId: line.id,
+            snapshotAtLinkJson: line.commercialItemLink!.snapshotAtLinkJson,
+          })),
+        },
+      });
+    }
 
-    const quoteDate = existingQuote?.quote_date ?? new Date().toISOString().slice(0, 10);
-    const quoteNumber = existingQuote?.quote_number ?? await resolveNextQuoteNumber(
-      input.client,
-      input.organizationId,
-      project?.project_code ?? opportunity.opportunity_code ?? deriveOpportunityCodeFromSlug(opportunity.name),
-    );
-    const quoteTitle = existingQuote?.quote_title ?? `${opportunity.name} Quote`;
-
-    const rpcResponse = await input.client.rpc("save_commercial_quote_draft" as never, {
-      p_organization_id: input.organizationId,
-      p_originating_opportunity_id: input.opportunityId,
-      p_project_id: input.projectId,
-      p_quote_id: existingQuote?.id ?? null,
-      p_expected_updated_at: existingQuote?.updated_at ?? null,
-      p_quote_title: quoteTitle,
-      p_quote_number: quoteNumber,
-      p_client_name: existingQuote?.client_name ?? client?.name ?? "",
-      p_company_name: existingQuote?.company_name ?? client?.company_name ?? "",
-      p_contact_person: existingQuote?.contact_person ?? client?.name ?? "",
-      p_client_email: existingQuote?.client_email ?? client?.email ?? "",
-      p_client_phone: existingQuote?.client_phone ?? client?.phone ?? "",
-      p_site_address: existingQuote?.site_address ?? project?.location ?? opportunity.location ?? "",
-      p_project_name: existingQuote?.project_name ?? project?.name ?? opportunity.name,
-      p_quote_date: quoteDate,
-      p_expiry_date: existingQuote?.expiry_date ?? (addDays(quoteDate, 30) || null),
-      p_status: existingQuote?.status ?? "Draft",
-      p_optional_items_notes: existingQuote?.optional_items_notes ?? "",
-      p_scope_exclusions: existingQuote?.scope_exclusions ?? "",
-      p_assumptions: existingQuote?.assumptions ?? "",
-      p_scope_notes: existingQuote?.scope_notes ?? "",
-      p_margin_percent: Number(numberOrZero(existingQuote?.margin_percent).toFixed(3)),
-      p_discount_amount: Number(numberOrZero(existingQuote?.discount_amount).toFixed(2)),
-      p_contingency_amount: Number(numberOrZero(existingQuote?.contingency_amount).toFixed(2)),
-      p_gst_percent: Number(numberOrZero(existingQuote?.gst_percent).toFixed(3)),
-      p_validity_period: existingQuote?.validity_period ?? "30 days",
-      p_payment_terms: existingQuote?.payment_terms ?? "",
-      p_retention_percent_default: 0,
-      p_lead_time: existingQuote?.lead_time ?? "",
-      p_terms_inclusions: existingQuote?.terms_inclusions ?? "",
-      p_terms_exclusions: existingQuote?.terms_exclusions ?? "",
-      p_clarifications: existingQuote?.clarifications ?? "",
-      p_acceptance_notes: existingQuote?.acceptance_notes ?? "",
-      p_line_items: combinedLineItems,
-    } as never);
+    const isMultiDestination = publicationInputs.length > 1;
+    const rpcResponse = isMultiDestination
+      ? await input.client.rpc((input.rpcNames?.multi ?? "publish_commercial_quotes_v1") as never, {
+          p_input: {
+            organizationId: input.organizationId,
+            originatingOpportunityId: input.opportunityId,
+            destinations: publicationInputs.map((publication) => publication.input),
+          },
+        } as never)
+      : await input.client.rpc((input.rpcNames?.single ?? "publish_commercial_quote_v1") as never, {
+          p_input: publicationInputs[0].input,
+        } as never);
 
     if (rpcResponse.error) {
       throw new Error(rpcResponse.error.message);
     }
 
-    const savedRow = (Array.isArray(rpcResponse.data) ? rpcResponse.data[0] : null) as QuoteSaveRpcRow | null;
-    if (!savedRow?.id || !savedRow.updated_at) {
-      throw new Error("Quote was saved but no identifier was returned.");
+    const savedRows = (Array.isArray(rpcResponse.data) ? rpcResponse.data : []) as QuoteSaveRpcRow[];
+    if (savedRows.length !== publicationInputs.length || savedRows.some((row) => !row.id || !row.updated_at)) {
+      throw new Error("Quote publication did not return every selected destination.");
     }
 
-    const linkResult = await persistCommercialItemQuoteLinksSafely({
-      client: input.client,
-      organizationId: input.organizationId,
-      quoteId: savedRow.id,
-      quoteSourceOpportunityId: input.opportunityId,
-      lineItems: appendedLineDrafts,
-    });
+    const quoteIds = savedRows.map((row) => row.id);
+    const quoteNumbers = publicationInputs.map((publication) => publication.quoteNumber);
+    const addedLineCount = input.publishedRows.length * publicationInputs.length;
 
     return {
-      quoteId: savedRow.id,
-      quoteNumber,
+      quoteId: quoteIds[0],
+      quoteNumber: quoteNumbers[0],
+      quoteIds,
+      quoteNumbers,
       targetMode: input.target.mode,
-      addedLineCount: appendedLineDrafts.length,
-      skippedRowCount: input.publishedSelection.skippedRows.length,
-      partialLinkFailureMessage: linkResult.ok ? null : linkResult.errorMessage,
-      message: `${buildWorksheetPublishSummaryMessage({
-        destinationLabel: "quote",
-        addedCount: appendedLineDrafts.length,
-        skippedCount: input.publishedSelection.skippedRows.length,
-      })} ${
-        input.target.mode === "new"
-          ? `Draft quote ${quoteNumber} created.`
-          : `Updated quote ${quoteNumber}.`
-      }`,
+      addedLineCount,
+      skippedRowCount: input.skippedRowCount ?? 0,
+      partialLinkFailureMessage: null,
+      message: isMultiDestination
+        ? `Added ${input.publishedRows.length} ${input.sourceLabel} ${input.publishedRows.length === 1 ? "item" : "items"} to ${publicationInputs.length} Quotes.`
+        : input.sourceLabel === "worksheet"
+          ? `${buildWorksheetPublishSummaryMessage({
+              destinationLabel: "quote",
+              addedCount: input.publishedRows.length,
+              skippedCount: input.skippedRowCount ?? 0,
+            })} Updated quote ${quoteNumbers[0]}.`
+          : `Added ${input.publishedRows.length} ${input.sourceLabel} ${input.publishedRows.length === 1 ? "item" : "items"} to quote ${quoteNumbers[0]}.`,
     };
+}
+
+export const quoteDestinationAdapter: WorksheetPublishDestinationAdapter<QuotePublishTarget, QuoteDestinationPublishResult> = {
+  destination: "quote",
+  publish(input) {
+    return publishCommercialRowsToQuotes({
+      client: input.client,
+      organizationId: input.organizationId,
+      opportunityId: input.opportunityId,
+      projectId: input.projectId,
+      publishedRows: input.publishedRows as PublishedWorksheetCommercialRowWithItem[],
+      target: input.target,
+      skippedRowCount: input.publishedSelection.skippedRows.length,
+      sourceLabel: "worksheet",
+      // Preserve the established worksheet RPC contract and its regression tests.
+      rpcNames: {
+        single: "publish_worksheet_commercial_quote_v1",
+        multi: "publish_worksheet_commercial_quotes_v1",
+      },
+    });
   },
 };

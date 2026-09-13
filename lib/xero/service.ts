@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getXeroEnv } from "@/lib/xero/env";
@@ -16,7 +17,6 @@ import type { StoredXeroTenant, XeroConnection, XeroTokenSet } from "@/lib/xero/
 
 const SETTINGS_PATH = "/app/settings/integrations";
 const XERO_OAUTH_STATE_EXPIRY_MINUTES = 10;
-const XERO_USED_OAUTH_STATE_RETENTION_HOURS = 24;
 
 type OrganizationXeroConnectionRow = {
   id: string;
@@ -58,16 +58,125 @@ type OrganizationXeroConnectionSecretRow = {
   updated_at: string;
 };
 
+type XeroMutationResult<T> = {
+  data: T | null;
+  error: { message: string } | null;
+};
+
 type OrganizationXeroOauthStateRow = {
   id: string;
   organization_id: string;
   user_id: string;
+  connection_id: string | null;
+  correlation_id: string | null;
   state_hash: string;
   redirect_path: string;
   expires_at: string;
   used_at: string | null;
+  status:
+    | "created"
+    | "redirect_issued"
+    | "callback_received"
+    | "completed"
+    | "expired"
+    | "cancelled"
+    | "failed"
+    | null;
+  redirect_issued_at: string | null;
+  callback_received_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  failure_at: string | null;
+  callback_outcome: string | null;
   created_at: string;
+  updated_at: string | null;
 };
+
+export type XeroOAuthAttemptStatus = NonNullable<OrganizationXeroOauthStateRow["status"]>;
+
+export type XeroOAuthAttemptSummary = Pick<
+  OrganizationXeroOauthStateRow,
+  | "id"
+  | "connection_id"
+  | "correlation_id"
+  | "status"
+  | "created_at"
+  | "expires_at"
+  | "redirect_issued_at"
+  | "callback_received_at"
+  | "completed_at"
+  | "failure_code"
+  | "failure_at"
+  | "callback_outcome"
+>;
+
+const ACTIVE_OAUTH_ATTEMPT_STATUSES: XeroOAuthAttemptStatus[] = [
+  "created",
+  "redirect_issued",
+  "callback_received",
+];
+
+const SAFE_XERO_ERROR_MESSAGES: Record<string, string> = {
+  xero_connect_not_authorized: "You do not have permission to connect Xero.",
+  xero_connect_configuration_error: "Xero connection settings need administrator attention before authorization can start.",
+  xero_connect_state_creation_failed: "TradesStack could not start a durable Xero authorization attempt. Try again or contact support.",
+  xero_connect_connection_update_failed: "TradesStack recorded the attempt but could not prepare the Xero connection. Try again or contact support.",
+  xero_connect_redirect_failed: "TradesStack could not open Xero authorization. Try again or contact support.",
+  xero_callback_access_denied: "Xero authorization was cancelled or denied. You can safely try again.",
+  xero_callback_missing_parameters: "Xero did not return the information required to complete authorization.",
+  xero_callback_session_missing: "Sign in again before completing the Xero connection.",
+  xero_callback_state_invalid: "This Xero authorization attempt is invalid or has already finished. Start a new reconnect attempt.",
+  xero_callback_state_expired: "This Xero authorization attempt expired. Start a new reconnect attempt.",
+  xero_callback_state_superseded: "A newer Xero authorization attempt has replaced this one.",
+  xero_callback_wrong_user: "This Xero authorization attempt belongs to another signed-in user.",
+  xero_callback_membership_invalid: "Your organization access changed before Xero authorization completed.",
+  xero_callback_token_exchange_failed: "Xero authorization could not be exchanged securely. Start a new reconnect attempt.",
+  xero_callback_tenant_discovery_failed: "TradesStack could not confirm the authorized Xero organization.",
+  xero_callback_no_tenants: "Xero returned no organizations for this authorization.",
+  xero_callback_token_encryption_failed: "TradesStack could not secure the refreshed Xero credentials.",
+  xero_callback_persistence_failed: "TradesStack could not commit the Xero connection safely. No successful reconnect was recorded.",
+};
+
+export function getSafeXeroRecoveryMessage(code: string | null | undefined) {
+  return code ? SAFE_XERO_ERROR_MESSAGES[code] ?? "The Xero reconnect attempt did not complete. Try again or contact support." : null;
+}
+
+const SAFE_LEGACY_INTEGRATION_ERRORS = new Set([
+  "You do not have permission to manage integrations.",
+  "Select a Xero tenant first.",
+  "Unable to select the Xero tenant.",
+  "Connect Xero before refreshing reference data.",
+  "Unable to refresh Xero reference data.",
+  "Connect Xero before refreshing contacts.",
+  "Unable to refresh Xero contacts.",
+  "Confirm the Xero disconnect before continuing.",
+  "Unable to disconnect Xero.",
+  "Select an accounting workflow and Xero account.",
+  "Select an active account from the connected Xero tenant.",
+  "The selected Xero account has the wrong classification for this workflow.",
+  "Unable to save the accounting workflow mapping.",
+]);
+
+export function getSafeLegacyIntegrationError(message: string | null | undefined) {
+  if (!message) return null;
+  return SAFE_LEGACY_INTEGRATION_ERRORS.has(message)
+    ? message
+    : "Unable to complete the Xero integration action. Try again or contact support.";
+}
+
+export class XeroOAuthFlowError extends Error {
+  readonly code: string;
+  readonly correlationId: string;
+
+  constructor(code: string, correlationId: string, message?: string) {
+    super(message ?? getSafeXeroRecoveryMessage(code) ?? "Xero authorization failed.");
+    this.name = "XeroOAuthFlowError";
+    this.code = code;
+    this.correlationId = correlationId;
+  }
+}
 
 function decodeJwtPayload(token: string | undefined) {
   if (!token) {
@@ -124,19 +233,121 @@ async function getAdmin() {
   return await createAdminSupabaseClient();
 }
 
-async function cleanupExpiredXeroOauthStates() {
+async function markOauthAttemptFailed(params: {
+  attemptId: string;
+  code: string;
+  message?: string | null;
+  callbackOutcome?: string | null;
+}) {
   const admin = await getAdmin();
   const nowIso = new Date().toISOString();
-  const usedRetentionFloorIso = new Date(Date.now() - XERO_USED_OAUTH_STATE_RETENTION_HOURS * 60 * 60 * 1_000).toISOString();
-
   const { error } = await admin
     .from("organization_xero_oauth_states" as never)
-    .delete()
-    .or(`and(used_at.is.null,expires_at.lt.${nowIso}),and(used_at.not.is.null,used_at.lt.${usedRetentionFloorIso})`);
+    .update({
+      status: "failed",
+      failure_code: params.code,
+      failure_message: params.message ?? getSafeXeroRecoveryMessage(params.code),
+      failure_at: nowIso,
+      callback_outcome: params.callbackOutcome ?? "failed",
+      used_at: nowIso,
+      updated_at: nowIso,
+    } as never)
+    .eq("id", params.attemptId)
+    .in("status", ACTIVE_OAUTH_ATTEMPT_STATUSES as never);
 
-  if (error) {
-    throw new Error(error.message);
+  if (error) throw new Error(error.message);
+}
+
+async function reconcileConnectionAfterAttemptEnd(params: {
+  organizationId: string;
+  connectionId: string | null;
+}) {
+  if (!params.connectionId) return;
+  const admin = await getAdmin();
+  const nowIso = new Date().toISOString();
+  const active = await admin
+    .from("organization_xero_oauth_states" as never)
+    .select("id")
+    .eq("organization_id", params.organizationId)
+    .eq("connection_id", params.connectionId)
+    .in("status", ACTIVE_OAUTH_ATTEMPT_STATUSES as never)
+    .gt("expires_at", nowIso)
+    .limit(1);
+
+  if (active.error) throw new Error(active.error.message);
+  if ((active.data ?? []).length > 0) return;
+
+  const connectionUpdate = await admin
+    .from("organization_xero_connections" as never)
+    .update({
+      status: "attention_required",
+      updated_at: nowIso,
+    } as never)
+    .eq("id", params.connectionId)
+    .eq("organization_id", params.organizationId)
+    .eq("status", "pending_authorization");
+
+  if (connectionUpdate.error) throw new Error(connectionUpdate.error.message);
+}
+
+export async function reconcileExpiredXeroOAuthAttempts(params?: {
+  organizationId?: string;
+}) {
+  const admin = await getAdmin();
+  const nowIso = new Date().toISOString();
+  let query = admin
+    .from("organization_xero_oauth_states" as never)
+    .select("id, organization_id, connection_id, correlation_id, status, created_at, expires_at, redirect_issued_at, callback_received_at, completed_at, failure_code, failure_at, callback_outcome")
+    .is("used_at", null)
+    .lt("expires_at", nowIso)
+    .or("status.is.null,status.in.(created,redirect_issued,callback_received)");
+  if (params?.organizationId) query = query.eq("organization_id", params.organizationId);
+  const expired = await query;
+  if (expired.error) throw new Error(expired.error.message);
+
+  const reconciledConnections = new Set<string>();
+  for (const value of expired.data ?? []) {
+    const row = value as unknown as OrganizationXeroOauthStateRow;
+    const update = await admin
+      .from("organization_xero_oauth_states" as never)
+      .update({
+        status: "expired",
+        failure_code: "xero_callback_state_expired",
+        failure_message: getSafeXeroRecoveryMessage("xero_callback_state_expired"),
+        failure_at: nowIso,
+        callback_outcome: "expired",
+        updated_at: nowIso,
+      } as never)
+      .eq("id", row.id)
+      .is("used_at", null);
+    if (update.error) throw new Error(update.error.message);
+    if (row.connection_id) reconciledConnections.add(`${row.organization_id}:${row.connection_id}`);
   }
+
+  for (const key of reconciledConnections) {
+    const [organizationId, connectionId] = key.split(":");
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: organizationId ?? "",
+      connectionId: connectionId ?? null,
+    });
+  }
+
+  return { expiredCount: expired.data?.length ?? 0 };
+}
+
+export async function getLatestXeroOAuthAttempt(organizationId: string) {
+  await reconcileExpiredXeroOAuthAttempts({ organizationId });
+  const admin = await getAdmin();
+  const { data, error } = await admin
+    .from("organization_xero_oauth_states" as never)
+    .select("id, connection_id, correlation_id, status, created_at, expires_at, redirect_issued_at, callback_received_at, completed_at, failure_code, failure_at, callback_outcome")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data ?? null) as XeroOAuthAttemptSummary | null;
 }
 
 export async function getOrganizationXeroConnection(organizationId: string) {
@@ -152,27 +363,6 @@ export async function getOrganizationXeroConnection(organizationId: string) {
   }
 
   return (data ?? null) as OrganizationXeroConnectionRow | null;
-}
-
-async function saveXeroTokenSecret(connectionId: string, tokenSet: XeroTokenSet) {
-  const admin = await getAdmin();
-  const { tokenEncryptionKey } = getXeroEnv();
-  const encryptedTokenSet = encryptJsonValue(tokenSet, tokenEncryptionKey);
-  const { error } = await admin.from("organization_xero_connection_secrets" as never).upsert(
-    {
-      connection_id: connectionId,
-      encrypted_token_set: encryptedTokenSet,
-      encryption_version: 1,
-      updated_at: new Date().toISOString(),
-    } as never,
-    {
-      onConflict: "connection_id",
-    },
-  );
-
-  if (error) {
-    throw new Error(error.message);
-  }
 }
 
 async function readXeroTokenSecret(connectionId: string) {
@@ -231,26 +421,131 @@ export async function getCurrentXeroCallbackUserId() {
   return data.user?.id ?? null;
 }
 
-export async function createXeroAuthorizationUrl(params: {
+export async function createXeroAuthorizationAttempt(params: {
   organizationId: string;
   userId: string;
   redirectPath?: string;
 }) {
-  await cleanupExpiredXeroOauthStates();
+  const correlationId = randomUUID();
+  try {
+    await reconcileExpiredXeroOAuthAttempts({ organizationId: params.organizationId });
+  } catch (error) {
+    throw new XeroOAuthFlowError(
+      "xero_connect_state_creation_failed",
+      correlationId,
+      error instanceof Error ? error.message : undefined,
+    );
+  }
+
   const state = createRandomXeroState();
   const stateHash = hashXeroOAuthState(state);
+  const attemptId = randomUUID();
+  const createdAt = new Date().toISOString();
   const admin = await getAdmin();
+  const connection = await getOrganizationXeroConnection(params.organizationId);
+  const expiresAt = new Date(Date.now() + XERO_OAUTH_STATE_EXPIRY_MINUTES * 60 * 1_000).toISOString();
 
-  const { error } = await admin.from("organization_xero_oauth_states" as never).insert({
-    organization_id: params.organizationId,
-    user_id: params.userId,
-    state_hash: stateHash,
-    redirect_path: params.redirectPath ?? SETTINGS_PATH,
-    expires_at: new Date(Date.now() + XERO_OAUTH_STATE_EXPIRY_MINUTES * 60 * 1_000).toISOString(),
-  } as never);
+  const attemptInsert = await admin
+    .from("organization_xero_oauth_states" as never)
+    .insert({
+      id: attemptId,
+      organization_id: params.organizationId,
+      user_id: params.userId,
+      connection_id: connection?.id ?? null,
+      correlation_id: correlationId,
+      state_hash: stateHash,
+      redirect_path: params.redirectPath ?? SETTINGS_PATH,
+      expires_at: expiresAt,
+      status: "created",
+      callback_outcome: "not_received",
+      created_at: createdAt,
+      updated_at: createdAt,
+    } as never)
+    .select("*")
+    .single() as unknown as XeroMutationResult<OrganizationXeroOauthStateRow>;
 
-  if (error) {
-    throw new Error(error.message);
+  if (attemptInsert.error || !attemptInsert.data) {
+    throw new XeroOAuthFlowError(
+      "xero_connect_state_creation_failed",
+      correlationId,
+      attemptInsert.error?.message,
+    );
+  }
+  const attempt = attemptInsert.data;
+
+  const cancelled = await admin
+    .from("organization_xero_oauth_states" as never)
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      failure_code: "xero_callback_state_superseded",
+      failure_message: getSafeXeroRecoveryMessage("xero_callback_state_superseded"),
+      callback_outcome: "superseded",
+    } as never)
+    .eq("organization_id", params.organizationId)
+    .eq("user_id", params.userId)
+    .neq("id", attempt.id)
+    .lt("created_at", attempt.created_at)
+    .in("status", ACTIVE_OAUTH_ATTEMPT_STATUSES as never);
+  if (cancelled.error) {
+    await markOauthAttemptFailed({
+      attemptId: attempt.id,
+      code: "xero_connect_state_creation_failed",
+    }).catch(() => undefined);
+    throw new XeroOAuthFlowError("xero_connect_state_creation_failed", correlationId, cancelled.error.message);
+  }
+  const cancelledLegacy = await admin
+    .from("organization_xero_oauth_states" as never)
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      failure_code: "xero_callback_state_superseded",
+      failure_message: getSafeXeroRecoveryMessage("xero_callback_state_superseded"),
+      callback_outcome: "superseded",
+    } as never)
+    .eq("organization_id", params.organizationId)
+    .eq("user_id", params.userId)
+    .neq("id", attempt.id)
+    .lt("created_at", attempt.created_at)
+    .is("status", null)
+    .is("used_at", null);
+  if (cancelledLegacy.error) {
+    await markOauthAttemptFailed({
+      attemptId: attempt.id,
+      code: "xero_connect_state_creation_failed",
+    }).catch(() => undefined);
+    throw new XeroOAuthFlowError("xero_connect_state_creation_failed", correlationId, cancelledLegacy.error.message);
+  }
+  for (const legacyStatus of [false, true]) {
+    let sameTimestampQuery = admin
+      .from("organization_xero_oauth_states" as never)
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        failure_code: "xero_callback_state_superseded",
+        failure_message: getSafeXeroRecoveryMessage("xero_callback_state_superseded"),
+        callback_outcome: "superseded",
+      } as never)
+      .eq("organization_id", params.organizationId)
+      .eq("user_id", params.userId)
+      .eq("created_at", attempt.created_at)
+      .lt("id", attempt.id)
+      .is("used_at", null);
+    sameTimestampQuery = legacyStatus
+      ? sameTimestampQuery.is("status", null)
+      : sameTimestampQuery.in("status", ACTIVE_OAUTH_ATTEMPT_STATUSES as never);
+    const sameTimestampCancellation = await sameTimestampQuery;
+    if (sameTimestampCancellation.error) {
+      await markOauthAttemptFailed({
+        attemptId: attempt.id,
+        code: "xero_connect_state_creation_failed",
+      }).catch(() => undefined);
+      throw new XeroOAuthFlowError(
+        "xero_connect_state_creation_failed",
+        correlationId,
+        sameTimestampCancellation.error.message,
+      );
+    }
   }
 
   const connectionUpdate = await admin
@@ -259,20 +554,84 @@ export async function createXeroAuthorizationUrl(params: {
       {
         organization_id: params.organizationId,
         status: "pending_authorization",
-        last_error: null,
         updated_at: new Date().toISOString(),
       } as never,
       { onConflict: "organization_id" },
-    );
+    )
+    .select("*")
+    .single() as unknown as XeroMutationResult<OrganizationXeroConnectionRow>;
 
-  if (connectionUpdate.error) {
-    throw new Error(connectionUpdate.error.message);
+  if (connectionUpdate.error || !connectionUpdate.data) {
+    await markOauthAttemptFailed({
+      attemptId: attempt.id,
+      code: "xero_connect_connection_update_failed",
+    }).catch(() => undefined);
+    throw new XeroOAuthFlowError(
+      "xero_connect_connection_update_failed",
+      correlationId,
+      connectionUpdate.error?.message,
+    );
   }
 
-  return buildXeroAuthorizeUrl(state);
+  const preparedConnection = connectionUpdate.data;
+  let authorizeUrl: string;
+  try {
+    authorizeUrl = buildXeroAuthorizeUrl(state);
+  } catch (error) {
+    await markOauthAttemptFailed({
+      attemptId: attempt.id,
+      code: "xero_connect_configuration_error",
+    }).catch(() => undefined);
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: params.organizationId,
+      connectionId: preparedConnection.id,
+    }).catch(() => undefined);
+    throw new XeroOAuthFlowError(
+      "xero_connect_configuration_error",
+      correlationId,
+      error instanceof Error ? error.message : undefined,
+    );
+  }
+
+  const redirectIssued = await admin
+    .from("organization_xero_oauth_states" as never)
+    .update({
+      connection_id: preparedConnection.id,
+      status: "redirect_issued",
+      redirect_issued_at: new Date().toISOString(),
+      callback_outcome: "not_received",
+    } as never)
+    .eq("id", attempt.id)
+    .eq("status", "created");
+  if (redirectIssued.error) {
+    await markOauthAttemptFailed({
+      attemptId: attempt.id,
+      code: "xero_connect_redirect_failed",
+    }).catch(() => undefined);
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: params.organizationId,
+      connectionId: preparedConnection.id,
+    }).catch(() => undefined);
+    throw new XeroOAuthFlowError("xero_connect_redirect_failed", correlationId, redirectIssued.error.message);
+  }
+
+  return {
+    authorizeUrl,
+    attemptId: attempt.id,
+    correlationId,
+    expiresAt,
+  };
 }
 
-async function consumeOauthState(params: {
+export async function createXeroAuthorizationUrl(params: {
+  organizationId: string;
+  userId: string;
+  redirectPath?: string;
+}) {
+  return (await createXeroAuthorizationAttempt(params)).authorizeUrl;
+}
+
+async function claimOauthAttempt(params: {
   state: string;
   currentUserId: string;
 }) {
@@ -282,7 +641,6 @@ async function consumeOauthState(params: {
     .from("organization_xero_oauth_states" as never)
     .select("*")
     .eq("state_hash", stateHash)
-    .is("used_at", null)
     .maybeSingle();
 
   if (error) {
@@ -290,14 +648,40 @@ async function consumeOauthState(params: {
   }
 
   const row = (data ?? null) as OrganizationXeroOauthStateRow | null;
-  if (!row) {
-    throw new Error("Xero authorization state is missing or has already been used.");
+  if (!row) throw new XeroOAuthFlowError("xero_callback_state_invalid", randomUUID());
+  const correlationId = row.correlation_id ?? row.id;
+  if (row.status === "cancelled") throw new XeroOAuthFlowError("xero_callback_state_superseded", correlationId);
+  if (["completed", "failed", "callback_received"].includes(row.status ?? "") || row.used_at) {
+    throw new XeroOAuthFlowError("xero_callback_state_invalid", correlationId);
   }
   if (Date.parse(row.expires_at) < Date.now()) {
-    throw new Error("Xero authorization state has expired. Start the connection again.");
+    await admin
+      .from("organization_xero_oauth_states" as never)
+      .update({
+        status: "expired",
+        failure_code: "xero_callback_state_expired",
+        failure_message: getSafeXeroRecoveryMessage("xero_callback_state_expired"),
+        failure_at: new Date().toISOString(),
+        callback_outcome: "expired",
+      } as never)
+      .eq("id", row.id);
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: row.organization_id,
+      connectionId: row.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_state_expired", correlationId);
   }
   if (row.user_id !== params.currentUserId) {
-    throw new Error("This Xero callback does not belong to the current signed-in user.");
+    await markOauthAttemptFailed({
+      attemptId: row.id,
+      code: "xero_callback_wrong_user",
+      callbackOutcome: "wrong_user",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: row.organization_id,
+      connectionId: row.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_wrong_user", correlationId);
   }
 
   const membershipCheck = await admin
@@ -308,35 +692,114 @@ async function consumeOauthState(params: {
     .maybeSingle();
 
   if (membershipCheck.error) {
-    throw new Error(membershipCheck.error.message);
+    await markOauthAttemptFailed({
+      attemptId: row.id,
+      code: "xero_callback_membership_invalid",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: row.organization_id,
+      connectionId: row.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_membership_invalid", correlationId, membershipCheck.error.message);
   }
   if (!membershipCheck.data) {
-    throw new Error("You are no longer a member of the organization that started this Xero connection.");
+    await markOauthAttemptFailed({
+      attemptId: row.id,
+      code: "xero_callback_membership_invalid",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: row.organization_id,
+      connectionId: row.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_membership_invalid", correlationId);
   }
 
-  const { error: updateError } = await admin
+  let connectionId = row.connection_id;
+  if (!connectionId) {
+    const connection = await getOrganizationXeroConnection(row.organization_id);
+    connectionId = connection?.id ?? null;
+  }
+  if (!connectionId) {
+    await markOauthAttemptFailed({
+      attemptId: row.id,
+      code: "xero_callback_persistence_failed",
+    });
+    throw new XeroOAuthFlowError("xero_callback_persistence_failed", correlationId);
+  }
+
+  let claimQuery = admin
     .from("organization_xero_oauth_states" as never)
-    .update({ used_at: new Date().toISOString() } as never)
+    .update({
+      connection_id: connectionId,
+      status: "callback_received",
+      callback_received_at: new Date().toISOString(),
+      callback_outcome: "received",
+    } as never)
     .eq("id", row.id)
     .is("used_at", null);
+  claimQuery = row.status
+    ? claimQuery.eq("status", row.status)
+    : claimQuery.is("status", null);
+  const claimed = await claimQuery
+    .select("id")
+    .maybeSingle();
 
-  if (updateError) {
-    throw new Error(updateError.message);
+  if (claimed.error || !claimed.data) {
+    throw new XeroOAuthFlowError("xero_callback_state_invalid", correlationId, claimed.error?.message);
   }
 
-  return row;
+  return { ...row, connection_id: connectionId, status: "callback_received" as const };
 }
 
 export async function completeXeroOAuthCallback(params: { code: string; state: string; currentUserId: string }) {
-  const oauthState = await consumeOauthState({
+  const oauthState = await claimOauthAttempt({
     state: params.state,
     currentUserId: params.currentUserId,
   });
-  const tokenSet = normalizeTokenSet(await exchangeXeroAuthorizationCode(params.code));
-  const connections = await listXeroConnections(tokenSet.access_token);
+  const correlationId = oauthState.correlation_id ?? oauthState.id;
+  let tokenSet: XeroTokenSet;
+  try {
+    tokenSet = normalizeTokenSet(await exchangeXeroAuthorizationCode(params.code));
+  } catch (error) {
+    await markOauthAttemptFailed({
+      attemptId: oauthState.id,
+      code: "xero_callback_token_exchange_failed",
+      callbackOutcome: "token_exchange_failed",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: oauthState.organization_id,
+      connectionId: oauthState.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_token_exchange_failed", correlationId, error instanceof Error ? error.message : undefined);
+  }
+
+  let connections: XeroConnection[];
+  try {
+    connections = await listXeroConnections(tokenSet.access_token);
+  } catch (error) {
+    await markOauthAttemptFailed({
+      attemptId: oauthState.id,
+      code: "xero_callback_tenant_discovery_failed",
+      callbackOutcome: "tenant_discovery_failed",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: oauthState.organization_id,
+      connectionId: oauthState.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_tenant_discovery_failed", correlationId, error instanceof Error ? error.message : undefined);
+  }
 
   if (connections.length === 0) {
-    throw new Error("Xero returned no tenants for this authorization.");
+    await markOauthAttemptFailed({
+      attemptId: oauthState.id,
+      code: "xero_callback_no_tenants",
+      callbackOutcome: "no_tenants",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: oauthState.organization_id,
+      connectionId: oauthState.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_no_tenants", correlationId);
   }
 
   const jwtPayload = decodeJwtPayload(tokenSet.id_token);
@@ -344,54 +807,90 @@ export async function completeXeroOAuthCallback(params: { code: string; state: s
   const storedTenants = connections.map(toStoredTenant);
   const selectedTenant = storedTenants.length === 1 ? storedTenants[0] ?? null : null;
   const admin = await getAdmin();
-
-  const { data, error } = await admin
-    .from("organization_xero_connections" as never)
-    .upsert(
-      {
-        organization_id: oauthState.organization_id,
-        status: selectedTenant ? "connected" : "awaiting_tenant_selection",
-        tenant_id: selectedTenant?.tenantId ?? null,
-        tenant_name: selectedTenant?.tenantName ?? null,
-        tenant_type: selectedTenant?.tenantType ?? null,
-        tenant_connection_id: selectedTenant?.connectionId ?? null,
-        xero_user_id: xeroUserId,
-        scope: Array.isArray(tokenSet.scope) ? tokenSet.scope : [],
-        available_tenants_json: storedTenants,
-        token_expires_at: addSecondsToIso(tokenSet.expires_in),
-        refresh_token_expires_at: inferRefreshExpiryIso(),
-        last_health_status: selectedTenant ? "healthy" : null,
-        last_health_checked_at: selectedTenant ? new Date().toISOString() : null,
-        last_error: null,
-        connected_by_user_id: oauthState.user_id,
-        updated_at: new Date().toISOString(),
-      } as never,
-      {
-        onConflict: "organization_id",
-      },
-    )
-    .select("*")
-    .single();
-
-  if (error || !data) {
-    throw new Error(error?.message ?? "Unable to save the Xero connection.");
+  let encryptedTokenSet: string;
+  try {
+    encryptedTokenSet = encryptJsonValue(tokenSet, getXeroEnv().tokenEncryptionKey);
+  } catch (error) {
+    await markOauthAttemptFailed({
+      attemptId: oauthState.id,
+      code: "xero_callback_token_encryption_failed",
+      callbackOutcome: "token_encryption_failed",
+    });
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: oauthState.organization_id,
+      connectionId: oauthState.connection_id,
+    });
+    throw new XeroOAuthFlowError("xero_callback_token_encryption_failed", correlationId, error instanceof Error ? error.message : undefined);
   }
 
-  const connection = data as OrganizationXeroConnectionRow;
-  await saveXeroTokenSecret(connection.id, tokenSet);
-  await cleanupExpiredXeroOauthStates();
+  const finalized = await admin.rpc("finalize_xero_oauth_attempt" as never, {
+    p_attempt_id: oauthState.id,
+    p_organization_id: oauthState.organization_id,
+    p_connection_id: oauthState.connection_id,
+    p_encrypted_token_set: encryptedTokenSet,
+    p_encryption_version: 1,
+    p_connection_status: selectedTenant ? "connected" : "awaiting_tenant_selection",
+    p_tenant_id: selectedTenant?.tenantId ?? null,
+    p_tenant_name: selectedTenant?.tenantName ?? null,
+    p_tenant_type: selectedTenant?.tenantType ?? null,
+    p_tenant_connection_id: selectedTenant?.connectionId ?? null,
+    p_xero_user_id: xeroUserId,
+    p_scope: Array.isArray(tokenSet.scope) ? tokenSet.scope : [],
+    p_available_tenants_json: storedTenants,
+    p_token_expires_at: addSecondsToIso(tokenSet.expires_in),
+    p_refresh_token_expires_at: inferRefreshExpiryIso(),
+    p_connected_by_user_id: oauthState.user_id,
+    p_callback_outcome: selectedTenant ? "connected" : "tenant_selection_required",
+  } as never) as unknown as XeroMutationResult<OrganizationXeroConnectionRow>;
+
+  if (finalized.error || !finalized.data) {
+    await markOauthAttemptFailed({
+      attemptId: oauthState.id,
+      code: "xero_callback_persistence_failed",
+      callbackOutcome: "persistence_failed",
+    }).catch(() => undefined);
+    await reconcileConnectionAfterAttemptEnd({
+      organizationId: oauthState.organization_id,
+      connectionId: oauthState.connection_id,
+    }).catch(() => undefined);
+    throw new XeroOAuthFlowError("xero_callback_persistence_failed", correlationId, finalized.error?.message);
+  }
+
+  const connection = finalized.data;
 
   return {
     organizationId: oauthState.organization_id,
     redirectPath: oauthState.redirect_path || SETTINGS_PATH,
     connection,
     autoSelectedTenant: selectedTenant,
+    correlationId,
   };
+}
+
+export async function recordXeroOAuthCallbackFailure(params: {
+  state: string;
+  currentUserId: string;
+  code: "xero_callback_access_denied" | "xero_callback_missing_parameters";
+}) {
+  const attempt = await claimOauthAttempt({
+    state: params.state,
+    currentUserId: params.currentUserId,
+  });
+  await markOauthAttemptFailed({
+    attemptId: attempt.id,
+    code: params.code,
+    callbackOutcome: params.code === "xero_callback_access_denied" ? "access_denied" : "missing_parameters",
+  });
+  await reconcileConnectionAfterAttemptEnd({
+    organizationId: attempt.organization_id,
+    connectionId: attempt.connection_id,
+  });
+  return { correlationId: attempt.correlation_id ?? attempt.id };
 }
 
 export const XERO_OAUTH_STATE_RETENTION = {
   expiryMinutes: XERO_OAUTH_STATE_EXPIRY_MINUTES,
-  usedRetentionHours: XERO_USED_OAUTH_STATE_RETENTION_HOURS,
+  historyDeletionEnabled: false,
 } as const;
 
 export async function getFreshXeroAccessToken(organizationId: string) {

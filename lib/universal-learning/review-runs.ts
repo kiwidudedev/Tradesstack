@@ -77,7 +77,9 @@ export async function hasCompletedUniversalLearningReviewRun(input: UniversalLea
   const admin = createDynamicAdminSupabaseClient();
   const { data, error } = await admin
     .from("learning_review_runs")
-    .select("id")
+    .select(
+      "id, candidate_next_cursor_updated_at, candidate_next_cursor_id, final_next_cursor_updated_at, final_next_cursor_id",
+    )
     .eq("organization_id", input.organizationId)
     .eq("container_type", input.containerType)
     .eq("scope_key", input.scopeKey)
@@ -85,13 +87,25 @@ export async function hasCompletedUniversalLearningReviewRun(input: UniversalLea
     .eq("run_type", input.runType)
     .eq("run_status", "completed")
     .eq("prompt_version", input.promptVersion ?? "ucl-v1")
-    .limit(1);
+    .limit(100);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return Array.isArray(data) && data.length > 0;
+  const rows = Array.isArray(data) ? data as Array<Record<string, unknown>> : [];
+  return rows.some((row) => {
+    const hasCursorCompletionFields =
+      "candidate_next_cursor_updated_at" in row
+      || "candidate_next_cursor_id" in row
+      || "final_next_cursor_updated_at" in row
+      || "final_next_cursor_id" in row;
+    if (!hasCursorCompletionFields) return true;
+    return (
+      (row.candidate_next_cursor_updated_at ?? null) === (row.final_next_cursor_updated_at ?? null)
+      && (row.candidate_next_cursor_id ?? null) === (row.final_next_cursor_id ?? null)
+    );
+  });
 }
 
 export async function updateUniversalLearningReviewRunStatus(input: {

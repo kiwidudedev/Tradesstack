@@ -51,7 +51,7 @@ describe("Phase 9 Retention Claim Xero application boundary", () => {
     expect(page).toContain("getRetentionClaimImmutableXeroPanel");
     expect(page).toContain("getRetentionClaimPaymentState");
     expect(page).toContain("getMasterRetentionSource");
-    expect(page).toContain("Cumulative Retention");
+    expect(page).toContain("Current Retention incl. GST");
     expect(page).not.toContain("Download PDF");
     expect(page).not.toContain("This PDF is not a tax invoice");
   });

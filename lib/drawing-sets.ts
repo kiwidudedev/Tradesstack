@@ -5,6 +5,14 @@ export const MAX_DRAWING_SET_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024;
 
 export type ProjectDrawingSet = Database["public"]["Tables"]["project_drawing_sets"]["Row"];
 
+export const MAX_DRAWING_SET_DISPLAY_NAME_LENGTH = 120;
+
+export function toDefaultDrawingSetDisplayName(fileName: string): string {
+  const trimmed = fileName.trim();
+  const withoutPdfExtension = trimmed.replace(/\.pdf$/i, "").trim();
+  return (withoutPdfExtension || "Untitled Drawing Set").slice(0, MAX_DRAWING_SET_DISPLAY_NAME_LENGTH).trim();
+}
+
 function normalizeFileNameSegment(segment: string): string {
   const normalized = segment
     .toLowerCase()

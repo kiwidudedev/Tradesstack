@@ -47,7 +47,7 @@ export function parseWorksheetClipboardText(input: string): ParsedWorksheetPaste
     return null;
   }
 
-  const isTabular = normalized.includes("\t");
+  const isTabular = normalized.includes("\t") || normalized.includes("\n");
 
   const rows = normalized.split("\n").map((row) => row.split("\t"));
   const rowCount = rows.length;

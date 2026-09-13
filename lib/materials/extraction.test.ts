@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { extractMaterialImportRows } from "@/lib/materials/extraction";
 
@@ -27,6 +28,22 @@ describe("material import extraction", () => {
       extractedUnit: "sheet",
       extractedUnitCost: 22.5,
     });
+  });
+
+  it("extracts candidate rows from a PDF price list", async () => {
+    const pdf = await readFile(
+      new URL("../../tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test.pdf", import.meta.url)
+    );
+
+    const result = await extractMaterialImportRows({
+      fileName: "TradeSupplier_Invoice_OCR_Test.pdf",
+      mimeType: "application/pdf",
+      buffer: Uint8Array.from(pdf).buffer,
+    });
+
+    expect(result.extractionMethod).toBe("pdf_text");
+    expect(result.rows.length).toBeGreaterThan(0);
+    expect(result.rows.some((row) => row.extractedName.length > 0)).toBe(true);
   });
 
   it("stages image uploads for manual review when OCR is not available", async () => {

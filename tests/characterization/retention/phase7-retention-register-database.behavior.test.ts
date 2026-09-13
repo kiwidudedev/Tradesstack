@@ -138,7 +138,7 @@ describeDatabase("Phase 7 Retention Register database behavior", () => {
     );
   }
 
-  it("returns deterministic origin-level values with zero paid attribution before reconciliation", async () => {
+  it("returns accumulated held retention with zero paid attribution before reconciliation", async () => {
     await asUser(OWNER_ID);
     const first = await read();
     const second = await read();
@@ -156,11 +156,13 @@ describeDatabase("Phase 7 Retention Register database behavior", () => {
         originatingPaymentClaimId: ORIGIN_ID,
         claimNumber: "P7-PC-01",
         currentRetentionOwned: 100,
-        currentEligibleRetention: 0,
+        // 20260726310000 made accumulated held retention less immutable prior
+        // claims authoritative; release schedules are planning metadata only.
+        currentEligibleRetention: 100,
         nativeClaimedAmount: 0,
         legacyReconciledAmount: 0,
         remainingAmount: 100,
-        availableRetention: 0,
+        availableRetention: 100,
         paidAmount: 0,
         latestRetentionClaim: null,
         scheduleNames: [],

@@ -5,7 +5,7 @@ import { getOrganizationPermissionsBatch } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { parseXeroDate } from "@/lib/xero/bill-status";
 import { getXeroInvoice, XeroRequestError } from "@/lib/xero/client";
-import { getFreshXeroAccessToken, getOrganizationXeroConnection } from "@/lib/xero/service";
+import { getFreshXeroAccessToken } from "@/lib/xero/service";
 import type { XeroInvoice } from "@/lib/xero/types";
 import {
   deriveProjectClaimPaymentProjection,
@@ -27,6 +27,11 @@ import {
 import {
   PAYMENT_CLAIM_INITIAL_PUSH_PERMISSION,
 } from "@/lib/xero/payment-claim-initial-push-contract";
+import {
+  resolvePaymentClaimAccountingIdentity,
+  type PaymentClaimAccountingIdentitySnapshot,
+  type PaymentClaimRefreshBlockingReason,
+} from "@/lib/xero/payment-claim-accounting-identity";
 
 type Row = Record<string, unknown>;
 type UntypedAdmin = {
@@ -36,13 +41,6 @@ type UntypedAdmin = {
   // The atomic Xero-to-claim projection RPC is newer than generated client types.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rpc: (functionName: string, args: Record<string, unknown>) => Promise<any>;
-};
-
-type RefreshJobRow = {
-  id: string;
-  job_kind: string;
-  queue_state: string;
-  request_payload: Record<string, unknown>;
 };
 
 export type XeroSalesInvoicePaymentProjection =
@@ -70,12 +68,19 @@ export class XeroSalesInvoiceRefreshError extends Error {
     | "missing_invoice"
     | "connection_mismatch"
     | "invoice_identity_mismatch"
+    | "invoice_number_mismatch"
+    | "revision_mismatch"
     | "invalid_provider_response"
     | "total_divergence"
     | "provider_failure"
     | "unauthorized"
     | "sync_in_progress"
     | "attachment_in_progress"
+    | "initial_push_in_progress"
+    | "replacement_in_progress"
+    | "accounting_update_in_progress"
+    | "refresh_in_progress"
+    | "tenant_mismatch"
     | "enqueue_failed";
   readonly safeMessage: string;
   readonly isRetryable: boolean;
@@ -91,6 +96,85 @@ export class XeroSalesInvoiceRefreshError extends Error {
     this.safeMessage = options?.safeMessage ?? message;
     this.isRetryable = options?.isRetryable ?? false;
   }
+}
+
+function throwForIdentityResolution(
+  identity: PaymentClaimAccountingIdentitySnapshot,
+): asserts identity is PaymentClaimAccountingIdentitySnapshot & {
+  document: Row;
+  currentConnection: Row;
+  invoiceId: string;
+} {
+  const reason = identity.refresh.blockingReason;
+  if (!reason) return;
+  const message = identity.refresh.message
+    ?? "The Xero Sales Invoice cannot be refreshed right now.";
+  const workflowCodes: Partial<Record<
+    PaymentClaimRefreshBlockingReason,
+    XeroSalesInvoiceRefreshError["code"]
+  >> = {
+    initial_push_in_progress: "initial_push_in_progress",
+    replacement_in_progress: "replacement_in_progress",
+    accounting_update_in_progress: "accounting_update_in_progress",
+    sync_in_progress: "sync_in_progress",
+    refresh_in_progress: "refresh_in_progress",
+  };
+  const workflowCode = workflowCodes[reason];
+  if (workflowCode) {
+    throw new XeroSalesInvoiceRefreshError(workflowCode, message);
+  }
+  if (reason === "missing_accounting_identity") {
+    throw new XeroSalesInvoiceRefreshError(
+      "document_not_found",
+      "The Payment Claim accounting identity was not found.",
+    );
+  }
+  if (reason === "missing_invoice_id") {
+    throw new XeroSalesInvoiceRefreshError("missing_invoice", message);
+  }
+  if (reason === "missing_active_revision") {
+    throw new XeroSalesInvoiceRefreshError("invalid_document", message);
+  }
+  if (reason === "invoice_number_mismatch") {
+    throw new XeroSalesInvoiceRefreshError(
+      "invoice_number_mismatch",
+      message,
+    );
+  }
+  if (reason === "revision_mismatch") {
+    throw new XeroSalesInvoiceRefreshError(
+      "revision_mismatch",
+      message,
+    );
+  }
+  if (reason === "invoice_id_mismatch") {
+    throw new XeroSalesInvoiceRefreshError(
+      "invoice_identity_mismatch",
+      message,
+    );
+  }
+  if (reason === "tenant_mismatch") {
+    throw new XeroSalesInvoiceRefreshError("tenant_mismatch", message);
+  }
+  throw new XeroSalesInvoiceRefreshError("connection_mismatch", message);
+}
+
+function scheduledRefreshAlreadyQueued(params: {
+  identity: PaymentClaimAccountingIdentitySnapshot;
+  triggerSource: "manual_refresh" | "scheduled";
+  documentId: string;
+}) {
+  if (
+    params.triggerSource !== "scheduled"
+    || params.identity.refresh.blockingReason !== "refresh_in_progress"
+    || !params.identity.activeRefreshJob
+  ) return null;
+  return {
+    jobId: String(params.identity.activeRefreshJob.id),
+    documentId: params.documentId,
+    currentStatus: String(params.identity.activeRefreshJob.queue_state),
+    created: false,
+  };
 }
 
 function db(client: Awaited<ReturnType<typeof createAdminSupabaseClient>>) {
@@ -558,55 +642,37 @@ export async function refreshXeroSalesInvoiceStatus(params: {
   };
 }
 
-async function activeDocumentJobs(admin: UntypedAdmin, organizationId: string, documentId: string) {
-  const financialJobKinds = [
-    "xero.sales_invoice.sync",
-    "xero.payment_claim.initial_push",
-    "xero.payment_claim.replacement",
-  ];
-  const attachmentJobKinds = [
-    "xero.sales_invoice.attachment",
-    "xero.payment_claim.initial_push.attachment",
-    "xero.payment_claim.replacement.attachment",
-  ];
-  const result = await admin
-    .from("organization_accounting_sync_jobs")
-    .select("id, job_kind, queue_state, request_payload")
-    .eq("organization_id", organizationId)
-    .eq("provider", "xero")
-    .in("job_kind", [...financialJobKinds, "xero.sales_invoice.refresh", ...attachmentJobKinds])
-    .in("queue_state", ["pending", "claimed", "retry_scheduled"])
-    .eq("request_payload->>accountingDocumentId", documentId)
-    .order("created_at", { ascending: false })
-    .limit(25);
-  if (result.error) {
-    throw new XeroSalesInvoiceRefreshError("enqueue_failed", "Unable to inspect active Xero Sales Invoice jobs.");
-  }
-  return (result.data ?? []) as RefreshJobRow[];
-}
-
-function isFinancialSalesInvoiceJob(job: RefreshJobRow) {
-  return [
-    "xero.sales_invoice.sync",
-    "xero.payment_claim.initial_push",
-    "xero.payment_claim.replacement",
-  ].includes(job.job_kind);
-}
-
 export async function enqueueXeroSalesInvoiceRefresh(params: {
   organizationId: string;
   documentId: string;
   createdByUserId: string | null;
   triggerSource: "manual_refresh" | "scheduled";
-  preparedIdentity?: {
-    document: Row;
-    connection: Awaited<ReturnType<typeof getOrganizationXeroConnection>>;
-  };
+  preparedIdentity?: PaymentClaimAccountingIdentitySnapshot;
   timing?: XeroActionTiming;
 }) {
   const admin = db(await createAdminSupabaseClient());
-  const document = params.preparedIdentity?.document
+  const loadedDocument = params.preparedIdentity?.document
     ?? await loadDocument(admin, params.organizationId, params.documentId);
+  if (!loadedDocument) {
+    throw new XeroSalesInvoiceRefreshError(
+      "document_not_found",
+      "The Payment Claim accounting identity was not found.",
+    );
+  }
+  const identity = params.preparedIdentity
+    ?? await resolvePaymentClaimAccountingIdentity({
+      organizationId: params.organizationId,
+      claimId: String(loadedDocument.project_claim_id),
+      admin,
+    });
+  const existingScheduledRefresh = scheduledRefreshAlreadyQueued({
+    identity,
+    triggerSource: params.triggerSource,
+    documentId: params.documentId,
+  });
+  if (existingScheduledRefresh) return existingScheduledRefresh;
+  throwForIdentityResolution(identity);
+  const document = identity.document;
   if (
     document.id !== params.documentId
     || document.organization_id !== params.organizationId
@@ -617,8 +683,7 @@ export async function enqueueXeroSalesInvoiceRefresh(params: {
     );
   }
   validateDocument(document);
-  const connection = params.preparedIdentity?.connection
-    ?? await getOrganizationXeroConnection(params.organizationId);
+  const connection = identity.currentConnection;
   if (
     !connection
     || connection.status !== "connected"
@@ -629,33 +694,6 @@ export async function enqueueXeroSalesInvoiceRefresh(params: {
       "connection_mismatch",
       "The current Xero connection or tenant does not match the linked Sales Invoice.",
     );
-  }
-
-  const active = params.timing
-    ? await params.timing.span(
-        "refresh_active_jobs",
-        () => activeDocumentJobs(admin, params.organizationId, params.documentId),
-        {
-          databaseOperation:
-            "organization_accounting_sync_jobs.active_by_document",
-        },
-      )
-    : await activeDocumentJobs(admin, params.organizationId, params.documentId);
-  const activeSync = active.find(isFinancialSalesInvoiceJob);
-  if (activeSync) {
-    throw new XeroSalesInvoiceRefreshError(
-      "sync_in_progress",
-      "The Sales Invoice is already being synchronized. Refresh it after synchronization completes.",
-    );
-  }
-  const existing = active.find((job) => job.job_kind === "xero.sales_invoice.refresh");
-  if (existing) {
-    return {
-      jobId: existing.id,
-      documentId: params.documentId,
-      currentStatus: existing.queue_state,
-      created: false,
-    };
   }
 
   const insertJob = () => admin
@@ -689,23 +727,23 @@ export async function enqueueXeroSalesInvoiceRefresh(params: {
     };
   }
 
-  const raced = await activeDocumentJobs(admin, params.organizationId, params.documentId);
-  if (raced.some(isFinancialSalesInvoiceJob)) {
-    throw new XeroSalesInvoiceRefreshError(
-      "sync_in_progress",
-      "The Sales Invoice started synchronizing before refresh could be queued.",
-    );
-  }
-  const racedRefresh = raced.find((job) => job.job_kind === "xero.sales_invoice.refresh");
-  if (!racedRefresh) {
-    throw new XeroSalesInvoiceRefreshError("enqueue_failed", "Unable to queue the Sales Invoice refresh.");
-  }
-  return {
-    jobId: racedRefresh.id,
+  const raced = await resolvePaymentClaimAccountingIdentity({
+    organizationId: params.organizationId,
+    claimId: identity.claimId,
+    admin,
+    currentConnection: connection,
+  });
+  const racedScheduledRefresh = scheduledRefreshAlreadyQueued({
+    identity: raced,
+    triggerSource: params.triggerSource,
     documentId: params.documentId,
-    currentStatus: racedRefresh.queue_state,
-    created: false,
-  };
+  });
+  if (racedScheduledRefresh) return racedScheduledRefresh;
+  throwForIdentityResolution(raced);
+  throw new XeroSalesInvoiceRefreshError(
+    "enqueue_failed",
+    "Unable to queue the Sales Invoice refresh.",
+  );
 }
 
 export async function enqueuePaymentClaimXeroRefreshForCurrentUser(
@@ -757,33 +795,21 @@ export async function enqueuePaymentClaimXeroRefreshForCurrentUser(
     );
   }
   const admin = db(await createAdminSupabaseClient());
-  const identityLoad = () => Promise.all([
-    admin
-      .from("organization_accounting_documents")
-      .select("*")
-      .eq("organization_id", member.organization_id)
-      .eq("provider", "xero")
-      .eq("local_document_type", "project_claim")
-      .in("export_status", ["exported", "attention_required"])
-      .eq("project_claim_id", params.claimId)
-      .maybeSingle(),
-    getOrganizationXeroConnection(member.organization_id),
-  ]);
-  const [documentResult, connection] = timing
+  const identityLoad = () => resolvePaymentClaimAccountingIdentity({
+    organizationId: member.organization_id,
+    claimId: params.claimId,
+    admin,
+  });
+  const identity = timing
     ? await timing.span("refresh_identity", identityLoad)
     : await identityLoad();
-  if (documentResult.error || !documentResult.data) {
-    throw new XeroSalesInvoiceRefreshError("document_not_found", "The linked Xero Sales Invoice was not found.");
-  }
+  throwForIdentityResolution(identity);
   const result = await enqueueXeroSalesInvoiceRefresh({
     organizationId: member.organization_id,
-    documentId: String(documentResult.data.id),
+    documentId: String(identity.document.id),
     createdByUserId: member.user_id,
     triggerSource: "manual_refresh",
-    preparedIdentity: {
-      document: documentResult.data as Row,
-      connection,
-    },
+    preparedIdentity: identity,
     timing,
   });
   return {
@@ -798,10 +824,10 @@ export async function enqueuePaymentClaimXeroRefreshForCurrentUser(
       claimId: params.claimId,
       permissions,
       featureFlags: { initialPaymentClaimPushEnabled: featureEnabled },
-      accountingDocumentId: String(documentResult.data.id),
+      accountingDocumentId: String(identity.document.id),
       revisionId:
-        typeof documentResult.data.active_accounting_revision_id === "string"
-          ? documentResult.data.active_accounting_revision_id
+        typeof identity.document.active_accounting_revision_id === "string"
+          ? identity.document.active_accounting_revision_id
           : null,
     }),
   };
@@ -815,7 +841,6 @@ export async function enqueueEligibleXeroSalesInvoiceRefreshes(params?: { limit?
     .select("id, organization_id")
     .eq("provider", "xero")
     .eq("local_document_type", "project_claim")
-    .in("export_status", ["exported", "attention_required"])
     .not("external_document_id", "is", null)
     .or("normalized_external_status.is.null,normalized_external_status.in.(awaiting_payment,partially_paid,paid,unknown)")
     .order("last_status_synced_at", { ascending: true, nullsFirst: true })

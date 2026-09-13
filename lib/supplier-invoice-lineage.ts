@@ -4,11 +4,10 @@ import type {
   OrganizationTradesstackAccountingMappingRow,
   ResolvedOrganizationAccountingCode,
 } from "@/lib/accounting/types";
+import type { FinancialRoutingReviewStatus } from "@/lib/tradesstack-financial-routing";
 import { resolveOrganizationAccountingCode } from "@/lib/accounting/organization-cost-code-resolver";
 import {
-  getTradesstackFinancialRoutingLabel,
   isTradesstackFinancialRoutingCode,
-  routeFinancialLineItem,
 } from "@/lib/tradesstack-financial-routing";
 import type { Database } from "@/lib/supabase/types";
 
@@ -30,12 +29,10 @@ export interface SupplierInvoiceResolvedLineage {
   sourceCostItemId: string | null;
   tradesstackCostCode: string | null;
   tradesstackCostCodeLabel: string | null;
-  workType: string | null;
-  costType: string | null;
-  internalCostCode: string | null;
-  classificationNeedsReview: boolean;
-  classificationConfidence: number | null;
-  classificationSource: string | null;
+  financialRoutingConfidence: number | null;
+  financialRoutingSource: string | null;
+  reviewStatus: FinancialRoutingReviewStatus | null;
+  reviewReason: string | null;
 }
 
 export interface SupplierInvoiceOrgConsistencyContext {
@@ -47,7 +44,10 @@ export interface SupplierInvoiceOrgConsistencyContext {
   sourceCostItemOrganizationId?: string | null;
 }
 
-function normalizeText(value: string | null | undefined) {
+function normalizeText(value: string | number | null | undefined) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
   if (typeof value !== "string") {
     return null;
   }
@@ -56,26 +56,8 @@ function normalizeText(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function preferClassificationSource(
-  costItem: CostItemRow | null,
-  sourceCostItem: CostItemRow | null
-) {
-  return normalizeText(costItem?.classification_source) ?? normalizeText(sourceCostItem?.classification_source);
-}
-
-function deriveClassificationNeedsReview(
-  costItem: CostItemRow | null,
-  sourceCostItem: CostItemRow | null
-) {
-  if (costItem?.needs_review === true) {
-    return true;
-  }
-
-  return sourceCostItem?.needs_review === true;
-}
-
 function firstPresentText(
-  ...values: Array<string | null | undefined>
+  ...values: Array<string | number | null | undefined>
 ) {
   for (const value of values) {
     const normalized = normalizeText(value);
@@ -91,48 +73,18 @@ function choosePreferredCostItem(
   costItem: CostItemRow | null,
   sourceCostItem: CostItemRow | null
 ) {
+  // An explicit source Cost Item represents the committed financial identity.
+  // Otherwise use the PO Cost Item. Arbitrary parent inheritance is intentionally
+  // not part of Financial Routing.
   if (
-    costItem &&
-    (normalizeText(costItem.tradesstack_cost_code_label) ||
-      normalizeText(costItem.tradesstack_cost_code) ||
-      normalizeText(costItem.work_type) ||
-      normalizeText(costItem.cost_type) ||
-      normalizeText(costItem.cost_code))
+    sourceCostItem &&
+    (normalizeText(sourceCostItem.tradesstack_cost_code) ||
+      normalizeText(sourceCostItem.tradesstack_cost_code_label))
   ) {
-    return costItem;
+    return sourceCostItem;
   }
 
-  return sourceCostItem ?? costItem;
-}
-
-function deriveFallbackLineageRouting(params: {
-  purchaseOrderLine: PurchaseOrderLineItemRow | null;
-  costItem: CostItemRow | null;
-  sourceCostItem: CostItemRow | null;
-}) {
-  const purchaseOrderLine = params.purchaseOrderLine;
-  if (!purchaseOrderLine) {
-    return null;
-  }
-
-  return routeFinancialLineItem({
-    sourceDocumentKind: "project_purchase_order",
-    sourceLineTable: "project_purchase_order_line_items",
-    originKind: purchaseOrderLine.source_time_sheet_entry_id ? "time_sheet_sync" : "manual",
-    sourceModule: "supplier_invoice",
-    documentType: "project_purchase_order",
-    transactionType: "supplier_invoice",
-    objectType: "project_purchase_order_line_item",
-    section: purchaseOrderLine.section ?? null,
-    category:
-      params.costItem?.category ??
-      params.sourceCostItem?.category ??
-      params.costItem?.section ??
-      params.sourceCostItem?.section ??
-      null,
-    description: purchaseOrderLine.description ?? null,
-    amount: purchaseOrderLine.total ?? null,
-  });
+  return costItem ?? sourceCostItem;
 }
 
 export function validateSupplierInvoiceOrgConsistency(
@@ -161,10 +113,6 @@ export function resolvePurchaseOrderLineLineage(params: {
 }): SupplierInvoiceResolvedLineage {
   const { purchaseOrderLine, costItem, sourceCostItem } = params;
   const preferredClassification = choosePreferredCostItem(costItem, sourceCostItem);
-  const fallbackRouting = deriveFallbackLineageRouting(params);
-  const fallbackRoutingLabel = fallbackRouting
-    ? getTradesstackFinancialRoutingLabel(fallbackRouting.tradesstackCostCode)
-    : null;
 
   return {
     projectId: purchaseOrderLine?.project_id ?? costItem?.project_id ?? sourceCostItem?.project_id ?? null,
@@ -175,28 +123,21 @@ export function resolvePurchaseOrderLineLineage(params: {
     tradesstackCostCode:
       firstPresentText(
         preferredClassification?.tradesstack_cost_code,
-        sourceCostItem?.tradesstack_cost_code,
-        fallbackRouting?.tradesstackCostCode
+        costItem?.tradesstack_cost_code
       ),
     tradesstackCostCodeLabel:
       firstPresentText(
         preferredClassification?.tradesstack_cost_code_label,
-        sourceCostItem?.tradesstack_cost_code_label,
-        fallbackRoutingLabel
+        costItem?.tradesstack_cost_code_label
       ),
-    workType: firstPresentText(preferredClassification?.work_type, sourceCostItem?.work_type),
-    costType: firstPresentText(preferredClassification?.cost_type, sourceCostItem?.cost_type),
-    internalCostCode: firstPresentText(preferredClassification?.cost_code, sourceCostItem?.cost_code),
-    classificationNeedsReview:
-      deriveClassificationNeedsReview(costItem, sourceCostItem) ||
-      fallbackRouting?.reviewStatus === "needs_routing_review",
-    classificationConfidence:
-      costItem?.classification_confidence ??
-      sourceCostItem?.classification_confidence ??
-      fallbackRouting?.confidence ??
-      null,
-    classificationSource:
-      preferClassificationSource(costItem, sourceCostItem) ?? fallbackRouting?.source ?? null,
+    financialRoutingConfidence:
+      preferredClassification?.financial_routing_confidence ?? costItem?.financial_routing_confidence ?? null,
+    financialRoutingSource:
+      normalizeText(preferredClassification?.financial_routing_source) ??
+      normalizeText(costItem?.financial_routing_source),
+    reviewStatus: (normalizeText(preferredClassification?.review_status) ??
+      normalizeText(costItem?.review_status)) as FinancialRoutingReviewStatus | null,
+    reviewReason: normalizeText(preferredClassification?.review_reason) ?? normalizeText(costItem?.review_reason),
   };
 }
 
@@ -223,9 +164,9 @@ export function buildAccountingResolutionInput(params: {
     projectId: params.projectId,
     title: params.title,
     description: params.description,
-    routingConfidence: params.lineage.classificationConfidence,
-    routingSource: params.lineage.classificationSource,
-    reviewStatus: params.lineage.classificationNeedsReview ? "needs_routing_review" : "resolved",
+    routingConfidence: params.lineage.financialRoutingConfidence,
+    routingSource: params.lineage.financialRoutingSource,
+    reviewStatus: params.lineage.reviewStatus ?? "needs_routing_review",
     updatedAt: null,
   };
 }
@@ -246,18 +187,6 @@ export function resolveInheritedAccountingCode(params: {
   });
 }
 
-export function deriveAllocationClassificationStatus(lineage: SupplierInvoiceResolvedLineage) {
-  if (lineage.classificationNeedsReview) {
-    return "needs_review" as const;
-  }
-
-  if (lineage.costItemId || lineage.sourceCostItemId) {
-    return "inherited" as const;
-  }
-
-  return "pending" as const;
-}
-
 export function hasCompleteInheritedClassification(lineage: SupplierInvoiceResolvedLineage) {
   return Boolean(lineage.tradesstackCostCode);
 }
@@ -276,10 +205,6 @@ export function deriveAllocationReviewStatus(params: {
     taxResolutionStatus: "resolved" | "not_applicable" | "unresolved";
   };
 }) {
-  if (!hasCompleteInheritedClassification(params.lineage) || params.lineage.classificationNeedsReview) {
-    return "needs_routing_review" as const;
-  }
-
   if (!params.accountingResolution?.organizationCostCodeId) {
     return "needs_accounting_mapping" as const;
   }
@@ -311,6 +236,7 @@ export function buildSupplierInvoiceLineAllocationPayload(params: {
     organization_id: params.organizationId,
     supplier_invoice_id: params.supplierInvoiceId,
     supplier_invoice_line_id: params.supplierInvoiceLineId,
+    allocation_group_id: crypto.randomUUID(),
     purchase_order_id: params.lineage.purchaseOrderId,
     purchase_order_line_item_id: params.lineage.purchaseOrderLineItemId,
     project_id: params.lineage.projectId,
@@ -320,15 +246,17 @@ export function buildSupplierInvoiceLineAllocationPayload(params: {
     matched_amount: allocatedAmount,
     cost_item_id: params.lineage.costItemId,
     source_cost_item_id: params.lineage.sourceCostItemId,
-    tradesstack_cost_code: params.lineage.tradesstackCostCode,
+    tradesstack_cost_code: params.lineage.tradesstackCostCode
+      ? Number(params.lineage.tradesstackCostCode)
+      : null,
     tradesstack_cost_code_label: params.lineage.tradesstackCostCodeLabel,
-    work_type: params.lineage.workType,
-    cost_type: params.lineage.costType,
-    internal_cost_code: params.lineage.internalCostCode,
-    classification_status: deriveAllocationClassificationStatus(params.lineage),
+    financial_routing_confidence: params.lineage.financialRoutingConfidence,
+    financial_routing_source: params.lineage.financialRoutingSource,
     organization_cost_code_id: params.accountingResolution?.organizationCostCodeId ?? null,
     accounting_resolution_status: deriveAllocationAccountingResolutionStatus(params.accountingResolution),
     accounting_mapping_id: params.accountingResolution?.accountingMappingId ?? null,
+    accounting_route: params.accountingResolution?.accountingRoute ?? null,
+    accounting_route_mapping_id: params.accountingResolution?.accountingRouteMappingId ?? null,
     accounting_tax_rate_id: params.taxResolution?.accountingTaxRateId ?? null,
     tax_resolution_status: params.taxResolution?.taxResolutionStatus ?? "unresolved",
     allocation_status: params.lineage.purchaseOrderLineItemId ? "matched" : "unmatched",
@@ -337,7 +265,7 @@ export function buildSupplierInvoiceLineAllocationPayload(params: {
       lineage: params.lineage,
       accountingResolution: params.accountingResolution,
     }),
-    review_reason: params.accountingResolution?.reason ?? null,
+    review_reason: params.lineage.reviewReason ?? params.accountingResolution?.reason ?? null,
     approval_status: "pending",
     allocation_source: "manual",
   };

@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { Calendar, DollarSign, LayoutGrid, Pencil, TrendingUp } from "lucide-react";
 import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
 import { OperationalPanel } from "@/components/app/OperationalPanel";
+import { OpportunityLeadDetailsForm } from "@/components/app/OpportunityLeadDetailsForm";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createTask, getTask, listTasks, updateTask } from "@/lib/tasks/service";
 import type { TaskPriority, TaskStatus } from "@/lib/tasks/types";
+import { resolveOpportunityTenderClients } from "@/lib/opportunity-lead-details";
 
 const MODAL_INPUT_CLASS =
   "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
@@ -268,9 +270,20 @@ export default async function OpportunityWorkspacePage({
     dueDate: opportunityResult.data.due_date,
     notes: opportunityResult.data.notes ?? "",
     workspaceProjectId: sharedOpportunity.workspaceProjectId,
+    workspaceProjectSlug: sharedOpportunity.workspaceProjectSlug,
   };
 
-  const [clientOpportunityCountResult, clientWonCountResult, leadTasksResult, assigneesResult] = await Promise.all([
+  const quotationRpc = supabase as unknown as {
+    rpc(name: "get_opportunity_quotation_workspace_v1", args: {
+      p_organization_id: string;
+      p_opportunity_id: string;
+    }): Promise<{ data: Array<{ tender_clients: Array<{
+      client_id: string | null;
+      client_name: string | null;
+      is_tender_client: boolean;
+    }> }> | null; error: { message: string } | null }>;
+  };
+  const [clientOpportunityCountResult, clientWonCountResult, leadTasksResult, assigneesResult, organizationClientsResult, quotationWorkspaceResult] = await Promise.all([
     activeOpportunity.clientId
       ? supabase
           .from("organization_opportunities")
@@ -297,6 +310,15 @@ export default async function OpportunityWorkspacePage({
       .select("user_id, display_name")
       .eq("organization_id", member.organization_id)
       .order("display_name", { ascending: true }),
+    supabase
+      .from("organization_clients")
+      .select("id, name, company_name")
+      .eq("organization_id", member.organization_id)
+      .order("company_name", { ascending: true }),
+    quotationRpc.rpc("get_opportunity_quotation_workspace_v1", {
+      p_organization_id: member.organization_id,
+      p_opportunity_id: activeOpportunity.opportunityId,
+    }),
   ]);
 
   const clientOpportunityCount = clientOpportunityCountResult.count ?? 0;
@@ -319,6 +341,14 @@ export default async function OpportunityWorkspacePage({
     userId: person.user_id,
     name: person.display_name || "Team Member",
   }));
+  const organizationClients = organizationClientsResult.data ?? [];
+  const activeTenderClients = resolveOpportunityTenderClients(
+    quotationWorkspaceResult.data?.[0]?.tender_clients ?? [],
+    activeOpportunity.clientId
+      ? { id: activeOpportunity.clientId, name: activeOpportunity.clientName || "Unknown Company" }
+      : null,
+  );
+  const activeTenderClientIds = activeTenderClients.map((client) => client.id);
   const leadTasks = [...leadTasksResult]
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .map((task) => ({
@@ -344,43 +374,41 @@ export default async function OpportunityWorkspacePage({
 
     const name = String(formData.get("projectName") ?? "").trim();
     const location = String(formData.get("location") ?? "").trim();
-    const clientName = String(formData.get("clientName") ?? "").trim();
+    const primaryClientId = String(formData.get("primaryClientId") ?? "").trim();
+    const tenderClientIds = Array.from(new Set([
+      ...formData.getAll("tenderClientIds").map((value) => String(value)),
+      primaryClientId,
+    ].filter(Boolean)));
     const dueDate = String(formData.get("dueDate") ?? "").trim();
 
     if (!name) {
       redirect(`/app/leads-clients/opportunities/${opportunityId}`);
     }
 
-    const updatePayload: {
-      name: string;
-      location: string;
-      due_date: string | null;
-      client_id?: string | null;
-    } = {
-      name,
-      location,
-      due_date: dueDate || null,
-    };
-
-    if (clientName) {
-      const clientResult = await supabase
-        .from("organization_clients")
-        .select("id")
-        .eq("organization_id", member.organization_id)
-        .eq("company_name", clientName)
-        .maybeSingle();
-
-      if (clientResult.data?.id) {
-        updatePayload.client_id = clientResult.data.id;
-      }
+    if (!primaryClientId) {
+      throw new Error("Primary Client is required.");
     }
 
-    const updateResult = await supabase
-      .from("organization_opportunities")
-      .update(updatePayload)
-      .eq("organization_id", member.organization_id)
-      .eq("id", activeOpportunity.opportunityId);
-
+    const updateRpc = supabase as unknown as {
+      rpc(name: "update_opportunity_details_and_tender_clients_v1", args: {
+        p_organization_id: string;
+        p_opportunity_id: string;
+        p_name: string;
+        p_location: string;
+        p_due_date: string | null;
+        p_client_ids: string[];
+        p_primary_client_id: string;
+      }): Promise<{ error: { message: string } | null }>;
+    };
+    const updateResult = await updateRpc.rpc("update_opportunity_details_and_tender_clients_v1", {
+      p_organization_id: member.organization_id,
+      p_opportunity_id: activeOpportunity.opportunityId,
+      p_name: name,
+      p_location: location,
+      p_due_date: dueDate || null,
+      p_client_ids: tenderClientIds,
+      p_primary_client_id: primaryClientId,
+    });
     if (updateResult.error) {
       throw new Error(updateResult.error.message);
     }
@@ -582,8 +610,15 @@ export default async function OpportunityWorkspacePage({
                   <p className="text-sm text-[var(--text-secondary)]">Project Name:</p>
                   <p className="text-sm text-[var(--text-primary)]">{activeOpportunity.name}</p>
 
-                  <p className="text-sm text-[var(--text-secondary)]">Client:</p>
+                  <p className="text-sm text-[var(--text-secondary)]">Primary Client:</p>
                   <p className="text-sm text-[var(--text-primary)]">{activeOpportunity.clientName || "Unassigned"}</p>
+
+                  <p className="text-sm text-[var(--text-secondary)]">Tender Clients:</p>
+                  <div className="space-y-1 text-sm text-[var(--text-primary)]">
+                    {activeTenderClients.length > 0
+                      ? activeTenderClients.map((client) => <p key={client.id}>{client.name}</p>)
+                      : <p>None assigned</p>}
+                  </div>
 
                   <p className="text-sm text-[var(--text-secondary)]">Location:</p>
                   <p className="text-sm text-[var(--text-primary)]">{activeOpportunity.location || "Not set"}</p>
@@ -596,44 +631,16 @@ export default async function OpportunityWorkspacePage({
                 </div>
               </div>
 
-              <form id="opportunity-details-form" action={saveOpportunityDetails} className="lead-details-edit-form hidden">
-                <div className="grid gap-x-5 gap-y-3.5 md:grid-cols-[160px_minmax(0,1fr)]">
-                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-projectName">Project Name:</label>
-                  <Input
-                    id="opportunity-projectName"
-                    name="projectName"
-                    defaultValue={activeOpportunity.name}
-                    required
-                  />
-
-                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-clientName">Client:</label>
-                  <Input
-                    id="opportunity-clientName"
-                    name="clientName"
-                    defaultValue={activeOpportunity.clientName || ""}
-                  />
-
-                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-location">Location:</label>
-                  <Input
-                    id="opportunity-location"
-                    name="location"
-                    defaultValue={activeOpportunity.location || ""}
-                  />
-
-                  <label className="self-center text-sm font-medium text-[var(--text-primary)]" htmlFor="opportunity-dueDate">Lead Due Date:</label>
-                  <Input
-                    id="opportunity-dueDate"
-                    type="date"
-                    name="dueDate"
-                    defaultValue={formatDateInputValue(activeOpportunity.dueDate)}
-                  />
-
-                  <p className="self-center text-sm font-medium text-[var(--text-primary)]">Created:</p>
-                  <div className="flex h-11 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm text-[var(--text-secondary)]">
-                    {formatDateTime(activeOpportunity.createdAt)}
-                  </div>
-                </div>
-              </form>
+              <OpportunityLeadDetailsForm
+                action={saveOpportunityDetails}
+                clients={organizationClients}
+                initialPrimaryClientId={activeOpportunity.clientId ?? ""}
+                initialTenderClientIds={activeTenderClientIds}
+                projectName={activeOpportunity.name}
+                location={activeOpportunity.location || ""}
+                dueDate={formatDateInputValue(activeOpportunity.dueDate)}
+                createdAtLabel={formatDateTime(activeOpportunity.createdAt)}
+              />
             </OperationalPanel>
           </div>
         </div>

@@ -56,7 +56,10 @@ function snapshot(): PaymentClaimXeroReadinessSnapshot {
       {
         id: "account-600", organization_id: "org-1", code: "internal-sales", name: "Sales Display Name",
         external_code: "200", external_provider: "xero", is_active: true,
-        metadata: { accountId: "account-id-600", tenantId: "tenant-1", status: "ACTIVE", class: "REVENUE", type: "REVENUE" },
+        metadata: {
+          accountId: "account-id-600", tenantId: "tenant-1", status: "ACTIVE",
+          class: "REVENUE", type: "REVENUE", taxType: "TENANT_REVENUE_15",
+        },
       },
       {
         id: "account-700", organization_id: "org-1", code: "internal-retention", name: "Retention Display Name",
@@ -116,6 +119,24 @@ describe("Payment Claim Xero ACCREC payload", () => {
     });
     expect(JSON.stringify(revenue)).not.toContain("Sales Display Name");
     expect(JSON.stringify(revenue)).not.toContain("account-id-600");
+  });
+
+  it.each([
+    ["NONE first", ["NONE", "TENANT_REVENUE_15"]],
+    ["exact match first", ["TENANT_REVENUE_15", "NONE"]],
+  ])("uses the exact Sales account TaxType independently of row order: %s", (_label, order) => {
+    const input = snapshot();
+    const rows = {
+      NONE: { ...input.taxRates[0], id: "tax-none", tax_type: "NONE", effective_rate: 0 },
+      TENANT_REVENUE_15: {
+        ...input.taxRates[0], id: "tax-output", tax_type: "TENANT_REVENUE_15", effective_rate: 15,
+      },
+    };
+    input.taxRates = order.map((taxType) => rows[taxType as keyof typeof rows]);
+
+    expect(build(input).payload.LineItems.every(
+      (line) => line.TaxType === "TENANT_REVENUE_15",
+    )).toBe(true);
   });
 
   it("keeps gross revenue intact and maps withheld retention negatively to route 700 Current Asset", () => {
@@ -187,7 +208,23 @@ describe("Payment Claim Xero ACCREC payload", () => {
     input.claim.net_claim_excl_gst = "100.03";
     input.claim.gst_amount = "15.02";
     input.claim.total_payable = "115.05";
-    expect(errorCode(() => build(input))).toBe("gst_mismatch");
+    let caught: unknown;
+    try {
+      build(input);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: "gst_mismatch",
+      diagnostics: {
+        organizationId: "org-1",
+        claimId: "claim-1",
+        accountTaxType: "TENANT_REVENUE_15",
+        selectedTaxType: "TENANT_REVENUE_15",
+        selectedTaxRateId: "tax-1",
+        selectedEffectiveRate: 15,
+      },
+    });
   });
 
   it.each([
@@ -211,6 +248,7 @@ describe("Payment Claim Xero ACCREC payload", () => {
     jurisdiction.taxRates[0].jurisdiction_code = "AU";
     jurisdiction.taxRates[0].effective_rate = 10;
     jurisdiction.taxRates[0].tax_type = "OUTPUT";
+    (jurisdiction.costCodes[0].metadata as Record<string, unknown>).taxType = "OUTPUT";
     jurisdiction.claim.gst_amount = 90;
     jurisdiction.claim.total_payable = 990;
     expect(build(jurisdiction).payload).toMatchObject({
@@ -225,6 +263,7 @@ describe("Payment Claim Xero ACCREC payload", () => {
   it("uses the synchronized tenant TaxType rather than a built-in TaxType string", () => {
     const input = snapshot();
     input.taxRates[0].tax_type = "CUSTOM_TENANT_OUTPUT";
+    (input.costCodes[0].metadata as Record<string, unknown>).taxType = "CUSTOM_TENANT_OUTPUT";
     expect(build(input).payload.LineItems.every((line) => line.TaxType === "CUSTOM_TENANT_OUTPUT")).toBe(true);
   });
 
@@ -241,7 +280,10 @@ describe("Payment Claim Xero ACCREC payload", () => {
     });
     input.costCodes.push({
       id: "project-sales-account", organization_id: "org-1", external_code: "201", external_provider: "xero",
-      is_active: true, metadata: { accountId: "project-sales-id", tenantId: "tenant-1", status: "ACTIVE", class: "REVENUE", type: "REVENUE" },
+      is_active: true, metadata: {
+        accountId: "project-sales-id", tenantId: "tenant-1", status: "ACTIVE",
+        class: "REVENUE", type: "REVENUE", taxType: "TENANT_REVENUE_15",
+      },
     });
     expect(build(input).payload.LineItems[0].AccountCode).toBe("201");
   });

@@ -297,7 +297,7 @@ export function SpecFinishesReviewWorkbench({
     try {
       const [{ PDFDocument }, pdfjs] = await Promise.all([
         import("pdf-lib"),
-        import("pdfjs-dist/legacy/build/pdf.mjs"),
+        import("pdfjs-dist/legacy/build/pdf.min.mjs"),
       ]);
 
       if (!(pdfjs as unknown as PdfJsModule).GlobalWorkerOptions.workerSrc) {

@@ -212,7 +212,7 @@ export function buildRetentionClaimXeroPayload(params: {
   const contactId = requiredText(params.contactId, "Xero ContactID");
   const accountCode = requiredText(
     params.accountCode,
-    "Route 700 Xero AccountCode",
+    "Retention Receivable Xero AccountCode",
   );
   const taxType = requiredText(params.taxType, "Xero TaxType");
   if (params.source.allocations.length === 0) {

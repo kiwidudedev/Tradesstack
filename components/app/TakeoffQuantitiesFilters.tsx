@@ -1,41 +1,25 @@
 "use client";
 
 import { Suspense, use, useEffect, useMemo, useState } from "react";
-import { ArrowUpDown, FileText, LayoutGrid, Ruler, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowUpDown, FileStack, FileText, LayoutGrid, Ruler, Search } from "lucide-react";
 import styles from "@/components/app/trade-pack-builder.module.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { exportQuantitiesWorkbook, type QuantitiesExcelExportContext } from "@/lib/exports/quantities-excel";
 import { interMedium } from "@/lib/fonts";
-import { formatCountValue, formatQuantityValue } from "@/lib/takeoff/measurement-display";
 import type { QuantityTableRow } from "@/lib/takeoff/quantities-adapter";
+import { aggregateTakeoffQuantityRows, formatTakeoffQuantityGroupTotals } from "@/lib/takeoff/quantity-totals";
 import { TakeoffQuantitiesTable, type QuantityTableGroup } from "@/components/app/TakeoffQuantitiesTable";
+import { buildTakeoffHref } from "@/lib/takeoff/navigation";
+import type { TakeoffRouteOwner } from "@/lib/takeoff/owner";
 
 type SortOption = "default" | "name-asc" | "quantity-desc" | "quantity-asc" | "page-order";
-type GroupOption = "none" | "name" | "page" | "type";
+type GroupOption = "none" | "drawing" | "name" | "page" | "type";
 type PageOption = { id: string; label: string; pageNumber: number };
 
 function normalizeGroupName(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function formatGroupTotals(group: QuantityTableGroup["totals"]): string {
-  const segments: string[] = [];
-
-  if (group.areaQuantityTotal !== null) {
-    segments.push(`Area ${formatQuantityValue(group.areaQuantityTotal, "m²")}`);
-  }
-  if (group.areaSecondaryTotal !== null) {
-    segments.push(`Perimeter ${formatQuantityValue(group.areaSecondaryTotal, group.areaSecondaryUnit ?? "m")}`);
-  }
-  if (group.linearQuantityTotal !== null) {
-    segments.push(`Linear ${formatQuantityValue(group.linearQuantityTotal, "m")}`);
-  }
-  if (group.countQuantityTotal !== null) {
-    segments.push(`Count ${formatCountValue(group.countQuantityTotal)}`);
-  }
-
-  return segments.join(" • ");
 }
 
 function HydrationRowsBridge({
@@ -64,6 +48,11 @@ export function TakeoffQuantitiesFilters({
   isHydratingAllPages = false,
   isFullDatasetLoaded = true,
   hydrationResult = null,
+  owner: ownerProp,
+  opportunityId,
+  drawingScope,
+  activeDrawingSetId,
+  availableDrawingSets,
 }: {
   rows: QuantityTableRow[];
   exportContext: QuantitiesExcelExportContext;
@@ -74,7 +63,14 @@ export function TakeoffQuantitiesFilters({
     rows: QuantityTableRow[];
     error: string | null;
   }> | null;
+  owner?: TakeoffRouteOwner;
+  opportunityId?: string;
+  drawingScope: "current" | "all";
+  activeDrawingSetId: string;
+  availableDrawingSets: Array<{ id: string; displayName: string }>;
 }) {
+  const owner = ownerProp ?? { kind: "opportunity" as const, slug: opportunityId ?? "" };
+  const router = useRouter();
   const [allRows, setAllRows] = useState(rows);
   const [search, setSearch] = useState("");
   const [pageFilter, setPageFilter] = useState("all");
@@ -122,7 +118,7 @@ export function TakeoffQuantitiesFilters({
       .map((row, index) => ({ row, index }))
       .filter(({ row }) => {
         if (normalizedSearch) {
-          const haystack = `${row.name} ${row.description ?? ""}`.toLowerCase();
+          const haystack = `${row.drawingDisplayName} ${row.name} ${row.description ?? ""}`.toLowerCase();
           if (!haystack.includes(normalizedSearch)) {
             return false;
           }
@@ -145,6 +141,8 @@ export function TakeoffQuantitiesFilters({
       }
 
       if (sortBy === "page-order") {
+        const drawingOrder = left.row.drawingDisplayName.localeCompare(right.row.drawingDisplayName, undefined, { sensitivity: "base" });
+        if (drawingScope === "all" && drawingOrder !== 0) return drawingOrder;
         if (left.row.pageNumber !== right.row.pageNumber) {
           return left.row.pageNumber - right.row.pageNumber;
         }
@@ -179,7 +177,7 @@ export function TakeoffQuantitiesFilters({
       });
 
     return nextRows.map(({ row }) => row);
-  }, [allRows, pageFilter, search, sortBy, typeFilter]);
+  }, [allRows, drawingScope, pageFilter, search, sortBy, typeFilter]);
 
   const groupedRows = useMemo<QuantityTableGroup[] | null>(() => {
     if (groupBy === "none") {
@@ -194,11 +192,16 @@ export function TakeoffQuantitiesFilters({
       let label = row.name;
 
       if (groupBy === "name") {
-        key = normalizeGroupName(row.name);
-        label = row.name;
+        key = drawingScope === "all"
+          ? `${row.drawingSetId}:${normalizeGroupName(row.name)}`
+          : normalizeGroupName(row.name);
+        label = drawingScope === "all" ? `${row.drawingDisplayName} — ${row.name}` : row.name;
       } else if (groupBy === "page") {
         key = row.pageId;
-        label = row.pageLabel;
+        label = drawingScope === "all" ? `${row.drawingDisplayName} — ${row.pageLabel}` : row.pageLabel;
+      } else if (groupBy === "drawing") {
+        key = row.drawingSetId;
+        label = row.drawingDisplayName;
       } else if (groupBy === "type") {
         key = row.typeLabel;
         label = row.typeLabel;
@@ -213,60 +216,17 @@ export function TakeoffQuantitiesFilters({
     }
 
     return Array.from(groups.entries()).map(([key, groupRows]) => {
-      let areaQuantityTotal = 0;
-      let hasAreaQuantity = false;
-      let areaSecondaryTotal = 0;
-      let hasAreaSecondary = false;
-      let areaSecondaryUnit: string | null = null;
-      let linearQuantityTotal = 0;
-      let hasLinearQuantity = false;
-      let countQuantityTotal = 0;
-      let hasCountQuantity = false;
-
-      for (const row of groupRows) {
-        if (row.typeLabel === "Area" && row.quantityValue !== null) {
-          areaQuantityTotal += row.quantityValue;
-          hasAreaQuantity = true;
-        }
-
-        if (row.typeLabel === "Area" && row.secondaryQuantityValue !== null) {
-          areaSecondaryTotal += row.secondaryQuantityValue;
-          areaSecondaryUnit = row.secondaryUnitLabel ?? areaSecondaryUnit;
-          hasAreaSecondary = true;
-        }
-
-        if (row.typeLabel === "Linear" && row.quantityValue !== null) {
-          linearQuantityTotal += row.quantityValue;
-          hasLinearQuantity = true;
-        }
-
-        if (row.typeLabel === "Count" && row.quantityValue !== null) {
-          countQuantityTotal += row.quantityValue;
-          hasCountQuantity = true;
-        }
-      }
+      const totals = aggregateTakeoffQuantityRows(groupRows);
 
       return {
         key,
         label: labels.get(key) ?? key,
         rows: groupRows,
-        totalsLabel: formatGroupTotals({
-          areaQuantityTotal: hasAreaQuantity ? areaQuantityTotal : null,
-          areaSecondaryTotal: hasAreaSecondary ? areaSecondaryTotal : null,
-          areaSecondaryUnit,
-          linearQuantityTotal: hasLinearQuantity ? linearQuantityTotal : null,
-          countQuantityTotal: hasCountQuantity ? countQuantityTotal : null,
-        }),
-        totals: {
-          areaQuantityTotal: hasAreaQuantity ? areaQuantityTotal : null,
-          areaSecondaryTotal: hasAreaSecondary ? areaSecondaryTotal : null,
-          areaSecondaryUnit,
-          linearQuantityTotal: hasLinearQuantity ? linearQuantityTotal : null,
-          countQuantityTotal: hasCountQuantity ? countQuantityTotal : null,
-        },
+        totalsLabel: formatTakeoffQuantityGroupTotals(totals),
+        totals,
       };
     });
-  }, [filteredRows, groupBy]);
+  }, [drawingScope, filteredRows, groupBy]);
 
   const activePageFilterLabel = useMemo(() => {
     if (pageFilter === "all") {
@@ -335,6 +295,26 @@ export function TakeoffQuantitiesFilters({
         </div>
 
         <div className="relative">
+          <FileStack className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
+          <select
+            value={drawingScope === "all" ? "all" : activeDrawingSetId}
+            onChange={(event) => {
+              const value = event.target.value;
+              router.push(buildTakeoffHref(owner, "quantities", {
+                drawingSetId: value === "all" ? activeDrawingSetId : value,
+                drawingScope: value === "all" ? "all" : null,
+              }));
+            }}
+            className={`${interMedium.className} h-10 min-w-[190px] rounded-[12px] border border-[#E2E8F1] bg-white pl-10 pr-8 text-[14px] text-[#10283B]`}
+          >
+            <option value="all">All Drawings</option>
+            {availableDrawingSets.map((drawingSet) => (
+              <option key={drawingSet.id} value={drawingSet.id}>{drawingSet.displayName}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="relative">
           <FileText className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8AA0BC]" strokeWidth={2} />
           <select
             value={pageFilter}
@@ -344,7 +324,9 @@ export function TakeoffQuantitiesFilters({
             <option value="all">All Pages</option>
             {pageOptions.map((option) => (
               <option key={option.id} value={option.id}>
-                {option.label}
+                {drawingScope === "all"
+                  ? `${allRows.find((row) => row.pageId === option.id)?.drawingDisplayName ?? "Drawing"} — ${option.label}`
+                  : option.label}
               </option>
             ))}
           </select>
@@ -387,6 +369,7 @@ export function TakeoffQuantitiesFilters({
             className={`${interMedium.className} h-10 min-w-[170px] rounded-[12px] border border-[#E2E8F1] bg-white pl-10 pr-8 text-[14px] text-[#10283B]`}
           >
             <option value="none">None</option>
+            {drawingScope === "all" ? <option value="drawing">Drawing</option> : null}
             <option value="name">Measurement name</option>
             <option value="page">Page</option>
             <option value="type">Type</option>
@@ -420,6 +403,7 @@ export function TakeoffQuantitiesFilters({
       <TakeoffQuantitiesTable
         rows={filteredRows}
         groups={groupedRows}
+        showDrawing={drawingScope === "all"}
       />
     </div>
   );

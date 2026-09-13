@@ -1,4 +1,21 @@
 import type { TakeoffCalibration } from "@/lib/takeoff-server";
+import {
+  convertTakeoffBaseLengthToDisplay,
+  isTakeoffDisplayUnit,
+} from "@/lib/takeoff/units";
+
+export const DEFAULT_TAKEOFF_MEASUREMENT_COLORS = {
+  line: "#F15A29",
+  area: "#0F766E",
+  count: "#2563EB",
+} as const;
+
+export function resolveTakeoffMeasurementColor(
+  colorHex: string | null | undefined,
+  kind: keyof typeof DEFAULT_TAKEOFF_MEASUREMENT_COLORS,
+): string {
+  return colorHex?.trim() || DEFAULT_TAKEOFF_MEASUREMENT_COLORS[kind];
+}
 
 function formatCompactDecimal(value: number): string {
   if (!Number.isFinite(value)) {
@@ -34,31 +51,19 @@ export function convertBaseLengthToDisplayValue(params: {
     return null;
   }
 
-  if (params.baseUnit === "mm") {
-    if (params.displayUnit === "mm") {
-      return params.value;
-    }
-
-    if (params.displayUnit === "cm") {
-      return params.value / 10;
-    }
-
-    if (params.displayUnit === "m") {
-      return params.value / 1000;
-    }
+  if ((params.baseUnit !== "mm" && params.baseUnit !== "in") || !isTakeoffDisplayUnit(params.displayUnit)) {
+    return null;
   }
 
-  if (params.baseUnit === "in") {
-    if (params.displayUnit === "in") {
-      return params.value;
-    }
-
-    if (params.displayUnit === "ft") {
-      return params.value / 12;
-    }
+  try {
+    return convertTakeoffBaseLengthToDisplay({
+      baseUnit: params.baseUnit,
+      displayUnit: params.displayUnit,
+      value: params.value,
+    });
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 export function formatAreaPerimeterDisplay(params: {

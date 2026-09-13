@@ -1,15 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CloudUpload, Loader2 } from "lucide-react";
 import { TakeoffPdfViewer } from "@/components/app/TakeoffPdfViewer";
+import { TakeoffAddToQuotePanel } from "@/components/app/TakeoffAddToQuotePanel";
+import { TakeoffAddToPurchaseOrderPanel } from "@/components/app/TakeoffAddToPurchaseOrderPanel";
+import { TakeoffAddToVariationPanel } from "@/components/app/TakeoffAddToVariationPanel";
 import type {
   TakeoffMeasurePageData,
   TakeoffMeasureViewerData,
-} from "@/app/app/(workspace)/leads-clients/opportunities/[opportunityId]/takeoff/takeoff-page-data";
+} from "@/lib/takeoff/page-data-server";
 import type { TakeoffActionResult } from "@/lib/takeoff/actions";
-import { buildTakeoffHref } from "@/lib/takeoff/navigation";
-import { useTakeoffSourceDrawingUpload } from "@/components/app/useTakeoffSourceDrawingUpload";
+import { buildTakeoffHref, buildTakeoffOwnerApiQuery, buildTakeoffRegisterHref } from "@/lib/takeoff/navigation";
+import type { TakeoffRouteOwner } from "@/lib/takeoff/owner";
+import { hasTakeoffPageMutationAdvanced } from "@/lib/takeoff/measurement-lifecycle";
+import {
+  reconcileCommittedTakeoffMeasurement,
+  type TakeoffCommittedMeasurement,
+} from "@/lib/takeoff/measurement-cache";
+import {
+  reconcileTakeoffDrawingSetSummaryMeasurement,
+  type TakeoffDrawingSetSummaryMeasurement,
+} from "@/lib/takeoff/measurement-summary";
 
 interface TakeoffMeasurementPoint {
   id: string;
@@ -62,23 +73,42 @@ interface TakeoffLinePath {
 interface TakeoffMeasurement {
   id: string;
   measurement_kind: "line" | "area" | "count";
-  status: string;
+  status: "active" | "archived" | "deleted";
   name: string;
   description: string;
   color_hex: string | null;
   display_value: number | null;
   display_unit: string | null;
   count_value: number | null;
+  quantity?: number;
+  measured_length_base?: number | null;
+  measured_area_base?: number | null;
   measured_perimeter_base?: number | null;
   page_bbox_min_x?: number | null;
   page_bbox_min_y?: number | null;
   page_bbox_max_x?: number | null;
   page_bbox_max_y?: number | null;
-  metadata?: Record<string, unknown> | null;
+  metadata?: unknown;
+  version?: number;
+  created_at?: string;
+  updated_at?: string;
   points: TakeoffMeasurementPoint[];
   area_shapes: TakeoffAreaShape[];
   line_paths: TakeoffLinePath[];
 }
+
+type CachedTakeoffMeasurement = TakeoffMeasureViewerData["measurements"][number];
+type WorkspaceCommittedMeasurement = TakeoffCommittedMeasurement<CachedTakeoffMeasurement> &
+  Pick<
+    CachedTakeoffMeasurement,
+    | "id"
+    | "status"
+    | "measurement_kind"
+    | "name"
+    | "color_hex"
+    | "display_value"
+    | "display_unit"
+  >;
 
 interface TakeoffCalibration {
   id: string;
@@ -86,22 +116,42 @@ interface TakeoffCalibration {
   name: string;
   display_unit: string;
   reference_length_input: number;
+  reference_length_base: number;
+  scale_ratio: number;
+  unit_system: string;
+  is_active: boolean;
+  superseded_by: string | null;
+  notes: string;
+  created_at: string;
+  updated_at: string;
   point_a_x: number;
   point_a_y: number;
   point_b_x: number;
   point_b_y: number;
 }
 
+interface TakeoffCalibrationHistoryItem extends TakeoffCalibration {
+  dependent_measurement_count: number;
+}
+
+interface DeleteTakeoffCalibrationResult {
+  deletedCalibrationId: string;
+  activeCalibration: TakeoffCalibration | null;
+}
+
 interface TakeoffMeasureWorkspaceProps {
-  opportunityId: string;
+  owner?: TakeoffRouteOwner;
+  opportunityId?: string;
   title: string;
   drawingSetId: string;
   initialViewerData: TakeoffMeasureViewerData | null;
-  organizationId: string;
-  projectId: string;
-  isEmptyDrawingState?: boolean;
+  initialSummaryMeasurements: TakeoffDrawingSetSummaryMeasurement[];
+  canAddToPurchaseOrder?: boolean;
+  canAddToVariation?: boolean;
   saveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration>>;
   setActiveCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibration | null>>;
+  getCalibrationHistoryAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffCalibrationHistoryItem[]>>;
+  deleteCalibrationAction: (formData: FormData) => Promise<TakeoffActionResult<DeleteTakeoffCalibrationResult>>;
   createLineMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createAreaMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
   createCountMeasurementAction: (formData: FormData) => Promise<TakeoffActionResult<TakeoffMeasurement>>;
@@ -120,7 +170,7 @@ interface TakeoffMeasureWorkspaceProps {
 
 interface MeasurePageResponse {
   ok: boolean;
-  data?: TakeoffMeasurePageData;
+  data?: TakeoffMeasurePageData | TakeoffMeasureViewerData;
   error?: string;
 }
 
@@ -149,99 +199,8 @@ function MeasureWorkspaceStatus(params: {
   );
 }
 
-function EmptyTakeoffMeasureWorkspace(props: {
-  opportunityId: string;
-  organizationId: string;
-  projectId: string;
-}) {
-  const {
-    inputRef,
-    isUploading,
-    status,
-    error,
-    onChooseFile,
-    onFileChange,
-  } = useTakeoffSourceDrawingUpload({
-    opportunityId: props.opportunityId,
-    organizationId: props.organizationId,
-    projectId: props.projectId,
-  });
-
-  return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-1 bg-[#FBFEFE]">
-      <input
-        ref={inputRef}
-        id="takeoffMeasureSidebarUploadInput"
-        type="file"
-        accept="application/pdf,.pdf"
-        className="hidden"
-        onChange={onFileChange}
-        disabled={isUploading}
-      />
-      <aside className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-r border-[#DDE5EE] bg-white">
-        <div className="border-b border-[#E2E8F1] px-6 py-6">
-          <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#334155]">Takeoff</p>
-          <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.02em] text-slate-900">Summary</h1>
-        </div>
-        <div className="flex flex-1 items-center justify-center px-6 py-10">
-          <div className="max-w-[220px] text-center">
-            <p className="text-sm font-medium text-[#1E293B]">No drawings uploaded yet.</p>
-            <p className="mt-2 text-sm leading-[1.7] text-[#6B7C93]">
-              Upload a PDF drawing set to open the live Measure canvas and begin takeoff.
-            </p>
-          </div>
-        </div>
-      </aside>
-
-      <div className="relative flex h-full min-h-0 min-w-0 flex-1 bg-[#EEF3F8]">
-        <div className="relative flex-1 overflow-hidden bg-[linear-gradient(180deg,#F6F8FB_0%,#E8EEF5_100%)]">
-          <div className="absolute inset-0 flex items-center justify-center px-6">
-            <div className="max-w-xl rounded-[18px] border border-white/80 bg-white/92 px-6 py-5 text-center shadow-[0_18px_44px_rgba(15,23,42,0.10)] backdrop-blur-sm">
-              <p className="text-[18px] font-semibold text-[#1d2433]">Upload plans to start measuring</p>
-              <p className="mt-2 text-[14px] leading-[1.7] text-[#6B7C93]">
-                Add your PDF drawing set to begin takeoff, calibration, and quantity tracking inside the Measure workspace.
-              </p>
-              {status ? (
-                <p className="mt-4 text-sm text-[#6B7C93]">{status}</p>
-              ) : null}
-              {error ? (
-                <p className="mt-3 text-sm text-[#9A3412]">{error}</p>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="absolute right-5 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-2 rounded-[28px] border border-white/75 bg-white/92 px-2 py-2 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={onChooseFile}
-              disabled={isUploading}
-              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-[#D7E0EA] bg-white px-3 text-[#334155] transition-colors hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
-              aria-label="Upload drawing"
-              title="Upload Drawing"
-            >
-              {isUploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.2} />
-              ) : (
-                <CloudUpload className="h-4 w-4" strokeWidth={2.2} />
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function TakeoffMeasureWorkspace(props: TakeoffMeasureWorkspaceProps) {
-  if (props.isEmptyDrawingState || !props.initialViewerData) {
-    return (
-      <EmptyTakeoffMeasureWorkspace
-        opportunityId={props.opportunityId}
-        organizationId={props.organizationId}
-        projectId={props.projectId}
-      />
-    );
-  }
+  if (!props.initialViewerData) return null;
 
   return <TakeoffMeasureWorkspaceWithViewer {...props} initialViewerData={props.initialViewerData} />;
 }
@@ -252,12 +211,18 @@ function TakeoffMeasureWorkspaceWithViewer(
   }
 ) {
   const {
+    owner: ownerProp,
     opportunityId,
     title,
     drawingSetId,
     initialViewerData,
+    initialSummaryMeasurements,
+    canAddToPurchaseOrder = false,
+    canAddToVariation = false,
     saveCalibrationAction,
     setActiveCalibrationAction,
+    getCalibrationHistoryAction,
+    deleteCalibrationAction,
     createLineMeasurementAction,
     createAreaMeasurementAction,
     createCountMeasurementAction,
@@ -273,6 +238,11 @@ function TakeoffMeasureWorkspaceWithViewer(
     updateMeasurementGeometryAction,
     updateMeasurementStatusAction,
   } = props;
+  const owner = useMemo<TakeoffRouteOwner>(
+    () => ownerProp ?? { kind: "opportunity", slug: opportunityId ?? "" },
+    [opportunityId, ownerProp],
+  );
+  const ownerApiQuery = useMemo(() => buildTakeoffOwnerApiQuery(owner), [owner]);
 
   const pdfUrlRef = useRef(initialViewerData.pdfUrl);
   const activeClientPageIdRef = useRef(initialViewerData.pageId);
@@ -280,30 +250,42 @@ function TakeoffMeasureWorkspaceWithViewer(
     drawingSetId: string;
     pageId: string;
   } | null>(null);
+  const initialViewerDataRef = useRef<TakeoffMeasureViewerData | null>(null);
   const cacheRef = useRef(new Map<string, TakeoffMeasurePageData>());
+  const pageSummaryMetadataRef = useRef(new Map<string, { pageNumber: number; pageLabel: string }>([
+    [initialViewerData.pageId, {
+      pageNumber: initialViewerData.pageNumber,
+      pageLabel: initialViewerData.pageLabel,
+    }],
+  ]));
+  const pageMutationRevisionRef = useRef(new Map<string, number>());
   const deletedMeasurementIdsRef = useRef<Record<string, Set<string>>>({});
   const inFlightRequestsRef = useRef(new Map<string, Promise<TakeoffMeasurePageData>>());
+  const backgroundPageControllersRef = useRef(new Map<string, AbortController>());
+  const activeRequestControllersRef = useRef(new Set<AbortController>());
   const requestIdRef = useRef(0);
   const [viewerData, setViewerData] = useState<TakeoffMeasureViewerData>(initialViewerData);
+  const [summaryMeasurements, setSummaryMeasurements] = useState<TakeoffDrawingSetSummaryMeasurement[]>(
+    initialSummaryMeasurements,
+  );
   const [isPageLoading, setIsPageLoading] = useState(false);
   const [pageLoadError, setPageLoadError] = useState<string | null>(null);
+  const [pdfReloadKey, setPdfReloadKey] = useState(0);
+  const [isPdfRetrying, setIsPdfRetrying] = useState(false);
+  const [quoteMeasurementId, setQuoteMeasurementId] = useState<string | null>(null);
+  const [purchaseOrderMeasurementId, setPurchaseOrderMeasurementId] = useState<string | null>(null);
+  const [variationMeasurementId, setVariationMeasurementId] = useState<string | null>(null);
+  const [quoteSuccessMessage, setQuoteSuccessMessage] = useState<string | null>(null);
 
   const currentHref = useMemo(
     () =>
-      buildTakeoffHref(opportunityId, "measure", {
+      buildTakeoffHref(owner, "measure", {
         drawingSetId,
         pageId: viewerData.pageId,
       }),
-    [drawingSetId, opportunityId, viewerData.pageId]
+    [drawingSetId, owner, viewerData.pageId]
   );
-  const quantitiesHref = useMemo(
-    () =>
-      buildTakeoffHref(opportunityId, "quantities", {
-        drawingSetId,
-        pageId: viewerData.pageId,
-      }),
-    [drawingSetId, opportunityId, viewerData.pageId]
-  );
+  const registerHref = useMemo(() => buildTakeoffRegisterHref(owner), [owner]);
   const filterDeletedMeasurements = useCallback(
     (pageId: string, measurements: TakeoffMeasurePageData["measurements"]) => {
       const deletedIds = deletedMeasurementIdsRef.current[pageId];
@@ -318,7 +300,7 @@ function TakeoffMeasureWorkspaceWithViewer(
 
   const syncHistory = useCallback(
     (pageId: string, mode: "push" | "replace") => {
-      const href = buildTakeoffHref(opportunityId, "measure", {
+      const href = buildTakeoffHref(owner, "measure", {
         drawingSetId,
         pageId,
       });
@@ -330,27 +312,43 @@ function TakeoffMeasureWorkspaceWithViewer(
 
       window.history.pushState({ pageId }, "", href);
     },
-    [drawingSetId, opportunityId]
+    [drawingSetId, owner]
   );
 
   const fetchPageData = useCallback(
-    async (pageId: string) => {
-      const response = await fetch(
-        `/api/takeoff/measure-viewer?opportunityId=${encodeURIComponent(opportunityId)}&drawingSetId=${encodeURIComponent(drawingSetId)}&pageId=${encodeURIComponent(pageId)}`,
+    async (pageId: string, externalSignal?: AbortSignal) => {
+      const controller = new AbortController();
+      activeRequestControllersRef.current.add(controller);
+      const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
+      const signal = externalSignal ? AbortSignal.any([controller.signal, externalSignal]) : controller.signal;
+      let response: Response;
+      try {
+        response = await fetch(
+        `/api/takeoff/measure-viewer?${ownerApiQuery}&drawingSetId=${encodeURIComponent(drawingSetId)}&pageId=${encodeURIComponent(pageId)}`,
         {
           credentials: "same-origin",
           cache: "no-store",
+          signal,
         }
       );
+      } catch (error) {
+        if (signal.aborted) {
+          throw new Error("The page request timed out. Please retry.");
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
+        activeRequestControllersRef.current.delete(controller);
+      }
 
       const payload = (await response.json()) as MeasurePageResponse;
       if (!response.ok || !payload.ok || !payload.data) {
         throw new Error(payload.error ?? "Unable to load the requested measure page.");
       }
 
-      return payload.data;
+      return payload.data as TakeoffMeasurePageData;
     },
-    [drawingSetId, opportunityId]
+    [drawingSetId, ownerApiQuery]
   );
 
   const getOrFetchPageData = useCallback(
@@ -365,12 +363,16 @@ function TakeoffMeasureWorkspaceWithViewer(
         return inFlightRequest;
       }
 
+      const revisionAtStart = pageMutationRevisionRef.current.get(pageId) ?? 0;
       const request = fetchPageData(pageId)
         .then((pageData) => {
           const filteredPageData = {
             ...pageData,
             measurements: filterDeletedMeasurements(pageId, pageData.measurements),
           };
+          if (hasTakeoffPageMutationAdvanced(revisionAtStart, pageMutationRevisionRef.current.get(pageId) ?? 0)) {
+            return cacheRef.current.get(pageId) ?? filteredPageData;
+          }
           cacheRef.current.set(pageId, filteredPageData);
           return filteredPageData;
         })
@@ -386,21 +388,39 @@ function TakeoffMeasureWorkspaceWithViewer(
 
   const primePage = useCallback(
     async (pageId: string | null) => {
-      if (!pageId || cacheRef.current.has(pageId)) {
+      if (!pageId || cacheRef.current.has(pageId) || backgroundPageControllersRef.current.has(pageId)) {
         return;
       }
 
+      const controller = new AbortController();
+      backgroundPageControllersRef.current.set(pageId, controller);
+      const revisionAtStart = pageMutationRevisionRef.current.get(pageId) ?? 0;
       try {
-        await getOrFetchPageData(pageId);
+        const pageData = await fetchPageData(pageId, controller.signal);
+        if (!controller.signal.aborted && !hasTakeoffPageMutationAdvanced(
+          revisionAtStart,
+          pageMutationRevisionRef.current.get(pageId) ?? 0
+        )) {
+          cacheRef.current.set(pageId, {
+            ...pageData,
+            measurements: filterDeletedMeasurements(pageId, pageData.measurements),
+          });
+        }
       } catch {
         // Ignore background preload failures. Explicit navigation handles errors visibly.
+      } finally {
+        backgroundPageControllersRef.current.delete(pageId);
       }
     },
-    [getOrFetchPageData]
+    [fetchPageData, filterDeletedMeasurements]
   );
 
   const applyPageData = useCallback((pageData: TakeoffMeasurePageData) => {
     activeClientPageIdRef.current = pageData.pageId;
+    pageSummaryMetadataRef.current.set(pageData.pageId, {
+      pageNumber: pageData.pageNumber,
+      pageLabel: pageData.pageLabel,
+    });
     const filteredPageData = {
       ...pageData,
       measurements: filterDeletedMeasurements(pageData.pageId, pageData.measurements),
@@ -440,7 +460,11 @@ function TakeoffMeasureWorkspaceWithViewer(
     []
   );
 
-  const patchCachedMeasurement = useCallback((pageId: string, measurement: TakeoffMeasureViewerData["measurements"][number]) => {
+  const patchCachedMeasurement = useCallback((
+    pageId: string,
+    measurement: WorkspaceCommittedMeasurement,
+  ) => {
+    pageMutationRevisionRef.current.set(pageId, (pageMutationRevisionRef.current.get(pageId) ?? 0) + 1);
     const deletedIds =
       deletedMeasurementIdsRef.current[pageId] ??
       (deletedMeasurementIdsRef.current[pageId] = new Set<string>());
@@ -455,7 +479,6 @@ function TakeoffMeasureWorkspaceWithViewer(
 
     const cachedPage = cacheRef.current.get(pageId);
     const patchMeasurements = (currentMeasurements: TakeoffMeasureViewerData["measurements"]) => {
-      const nextMeasurement = measurement as (typeof currentMeasurements)[number];
       const existingIndex = currentMeasurements.findIndex((currentMeasurement) => currentMeasurement.id === measurement.id);
 
       if (measurement.status === "deleted") {
@@ -467,11 +490,17 @@ function TakeoffMeasureWorkspaceWithViewer(
       }
 
       if (existingIndex < 0) {
-        return [...currentMeasurements, nextMeasurement];
+        return [
+          ...currentMeasurements,
+          reconcileCommittedTakeoffMeasurement<(typeof currentMeasurements)[number]>(undefined, measurement),
+        ];
       }
 
       const nextMeasurements = [...currentMeasurements];
-      nextMeasurements[existingIndex] = nextMeasurement;
+      nextMeasurements[existingIndex] = reconcileCommittedTakeoffMeasurement<(typeof currentMeasurements)[number]>(
+        currentMeasurements[existingIndex],
+        measurement,
+      );
       return nextMeasurements;
     };
 
@@ -492,10 +521,33 @@ function TakeoffMeasureWorkspaceWithViewer(
         measurements: patchMeasurements(current.measurements),
       };
     });
+
+    setSummaryMeasurements((current) => {
+      const existing = current.find((item) => item.id === measurement.id);
+      const measurementPage = pageSummaryMetadataRef.current.get(pageId);
+      const now = new Date().toISOString();
+      return reconcileTakeoffDrawingSetSummaryMeasurement(current, {
+        id: measurement.id,
+        pageId,
+        pageNumber: measurementPage?.pageNumber ?? existing?.pageNumber ?? Number.MAX_SAFE_INTEGER,
+        pageLabel: measurementPage?.pageLabel ?? existing?.pageLabel ?? "Page",
+        name: measurement.name,
+        measurementKind: measurement.measurement_kind,
+        colorHex: measurement.color_hex,
+        displayValue: measurement.display_value,
+        displayUnit: measurement.display_unit,
+        status: measurement.status,
+        createdAt:
+          typeof measurement.created_at === "string"
+            ? measurement.created_at
+            : existing?.createdAt ?? now,
+      });
+    });
   }, []);
 
   const patchCachedCalibration = useCallback(
     (pageId: string, calibration: TakeoffMeasureViewerData["activeCalibration"]) => {
+      pageMutationRevisionRef.current.set(pageId, (pageMutationRevisionRef.current.get(pageId) ?? 0) + 1);
       const cachedPage = cacheRef.current.get(pageId);
       if (cachedPage) {
         cacheRef.current.set(pageId, {
@@ -529,6 +581,8 @@ function TakeoffMeasureWorkspaceWithViewer(
         return;
       }
 
+      backgroundPageControllersRef.current.forEach((controller) => controller.abort());
+      backgroundPageControllersRef.current.clear();
       activeClientPageIdRef.current = pageId;
       const cached = cacheRef.current.get(pageId);
       if (cached) {
@@ -537,8 +591,6 @@ function TakeoffMeasureWorkspaceWithViewer(
         if (mode !== "none") {
           syncHistory(pageId, mode);
         }
-        void primePage(cached.previousPageId);
-        void primePage(cached.nextPageId);
         return;
       }
 
@@ -557,8 +609,6 @@ function TakeoffMeasureWorkspaceWithViewer(
         if (mode !== "none") {
           syncHistory(pageData.pageId, mode);
         }
-        void primePage(pageData.previousPageId);
-        void primePage(pageData.nextPageId);
       } catch (error) {
         if (requestIdRef.current !== requestId) {
           return;
@@ -571,10 +621,74 @@ function TakeoffMeasureWorkspaceWithViewer(
         }
       }
     },
-    [applyPageData, getOrFetchPageData, primePage, syncHistory, viewerData.pageId]
+    [applyPageData, getOrFetchPageData, syncHistory, viewerData.pageId]
   );
 
+  const retrySourcePdf = useCallback(async () => {
+    if (isPdfRetrying) {
+      return;
+    }
+    setIsPdfRetrying(true);
+    setPageLoadError(null);
+    const controller = new AbortController();
+    activeRequestControllersRef.current.add(controller);
+    const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
+    try {
+      const response = await fetch(
+        `/api/takeoff/measure-viewer?${ownerApiQuery}&drawingSetId=${encodeURIComponent(drawingSetId)}&pageId=${encodeURIComponent(viewerData.pageId)}&refreshSource=1`,
+        { credentials: "same-origin", cache: "no-store", signal: controller.signal }
+      );
+      const payload = (await response.json()) as MeasurePageResponse;
+      const refreshed = payload.data as TakeoffMeasureViewerData | undefined;
+      if (!response.ok || !payload.ok || !refreshed?.pdfUrl) {
+        throw new Error(payload.error ?? "Unable to refresh the drawing PDF.");
+      }
+      pdfUrlRef.current = refreshed.pdfUrl;
+      setViewerData((current) => ({ ...current, pdfUrl: refreshed.pdfUrl }));
+      setPdfReloadKey((current) => current + 1);
+    } catch (error) {
+      setPageLoadError(controller.signal.aborted
+        ? "The PDF refresh timed out. Please retry."
+        : error instanceof Error ? error.message : "Unable to refresh the drawing PDF.");
+    } finally {
+      window.clearTimeout(timeoutId);
+      activeRequestControllersRef.current.delete(controller);
+      setIsPdfRetrying(false);
+    }
+  }, [drawingSetId, isPdfRetrying, ownerApiQuery, viewerData.pageId]);
+
+  const primeAdjacentPagesAfterUsable = useCallback((usablePageId: string) => {
+    if (usablePageId !== viewerData.pageId) {
+      return;
+    }
+    backgroundPageControllersRef.current.forEach((controller) => controller.abort());
+    backgroundPageControllersRef.current.clear();
+    const run = () => {
+      void primePage(viewerData.previousPageId);
+      void primePage(viewerData.nextPageId);
+    };
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(run, { timeout: 750 });
+    } else {
+      globalThis.setTimeout(run, 250);
+    }
+  }, [primePage, viewerData.nextPageId, viewerData.pageId, viewerData.previousPageId]);
+
+  useEffect(() => () => {
+    backgroundPageControllersRef.current.forEach((controller) => controller.abort());
+    backgroundPageControllersRef.current.clear();
+    activeRequestControllersRef.current.forEach((controller) => controller.abort());
+    activeRequestControllersRef.current.clear();
+    inFlightRequestsRef.current.clear();
+    cacheRef.current.clear();
+    pageSummaryMetadataRef.current.clear();
+  }, []);
+
   useEffect(() => {
+    if (initialViewerDataRef.current === initialViewerData) {
+      return;
+    }
+    initialViewerDataRef.current = initialViewerData;
     const previousServerPayload = serverPayloadRef.current;
     const hasSameServerPayload =
       previousServerPayload?.drawingSetId === drawingSetId &&
@@ -619,6 +733,10 @@ function TakeoffMeasureWorkspaceWithViewer(
     };
 
     cacheRef.current.set(initialViewerData.pageId, nextPageData);
+    pageSummaryMetadataRef.current.set(initialViewerData.pageId, {
+      pageNumber: initialViewerData.pageNumber,
+      pageLabel: initialViewerData.pageLabel,
+    });
 
     setViewerData((current) => {
       const previousServerPayload = serverPayloadRef.current;
@@ -698,11 +816,6 @@ function TakeoffMeasureWorkspaceWithViewer(
   }, [currentHref, drawingSetId, viewerData.pageId]);
 
   useEffect(() => {
-    void primePage(viewerData.previousPageId);
-    void primePage(viewerData.nextPageId);
-  }, [primePage, viewerData.nextPageId, viewerData.previousPageId]);
-
-  useEffect(() => {
     function handlePopState() {
       const pageId = new URL(window.location.href).searchParams.get("pageId");
       if (pageId && pageId !== viewerData.pageId) {
@@ -731,14 +844,17 @@ function TakeoffMeasureWorkspaceWithViewer(
             pageHeightPts={viewerData.pageHeightPts}
             rotationDegrees={viewerData.rotationDegrees}
             measurements={viewerData.measurements}
+            summaryMeasurements={summaryMeasurements}
             measurementReadiness={viewerData.measurementReadiness}
             activeCalibration={viewerData.activeCalibration}
             drawingSetId={drawingSetId}
             pageId={viewerData.pageId}
-            exitHref={quantitiesHref}
+            exitHref={registerHref}
             title={title}
             saveCalibrationAction={saveCalibrationAction}
             setActiveCalibrationAction={setActiveCalibrationAction}
+            getCalibrationHistoryAction={getCalibrationHistoryAction}
+            deleteCalibrationAction={deleteCalibrationAction}
             createLineMeasurementAction={createLineMeasurementAction}
             createAreaMeasurementAction={createAreaMeasurementAction}
             createCountMeasurementAction={createCountMeasurementAction}
@@ -759,8 +875,12 @@ function TakeoffMeasureWorkspaceWithViewer(
             nextPageId={viewerData.nextPageId}
             isPageLoading={isPageLoading}
             pageLoadError={pageLoadError}
+            pdfReloadKey={pdfReloadKey}
+            onRetryPdf={() => void retrySourcePdf()}
+            onRetryPage={() => void loadPage(activeClientPageIdRef.current, "none")}
+            onPageUsable={primeAdjacentPagesAfterUsable}
             onMeasurementCommitted={(pageId, measurement) => {
-              patchCachedMeasurement(pageId, measurement as TakeoffMeasureViewerData["measurements"][number]);
+              patchCachedMeasurement(pageId, measurement);
             }}
             onCalibrationCommitted={(pageId, calibration) => {
               patchCachedCalibration(pageId, calibration as TakeoffMeasureViewerData["activeCalibration"]);
@@ -768,18 +888,74 @@ function TakeoffMeasureWorkspaceWithViewer(
             onPageChange={(pageId) => {
               void loadPage(pageId, "push");
             }}
+            onAddMeasurementToQuote={(measurementId) => {
+              setPurchaseOrderMeasurementId(null);
+              setVariationMeasurementId(null);
+              setQuoteMeasurementId(measurementId);
+            }}
+            onAddMeasurementToPurchaseOrder={canAddToPurchaseOrder ? (measurementId) => {
+              setQuoteMeasurementId(null);
+              setVariationMeasurementId(null);
+              setPurchaseOrderMeasurementId(measurementId);
+            } : undefined}
+            onAddMeasurementToVariation={canAddToVariation ? (measurementId) => {
+              setQuoteMeasurementId(null);
+              setPurchaseOrderMeasurementId(null);
+              setVariationMeasurementId(measurementId);
+            } : undefined}
           />
         </div>
       ) : (
         <MeasureWorkspaceStatus
           title="Drawing PDF Unavailable"
-          body="The selected drawing set could not be opened for Measure right now. Reload the page or try another page in this set."
-          actionLabel="Retry Page"
+          body={pageLoadError ?? "The selected drawing set could not be opened for Measure right now. Reload the page or try another page in this set."}
+          actionLabel={isPdfRetrying ? "Retrying…" : "Retry Drawing"}
           onAction={() => {
-            void loadPage(viewerData.pageId, "none");
+            void retrySourcePdf();
           }}
         />
       )}
+      {quoteMeasurementId ? (
+        <TakeoffAddToQuotePanel
+          owner={owner}
+          measurementId={quoteMeasurementId}
+          onClose={() => setQuoteMeasurementId(null)}
+          onSuccess={(message) => {
+            setQuoteSuccessMessage(message);
+            setQuoteMeasurementId(null);
+            window.setTimeout(() => setQuoteSuccessMessage(null), 5000);
+          }}
+        />
+      ) : null}
+      {purchaseOrderMeasurementId ? (
+        <TakeoffAddToPurchaseOrderPanel
+          owner={owner}
+          measurementId={purchaseOrderMeasurementId}
+          onClose={() => setPurchaseOrderMeasurementId(null)}
+          onSuccess={(message) => {
+            setQuoteSuccessMessage(message);
+            setPurchaseOrderMeasurementId(null);
+            window.setTimeout(() => setQuoteSuccessMessage(null), 5000);
+          }}
+        />
+      ) : null}
+      {variationMeasurementId ? (
+        <TakeoffAddToVariationPanel
+          owner={owner}
+          measurementId={variationMeasurementId}
+          onClose={() => setVariationMeasurementId(null)}
+          onSuccess={(message) => {
+            setQuoteSuccessMessage(message);
+            setVariationMeasurementId(null);
+            window.setTimeout(() => setQuoteSuccessMessage(null), 5000);
+          }}
+        />
+      ) : null}
+      {quoteSuccessMessage ? (
+        <div role="status" className="fixed bottom-5 right-5 z-[70] max-w-sm rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-lg">
+          {quoteSuccessMessage}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,65 +1,119 @@
 import { NextResponse } from "next/server";
-import { completeXeroOAuthCallback, getCurrentXeroCallbackUserId } from "@/lib/xero/service";
-import { enqueueOrganizationXeroSync, runXeroSyncWorker } from "@/lib/xero/sync";
+import {
+  completeXeroOAuthCallback,
+  getCurrentXeroCallbackUserId,
+  recordXeroOAuthCallbackFailure,
+  XeroOAuthFlowError,
+} from "@/lib/xero/service";
+import { enqueueOrganizationXeroSync } from "@/lib/xero/sync";
+
+function integrationRedirect(request: Request, params: {
+  path?: string;
+  message?: string;
+  errorCode?: string;
+  correlationId?: string;
+}) {
+  const url = new URL(params.path ?? "/app/settings/integrations", request.url);
+  if (params.message) url.searchParams.set("message", params.message);
+  if (params.errorCode) url.searchParams.set("error_code", params.errorCode);
+  if (params.correlationId) url.searchParams.set("correlation_id", params.correlationId);
+  return NextResponse.redirect(url);
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code")?.trim() ?? "";
   const state = searchParams.get("state")?.trim() ?? "";
   const error = searchParams.get("error")?.trim() ?? "";
-  const errorDescription = searchParams.get("error_description")?.trim() ?? "";
+  const currentUserId = await getCurrentXeroCallbackUserId().catch(() => null);
 
   if (error) {
-    const redirectUrl = new URL("/app/settings/integrations", request.url);
-    redirectUrl.searchParams.set("error", errorDescription || error);
-    return NextResponse.redirect(redirectUrl);
+    if (!currentUserId) {
+      return integrationRedirect(request, { errorCode: "xero_callback_session_missing" });
+    }
+    try {
+      const recorded = state
+        ? await recordXeroOAuthCallbackFailure({
+            state,
+            currentUserId,
+            code: "xero_callback_access_denied",
+          })
+        : null;
+      return integrationRedirect(request, {
+        errorCode: "xero_callback_access_denied",
+        correlationId: recorded?.correlationId,
+      });
+    } catch (recordError) {
+      const correlationId = recordError instanceof XeroOAuthFlowError
+        ? recordError.correlationId
+        : undefined;
+      console.error("Unable to record denied Xero callback", {
+        correlationId,
+        code: recordError instanceof XeroOAuthFlowError ? recordError.code : "xero_callback_access_denied",
+      });
+      return integrationRedirect(request, {
+        errorCode: recordError instanceof XeroOAuthFlowError
+          ? recordError.code
+          : "xero_callback_access_denied",
+        correlationId,
+      });
+    }
   }
 
   if (!code || !state) {
-    const redirectUrl = new URL("/app/settings/integrations", request.url);
-    redirectUrl.searchParams.set("error", "Xero did not return a valid authorization code and state.");
-    return NextResponse.redirect(redirectUrl);
+    if (state && currentUserId) {
+      await recordXeroOAuthCallbackFailure({
+        state,
+        currentUserId,
+        code: "xero_callback_missing_parameters",
+      }).catch(() => undefined);
+    }
+    return integrationRedirect(request, { errorCode: "xero_callback_missing_parameters" });
   }
 
   try {
-    const currentUserId = await getCurrentXeroCallbackUserId();
     if (!currentUserId) {
-      const redirectUrl = new URL("/app/settings/integrations", request.url);
-      redirectUrl.searchParams.set("error", "Sign in again before completing the Xero connection.");
-      return NextResponse.redirect(redirectUrl);
+      return integrationRedirect(request, { errorCode: "xero_callback_session_missing" });
     }
 
     const result = await completeXeroOAuthCallback({ code, state, currentUserId });
-    const redirectUrl = new URL(result.redirectPath || "/app/settings/integrations", request.url);
 
     if (result.autoSelectedTenant) {
-      const createdJobs = await enqueueOrganizationXeroSync({
+      await enqueueOrganizationXeroSync({
         organizationId: result.organizationId,
         connectionId: result.connection.id,
         createdByUserId: result.connection.connected_by_user_id,
         triggerSource: "oauth_callback",
         includeHealthCheck: true,
         includeContacts: true,
+      }).catch((queueError) => {
+        console.error("Xero connected but reference sync enqueue failed", {
+          correlationId: result.correlationId,
+          code: "xero_callback_sync_queue_failed",
+          message: queueError instanceof Error ? queueError.message : "unknown",
+        });
       });
 
-      await runXeroSyncWorker({
-        organizationId: result.organizationId,
-        limit: createdJobs.jobs.length,
-        workerId: "xero-oauth-callback",
+      return integrationRedirect(request, {
+        path: result.redirectPath,
+        message: "Xero reconnect completed. Reference data and contacts are queued for background refresh.",
+        correlationId: result.correlationId,
       });
-
-      redirectUrl.searchParams.set("message", "Xero connected and reference data plus contacts imported.");
-      return NextResponse.redirect(redirectUrl);
     }
 
-    redirectUrl.searchParams.set("message", "Xero connected. Select the tenant to finish setup.");
-    return NextResponse.redirect(redirectUrl);
+    return integrationRedirect(request, {
+      path: result.redirectPath,
+      message: "Xero authorization completed. Select the tenant to finish setup.",
+      correlationId: result.correlationId,
+    });
   } catch (callbackError) {
-    const redirectUrl = new URL("/app/settings/integrations", request.url);
-    redirectUrl.searchParams.set(
-      "error",
-      callbackError instanceof Error ? callbackError.message : "Unable to complete the Xero connection.",
-    );
-    return NextResponse.redirect(redirectUrl);
+    const code = callbackError instanceof XeroOAuthFlowError
+      ? callbackError.code
+      : "xero_callback_persistence_failed";
+    const correlationId = callbackError instanceof XeroOAuthFlowError
+      ? callbackError.correlationId
+      : undefined;
+    console.error("Xero callback failed", { correlationId, code });
+    return integrationRedirect(request, { errorCode: code, correlationId });
   }
 }

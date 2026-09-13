@@ -11,9 +11,10 @@ export default async function CompanyMaterialsPage() {
     return null;
   }
 
-  const [canView, canWrite] = await Promise.all([
+  const [canView, canWrite, canCreateSupplier] = await Promise.all([
     hasOrganizationPermission(currentMember.organization_id, "materials.view"),
     hasOrganizationPermission(currentMember.organization_id, "materials.write"),
+    hasOrganizationPermission(currentMember.organization_id, "suppliers.write"),
   ]);
 
   if (!canView) {
@@ -29,6 +30,7 @@ export default async function CompanyMaterialsPage() {
     <CompanyMaterialsWorkspace
       organizationId={currentMember.organization_id}
       canWrite={canWrite}
+      canCreateSupplier={canCreateSupplier}
       initialData={data}
     />
   );

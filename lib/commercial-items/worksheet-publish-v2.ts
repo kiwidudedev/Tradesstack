@@ -810,13 +810,15 @@ function buildWorksheetMetadataForConfirmedLine(params: {
         rate: params.proposal.rate.value,
         total: params.proposal.total.value,
       },
-      fieldMappings: {
-        description: params.proposal.description.anchors.map((anchor) => anchor.cellKey),
-        quantity: params.proposal.quantity.anchors.map((anchor) => anchor.cellKey),
-        unit: params.proposal.unit.anchors.map((anchor) => anchor.cellKey),
-        rate: params.proposal.rate.anchors.map((anchor) => anchor.cellKey),
-        total: params.proposal.total.anchors.map((anchor) => anchor.cellKey),
-      },
+      fieldMappings: Object.fromEntries(Object.entries({
+        description: params.proposal.description.anchors,
+        quantity: params.proposal.quantity.anchors,
+        unit: params.proposal.unit.anchors,
+        rate: params.proposal.rate.anchors,
+        total: params.proposal.total.anchors,
+      }).flatMap(([field, anchors]) => anchors.length > 0
+        ? [[field, anchors.map((anchor) => anchor.cellKey)]]
+        : [])),
       confirmedLine: {
         description: params.confirmedLine.description,
         quantity: params.confirmedLine.quantity,

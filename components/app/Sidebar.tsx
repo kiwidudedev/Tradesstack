@@ -50,25 +50,19 @@ const PRIMARY_NAV_ITEMS = [
   { label: "Opportunities", href: "/app/leads-clients/opportunities", icon: TrendingUp },
   { label: "Clients", href: "/app/leads-clients/clients", icon: Users },
   { label: "Projects", href: "/app/projects", icon: FolderKanban },
-  {
-    label: "Financials",
-    icon: DollarSign,
-    trailing: "chevron" as const,
-    children: [
-      { label: "Invoices" },
-      { label: "Expenses" },
-      { label: "Cash Flow" },
-    ],
-  },
+  { label: "Financials", icon: DollarSign },
   {
     label: "Company",
     icon: Building2,
     trailing: "chevron" as const,
     children: [
-      { label: "Cost Item Review", href: "/app/company/cost-items/review" },
-      { label: "Cost Codes", href: "/app/company/cost-codes" },
       { label: "Suppliers", href: "/app/company/suppliers" },
       { label: "Supplier Invoices", href: "/app/company/supplier-invoices" },
+      {
+        label: "Payment Claims",
+        href: "/app/company/payment-claims",
+        requiresPaymentClaimsView: true,
+      },
       { label: "Materials", href: "/app/company/materials" },
     ],
   },
@@ -79,16 +73,17 @@ interface SidebarNavContentProps {
   onNavigate?: () => void;
   isCompact?: boolean;
   footer?: ReactNode;
+  canViewPaymentClaims?: boolean;
 }
 
 export function SidebarNavContent({
   onNavigate,
   isCompact = false,
   footer = null,
+  canViewPaymentClaims = false,
 }: SidebarNavContentProps) {
   const pathname = usePathname();
   const { toggle: toggleSidebar } = useSidebarState();
-  const [isFinancialsExpanded, setIsFinancialsExpanded] = useState(false);
   const [isCompanyExpanded, setIsCompanyExpanded] = useState(() =>
     pathname.startsWith("/app/company")
   );
@@ -168,11 +163,8 @@ export function SidebarNavContent({
 
           // ── EXPANDED MODE ──────────────────────────────────
           if (hasChildren) {
-            const isFinancialsSection = item.label === "Financials";
-            const isExpanded = isFinancialsSection ? isFinancialsExpanded : isCompanyExpanded;
-            const toggleExpanded = isFinancialsSection
-              ? () => setIsFinancialsExpanded((current) => !current)
-              : () => setIsCompanyExpanded((current) => !current);
+            const isExpanded = isCompanyExpanded;
+            const toggleExpanded = () => setIsCompanyExpanded((current) => !current);
 
             return (
               <div key={item.label} className="space-y-px">
@@ -199,6 +191,13 @@ export function SidebarNavContent({
                 {isExpanded ? (
                   <div className="space-y-px py-0.5">
                     {item.children.map((child) => {
+                      if (
+                        "requiresPaymentClaimsView" in child
+                        && child.requiresPaymentClaimsView
+                        && !canViewPaymentClaims
+                      ) {
+                        return null;
+                      }
                       if ("href" in child && child.href) {
                         const isChildActive =
                           pathname === child.href || pathname.startsWith(`${child.href}/`);
@@ -220,15 +219,7 @@ export function SidebarNavContent({
                         );
                       }
 
-                      return (
-                        <button
-                          key={child.label}
-                          type="button"
-                          className={cn(sidebarSubItemClass, "w-full text-left")}
-                        >
-                          <span className="truncate">{child.label}</span>
-                        </button>
-                      );
+                      return null;
                     })}
                   </div>
                 ) : null}
@@ -332,7 +323,13 @@ function SidebarToggleFooter({
   );
 }
 
-export function Sidebar({ className }: { className?: string }) {
+export function Sidebar({
+  className,
+  canViewPaymentClaims = false,
+}: {
+  className?: string;
+  canViewPaymentClaims?: boolean;
+}) {
   const { isCollapsed, toggle, width, setWidth, isDragging, setDragging } = useSidebarState();
   const actualWidth = isCollapsed ? SIDEBAR_COMPACT_WIDTH : width;
 
@@ -391,6 +388,7 @@ export function Sidebar({ className }: { className?: string }) {
     >
       <SidebarNavContent
         isCompact={isCollapsed}
+        canViewPaymentClaims={canViewPaymentClaims}
         footer={<SidebarToggleFooter isCompact={isCollapsed} onToggle={toggle} />}
       />
       {!isCollapsed ? (

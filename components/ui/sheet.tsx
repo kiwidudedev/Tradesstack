@@ -11,6 +11,8 @@ const Sheet = DialogPrimitive.Root;
 const SheetTrigger = DialogPrimitive.Trigger;
 const SheetClose = DialogPrimitive.Close;
 const SheetPortal = DialogPrimitive.Portal;
+const SheetTitle = DialogPrimitive.Title;
+const SheetDescription = DialogPrimitive.Description;
 
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
@@ -61,4 +63,4 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Co
 );
 SheetContent.displayName = DialogPrimitive.Content.displayName;
 
-export { Sheet, SheetClose, SheetContent, SheetOverlay, SheetPortal, SheetTrigger };
+export { Sheet, SheetClose, SheetContent, SheetDescription, SheetOverlay, SheetPortal, SheetTitle, SheetTrigger };

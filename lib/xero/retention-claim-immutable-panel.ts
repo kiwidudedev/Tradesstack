@@ -77,6 +77,12 @@ export type RetentionClaimImmutableXeroPanelState = {
   invoiceTaxMinor?: number | null;
   invoiceTotalMinor?: number | null;
   authoritativeInheritedTax?: boolean;
+  currentRetentionSubtotalMinor?: number | null;
+  currentRetentionTaxMinor?: number | null;
+  currentRetentionTotalMinor?: number | null;
+  currentRetentionTaxType?: string | null;
+  currentRetentionEffectiveRate?: number | null;
+  currentRetentionOriginatingPaymentClaimId?: string | null;
   paymentStatus: "unpaid" | "partially_paid" | "paid" | "attention_required" | null;
   paymentStatusLabel: "Unpaid" | "Partially paid" | "Paid" | "Attention required" | null;
   fullyPaidAt: string | null;
@@ -221,6 +227,22 @@ export function deriveRetentionClaimPanelFromCompletionEvidence(params: {
     invoiceTaxMinor: authoritativeInheritedTax ? evidence.taxMinor : null,
     invoiceTotalMinor: evidence.totalMinor,
     authoritativeInheritedTax,
+    currentRetentionSubtotalMinor: authoritativeInheritedTax
+      ? evidence.subtotalMinor
+      : null,
+    currentRetentionTaxMinor: authoritativeInheritedTax
+      ? evidence.taxMinor
+      : null,
+    currentRetentionTotalMinor: authoritativeInheritedTax
+      ? evidence.totalMinor
+      : null,
+    currentRetentionTaxType: authoritativeInheritedTax
+      ? text(revisionTaxSnapshot?.taxType)
+      : null,
+    currentRetentionEffectiveRate: authoritativeInheritedTax
+      && Number.isFinite(Number(revisionTaxSnapshot?.effectiveRate))
+      ? Number(revisionTaxSnapshot?.effectiveRate)
+      : null,
     paymentStatus: payment.status,
     paymentStatusLabel: payment.label,
     fullyPaidAt: text(evidence.document.fully_paid_at)
@@ -379,17 +401,38 @@ export async function getRetentionClaimImmutableXeroPanel(
       structuredSourceAccess.succeeded === true
       && Boolean(authoritativeSourceStateHash)
     );
+  const retentionMappings = connection?.tenant_id
+    ? await db.from("organization_accounting_route_mappings")
+        .select("id,project_id,organization_cost_code_id,updated_at")
+        .eq("organization_id", member.organization_id)
+        .eq("provider", "xero")
+        .eq("accounting_route", "retention_receivable")
+        .eq("is_active", true)
+    : { data: [], error: null };
+  const retentionMapping = ((retentionMappings.data ?? []) as Row[])
+    .filter((row) => row.project_id === claim.project_id || row.project_id == null)
+    .sort((left, right) => Number(right.project_id != null) - Number(left.project_id != null))[0] ?? null;
+  const retentionAccount = retentionMapping
+    ? await db.from("organization_cost_codes")
+        .select("external_code")
+        .eq("organization_id", member.organization_id)
+        .eq("id", retentionMapping.organization_cost_code_id)
+        .eq("is_active", true)
+        .maybeSingle()
+    : { data: null, error: null };
+  const retentionAccountCode = text(retentionAccount.data?.external_code);
   const directOriginResolution = claim.status === "submitted"
     && structuredSourceAccess.source
     && connection?.id
     && connection.tenant_id
+    && retentionAccountCode
     && text(organizationResult.data?.default_currency)
     ? await loadDirectRetentionOriginEvidence({
         source: structuredSourceAccess.source,
         connectionId: connection.id,
         tenantId: connection.tenant_id,
         currencyCode: text(organizationResult.data?.default_currency)!,
-        routeAccountCode: "700",
+        routeAccountCode: retentionAccountCode,
       })
     : null;
   const directReadinessBlocker = directOriginResolution
@@ -581,6 +624,34 @@ export async function getRetentionClaimImmutableXeroPanel(
       ? null
       : Number(revisionRow.total_minor),
     authoritativeInheritedTax,
+    currentRetentionSubtotalMinor:
+      directOriginEvidence?.releaseAmountMinor
+      ?? (authoritativeInheritedTax && revisionRow?.subtotal_minor != null
+        ? Number(revisionRow.subtotal_minor)
+        : null),
+    currentRetentionTaxMinor:
+      directOriginEvidence?.releaseTaxMinor
+      ?? (authoritativeInheritedTax && revisionRow?.tax_minor != null
+        ? Number(revisionRow.tax_minor)
+        : null),
+    currentRetentionTotalMinor:
+      directOriginEvidence?.releaseTotalMinor
+      ?? (authoritativeInheritedTax && revisionRow?.total_minor != null
+        ? Number(revisionRow.total_minor)
+        : null),
+    currentRetentionTaxType:
+      directOriginEvidence?.taxType
+      ?? (authoritativeInheritedTax
+        ? text(revisionTaxSnapshot?.taxType)
+        : null),
+    currentRetentionEffectiveRate:
+      directOriginEvidence?.effectiveRate
+      ?? (authoritativeInheritedTax
+        && Number.isFinite(Number(revisionTaxSnapshot?.effectiveRate))
+        ? Number(revisionTaxSnapshot?.effectiveRate)
+        : null),
+    currentRetentionOriginatingPaymentClaimId:
+      directOriginEvidence?.originatingPaymentClaimId ?? null,
     paymentStatus: payment.status,
     paymentStatusLabel: payment.label,
     fullyPaidAt: text(document?.fully_paid_at)

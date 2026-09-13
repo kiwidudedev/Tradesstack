@@ -1,4 +1,5 @@
 import { PDFDocument } from "pdf-lib";
+import type { PdfExportTiming } from "@/lib/exports/pdf-export-timing";
 
 export type DeterministicPdfMetadata = {
   title: string;
@@ -26,18 +27,28 @@ export function applyDeterministicPdfMetadata(
 export async function mergePdfDocuments(
   parts: Uint8Array[],
   metadata?: DeterministicPdfMetadata,
+  timing?: PdfExportTiming,
 ): Promise<Uint8Array> {
+  timing?.start("merge");
+  timing?.mark("merge-start");
   const merged = await PDFDocument.create();
   if (metadata) applyDeterministicPdfMetadata(merged, metadata);
 
   for (const part of parts) {
-    const normalizedPart = Uint8Array.from(part);
-    const source = await PDFDocument.load(normalizedPart);
+    timing?.start("merge-source-load");
+    const source = await PDFDocument.load(part);
+    timing?.end("merge-source-load");
+    timing?.start("merge-page-copy");
     const copiedPages = await merged.copyPages(source, source.getPageIndices());
     for (const copiedPage of copiedPages) {
       merged.addPage(copiedPage);
     }
+    timing?.end("merge-page-copy");
   }
 
-  return merged.save();
+  timing?.start("merge-save");
+  const bytes = await merged.save();
+  timing?.end("merge-save");
+  timing?.end("merge");
+  return bytes;
 }

@@ -6,7 +6,6 @@ import type {
   ResolvedOrganizationAccountingCode,
 } from "@/lib/accounting/types";
 import type { FinancialRoutingResult } from "@/lib/tradesstack-financial-routing";
-import { getTradesstackFinancialRoutingLabel, routeFinancialRecord } from "@/lib/tradesstack-financial-routing";
 import type { Json } from "@/lib/supabase/types";
 
 type JsonObject = Record<string, Json | null>;
@@ -37,28 +36,26 @@ export function classifyMaterial(params: {
 }): MaterialClassificationResult {
   const description = [params.name.trim(), params.description?.trim() || ""].filter(Boolean).join(" ");
   const source = params.source ?? "rules";
-  const financialRouting = routeFinancialRecord({
-    sourceModule: "materials",
-    objectType: "organization_material",
-    documentType: "material_library_item",
-    transactionType: "material",
-    title: params.name,
-    description,
-  });
-
-  const reasoningSummary =
-    financialRouting.reviewReason ??
-    `Routed to ${getTradesstackFinancialRoutingLabel(financialRouting.tradesstackCostCode)} from material source context.`;
+  const reasoningSummary = "Construction classification retired; factual material lineage retained.";
+  const financialRouting = {
+    tradesstackCostCode: null,
+    tradesstackCostCodeLabel: null,
+    confidence: null,
+    source: null,
+    reviewStatus: null,
+    reviewReason: null,
+    evidence: { retirement: "construction_classification" },
+  } as unknown as FinancialRoutingResult;
 
   const originalClassification: JsonObject = {
     method: source,
-    classifierVersion: "materials-routing-v2",
+    classifierVersion: "materials-factual-v3",
     description,
     workType: null,
     costType: "MAT",
-    costCode: "100",
-    confidence: financialRouting.confidence,
-    needsReview: financialRouting.reviewStatus !== "auto_approved" && financialRouting.reviewStatus !== "resolved",
+    costCode: null,
+    confidence: null,
+    needsReview: false,
     reasoningSummary,
     tradesstackCostCode: financialRouting.tradesstackCostCode,
     tradesstackCostCodeLabel: financialRouting.tradesstackCostCodeLabel,
@@ -69,9 +66,9 @@ export function classifyMaterial(params: {
   return {
     workType: null,
     costType: "MAT",
-    costCode: "100",
-    confidence: financialRouting.confidence,
-    needsReview: financialRouting.reviewStatus !== "auto_approved" && financialRouting.reviewStatus !== "resolved",
+    costCode: null,
+    confidence: null,
+    needsReview: false,
     classificationSource: source,
     originalClassification,
     finalClassification: originalClassification,

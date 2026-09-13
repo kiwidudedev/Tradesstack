@@ -3,7 +3,7 @@ import { vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { describe, expect, it } from "vitest";
-import { buildScopePrompt } from "./route";
+import { buildScopePrompt } from "@/lib/scope-builder-prompt";
 
 describe("scope builder prompt", () => {
   it("includes the organization construction context when provided", () => {

@@ -1,12 +1,8 @@
 import type { PostgrestError } from "@supabase/supabase-js";
-import type {
-  OrganizationCostCodeRow,
-  OrganizationTradesstackAccountingMappingRow,
-} from "@/lib/accounting/types";
+import type { ResolvedOrganizationAccountingCode } from "@/lib/accounting/types";
 import {
   buildConfirmedMaterialClassification,
   classifyMaterial,
-  resolveMaterialOrganizationCostCode,
   type MaterialClassificationResult,
 } from "@/lib/materials/classification";
 import {
@@ -21,13 +17,21 @@ import {
   buildCostConstructionIntelligenceIdempotencyKey,
   EMPTY_COST_CONSTRUCTION_INTELLIGENCE,
   tryEnqueueCostConstructionIntelligenceEvent,
+  type CostConstructionIntelligenceEventInput,
 } from "@/lib/cost-construction-intelligence";
-import { normalizeCurrency, normalizeMaterialName } from "@/lib/materials/normalization";
+import { normalizeMaterialName } from "@/lib/materials/normalization";
+import {
+  archiveSupplierProductAtomic,
+  confirmSupplierPriceTaxEvidenceAtomic,
+  remapSupplierProductMaterialAtomic,
+  restoreSupplierProductAtomic,
+  setPreferredSupplierProductAtomic,
+  writeSupplierPriceAtomic,
+} from "@/lib/materials/atomic-rpc";
+import { resolveEffectivePriceIds } from "@/lib/materials/effective-price";
 import type {
   MaterialsSupabaseClient,
-  MaterialPriceSource,
   OrganizationMaterialRow,
-  OrganizationMaterialSupplierPriceInsert,
   OrganizationMaterialSupplierPriceRow,
 } from "@/lib/materials/types";
 import {
@@ -37,12 +41,20 @@ import {
   type MaterialSupplierPriceDraftInput,
 } from "@/lib/materials/validation";
 import type { Json } from "@/lib/supabase/types";
+import {
+  buildPriceTaxSnapshot,
+  resolveOrganizationTaxPolicyAt,
+  resolveUniqueOrganizationTaxPolicyAt,
+} from "@/lib/tax/organization-policy-server";
+import { buildPriceTaxReviewMetadata, routePriceTaxReview } from "@/lib/tax/price-review-state";
+import type { SourceTaxBasis } from "@/lib/tax/types";
+import { classifySupplierPriceTaxEvidence } from "@/lib/materials/tax-evidence-review";
 
 type MaterialClassificationPatch = {
   work_type: string | null;
   cost_type: string | null;
   cost_code: string | null;
-  tradesstack_cost_code: string | null;
+  tradesstack_cost_code: number | null;
   tradesstack_cost_code_label: string | null;
   financial_routing_confidence: number | null;
   financial_routing_source: string | null;
@@ -89,48 +101,6 @@ export function buildMaterialImportStoragePath(params: {
   return `${params.organizationId}/material-imports/${params.batchId}/${safeFileName}`;
 }
 
-export function buildSupersedeCurrentPricePatch(params: {
-  currentRows: Array<Pick<OrganizationMaterialSupplierPriceRow, "id">>;
-  effectiveToIso: string;
-}) {
-  return params.currentRows.map((row) => ({
-    id: row.id,
-    is_current: false,
-    effective_to: params.effectiveToIso,
-  }));
-}
-
-async function loadOrganizationCostCodeContext(params: {
-  supabase: MaterialsSupabaseClient;
-  organizationId: string;
-}) {
-  const [
-    { data: costCodes, error: costCodesError },
-    { data: mappings, error: mappingsError },
-  ] = await Promise.all([
-    params.supabase
-      .from("organization_cost_codes")
-      .select("*")
-      .eq("organization_id", params.organizationId),
-    params.supabase
-      .from("organization_tradesstack_accounting_mappings")
-      .select("*")
-      .eq("organization_id", params.organizationId),
-  ]);
-
-  if (costCodesError) {
-    throwSupabaseError(costCodesError, "Unable to load organization cost codes.");
-  }
-  if (mappingsError) {
-    throwSupabaseError(mappingsError, "Unable to load TradesStack accounting mappings.");
-  }
-
-  return {
-    costCodes: (costCodes ?? []) as OrganizationCostCodeRow[],
-    mappings: (mappings ?? []) as OrganizationTradesstackAccountingMappingRow[],
-  };
-}
-
 function firstPresentText(...values: Array<string | null | undefined>) {
   for (const value of values) {
     if (typeof value === "string" && value.trim().length > 0) {
@@ -146,35 +116,43 @@ async function loadMaterialConstructionContext(params: {
   organizationId: string;
   materialId: string;
 }) {
-  const { data: priceRows, error: priceError } = await params.supabase
-    .from("organization_material_supplier_prices")
-    .select(
-      "supplier_id, unit, unit_cost, currency, source, import_batch_id, supplier_description, supplier_sku, updated_at, is_preferred",
-    )
-    .eq("organization_id", params.organizationId)
-    .eq("material_id", params.materialId)
-    .eq("is_current", true)
-    .order("is_preferred", { ascending: false })
-    .order("updated_at", { ascending: false })
-    .limit(1);
+  const [
+    { data: productRows, error: productError },
+    { data: priceRows, error: priceError },
+    effectivePriceResolutions,
+  ] = await Promise.all([
+    params.supabase
+      .from("organization_material_supplier_products")
+      .select("id,is_preferred")
+      .eq("organization_id", params.organizationId)
+      .eq("material_id", params.materialId)
+      .eq("is_active", true)
+      .is("archived_at", null),
+    params.supabase
+      .from("organization_material_supplier_prices")
+      .select(
+        "id,supplier_product_id,supplier_id,unit,unit_cost,currency,source,import_batch_id,supplier_description,supplier_sku",
+      )
+      .eq("organization_id", params.organizationId)
+      .eq("material_id", params.materialId),
+    resolveEffectivePriceIds({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+    }),
+  ]);
 
+  if (productError) {
+    throwSupabaseError(productError, "Unable to load material Supplier Products.");
+  }
   if (priceError) {
     throwSupabaseError(priceError, "Unable to load material supplier context.");
   }
 
-  const preferredPrice = (priceRows?.[0] ?? null) as
-    | (Pick<
-        OrganizationMaterialSupplierPriceRow,
-        | "supplier_id"
-        | "unit"
-        | "unit_cost"
-        | "currency"
-        | "source"
-        | "import_batch_id"
-        | "supplier_description"
-        | "supplier_sku"
-      > & { is_preferred?: boolean | null })
-    | null;
+  const preferredProductId = productRows?.find((row) => row.is_preferred)?.id ?? null;
+  const effectivePriceId = effectivePriceResolutions.find(
+    (resolution) => resolution.supplierProductId === preferredProductId
+  )?.priceId;
+  const preferredPrice = priceRows?.find((row) => row.id === effectivePriceId) ?? null;
 
   const supplierId = preferredPrice?.supplier_id ?? null;
   const importBatchId = preferredPrice?.import_batch_id ?? null;
@@ -233,28 +211,24 @@ export async function classifyMaterialDraft(params: {
   description?: string | null;
   classificationSource?: MaterialClassificationResult["classificationSource"];
 }) {
-  const { costCodes, mappings } = await loadOrganizationCostCodeContext({
-    supabase: params.supabase,
-    organizationId: params.organizationId,
-  });
   const classification = classifyMaterial({
     name: params.name,
     description: params.description,
     source: params.classificationSource,
   });
-  const resolution = resolveMaterialOrganizationCostCode({
-    organizationId: params.organizationId,
-    provider:
-      mappings.find((row) => row.is_active)?.provider ??
-      costCodes.find((row) => row.external_provider)?.external_provider ??
-      "manual",
-    materialId: params.materialId,
-    name: params.name,
-    description: params.description,
-    classification,
-    costCodes,
-    mappings,
-  });
+  const resolution: ResolvedOrganizationAccountingCode = {
+    status: "needs_accounting_setup",
+    organizationCostCodeId: null,
+    accountingMappingId: null,
+    code: null,
+    name: null,
+    externalCode: null,
+    externalProvider: null,
+    tradesstackCostCode: null,
+    provider: "none",
+    projectId: null,
+    reason: "missing_accounting_route",
+  };
 
   return {
     classification,
@@ -266,20 +240,24 @@ export async function classifyMaterialDraft(params: {
 export function buildMaterialClassificationPatch(params: {
   classification: MaterialClassificationResult;
   organizationCostCodeId: string | null;
+  accountingResolution: Pick<
+    ResolvedOrganizationAccountingCode,
+    "status" | "accountingMappingId"
+  >;
 }) {
   return {
     work_type: params.classification.workType,
     cost_type: params.classification.costType,
     cost_code: params.classification.costCode,
-    tradesstack_cost_code: params.classification.financialRouting.tradesstackCostCode,
-    tradesstack_cost_code_label: params.classification.financialRouting.tradesstackCostCodeLabel,
-    financial_routing_confidence: params.classification.financialRouting.confidence,
-    financial_routing_source: params.classification.financialRouting.source,
+    tradesstack_cost_code: null,
+    tradesstack_cost_code_label: null,
+    financial_routing_confidence: null,
+    financial_routing_source: null,
     classification_confidence: params.classification.confidence,
     classification_source: params.classification.classificationSource,
     needs_review: params.classification.needsReview,
-    review_status: params.classification.financialRouting.reviewStatus,
-    review_reason: params.classification.reasoningSummary,
+    review_status: null,
+    review_reason: null,
     original_classification: params.classification.originalClassification,
     final_classification: params.classification.finalClassification,
     organization_cost_code_id: params.organizationCostCodeId,
@@ -428,7 +406,7 @@ export function buildMaterialConstructionIntelligenceInput(params: {
     | "created_at"
   >;
   context: MaterialConstructionContext;
-}) {
+}): CostConstructionIntelligenceEventInput {
   return {
     idempotencyKey: buildCostConstructionIntelligenceIdempotencyKey({
       sourceType: "organization_material",
@@ -438,8 +416,8 @@ export function buildMaterialConstructionIntelligenceInput(params: {
     organizationId: params.material.organization_id,
     sourceType: "organization_material",
     sourceId: params.material.id,
-    tradesstackCostCode: params.material.tradesstack_cost_code,
-    tradesstackCostCodeLabel: params.material.tradesstack_cost_code_label,
+    tradesstackCostCode: String(params.material.tradesstack_cost_code ?? ""),
+    tradesstackCostCodeLabel: params.material.tradesstack_cost_code_label ?? "",
     accountingMappingId: params.material.accounting_mapping_id,
     description: params.material.description?.trim() || params.material.name,
     supplierId: params.context.supplierId,
@@ -564,6 +542,7 @@ export async function createMaterial(params: {
     classification: classified.classification,
     organizationCostCodeId:
       validated.organizationCostCodeId ?? classified.organizationCostCodeId ?? null,
+    accountingResolution: classified.resolution,
   });
 
   const { data, error } = await params.supabase
@@ -627,6 +606,7 @@ export async function updateMaterial(params: {
     classification: classified.classification,
     organizationCostCodeId:
       validated.organizationCostCodeId ?? classified.organizationCostCodeId ?? null,
+    accountingResolution: classified.resolution,
   });
 
   const { data, error } = await params.supabase
@@ -689,6 +669,60 @@ export async function archiveMaterial(params: {
   }
 
   return data;
+}
+
+export async function archiveSupplierProduct(params: {
+  supabase: MaterialsSupabaseClient;
+  organizationId: string;
+  materialId: string;
+  supplierProductId: string;
+  reason: string;
+  note?: string | null;
+}) {
+  const reason = params.reason.trim();
+  if (!reason) throw new Error("Choose a reason for removing this supplier item.");
+  return archiveSupplierProductAtomic({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    materialId: params.materialId,
+    supplierProductId: params.supplierProductId,
+    reason,
+    metadata: params.note?.trim() ? { note: params.note.trim() } : undefined,
+  });
+}
+
+export async function restoreSupplierProduct(params: {
+  supabase: MaterialsSupabaseClient;
+  organizationId: string;
+  materialId: string;
+  supplierProductId: string;
+  reason?: string;
+}) {
+  return restoreSupplierProductAtomic({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    materialId: params.materialId,
+    supplierProductId: params.supplierProductId,
+    reason: params.reason,
+  });
+}
+
+export async function moveSupplierProduct(params: {
+  supabase: MaterialsSupabaseClient;
+  organizationId: string;
+  supplierProductId: string;
+  newMaterialId: string;
+  reason: string;
+}) {
+  const reason = params.reason.trim();
+  if (!reason) throw new Error("Enter a reason for moving this supplier item.");
+  return remapSupplierProductMaterialAtomic({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    supplierProductId: params.supplierProductId,
+    newMaterialId: params.newMaterialId,
+    reason,
+  });
 }
 
 export async function findMaterialByNormalizedName(params: {
@@ -913,24 +947,6 @@ export async function confirmMaterialClassification(params: {
   return data;
 }
 
-async function clearExistingPreferredPrices(params: {
-  supabase: MaterialsSupabaseClient;
-  organizationId: string;
-  materialId: string;
-}) {
-  const { error } = await params.supabase
-    .from("organization_material_supplier_prices")
-    .update({ is_preferred: false })
-    .eq("organization_id", params.organizationId)
-    .eq("material_id", params.materialId)
-    .eq("is_current", true)
-    .eq("is_preferred", true);
-
-  if (error) {
-    throwSupabaseError(error, "Unable to clear existing preferred price.");
-  }
-}
-
 export async function addSupplierPrice(params: {
   supabase: MaterialsSupabaseClient;
   organizationId: string;
@@ -943,81 +959,145 @@ export async function addSupplierPrice(params: {
     organizationId: params.organizationId,
     supplierId: validated.supplierId,
   });
-  await ensureMaterialAccess({
+  const material = await ensureMaterialAccess({
     supabase: params.supabase,
     organizationId: params.organizationId,
     materialId: validated.materialId,
   });
+  const effectiveAt = validated.effectiveFrom ?? new Date().toISOString();
+  const taxPolicy = await resolveOrganizationTaxPolicyAt({ supabase: params.supabase, organizationId: params.organizationId, effectiveAt });
+  const taxSnapshot = buildPriceTaxSnapshot({
+    sourceTaxBasis: validated.sourceTaxBasis,
+    explicitSourceTaxRate: validated.sourceTaxRate,
+    policy: taxPolicy,
+    confirmation: { source: "user_confirmed", actorUserId: params.actorUserId, confirmedAt: new Date().toISOString() },
+  });
+  const taxReview = buildPriceTaxReviewMetadata({
+    snapshot: taxSnapshot,
+    intent: validated.taxEvidenceIntent,
+    incompleteReason: validated.incompleteTaxReason,
+    actorUserId: params.actorUserId,
+  });
 
-  const effectiveFromIso = validated.effectiveFrom || new Date().toISOString();
-
-  const { data: currentRows, error: currentRowsError } = await params.supabase
-    .from("organization_material_supplier_prices")
-    .select("id")
-    .eq("organization_id", params.organizationId)
-    .eq("material_id", validated.materialId)
-    .eq("supplier_id", validated.supplierId)
-    .eq("unit", validated.unit)
-    .eq("is_current", true);
-
-  if (currentRowsError) {
-    throwSupabaseError(currentRowsError, "Unable to load current supplier prices.");
-  }
-
-  if ((currentRows ?? []).length > 0) {
-    const { error: supersedeError } = await params.supabase
-      .from("organization_material_supplier_prices")
-      .update({
-        is_current: false,
-        effective_to: effectiveFromIso,
-      })
-      .in(
-        "id",
-        (currentRows ?? []).map((row) => row.id)
-      );
-
-    if (supersedeError) {
-      throwSupabaseError(supersedeError, "Unable to supersede the previous current supplier price.");
-    }
-  }
-
-  if (validated.isPreferred) {
-    await clearExistingPreferredPrices({
-      supabase: params.supabase,
-      organizationId: params.organizationId,
-      materialId: validated.materialId,
-    });
-  }
-
-  const payload: OrganizationMaterialSupplierPriceInsert = {
-    organization_id: params.organizationId,
-    material_id: validated.materialId,
-    supplier_id: validated.supplierId,
-    import_batch_id: validated.importBatchId,
-    supplier_sku: validated.supplierSku,
-    supplier_description: validated.supplierDescription,
+  const atomicResult = await writeSupplierPriceAtomic({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    materialId: validated.materialId,
+    supplierId: validated.supplierId,
+    supplierProductId: validated.supplierProductId,
+    supplierSku: validated.supplierSku,
+    supplierDescription: validated.supplierDescription || material.name,
     unit: validated.unit,
-    unit_cost: validated.unitCost,
-    currency: normalizeCurrency(validated.currency),
-    is_preferred: validated.isPreferred,
-    is_current: true,
-    source: (validated.source ?? "manual") as MaterialPriceSource,
-    effective_from: effectiveFromIso,
-    effective_to: null,
-    created_by: params.actorUserId,
-  };
+    unitCost: validated.unitCost,
+    currency: validated.currency,
+    isPreferred: validated.isPreferred,
+    effectiveFrom: validated.effectiveFrom,
+    source: validated.source,
+    idempotencyKey: validated.idempotencyKey || `legacy-adapter:${crypto.randomUUID()}`,
+    taxSnapshot,
+    taxReview,
+  });
+  return atomicResult;
+}
 
-  const { data, error } = await params.supabase
-    .from("organization_material_supplier_prices")
-    .insert(payload)
-    .select("*")
-    .single();
+export async function confirmSupplierPriceTaxEvidence(params: {
+  supabase: MaterialsSupabaseClient;
+  organizationId: string;
+  previousSupplierPriceId: string;
+  policyId: string;
+  sourceTaxBasis: Exclude<SourceTaxBasis, "unknown">;
+  sourceTaxRate?: number | null;
+  effectiveFrom: string;
+  reason: string;
+  idempotencyKey: string;
+}) {
+  const previous = await ensureSupplierPriceAccess({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    supplierPriceId: params.previousSupplierPriceId,
+  });
+  if (!previous.is_current) {
+    throw new Error("This Supplier Price is no longer current. Refresh and review the latest version.");
+  }
+  if (!params.policyId) throw new Error("Choose an applicable organization tax policy.");
+  if (!params.effectiveFrom || !Number.isFinite(Date.parse(params.effectiveFrom))) {
+    throw new Error("Choose a valid correction effective date.");
+  }
+  if (params.reason.trim().length < 8) {
+    throw new Error("Enter a meaningful reason for confirming this tax evidence.");
+  }
+  return confirmSupplierPriceTaxEvidenceAtomic({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    previousSupplierPriceId: params.previousSupplierPriceId,
+    policyId: params.policyId,
+    sourceTaxBasis: params.sourceTaxBasis,
+    sourceTaxRate: params.sourceTaxRate,
+    effectiveFrom: new Date(params.effectiveFrom).toISOString(),
+    reason: params.reason.trim(),
+    idempotencyKey: params.idempotencyKey,
+  });
+}
 
-  if (error || !data) {
-    throwSupabaseError(error, "Unable to create supplier price.");
+const FORWARD_TAX_CONFIRMATION_REASON =
+  "forward_tax_confirmation: Current organization policy applied from confirmation time; original supplier source evidence retained.";
+
+export async function confirmSupplierPriceTaxEvidenceForward(params: {
+  supabase: MaterialsSupabaseClient;
+  organizationId: string;
+  previousSupplierPriceId: string;
+  idempotencyKey: string;
+}) {
+  const previous = await ensureSupplierPriceAccess({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    supplierPriceId: params.previousSupplierPriceId,
+  });
+  if (!previous.is_current) {
+    throw new Error("This Supplier Price is no longer current. Refresh and review the latest version.");
   }
 
-  return data;
+  const effectiveFrom = new Date().toISOString();
+  const policyResolution = await resolveUniqueOrganizationTaxPolicyAt({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    effectiveAt: effectiveFrom,
+  });
+  if (policyResolution.status !== "resolved") {
+    throw new Error(policyResolution.status === "ambiguous"
+      ? "More than one current company tax policy applies. Use advanced tax review."
+      : "No current company tax policy is available. Use advanced tax review.");
+  }
+
+  const sourceTaxBasis = previous.source_tax_basis as SourceTaxBasis;
+  const classification = classifySupplierPriceTaxEvidence(previous).classification;
+  const route = routePriceTaxReview({
+    classification,
+    sourceTaxBasis,
+    sourceTaxRate: previous.source_tax_rate,
+    amount: Number(previous.unit_cost),
+    unit: previous.unit,
+    currency: previous.currency,
+    isCurrent: previous.is_current,
+    supplierProductId: previous.supplier_product_id,
+    currentPolicy: policyResolution.policy,
+    canWrite: true,
+  });
+  if (route !== "simple_forward_confirmation") {
+    throw new Error("This Supplier Price needs advanced tax review before it can be used for estimating.");
+  }
+
+  return confirmSupplierPriceTaxEvidenceAtomic({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    previousSupplierPriceId: previous.id,
+    policyId: policyResolution.policy.id,
+    sourceTaxBasis: sourceTaxBasis as Exclude<SourceTaxBasis, "unknown">,
+    sourceTaxRate: previous.source_tax_rate,
+    effectiveFrom,
+    reason: FORWARD_TAX_CONFIRMATION_REASON,
+    idempotencyKey: params.idempotencyKey,
+  });
 }
 
 export async function makeSupplierPricePreferred(params: {
@@ -1025,31 +1105,25 @@ export async function makeSupplierPricePreferred(params: {
   organizationId: string;
   supplierPriceId: string;
 }) {
-  const currentPrice = await ensureSupplierPriceAccess({
+  const price = await ensureSupplierPriceAccess({
     supabase: params.supabase,
     organizationId: params.organizationId,
     supplierPriceId: params.supplierPriceId,
   });
 
-  if (!currentPrice.is_current) {
-    throw new Error("Only current supplier prices can be marked preferred.");
+  const supplierProductId = (price as typeof price & {
+    supplier_product_id?: string | null;
+  }).supplier_product_id;
+  if (!supplierProductId) {
+    throw new Error("This supplier price is not attached to a Supplier Product.");
   }
 
-  await clearExistingPreferredPrices({
+  await setPreferredSupplierProductAtomic({
     supabase: params.supabase,
     organizationId: params.organizationId,
-    materialId: currentPrice.material_id,
+    materialId: price.material_id,
+    supplierProductId,
   });
 
-  const { error } = await params.supabase
-    .from("organization_material_supplier_prices")
-    .update({ is_preferred: true })
-    .eq("organization_id", params.organizationId)
-    .eq("id", currentPrice.id);
-
-  if (error) {
-    throwSupabaseError(error, "Unable to mark supplier price as preferred.");
-  }
-
-  return currentPrice;
+  return price;
 }

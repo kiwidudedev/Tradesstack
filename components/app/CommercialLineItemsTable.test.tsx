@@ -113,4 +113,35 @@ describe("CommercialLineItemsTable", () => {
 
     expect(markup).toContain('value="NZ$8,268.48"');
   });
+
+  it("keeps representative large Price and Amount values on one line", () => {
+    const markup = renderToStaticMarkup(
+      <div>
+        <CommercialLinePrefixedNumberInput
+          value="10000"
+          onChange={vi.fn()}
+          prefix="$"
+        />
+        <CommercialLinePrefixedNumberInput
+          value="100000"
+          onChange={vi.fn()}
+          prefix="$"
+        />
+        <CommercialLinePrefixedNumberInput
+          value="999999.99"
+          onChange={vi.fn()}
+          prefix="$"
+        />
+        <CommercialLineMoneyDisplay value={1_000_000} />
+        <CommercialLineMoneyDisplay value={9_999_999.99} />
+      </div>,
+    );
+
+    expect(markup).toContain('value="10,000.00"');
+    expect(markup).toContain('value="100,000.00"');
+    expect(markup).toContain('value="999,999.99"');
+    expect(markup).toContain("NZ$1,000,000.00");
+    expect(markup).toContain("NZ$9,999,999.99");
+    expect(markup.match(/whitespace-nowrap/g)).toHaveLength(2);
+  });
 });

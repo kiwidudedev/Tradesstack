@@ -1,9 +1,13 @@
 import "server-only";
 
-import { createOrganizationProjectForCurrentUser } from "@/lib/project-creation-server";
+import { createHash } from "node:crypto";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { toProjectSlug, resolveUniqueProjectSlug } from "@/lib/projects";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  capturePromotionShadowBestEffort,
+  finalizePromotionShadowBestEffort,
+} from "@/lib/opportunity-promotion-shadow-server";
 import type { Database } from "@/lib/supabase/types";
 import { PROJECT_DRAWING_SETS_BUCKET } from "@/lib/drawing-sets";
 import { toTradePackPdfUrl } from "@/lib/trade-packs";
@@ -11,17 +15,19 @@ import { toTradePackPdfUrl } from "@/lib/trade-packs";
 type OpportunityRow = Database["public"]["Tables"]["organization_opportunities"]["Row"];
 type ClientRow = Pick<Database["public"]["Tables"]["organization_clients"]["Row"], "id" | "name" | "company_name">;
 type MemberRow = Pick<Database["public"]["Tables"]["organization_members"]["Row"], "user_id" | "display_name">;
-type OpportunityQuoteRow = Database["public"]["Tables"]["opportunity_quotes"]["Row"];
+type ProjectQuoteRow = Database["public"]["Tables"]["project_quotes"]["Row"];
+type TradePackPageIndexJson = Database["public"]["Tables"]["trade_packs"]["Row"]["page_index_json"];
+type ScopeRunResultJson = Database["public"]["Tables"]["scope_runs"]["Row"]["result_json"];
 type OpportunityStage = OpportunityRow["stage"];
-type QuoteStatus = OpportunityQuoteRow["status"];
-type OpportunityQuoteSummaryRow = Pick<
-  OpportunityQuoteRow,
-  "id" | "opportunity_id" | "status" | "total_quote_price" | "updated_at" | "created_at"
->;
+type QuoteStatus = ProjectQuoteRow["status"];
 
 export type OpportunityGroup = "pipeline" | "priced" | "won";
 
 export interface LiveOpportunityRow {
+  quoteSeriesId: string | null;
+  quoteRevisionId: string | null;
+  quoteNumber: string | null;
+  revisionNumber: number | null;
   opportunityId: string;
   slug: string;
   name: string;
@@ -51,6 +57,44 @@ export interface CreateOpportunityInput {
   estimatedValue?: number;
 }
 
+export interface OpportunityConversionResult {
+  projectId: string;
+  projectSlug: string;
+  projectCreated: boolean;
+  legacyTenderDataMigrationStatus: "complete" | "retry_required";
+}
+
+export class OpportunityConversionFailure extends Error {
+  readonly databaseCode: string | null;
+  readonly details: string | null;
+  readonly hint: string | null;
+  readonly operation: string;
+  readonly opportunityId: string | null;
+  readonly acceptedQuoteId: string;
+  readonly organizationId: string;
+
+  constructor(params: {
+    message: string;
+    databaseCode?: string | null;
+    details?: string | null;
+    hint?: string | null;
+    operation: string;
+    opportunityId?: string | null;
+    acceptedQuoteId: string;
+    organizationId: string;
+  }) {
+    super(params.message);
+    this.name = "OpportunityConversionFailure";
+    this.databaseCode = params.databaseCode ?? null;
+    this.details = params.details ?? null;
+    this.hint = params.hint ?? null;
+    this.operation = params.operation;
+    this.opportunityId = params.opportunityId ?? null;
+    this.acceptedQuoteId = params.acceptedQuoteId;
+    this.organizationId = params.organizationId;
+  }
+}
+
 interface OpportunityWorkspaceProjectRow {
   id: string;
   slug: string;
@@ -68,7 +112,27 @@ interface OpportunityWorkspaceSeed {
   workspace_project_id: string | null;
 }
 
-async function cloneWorkspaceDataToProject(params: {
+function deterministicCloneId(sourceId: string, targetProjectId: string): string {
+  const hex = createHash("sha256")
+    .update(`workspace-clone:${sourceId}:${targetProjectId}`)
+    .digest("hex")
+    .slice(0, 32);
+  const chars = hex.split("");
+  chars[12] = "5";
+  chars[16] = ((Number.parseInt(chars[16] ?? "0", 16) & 0x3) | 0x8).toString(16);
+  return `${chars.slice(0, 8).join("")}-${chars.slice(8, 12).join("")}-${chars.slice(12, 16).join("")}-${chars.slice(16, 20).join("")}-${chars.slice(20).join("")}`;
+}
+
+function isExistingStorageObjectError(message: string | undefined): boolean {
+  const normalized = (message ?? "").toLowerCase();
+  return (
+    normalized.includes("already exists")
+    || normalized.includes("duplicate")
+    || normalized.includes("resource exists")
+  );
+}
+
+async function cloneLegacyTenderDataToProject(params: {
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
   organizationId: string;
   sourceProjectId: string;
@@ -90,7 +154,7 @@ async function cloneWorkspaceDataToProject(params: {
       .eq("project_id", sourceProjectId),
     supabase
       .from("scope_runs")
-      .select("trade_pack_id, status, result_json, error_message, created_at, updated_at")
+      .select("id, trade_pack_id, status, result_json, error_message, created_at, updated_at")
       .eq("organization_id", organizationId)
       .eq("project_id", sourceProjectId),
   ]);
@@ -127,14 +191,14 @@ async function cloneWorkspaceDataToProject(params: {
     const pathParts = (row.storage_path ?? "").split("/");
     const objectName = pathParts.length >= 3 ? pathParts.slice(2).join("/") : `${crypto.randomUUID()}-drawing-set.pdf`;
     const targetStoragePath = `${organizationId}/${targetProjectId}/${objectName}`;
-    const newDrawingSetId = crypto.randomUUID();
+    const newDrawingSetId = deterministicCloneId(row.id, targetProjectId);
 
     const copyResult = await supabase
       .storage
       .from(PROJECT_DRAWING_SETS_BUCKET)
       .copy(row.storage_path, targetStoragePath);
 
-    if (copyResult.error) {
+    if (copyResult.error && !isExistingStorageObjectError(copyResult.error.message)) {
       throw new Error(copyResult.error.message);
     }
 
@@ -160,7 +224,7 @@ async function cloneWorkspaceDataToProject(params: {
     trade_id: string;
     trade_label: string;
     pdf_url: string;
-    page_index_json: Record<string, unknown>[];
+    page_index_json: TradePackPageIndexJson;
     created_by: string;
     created_at: string;
   }> = tradePacks
@@ -185,12 +249,13 @@ async function cloneWorkspaceDataToProject(params: {
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
 
   const scopeRunRowsForClone: Array<{
+    id: string;
     organization_id: string;
     project_id: string;
     trade_pack_id: string;
     created_by: string;
     status: string;
-    result_json: Record<string, unknown>;
+    result_json: ScopeRunResultJson;
     error_message: string | null;
     created_at: string;
     updated_at: string;
@@ -202,6 +267,7 @@ async function cloneWorkspaceDataToProject(params: {
       }
 
       return {
+        id: deterministicCloneId(row.id, targetProjectId),
         organization_id: organizationId,
         project_id: targetProjectId,
         trade_pack_id: mappedTradePackId,
@@ -401,122 +467,6 @@ function normalizeIsoDate(value: string | null | undefined): string | null {
   return date.toISOString().slice(0, 10);
 }
 
-async function syncLatestOpportunityQuoteToProject(params: {
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
-  organizationId: string;
-  opportunityId: string;
-  projectId: string;
-  fallbackCreatedBy: string;
-}): Promise<{ quoteDate: string | null }> {
-  const { supabase, organizationId, opportunityId, projectId, fallbackCreatedBy } = params;
-
-  const existingProjectQuote = await supabase
-    .from("project_quotes")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("project_id", projectId)
-    .limit(1)
-    .maybeSingle();
-
-  if (existingProjectQuote.error) {
-    throw new Error(existingProjectQuote.error.message);
-  }
-
-  if (existingProjectQuote.data?.id) {
-    const latestProjectQuoteDate = await supabase
-      .from("project_quotes")
-      .select("quote_date")
-      .eq("organization_id", organizationId)
-      .eq("project_id", projectId)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (latestProjectQuoteDate.error) {
-      throw new Error(latestProjectQuoteDate.error.message);
-    }
-
-    return { quoteDate: latestProjectQuoteDate.data?.quote_date ?? null };
-  }
-
-  const latestOpportunityQuoteResult = await supabase
-    .from("opportunity_quotes")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .eq("opportunity_id", opportunityId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestOpportunityQuoteResult.error) {
-    throw new Error(latestOpportunityQuoteResult.error.message);
-  }
-
-  const latestOpportunityQuote = latestOpportunityQuoteResult.data as OpportunityQuoteRow | null;
-  if (!latestOpportunityQuote) {
-    return { quoteDate: null };
-  }
-
-  const conversionResult = await supabase.rpc("convert_opportunity_quote_to_project_quote", {
-    p_organization_id: organizationId,
-    p_opportunity_id: opportunityId,
-    p_opportunity_quote_id: latestOpportunityQuote.id,
-    p_project_id: projectId,
-    p_fallback_created_by: fallbackCreatedBy,
-  });
-
-  if (conversionResult.error) {
-    throw new Error(conversionResult.error.message);
-  }
-
-  return { quoteDate: latestOpportunityQuote.quote_date ?? null };
-}
-
-async function attachOpportunityCommercialHistoryToProject(params: {
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
-  organizationId: string;
-  opportunityId: string;
-  projectId: string;
-}) {
-  const rpcClient = params.supabase as unknown as {
-    rpc: (
-      fn: "attach_opportunity_commercial_history_to_project",
-      rpcParams: {
-        p_organization_id: string;
-        p_opportunity_id: string;
-        p_project_id: string;
-      }
-    ) => Promise<{
-      data:
-        | Array<{
-            attached_quote_count: number | null;
-            attached_quote_line_count: number | null;
-            attached_commercial_item_count: number | null;
-          }>
-        | null;
-      error: { message?: string } | null;
-    }>;
-  };
-
-  const result = await rpcClient.rpc("attach_opportunity_commercial_history_to_project", {
-    p_organization_id: params.organizationId,
-    p_opportunity_id: params.opportunityId,
-    p_project_id: params.projectId,
-  });
-
-  if (result.error) {
-    throw new Error(result.error.message ?? "Failed to attach commercial history to project.");
-  }
-
-  return (
-    result.data?.[0] ?? {
-      attached_quote_count: 0,
-      attached_quote_line_count: 0,
-      attached_commercial_item_count: 0,
-    }
-  );
-}
-
 export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportunityRow[]> {
   const member = await getCurrentOrganizationMember();
   if (!member) {
@@ -526,15 +476,47 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
   const supabase = await createServerSupabaseClient();
   const opportunitiesResult = await supabase
     .from("organization_opportunities")
-    .select("id, slug, opportunity_code, name, location, stage, client_id, owner_user_id, due_date, quoted_at, estimated_value, workspace_project_id, converted_project_id, created_by, created_at, opportunity_quotes(id, opportunity_id, status, total_quote_price, updated_at, created_at)")
+    .select("id, slug, opportunity_code, name, location, stage, client_id, owner_user_id, due_date, quoted_at, estimated_value, workspace_project_id, converted_project_id, created_by, created_at")
     .eq("organization_id", member.organization_id)
-    .order("created_at", { ascending: false })
-    .order("updated_at", { ascending: false, referencedTable: "opportunity_quotes" })
-    .limit(1, { referencedTable: "opportunity_quotes" });
+    .order("created_at", { ascending: false });
 
-  const opportunities = (opportunitiesResult.error ? [] : (opportunitiesResult.data ?? [])) as Array<
-    OpportunityRow & { opportunity_quotes?: OpportunityQuoteSummaryRow[] | null }
-  >;
+  const opportunities = (opportunitiesResult.error ? [] : (opportunitiesResult.data ?? [])) as OpportunityRow[];
+
+  type CanonicalSeriesRow = {
+    id: string;
+    opportunity_id: string;
+    recipient_client_id: string | null;
+    base_quote_number: string;
+    display_reference: string;
+    recipient: { id: string; name: string; company_name: string | null } | null;
+    current_revision: {
+      id: string;
+      status: QuoteStatus;
+      total_quote_price: number;
+      quote_date: string | null;
+      expiry_date: string | null;
+      updated_at: string;
+      revision_number: number;
+    } | null;
+  };
+  const canonicalClient = supabase as unknown as {
+    from(table: "opportunity_quote_series"): {
+      select(columns: string): {
+        eq(column: string, value: string): { is(column: string, value: null): Promise<{ data: CanonicalSeriesRow[] | null; error: unknown }> };
+      };
+    };
+  };
+  const seriesResult = await canonicalClient
+    .from("opportunity_quote_series")
+    .select("id, opportunity_id, recipient_client_id, base_quote_number, display_reference, recipient:organization_clients!opportunity_quote_series_org_recipient_fkey(id,name,company_name), current_revision:project_quotes!opportunity_quote_series_org_current_revision_fkey(id,status,total_quote_price,quote_date,expiry_date,updated_at,revision_number)")
+    .eq("organization_id", member.organization_id)
+    .is("archived_at", null);
+  const seriesByOpportunityId = new Map<string, CanonicalSeriesRow[]>();
+  for (const series of seriesResult.data ?? []) {
+    const existing = seriesByOpportunityId.get(series.opportunity_id) ?? [];
+    existing.push(series);
+    seriesByOpportunityId.set(series.opportunity_id, existing);
+  }
 
   const clientIds = Array.from(
     new Set(
@@ -609,45 +591,46 @@ export async function getLiveOpportunitiesForCurrentUser(): Promise<LiveOpportun
     }
   }
 
-  return opportunities.map((opportunity) => {
+  return opportunities.flatMap((opportunity) => {
     const ownerUserId = opportunity.owner_user_id ?? opportunity.created_by;
-    const latestQuoteRow = opportunity.opportunity_quotes?.[0] ?? null;
-    const latestQuote = latestQuoteRow
-      ? {
-          status: latestQuoteRow.status as QuoteStatus,
-          updatedIso: normalizeIsoDate(latestQuoteRow.updated_at ?? latestQuoteRow.created_at),
-          totalNZD: typeof latestQuoteRow.total_quote_price === "number" ? latestQuoteRow.total_quote_price : null,
-        }
-      : null;
-    const estimatedValue = Number(opportunity.estimated_value ?? 0);
-    const quoteValue = latestQuote?.totalNZD ?? null;
-    const resolvedValueNZD = quoteValue !== null && quoteValue > 0 ? quoteValue : estimatedValue;
     const clientWins = opportunity.client_id ? wonCountByClientId.get(opportunity.client_id) ?? 0 : 0;
     const clientLosses = opportunity.client_id ? lostCountByClientId.get(opportunity.client_id) ?? 0 : 0;
     const clientWinRatePct =
       clientWins + clientLosses > 0 ? Math.round((clientWins / (clientWins + clientLosses)) * 100) : 0;
 
-    return {
+    const seriesRows = seriesByOpportunityId.get(opportunity.id) ?? [];
+    const rowSources: Array<CanonicalSeriesRow | null> = seriesRows.length > 0 ? seriesRows : [null];
+    return rowSources.map((series) => {
+      const revision = series?.current_revision ?? null;
+      const recipientName = series?.recipient
+        ? series.recipient.company_name?.trim() || series.recipient.name
+        : opportunity.client_id ? clientNameById.get(opportunity.client_id) ?? "Unassigned client" : "Unassigned client";
+      return {
+      quoteSeriesId: series?.id ?? null,
+      quoteRevisionId: revision?.id ?? null,
+      quoteNumber: series?.display_reference ?? opportunity.opportunity_code ?? null,
+      revisionNumber: revision?.revision_number ?? null,
       opportunityId: opportunity.id,
       slug: opportunity.slug,
       name: opportunity.name,
       location: opportunity.location,
       stage: opportunity.stage,
       clientWinRatePct,
-      clientId: opportunity.client_id,
-      clientName: opportunity.client_id ? clientNameById.get(opportunity.client_id) ?? "Unassigned client" : "Unassigned client",
+      clientId: series?.recipient_client_id ?? opportunity.client_id,
+      clientName: recipientName,
       ownerName: ownerNameByUserId.get(ownerUserId) ?? "Unassigned",
-      dueDateIso: normalizeIsoDate(opportunity.due_date),
-      quotedDateIso: normalizeIsoDate(opportunity.quoted_at),
-      hasQuote: Boolean(latestQuote),
-      latestQuoteStatus: latestQuote?.status ?? null,
-      latestQuoteUpdatedIso: latestQuote?.updatedIso ?? null,
-      valueNZD: resolvedValueNZD,
+      dueDateIso: series ? normalizeIsoDate(revision?.expiry_date) : normalizeIsoDate(opportunity.due_date),
+      quotedDateIso: series ? normalizeIsoDate(revision?.quote_date) : normalizeIsoDate(opportunity.quoted_at),
+      hasQuote: Boolean(revision),
+      latestQuoteStatus: revision?.status ?? null,
+      latestQuoteUpdatedIso: normalizeIsoDate(revision?.updated_at),
+      valueNZD: revision && revision.total_quote_price > 0 ? revision.total_quote_price : Number(opportunity.estimated_value ?? 0),
       workspaceProjectId: opportunity.workspace_project_id,
       workspaceProjectSlug: opportunity.workspace_project_id ? workspaceSlugByProjectId.get(opportunity.workspace_project_id) ?? null : null,
       convertedProjectId: opportunity.converted_project_id,
       group: resolveOpportunityGroup(opportunity.stage, opportunity.converted_project_id),
-    } satisfies LiveOpportunityRow;
+      } satisfies LiveOpportunityRow;
+    });
   });
 }
 
@@ -718,22 +701,45 @@ export async function createOpportunityForCurrentUser(input: CreateOpportunityIn
   return { slug };
 }
 
-export async function convertOpportunityToProjectForCurrentUser(opportunitySlug: string): Promise<{ projectSlug: string }> {
+export async function convertOpportunityToProjectForCurrentUser(
+  opportunitySlug: string,
+  acceptedQuoteId: string,
+  shadowCorrelationId = crypto.randomUUID(),
+): Promise<OpportunityConversionResult> {
   const member = await getCurrentOrganizationMember();
   if (!member) {
     throw new Error("Unauthorized");
   }
 
+  const normalizedAcceptedQuoteId = acceptedQuoteId.trim();
+  if (!normalizedAcceptedQuoteId) {
+    throw new OpportunityConversionFailure({
+      message: "Accepted quote ID is required.",
+      databaseCode: "TS422",
+      operation: "validate-conversion-request",
+      acceptedQuoteId: normalizedAcceptedQuoteId,
+      organizationId: member.organization_id,
+    });
+  }
+
   const supabase = await createServerSupabaseClient();
   const opportunityResult = await supabase
     .from("organization_opportunities")
-    .select("id, organization_id, name, location, client_id, quoted_at, workspace_project_id, converted_project_id")
+    .select("id, workspace_project_id")
     .eq("organization_id", member.organization_id)
     .eq("slug", opportunitySlug)
     .maybeSingle();
 
   if (opportunityResult.error) {
-    throw new Error(opportunityResult.error.message);
+    throw new OpportunityConversionFailure({
+      message: opportunityResult.error.message,
+      databaseCode: opportunityResult.error.code,
+      details: opportunityResult.error.details,
+      hint: opportunityResult.error.hint,
+      operation: "resolve-opportunity",
+      acceptedQuoteId: normalizedAcceptedQuoteId,
+      organizationId: member.organization_id,
+    });
   }
 
   const opportunity = opportunityResult.data;
@@ -741,109 +747,158 @@ export async function convertOpportunityToProjectForCurrentUser(opportunitySlug:
     throw new Error("Opportunity not found.");
   }
 
-  if (opportunity.converted_project_id) {
-    const existingProjectResult = await supabase
-      .from("organization_projects")
-      .select("id, slug")
-      .eq("organization_id", member.organization_id)
-      .eq("id", opportunity.converted_project_id)
-      .maybeSingle();
-
-    if (existingProjectResult.data?.slug) {
-      await attachOpportunityCommercialHistoryToProject({
-        supabase,
-        organizationId: member.organization_id,
-        opportunityId: opportunity.id,
-        projectId: existingProjectResult.data.id,
-      });
-
-      const syncedQuote = await syncLatestOpportunityQuoteToProject({
-        supabase,
-        organizationId: member.organization_id,
-        opportunityId: opportunity.id,
-        projectId: existingProjectResult.data.id,
-        fallbackCreatedBy: member.user_id,
-      });
-
-      const quotedAtForUpdate =
-        opportunity.quoted_at ??
-        syncedQuote.quoteDate ??
-        normalizeIsoDate(new Date().toISOString());
-
-      const enforceWonResult = await supabase
-        .from("organization_opportunities")
-        .update({
-          converted_project_id: existingProjectResult.data.id,
-          converted_at: new Date().toISOString(),
-          stage: "Won",
-          quoted_at: quotedAtForUpdate,
-        })
-        .eq("organization_id", member.organization_id)
-        .eq("id", opportunity.id);
-
-      if (enforceWonResult.error) {
-        throw new Error(enforceWonResult.error.message);
-      }
-
-      return { projectSlug: existingProjectResult.data.slug };
-    }
-  }
-
-  const createdProject = await createOrganizationProjectForCurrentUser({
-    name: opportunity.name,
-    clientId: opportunity.client_id,
-    stage: "Pricing",
-    location: opportunity.location || "Unspecified",
-    coverImageUrl: null,
-    sourceOpportunityId: opportunity.id,
+  const shadowCapture = await capturePromotionShadowBestEffort({
+    organizationId: member.organization_id,
+    opportunityId: opportunity.id,
+    acceptedQuoteId: normalizedAcceptedQuoteId,
+    actorUserId: member.user_id,
+    correlationId: shadowCorrelationId,
   });
 
-  if (opportunity.workspace_project_id && opportunity.workspace_project_id !== createdProject.id) {
-    await cloneWorkspaceDataToProject({
-      supabase,
+  const rpcClient = supabase as unknown as {
+    rpc: (
+      name: "award_opportunity_by_lifecycle_v1",
+      args: {
+        p_organization_id: string;
+        p_opportunity_id: string;
+        p_accepted_quote_id: string;
+        p_correlation_id: string;
+      },
+    ) => Promise<{
+      data: Array<{
+        project_id: string;
+        project_slug: string;
+        project_created: boolean;
+        storage_clone_required: boolean;
+        lifecycle_strategy: string;
+      }> | null;
+      error: {
+        code?: string;
+        message: string;
+        details?: string;
+        hint?: string;
+      } | null;
+    }>;
+  };
+
+  const conversionResult = await rpcClient.rpc(
+    "award_opportunity_by_lifecycle_v1",
+    {
+      p_organization_id: member.organization_id,
+      p_opportunity_id: opportunity.id,
+      p_accepted_quote_id: normalizedAcceptedQuoteId,
+      p_correlation_id: shadowCorrelationId,
+    },
+  );
+
+  if (conversionResult.error) {
+    throw new OpportunityConversionFailure({
+      message: conversionResult.error.message,
+      databaseCode: conversionResult.error.code,
+      details: conversionResult.error.details,
+      hint: conversionResult.error.hint,
+      operation: "award_opportunity_by_lifecycle_v1",
+      opportunityId: opportunity.id,
+      acceptedQuoteId: normalizedAcceptedQuoteId,
       organizationId: member.organization_id,
-      sourceProjectId: opportunity.workspace_project_id,
-      targetProjectId: createdProject.id,
-      actingUserId: member.user_id,
     });
   }
 
-  await attachOpportunityCommercialHistoryToProject({
-    supabase,
-    organizationId: member.organization_id,
-    opportunityId: opportunity.id,
-    projectId: createdProject.id,
-  });
-
-  const syncedQuote = await syncLatestOpportunityQuoteToProject({
-    supabase,
-    organizationId: member.organization_id,
-    opportunityId: opportunity.id,
-    projectId: createdProject.id,
-    fallbackCreatedBy: member.user_id,
-  });
-
-  const quotedAtForUpdate =
-    opportunity.quoted_at ??
-    syncedQuote.quoteDate ??
-    normalizeIsoDate(new Date().toISOString());
-
-  const opportunityUpdateResult = await supabase
-    .from("organization_opportunities")
-    .update({
-      converted_project_id: createdProject.id,
-      converted_at: new Date().toISOString(),
-      stage: "Won",
-      quoted_at: quotedAtForUpdate,
-    })
-    .eq("organization_id", member.organization_id)
-    .eq("id", opportunity.id);
-
-  if (opportunityUpdateResult.error) {
-    throw new Error(opportunityUpdateResult.error.message);
+  const converted = conversionResult.data?.[0];
+  if (!converted?.project_id || !converted.project_slug) {
+    throw new OpportunityConversionFailure({
+      message: "Conversion completed without a final Project result.",
+      operation: "award_opportunity_by_lifecycle_v1",
+      opportunityId: opportunity.id,
+      acceptedQuoteId: normalizedAcceptedQuoteId,
+      organizationId: member.organization_id,
+    });
   }
 
-  return { projectSlug: createdProject.slug };
+  // New awards finalize pricing inside the atomic database lifecycle. Historical
+  // mappings predate that lifecycle, so an idempotent retry brings the immutable
+  // manifest and Project-owned worksheet continuations forward. Quote revisions
+  // remain an explicit commercial action.
+  const pricingFinalizer = supabase as unknown as {
+    rpc: (
+      name: "finalize_opportunity_award_pricing_v1",
+      args: {
+        p_organization_id: string;
+        p_opportunity_id: string;
+        p_project_id: string;
+        p_accepted_quote_id: string;
+      },
+    ) => Promise<{
+      data: unknown;
+      error: {
+        code?: string;
+        message: string;
+        details?: string;
+        hint?: string;
+      } | null;
+    }>;
+  };
+  const pricingResult = await pricingFinalizer.rpc(
+    "finalize_opportunity_award_pricing_v1",
+    {
+      p_organization_id: member.organization_id,
+      p_opportunity_id: opportunity.id,
+      p_project_id: converted.project_id,
+      p_accepted_quote_id: normalizedAcceptedQuoteId,
+    },
+  );
+  if (pricingResult.error) {
+    throw new OpportunityConversionFailure({
+      message: pricingResult.error.message,
+      databaseCode: pricingResult.error.code,
+      details: pricingResult.error.details,
+      hint: pricingResult.error.hint,
+      operation: "finalize_opportunity_award_pricing_v1",
+      opportunityId: opportunity.id,
+      acceptedQuoteId: normalizedAcceptedQuoteId,
+      organizationId: member.organization_id,
+    });
+  }
+
+  let legacyTenderDataMigrationStatus: OpportunityConversionResult["legacyTenderDataMigrationStatus"] = "complete";
+  if (
+    converted.storage_clone_required
+    && opportunity.workspace_project_id
+    && opportunity.workspace_project_id !== converted.project_id
+  ) {
+    try {
+      await cloneLegacyTenderDataToProject({
+        supabase,
+        organizationId: member.organization_id,
+        sourceProjectId: opportunity.workspace_project_id,
+        targetProjectId: converted.project_id,
+        actingUserId: member.user_id,
+      });
+    } catch (error) {
+      legacyTenderDataMigrationStatus = "retry_required";
+      console.error("[opportunity/convert] post-commit legacy tender data migration failed", {
+        operation: "clone-legacy-tender-data",
+        opportunityId: opportunity.id,
+        organizationId: member.organization_id,
+        projectId: converted.project_id,
+        message: error instanceof Error ? error.message : "Unknown legacy tender data migration failure",
+      });
+    }
+  }
+
+  await finalizePromotionShadowBestEffort({
+    organizationId: member.organization_id,
+    runId: shadowCapture?.runId ?? null,
+    finalProjectId: converted.project_id,
+    actorUserId: member.user_id,
+  });
+
+  return {
+    projectId: converted.project_id,
+    projectSlug: converted.project_slug,
+    projectCreated: converted.project_created,
+    legacyTenderDataMigrationStatus,
+  };
 }
 
 export async function getOrCreateOpportunityWorkspaceSlugForCurrentUser(opportunitySlug: string): Promise<string> {
@@ -930,6 +985,22 @@ export async function deleteOpportunityForCurrentUser(opportunityId: string): Pr
   }
 
   const supabase = await createServerSupabaseClient();
+  // Keep this narrow guard independent from the generated database type depth.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lifecycleResult = await (supabase as any)
+    .from("opportunity_lifecycles")
+    .select("id")
+    .eq("organization_id", member.organization_id)
+    .eq("opportunity_id", opportunityId)
+    .maybeSingle();
+
+  if (lifecycleResult.error) {
+    throw new Error(lifecycleResult.error.message);
+  }
+  if (lifecycleResult.data) {
+    throw new Error("Lifecycle-managed opportunities cannot be deleted through the ordinary delete action.");
+  }
+
   const deleteResult = await supabase
     .from("organization_opportunities")
     .delete()

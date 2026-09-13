@@ -26,6 +26,15 @@ function createSelectQuery(result: unknown) {
   return query;
 }
 
+function createCompletedRunQuery(result: unknown) {
+  const query = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    limit: vi.fn(() => Promise.resolve(result)),
+  };
+  return query;
+}
+
 describe("Universal Construction Learning review runs", () => {
   beforeEach(() => {
     createAdminSupabaseClient.mockReset();
@@ -126,5 +135,53 @@ describe("Universal Construction Learning review runs", () => {
     expect(insertQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
       previous_cursor_id: "opportunity_quotes:5131d8a6-fbb5-401a-ba2e-dca21dd9f8d2",
     }));
+  });
+
+  it("treats a completed run with a deferred cursor suffix as incomplete", async () => {
+    const query = createCompletedRunQuery({
+      data: [{
+        id: "run-partial",
+        candidate_next_cursor_updated_at: "2026-07-20T00:00:00.000Z",
+        candidate_next_cursor_id: "invoice-20",
+        final_next_cursor_updated_at: "2026-07-12T00:00:00.000Z",
+        final_next_cursor_id: "invoice-12",
+      }],
+      error: null,
+    });
+    createAdminSupabaseClient.mockReturnValue({ from: vi.fn(() => query) });
+
+    const { hasCompletedUniversalLearningReviewRun } = await import("./review-runs");
+    await expect(hasCompletedUniversalLearningReviewRun({
+      organizationId: "org-1",
+      containerType: "supplier_invoice",
+      reviewMonth: "2026-07",
+      runType: "monthly",
+      scopeKey: "organization",
+      promptVersion: "ucl-response-v2",
+    })).resolves.toBe(false);
+  });
+
+  it("treats a completed run as final only when candidate and final cursors match", async () => {
+    const query = createCompletedRunQuery({
+      data: [{
+        id: "run-complete",
+        candidate_next_cursor_updated_at: "2026-07-20T00:00:00.000Z",
+        candidate_next_cursor_id: "invoice-20",
+        final_next_cursor_updated_at: "2026-07-20T00:00:00.000Z",
+        final_next_cursor_id: "invoice-20",
+      }],
+      error: null,
+    });
+    createAdminSupabaseClient.mockReturnValue({ from: vi.fn(() => query) });
+
+    const { hasCompletedUniversalLearningReviewRun } = await import("./review-runs");
+    await expect(hasCompletedUniversalLearningReviewRun({
+      organizationId: "org-1",
+      containerType: "supplier_invoice",
+      reviewMonth: "2026-07",
+      runType: "monthly",
+      scopeKey: "organization",
+      promptVersion: "ucl-response-v2",
+    })).resolves.toBe(true);
   });
 });

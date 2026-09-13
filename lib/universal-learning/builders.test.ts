@@ -1,4 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  SUPPLIER_BILL_UCL_SCHEMA_VERSION,
+  type SupplierBillUclBusinessRecord,
+  validateSupplierBillUclBusinessRecord,
+} from "@/lib/universal-learning/supplier-bill-schema";
+import {
+  getSupplierBillEffectiveCursor,
+  selectSupplierBillRecordsForPrompt,
+} from "@/lib/universal-learning/supplier-bill-prompt";
+import { normalizeSupplierBillUclTimestamp } from "@/lib/universal-learning/supplier-bill-timestamps";
 
 const createAdminSupabaseClient = vi.fn();
 
@@ -267,9 +277,9 @@ describe("Universal learning builders monthly selection", () => {
 
     expect(result.records).toHaveLength(1);
     expect(result.records[0]?.source.sourceId).toBe("20000000-0000-0000-0000-000000000002");
-    expect(result.records[0]?.updatedAt).toBe("2026-06-20T11:30:00.000Z");
+    expect(result.records[0]?.updatedAt).toBe("2026-06-20T11:30:00.000000Z");
     expect(result.nextCursorCandidate).toEqual({
-      updatedAt: "2026-06-20T11:30:00.000Z",
+      updatedAt: "2026-06-20T11:30:00.000000Z",
       id: "20000000-0000-0000-0000-000000000002",
     });
   });
@@ -2769,7 +2779,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_number: "PO-017",
           purchase_order_title: "Ceiling materials and labour",
           status: "Approved",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           issued_to_label: "Metro Building Supplies",
           supplier_name_snapshot: "Metro Building Supplies",
           updated_at: "2026-06-01T00:00:00.000Z",
@@ -2990,7 +3000,7 @@ describe("Universal learning builders monthly selection", () => {
         {
           id: "invoice-1",
           organization_id: "org-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           invoice_number: "INV-2406-17",
           invoice_date: "2026-06-18",
           due_date: "2026-07-18",
@@ -2998,6 +3008,9 @@ describe("Universal learning builders monthly selection", () => {
           tax_total: 225,
           total: 1725,
           currency: "NZD",
+          supplier_po_reference: "PO-1001",
+          tax_amount_mode: "exclusive",
+          tax_evidence_json: { amountMode: "exclusive", lineTaxPreserved: true },
           status: "Needs Review",
           source: "upload",
           document_file_path: "org-1/supplier-invoices/invoice-1/header.pdf",
@@ -3122,6 +3135,7 @@ describe("Universal learning builders monthly selection", () => {
           tradesstack_cost_code_label: "Materials",
           accounting_mapping_id: "mapping-1",
           organization_cost_code_id: "org-cost-code-1",
+          tax_resolution_status: "resolved",
           work_type: "wall linings",
           cost_type: "materials",
           internal_cost_code: "INT-100",
@@ -3149,6 +3163,7 @@ describe("Universal learning builders monthly selection", () => {
           tradesstack_cost_code_label: "Subcontractors",
           accounting_mapping_id: "mapping-2",
           organization_cost_code_id: "org-cost-code-2",
+          tax_resolution_status: "resolved",
           work_type: "ceilings",
           cost_type: "subcontractors",
           internal_cost_code: "INT-300",
@@ -3171,6 +3186,7 @@ describe("Universal learning builders monthly selection", () => {
           allocation_status: "unmatched",
           match_status: "suggested",
           approval_status: "pending",
+          tax_resolution_status: "unresolved",
           created_at: "2026-06-20T13:10:00.000Z",
           updated_at: "2026-06-20T13:10:00.000Z",
           allocation_group_id: "allocation-group-2",
@@ -3188,7 +3204,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_id: "po-1",
           purchase_order_line_item_id: "po-line-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           amount: 1000,
           tax_amount: 150,
           total_amount: 1150,
@@ -3213,7 +3229,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_id: "po-1",
           purchase_order_line_item_id: "po-line-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           amount: 1000,
           tax_amount: 150,
           total_amount: 1150,
@@ -3235,7 +3251,7 @@ describe("Universal learning builders monthly selection", () => {
       ],
       organization_suppliers: [
         {
-          id: "supplier-1",
+          id: "11111111-1111-4111-8111-111111111111",
           organization_id: "org-1",
           company_name: "Metro Building Supplies",
           name: "Metro Building Supplies",
@@ -3251,10 +3267,11 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_number: "PO-1001",
           purchase_order_title: "Plasterboard package",
           status: "Approved",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           issued_to_label: "Metro Building Supplies",
           supplier_name_snapshot: "Metro Building Supplies",
           updated_at: "2026-06-10T00:00:00.000Z",
+          total_purchase_order_price: 2000,
         },
         {
           id: "po-2",
@@ -3263,9 +3280,36 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_number: "PO-1002",
           purchase_order_title: "Ceiling package",
           status: "Approved",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           issued_to_label: "Metro Building Supplies",
           supplier_name_snapshot: "Metro Building Supplies",
+          updated_at: "2026-06-10T00:00:00.000Z",
+          total_purchase_order_price: 1000,
+        },
+      ],
+      project_purchase_order_line_items: [
+        {
+          id: "po-line-1",
+          organization_id: "org-1",
+          purchase_order_id: "po-1",
+          project_id: "project-1",
+          description: "13mm GIB standard plasterboard",
+          quantity: 40,
+          rate: 50,
+          total: 2000,
+          sort_order: 1,
+          updated_at: "2026-06-10T00:00:00.000Z",
+        },
+        {
+          id: "po-line-2",
+          organization_id: "org-1",
+          purchase_order_id: "po-2",
+          project_id: "project-2",
+          description: "Suspended ceiling grid",
+          quantity: 20,
+          rate: 50,
+          total: 1000,
+          sort_order: 1,
           updated_at: "2026-06-10T00:00:00.000Z",
         },
       ],
@@ -3321,14 +3365,19 @@ describe("Universal learning builders monthly selection", () => {
     const invoice = result.records[0];
     expect(invoice?.source.table).toBe("supplier_invoices");
     expect(invoice?.source.sourceId).toBe("invoice-1");
-    expect(invoice?.supplierId).toBe("supplier-1");
+    expect(invoice?.supplierId).toBe("11111111-1111-4111-8111-111111111111");
+    expect((invoice as SupplierBillUclBusinessRecord | undefined)?.supplier).toEqual({
+      supplierId: "11111111-1111-4111-8111-111111111111",
+      displayName: "Metro Building Supplies",
+    });
     expect(invoice?.signalStrength).toBe("normal");
-    expect(invoice?.routingContext).toMatchObject({
+    expect(invoice?.routingContext).toEqual({
       readOnly: true,
-      tradesstack_cost_codeValues: [100, 300],
-      tradesstack_cost_code_labelValues: ["Materials", "Subcontractors"],
-      accounting_mapping_idValues: ["mapping-1", "mapping-2"],
-      organization_cost_code_idValues: ["org-cost-code-1", "org-cost-code-2"],
+      tradesstackCostCodes: ["100"],
+      accountingMappingIds: ["mapping-1"],
+      organizationCostCodeIds: ["org-cost-code-1"],
+      xeroAccountCodes: [],
+      xeroTaxTypes: [],
     });
     expect(JSON.stringify(invoice?.routingContext)).not.toContain("work_type");
     expect(JSON.stringify(invoice?.routingContext)).not.toContain("cost_type");
@@ -3336,10 +3385,18 @@ describe("Universal learning builders monthly selection", () => {
 
     const payload = invoice?.payload as Record<string, unknown>;
     expect(Object.keys(payload).sort()).toEqual([
-      "lineageContext",
+      "lineage",
       "operationalContext",
+      "provenance",
+      "schemaVersion",
       "sourceEvidence",
+      "visibility",
     ]);
+    expect(payload.schemaVersion).toBe(SUPPLIER_BILL_UCL_SCHEMA_VERSION);
+    expect(validateSupplierBillUclBusinessRecord(invoice).success).toBe(true);
+    expect(payload).not.toHaveProperty("lineageContext");
+    expect(payload.sourceEvidence).not.toHaveProperty("supplierInvoice");
+    expect(payload.sourceEvidence).not.toHaveProperty("lineItems");
     expect(JSON.stringify(payload)).not.toContain("\"row\"");
     expect(JSON.stringify(payload)).not.toContain("OCR ONLY TEXT");
     expect(JSON.stringify(payload)).not.toContain("org-1/supplier-invoices");
@@ -3353,73 +3410,84 @@ describe("Universal learning builders monthly selection", () => {
     expect(JSON.stringify(payload)).not.toContain("fingerprint");
 
     expect(payload.sourceEvidence).toMatchObject({
-      supplierInvoice: {
-        sourceId: "invoice-1",
-        invoiceNumber: "INV-2406-17",
-        invoiceDate: "2026-06-18",
+      bill: {
+        billNumber: "INV-2406-17",
+        billDate: "2026-06-18",
         dueDate: "2026-07-18",
-        status: "Needs Review",
+        currency: "NZD",
+        canonicalStatus: "Needs Review",
         source: "upload",
-        supplier: {
-          supplierId: "supplier-1",
-          supplierName: "Metro Building Supplies",
-        },
-        commercialTotals: {
-          subtotal: 1500,
-          gstTotal: 225,
-          total: 1725,
-        },
-        notes: "June plasterboard delivery.",
+        supplierPoReference: "PO-1001",
+        notesSummary: "June plasterboard delivery.",
       },
-      documentSummary: {
-        documentCount: 2,
-        documentTypes: ["invoice", "supporting_document"],
-        hasInvoiceDocument: true,
-        hasSupportingDocument: true,
+      supplier: {
+        supplierId: "11111111-1111-4111-8111-111111111111",
+        displayName: "Metro Building Supplies",
+      },
+      financialTotals: {
+        subtotal: 1500,
+        taxTotal: 225,
+        total: 1725,
+        calculatedLineSubtotal: 1500,
+        calculatedLineTax: 225,
+        calculatedLineTotal: 1725,
+        headerVariance: 0,
+      },
+      taxSummary: {
+        amountMode: "exclusive",
+        evidencePresent: true,
+        treatmentCounts: {
+          taxable: 1,
+          unresolved: 1,
+        },
       },
       allocationSummary: {
-        allocationCount: 3,
+        totalAllocationCount: 2,
         allocatedLineCount: 2,
-        approvedAllocationCount: 1,
-        unmatchedAllocationCount: 1,
-        splitAllocationLineCount: 1,
-        approvedAllocationAmount: 1000,
+        allocatedAmount: 1200,
+        unallocatedAmount: 300,
+        codedLineCount: 1,
+        uncodedLineCount: 1,
       },
       actualCostPostingSummary: {
-        postedEventCount: 1,
-        postedAmount: 1150,
-        unpostedApprovedAllocationCount: 0,
-        postedEventIds: ["event-1"],
+        postingEventCount: 2,
+        postedAmount: 1000,
+        postedTax: 150,
+        postedTotal: 1150,
+        reversalAmount: 1150,
+        netPostedAmount: 0,
       },
-      reversalCorrectionSummary: {
-        reversalCount: 1,
-        correctionRootCount: 2,
-        reversalEventIds: ["event-2"],
+      attachmentSummary: {
+        totalAttachmentCount: 2,
       },
     });
     const sourceEvidence = payload.sourceEvidence as Record<string, any>;
-    expect(sourceEvidence.lineItems).toHaveLength(2);
-    expect(sourceEvidence.lineItems[0]).toMatchObject({
-      lineItemId: "line-1",
+    expect(sourceEvidence.billLines).toHaveLength(2);
+    expect(sourceEvidence.billLines[0]).toMatchObject({
+      lineId: "line-1",
       description: "13mm GIB standard plasterboard",
       quantity: 20,
       unitPrice: 50,
       lineTotal: 1000,
+      poMatchSummary: {
+        purchaseOrderId: "po-1",
+        purchaseOrderLineItemId: "po-line-1",
+        previouslyApprovedQuantity: 0,
+        cumulativeQuantity: 20,
+        remainingQuantity: 20,
+      },
     });
-    expect(sourceEvidence.purchaseOrderMatches).toMatchObject([
+    expect(sourceEvidence.poMatches).toMatchObject([
       {
         matchId: "match-1",
         purchaseOrderId: "po-1",
-        purchaseOrderNumber: "PO-1001",
         matchedAmount: 1000,
         matchStatus: "accepted",
         approvalStatus: "approved",
-        approvalNotes: "Materials received and checked.",
       },
       {
         matchId: "match-2",
         purchaseOrderId: "po-2",
-        purchaseOrderNumber: "PO-1002",
         matchedAmount: 500,
         matchStatus: "adjusted",
         approvalStatus: "pending",
@@ -3427,60 +3495,372 @@ describe("Universal learning builders monthly selection", () => {
     ]);
 
     expect(payload.operationalContext).toMatchObject({
-      captureSource: "upload",
-      lifecycleStage: "corrected",
-      lineCount: 2,
-      hasSupplier: true,
-      hasProject: true,
-      hasPOReference: true,
-      hasAllocations: true,
-      documentCompleteness: {
-        documentCount: 2,
-        hasDocument: true,
-      },
-      approvalCompleteness: {
-        activeMatchCount: 2,
-        approvedMatchCount: 1,
-        pendingMatchCount: 1,
-        fullyApproved: false,
-      },
-      allocationCompleteness: {
-        allocationCount: 3,
-        allocatedLineCount: 2,
-        unmatchedAllocationCount: 1,
-        splitAllocationLineCount: 1,
-        fullyAllocated: true,
-      },
-      postingCompleteness: {
-        approvedAllocationCount: 1,
-        postedEventCount: 1,
-        unpostedApprovedAllocationCount: 0,
-        fullyPosted: true,
-      },
-      disputeState: {
-        invoiceStatus: "Needs Review",
-        hasDisputedMatches: false,
-        hasDisputedAllocations: false,
-        hasReversals: true,
-      },
+      lifecycleStage: "draft",
+      workflowState: "Draft",
+      approvalState: "not_started",
+      poMatchingCompleteness: "complete",
+      allocationCompleteness: "complete",
+      accountingReadiness: "not_ready",
+      unresolvedExceptionCount: 2,
       evidenceStrength: "normal",
+      truncated: false,
     });
 
-    expect(payload.lineageContext).toMatchObject({
-      organizationId: "org-1",
-      supplierId: "supplier-1",
-      supplierName: "Metro Building Supplies",
-      invoiceId: "invoice-1",
-      invoiceLineIds: ["line-1", "line-2"],
-      documentIds: ["document-1", "document-2"],
+    expect(payload.lineage).toMatchObject({
+      supplierBillId: "invoice-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
+      billLineIds: ["line-1", "line-2"],
+      currentDocumentIds: ["document-1", "document-2"],
       purchaseOrderIds: ["po-1", "po-2"],
-      purchaseOrderLineIds: ["po-line-1", "po-line-2"],
-      allocationIds: ["allocation-1", "allocation-2", "allocation-3"],
+      purchaseOrderLineItemIds: ["po-line-1"],
+      allocationIds: ["allocation-1", "allocation-3"],
       actualCostEventIds: ["event-1", "event-2"],
-      sourceTable: "supplier_invoices",
       projectIds: ["project-1", "project-2"],
-      clientIds: ["client-1", "client-2"],
     });
+    expect(payload.visibility).toMatchObject({
+      organizationId: "org-1",
+      projectIds: ["project-1", "project-2"],
+      requiresSupplierInvoiceView: true,
+    });
+    expect(invoice?.projectId).toBeNull();
+  });
+
+  it("uses the latest direct-child timestamp as the Supplier Bill cursor before deterministic prompt prefixing", async () => {
+    const invoiceRows = Array.from({ length: 13 }, (_, offset) => {
+      const index = offset + 1;
+      return {
+        id: `invoice-cursor-${String(index).padStart(2, "0")}`,
+        organization_id: "org-1",
+        supplier_id: "11111111-1111-4111-8111-111111111111",
+        invoice_number: `CURSOR-${index}`,
+        invoice_date: "2026-06-01",
+        subtotal: 100,
+        tax_total: 15,
+        total: 115,
+        currency: "NZD",
+        status: "Captured",
+        source: "manual",
+        created_by: "user-1",
+        updated_at: `2026-06-02T00:${String(index).padStart(2, "0")}:00.592353+00:00`,
+      };
+    });
+    const lineRows = invoiceRows.map((invoice, offset) => ({
+      id: `line-cursor-${String(offset + 1).padStart(2, "0")}`,
+      organization_id: "org-1",
+      supplier_invoice_id: invoice.id,
+      description: `Cursor line ${offset + 1}`,
+      quantity: 1,
+      unit_price: 100,
+      line_total: 100,
+      tax_amount: 15,
+      sort_order: 1,
+      updated_at: `2026-06-20T12:${String(13 - offset).padStart(2, "0")}:00.138918+12:00`,
+    }));
+    installFakeAdmin({
+      supplier_invoices: [...invoiceRows].reverse(),
+      supplier_invoice_lines: [
+        ...lineRows.filter((_, index) => index % 2 === 0).reverse(),
+        ...lineRows.filter((_, index) => index % 2 === 1),
+      ],
+      supplier_invoice_documents: [],
+      supplier_invoice_purchase_order_matches: [],
+      supplier_invoice_line_allocations: [],
+      project_actual_cost_events: [],
+      organization_suppliers: [{
+        id: "11111111-1111-4111-8111-111111111111",
+        organization_id: "org-1",
+        name: "Cursor Supplier",
+        updated_at: "2026-06-01T00:00:00.000Z",
+      }],
+    });
+
+    const { buildUniversalLearningContainerRecords } = await import("./builders");
+    const result = await buildUniversalLearningContainerRecords({
+      containerType: "supplier_invoice",
+      context: {
+        organizationId: "org-1",
+        cursor: { updatedAt: null, id: null },
+        reviewMonth: "2026-06",
+      },
+    });
+    const expected = [...result.records].sort((left, right) => (
+      left.updatedAt.localeCompare(right.updatedAt)
+      || left.source.sourceId.localeCompare(right.source.sourceId)
+    ));
+    const selection = selectSupplierBillRecordsForPrompt({
+      records: result.records,
+      previousCursor: { updatedAt: null, id: null },
+      sourceNextCursorCandidate: result.nextCursorCandidate,
+    });
+
+    expect(result.records.map((record) => record.source.sourceId)).toEqual(
+      invoiceRows.map((invoice) => invoice.id),
+    );
+    expect(result.records[0].updatedAt).toBe(
+      normalizeSupplierBillUclTimestamp(lineRows[0].updated_at),
+    );
+    expect(selection.records.map((record) => record.source.sourceId)).toEqual(
+      expected.slice(0, 12).map((record) => record.source.sourceId),
+    );
+    expect(selection.nextCursorCandidate).toEqual(
+      getSupplierBillEffectiveCursor(expected[11]),
+    );
+    expect(
+      expected
+        .slice(12)
+        .every((record) => (
+          record.updatedAt > selection.nextCursorCandidate.updatedAt!
+          || (
+            record.updatedAt === selection.nextCursorCandidate.updatedAt
+            && record.source.sourceId > selection.nextCursorCandidate.id!
+          )
+        )),
+    ).toBe(true);
+  });
+
+  it("uses the normalized owner timestamp when optional child timestamps are null", async () => {
+    installFakeAdmin({
+      supplier_invoices: [{
+        id: "invoice-owner-cursor",
+        organization_id: "org-1",
+        supplier_id: "11111111-1111-4111-8111-111111111111",
+        invoice_number: "OWNER-CURSOR",
+        invoice_date: "2026-06-01",
+        subtotal: 100,
+        tax_total: 15,
+        total: 115,
+        currency: "NZD",
+        status: "Captured",
+        source: "manual",
+        created_by: "user-1",
+        updated_at: "2026-06-20T12:01:47.138918+12:00",
+      }],
+      supplier_invoice_lines: [{
+        id: "line-null-cursor",
+        organization_id: "org-1",
+        supplier_invoice_id: "invoice-owner-cursor",
+        description: "Optional null child timestamp",
+        quantity: 1,
+        unit_price: 100,
+        line_total: 100,
+        tax_amount: 15,
+        sort_order: 1,
+        updated_at: null,
+        created_at: null,
+      }],
+      supplier_invoice_documents: [],
+      supplier_invoice_purchase_order_matches: [],
+      supplier_invoice_line_allocations: [],
+      project_actual_cost_events: [],
+      organization_suppliers: [{
+        id: "11111111-1111-4111-8111-111111111111",
+        organization_id: "org-1",
+        name: "Owner Cursor Supplier",
+        updated_at: "2026-06-01T00:00:00.000000+00:00",
+      }],
+    });
+
+    const { buildUniversalLearningContainerRecords } = await import("./builders");
+    const result = await buildUniversalLearningContainerRecords({
+      containerType: "supplier_invoice",
+      context: {
+        organizationId: "org-1",
+        cursor: { updatedAt: null, id: null },
+        reviewMonth: "2026-06",
+      },
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].updatedAt).toBe("2026-06-20T00:01:47.138918Z");
+    expect(result.nextCursorCandidate).toEqual({
+      updatedAt: result.records[0].updatedAt,
+      id: result.records[0].source.sourceId,
+    });
+  });
+
+  it("treats extraction-only changes as enrichment snapshots rather than monthly selection dependencies", async () => {
+    installFakeAdmin({
+      supplier_invoices: [{
+        id: "invoice-extraction-only",
+        organization_id: "org-1",
+        supplier_id: "11111111-1111-4111-8111-111111111111",
+        invoice_number: "EXTRACTION-ONLY",
+        currency: "NZD",
+        status: "Captured",
+        source: "upload",
+        updated_at: "2026-05-31T23:59:00.000Z",
+      }],
+      supplier_invoice_lines: [],
+      supplier_invoice_documents: [],
+      supplier_invoice_purchase_order_matches: [],
+      supplier_invoice_line_allocations: [],
+      project_actual_cost_events: [],
+      supplier_invoice_document_extractions: [{
+        id: "extraction-in-june",
+        organization_id: "org-1",
+        supplier_invoice_id: "invoice-extraction-only",
+        status: "completed",
+        updated_at: "2026-06-10T10:00:00.000Z",
+      }],
+    });
+
+    const { buildUniversalLearningContainerRecords } = await import("./builders");
+    const result = await buildUniversalLearningContainerRecords({
+      containerType: "supplier_invoice",
+      context: {
+        organizationId: "org-1",
+        cursor: { updatedAt: null, id: null },
+        reviewMonth: "2026-06",
+      },
+    });
+
+    expect(result.records).toEqual([]);
+    expect(result.nextCursorCandidate).toEqual({ updatedAt: null, id: null });
+  });
+
+  it("fails the supplier invoice build with the source ID when the assembled v2 record is invalid", async () => {
+    installFakeAdmin({
+      supplier_invoices: [
+        {
+          id: "invoice-invalid-currency",
+          organization_id: "org-1",
+          supplier_id: null,
+          invoice_number: "BAD-1",
+          invoice_date: "2026-06-18",
+          due_date: null,
+          subtotal: 0,
+          tax_total: 0,
+          total: 0,
+          currency: "nzd",
+          status: "Needs Review",
+          source: "manual",
+          created_by: "user-1",
+          updated_at: "2026-06-21T09:00:00.000Z",
+        },
+      ],
+      supplier_invoice_lines: [],
+      supplier_invoice_documents: [],
+      supplier_invoice_purchase_order_matches: [],
+      supplier_invoice_line_allocations: [],
+      project_actual_cost_events: [],
+    });
+
+    const { buildUniversalLearningContainerRecords } = await import("./builders");
+    await expect(buildUniversalLearningContainerRecords({
+      containerType: "supplier_invoice",
+      context: {
+        organizationId: "org-1",
+        cursor: { updatedAt: null, id: null },
+        reviewMonth: "2026-06",
+      },
+    })).rejects.toThrow(
+      /Supplier Bill UCL validation failed for invoice-invalid-currency:.*currency/i,
+    );
+  });
+
+  it("excludes cross-organization Supplier Bill relationships under service-level reads", async () => {
+    installFakeAdmin({
+      supplier_invoices: [{
+        id: "invoice-secure",
+        organization_id: "org-1",
+        supplier_id: "supplier-foreign",
+        invoice_number: "SECURE-1",
+        invoice_date: "2026-06-18",
+        currency: "NZD",
+        subtotal: 100,
+        tax_total: 15,
+        total: 115,
+        status: "Needs Review",
+        source: "manual",
+        updated_at: "2026-06-21T09:00:00.000Z",
+      }],
+      supplier_invoice_lines: [{
+        id: "line-secure",
+        organization_id: "org-1",
+        supplier_invoice_id: "invoice-secure",
+        project_id: "project-foreign",
+        description: "Authorized bill line",
+        quantity: 1,
+        unit_price: 100,
+        line_total: 100,
+        tax_amount: 15,
+        sort_order: 1,
+      }],
+      supplier_invoice_documents: [{
+        id: "document-foreign",
+        organization_id: "org-foreign",
+        supplier_invoice_id: "invoice-secure",
+        file_name: "foreign.pdf",
+        is_current: true,
+      }],
+      supplier_invoice_purchase_order_matches: [{
+        id: "match-foreign",
+        organization_id: "org-1",
+        supplier_invoice_id: "invoice-secure",
+        purchase_order_id: "po-foreign",
+      }],
+      supplier_invoice_line_allocations: [{
+        id: "allocation-foreign",
+        organization_id: "org-foreign",
+        supplier_invoice_id: "invoice-secure",
+        supplier_invoice_line_id: "line-secure",
+        project_id: "project-foreign",
+        purchase_order_id: "po-foreign",
+      }],
+      project_actual_cost_events: [{
+        id: "event-foreign",
+        organization_id: "org-foreign",
+        supplier_invoice_id: "invoice-secure",
+        event_type: "posting",
+        event_status: "posted",
+        total_amount: 999,
+      }],
+      organization_suppliers: [{
+        id: "supplier-foreign",
+        organization_id: "org-foreign",
+        company_name: "Foreign Supplier",
+      }],
+      project_purchase_orders: [{
+        id: "po-foreign",
+        organization_id: "org-foreign",
+        project_id: "project-foreign",
+      }],
+      organization_projects: [{
+        id: "project-foreign",
+        organization_id: "org-foreign",
+        name: "Foreign Project",
+      }],
+      organization_accounting_documents: [{
+        id: "accounting-foreign",
+        organization_id: "org-foreign",
+        local_document_type: "supplier_invoice",
+        local_document_id: "invoice-secure",
+        export_status: "exported",
+      }],
+    });
+
+    const { buildUniversalLearningContainerRecords } = await import("./builders");
+    const result = await buildUniversalLearningContainerRecords({
+      containerType: "supplier_invoice",
+      context: {
+        organizationId: "org-1",
+        cursor: { updatedAt: null, id: null },
+        reviewMonth: "2026-06",
+      },
+    });
+
+    const record = result.records[0] as SupplierBillUclBusinessRecord;
+    const payload = record.payload;
+    expect(validateSupplierBillUclBusinessRecord(record).success).toBe(true);
+    expect(record).toMatchObject({ supplierId: null, projectId: null });
+    expect(payload.sourceEvidence.supplier.supplierId).toBeNull();
+    expect(payload.sourceEvidence.billLines[0].projectId).toBeNull();
+    expect(payload.sourceEvidence.poMatches).toEqual([]);
+    expect(payload.sourceEvidence.allocationSummary.allocations).toEqual([]);
+    expect(payload.sourceEvidence.attachmentSummary.references).toEqual([]);
+    expect(payload.sourceEvidence.actualCostPostingSummary.postingEventCount).toBe(0);
+    expect(payload.sourceEvidence.xeroSummary.accountingDocumentId).toBeNull();
+    expect(payload.visibility.projectIds).toEqual([]);
   });
 
   it("enriches supplier invoice allocations into a dedicated trust-boundary packet across review, posting, dispute, correction, and reversal stages", async () => {
@@ -3694,7 +4074,7 @@ describe("Universal learning builders monthly selection", () => {
         {
           id: "invoice-1",
           organization_id: "org-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           invoice_number: "INV-ALLOC-1",
           invoice_date: "2026-06-18",
           due_date: "2026-07-18",
@@ -3819,7 +4199,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_number: "PO-ALLOC-1",
           purchase_order_title: "Wall linings labour",
           status: "Approved",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           issued_to_label: "Metro Building Supplies",
           supplier_name_snapshot: "Metro Building Supplies",
           updated_at: "2026-06-10T00:00:00.000Z",
@@ -3831,7 +4211,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_number: "PO-ALLOC-2",
           purchase_order_title: "Structural timber",
           status: "Approved",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           issued_to_label: "Metro Building Supplies",
           supplier_name_snapshot: "Metro Building Supplies",
           updated_at: "2026-06-10T00:00:00.000Z",
@@ -3933,7 +4313,7 @@ describe("Universal learning builders monthly selection", () => {
       ],
       organization_suppliers: [
         {
-          id: "supplier-1",
+          id: "11111111-1111-4111-8111-111111111111",
           organization_id: "org-1",
           company_name: "Metro Building Supplies",
           name: "Metro Building Supplies",
@@ -4007,7 +4387,7 @@ describe("Universal learning builders monthly selection", () => {
     const allocation5 = recordsById.get("allocation-5");
 
     expect(allocation1?.source.table).toBe("supplier_invoice_line_allocations");
-    expect(allocation1?.supplierId).toBe("supplier-1");
+    expect(allocation1?.supplierId).toBe("11111111-1111-4111-8111-111111111111");
     expect(allocation1?.clientId).toBe("client-1");
     expect(allocation1?.routingContext).toMatchObject({
       readOnly: true,
@@ -4039,7 +4419,7 @@ describe("Universal learning builders monthly selection", () => {
         supplierInvoiceId: "invoice-1",
         supplierInvoiceLineId: "line-1",
         supplier: {
-          supplierId: "supplier-1",
+          supplierId: "11111111-1111-4111-8111-111111111111",
           supplierName: "Metro Building Supplies",
         },
         project: {
@@ -4141,7 +4521,7 @@ describe("Universal learning builders monthly selection", () => {
       projectName: "Auckland Office Fitout",
       clientId: "client-1",
       clientName: "Metro Property Group",
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
       supplierName: "Metro Building Supplies",
       costItemId: "cost-item-1",
       sourceCostItemId: "cost-item-1",
@@ -4170,7 +4550,7 @@ describe("Universal learning builders monthly selection", () => {
       successorAllocationIds: [],
       projectId: "project-2",
       clientId: "client-2",
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
     });
   });
 
@@ -4186,7 +4566,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_id: "po-1",
           purchase_order_line_item_id: "po-line-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           cost_item_id: "cost-item-1",
           source_cost_item_id: "cost-item-1",
           work_type: "wall linings",
@@ -4226,7 +4606,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_id: "po-1",
           purchase_order_line_item_id: "po-line-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           cost_item_id: "cost-item-1",
           source_cost_item_id: "cost-item-1",
           work_type: "wall linings",
@@ -4265,7 +4645,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_id: "po-1",
           purchase_order_line_item_id: "po-line-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           cost_item_id: "cost-item-1",
           source_cost_item_id: "cost-item-1",
           work_type: "wall linings",
@@ -4452,7 +4832,7 @@ describe("Universal learning builders monthly selection", () => {
         {
           id: "invoice-1",
           organization_id: "org-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           invoice_number: "INV-ACT-1",
           invoice_date: "2026-06-18",
           due_date: "2026-07-18",
@@ -4507,7 +4887,7 @@ describe("Universal learning builders monthly selection", () => {
           purchase_order_number: "PO-ACT-1",
           purchase_order_title: "Wall linings labour",
           status: "Approved",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           issued_to_label: "Metro Building Supplies",
           supplier_name_snapshot: "Metro Building Supplies",
           updated_at: "2026-06-10T00:00:00.000Z",
@@ -4567,7 +4947,7 @@ describe("Universal learning builders monthly selection", () => {
       ],
       organization_suppliers: [
         {
-          id: "supplier-1",
+          id: "11111111-1111-4111-8111-111111111111",
           organization_id: "org-1",
           company_name: "Metro Building Supplies",
           name: "Metro Building Supplies",
@@ -4604,7 +4984,7 @@ describe("Universal learning builders monthly selection", () => {
     const event5 = recordsById.get("event-5");
 
     expect(event1?.source.table).toBe("project_actual_cost_events");
-    expect(event1?.supplierId).toBe("supplier-1");
+    expect(event1?.supplierId).toBe("11111111-1111-4111-8111-111111111111");
     expect(event1?.clientId).toBe("client-1");
     expect(event1?.routingContext).toMatchObject({
       readOnly: true,
@@ -4684,7 +5064,7 @@ describe("Universal learning builders monthly selection", () => {
         projectCode: "AKL-001",
       },
       supplier: {
-        supplierId: "supplier-1",
+        supplierId: "11111111-1111-4111-8111-111111111111",
         supplierName: "Metro Building Supplies",
       },
       ledgerMeaning: {
@@ -4732,7 +5112,7 @@ describe("Universal learning builders monthly selection", () => {
       projectName: "Auckland Office Fitout",
       clientId: "client-1",
       clientName: "Metro Property Group",
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
       supplierName: "Metro Building Supplies",
       costItemId: "cost-item-1",
       sourceCostItemId: "cost-item-1",
@@ -5022,6 +5402,39 @@ describe("Universal learning builders monthly selection", () => {
           sort_order: 1,
         },
       ],
+      retention_claim_allocations: [
+        {
+          id: "retention-allocation-1",
+          organization_id: "org-1",
+          project_id: "project-1",
+          originating_payment_claim_id: "claim-1",
+          retention_claim_id: "retention-claim-1",
+          allocation_sequence: 1,
+          allocation_amount: 250,
+          origin_claim_status_snapshot: "Submitted",
+          updated_at: "2026-06-30T10:00:00.123456Z",
+        },
+      ],
+      organization_accounting_documents: [
+        {
+          id: "accounting-document-1",
+          organization_id: "org-1",
+          project_claim_id: "claim-1",
+          local_document_type: "project_claim",
+          provider: "xero",
+          export_status: "exported",
+          external_document_number: "INV-PC-001",
+          normalized_external_status: "AUTHORISED",
+          amount_paid: 1000,
+          amount_due: 4692.5,
+          currency_code: "NZD",
+          attachment_filename: "PC-001.pdf",
+          attachment_status: "uploaded",
+          attachment_uploaded_at: "2026-06-30T11:00:00.123456Z",
+          last_status_synced_at: "2026-06-30T12:00:00.123456Z",
+          updated_at: "2026-06-30T12:00:00.123456Z",
+        },
+      ],
       organization_projects: [
         {
           id: "project-1",
@@ -5267,10 +5680,14 @@ describe("Universal learning builders monthly selection", () => {
 
     const payload = submitted?.payload as Record<string, any>;
     expect(Object.keys(payload).sort()).toEqual([
-      "lineageContext",
+      "lineage",
       "operationalContext",
+      "provenance",
+      "schemaVersion",
       "sourceEvidence",
+      "visibility",
     ]);
+    expect(payload.schemaVersion).toBe("payment_claim.v2");
     expect(JSON.stringify(payload)).not.toContain("\"row\"");
     expect(JSON.stringify(payload)).not.toContain("ai_construction_intelligence");
     expect(JSON.stringify(payload)).not.toContain("work_type");
@@ -5281,117 +5698,124 @@ describe("Universal learning builders monthly selection", () => {
     expect(JSON.stringify(payload.sourceEvidence)).not.toContain("accounting_mapping_id");
 
     expect(payload.sourceEvidence.claim).toMatchObject({
-      claimId: "claim-1",
+      paymentClaimId: "claim-1",
       claimNumber: "CLM-001",
       title: "June progress claim",
-      type: "Progress",
-      status: "Submitted",
+      claimType: "Progress",
+      canonicalStatus: "Submitted",
       claimDate: "2026-06-20",
       dueDate: "2026-06-27",
-      periodStart: "2026-06-01",
-      periodEnd: "2026-06-30",
+      claimPeriodStart: "2026-06-01",
+      claimPeriodEnd: "2026-06-30",
     });
-    expect(payload.sourceEvidence.commercialRecovery).toMatchObject({
-      claimAmount: 5500,
-      gstAmount: 742.5,
-      totalPayable: 5692.5,
+    expect(payload.sourceEvidence.project).toMatchObject({
+      projectId: "project-1",
+      name: "Auckland Office Fitout",
+      code: "AKL-001",
+    });
+    expect(payload.sourceEvidence.client).toEqual({
+      clientId: "client-1",
+      displayName: "Metro Property Group",
+    });
+    expect(payload.sourceEvidence.financialSummary.stored).toMatchObject({
+      originalContractAmount: 10000,
+      approvedVariations: 2500,
+      revisedContractAmount: 12500,
+      previouslyClaimed: 2000,
+      thisClaim: 5500,
+      tax: 742.5,
+      totalClaimed: 5692.5,
       paidAmount: 0,
-      previousClaimsTotal: 2000,
-      revisedContractValue: 12500,
-      linkedQuoteValue: 10000,
-      linkedApprovedVariationsValue: 2500,
-      sourceMixSummary: {
-        quoteLineCount: 1,
-        variationLineCount: 1,
-        quoteClaimAmount: 3500,
-        variationClaimAmount: 2000,
-      },
+    });
+    expect(payload.sourceEvidence.financialSummary.calculated).toMatchObject({
+      lineThisClaim: 5500,
+      lineClaimedToDate: 6000,
     });
     expect(payload.sourceEvidence.retention).toMatchObject({
-      retentionMethod: "flat",
-      retentionPercent: 10,
-      retentionWithheldThisClaim: 550,
-      retentionReleasedThisClaim: 0,
-      retentionHeldToDate: 750,
-      retentionReleasedToDate: 0,
-      retentionBalance: 750,
-    });
-    expect(payload.sourceEvidence.quoteBasisSummary).toMatchObject({
-      hasQuoteBasis: true,
-      quoteLineCount: 1,
-      quoteClaimAmount: 3500,
-      linkedQuoteCount: 1,
-    });
-    expect(payload.sourceEvidence.variationRecoverySummary).toMatchObject({
-      hasVariationBasis: true,
-      variationLineCount: 1,
-      variationClaimAmount: 2000,
-      linkedVariationCount: 1,
+      basis: "flat",
+      rate: 10,
+      heldThisClaim: 550,
+      releasedThisClaim: 0,
+      heldToDate: 750,
+      releasedToDate: 0,
+      remainingRetention: 750,
     });
     const claimLines = payload.sourceEvidence.claimLines as Array<Record<string, unknown>>;
     expect(claimLines).toHaveLength(2);
     expect(claimLines[0]).toMatchObject({
-      claimLineItemId: "claim-line-1",
+      lineId: "claim-line-1",
       sourceKind: "Quote",
-      sourceDocumentId: "quote-1",
-      sourceLineItemId: "quote-line-1",
+      sourceScheduleId: "quote-1",
+      sourceScheduleLineId: "quote-line-1",
       description: "Partition framing and linings",
       quantity: 1,
       unit: "lot",
       rate: 4000,
-      sourceTotal: 4000,
-      previouslyClaimedAmount: 500,
-      currentClaimPercent: 100,
-      currentClaimAmount: 3500,
-      cumulativeClaimedAmount: 4000,
+      contractValue: 4000,
+      previouslyClaimed: 500,
+      claimPercentage: 100,
+      thisClaim: 3500,
+      claimedToDate: 4000,
     });
     expect(claimLines[1]).toMatchObject({
-      claimLineItemId: "claim-line-2",
+      lineId: "claim-line-2",
       sourceKind: "Variation",
-      sourceDocumentId: "variation-1",
-      sourceLineItemId: "variation-line-1",
-      currentClaimAmount: 2000,
+      variationId: "variation-1",
+      sourceScheduleLineId: "variation-line-1",
+      thisClaim: 2000,
     });
 
     expect(payload.operationalContext).toMatchObject({
-      lifecycleStage: "submitted_unpaid",
-      hasProject: true,
-      hasClient: true,
-      hasQuoteBasis: true,
-      hasVariationBasis: true,
-      hasRetention: true,
-      hasPaidAmount: false,
-      isSubmitted: true,
-      isUnpaid: true,
-      isPaid: false,
-      isOverdue: false,
-      isCancelled: false,
-      lineCount: 2,
-      paymentState: "awaiting_payment",
+      lifecycleStage: "submitted",
       evidenceStrength: "strong",
+      truncated: false,
+      totalCounts: {
+        claimLines: 2,
+        variations: 1,
+      },
     });
-    expect(payload.lineageContext).toMatchObject({
+    expect(payload.lineage).toMatchObject({
       organizationId: "org-1",
       projectId: "project-1",
-      projectName: "Auckland Office Fitout",
       clientId: "client-1",
-      clientName: "Metro Property Group",
-      claimId: "claim-1",
+      paymentClaimId: "claim-1",
       sourceQuoteIds: ["quote-1"],
-      sourceQuoteLineItemIds: ["quote-line-1"],
-      sourceVariationIds: ["variation-1"],
-      sourceVariationLineItemIds: ["variation-line-1"],
-      costItemIds: ["claim-cost-item-1", "claim-cost-item-2"],
-      sourceCostItemIds: ["quote-cost-item-1", "variation-cost-item-1"],
-      createdByUserId: "user-claim-1",
-      sourceTable: "project_claims",
+      sourceQuoteLineIds: ["quote-line-1"],
+      variationIds: ["variation-1"],
+      variationLineIds: ["variation-line-1"],
     });
+    expect(payload.provenance.latestDependencyUpdatedAt).toBe(submitted?.updatedAt);
+    expect(submitted?.updatedAt).toBe("2026-06-30T12:00:00.123456Z");
+    expect(payload.sourceEvidence.retention.linkedRetentionClaims).toEqual([
+      {
+        retentionClaimId: "retention-claim-1",
+        allocationId: "retention-allocation-1",
+        allocationAmount: 250,
+        statusSnapshot: "Submitted",
+      },
+    ]);
+    expect(payload.sourceEvidence.accountingAndPayment.observations).toEqual([
+      expect.objectContaining({
+        accountingDocumentId: "accounting-document-1",
+        provider: "xero",
+        exportStatus: "exported",
+        externalDocumentReference: "INV-PC-001",
+        paidAmount: 1000,
+        outstandingAmount: 4692.5,
+      }),
+    ]);
+    expect(payload.sourceEvidence.supportingEvidence.documents).toEqual([
+      expect.objectContaining({
+        documentId: "accounting-document-1",
+        fileName: "PC-001.pdf",
+        attachmentStatus: "uploaded",
+      }),
+    ]);
 
     expect((overdue?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("submitted_overdue");
-    expect((overdue?.payload as Record<string, any>).operationalContext.paymentState).toBe("overdue");
     expect((paid?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("paid");
-    expect((paid?.payload as Record<string, any>).sourceEvidence.retention.retentionReleasedThisClaim).toBe(500);
-    expect((incomplete?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("incomplete_lineage");
+    expect((paid?.payload as Record<string, any>).sourceEvidence.retention.releasedThisClaim).toBe(500);
+    expect((incomplete?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("draft");
     expect((incomplete?.payload as Record<string, any>).operationalContext.evidenceStrength).toBe("weak");
   });
 
@@ -5435,12 +5859,41 @@ describe("Universal learning builders monthly selection", () => {
           ai_construction_intelligence: { leaked: true },
         },
       ],
+      organization_material_supplier_products: [
+        {
+          id: "supplier-product-1",
+          organization_id: "org-1",
+          material_id: "material-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
+          supplier_sku: "GIB-13-STD",
+          supplier_description: "13mm GIB standard sheet",
+          supplier_unit: "sheet",
+          is_preferred: true,
+          is_active: true,
+          archived_at: null,
+          identity_status: "confirmed",
+        },
+        {
+          id: "supplier-product-2",
+          organization_id: "org-1",
+          material_id: "material-1",
+          supplier_id: "supplier-2",
+          supplier_sku: "ALT-BOARD-13",
+          supplier_description: "Alternative plasterboard sheet",
+          supplier_unit: "sheet",
+          is_preferred: false,
+          is_active: true,
+          archived_at: null,
+          identity_status: "confirmed",
+        },
+      ],
       organization_material_supplier_prices: [
         {
           id: "price-1",
           organization_id: "org-1",
           material_id: "material-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
+          supplier_product_id: "supplier-product-1",
           import_batch_id: "batch-1",
           supplier_sku: "GIB-13-STD",
           supplier_description: "13mm GIB standard sheet",
@@ -5461,6 +5914,7 @@ describe("Universal learning builders monthly selection", () => {
           organization_id: "org-1",
           material_id: "material-1",
           supplier_id: "supplier-2",
+          supplier_product_id: "supplier-product-2",
           import_batch_id: null,
           supplier_sku: "ALT-BOARD-13",
           supplier_description: "Alternative plasterboard sheet",
@@ -5480,7 +5934,8 @@ describe("Universal learning builders monthly selection", () => {
           id: "price-3",
           organization_id: "org-1",
           material_id: "material-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
+          supplier_product_id: "supplier-product-1",
           import_batch_id: null,
           supplier_sku: "GIB-13-OLD",
           supplier_description: "Old supplier sheet price",
@@ -5501,7 +5956,7 @@ describe("Universal learning builders monthly selection", () => {
         {
           id: "batch-1",
           organization_id: "org-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           uploaded_by: "uploader-1",
           file_name: "metro-june-catalogue.pdf",
           file_type: "application/pdf",
@@ -5601,7 +6056,7 @@ describe("Universal learning builders monthly selection", () => {
       ],
       organization_suppliers: [
         {
-          id: "supplier-1",
+          id: "11111111-1111-4111-8111-111111111111",
           organization_id: "org-1",
           company_name: "Metro Building Supplies",
           name: "Metro Building Supplies",
@@ -5633,7 +6088,7 @@ describe("Universal learning builders monthly selection", () => {
     const material = result.records[0];
     expect(material?.source.table).toBe("organization_materials");
     expect(material?.source.sourceId).toBe("material-1");
-    expect(material?.supplierId).toBe("supplier-1");
+    expect(material?.supplierId).toBe("11111111-1111-4111-8111-111111111111");
     expect(material?.routingContext).toMatchObject({
       readOnly: true,
       tradesstack_cost_code: 100,
@@ -5692,7 +6147,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(payload.sourceEvidence.currentSupplierPrices).toEqual([
       expect.objectContaining({
         supplierPriceId: "price-1",
-        supplierId: "supplier-1",
+        supplierId: "11111111-1111-4111-8111-111111111111",
         supplierName: "Metro Building Supplies",
         supplierSku: "GIB-13-STD",
         unitPrice: 24.5,
@@ -5722,7 +6177,7 @@ describe("Universal learning builders monthly selection", () => {
       approvedImportBatchSummary: [
         {
           importBatchId: "batch-1",
-          supplierId: "supplier-1",
+          supplierId: "11111111-1111-4111-8111-111111111111",
           supplierName: "Metro Building Supplies",
           status: "approved",
           extractionMethod: "pdf_text",
@@ -5748,7 +6203,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(payload.sourceEvidence.catalogueSummaries.preferredSupplierSummary).toMatchObject([
       {
         supplierPriceId: "price-1",
-        supplierId: "supplier-1",
+        supplierId: "11111111-1111-4111-8111-111111111111",
         supplierName: "Metro Building Supplies",
       },
     ]);
@@ -5785,7 +6240,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(payload.lineageContext).toMatchObject({
       organizationId: "org-1",
       materialId: "material-1",
-      supplierIds: ["supplier-1", "supplier-2"],
+      supplierIds: ["11111111-1111-4111-8111-111111111111", "supplier-2"],
       supplierPriceIds: ["price-1", "price-2", "price-3"],
       currentSupplierPriceIds: ["price-1", "price-2"],
       historicalSupplierPriceIds: ["price-3"],
@@ -5806,7 +6261,7 @@ describe("Universal learning builders monthly selection", () => {
         {
           id: "batch-1",
           organization_id: "org-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           uploaded_by: "uploader-1",
           file_name: "metro-june-catalogue.pdf",
           file_type: "application/pdf",
@@ -5937,7 +6392,7 @@ describe("Universal learning builders monthly selection", () => {
       ],
       organization_suppliers: [
         {
-          id: "supplier-1",
+          id: "11111111-1111-4111-8111-111111111111",
           organization_id: "org-1",
           company_name: "Metro Building Supplies",
           name: "Metro Building Supplies",
@@ -5988,7 +6443,7 @@ describe("Universal learning builders monthly selection", () => {
           id: "price-1",
           organization_id: "org-1",
           material_id: "material-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           import_batch_id: "batch-1",
           supplier_sku: "GIB-13-STD",
           supplier_description: "13mm GIB standard sheet",
@@ -6008,7 +6463,7 @@ describe("Universal learning builders monthly selection", () => {
           id: "price-2",
           organization_id: "org-1",
           material_id: "material-2",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           import_batch_id: "batch-1",
           supplier_sku: "STUD-90",
           supplier_description: "90mm steel stud",
@@ -6041,7 +6496,7 @@ describe("Universal learning builders monthly selection", () => {
     const batch = result.records[0];
     expect(batch?.source.table).toBe("organization_material_import_batches");
     expect(batch?.source.sourceId).toBe("batch-1");
-    expect(batch?.supplierId).toBe("supplier-1");
+    expect(batch?.supplierId).toBe("11111111-1111-4111-8111-111111111111");
     expect(batch?.routingContext).toMatchObject({
       readOnly: true,
       tradesstack_cost_codeValues: [100],
@@ -6073,7 +6528,7 @@ describe("Universal learning builders monthly selection", () => {
 
     expect(payload.sourceEvidence.batch).toMatchObject({
       batchId: "batch-1",
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
       supplierName: "Metro Building Supplies",
       fileName: "metro-june-catalogue.pdf",
       fileType: "application/pdf",
@@ -6174,7 +6629,7 @@ describe("Universal learning builders monthly selection", () => {
 
     expect(payload.lineageContext).toMatchObject({
       organizationId: "org-1",
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
       supplierName: "Metro Building Supplies",
       batchId: "batch-1",
       rowIds: ["import-row-1", "import-row-2", "import-row-3"],
@@ -6197,7 +6652,7 @@ describe("Universal learning builders monthly selection", () => {
           id: "50000000-0000-0000-0000-000000000001",
           organization_id: "org-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           created_by: "user-1",
           status: "Approved",
           origin: "manual",
@@ -6223,7 +6678,7 @@ describe("Universal learning builders monthly selection", () => {
           id: "50000000-0000-0000-0000-000000000003",
           organization_id: "org-1",
           project_id: "project-1",
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           created_by: "user-1",
           status: "Approved",
           origin: "manual",
@@ -6263,7 +6718,7 @@ describe("Universal learning builders monthly selection", () => {
       ],
       organization_suppliers: [
         {
-          id: "supplier-1",
+          id: "11111111-1111-4111-8111-111111111111",
           organization_id: "org-1",
           name: "Bunnings Trade",
           company_name: "Bunnings Commercial Supplies",
@@ -6317,7 +6772,7 @@ describe("Universal learning builders monthly selection", () => {
           unit: "sheet",
           unit_rate: 60,
           line_total: 1200,
-          supplier_id: "supplier-1",
+          supplier_id: "11111111-1111-4111-8111-111111111111",
           supplier_name_snapshot: "Bunnings Snapshot",
           tradesstack_cost_code: "100",
           tradesstack_cost_code_label: "Materials",
@@ -6345,7 +6800,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(result.reviewScopeContext.projectCount).toBe(2);
     expect(result.reviewScopeContext.clientCount).toBe(1);
     expect(result.reviewScopeContext.suppliers[0]).toMatchObject({
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
       supplierName: "Bunnings Commercial Supplies",
       supplierDisplayName: "Bunnings Commercial Supplies",
       issuedToLabel: "Bunnings Trade Counter",
@@ -6353,8 +6808,8 @@ describe("Universal learning builders monthly selection", () => {
     });
 
     const approved = result.records.find((record) => record.source.sourceId === "50000000-0000-0000-0000-000000000001");
-    expect(approved?.supplierId).toBe("supplier-1");
-    expect(approved?.linkedContext.sourceIds.supplierId).toBe("supplier-1");
+    expect(approved?.supplierId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(approved?.linkedContext.sourceIds.supplierId).toBe("11111111-1111-4111-8111-111111111111");
     expect(approved?.projectId).toBe("project-1");
     expect(approved?.clientId).toBe("client-1");
     expect(approved?.signalStrength).toBe("strong");
@@ -6382,7 +6837,7 @@ describe("Universal learning builders monthly selection", () => {
       origin: "manual",
       invoiceReady: false,
       supplier: {
-        supplierId: "supplier-1",
+        supplierId: "11111111-1111-4111-8111-111111111111",
         displayName: "Bunnings Commercial Supplies",
         issuedToLabel: "Bunnings Trade Counter",
         nameSnapshot: "Bunnings Snapshot",
@@ -6426,7 +6881,7 @@ describe("Universal learning builders monthly selection", () => {
       projectStatus: "delivery",
       clientId: "client-1",
       clientName: "Metro Property Group",
-      supplierId: "supplier-1",
+      supplierId: "11111111-1111-4111-8111-111111111111",
       actorUserId: "user-1",
       sourceTable: "project_purchase_orders",
       sourceModule: "purchase_orders",

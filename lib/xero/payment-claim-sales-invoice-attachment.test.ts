@@ -88,6 +88,7 @@ function createAdmin(initialDocument = document(), initialJobs: Row[] = []) {
         eq(field: string, value: unknown) { filters.push((row) => row[field] === value); return builder; },
         in(field: string, allowed: unknown[]) { filters.push((row) => allowed.includes(row[field])); return builder; },
         order() { return builder; },
+        limit() { return Promise.resolve({ data: matching(), error: null }); },
         update(next: Row) { values = next; return builder; },
         insert(next: Row) {
           const row = { id: `job-${jobs.length + 1}`, queue_state: "pending", created_at: new Date().toISOString(), ...next };

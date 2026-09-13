@@ -13,6 +13,7 @@ describe("classification review queue", () => {
   });
 
   it("returns broad financial routing review rows instead of taxonomy review rows", async () => {
+    const selectedColumnsByTable = new Map<string, string>();
     const costItems = [
       {
         id: "cost-item-1",
@@ -26,10 +27,9 @@ describe("classification review queue", () => {
         tradesstack_cost_code_label: "Materials",
         financial_routing_confidence: 0.42,
         financial_routing_source: "rules",
-        accounting_mapping_id: null,
-        organization_cost_code_id: null,
-        review_status: "needs_accounting_mapping",
-        review_reason: "missing_accounting_mapping",
+        accounting_mapping_id: "mapping-1",
+        review_status: "needs_routing_review",
+        review_reason: "ambiguous_context",
         original_classification: null,
         final_classification: null,
       },
@@ -57,7 +57,9 @@ describe("classification review queue", () => {
     const costCodes = [{ id: "org-code-1", code: "4200", name: "Materials" }];
 
     const buildQuery = (table: string) => ({
-      select: () => ({
+      select: (columns: string) => {
+        selectedColumnsByTable.set(table, columns);
+        return ({
         eq: () => {
           if (table === "cost_items") {
             const query = {
@@ -80,6 +82,15 @@ describe("classification review queue", () => {
             return query;
           }
 
+          if (table === "organization_tradesstack_accounting_mappings") {
+            return {
+              in: async () => ({
+                data: [{ id: "mapping-1", organization_cost_code_id: "org-code-1" }],
+                error: null,
+              }),
+            };
+          }
+
           throw new Error(`Unexpected eq chain for ${table}`);
         },
         in: async () => {
@@ -91,7 +102,8 @@ describe("classification review queue", () => {
           }
           return { data: [], error: null };
         },
-      }),
+        });
+      },
     });
 
     createServerSupabaseClientMock.mockResolvedValue({
@@ -113,9 +125,11 @@ describe("classification review queue", () => {
       entityType: "cost_item",
       entityId: "cost-item-1",
       projectName: "Long Bay Apartment",
-      reviewStatus: "needs_accounting_mapping",
-      accountingStatus: "needs_accounting_mapping",
+      reviewStatus: "needs_routing_review",
+      accountingStatus: "resolved",
+      mappedOrganizationCostCodeLabel: "4200 - Materials",
     });
+    expect(selectedColumnsByTable.get("cost_items")).not.toContain("organization_cost_code_id");
   });
 
   it("skips material review rows when new routing columns are not present yet", async () => {

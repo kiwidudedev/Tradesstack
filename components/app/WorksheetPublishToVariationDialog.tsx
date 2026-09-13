@@ -3,6 +3,10 @@
 import { CommercialLineConfirmationEditor } from "@/components/app/WorksheetCommercialLineConfirmationEditor";
 import { Button } from "@/components/ui/button";
 import {
+  VARIATION_COST_SECTIONS,
+  type VariationCostSection,
+} from "@/lib/commercial-items/variation-sections";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -10,8 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-type VariationCostSection = "Labour" | "Materials" | "Subcontractors" | "Plant" | "Margin";
 
 export interface WorksheetPublishToVariationLineDraft {
   id: string;
@@ -96,11 +98,9 @@ export function WorksheetPublishToVariationDialog({
                 }
                 className="h-10 w-full rounded-[10px] border border-[var(--border)] bg-white px-3 text-sm text-[var(--text-primary)]"
               >
-                <option value="Labour">Labour</option>
-                <option value="Materials">Materials</option>
-                <option value="Subcontractors">Subcontractors</option>
-                <option value="Plant">Plant / Equipment</option>
-                <option value="Margin">Margin</option>
+                {VARIATION_COST_SECTIONS.map((section) => (
+                  <option key={section} value={section}>{section === "Plant" ? "Plant / Equipment" : section}</option>
+                ))}
               </select>
             </label>
           )}

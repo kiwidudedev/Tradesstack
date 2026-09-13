@@ -3,12 +3,13 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 import {
   MAX_DRAWING_SET_UPLOAD_SIZE_BYTES,
   PROJECT_DRAWING_SETS_BUCKET,
+  toDefaultDrawingSetDisplayName,
   toDrawingSetStoragePath,
 } from "@/lib/drawing-sets";
 import type { Database } from "@/lib/supabase/types";
 
 const PROJECT_DRAWING_SET_SELECT =
-  "id, organization_id, project_id, uploaded_by, file_name, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
+  "id, organization_id, project_id, uploaded_by, file_name, display_name, sort_order, archived_at, archived_by, source_type, source_revision, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
 
 export type ProjectDrawingSet = Database["public"]["Tables"]["project_drawing_sets"]["Row"];
 
@@ -140,6 +141,8 @@ export async function uploadSourceDrawingSetToProject(params: {
       project_id: params.projectId,
       uploaded_by: user.id,
       file_name: normalizedFileName,
+      display_name: toDefaultDrawingSetDisplayName(normalizedFileName),
+      source_type: "source",
       storage_path: storagePath,
       file_size_bytes: params.file.size,
       mime_type: mimeType,

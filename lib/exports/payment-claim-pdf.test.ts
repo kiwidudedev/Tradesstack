@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +9,8 @@ import {
   composePaymentClaimPdfExport,
   type PaymentClaimPdfExportModel,
 } from "@/lib/exports/payment-claim-pdf";
+import { createPdfExportTiming } from "@/lib/exports/pdf-export-timing";
+import type { PdfExportTiming } from "@/lib/exports/pdf-export-timing";
 
 function buildModel(overrides: Partial<PaymentClaimPdfExportModel> = {}): PaymentClaimPdfExportModel {
   return {
@@ -72,7 +74,6 @@ function buildModel(overrides: Partial<PaymentClaimPdfExportModel> = {}): Paymen
 async function extractTextByPage(bytes: Uint8Array) {
   const loadingTask = pdfjs.getDocument({
     data: Uint8Array.from(bytes),
-    disableWorker: true,
   });
   const pdf = await loadingTask.promise;
   const pages: string[] = [];
@@ -103,6 +104,15 @@ async function form1Fetch(input: RequestInfo | URL) {
 
 function sha256(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function multiPageLines(count = 60) {
+  const source = buildModel().lineItems[0]!;
+  return Array.from({ length: count }, (_, index) => ({
+    ...source,
+    id: `line-${index}`,
+    description: `Representative construction line ${index + 1}`,
+  }));
 }
 
 describe("payment claim PDF export", () => {
@@ -160,6 +170,102 @@ describe("payment claim PDF export", () => {
     expect(pages.join(" ")).toContain("Payment Claim");
     expect(pages.join(" ")).not.toMatch(/Information that must accompany all payment claims/i);
     expect(pages.join(" ")).not.toMatch(/Construction Contracts Act 2002/i);
+  });
+
+  it("fetches and embeds a logo once while drawing it on every claim page", async () => {
+    const png = Uint8Array.from(Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ));
+    const fetchMock = vi.fn(async () => new Response(png, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    }));
+    const result = await composePaymentClaimPdfExport({
+      model: buildModel({
+        organizationCountry: "Australia",
+        organizationLogoUrl: "https://example.test/logo.png",
+        legalNoticeText: null,
+        lineItems: multiPageLines(),
+      }),
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const pdf = await PDFDocument.load(result.bytes);
+    expect(pdf.getPageCount()).toBeGreaterThan(1);
+    for (const page of pdf.getPages()) {
+      const xObjects = page.node.Resources()
+        ?.lookup(PDFName.of("XObject"), PDFDict);
+      expect(xObjects?.keys().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("fetches a failing logo once and preserves initials on every page", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 500 }));
+    const result = await composePaymentClaimPdfExport({
+      model: buildModel({
+        organizationCountry: "Australia",
+        organizationLogoUrl: "https://example.test/missing-logo.png",
+        legalNoticeText: null,
+        lineItems: multiPageLines(),
+      }),
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const pages = await extractTextByPage(result.bytes);
+    expect(pages.length).toBeGreaterThan(1);
+    pages.forEach((page) => expect(page).toContain("TR"));
+  });
+
+  it("downloads and validates Form 1 while the base claim is rendering", async () => {
+    const stages: string[] = [];
+    const timing: PdfExportTiming = {
+      enabled: true,
+      exportId: "form1-concurrency-proof",
+      start(stage) {
+        stages.push(`${stage}-start`);
+      },
+      end(stage) {
+        stages.push(`${stage}-completed`);
+      },
+      mark(stage) {
+        stages.push(stage);
+      },
+      report() {},
+      serverTimingHeader: () => null,
+    };
+    const form1Bytes = await readFile(
+      join(process.cwd(), "public/legal/nz/payment-claims/form-1-information-that-must-accompany-all-payment-claims-v2026-07.pdf"),
+    );
+    const form1Gate: {
+      release?: (response: Response) => void;
+    } = {};
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => {
+      form1Gate.release = resolve;
+    }));
+    const resultPromise = composePaymentClaimPdfExport({
+      model: buildModel({ lineItems: multiPageLines(20) }),
+      fetchImpl: fetchMock as typeof fetch,
+      timing,
+    });
+
+    await vi.waitFor(() => expect(stages).toContain("drawing-end"));
+    expect(stages.indexOf("form1-fetch-start")).toBeLessThan(
+      stages.indexOf("drawing-start"),
+    );
+    expect(stages).not.toContain("form1-response-received");
+    form1Gate.release?.(new Response(form1Bytes, {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+    }));
+    const result = await resultPromise;
+
+    expect(result.statutoryDocumentsIncluded).toHaveLength(1);
+    expect(stages.indexOf("drawing-end")).toBeLessThan(
+      stages.indexOf("form1-response-received"),
+    );
   });
 
   it("exports claim pages only for blank and unknown country values", async () => {
@@ -247,6 +353,35 @@ describe("payment claim PDF export", () => {
     expect(firstPdf.getModificationDate()?.toISOString()).toBe("2026-07-14T00:00:00.000Z");
     expect(secondPdf.getCreationDate()?.toISOString()).toBe(firstPdf.getCreationDate()?.toISOString());
     expect(secondPdf.getModificationDate()?.toISOString()).toBe(firstPdf.getModificationDate()?.toISOString());
+  });
+
+  it("produces byte-identical NZ output with timing enabled", async () => {
+    let now = 0;
+    const timing = createPdfExportTiming({
+      enabled: true,
+      exportId: "payment-claim-byte-proof",
+      kind: "payment-claim",
+      now: () => {
+        now += 1;
+        return now;
+      },
+    });
+    const model = buildModel();
+    const baseline = await composePaymentClaimPdfExport({
+      model,
+      fetchImpl: form1Fetch as typeof fetch,
+    });
+    const instrumented = await composePaymentClaimPdfExport({
+      model,
+      fetchImpl: form1Fetch as typeof fetch,
+      timing,
+    });
+
+    expect(instrumented.fileName).toBe(baseline.fileName);
+    expect(instrumented.statutoryDocumentsIncluded).toEqual(
+      baseline.statutoryDocumentsIncluded,
+    );
+    expect(instrumented.bytes).toEqual(baseline.bytes);
   });
 
   it.each([

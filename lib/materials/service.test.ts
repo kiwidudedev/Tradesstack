@@ -2,15 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyMaterial } from "@/lib/materials/classification";
 import {
   addSupplierPrice,
-  buildSupersedeCurrentPricePatch,
   createMaterialWithInitialSupplierPrice,
   makeSupplierPricePreferred,
 } from "@/lib/materials/service";
 import {
+  buildPlannedSupplierProductIdentity,
   buildApprovedImportSupplierPriceInput,
   computeBatchStatus,
+  duplicatePlannedSupplierProductTargetRowIds,
   hasConfirmedClassificationConflict,
 } from "@/lib/materials/import-service";
+
+vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/material-intelligence", () => ({
   buildMaterialIntelligenceEvent: vi.fn(() => ({})),
@@ -249,21 +252,6 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("material pricing helpers", () => {
-  it("builds current-price supersession updates without mutating historical rows directly", () => {
-    const effectiveToIso = "2026-06-15T00:00:00.000Z";
-    const patch = buildSupersedeCurrentPricePatch({
-      currentRows: [{ id: "price-1" }, { id: "price-2" }],
-      effectiveToIso,
-    });
-
-    expect(patch).toEqual([
-      { id: "price-1", is_current: false, effective_to: effectiveToIso },
-      { id: "price-2", is_current: false, effective_to: effectiveToIso },
-    ]);
-  });
-});
-
 describe("material import batch status", () => {
   it("stays ready for review until any row is reviewed", () => {
     expect(
@@ -293,6 +281,55 @@ describe("material import batch status", () => {
         rowsRejected: 1,
       })
     ).toBe("approved");
+  });
+});
+
+describe("material import Supplier Product approval preflight", () => {
+  it("blocks two selected rows resolving to the same existing Supplier Product", () => {
+    expect(duplicatePlannedSupplierProductTargetRowIds([
+      { rowId: "row-a", targetIdentity: "product:product-1" },
+      { rowId: "row-b", targetIdentity: "product:product-1" },
+    ])).toEqual(new Set(["row-a", "row-b"]));
+  });
+
+  it("allows distinct exact descriptions sharing Material, supplier, and unit", () => {
+    const common = {
+      materialIdentity: "material:fyreline",
+      supplierId: "trade-direct",
+      supplierUnit: "m2",
+    };
+    const standard = buildPlannedSupplierProductIdentity({
+      ...common,
+      supplierDescription: "GIB Standard 13mm",
+    });
+    const fyreline = buildPlannedSupplierProductIdentity({
+      ...common,
+      supplierDescription: "GIB Fyreline 13mm",
+    });
+
+    expect(standard).not.toBe(fyreline);
+    expect(duplicatePlannedSupplierProductTargetRowIds([
+      { rowId: "standard", targetIdentity: standard },
+      { rowId: "fyreline", targetIdentity: fyreline },
+    ])).toEqual(new Set());
+  });
+
+  it("uses exact normalized SKU ahead of description without fuzzy matching", () => {
+    const left = buildPlannedSupplierProductIdentity({
+      materialIdentity: "material:1",
+      supplierId: "supplier:1",
+      supplierSku: " GIB-13 ",
+      supplierDescription: "Standard",
+      supplierUnit: "M2",
+    });
+    const right = buildPlannedSupplierProductIdentity({
+      materialIdentity: "material:1",
+      supplierId: "supplier:1",
+      supplierSku: "gib-13",
+      supplierDescription: "Fyreline",
+      supplierUnit: "m2",
+    });
+    expect(left).toBe(right);
   });
 });
 
@@ -326,25 +363,26 @@ describe("material import approval pricing", () => {
   });
 });
 
-describe("material classification", () => {
-  it("reuses the shared classifier and defaults material cost type to MAT", () => {
+describe("material factual persistence", () => {
+  it("keeps the material cost type without assigning construction meaning", () => {
     const result = classifyMaterial({
       name: "100 x 50 H1.2 SG8 Timber",
       description: "Structural framing timber",
     });
 
     expect(result.costType).toBe("MAT");
-    expect(result.workType).toBeTruthy();
-    expect(result.costCode).toMatch(/\.MAT$/);
+    expect(result.workType).toBeNull();
+    expect(result.costCode).toBeNull();
     expect(result.classificationSource).toBe("rules");
+    expect(result.financialRouting.tradesstackCostCode).toBeNull();
   });
 
-  it("flags unmatched material names for review", () => {
+  it("does not ask users to classify an ambiguous material", () => {
     const result = classifyMaterial({
       name: "Mystery Builder Widget",
     });
 
-    expect(result.needsReview).toBe(true);
+    expect(result.needsReview).toBe(false);
     expect(result.costType).toBe("MAT");
   });
 });
@@ -405,13 +443,15 @@ describe("material create with initial supplier price", () => {
         supplierId: "supplier-1",
         unit: "LM",
         unitCost: 4.55,
+        taxEvidenceIntent: "needs_review",
+        incompleteTaxReason: "Legacy test source price needs tax review.",
       },
     });
 
     expect(materials).toHaveLength(1);
     expect(supplierPrices).toHaveLength(1);
     expect(result.material.name).toBe("100 x 50 H1.2 SG8 Timber");
-    expect(result.supplierPrice.material_id).toBe(result.material.id);
+    expect(result.supplierPrice.materialId).toBe(result.material.id);
   });
 
   it("validates the supplier belongs to the organization before creating the material", async () => {
@@ -432,6 +472,8 @@ describe("material create with initial supplier price", () => {
           supplierId: "supplier-1",
           unit: "LM",
           unitCost: 4.55,
+          taxEvidenceIntent: "needs_review",
+          incompleteTaxReason: "Legacy test source price needs tax review.",
         },
       })
     ).rejects.toThrow("Supplier not found.");
@@ -454,6 +496,8 @@ describe("material create with initial supplier price", () => {
         supplierId: "supplier-1",
         unit: "LM",
         unitCost: 4.55,
+        taxEvidenceIntent: "needs_review",
+        incompleteTaxReason: "Legacy test source price needs tax review.",
       },
     });
 
@@ -477,6 +521,8 @@ describe("material create with initial supplier price", () => {
         supplierId: "supplier-1",
         unit: "EA",
         unitCost: 12.5,
+        taxEvidenceIntent: "needs_review",
+        incompleteTaxReason: "Legacy test source price needs tax review.",
       },
     });
 
@@ -499,10 +545,12 @@ describe("material create with initial supplier price", () => {
         supplierId: "supplier-1",
         unit: "LM",
         unitCost: 4.55,
+        taxEvidenceIntent: "needs_review",
+        incompleteTaxReason: "Legacy test source price needs tax review.",
       },
     });
 
-    expect(result.supplierPrice.is_preferred).toBe(true);
+    expect(result.supplierPrice.supplierProductId).toBeTruthy();
   });
 
   it("requires material name, supplier, unit, and unit cost", async () => {
@@ -521,6 +569,8 @@ describe("material create with initial supplier price", () => {
           supplierId: "supplier-1",
           unit: "LM",
           unitCost: 4.55,
+          taxEvidenceIntent: "needs_review",
+          incompleteTaxReason: "Legacy test source price needs tax review.",
         },
       })
     ).rejects.toThrow("Material name is required.");
@@ -538,6 +588,8 @@ describe("material create with initial supplier price", () => {
           supplierId: "supplier-1",
           unit: "",
           unitCost: 4.55,
+          taxEvidenceIntent: "needs_review",
+          incompleteTaxReason: "Legacy test source price needs tax review.",
         },
       })
     ).rejects.toThrow("Default unit is required.");
@@ -555,6 +607,8 @@ describe("material create with initial supplier price", () => {
           supplierId: "",
           unit: "LM",
           unitCost: 4.55,
+          taxEvidenceIntent: "needs_review",
+          incompleteTaxReason: "Legacy test source price needs tax review.",
         },
       })
     ).rejects.toThrow("Supplier is required.");
@@ -572,6 +626,8 @@ describe("material create with initial supplier price", () => {
           supplierId: "supplier-1",
           unit: "LM",
           unitCost: Number.NaN,
+          taxEvidenceIntent: "needs_review",
+          incompleteTaxReason: "Legacy test source price needs tax review.",
         },
       })
     ).rejects.toThrow("Unit cost must be a valid positive number.");
@@ -594,6 +650,8 @@ describe("material supplier price validation", () => {
           supplierId: "supplier-1",
           unit: "LM",
           unitCost: 4.55,
+          taxEvidenceIntent: "needs_review",
+          incompleteTaxReason: "Legacy test source price needs tax review.",
         },
       })
     ).rejects.toThrow("Supplier not found.");
@@ -638,6 +696,8 @@ describe("material supplier price versioning", () => {
         unitCost: 4.85,
         currency: "NZD",
         isPreferred: true,
+        taxEvidenceIntent: "needs_review",
+        incompleteTaxReason: "Legacy test source price needs tax review.",
       },
     });
 
@@ -692,6 +752,8 @@ describe("material supplier price versioning", () => {
         supplierId: "supplier-1",
         unit: "ea",
         unitCost: 1.45,
+        taxEvidenceIntent: "needs_review",
+        incompleteTaxReason: "Legacy test source price needs tax review.",
       },
     });
 

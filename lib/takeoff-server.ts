@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cache } from "react";
 import { PROJECT_DRAWING_SETS_BUCKET, toTakeoffPagePreviewStoragePath } from "@/lib/drawing-sets";
 import { getCurrentOrganizationMember, getProjectDrawingSetsForCurrentUser } from "@/lib/projects-server";
-import { getProjectWorkContextForCurrentUser } from "@/lib/project-work-context-server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -21,7 +21,26 @@ import {
   writeTakeoffCorrectionEvent,
   writeTakeoffIntelligenceEvent,
 } from "@/lib/takeoff-intelligence";
-import { isGeneratedTradePackDrawingSet } from "@/lib/trade-packs";
+import { resolveTakeoffMeasurementStatusTransition } from "@/lib/takeoff/measurement-lifecycle";
+import type { TakeoffDrawingSetSummaryMeasurement } from "@/lib/takeoff/measurement-summary";
+import { getAuthorizedTakeoffContext, resolveAuthorizedTakeoffContext } from "@/lib/takeoff-owner-server";
+import { parseTakeoffOwnerKey, type TakeoffRouteOwner } from "@/lib/takeoff/owner";
+import {
+  DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_BYTES,
+  DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
+  validateTakeoffPdfPreparationBounds,
+} from "@/lib/takeoff/page-preparation";
+import {
+  assertTakeoffUnitConsistency,
+  convertTakeoffBaseAreaToDisplay,
+  convertTakeoffBaseLengthToDisplay,
+  convertTakeoffDisplayLengthToBase,
+  getTakeoffBaseUnit,
+  isTakeoffDisplayUnit,
+  type TakeoffBaseUnit,
+  type TakeoffDisplayUnit,
+  type TakeoffUnitSystem,
+} from "@/lib/takeoff/units";
 
 const takeoffPageSelect =
   "id, organization_id, project_id, opportunity_id, drawing_set_id, page_number, page_label, page_width_pts, page_height_pts, rotation_degrees, source_revision, preview_storage_path, preview_status, preview_error, preview_generated_at, preview_render_version, preview_width_px, preview_height_px, preview_mime_type, preview_bytes, metadata, created_by, created_at, updated_at";
@@ -29,6 +48,10 @@ const takeoffCalibrationSelect =
   "id, organization_id, project_id, opportunity_id, page_id, name, scale_ratio, unit_system, base_unit, display_unit, reference_length_input, reference_length_base, point_a_x, point_a_y, point_b_x, point_b_y, is_active, superseded_by, notes, metadata, created_by, created_at, updated_at";
 const takeoffMeasurementSelect =
   "id, organization_id, project_id, opportunity_id, drawing_set_id, page_id, calibration_id, group_id, measurement_kind, status, source, name, description, color_hex, quantity, count_value, measured_length_base, measured_area_base, measured_perimeter_base, display_value, display_unit, page_bbox_min_x, page_bbox_min_y, page_bbox_max_x, page_bbox_max_y, ai_confidence, ai_model, ai_run_id, external_ref, metadata, version, created_by, updated_by, archived_by, created_at, updated_at, archived_at";
+const takeoffViewerMeasurementSelect =
+  "id, drawing_set_id, page_id, calibration_id, group_id, measurement_kind, status, source, name, description, color_hex, quantity, count_value, measured_length_base, measured_area_base, measured_perimeter_base, display_value, display_unit, page_bbox_min_x, page_bbox_min_y, page_bbox_max_x, page_bbox_max_y, metadata, version, created_at, updated_at";
+const takeoffDrawingSetSummaryMeasurementSelect =
+  "id, page_id, measurement_kind, status, name, color_hex, display_value, display_unit, created_at, page:takeoff_pages!inner(page_number, page_label)";
 const takeoffMeasurementPointSelect =
   "id, organization_id, measurement_id, point_order, x, y, created_at";
 const takeoffMeasurementAreaShapeSelect =
@@ -42,15 +65,25 @@ const takeoffMeasurementLinePathPointSelect =
 const takeoffMeasurementGroupSelect =
   "id, organization_id, project_id, opportunity_id, parent_group_id, name, code, color_hex, sort_order, status, trade_id, trade_label, metadata, created_by, created_at, updated_at";
 const projectDrawingSetSelect =
-  "id, organization_id, project_id, uploaded_by, file_name, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
-const METRIC_DISPLAY_UNITS = new Set(["mm", "cm", "m"]);
-const IMPERIAL_DISPLAY_UNITS = new Set(["in", "ft"]);
+  "id, organization_id, project_id, uploaded_by, file_name, display_name, sort_order, archived_at, archived_by, source_type, source_revision, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
 export const TAKEOFF_PREVIEW_RENDER_VERSION = "swift-pdfkit-v4";
+export const TAKEOFF_PAGE_METADATA_RENDER_VERSION = "pdf-lib-metadata-v1";
 const TAKEOFF_PREVIEW_TARGET_PIXELS_PER_POINT = 3;
 const TAKEOFF_PREVIEW_MAX_EDGE_PX = 6144;
+const configuredPreparationMaxBytes = Number(process.env.TAKEOFF_PAGE_PREPARATION_MAX_BYTES);
+const configuredPreparationMaxPages = Number(process.env.TAKEOFF_PAGE_PREPARATION_MAX_PAGES);
+const TAKEOFF_PAGE_PREPARATION_MAX_BYTES = Number.isFinite(configuredPreparationMaxBytes) && configuredPreparationMaxBytes > 0
+  ? configuredPreparationMaxBytes
+  : DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_BYTES;
+const TAKEOFF_PAGE_PREPARATION_MAX_PAGES = Number.isFinite(configuredPreparationMaxPages) && configuredPreparationMaxPages > 0
+  ? configuredPreparationMaxPages
+  : DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_PAGES;
 const execFileAsync = promisify(execFile);
 
 export type TakeoffPage = Database["public"]["Tables"]["takeoff_pages"]["Row"];
+export type TakeoffPageSummary = Pick<TakeoffPage,
+  "id" | "drawing_set_id" | "page_number" | "page_label" | "page_width_pts" | "page_height_pts" | "rotation_degrees"
+>;
 export type TakeoffCalibration = Database["public"]["Tables"]["takeoff_calibrations"]["Row"];
 export type TakeoffMeasurement = Database["public"]["Tables"]["takeoff_measurements"]["Row"];
 export type TakeoffMeasurementPoint = Database["public"]["Tables"]["takeoff_measurement_points"]["Row"];
@@ -61,8 +94,18 @@ export type TakeoffMeasurementLinePathPoint = Database["public"]["Tables"]["take
 export type TakeoffMeasurementGroup = Database["public"]["Tables"]["takeoff_measurement_groups"]["Row"];
 type OrganizationMember = Awaited<ReturnType<typeof getCurrentOrganizationMember>>;
 export type ProjectDrawingSet = Database["public"]["Tables"]["project_drawing_sets"]["Row"];
+export type TakeoffDrawingPreparationStatus = "ready" | "preparing" | "failed";
+export type TakeoffDrawingTab = {
+  drawingSetId: string;
+  displayName: string;
+  sourceFilename: string;
+  sortOrder: number;
+  status: TakeoffDrawingPreparationStatus;
+  uploadedAt: string;
+  updatedAt: string;
+};
 export type TakeoffRenderJob = Database["public"]["Tables"]["takeoff_render_jobs"]["Row"];
-export type TakeoffUnitSystem = "metric" | "imperial";
+export type { TakeoffUnitSystem } from "@/lib/takeoff/units";
 export type TakeoffMeasurementKind = "line" | "area" | "count";
 export type TakeoffPreviewStatus = Database["public"]["Tables"]["takeoff_pages"]["Row"]["preview_status"];
 export type TakeoffRenderJobStatus = Database["public"]["Tables"]["takeoff_render_jobs"]["Row"]["status"];
@@ -129,6 +172,7 @@ class TakeoffWorkerError extends Error {
 
 export interface SaveTakeoffCalibrationInput {
   opportunitySlug: string;
+  drawingSetId: string;
   pageId: string;
   name: string;
   unitSystem: TakeoffUnitSystem;
@@ -148,6 +192,32 @@ export interface ResolvedTakeoffOpportunityWorkspace {
   projectName: string;
   opportunityId: string | null;
   opportunitySlug: string;
+  opportunityName?: string | null;
+  routeProjectId?: string;
+  conversionMode?: "workspace" | "promoted" | "legacy-reference" | "project";
+  canonicalProject?: { id: string; slug: string } | null;
+}
+
+export interface TakeoffAuthorizedContext {
+  member: NonNullable<OrganizationMember>;
+  workspace: ResolvedTakeoffOpportunityWorkspace;
+}
+
+function resolvedWorkspaceFromOwnerContext(
+  context: NonNullable<Awaited<ReturnType<typeof getAuthorizedTakeoffContext>>>,
+): ResolvedTakeoffOpportunityWorkspace {
+  return {
+    organizationId: context.organizationId,
+    projectId: context.dataProjectId,
+    projectSlug: context.routeProjectSlug,
+    projectName: context.displayName,
+    opportunityId: context.lineageOpportunityId,
+    opportunitySlug: context.routeOwner.kind === "opportunity" ? context.routeOwner.slug : "",
+    opportunityName: context.routeOwner.kind === "opportunity" ? context.displayName : null,
+    routeProjectId: context.routeProjectId,
+    conversionMode: context.conversionMode,
+    canonicalProject: context.canonicalProject,
+  };
 }
 
 export interface TakeoffMeasurementWithPoints extends TakeoffMeasurement {
@@ -167,6 +237,15 @@ export interface TakeoffMeasurementReadiness {
   canCreateArea: boolean;
   canCreateCount: boolean;
   message: string;
+}
+
+export interface TakeoffCalibrationHistoryItem extends TakeoffCalibration {
+  dependent_measurement_count: number;
+}
+
+export interface DeleteTakeoffCalibrationResult {
+  deletedCalibrationId: string;
+  activeCalibration: TakeoffCalibration | null;
 }
 
 export interface TakeoffPointInput {
@@ -231,6 +310,7 @@ export interface UpdateTakeoffMeasurementDetailsInput {
 
 export interface SetActiveTakeoffCalibrationInput {
   opportunitySlug: string;
+  drawingSetId: string;
   pageId: string;
   calibrationId: string | null;
 }
@@ -268,60 +348,21 @@ function createTakeoffPerfTrace(operation: string): TakeoffPerfTrace {
   };
 }
 
-function normalizeDisplayUnit(unitSystem: TakeoffUnitSystem, rawUnit: string): string {
-  const normalized = rawUnit.trim().toLowerCase();
-  if (unitSystem === "metric") {
-    if (!METRIC_DISPLAY_UNITS.has(normalized)) {
-      throw new Error("Choose a valid metric display unit.");
-    }
-
-    return normalized;
-  }
-
-  if (!IMPERIAL_DISPLAY_UNITS.has(normalized)) {
-    throw new Error("Choose a valid imperial display unit.");
-  }
-
-  return normalized;
+function normalizeDisplayUnit(unitSystem: TakeoffUnitSystem, rawUnit: string): TakeoffDisplayUnit {
+  return assertTakeoffUnitConsistency({ unitSystem, displayUnit: rawUnit });
 }
 
-function baseUnitForUnitSystem(unitSystem: TakeoffUnitSystem): "mm" | "in" {
-  return unitSystem === "metric" ? "mm" : "in";
+function baseUnitForUnitSystem(unitSystem: TakeoffUnitSystem): TakeoffBaseUnit {
+  return getTakeoffBaseUnit(unitSystem);
 }
 
 function convertDisplayLengthToBase(params: {
   unitSystem: TakeoffUnitSystem;
-  displayUnit: string;
+  displayUnit: TakeoffDisplayUnit;
   value: number;
 }): number {
-  const { unitSystem, displayUnit, value } = params;
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("Reference length must be greater than zero.");
-  }
-
-  if (unitSystem === "metric") {
-    if (displayUnit === "mm") {
-      return value;
-    }
-
-    if (displayUnit === "cm") {
-      return value * 10;
-    }
-
-    if (displayUnit === "m") {
-      return value * 1000;
-    }
-  } else {
-    if (displayUnit === "in") {
-      return value;
-    }
-
-    if (displayUnit === "ft") {
-      return value * 12;
-    }
-  }
-
-  throw new Error("Unable to convert calibration units.");
+  const displayUnit = assertTakeoffUnitConsistency(params);
+  return convertTakeoffDisplayLengthToBase({ displayUnit, value: params.value });
 }
 
 function assertNormalizedCoordinate(value: number, label: string): number {
@@ -562,31 +603,15 @@ function convertBaseLengthToDisplay(params: {
   displayUnit: string;
   value: number;
 }): number {
-  if (params.baseUnit === "mm") {
-    if (params.displayUnit === "mm") {
-      return params.value;
-    }
-
-    if (params.displayUnit === "cm") {
-      return params.value / 10;
-    }
-
-    if (params.displayUnit === "m") {
-      return params.value / 1000;
-    }
+  if ((params.baseUnit !== "mm" && params.baseUnit !== "in") || !isTakeoffDisplayUnit(params.displayUnit)) {
+    throw new Error("Unable to convert measured length to display units.");
   }
 
-  if (params.baseUnit === "in") {
-    if (params.displayUnit === "in") {
-      return params.value;
-    }
-
-    if (params.displayUnit === "ft") {
-      return params.value / 12;
-    }
-  }
-
-  throw new Error("Unable to convert measured length to display units.");
+  return convertTakeoffBaseLengthToDisplay({
+    baseUnit: params.baseUnit,
+    displayUnit: params.displayUnit,
+    value: params.value,
+  });
 }
 
 function convertBaseAreaToDisplay(params: {
@@ -594,31 +619,15 @@ function convertBaseAreaToDisplay(params: {
   displayUnit: string;
   value: number;
 }): number {
-  if (params.baseUnit === "mm") {
-    if (params.displayUnit === "mm") {
-      return params.value;
-    }
-
-    if (params.displayUnit === "cm") {
-      return params.value / 100;
-    }
-
-    if (params.displayUnit === "m") {
-      return params.value / 1_000_000;
-    }
+  if ((params.baseUnit !== "mm" && params.baseUnit !== "in") || !isTakeoffDisplayUnit(params.displayUnit)) {
+    throw new Error("Unable to convert measured area to display units.");
   }
 
-  if (params.baseUnit === "in") {
-    if (params.displayUnit === "in") {
-      return params.value;
-    }
-
-    if (params.displayUnit === "ft") {
-      return params.value / 144;
-    }
-  }
-
-  throw new Error("Unable to convert measured area to display units.");
+  return convertTakeoffBaseAreaToDisplay({
+    baseUnit: params.baseUnit,
+    displayUnit: params.displayUnit,
+    value: params.value,
+  });
 }
 
 function getCountItemValueFromMeasurement(params: {
@@ -1242,95 +1251,228 @@ export async function resolveTakeoffWorkspaceForOpportunitySlug(
   }
 ): Promise<ResolvedTakeoffOpportunityWorkspace | null> {
   const member = options?.member ?? await getCurrentOrganizationMember();
-  if (!member) {
-    return null;
-  }
-
+  if (!member) return null;
   const supabase = options?.supabase ?? await createServerSupabaseClient();
-  const opportunityResult = await supabase
-    .from("organization_opportunities")
-    .select("id, workspace_project_id")
-    .eq("organization_id", member.organization_id)
-    .eq("slug", opportunitySlug)
-    .maybeSingle();
-
-  if (opportunityResult.error || !opportunityResult.data) {
-    return null;
-  }
-
-  const workspaceProjectId = opportunityResult.data.workspace_project_id;
-  if (!workspaceProjectId) {
-    const fallbackContext = await getProjectWorkContextForCurrentUser({ opportunityId: opportunitySlug });
-    if (!fallbackContext) {
-      return null;
-    }
-
-    return {
-      organizationId: fallbackContext.organizationId,
-      projectId: fallbackContext.workspaceProjectId ?? fallbackContext.effectiveFeatureProjectId,
-      projectSlug: fallbackContext.projectSlug,
-      projectName: fallbackContext.projectName,
-      opportunityId: fallbackContext.sourceOpportunityId,
-      opportunitySlug,
-    };
-  }
-
-  const workspaceProjectResult = await supabase
-    .from("organization_projects")
-    .select("id, organization_id, slug, name")
-    .eq("organization_id", member.organization_id)
-    .eq("id", workspaceProjectId)
-    .maybeSingle();
-
-  if (workspaceProjectResult.error || !workspaceProjectResult.data) {
-    const fallbackContext = await getProjectWorkContextForCurrentUser({ opportunityId: opportunitySlug });
-    if (!fallbackContext) {
-      return null;
-    }
-
-    return {
-      organizationId: fallbackContext.organizationId,
-      projectId: fallbackContext.workspaceProjectId ?? fallbackContext.effectiveFeatureProjectId,
-      projectSlug: fallbackContext.projectSlug,
-      projectName: fallbackContext.projectName,
-      opportunityId: fallbackContext.sourceOpportunityId,
-      opportunitySlug,
-    };
-  }
-
-  return {
-    organizationId: workspaceProjectResult.data.organization_id,
-    projectId: workspaceProjectResult.data.id,
-    projectSlug: workspaceProjectResult.data.slug,
-    projectName: workspaceProjectResult.data.name,
-    opportunityId: opportunityResult.data.id,
-    opportunitySlug,
-  };
+  const context = await resolveAuthorizedTakeoffContext({
+    owner: { kind: "opportunity", slug: opportunitySlug },
+    member,
+    supabase,
+  });
+  return context ? resolvedWorkspaceFromOwnerContext(context) : null;
 }
 
+export const getTakeoffAuthorizedContext = cache(
+  async (opportunitySlug: string): Promise<TakeoffAuthorizedContext | null> => {
+    const member = await getCurrentOrganizationMember();
+    if (!member) {
+      return null;
+    }
+
+    const context = await resolveAuthorizedTakeoffContext({ owner: { kind: "opportunity", slug: opportunitySlug }, member });
+    const workspace = context ? resolvedWorkspaceFromOwnerContext(context) : null;
+    if (!workspace || workspace.organizationId !== member.organization_id) {
+      return null;
+    }
+
+    return { member, workspace };
+  }
+);
+
+export const getTakeoffAuthorizedContextForOwner = cache(
+  async (owner: TakeoffRouteOwner): Promise<TakeoffAuthorizedContext | null> => {
+    const member = await getCurrentOrganizationMember();
+    if (!member) return null;
+    const context = await resolveAuthorizedTakeoffContext({ owner, member });
+    if (!context || context.organizationId !== member.organization_id) return null;
+    return { member, workspace: resolvedWorkspaceFromOwnerContext(context) };
+  },
+);
+
 export async function getTakeoffDrawingSetsForOpportunitySlug(
-  opportunitySlug: string
+  opportunitySlug: string,
+  options?: {
+    resolvedWorkspace?: ResolvedTakeoffOpportunityWorkspace;
+    supabase?: SupabaseClient<Database>;
+  }
 ): Promise<ProjectDrawingSet[]> {
-  const resolved = await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug);
+  const resolved = options?.resolvedWorkspace ?? await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug, {
+    supabase: options?.supabase,
+  });
   if (!resolved) {
     return [];
   }
 
-  const drawingSets = await getProjectDrawingSetsForCurrentUser(resolved.projectId);
-  return drawingSets.filter((drawingSet) => !isGeneratedTradePackDrawingSet(drawingSet));
+  if (!options?.resolvedWorkspace && !options?.supabase) {
+    const drawingSets = await getProjectDrawingSetsForCurrentUser(resolved.projectId);
+    return drawingSets
+      .filter((drawingSet) => drawingSet.source_type === "source" && !drawingSet.archived_at)
+      .sort((left, right) => left.sort_order - right.sort_order || left.created_at.localeCompare(right.created_at));
+  }
+
+  const supabase = options.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const { data, error } = await supabase
+    .from("project_drawing_sets")
+    .select(projectDrawingSetSelect)
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("source_type", "source")
+    .is("archived_at", null)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new Error("Unable to load Takeoff drawing sets.");
+  }
+
+  return data ?? [];
 }
 
-async function createValidatedTakeoffMutationContext(opportunitySlug: string) {
+export async function getTakeoffDrawingTabsForOpportunitySlug(
+  opportunitySlug: string,
+  options?: {
+    drawingSets?: ProjectDrawingSet[];
+    resolvedWorkspace?: ResolvedTakeoffOpportunityWorkspace;
+    supabase?: SupabaseClient<Database>;
+  },
+): Promise<TakeoffDrawingTab[]> {
+  const resolved = options?.resolvedWorkspace ?? await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug, {
+    supabase: options?.supabase,
+  });
+  if (!resolved) return [];
+
+  const supabase = options?.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const drawingSets = options?.drawingSets ?? await getTakeoffDrawingSetsForOpportunitySlug(opportunitySlug, {
+    resolvedWorkspace: resolved,
+    supabase,
+  });
+  if (drawingSets.length === 0) return [];
+
+  const drawingSetIds = drawingSets.map((drawingSet) => drawingSet.id);
+  const [pagesResult, jobsResult] = await Promise.all([
+    supabase
+      .from("takeoff_pages")
+      .select("drawing_set_id")
+      .eq("organization_id", resolved.organizationId)
+      .eq("project_id", resolved.projectId)
+      .in("drawing_set_id", drawingSetIds),
+    supabase
+      .from("takeoff_render_jobs")
+      .select("drawing_set_id, status, created_at")
+      .eq("organization_id", resolved.organizationId)
+      .eq("project_id", resolved.projectId)
+      .eq("job_type", "page_metadata")
+      .in("drawing_set_id", drawingSetIds)
+      .order("created_at", { ascending: false }),
+  ]);
+  if (pagesResult.error || jobsResult.error) {
+    throw new Error("Unable to load Takeoff drawing status.");
+  }
+
+  const readyDrawingSetIds = new Set((pagesResult.data ?? []).map((page) => page.drawing_set_id));
+  const latestJobStatusByDrawingSetId = new Map<string, Database["public"]["Enums"]["takeoff_render_job_status"]>();
+  (jobsResult.data ?? []).forEach((job) => {
+    if (!latestJobStatusByDrawingSetId.has(job.drawing_set_id)) {
+      latestJobStatusByDrawingSetId.set(job.drawing_set_id, job.status);
+    }
+  });
+
+  return drawingSets.map((drawingSet) => {
+    const latestJobStatus = latestJobStatusByDrawingSetId.get(drawingSet.id);
+    const status: TakeoffDrawingPreparationStatus = readyDrawingSetIds.has(drawingSet.id)
+      ? "ready"
+      : latestJobStatus === "failed"
+        ? "failed"
+        : "preparing";
+    return {
+      drawingSetId: drawingSet.id,
+      displayName: drawingSet.display_name,
+      sourceFilename: drawingSet.file_name,
+      sortOrder: drawingSet.sort_order,
+      status,
+      uploadedAt: drawingSet.uploaded_at,
+      updatedAt: drawingSet.updated_at,
+    };
+  });
+}
+
+export async function renameTakeoffDrawingSetForOpportunity(params: {
+  opportunitySlug: string;
+  drawingSetId: string;
+  displayName: string;
+}): Promise<ProjectDrawingSet> {
+  const displayName = params.displayName.trim();
+  if (!displayName || displayName.length > 120) {
+    throw new Error("Drawing set name must be between 1 and 120 characters.");
+  }
+  const { member, resolved, supabase } = await createValidatedTakeoffMutationContext(params.opportunitySlug);
+  const drawingSet = await getTakeoffDrawingSetForWorkspace({
+    supabase,
+    organizationId: resolved.organizationId,
+    projectId: resolved.projectId,
+    drawingSetId: params.drawingSetId,
+  });
+  if (!drawingSet || drawingSet.source_type !== "source" || drawingSet.archived_at) {
+    throw new Error("The selected Takeoff drawing set could not be renamed.");
+  }
+  if (drawingSet.uploaded_by !== member.user_id && member.role !== "admin" && member.role !== "owner") {
+    throw new Error("You do not have permission to rename this drawing set.");
+  }
+  const { data, error } = await supabase
+    .from("project_drawing_sets")
+    .update({ display_name: displayName })
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("source_type", "source")
+    .is("archived_at", null)
+    .eq("id", params.drawingSetId)
+    .select(projectDrawingSetSelect)
+    .maybeSingle();
+  if (error || !data) throw new Error("The selected Takeoff drawing set could not be renamed.");
+  return data;
+}
+
+export async function archiveTakeoffDrawingSetForOpportunity(params: {
+  opportunitySlug: string;
+  drawingSetId: string;
+}): Promise<{ archivedDrawingSetId: string }> {
+  const { member, resolved, supabase } = await createValidatedTakeoffMutationContext(params.opportunitySlug);
+  const drawingSet = await getTakeoffDrawingSetForWorkspace({
+    supabase,
+    organizationId: resolved.organizationId,
+    projectId: resolved.projectId,
+    drawingSetId: params.drawingSetId,
+  });
+  if (!drawingSet || drawingSet.source_type !== "source" || drawingSet.archived_at) {
+    throw new Error("The selected Takeoff drawing set could not be archived.");
+  }
+  if (drawingSet.uploaded_by !== member.user_id && member.role !== "admin" && member.role !== "owner") {
+    throw new Error("You do not have permission to archive this drawing set.");
+  }
+  const { data, error } = await supabase
+    .from("project_drawing_sets")
+    .update({ archived_at: new Date().toISOString(), archived_by: member.user_id })
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("id", drawingSet.id)
+    .is("archived_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) throw new Error("Unable to archive this drawing set.");
+  return { archivedDrawingSetId: data.id };
+}
+
+async function createValidatedTakeoffMutationContext(ownerKey: string) {
   const member = await getCurrentOrganizationMember();
   if (!member) {
     throw new Error("You must be signed in to update takeoff data.");
   }
 
   const validationSupabase = await createServerSupabaseClient();
-  const resolved = await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug, {
-    supabase: validationSupabase,
-    member,
-  });
+  const owner = parseTakeoffOwnerKey(ownerKey);
+  const ownerContext = await resolveAuthorizedTakeoffContext({ owner, supabase: validationSupabase, member });
+  if (owner.kind === "opportunity" && ownerContext?.canonicalProject) {
+    throw new Error(`This Opportunity has converted. Continue Takeoff from /app/projects/${ownerContext.canonicalProject.slug}/takeoff.`);
+  }
+  const resolved = ownerContext ? resolvedWorkspaceFromOwnerContext(ownerContext) : null;
 
   if (!resolved || resolved.organizationId !== member.organization_id) {
     throw new Error("Unable to resolve the takeoff workspace.");
@@ -1349,6 +1491,7 @@ export async function createSignedTakeoffDrawingSetUrlForOpportunity(params: {
   expiresInSeconds?: number;
   resolvedWorkspace?: ResolvedTakeoffOpportunityWorkspace;
   supabase?: SupabaseClient<Database>;
+  authorizedDrawingSet?: ProjectDrawingSet;
 }): Promise<string | null> {
   const resolved =
     params.resolvedWorkspace ??
@@ -1359,12 +1502,28 @@ export async function createSignedTakeoffDrawingSetUrlForOpportunity(params: {
     return null;
   }
 
-  const drawingSet = await getTakeoffDrawingSetForWorkspace({
-    supabase: params.supabase,
-    organizationId: resolved.organizationId,
-    projectId: resolved.projectId,
-    drawingSetId: params.drawingSetId,
-  });
+  const suppliedDrawingSet = params.authorizedDrawingSet;
+  const suppliedDrawingSetIsAuthorized = Boolean(
+    suppliedDrawingSet &&
+    suppliedDrawingSet.id === params.drawingSetId &&
+    suppliedDrawingSet.organization_id === resolved.organizationId &&
+    suppliedDrawingSet.project_id === resolved.projectId &&
+    suppliedDrawingSet.source_type === "source" &&
+    !suppliedDrawingSet.archived_at
+  );
+
+  if (suppliedDrawingSet && !suppliedDrawingSetIsAuthorized) {
+    return null;
+  }
+
+  const drawingSet = suppliedDrawingSetIsAuthorized
+    ? suppliedDrawingSet ?? null
+    : await getTakeoffDrawingSetForWorkspace({
+        supabase: params.supabase,
+        organizationId: resolved.organizationId,
+        projectId: resolved.projectId,
+        drawingSetId: params.drawingSetId,
+      });
 
   if (!drawingSet) {
     return null;
@@ -1445,6 +1604,59 @@ export async function getTakeoffPagesForOpportunitySlug(
     return [];
   }
 
+  return data ?? [];
+}
+
+export async function getTakeoffMeasurePagesForOpportunitySlug(
+  opportunitySlug: string,
+  options: {
+    drawingSetId: string;
+    resolvedWorkspace?: ResolvedTakeoffOpportunityWorkspace;
+    supabase?: SupabaseClient<Database>;
+  }
+): Promise<TakeoffPageSummary[]> {
+  const resolved = options.resolvedWorkspace ?? await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug, {
+    supabase: options.supabase,
+  });
+  if (!resolved) {
+    return [];
+  }
+  const supabase = options.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const { data, error } = await supabase
+    .from("takeoff_pages")
+    .select("id, drawing_set_id, page_number, page_label, page_width_pts, page_height_pts, rotation_degrees")
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("drawing_set_id", options.drawingSetId)
+    .order("page_number", { ascending: true });
+  if (error) {
+    throw new Error("Unable to load Takeoff pages.");
+  }
+  return data ?? [];
+}
+
+export async function getTakeoffMeasurePagesForDrawingSetsForOpportunitySlug(
+  opportunitySlug: string,
+  options: {
+    drawingSetIds: string[];
+    resolvedWorkspace?: ResolvedTakeoffOpportunityWorkspace;
+    supabase?: SupabaseClient<Database>;
+  },
+): Promise<TakeoffPageSummary[]> {
+  if (options.drawingSetIds.length === 0) return [];
+  const resolved = options.resolvedWorkspace ?? await resolveTakeoffWorkspaceForOpportunitySlug(opportunitySlug, {
+    supabase: options.supabase,
+  });
+  if (!resolved) return [];
+  const supabase = options.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const { data, error } = await supabase
+    .from("takeoff_pages")
+    .select("id, drawing_set_id, page_number, page_label, page_width_pts, page_height_pts, rotation_degrees")
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .in("drawing_set_id", options.drawingSetIds)
+    .order("page_number", { ascending: true });
+  if (error) throw new Error("Unable to load Takeoff pages.");
   return data ?? [];
 }
 
@@ -1593,7 +1805,7 @@ async function renderAndStoreTakeoffPagePreviews(params: {
 }
 
 function getTakeoffDrawingSetSourceRevision(drawingSet: ProjectDrawingSet): string {
-  return drawingSet.updated_at ?? drawingSet.created_at;
+  return drawingSet.source_revision;
 }
 
 function computeTakeoffPreviewDimensions(params: {
@@ -1698,6 +1910,114 @@ async function getTakeoffPagesForDrawingSetWithClient(params: {
   }
 
   return data ?? [];
+}
+
+async function createTakeoffPageMetadataRows(params: {
+  supabase: SupabaseClient<Database>;
+  resolved: ResolvedTakeoffOpportunityWorkspace;
+  drawingSet: ProjectDrawingSet;
+  createdBy: string;
+}): Promise<TakeoffPage[]> {
+  const existingPages = await getTakeoffPagesForDrawingSetWithClient({
+    supabase: params.supabase,
+    organizationId: params.resolved.organizationId,
+    projectId: params.resolved.projectId,
+    drawingSetId: params.drawingSet.id,
+  });
+  if (existingPages.length > 0) {
+    return existingPages;
+  }
+
+  validateTakeoffPdfPreparationBounds({
+    byteLength: params.drawingSet.file_size_bytes ?? 0,
+    maxBytes: TAKEOFF_PAGE_PREPARATION_MAX_BYTES,
+    maxPages: TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
+  });
+
+  const downloadResult = await params.supabase.storage
+    .from(PROJECT_DRAWING_SETS_BUCKET)
+    .download(params.drawingSet.storage_path);
+  if (downloadResult.error || !downloadResult.data) {
+    throw new Error(downloadResult.error?.message ?? "Unable to load the selected drawing set.");
+  }
+  validateTakeoffPdfPreparationBounds({
+    byteLength: downloadResult.data.size,
+    maxBytes: TAKEOFF_PAGE_PREPARATION_MAX_BYTES,
+    maxPages: TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
+  });
+
+  const pdfBytes = new Uint8Array(await downloadResult.data.arrayBuffer());
+  const { PDFDocument } = await import("pdf-lib");
+  const pdf = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+  const pdfPages = pdf.getPages();
+  validateTakeoffPdfPreparationBounds({
+    byteLength: pdfBytes.byteLength,
+    pageCount: pdfPages.length,
+    maxBytes: TAKEOFF_PAGE_PREPARATION_MAX_BYTES,
+    maxPages: TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
+  });
+
+  const rows: Database["public"]["Tables"]["takeoff_pages"]["Insert"][] = pdfPages.map((page, index) => {
+    const pageSize = page.getSize();
+    const geometry = getTakeoffPageDisplayDimensions({
+      pageWidthPts: pageSize.width,
+      pageHeightPts: pageSize.height,
+      rotationDegrees: page.getRotation().angle,
+    });
+    return {
+      organization_id: params.resolved.organizationId,
+      project_id: params.resolved.projectId,
+      opportunity_id: params.resolved.opportunityId,
+      drawing_set_id: params.drawingSet.id,
+      page_number: index + 1,
+      page_label: null,
+      page_width_pts: geometry.widthPts,
+      page_height_pts: geometry.heightPts,
+      rotation_degrees: geometry.rotationDegrees,
+      source_revision: getTakeoffDrawingSetSourceRevision(params.drawingSet),
+      preview_storage_path: null,
+      preview_status: "pending",
+      preview_error: null,
+      preview_generated_at: null,
+      preview_render_version: TAKEOFF_PREVIEW_RENDER_VERSION,
+      preview_width_px: null,
+      preview_height_px: null,
+      preview_mime_type: null,
+      preview_bytes: null,
+      metadata: {
+        sourceFileName: params.drawingSet.file_name,
+        rawPageWidthPts: pageSize.width,
+        rawPageHeightPts: pageSize.height,
+      },
+      created_by: params.createdBy,
+    };
+  });
+
+  const insertResult = await params.supabase
+    .from("takeoff_pages")
+    .insert(rows as never, {
+      onConflict: "organization_id,drawing_set_id,page_number",
+      ignoreDuplicates: true,
+    } as never);
+  if (insertResult.error) {
+    const fallbackPages = await getTakeoffPagesForDrawingSetWithClient({
+      supabase: params.supabase,
+      organizationId: params.resolved.organizationId,
+      projectId: params.resolved.projectId,
+      drawingSetId: params.drawingSet.id,
+    });
+    if (fallbackPages.length === 0) {
+      throw new Error(insertResult.error.message);
+    }
+    return fallbackPages;
+  }
+
+  return getTakeoffPagesForDrawingSetWithClient({
+    supabase: params.supabase,
+    organizationId: params.resolved.organizationId,
+    projectId: params.resolved.projectId,
+    drawingSetId: params.drawingSet.id,
+  });
 }
 
 async function enqueueTakeoffPagePreviewRenderJob(params: {
@@ -1832,6 +2152,141 @@ async function enqueueTakeoffPagePreviewRenderJob(params: {
     insertResult.error?.message ??
       "Takeoff render job insertion failed and no duplicate job was found."
   );
+}
+
+export interface TakeoffPagePreparationState {
+  status: "not_started" | "pending" | "processing" | "ready" | "failed";
+  jobId: string | null;
+  pageCount: number;
+  error: string | null;
+}
+
+export async function enqueueTakeoffPageMetadataPreparation(params: {
+  opportunitySlug: string;
+  drawingSetId: string;
+}): Promise<TakeoffPagePreparationState> {
+  const owner = parseTakeoffOwnerKey(params.opportunitySlug);
+  const context = await getTakeoffAuthorizedContextForOwner(owner);
+  if (!context) {
+    throw new Error("Unable to resolve the Takeoff workspace.");
+  }
+  const supabase = await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const drawingSet = await getTakeoffDrawingSetForWorkspace({
+    supabase,
+    organizationId: context.workspace.organizationId,
+    projectId: context.workspace.projectId,
+    drawingSetId: params.drawingSetId,
+  });
+  if (!drawingSet) {
+    throw new Error("The selected drawing set could not be found.");
+  }
+
+  const pages = await getTakeoffPagesForDrawingSetWithClient({
+    supabase,
+    organizationId: context.workspace.organizationId,
+    projectId: context.workspace.projectId,
+    drawingSetId: drawingSet.id,
+  });
+  if (pages.length > 0) {
+    return { status: "ready", jobId: null, pageCount: pages.length, error: null };
+  }
+
+  const sourceRevision = getTakeoffDrawingSetSourceRevision(drawingSet);
+  const insertResult = await supabase
+    .from("takeoff_render_jobs")
+    .insert({
+      organization_id: context.workspace.organizationId,
+      project_id: context.workspace.projectId,
+      opportunity_id: context.workspace.opportunityId,
+      drawing_set_id: drawingSet.id,
+      job_type: "page_metadata",
+      status: "pending",
+      attempt_count: 0,
+      last_error: null,
+      requested_by: context.member.user_id,
+      source_revision: sourceRevision,
+      render_version: TAKEOFF_PAGE_METADATA_RENDER_VERSION,
+      payload: {},
+    })
+    .select("*")
+    .single();
+
+  if (!insertResult.error && insertResult.data) {
+    return { status: "pending", jobId: insertResult.data.id, pageCount: 0, error: null };
+  }
+
+  const existingResult = await supabase
+    .from("takeoff_render_jobs")
+    .select("*")
+    .eq("organization_id", context.workspace.organizationId)
+    .eq("project_id", context.workspace.projectId)
+    .eq("drawing_set_id", drawingSet.id)
+    .eq("job_type", "page_metadata")
+    .eq("source_revision", sourceRevision)
+    .eq("render_version", TAKEOFF_PAGE_METADATA_RENDER_VERSION)
+    .in("status", ["pending", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingResult.error || !existingResult.data) {
+    throw new Error("Unable to queue Takeoff page preparation.");
+  }
+
+  return {
+    status: existingResult.data.status === "processing" ? "processing" : "pending",
+    jobId: existingResult.data.id,
+    pageCount: 0,
+    error: null,
+  };
+}
+
+export async function getTakeoffPageMetadataPreparationState(params: {
+  opportunitySlug: string;
+  drawingSetId: string;
+}): Promise<TakeoffPagePreparationState> {
+  const owner = parseTakeoffOwnerKey(params.opportunitySlug);
+  const context = await getTakeoffAuthorizedContextForOwner(owner);
+  if (!context) {
+    throw new Error("Unable to resolve the Takeoff workspace.");
+  }
+  const supabase = await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const pages = await getTakeoffPagesForDrawingSetWithClient({
+    supabase,
+    organizationId: context.workspace.organizationId,
+    projectId: context.workspace.projectId,
+    drawingSetId: params.drawingSetId,
+  });
+  if (pages.length > 0) {
+    return { status: "ready", jobId: null, pageCount: pages.length, error: null };
+  }
+
+  const { data, error } = await supabase
+    .from("takeoff_render_jobs")
+    .select("id, status, last_error")
+    .eq("organization_id", context.workspace.organizationId)
+    .eq("project_id", context.workspace.projectId)
+    .eq("drawing_set_id", params.drawingSetId)
+    .eq("job_type", "page_metadata")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error("Unable to read Takeoff preparation status.");
+  }
+  if (!data) {
+    return { status: "not_started", jobId: null, pageCount: 0, error: null };
+  }
+
+  return {
+    status: data.status === "completed" ? "ready" : data.status,
+    jobId: data.id,
+    pageCount: 0,
+    error: data.status === "failed"
+      ? (/exceeds the .* Takeoff preparation limit/i.test(data.last_error ?? "")
+          ? (data.last_error ?? "Takeoff page preparation failed.").replace(/^\[[^\]]+\]\s*/, "")
+          : "Measure could not prepare this PDF. Retry the drawing or contact support.")
+      : null,
+  };
 }
 
 async function queueMissingTakeoffPagePreviews(params: {
@@ -1998,7 +2453,7 @@ export async function ensureTakeoffPagesForOpportunityDrawingSet(
           page_width_pts: geometry.displayWidthPts,
           page_height_pts: geometry.displayHeightPts,
           metadata: {
-            ...page.metadata,
+            ...(page.metadata && typeof page.metadata === "object" && !Array.isArray(page.metadata) ? page.metadata : {}),
             rawPageWidthPts: geometry.rawWidthPts,
             rawPageHeightPts: geometry.rawHeightPts,
           },
@@ -2043,69 +2498,12 @@ export async function ensureTakeoffPagesForOpportunityDrawingSet(
     return getTakeoffPagesForOpportunitySlug(opportunitySlug, { drawingSetId });
   }
 
-  const downloadResult = await supabase.storage
-    .from(PROJECT_DRAWING_SETS_BUCKET)
-    .download(drawingSet.storage_path);
-
-  if (downloadResult.error || !downloadResult.data) {
-    throw new Error(downloadResult.error?.message ?? "Unable to load the selected drawing set.");
-  }
-
-  const pdfBytes = new Uint8Array(await downloadResult.data.arrayBuffer());
-  const { PDFDocument } = await import("pdf-lib");
-  const pdf = await PDFDocument.load(pdfBytes);
-  const pdfPages = pdf.getPages();
-
-  const rows: Database["public"]["Tables"]["takeoff_pages"]["Insert"][] = pdfPages.map((page, index) => {
-    const pageSize = page.getSize();
-    const geometry = getTakeoffPageDisplayDimensions({
-      pageWidthPts: pageSize.width,
-      pageHeightPts: pageSize.height,
-      rotationDegrees: page.getRotation().angle,
-    });
-    return {
-      organization_id: resolved.organizationId,
-      project_id: resolved.projectId,
-      opportunity_id: resolved.opportunityId,
-      drawing_set_id: drawingSet.id,
-      page_number: index + 1,
-      page_label: null,
-      page_width_pts: geometry.widthPts,
-      page_height_pts: geometry.heightPts,
-      rotation_degrees: geometry.rotationDegrees,
-      source_revision: drawingSet.updated_at ?? drawingSet.created_at,
-      preview_storage_path: null,
-      preview_status: "pending",
-      preview_error: null,
-      preview_generated_at: null,
-      preview_render_version: TAKEOFF_PREVIEW_RENDER_VERSION,
-      preview_width_px: null,
-      preview_height_px: null,
-      preview_mime_type: null,
-      preview_bytes: null,
-      metadata: {
-        sourceFileName: drawingSet.file_name,
-        rawPageWidthPts: pageSize.width,
-        rawPageHeightPts: pageSize.height,
-      },
-      created_by: member.user_id,
-    };
+  const insertedPages = await createTakeoffPageMetadataRows({
+    supabase,
+    resolved,
+    drawingSet,
+    createdBy: member.user_id,
   });
-
-  const insertResult = await supabase
-    .from("takeoff_pages")
-    .insert(rows as never, {
-      onConflict: "organization_id,drawing_set_id,page_number",
-      ignoreDuplicates: true,
-    } as never);
-  if (insertResult.error) {
-    const fallbackPages = await getTakeoffPagesForOpportunitySlug(opportunitySlug, { drawingSetId });
-    if (fallbackPages.length === 0) {
-      throw new Error(insertResult.error.message);
-    }
-  }
-
-  const insertedPages = await getTakeoffPagesForOpportunitySlug(opportunitySlug, { drawingSetId });
   if (!options?.skipPreviewQueue) {
     await queueMissingTakeoffPagePreviews({
       supabase,
@@ -2237,6 +2635,46 @@ export async function processNextTakeoffRenderJob(): Promise<{
       });
     }
 
+    if (job.job_type === "page_metadata") {
+      const resolvedWorkspace: ResolvedTakeoffOpportunityWorkspace = {
+        organizationId: job.organization_id,
+        projectId: job.project_id,
+        projectSlug: "",
+        projectName: "",
+        opportunityId: job.opportunity_id,
+        opportunitySlug: "",
+      };
+      const preparedPages = await createTakeoffPageMetadataRows({
+        supabase,
+        resolved: resolvedWorkspace,
+        drawingSet,
+        createdBy: job.requested_by ?? drawingSet.uploaded_by,
+      });
+      await queueMissingTakeoffPagePreviews({
+        supabase,
+        resolved: resolvedWorkspace,
+        drawingSet,
+        pages: preparedPages,
+        requestedBy: job.requested_by,
+      });
+      const completeResult = await supabase
+        .from("takeoff_render_jobs")
+        .update({
+          status: "completed",
+          last_error: null,
+          finished_at: new Date().toISOString(),
+          payload: { pageCount: preparedPages.length },
+        })
+        .eq("id", job.id);
+      if (completeResult.error) {
+        throw new TakeoffWorkerError(completeResult.error.message, {
+          stage: "complete-page-metadata",
+          details: { jobId: job.id },
+        });
+      }
+      return { job, pagesRendered: 0 };
+    }
+
     const sourceRevision = getTakeoffDrawingSetSourceRevision(drawingSet);
     const allPages = await getTakeoffPagesForDrawingSetWithClient({
       supabase,
@@ -2244,8 +2682,11 @@ export async function processNextTakeoffRenderJob(): Promise<{
       projectId: job.project_id,
       drawingSetId: job.drawing_set_id,
     });
-    const payloadPageIds = Array.isArray(job.payload?.pageIds)
-      ? job.payload.pageIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    const jobPayload = job.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+      ? job.payload
+      : {};
+    const payloadPageIds = Array.isArray(jobPayload.pageIds)
+      ? jobPayload.pageIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       : [];
     const candidatePages = payloadPageIds.length > 0
       ? allPages.filter((page) => payloadPageIds.includes(page.id))
@@ -2429,6 +2870,29 @@ export async function getActiveTakeoffCalibrationForPage(
   return data ?? null;
 }
 
+export async function getTakeoffCalibrationsForMeasurements(
+  measurements: Array<Pick<TakeoffMeasurement, "calibration_id">>,
+  options?: { supabase?: SupabaseClient<Database> }
+): Promise<Map<string, TakeoffCalibration>> {
+  const calibrationIds = Array.from(new Set(
+    measurements.map((measurement) => measurement.calibration_id).filter((id): id is string => Boolean(id))
+  ));
+  if (calibrationIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = options?.supabase ?? await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("takeoff_calibrations")
+    .select(takeoffCalibrationSelect)
+    .in("id", calibrationIds);
+  if (error) {
+    throw new Error("Unable to load measurement calibrations.");
+  }
+
+  return new Map((data ?? []).map((calibration) => [calibration.id, calibration]));
+}
+
 export async function getTakeoffMeasurementReadinessForPage(
   pageId: string,
   options?: {
@@ -2496,6 +2960,136 @@ export async function getTakeoffCalibrationHistoryForPage(
   return data ?? [];
 }
 
+export async function getTakeoffCalibrationHistoryForOpportunityPage(params: {
+  opportunitySlug: string;
+  drawingSetId: string;
+  pageId: string;
+}): Promise<TakeoffCalibrationHistoryItem[]> {
+  const { resolved, supabase } = await createValidatedTakeoffMutationContext(params.opportunitySlug);
+  const { data: page, error: pageError } = await supabase
+    .from("takeoff_pages")
+    .select("id")
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("drawing_set_id", params.drawingSetId)
+    .eq("id", params.pageId)
+    .maybeSingle();
+
+  if (pageError || !page) {
+    throw new Error("The selected takeoff page could not be found.");
+  }
+
+  const { data: calibrations, error: calibrationError } = await supabase
+    .from("takeoff_calibrations")
+    .select(takeoffCalibrationSelect)
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("page_id", page.id)
+    .order("created_at", { ascending: false });
+
+  if (calibrationError) {
+    throw new Error("Unable to load calibration history.");
+  }
+
+  const calibrationIds = (calibrations ?? []).map((calibration) => calibration.id);
+  if (calibrationIds.length === 0) {
+    return [];
+  }
+
+  const { data: dependencies, error: dependencyError } = await supabase
+    .from("takeoff_measurements")
+    .select("calibration_id")
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("drawing_set_id", params.drawingSetId)
+    .eq("page_id", page.id)
+    .in("calibration_id", calibrationIds);
+
+  if (dependencyError) {
+    throw new Error("Unable to load calibration dependencies.");
+  }
+
+  const counts = new Map<string, number>();
+  (dependencies ?? []).forEach((measurement) => {
+    if (measurement.calibration_id) {
+      counts.set(measurement.calibration_id, (counts.get(measurement.calibration_id) ?? 0) + 1);
+    }
+  });
+
+  return (calibrations ?? []).map((calibration) => ({
+    ...calibration,
+    dependent_measurement_count: counts.get(calibration.id) ?? 0,
+  }));
+}
+
+export async function deleteUnusedTakeoffCalibrationForOpportunityPage(params: {
+  opportunitySlug: string;
+  drawingSetId: string;
+  pageId: string;
+  calibrationId: string;
+}): Promise<DeleteTakeoffCalibrationResult> {
+  const { resolved, supabase } = await createValidatedTakeoffMutationContext(params.opportunitySlug);
+  const { data: page, error: pageError } = await supabase
+    .from("takeoff_pages")
+    .select("id")
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("drawing_set_id", params.drawingSetId)
+    .eq("id", params.pageId)
+    .maybeSingle();
+
+  if (pageError || !page) {
+    throw new Error("The selected takeoff page could not be found.");
+  }
+
+  const { data: calibration, error: calibrationError } = await supabase
+    .from("takeoff_calibrations")
+    .select(takeoffCalibrationSelect)
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("page_id", page.id)
+    .eq("id", params.calibrationId)
+    .maybeSingle();
+
+  if (calibrationError || !calibration) {
+    throw new Error("The selected calibration could not be found.");
+  }
+
+  const { count, error: dependencyError } = await supabase
+    .from("takeoff_measurements")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("drawing_set_id", params.drawingSetId)
+    .eq("page_id", page.id)
+    .eq("calibration_id", calibration.id);
+
+  if (dependencyError) {
+    throw new Error("Unable to verify calibration dependencies.");
+  }
+  if ((count ?? 0) > 0) {
+    throw new Error(`This calibration is used by ${count} measurement${count === 1 ? "" : "s"} and cannot be deleted.`);
+  }
+
+  const deleteResult = await supabase
+    .from("takeoff_calibrations")
+    .delete()
+    .eq("organization_id", resolved.organizationId)
+    .eq("project_id", resolved.projectId)
+    .eq("page_id", page.id)
+    .eq("id", calibration.id);
+
+  if (deleteResult.error) {
+    throw new Error("Unable to delete calibration. Please try again.");
+  }
+
+  const activeCalibration = calibration.is_active
+    ? null
+    : await getActiveTakeoffCalibrationForPage(page.id, { supabase });
+
+  return { deletedCalibrationId: calibration.id, activeCalibration };
+}
+
 export async function getTakeoffMeasurementGroupsForProject(
   projectId: string
 ): Promise<TakeoffMeasurementGroup[]> {
@@ -2527,27 +3121,25 @@ export async function getTakeoffMeasurementsForPage(
   const supabase = options?.supabase ?? await createServerSupabaseClient();
   const { data, error } = await supabase
     .from("takeoff_measurements")
-    .select(`${takeoffMeasurementSelect}, takeoff_measurement_points(${takeoffMeasurementPointSelect})`)
+    .select(`${takeoffViewerMeasurementSelect}, takeoff_measurement_points(${takeoffMeasurementPointSelect})`)
     .eq("page_id", pageId)
     .in("status", ["active", "archived"])
     .order("created_at", { ascending: true });
 
   if (error) {
-    return [];
+    throw new Error("Unable to load Takeoff measurements.");
   }
 
-  const areaShapesByMeasurementId = await getTakeoffAreaShapesForMeasurements(
-    (data ?? [])
-      .filter((row) => row.measurement_kind === "area")
-      .map((row) => row.id),
-    { supabase }
-  );
-  const linePathsByMeasurementId = await getTakeoffLinePathsForMeasurements(
-    (data ?? [])
-      .filter((row) => row.measurement_kind === "line")
-      .map((row) => row.id),
-    { supabase }
-  );
+  const [areaShapesByMeasurementId, linePathsByMeasurementId] = await Promise.all([
+    getTakeoffAreaShapesForMeasurements(
+      (data ?? []).filter((row) => row.measurement_kind === "area").map((row) => row.id),
+      { supabase }
+    ),
+    getTakeoffLinePathsForMeasurements(
+      (data ?? []).filter((row) => row.measurement_kind === "line").map((row) => row.id),
+      { supabase }
+    ),
+  ]);
 
   return (data ?? []).map((row) => {
     const points = Array.isArray(row.takeoff_measurement_points)
@@ -2555,12 +3147,123 @@ export async function getTakeoffMeasurementsForPage(
       : [];
 
     return {
-      ...(row as TakeoffMeasurement),
+      ...(row as unknown as TakeoffMeasurement),
       points,
       area_shapes: areaShapesByMeasurementId[row.id] ?? [],
       line_paths: linePathsByMeasurementId[row.id] ?? [],
     };
   });
+}
+
+export async function getTakeoffDrawingSetSummaryMeasurements(params: {
+  organizationId: string;
+  projectId: string;
+  drawingSetId: string;
+  supabase?: SupabaseClient<Database>;
+}): Promise<TakeoffDrawingSetSummaryMeasurement[]> {
+  const supabase = params.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const { data, error } = await supabase
+    .from("takeoff_measurements")
+    .select(takeoffDrawingSetSummaryMeasurementSelect)
+    .eq("organization_id", params.organizationId)
+    .eq("project_id", params.projectId)
+    .eq("drawing_set_id", params.drawingSetId)
+    .eq("status", "active")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error("Unable to load the Takeoff drawing-set summary.");
+  }
+
+  return (data ?? [])
+    .map((row) => {
+      const page = Array.isArray(row.page) ? row.page[0] : row.page;
+      return {
+        id: row.id,
+        pageId: row.page_id,
+        pageNumber: page?.page_number ?? Number.MAX_SAFE_INTEGER,
+        pageLabel: page?.page_label?.trim() || (page?.page_number ? `Page ${page.page_number}` : "Page"),
+        name: row.name,
+        measurementKind: row.measurement_kind,
+        colorHex: row.color_hex,
+        displayValue: row.display_value,
+        displayUnit: row.display_unit,
+        status: row.status,
+        createdAt: row.created_at,
+      } satisfies TakeoffDrawingSetSummaryMeasurement;
+    })
+    .sort((left, right) =>
+      left.pageNumber - right.pageNumber ||
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id)
+    );
+}
+
+export async function getTakeoffMeasurementsForPages(
+  pageIds: string[],
+  options?: { supabase?: SupabaseClient<Database> }
+): Promise<Map<string, TakeoffMeasurementWithPoints[]>> {
+  const result = new Map(pageIds.map((pageId) => [pageId, [] as TakeoffMeasurementWithPoints[]]));
+  if (pageIds.length === 0) {
+    return result;
+  }
+  const supabase = options?.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const { data, error } = await supabase
+    .from("takeoff_measurements")
+    .select(`${takeoffViewerMeasurementSelect}, takeoff_measurement_points(${takeoffMeasurementPointSelect})`)
+    .in("page_id", pageIds)
+    .in("status", ["active", "archived"])
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new Error("Unable to load Takeoff measurements.");
+  }
+
+  const rows = data ?? [];
+  const [areaShapesByMeasurementId, linePathsByMeasurementId] = await Promise.all([
+    getTakeoffAreaShapesForMeasurements(rows.filter((row) => row.measurement_kind === "area").map((row) => row.id), { supabase }),
+    getTakeoffLinePathsForMeasurements(rows.filter((row) => row.measurement_kind === "line").map((row) => row.id), { supabase }),
+  ]);
+  rows.forEach((row) => {
+    const measurements = result.get(row.page_id);
+    if (!measurements) {
+      return;
+    }
+    measurements.push({
+      ...(row as unknown as TakeoffMeasurement),
+      points: Array.isArray(row.takeoff_measurement_points)
+        ? [...row.takeoff_measurement_points].sort((left, right) => left.point_order - right.point_order)
+        : [],
+      area_shapes: areaShapesByMeasurementId[row.id] ?? [],
+      line_paths: linePathsByMeasurementId[row.id] ?? [],
+    });
+  });
+  return result;
+}
+
+export async function getActiveTakeoffCalibrationsForPages(
+  pageIds: string[],
+  options?: { supabase?: SupabaseClient<Database> }
+): Promise<Map<string, TakeoffCalibration>> {
+  if (pageIds.length === 0) {
+    return new Map();
+  }
+  const supabase = options?.supabase ?? await createServerSupabaseClient({ requestTimeoutMs: 12_000 });
+  const { data, error } = await supabase
+    .from("takeoff_calibrations")
+    .select(takeoffCalibrationSelect)
+    .in("page_id", pageIds)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  if (error) {
+    throw new Error("Unable to load active Takeoff calibrations.");
+  }
+  const result = new Map<string, TakeoffCalibration>();
+  (data ?? []).forEach((calibration) => {
+    if (!result.has(calibration.page_id)) {
+      result.set(calibration.page_id, calibration);
+    }
+  });
+  return result;
 }
 
 export async function getLatestActiveAreaMeasurementForOpportunitySlug(
@@ -2613,6 +3316,7 @@ export async function saveTakeoffCalibrationForOpportunityPage(
         .select(takeoffPageSelect)
         .eq("organization_id", resolved.organizationId)
         .eq("project_id", resolved.projectId)
+        .eq("drawing_set_id", input.drawingSetId)
         .eq("id", input.pageId)
         .maybeSingle()
     );
@@ -2754,6 +3458,7 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
         .select(takeoffPageSelect)
         .eq("organization_id", resolved.organizationId)
         .eq("project_id", resolved.projectId)
+        .eq("drawing_set_id", input.drawingSetId)
         .eq("id", input.pageId)
         .maybeSingle()
     );
@@ -2794,6 +3499,8 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
               is_active: false,
               superseded_by: targetCalibration.id,
             })
+            .eq("organization_id", resolved.organizationId)
+            .eq("project_id", resolved.projectId)
             .eq("id", currentActiveCalibration.id)
             .eq("page_id", page.id)
         );
@@ -2810,6 +3517,8 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
             is_active: true,
             superseded_by: null,
           })
+          .eq("organization_id", resolved.organizationId)
+          .eq("project_id", resolved.projectId)
           .eq("id", targetCalibration.id)
           .eq("page_id", page.id)
           .select(takeoffCalibrationSelect)
@@ -2853,6 +3562,8 @@ export async function setActiveTakeoffCalibrationForOpportunityPage(
         .update({
           is_active: false,
         })
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
         .eq("id", currentActiveCalibration.id)
         .eq("page_id", page.id)
     );
@@ -5891,6 +6602,8 @@ export async function updateTakeoffMeasurementDetailsForOpportunity(
 
 export async function updateTakeoffMeasurementStatusForOpportunity(params: {
   opportunitySlug: string;
+  drawingSetId: string;
+  pageId: string;
   measurementId: string;
   action: "archive" | "delete" | "restore";
 }): Promise<TakeoffMeasurementWithPoints> {
@@ -5905,6 +6618,8 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
         .select(takeoffMeasurementSelect)
         .eq("organization_id", resolved.organizationId)
         .eq("project_id", resolved.projectId)
+        .eq("drawing_set_id", params.drawingSetId)
+        .eq("page_id", params.pageId)
         .eq("id", params.measurementId)
         .maybeSingle()
     );
@@ -5913,12 +6628,21 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
       throw new Error("The selected measurement could not be found.");
     }
 
+    const transition = resolveTakeoffMeasurementStatusTransition(measurement.status, params.action);
+    const nextStatus = transition.nextStatus;
+    if (!transition.shouldMutate) {
+      if (nextStatus === "deleted") {
+        return {
+          ...measurement,
+          points: [],
+          area_shapes: [],
+          line_paths: [],
+        };
+      }
+
+      return hydrateTakeoffMeasurementWithChildren({ measurement, supabase });
+    }
     const nextVersion = measurement.version + 1;
-    const nextStatus = params.action === "archive"
-      ? "archived"
-      : params.action === "delete"
-        ? "deleted"
-        : "active";
     const updatePayload: Database["public"]["Tables"]["takeoff_measurements"]["Update"] = {
       status: nextStatus,
       version: nextVersion,
@@ -5931,13 +6655,33 @@ export async function updateTakeoffMeasurementStatusForOpportunity(params: {
       supabase
         .from("takeoff_measurements")
         .update(updatePayload)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("drawing_set_id", params.drawingSetId)
+        .eq("page_id", params.pageId)
         .eq("id", measurement.id)
+        .eq("status", measurement.status)
         .select(takeoffMeasurementSelect)
         .single()
     );
 
     if (updateResult.error || !updateResult.data) {
-      throw new Error(updateResult.error?.message ?? "Unable to update measurement status.");
+      const { data: concurrentMeasurement } = await supabase
+        .from("takeoff_measurements")
+        .select(takeoffMeasurementSelect)
+        .eq("organization_id", resolved.organizationId)
+        .eq("project_id", resolved.projectId)
+        .eq("drawing_set_id", params.drawingSetId)
+        .eq("page_id", params.pageId)
+        .eq("id", measurement.id)
+        .maybeSingle();
+      if (concurrentMeasurement?.status === nextStatus) {
+        if (nextStatus === "deleted") {
+          return { ...concurrentMeasurement, points: [], area_shapes: [], line_paths: [] };
+        }
+        return hydrateTakeoffMeasurementWithChildren({ measurement: concurrentMeasurement, supabase });
+      }
+      throw new Error("Unable to update measurement status.");
     }
 
     const updatedMeasurement = updateResult.data;

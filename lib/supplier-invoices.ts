@@ -138,9 +138,8 @@ export type SupplierInvoiceLineAllocationPreviewRow = {
   sourceCostItemId: string | null;
   tradesstackCostCode: string | null;
   tradesstackCostCodeLabel: string | null;
-  workType: string | null;
-  costType: string | null;
-  internalCostCode: string | null;
+  financialRoutingConfidence: number | null;
+  financialRoutingSource: string | null;
   organizationCostCodeId: string | null;
   organizationCostCode: string | null;
   organizationCostCodeName: string | null;

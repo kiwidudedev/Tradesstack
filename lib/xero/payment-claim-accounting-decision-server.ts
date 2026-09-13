@@ -73,6 +73,7 @@ export async function loadPaymentClaimAccountingDecisionEvidence(params: {
   organizationId: string;
   document: Row | null;
   hasActiveWork?: boolean;
+  resolvedActiveRevision?: Row | null;
 }): Promise<PaymentClaimAccountingDecisionEvidence> {
   const db = createAdminSupabaseClient() as unknown as Db;
   const activeRevisionId = text(
@@ -87,7 +88,12 @@ export async function loadPaymentClaimAccountingDecisionEvidence(params: {
     jobsResult,
     latestObservationResult,
   ] = await Promise.all([
-    activeRevisionId
+    params.resolvedActiveRevision !== undefined
+      ? Promise.resolve({
+          data: params.resolvedActiveRevision,
+          error: null,
+        })
+      : activeRevisionId
       ? db.from("organization_accounting_document_revisions")
           .select("*")
           .eq("organization_id", params.organizationId)

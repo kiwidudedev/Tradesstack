@@ -14,6 +14,10 @@ const refreshService = fs.readFileSync(
   path.join(process.cwd(), "lib/xero/payment-claim-sales-invoice-refresh.ts"),
   "utf8",
 );
+const syncWorker = fs.readFileSync(
+  path.join(process.cwd(), "lib/xero/sync.ts"),
+  "utf8",
+);
 
 describe("existing Payment Claim status workflow boundary", () => {
   it("keeps all six existing manual statuses and adds no Partially Paid claim status", () => {
@@ -50,5 +54,19 @@ describe("existing Payment Claim status workflow boundary", () => {
     expect(refreshService).toContain("partially_paid,paid,unknown");
     expect(refreshService).not.toContain("Partially Paid");
     expect(refreshService).not.toContain("bill-refresh");
+  });
+
+  it("keeps scheduled payment refresh recoverable from queued document workflows", () => {
+    const scheduler = refreshService.slice(
+      refreshService.indexOf(
+        "export async function enqueueEligibleXeroSalesInvoiceRefreshes",
+      ),
+    );
+    expect(scheduler).not.toContain('.in("export_status"');
+    expect(refreshService).toContain("scheduledRefreshAlreadyQueued");
+    expect(syncWorker).toContain("affectsConnectionHealth");
+    expect(syncWorker).toContain(
+      'error.code === "tenant_mismatch"',
+    );
   });
 });

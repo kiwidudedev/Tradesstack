@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getOrganizationPermissionsBatch } from "@/lib/permissions-server";
+import { resolveProjectContractualBaseline } from "@/lib/opportunity-lifecycle-compatibility-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -147,7 +148,12 @@ export async function loadPaymentClaimRegisterSnapshot(
   const snapshotStartedAt = performance.now();
   const database = context.database;
   const admin = createAdminSupabaseClient() as unknown as UntypedAdmin;
-  const [claimsResult, quotesResult, variationsResult] = await Promise.all([
+  const [
+    claimsResult,
+    quotesResult,
+    variationsResult,
+    contractualBaseline,
+  ] = await Promise.all([
     database
       .from("project_claims")
       .select(
@@ -180,6 +186,11 @@ export async function loadPaymentClaimRegisterSnapshot(
       )
       .eq("organization_id", context.organizationId)
       .eq("project_id", context.projectId),
+    resolveProjectContractualBaseline({
+      client: database as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>,
+      organizationId: context.organizationId,
+      projectId: context.projectId,
+    }),
   ]);
   if (claimsResult.error) throw new Error(claimsResult.error.message);
   if (quotesResult.error) throw new Error(quotesResult.error.message);
@@ -187,7 +198,12 @@ export async function loadPaymentClaimRegisterSnapshot(
   const paymentSnapshot = elapsed(snapshotStartedAt);
 
   const claims = (claimsResult.data ?? []) as PaymentClaimRegisterRow[];
-  const quotes = (quotesResult.data ?? []) as PaymentClaimRegisterQuote[];
+  const projectQuotes = (quotesResult.data ?? []) as PaymentClaimRegisterQuote[];
+  const quotes = contractualBaseline === null
+    ? projectQuotes
+    : contractualBaseline.isValid
+      ? projectQuotes.filter((quote) => quote.id === contractualBaseline.quoteId)
+      : [];
   const variations =
     (variationsResult.data ?? []) as PaymentClaimRegisterVariation[];
   const canViewAccounting =

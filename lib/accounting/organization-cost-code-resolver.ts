@@ -10,8 +10,18 @@ import type {
   ResolvedOrganizationAccountingCode,
 } from "@/lib/accounting/types";
 
-function buildCodeLookup(costCodes: OrganizationCostCodeRow[]) {
-  return new Map(costCodes.filter((row) => row.is_active).map((row) => [row.id, row]));
+function buildCodeLookup(params: {
+  costCodes: OrganizationCostCodeRow[];
+  organizationId: string;
+  provider: string;
+}) {
+  return new Map(
+    params.costCodes
+      .filter((row) => row.is_active)
+      .filter((row) => row.organization_id === params.organizationId)
+      .filter((row) => row.external_provider === params.provider)
+      .map((row) => [row.id, row])
+  );
 }
 
 function sortMappings(left: OrganizationTradesstackAccountingMappingRow, right: OrganizationTradesstackAccountingMappingRow) {
@@ -39,7 +49,11 @@ export function resolveOrganizationAccountingCode(params: {
   input: AccountingCostItemResolutionInput;
 }): ResolvedOrganizationAccountingCode {
   const { costCodes, mappings, input } = params;
-  const codeLookup = buildCodeLookup(costCodes);
+  const codeLookup = buildCodeLookup({
+    costCodes,
+    organizationId: input.organizationId,
+    provider: input.provider,
+  });
 
   if (!input.tradesstackCostCode || !isTradesstackFinancialRoutingCode(input.tradesstackCostCode)) {
     return {
@@ -60,6 +74,7 @@ export function resolveOrganizationAccountingCode(params: {
   const tradesstackCostCode = assertTradesstackFinancialRoutingCode(input.tradesstackCostCode);
   const matchingMappings = mappings
     .filter((row) => row.is_active)
+    .filter((row) => row.organization_id === input.organizationId)
     .filter((row) => row.provider === input.provider)
     .filter((row) => coerceTradesstackFinancialRoutingCode(row.tradesstack_cost_code) === tradesstackCostCode)
     .filter((row) => row.project_id === (input.projectId ?? null) || row.project_id === null)

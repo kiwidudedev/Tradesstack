@@ -129,23 +129,25 @@ export type CostItemDailyRow = {
   module: string;
   event_type: string;
   project_id: string | null;
-  work_type: string | null;
-  cost_type: string | null;
-  intelligence_cost_code: string | null;
-  target_cost_code_id: string | null;
+  tradesstack_cost_code: number | null;
+  tradesstack_cost_code_label: string | null;
+  financial_routing_source: string | null;
   source_document_kind: string | null;
   event_count: number;
   distinct_entity_count: number;
+  avg_routing_confidence: number | null;
+  unmapped_count: number;
 };
 
 export type CostItemReviewBacklogRow = {
   organization_id: string;
   project_id: string;
   source_document_kind: string;
-  work_type: string | null;
-  cost_type: string | null;
+  tradesstack_cost_code: number | null;
+  tradesstack_cost_code_label: string | null;
+  review_status: string;
   unresolved_review_count: number;
-  avg_classification_confidence: number | null;
+  avg_routing_confidence: number | null;
   last_updated_at: string | null;
 };
 

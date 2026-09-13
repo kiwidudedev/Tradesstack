@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
-import type { QuoteCommercialItemLink, QuoteCommercialItemPickerItem } from "@/lib/commercial-items/quote-linking";
+import type { QuoteCommercialItemPickerItem } from "@/lib/commercial-items/quote-linking";
 import { OperationalEmptyState } from "@/components/app/OperationalEmptyState";
 import { OperationalAlert } from "@/components/app/OperationalAlert";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
@@ -20,57 +20,40 @@ import { Input } from "@/components/ui/input";
 import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { ibmPlexSans, interMedium } from "@/lib/fonts";
 import styles from "@/components/app/trade-pack-builder.module.css";
-
-export type QuoteStatus = "Draft" | "Sent" | "Accepted" | "Rejected" | "Expired";
-export type LineItemSection = "Item" | "Materials" | "Labour" | "Plant" | "Subcontractors" | "Preliminaries";
-
-export interface LineItem {
-  id: string;
-  section: LineItemSection;
-  description: string;
-  quantity: number;
-  unit: string;
-  rate: number;
-  isOptional: boolean;
-  sourceOpportunityQuoteId?: string | null;
-  sourceOpportunityQuoteLineItemId?: string | null;
-  sourceOpportunityQuoteNumber?: string | null;
-  commercialItemLink?: QuoteCommercialItemLink | null;
-}
-
-export interface ScopeCostCategoryItem {
-  id: string;
-  title: string;
-  description: string;
-  tradeLabel: string;
-  generatedAt: string;
-}
-
-export interface PricingSummary {
-  baseSubtotal: number;
-  optionalSubtotal: number;
-  margin: number;
-  contingency: number;
-  discount: number;
-  gst: number;
-  grandTotal: number;
-}
-
-export const STANDARD_QUOTE_PRICING_LABELS = {
-  markup: "Mark up",
-  contingency: "P&G",
-  subtotalExcludingGst: "Subtotal (excl. GST)",
-  totalIncludingMargin: "Total (incl. margin)",
-  totalQuotePrice: "Total Quote Price (incl. GST)",
-} as const;
-
-export const STATUS_OPTIONS: Array<{ value: QuoteStatus; label: string }> = [
-  { value: "Draft", label: "Draft" },
-  { value: "Sent", label: "Sent" },
-  { value: "Accepted", label: "Accepted" },
-  { value: "Rejected", label: "Lost" },
-  { value: "Expired", label: "Expired" },
-];
+import {
+  COMMERCIAL_LINE_GRID_WITHOUT_SOURCE,
+  COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITHOUT_SOURCE,
+} from "@/components/app/commercial-line-table-layout";
+import {
+  LINE_ITEM_SECTIONS,
+  STANDARD_QUOTE_PRICING_LABELS,
+  STATUS_OPTIONS,
+  formatQuoteRateDisplay,
+  lineItemTotal,
+  numberOrZero,
+  parseQuoteRateDraft,
+  toDayMonthYearLabel,
+  toMoney,
+  type LineItem,
+  type LineItemSection,
+  type PricingSummary,
+  type QuoteStatus,
+} from "@/lib/quote-editor-core";
+export {
+  LINE_ITEM_SECTIONS,
+  STANDARD_QUOTE_PRICING_LABELS,
+  STATUS_OPTIONS,
+  lineItemTotal,
+  makeDefaultLineItem,
+  numberOrZero,
+  toDayMonthYearLabel,
+  toMoney,
+  type LineItem,
+  type LineItemSection,
+  type PricingSummary,
+  type QuoteStatus,
+  type ScopeCostCategoryItem,
+} from "@/lib/quote-editor-core";
 
 function quoteStatusBadge(status: QuoteStatus): NonNullable<StatusBadgeProps["status"]> {
   switch (status) {
@@ -88,9 +71,6 @@ function quoteStatusBadge(status: QuoteStatus): NonNullable<StatusBadgeProps["st
   }
 }
 
-export const LINE_ITEM_SECTIONS: LineItemSection[] = ["Item", "Materials", "Labour", "Plant", "Subcontractors", "Preliminaries"];
-const MAIN_LINE_GRID_TEMPLATE = "minmax(156px, 1.25fr) 112px 76px 72px 124px 140px";
-const OPTIONAL_LINE_GRID_TEMPLATE = MAIN_LINE_GRID_TEMPLATE;
 const ROW_CELL_PADDING_CLASS = "px-2 py-1";
 const DESCRIPTION_CELL_PADDING_CLASS = "px-3 py-1";
 const ROW_DIVIDER_CLASS = "self-stretch border-l border-[var(--border)]";
@@ -101,379 +81,51 @@ const COMPACT_NUMERIC_FIELD_CLASS = `${COMPACT_FIELD_CLASS} text-right tabular-n
 const COMPACT_VALUE_FIELD_CLASS = `${interMedium.className} flex h-[34px] w-full items-center justify-end px-1.5 text-right text-[13px] leading-[1.1] text-[var(--text-primary)] tabular-nums`;
 const SECTION_FIELD_CLASS = `${interMedium.className} h-[34px] w-full !border-0 !bg-transparent pl-0 pr-5 text-left text-sm leading-[1.15] text-[var(--text-primary)] !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none`;
 
-export function numberOrZero(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+function QuoteRateInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  className: string;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [draft, setDraft] = useState(() => formatQuoteRateDisplay(value));
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={isFocused ? draft : formatQuoteRateDisplay(value)}
+      onFocus={() => {
+        setIsFocused(true);
+        setDraft(String(value));
+      }}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        const parsed = parseQuoteRateDraft(nextDraft);
+        if (parsed !== null) {
+          onChange(parsed);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseQuoteRateDraft(draft);
+        const committedValue = parsed ?? (draft.trim() === "" ? 0 : value);
+        if (draft.trim() === "") {
+          onChange(0);
+        }
+        setIsFocused(false);
+        setDraft(formatQuoteRateDisplay(committedValue));
+      }}
+      className={className}
+    />
+  );
 }
 
-export function lineItemTotal(item: LineItem) {
-  return item.quantity * item.rate;
-}
-
-export function toMoney(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "NZD",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-export function toDayMonthYearLabel(value: string | null) {
-  if (!value) {
-    return "—";
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-
-  return parsed.toLocaleDateString("en-NZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-export function makeDefaultLineItem(isOptional = false): LineItem {
-  return {
-    id: crypto.randomUUID(),
-    section: "Labour",
-    description: "",
-    quantity: 1,
-    unit: isOptional ? "Item" : "hr",
-    rate: 0,
-    isOptional,
-  };
-}
-
-export function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-interface BuildQuotePdfHtmlParams {
-  lineItems: LineItem[];
-  pricingSummary: PricingSummary;
-  showMarginBreakout: boolean;
-  includeDiscountInExport: boolean;
-  includeContingencyInExport: boolean;
-  quoteDate: string;
-  quoteNumber: string;
-  organizationName: string;
-  organizationLogoUrl: string | null;
-  organizationBrandPrimaryColor?: string | null;
-  projectName: string;
-  companyName: string;
-  clientName: string;
-  siteAddress: string;
-  contactPerson?: string;
-  email: string;
-  phone: string;
-  expiryDate: string;
-  gstPercent: string;
-  termsInclusions: string;
-  termsExclusions: string;
-  clarifications: string;
-  assumptions: string;
-}
-
-export function buildQuotePdfHtml(params: BuildQuotePdfHtmlParams) {
-  const exportMarginMultiplier = !params.showMarginBreakout && params.pricingSummary.baseSubtotal > 0
-    ? (params.pricingSummary.baseSubtotal + params.pricingSummary.margin) / params.pricingSummary.baseSubtotal
-    : 1;
-
-  const lineItemsRows = params.lineItems.length > 0
-    ? params.lineItems
-        .map((item) => {
-          const description = item.description.trim() || "Untitled line item";
-          const exportedRate = item.rate * exportMarginMultiplier;
-          const exportedLineTotal = lineItemTotal(item) * exportMarginMultiplier;
-          const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
-          return `
-            <tr>
-              <td class="desc-cell">
-                <div class="cell-primary">${escapeHtml(description)}</div>
-                <div class="cell-secondary">${escapeHtml(item.section)}</div>
-              </td>
-              <td class="right money col-rate">${toMoney(exportedRate)}</td>
-              <td class="right col-qty">${qty}</td>
-              <td class="col-unit">${escapeHtml(item.unit || "-")}</td>
-              <td class="right money col-total">${toMoney(exportedLineTotal)}</td>
-            </tr>
-          `;
-        })
-        .join("")
-    : `<tr><td colspan="5" style="text-align:center;color:#64748b;">No line items added.</td></tr>`;
-
-  const issuedDate = toDayMonthYearLabel(params.quoteDate || new Date().toISOString().slice(0, 10));
-  const printableNumber = params.quoteNumber.trim() || "Unassigned";
-  const printableOrgName = params.organizationName.trim() || "Tradesstack";
-  const printableProjectName = params.projectName.trim() || "Project";
-  const issuedToLines = [
-    params.companyName.trim() || params.clientName.trim() || printableOrgName,
-    params.siteAddress.trim() || printableProjectName,
-    params.contactPerson?.trim() ? `Contact: ${params.contactPerson.trim()}` : "",
-  ]
-    .filter((line) => line.trim().length > 0)
-    .map((line) => escapeHtml(line))
-    .join("\n");
-  const footerCompanyName = params.companyName.trim() || printableOrgName;
-  const footerEmail = params.email.trim() || "-";
-  const footerContactNumber = params.phone.trim() || "-";
-  const exportDocumentTitle = `${printableOrgName} - ${printableProjectName} - ${printableNumber}`;
-  const sanitizedBrandPrimaryColor = (params.organizationBrandPrimaryColor ?? "").trim();
-  const pdfPrimaryColor = /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(sanitizedBrandPrimaryColor)
-    ? sanitizedBrandPrimaryColor
-    : "#0B2739";
-  const logoMarkup = params.organizationLogoUrl
-    ? `<img src="${escapeHtml(params.organizationLogoUrl)}" alt="${escapeHtml(printableOrgName)} logo" class="logo-img" />`
-    : `<div class="logo-fallback">${escapeHtml(printableOrgName.slice(0, 2).toUpperCase())}</div>`;
-  const markUpRowForExport = params.showMarginBreakout ? `<div class="row"><span class="k">Mark up</span><span class="v">${toMoney(params.pricingSummary.margin)}</span></div>` : "";
-  const discountRowForExport = params.includeDiscountInExport && params.pricingSummary.discount > 0
-    ? `<div class="row"><span class="k">Discount</span><span class="v">-${toMoney(params.pricingSummary.discount)}</span></div>`
-    : "";
-  const contingencyRowForExport = params.includeContingencyInExport && params.pricingSummary.contingency > 0
-    ? `<div class="row"><span class="k">P&G</span><span class="v">${toMoney(params.pricingSummary.contingency)}</span></div>`
-    : "";
-  const subtotalExcludingGstForExport = params.pricingSummary.baseSubtotal + params.pricingSummary.margin;
-  const scopeBlocksMarkup = [
-    { title: "Inclusions", value: params.termsInclusions.trim() || "-" },
-    { title: "Exclusions", value: params.termsExclusions.trim() || "-" },
-    { title: "Clarifications", value: params.clarifications.trim() || "-" },
-    { title: "Assumptions", value: params.assumptions.trim() || "-" },
-  ]
-    .map((block) => `
-      <section class="scope-item">
-        <p class="scope-item-title">${escapeHtml(block.title)}</p>
-        <p class="scope-item-value">${escapeHtml(block.value).replaceAll("\n", "<br />")}</p>
-      </section>
-    `)
-    .join("");
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(exportDocumentTitle)}</title>
-    <style>
-      :root {
-        --orange: ${pdfPrimaryColor};
-        --text: #2d3137;
-        --muted: #697587;
-        --line: #cfd6e0;
-      }
-      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      @page { size: A4; margin: 0; }
-      html, body { margin: 0; padding: 0; background: #eceff3; color: var(--text); }
-      body { font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; }
-      .sheet {
-        width: 794px;
-        min-height: 1123px;
-        margin: 34px auto;
-        background: #fff;
-        padding: 44px 44px 32px;
-        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 10px 26px rgba(15, 23, 42, 0.12);
-        display: flex;
-        flex-direction: column;
-      }
-      .accent { height: 4px; background: var(--orange); margin-bottom: 16px; }
-      .top {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: center;
-        column-gap: 20px;
-        border-bottom: 1px solid var(--line);
-        padding-bottom: 10px;
-      }
-      .brand { display: flex; align-items: center; gap: 12px; }
-      .logo-wrap { width: 180px; height: 72px; display: flex; align-items: center; justify-content: flex-start; overflow: hidden; }
-      .logo-img { width: 100%; height: 100%; object-fit: contain; }
-      .logo-fallback {
-        width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
-        border: 1px solid var(--line); color: var(--orange); font-size: 13px; font-weight: 700;
-      }
-      .title {
-        margin: 0;
-        color: var(--orange);
-        font-size: 22px;
-        line-height: 1.1;
-        letter-spacing: -0.01em;
-        font-weight: 700;
-        text-align: right;
-        justify-self: end;
-      }
-      .issued-row {
-        margin-top: 16px;
-        display: grid;
-        grid-template-columns: 1fr 310px;
-        column-gap: 20px;
-      }
-      .issued-title {
-        margin: 0 0 4px;
-        color: #1f2937;
-        font-size: 12px;
-        line-height: 1;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .issued-text {
-        margin: 0;
-        color: #4b5563;
-        white-space: pre-line;
-        font-size: 13px;
-        line-height: 1.3;
-      }
-      .issued-meta .row {
-        display: grid;
-        grid-template-columns: 185px auto;
-        gap: 10px;
-        margin-bottom: 1px;
-      }
-      .issued-meta .k {
-        color: #1f2937;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-weight: 700;
-        text-align: right;
-        font-size: 10px;
-      }
-      .issued-meta .v {
-        color: #4b5563;
-        text-align: right;
-        font-size: 12px;
-      }
-      .project-lead { margin: 14px 0 10px; }
-      .project-lead .project-line {
-        margin: 0 0 2px;
-        color: #1f2937;
-        font-size: 18px;
-        line-height: 1.15;
-        font-weight: 700;
-      }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }
-      thead th {
-        background: var(--orange);
-        color: #fff;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 11px;
-        font-weight: 700;
-        text-align: left;
-        padding: 5px 8px;
-      }
-      tbody td {
-        border-top: 1px solid var(--line);
-        padding: 6px 8px;
-        color: #303846;
-        font-size: 10px;
-        vertical-align: top;
-      }
-      .desc-cell { line-height: 1.25; }
-      .cell-primary { font-weight: 400; color: #1f2937; }
-      .cell-secondary { margin-top: 1px; font-size: 9px; color: #6b7280; }
-      .right { text-align: right; }
-      .money { white-space: nowrap; font-variant-numeric: tabular-nums; }
-      .quote-summary-wrap { margin-top: 12px; margin-left: auto; width: 360px; }
-      .terms-wrap { width: 100%; margin-top: 280px; align-self: stretch; }
-      .terms-wrap .terms-bar {
-        display: block; width: 100%; background: var(--orange); color: #fff; font-size: 12px; letter-spacing: 0.08em;
-        text-transform: uppercase; font-weight: 700; padding: 8px 16px;
-      }
-      .scope-grid {
-        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 28px; margin-top: 10px; padding: 0 16px;
-      }
-      .scope-item-title { margin: 0 0 4px; color: #1f2937; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
-      .scope-item-value { margin: 0; color: #374151; font-size: 11px; white-space: pre-wrap; }
-      .totals-inline .row {
-        display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 11px;
-      }
-      .totals-inline .k { color: #5d7292; }
-      .totals-inline .v { color: #27344a; font-weight: 600; }
-      .totals-inline .row.total-row { background: var(--orange); border-top: 0; border-bottom: 0; padding: 7px 8px; }
-      .totals-inline .row.total-row .k,
-      .totals-inline .row.total-row .v { color: #fff; font-size: 12px; line-height: 1.1; font-weight: 800; }
-      .company-footer {
-        margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
-      }
-      .company-footer .item { margin: 0; font-size: 11px; color: #374151; }
-      .company-footer .item .k { color: #1f2937; font-weight: 700; }
-      tbody tr { break-inside: avoid; page-break-inside: avoid; }
-      @media print {
-        html, body { background: #fff; }
-        .sheet { margin: 0; box-shadow: none; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="sheet">
-      <div class="accent"></div>
-      <header class="top">
-        <div class="brand">
-          <div class="logo-wrap">${logoMarkup}</div>
-        </div>
-        <p class="title">Quote</p>
-      </header>
-      <section class="issued-row">
-        <div>
-          <p class="issued-title">Issued To:</p>
-          <p class="issued-text">${issuedToLines}</p>
-        </div>
-        <div class="issued-meta">
-          <div class="row"><span class="k">Quote No:</span><span class="v">${escapeHtml(printableNumber)}</span></div>
-          <div class="row"><span class="k">Date:</span><span class="v">${escapeHtml(issuedDate)}</span></div>
-          <div class="row"><span class="k">Expiry:</span><span class="v">${escapeHtml(toDayMonthYearLabel(params.expiryDate))}</span></div>
-        </div>
-      </section>
-      <section class="project-lead">
-        <p class="project-line">Project: ${escapeHtml(printableProjectName)}</p>
-      </section>
-      <table>
-        <thead>
-          <tr>
-            <th style="width:42%">Description</th>
-            <th class="right" style="width:18%">Rate</th>
-            <th class="right" style="width:10%">Qty</th>
-            <th style="width:10%">Unit</th>
-            <th class="right" style="width:20%">Total</th>
-          </tr>
-        </thead>
-        <tbody>${lineItemsRows}</tbody>
-      </table>
-      <section class="quote-summary-wrap">
-        <section class="totals-inline">
-          ${markUpRowForExport}
-          ${discountRowForExport}
-          ${contingencyRowForExport}
-          <div class="row"><span class="k">Subtotal (excl. GST)</span><span class="v">${toMoney(subtotalExcludingGstForExport)}</span></div>
-          <div class="row"><span class="k">GST (${escapeHtml(params.gstPercent.trim() || "15")}%)</span><span class="v">${toMoney(params.pricingSummary.gst)}</span></div>
-          <div class="row total-row"><span class="k">Total (incl. GST)</span><span class="v">${toMoney(params.pricingSummary.grandTotal)}</span></div>
-        </section>
-      </section>
-      <section class="terms-wrap">
-        <div class="terms-bar">Terms and Conditions</div>
-        <section class="scope-grid">
-          ${scopeBlocksMarkup}
-        </section>
-      </section>
-      <section class="company-footer">
-        <p class="item"><span class="k">Company Name:</span> ${escapeHtml(footerCompanyName)}</p>
-        <p class="item"><span class="k">Email:</span> ${escapeHtml(footerEmail)}</p>
-        <p class="item"><span class="k">Contact Number:</span> ${escapeHtml(footerContactNumber)}</p>
-      </section>
-    </main>
-  </body>
-</html>`;
+function commercialItemStatusLabel(value: string) {
+  return value.length > 0 ? `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}` : "Current";
 }
 
 function DescriptionInputWithPreview({
@@ -538,7 +190,7 @@ function CommercialItemLineMeta({
   );
 }
 
-interface QuoteEditorLayoutProps {
+interface QuoteEditorLayoutBaseProps {
   heroTitle: string;
   backHref?: string;
   backLabel?: string;
@@ -583,20 +235,11 @@ interface QuoteEditorLayoutProps {
   setIsLineItemsOpen: (value: boolean | ((current: boolean) => boolean)) => void;
   isTermsOpen: boolean;
   setIsTermsOpen: (value: boolean | ((current: boolean) => boolean)) => void;
-  isScopeImportOpen: boolean;
-  setIsScopeImportOpen: (value: boolean | ((current: boolean) => boolean)) => void;
-  isLoadingScopeItems: boolean;
-  availableScopeCostItems: ScopeCostCategoryItem[];
-  selectedScopeCostItemIds: string[];
-  toggleScopeCostItem: (itemId: string) => void;
-  importSelectedScopeItems: () => void;
-  isCommercialItemsOpen: boolean;
-  setIsCommercialItemsOpen: (value: boolean | ((current: boolean) => boolean)) => void;
-  isLoadingCommercialItems: boolean;
-  availableCommercialItems: QuoteCommercialItemPickerItem[];
-  selectedCommercialItemIds: string[];
-  toggleCommercialItem: (itemId: string) => void;
-  importSelectedCommercialItems: () => void;
+  onOpenScopeImport: () => void;
+  scopeImportTriggerRef?: Ref<HTMLButtonElement>;
+  canUseMaterials?: boolean;
+  onOpenMaterials?: () => void;
+  materialsTriggerRef?: Ref<HTMLButtonElement>;
   getCommercialItemSourceHref?: (item: LineItem) => string | null;
   sectionSubtotals: Map<LineItemSection, number>;
   validityPeriod: string;
@@ -628,7 +271,34 @@ interface QuoteEditorLayoutProps {
   includeContingencyInExport: boolean;
   setIncludeContingencyInExport: (value: boolean | ((current: boolean) => boolean)) => void;
   pricingSummary: PricingSummary;
+  primaryAction?: ReactNode;
+  recordTabs?: ReactNode;
+  contentOverride?: ReactNode;
+  hideRecordHeader?: boolean;
 }
+
+type QuoteEditorLayoutProps = QuoteEditorLayoutBaseProps & (
+  | {
+      showWorksheetSources: true;
+      isCommercialItemsOpen: boolean;
+      setIsCommercialItemsOpen: (value: boolean | ((current: boolean) => boolean)) => void;
+      isLoadingCommercialItems: boolean;
+      availableCommercialItems: QuoteCommercialItemPickerItem[];
+      selectedCommercialItemIds: string[];
+      toggleCommercialItem: (itemId: string) => void;
+      importSelectedCommercialItems: () => void;
+    }
+  | {
+      showWorksheetSources: false;
+      isCommercialItemsOpen?: never;
+      setIsCommercialItemsOpen?: never;
+      isLoadingCommercialItems?: never;
+      availableCommercialItems?: never;
+      selectedCommercialItemIds?: never;
+      toggleCommercialItem?: never;
+      importSelectedCommercialItems?: never;
+    }
+);
 
 export function QuoteEditorLayout({
   heroTitle,
@@ -675,20 +345,19 @@ export function QuoteEditorLayout({
   setIsLineItemsOpen,
   isTermsOpen,
   setIsTermsOpen,
-  isScopeImportOpen,
-  setIsScopeImportOpen,
-  isLoadingScopeItems,
-  availableScopeCostItems,
-  selectedScopeCostItemIds,
-  toggleScopeCostItem,
-  importSelectedScopeItems,
-  isCommercialItemsOpen,
+  onOpenScopeImport,
+  scopeImportTriggerRef,
+  showWorksheetSources,
+  isCommercialItemsOpen = false,
   setIsCommercialItemsOpen,
-  isLoadingCommercialItems,
-  availableCommercialItems,
-  selectedCommercialItemIds,
+  isLoadingCommercialItems = false,
+  availableCommercialItems = [],
+  selectedCommercialItemIds = [],
   toggleCommercialItem,
   importSelectedCommercialItems,
+  canUseMaterials = false,
+  onOpenMaterials,
+  materialsTriggerRef,
   getCommercialItemSourceHref,
   sectionSubtotals,
   validityPeriod,
@@ -720,6 +389,10 @@ export function QuoteEditorLayout({
   includeContingencyInExport,
   setIncludeContingencyInExport,
   pricingSummary,
+  primaryAction,
+  recordTabs,
+  contentOverride,
+  hideRecordHeader = false,
 }: QuoteEditorLayoutProps) {
   const markupLabel = STANDARD_QUOTE_PRICING_LABELS.markup;
   const contingencyLabel = STANDARD_QUOTE_PRICING_LABELS.contingency;
@@ -748,37 +421,48 @@ export function QuoteEditorLayout({
 
   return (
     <div className={`${ibmPlexSans.className} -mb-8 w-full space-y-6 bg-[var(--background)]`} aria-busy={isLoadingQuote}>
-      <OperationalModuleHeader
-        title={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <span>{headerTitle}</span>
-            <StatusBadge status={quoteStatusBadge(quoteStatus)}>{currentStatusLabel}</StatusBadge>
-          </span>
-        }
-        eyebrow={backHref && backLabel ? <a href={backHref} className="underline underline-offset-2">{backLabel}</a> : undefined}
-        description={saveMessage ?? undefined}
-        actions={
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                if (shouldShowEditor) {
-                  void onSave();
-                  return;
-                }
-                onEdit();
-              }}
-              disabled={shouldShowEditor ? !canManageQuote || isSaving : !canManageQuote}
-            >
-              {shouldShowEditor ? (isSaving ? "Saving..." : "Save Quote") : "Edit Quote"}
-            </Button>
-            <Button type="button" onClick={onExport} disabled={isSaving}>
-              Export PDF
-            </Button>
-          </>
-        }
-      />
+      {hideRecordHeader ? null : (
+        <OperationalModuleHeader
+          title={
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>{headerTitle}</span>
+              <StatusBadge status={quoteStatusBadge(quoteStatus)}>{currentStatusLabel}</StatusBadge>
+            </span>
+          }
+          eyebrow={backHref && backLabel ? <a href={backHref} className="underline underline-offset-2">{backLabel}</a> : undefined}
+          description={saveMessage ?? undefined}
+          actions={
+            <>
+              {primaryAction !== undefined ? primaryAction : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    if (shouldShowEditor) {
+                      void onSave();
+                      return;
+                    }
+                    onEdit();
+                  }}
+                  disabled={shouldShowEditor ? !canManageQuote || isSaving : !canManageQuote}
+                >
+                  {shouldShowEditor ? (isSaving ? "Saving..." : "Save Quote") : "Edit Quote"}
+                </Button>
+              )}
+              <Button
+                type="button"
+                onClick={onExport}
+                disabled={isSaving || isLoadingQuote}
+                className={primaryAction !== undefined ? "sm:min-w-[180px]" : undefined}
+              >
+                Export PDF
+              </Button>
+            </>
+          }
+        />
+      )}
+
+      {recordTabs}
 
       {error ? (
         <OperationalAlert variant="error">
@@ -791,7 +475,7 @@ export function QuoteEditorLayout({
         </OperationalAlert>
       ) : null}
 
-      {isHydratingExistingQuote ? (
+      {contentOverride ? contentOverride : isHydratingExistingQuote ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <OperationalPanel>
             <p className="text-sm text-[var(--text-secondary)]">Loading saved quote...</p>
@@ -818,7 +502,7 @@ export function QuoteEditorLayout({
                   <div className="space-y-1.5 xl:col-span-2">
                     <label className={styles.quoteBodyLabel}>Client</label>
                     <div className={`${styles.quoteBodyValue} flex h-11 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 text-sm font-medium`}>
-                      {clientName || "No client linked yet"}
+                      {clientName || "Client"}
                     </div>
                   </div>
                   <div className="space-y-1.5">
@@ -867,31 +551,48 @@ export function QuoteEditorLayout({
                 </div>
               ) : null}
             </div>
-            <div className="flex items-center justify-between gap-4 pb-4 pt-6">
+            <div className="flex flex-wrap items-center gap-3 pb-4 pt-6">
               <h2 className={styles.quoteSectionTitle}>Line Items</h2>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {showWorksheetSources ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCommercialItemsOpen?.((current) => !current)}
+                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add from Worksheet Sources
+                  </Button>
+                ) : null}
                 <Button
+                  ref={scopeImportTriggerRef}
                   type="button"
-                  variant="secondary"
-                  onClick={() => setIsCommercialItemsOpen((current) => !current)}
+                  variant="outline"
+                  onClick={onOpenScopeImport}
+                  className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
                 >
-                  <Plus className="h-4 w-4" />
-                  Add from Worksheet Sources
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setIsScopeImportOpen((current) => !current)}
-                >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="mr-1 h-4 w-4" />
                   Import Scope Items
                 </Button>
+                {canUseMaterials && onOpenMaterials ? (
+                  <Button
+                    ref={materialsTriggerRef}
+                    type="button"
+                    variant="outline"
+                    onClick={onOpenMaterials}
+                    className={`${styles.quoteButtonLabel} h-10 rounded-full border-[var(--border)] bg-[var(--surface)] px-4`}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Materials
+                  </Button>
+                ) : null}
               </div>
             </div>
 
             <section>
                   <div className="space-y-5">
-                  {isCommercialItemsOpen ? (
+                  {showWorksheetSources && isCommercialItemsOpen ? (
                     <div className="min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5">
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
                         <div className="space-y-1">
@@ -918,7 +619,7 @@ export function QuoteEditorLayout({
                               <input
                                 type="checkbox"
                                 checked={selectedCommercialItemIds.includes(item.id)}
-                                onChange={() => toggleCommercialItem(item.id)}
+                                onChange={() => toggleCommercialItem?.(item.id)}
                                 className="mt-0.5 h-4 w-4 rounded-[6px] border-[var(--border)]"
                               />
                               <span className="min-w-0">
@@ -941,63 +642,13 @@ export function QuoteEditorLayout({
                     </div>
                   ) : null}
 
-                  {isScopeImportOpen ? (
-                    <div className="min-h-0 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5">
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
-                        <div className="space-y-1">
-                          <p className={styles.quoteCardTitle}>Cost Breakdown Categories</p>
-                          <p className={styles.quoteBodyLabel}>Import completed Scope Builder items into your line items.</p>
-                        </div>
-                        <Button
-                          type="button"
-                          onClick={importSelectedScopeItems}
-                          disabled={selectedScopeCostItemIds.length === 0}
-                          className={`${styles.controlButton} ${styles.producedActionButtonProjectTone} ${styles.quoteButtonLabel} h-9 px-4 disabled:opacity-50`}
-                        >
-                          Add Selected ({selectedScopeCostItemIds.length})
-                        </Button>
-                      </div>
-                      {isLoadingScopeItems ? (
-                        <div className="rounded-[14px] bg-[var(--surface-muted)] px-4 py-5">
-                          <p className={styles.quoteBodyLabel}>Loading Scope Builder items...</p>
-                        </div>
-                      ) : availableScopeCostItems.length > 0 ? (
-                        <div className="mt-4 max-h-[240px] space-y-2 overflow-y-auto pr-1">
-                          {availableScopeCostItems.map((item) => (
-                            <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 transition-colors hover:bg-[var(--surface-muted)]">
-                              <input
-                                type="checkbox"
-                                checked={selectedScopeCostItemIds.includes(item.id)}
-                                onChange={() => toggleScopeCostItem(item.id)}
-                                className="mt-0.5 h-4 w-4 rounded-[6px] border-[var(--border)]"
-                              />
-                              <span className="min-w-0">
-                                <span className={styles.quoteCardTitle}>{item.title}</span>
-                                {item.description ? (
-                                  <span className={`${styles.quoteBodyLabel} mt-0.5 block`}>{item.description}</span>
-                                ) : null}
-                                <span className={`${styles.quoteTabLabel} mt-1 block text-[10px] uppercase tracking-[0.08em]`}>
-                                  {item.tradeLabel} · {toDayMonthYearLabel(item.generatedAt)}
-                                </span>
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="mt-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-5">
-                          <p className={styles.quoteBodyLabel}>No completed Scope Builder items found for this lead workspace.</p>
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-
                   <div className="hidden md:block">
                     <div className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--card)]">
                       <div className="overflow-x-auto">
-                        <div className="min-w-[820px]">
+                        <div className={COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITHOUT_SOURCE}>
                           <div
                             className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
-                            style={{ gridTemplateColumns: `${MAIN_LINE_GRID_TEMPLATE} 44px` }}
+                            style={{ gridTemplateColumns: COMMERCIAL_LINE_GRID_WITHOUT_SOURCE }}
                           >
                             <span className="px-3 py-2.5 font-semibold">Description</span>
                             <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Item</span>
@@ -1009,7 +660,7 @@ export function QuoteEditorLayout({
                           </div>
                           <div className="divide-y divide-[var(--border)] bg-[var(--card)]">
                             {mainLineItems.map((item) => (
-                              <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${MAIN_LINE_GRID_TEMPLATE} 44px` }}>
+                              <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: COMMERCIAL_LINE_GRID_WITHOUT_SOURCE }}>
                                 <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
                                   <div className="w-full py-1">
                                     <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Description" />
@@ -1045,10 +696,9 @@ export function QuoteEditorLayout({
                                   <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
                                   <div className="relative w-full">
                                     <span className={`${interMedium.className} pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-[12px] leading-none text-[var(--text-muted)]`}>$</span>
-                                    <Input
-                                      type="number"
-                                      value={item.rate === 0 ? "" : item.rate}
-                                      onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
+                                    <QuoteRateInput
+                                      value={item.rate}
+                                      onChange={(value) => updateLineItem(item.id, "rate", value)}
                                       className={`${COMPACT_NUMERIC_FIELD_CLASS} pl-4 pr-1.5`}
                                     />
                                   </div>
@@ -1105,10 +755,9 @@ export function QuoteEditorLayout({
                           <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-11 w-full !border-0 !bg-transparent px-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none" />
                           <div className="relative">
                             <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[var(--text-muted)]`}>$</span>
-                            <Input
-                              type="number"
-                              value={item.rate === 0 ? "" : item.rate}
-                              onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
+                            <QuoteRateInput
+                              value={item.rate}
+                              onChange={(value) => updateLineItem(item.id, "rate", value)}
                               className="h-11 w-full !border-0 !bg-transparent pl-6 pr-3 text-left !shadow-none focus:!border-0 focus:!bg-transparent focus:!shadow-none focus-visible:!border-0 focus-visible:!bg-transparent focus-visible:!shadow-none"
                             />
                           </div>
@@ -1143,10 +792,10 @@ export function QuoteEditorLayout({
                   <div className="hidden md:block">
                     <div className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--card)]">
                       <div className="overflow-x-auto">
-                        <div className="min-w-[820px]">
+                        <div className={COMMERCIAL_LINE_TABLE_MIN_WIDTH_WITHOUT_SOURCE}>
                           <div
                             className={`${styles.quoteTabLabel} grid items-center gap-0 border-b border-[var(--border)] bg-[var(--surface-muted)] px-0 py-0 text-left text-[13px] normal-case tracking-[-0.01em] text-[var(--text-secondary)]`}
-                            style={{ gridTemplateColumns: `${OPTIONAL_LINE_GRID_TEMPLATE} 44px` }}
+                            style={{ gridTemplateColumns: COMMERCIAL_LINE_GRID_WITHOUT_SOURCE }}
                           >
                             <span className="px-3 py-2.5 font-semibold">Description</span>
                             <span className="border-l border-[var(--border)] px-3 py-2.5 font-semibold">Item</span>
@@ -1158,7 +807,7 @@ export function QuoteEditorLayout({
                           </div>
                           <div className="divide-y divide-[var(--border)] bg-[var(--card)]">
                             {optionalLineItems.map((item) => (
-                              <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: `${OPTIONAL_LINE_GRID_TEMPLATE} 44px` }}>
+                              <div key={item.id} className="grid items-stretch gap-0 px-0 py-0" style={{ gridTemplateColumns: COMMERCIAL_LINE_GRID_WITHOUT_SOURCE }}>
                                 <div className={`${DESCRIPTION_CELL_PADDING_CLASS} flex h-full items-center`}>
                                   <div className="w-full py-1">
                                     <DescriptionInputWithPreview value={item.description} onChange={(value) => updateLineItem(item.id, "description", value)} placeholder="Optional add-on" />
@@ -1194,10 +843,9 @@ export function QuoteEditorLayout({
                                   <div className={`${ROW_FIELD_SHELL_CLASS} justify-end`}>
                                   <div className="relative w-full">
                                     <span className={`${interMedium.className} pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-[12px] leading-none text-[var(--text-muted)]`}>$</span>
-                                    <Input
-                                      type="number"
-                                      value={item.rate === 0 ? "" : item.rate}
-                                      onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
+                                    <QuoteRateInput
+                                      value={item.rate}
+                                      onChange={(value) => updateLineItem(item.id, "rate", value)}
                                       className={`${COMPACT_NUMERIC_FIELD_CLASS} pl-4 pr-1.5`}
                                     />
                                   </div>
@@ -1255,10 +903,9 @@ export function QuoteEditorLayout({
                           <Input value={item.unit} onChange={(event) => updateLineItem(item.id, "unit", event.target.value)} className="h-11 w-full rounded-[12px] px-3" />
                           <div className="relative">
                             <span className={`${interMedium.className} pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[var(--text-muted)]`}>$</span>
-                            <Input
-                              type="number"
-                              value={item.rate === 0 ? "" : item.rate}
-                              onChange={(event) => updateLineItem(item.id, "rate", numberOrZero(event.target.value))}
+                            <QuoteRateInput
+                              value={item.rate}
+                              onChange={(value) => updateLineItem(item.id, "rate", value)}
                               className="h-11 w-full rounded-[12px] pl-6 pr-3"
                             />
                           </div>
@@ -1415,7 +1062,7 @@ export function QuoteEditorLayout({
                     <Button type="button" onClick={onSave} disabled={!canManageQuote || isSaving} variant="secondary" className="sm:min-w-[150px]">
                       {isSaving ? "Saving..." : "Save Quote"}
                     </Button>
-                    <Button type="button" onClick={onExport} disabled={isSaving} className="sm:min-w-[150px]">
+                    <Button type="button" onClick={onExport} disabled={isSaving || isLoadingQuote} className="sm:min-w-[150px]">
                       Export PDF
                     </Button>
                   </div>

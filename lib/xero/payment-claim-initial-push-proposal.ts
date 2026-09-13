@@ -16,6 +16,7 @@ import {
 } from "@/lib/xero/payment-claim-initial-push-contract";
 import {
   buildPaymentClaimXeroPayloadFromResolvedSnapshot,
+  PaymentClaimXeroPayloadError,
 } from "@/lib/xero/payment-claim-sales-invoice-payload";
 import { buildPaymentClaimXeroCurrentStateHashFromPayload } from "@/lib/xero/payment-claim-sales-invoice-hash";
 import {
@@ -147,9 +148,31 @@ async function buildPaymentClaimPushProposalWithArtifact(params: {
   if (!resolution.snapshot) {
     throw new Error(resolution.terminalReadiness.blockers[0]?.message ?? "Payment Claim not found.");
   }
-  const readiness = evaluatePaymentClaimXeroReadinessSnapshot(resolution.snapshot);
-  if (!readiness.ready) throw new Error(readiness.blockers[0]?.message ?? "Payment Claim is not ready.");
   const dependencies = resolvePaymentClaimXeroDependencies(resolution.snapshot);
+  const readiness = evaluatePaymentClaimXeroReadinessSnapshot(resolution.snapshot);
+  if (!readiness.ready) {
+    const taxResolution = dependencies.revenueTaxResolution;
+    throw new PaymentClaimXeroPayloadError(
+      "not_ready",
+      readiness.blockers[0]?.message ?? "Payment Claim is not ready.",
+      {
+        organizationId: params.organizationId,
+        claimId: params.claimId,
+        accountTaxType: taxResolution.status === "resolved"
+          ? taxResolution.externalTaxType
+          : taxResolution.accountTaxType,
+        selectedTaxType: typeof dependencies.revenueTaxRate?.tax_type === "string"
+          ? dependencies.revenueTaxRate.tax_type
+          : null,
+        selectedTaxRateId: typeof dependencies.revenueTaxRate?.id === "string"
+          ? dependencies.revenueTaxRate.id
+          : null,
+        selectedEffectiveRate: Number.isFinite(Number(dependencies.revenueTaxRate?.effective_rate))
+          ? Number(dependencies.revenueTaxRate?.effective_rate)
+          : null,
+      },
+    );
+  }
   const admin = db(createAdminSupabaseClient());
   const currentHash = buildPaymentClaimXeroCurrentStateHashFromPayload({
     snapshot: resolution.snapshot,
@@ -292,9 +315,9 @@ async function buildPaymentClaimPushProposalWithArtifact(params: {
     tenantId: dependencies.tenantId,
   };
   const routingSnapshot = {
-    sales: { route: 600, mappingId: dependencies.salesMapping?.id, accountId: salesAccount.id, accountCode: salesAccount.external_code },
+    sales: { accountingRoute: "payment_claim_revenue", mappingId: dependencies.salesMapping?.id, accountId: salesAccount.id, accountCode: salesAccount.external_code },
     retention: retentionAccount
-      ? { route: 700, mappingId: dependencies.retentionMapping?.id, accountId: retentionAccount.id, accountCode: retentionAccount.external_code }
+      ? { accountingRoute: "retention_receivable", mappingId: dependencies.retentionMapping?.id, accountId: retentionAccount.id, accountCode: retentionAccount.external_code }
       : null,
   };
   const taxSnapshot = {

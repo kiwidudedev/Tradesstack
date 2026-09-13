@@ -166,13 +166,31 @@ export type UniversalLearningModelResult = {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  diagnostic?: {
+    request: {
+      model: string;
+      max_tokens: number;
+      temperature: number;
+      system: string | null;
+      messages: Array<{
+        role: "user";
+        content: string;
+      }>;
+    };
+  };
 };
 
 export type UniversalLearningModelInvoker = (
   prompt: UniversalLearningPromptBuildResult,
+  options?: {
+    captureDiagnostic?: boolean;
+  },
 ) => Promise<UniversalLearningModelResult>;
 
-export const callUniversalConstructionLearningAnthropic: UniversalLearningModelInvoker = async (prompt) => {
+export const callUniversalConstructionLearningAnthropic: UniversalLearningModelInvoker = async (
+  prompt,
+  options,
+) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is required for Universal Construction Learning.");
@@ -183,6 +201,20 @@ export const callUniversalConstructionLearningAnthropic: UniversalLearningModelI
     process.env.UNIVERSAL_CONSTRUCTION_LEARNING_ANTHROPIC_MAX_OUTPUT_TOKENS ?? `${DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS}`,
     10,
   );
+  const requestBody = {
+    model,
+    max_tokens: Number.isFinite(maxOutputTokens) && maxOutputTokens > 0
+      ? maxOutputTokens
+      : DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
+    temperature: 0,
+    system: prompt.systemPrompt,
+    messages: [
+      {
+        role: "user" as const,
+        content: prompt.userPrompt,
+      },
+    ],
+  };
   const response = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
@@ -190,20 +222,7 @@ export const callUniversalConstructionLearningAnthropic: UniversalLearningModelI
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: Number.isFinite(maxOutputTokens) && maxOutputTokens > 0
-        ? maxOutputTokens
-        : DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
-      temperature: 0,
-      system: prompt.systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: prompt.userPrompt,
-        },
-      ],
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -242,5 +261,12 @@ export const callUniversalConstructionLearningAnthropic: UniversalLearningModelI
     outputTokens,
     totalTokens:
       inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null,
+    ...(options?.captureDiagnostic
+      ? {
+        diagnostic: {
+          request: requestBody,
+        },
+      }
+      : {}),
   };
 };

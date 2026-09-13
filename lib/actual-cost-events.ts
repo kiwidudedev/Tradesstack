@@ -59,20 +59,22 @@ export function buildProjectActualCostEventPayload(params: {
     | "source_cost_item_id"
     | "tradesstack_cost_code"
     | "tradesstack_cost_code_label"
-    | "work_type"
-    | "cost_type"
-    | "internal_cost_code"
+    | "financial_routing_confidence"
+    | "financial_routing_source"
     | "organization_cost_code_id"
     | "accounting_mapping_id"
     | "allocated_amount"
     | "allocated_quantity"
-  >;
+  > & {
+    accounting_route?: string | null;
+    accounting_route_mapping_id?: string | null;
+  };
   taxAmount?: number | null;
 }): ProjectActualCostEventInsert | null {
   const amount = Number(params.allocation.allocated_amount ?? 0);
   const projectId = params.allocation.project_id;
 
-  if (!projectId || !params.allocation.tradesstack_cost_code || !params.allocation.tradesstack_cost_code_label) {
+  if (!projectId) {
     return null;
   }
 
@@ -103,11 +105,12 @@ export function buildProjectActualCostEventPayload(params: {
     source_cost_item_id: params.allocation.source_cost_item_id,
     tradesstack_cost_code: params.allocation.tradesstack_cost_code,
     tradesstack_cost_code_label: params.allocation.tradesstack_cost_code_label,
-    work_type: params.allocation.work_type,
-    cost_type: params.allocation.cost_type,
-    internal_cost_code: params.allocation.internal_cost_code,
+    financial_routing_confidence: params.allocation.financial_routing_confidence,
+    financial_routing_source: params.allocation.financial_routing_source,
     organization_cost_code_id: params.allocation.organization_cost_code_id,
     accounting_mapping_id: params.allocation.accounting_mapping_id,
+    accounting_route: params.allocation.accounting_route ?? null,
+    accounting_route_mapping_id: params.allocation.accounting_route_mapping_id ?? null,
     amount,
     tax_amount: taxAmount,
     total_amount: totalAmount,
@@ -120,5 +123,5 @@ export function buildProjectActualCostEventPayload(params: {
     source_type: "supplier_invoice",
     source_reference: params.invoice.invoice_number ?? "",
     created_by_user_id: params.createdByUserId,
-  };
+  } as ProjectActualCostEventInsert;
 }

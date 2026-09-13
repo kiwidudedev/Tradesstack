@@ -28,7 +28,7 @@ export default defineConfig({
   webServer: shouldUseManagedWebServer
     ? {
         command:
-          `set -a && source .env.local && set +a && SUPPLIER_INVOICE_EXTRACTION_FORCE_PROVIDER_FAILURE_MATCH=provider_fallback npx next dev --hostname 127.0.0.1 --port ${PORT} --webpack`,
+          `set -a && source .env.test.local && set +a && PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR=.tmp/next-stage3-e2e SUPPLIER_INVOICE_EXTRACTION_FORCE_PROVIDER_FAILURE_MATCH=provider_fallback npx next dev --hostname 127.0.0.1 --port ${PORT} --webpack`,
         url: BASE_URL,
         reuseExistingServer: false,
         timeout: 120_000,

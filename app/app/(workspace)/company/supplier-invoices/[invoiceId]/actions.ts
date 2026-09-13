@@ -1195,22 +1195,35 @@ export async function updateSupplierInvoiceAllocationCommercialCodingAction(para
   try {
     const { currentMember, supabase } =
       await requireSupplierInvoiceCommercialContext(params.supplierInvoiceId);
-    const { data: mapping, error: mappingError } = await supabase
-      .from("organization_tradesstack_accounting_mappings" as never)
-      .select("id, is_active, tradesstack_cost_code, project_id, provider, organization_cost_code_id")
-      .eq("organization_id", currentMember.organization_id)
-      .eq("id", params.accountingMappingId)
-      .eq("is_active", true)
-      .maybeSingle();
-    if (mappingError || !mapping) {
-      throw new Error("Select an active accounting mapping.");
+    const directAccountId = params.accountingMappingId.startsWith("account:")
+      ? params.accountingMappingId.slice("account:".length)
+      : null;
+    const mappingResult = directAccountId
+      ? { data: null, error: null }
+      : await supabase
+          .from("organization_accounting_route_mappings" as never)
+          .select("id, is_active, accounting_route, project_id, provider, organization_cost_code_id")
+          .eq("organization_id", currentMember.organization_id)
+          .eq("id", params.accountingMappingId)
+          .eq("is_active", true)
+          .maybeSingle();
+    if (!directAccountId && (mappingResult.error || !mappingResult.data)) {
+      throw new Error("Select an active Supplier Bills account mapping.");
     }
-    const selectedMappingRecord = mapping as {
-      tradesstack_cost_code: number;
+    const selectedMappingRecord = (mappingResult.data ?? {
+      accounting_route: "supplier_bill_expense",
+      project_id: null,
+      provider: "xero",
+      organization_cost_code_id: directAccountId,
+    }) as {
+      accounting_route: string;
       project_id: string | null;
       provider: string;
       organization_cost_code_id: string;
     };
+    if (selectedMappingRecord.accounting_route !== "supplier_bill_expense") {
+      throw new Error("Select the Supplier Bills accounting route.");
+    }
     if (selectedMappingRecord.provider === "xero") {
       const [{ data: connection }, { data: costCode }] = await Promise.all([
         supabase
@@ -1273,7 +1286,7 @@ export async function updateSupplierInvoiceAllocationCommercialCodingAction(para
 
     const { data: allocation, error: allocationError } = await supabase
       .from("supplier_invoice_line_allocations")
-      .select("supplier_invoice_line_id, tradesstack_cost_code, project_id")
+      .select("supplier_invoice_line_id, project_id")
       .eq("organization_id", currentMember.organization_id)
       .eq("supplier_invoice_id", params.supplierInvoiceId)
       .eq("id", params.allocationId)
@@ -1282,15 +1295,9 @@ export async function updateSupplierInvoiceAllocationCommercialCodingAction(para
       throw new Error("Supplier invoice allocation not found.");
     }
     const selectedMapping = selectedMappingRecord;
-    if (
-      allocation.tradesstack_cost_code === null ||
-      selectedMapping.tradesstack_cost_code !==
-        allocation.tradesstack_cost_code ||
-      (selectedMapping.project_id !== null &&
-        selectedMapping.project_id !== allocation.project_id)
-    ) {
+    if (selectedMapping.project_id !== null && selectedMapping.project_id !== allocation.project_id) {
       throw new Error(
-        "Select an accounting mapping that matches the allocation routing code and project."
+        "Select a Supplier Bills account mapping for this project."
       );
     }
     if (params.taxResolutionStatus === "not_applicable") {
@@ -1315,7 +1322,11 @@ export async function updateSupplierInvoiceAllocationCommercialCodingAction(para
     const { error } = await supabase
       .from("supplier_invoice_line_allocations")
       .update({
-        accounting_mapping_id: params.accountingMappingId,
+        accounting_mapping_id: null,
+        accounting_route: "supplier_bill_expense",
+        accounting_route_mapping_id: directAccountId ? null : params.accountingMappingId,
+        account_override_organization_cost_code_id: directAccountId,
+        organization_cost_code_id: selectedMapping.organization_cost_code_id,
         accounting_resolution_status: "resolved",
         accounting_tax_rate_id:
           params.taxResolutionStatus === "resolved"

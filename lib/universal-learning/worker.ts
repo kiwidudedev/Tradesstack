@@ -55,6 +55,7 @@ export function classifyUniversalLearningWorkerFailure(error: unknown): {
     "target_memory_id_invalid",
     "memory_action_preflight_failed",
     "model_output_unparseable",
+    "supplier_bill_prompt_compaction_failed",
   ]);
   if (
     deterministicCodes.has(code)

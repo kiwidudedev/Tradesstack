@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const routePath = join(
   process.cwd(),
-  "app/app/(workspace)/leads-clients/opportunities/[opportunityId]/quote/page.tsx",
+  "components/app/OpportunityQuoteRevisionEditor.tsx",
 );
 
 describe("opportunity quote route canonicalization foundation", () => {
@@ -19,6 +19,6 @@ describe("opportunity quote route canonicalization foundation", () => {
   it("saves through the lifecycle-aware quote rpc", () => {
     expect(source).toContain("save_commercial_quote_draft");
     expect(source).toContain("p_originating_opportunity_id: dbOpportunityId");
-    expect(source).toContain("p_project_id: null");
+    expect(source).toContain("p_project_id: undefined");
   });
 });

@@ -1,6 +1,10 @@
 import "server-only";
 
 import { cache } from "react";
+import {
+  getVisibleProjectIds,
+  resolveProjectLifecycleCompatibility,
+} from "@/lib/opportunity-lifecycle-compatibility-server";
 import type { OrganizationProject } from "@/lib/projects";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
@@ -9,7 +13,7 @@ const memberSelect = "id, organization_id, user_id, role, display_name, avatar_p
 const projectSelect =
   "id, organization_id, created_by, client_id, source_opportunity_id, name, slug, project_code, stage, location, cover_image_url, created_at, updated_at";
 const projectDrawingSetSelect =
-  "id, organization_id, project_id, uploaded_by, file_name, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
+  "id, organization_id, project_id, uploaded_by, file_name, display_name, sort_order, archived_at, archived_by, source_type, source_revision, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
 const projectTradePackPageIndexSelect = "id, trade_label, include_in_pack, is_support_sheet, created_at, run_id";
 
 type OrganizationMember = Database["public"]["Tables"]["organization_members"]["Row"];
@@ -39,13 +43,21 @@ function isGeneratedTradePackFile(fileName: string | null, storagePath: string |
   return /trade pack/i.test(fileName ?? "") || /-trade-pack\.pdf$/i.test(fileName ?? "") || /-trade-pack\.pdf$/i.test(storagePath ?? "");
 }
 
-export const getCurrentOrganizationMember = cache(async (): Promise<OrganizationMember | null> => {
+type OrganizationMemberTimingMark = (
+  stage: "authentication-completed" | "membership-completed",
+) => void;
+
+async function loadCurrentOrganizationMember(
+  timingMark?: OrganizationMemberTimingMark,
+): Promise<OrganizationMember | null> {
   const supabase = await createServerSupabaseClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  timingMark?.("authentication-completed");
 
   if (!user) {
+    timingMark?.("membership-completed");
     return null;
   }
 
@@ -56,16 +68,46 @@ export const getCurrentOrganizationMember = cache(async (): Promise<Organization
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+  timingMark?.("membership-completed");
 
   if (error) {
     return null;
   }
 
   return data ?? null;
-});
+}
+
+export const getCurrentOrganizationMember = cache(
+  async (): Promise<OrganizationMember | null> => loadCurrentOrganizationMember(),
+);
+
+export async function getCurrentOrganizationMemberWithTiming(
+  timingMark: OrganizationMemberTimingMark,
+) {
+  return loadCurrentOrganizationMember(timingMark);
+}
 
 async function getHiddenWorkspaceProjectIds(organizationId: string, candidateProjectIds?: string[]): Promise<Set<string>> {
   const supabase = await createServerSupabaseClient();
+  const visibleProjectIds = await getVisibleProjectIds({
+    client: supabase,
+    organizationId,
+    candidateProjectIds,
+  });
+
+  if (visibleProjectIds) {
+    const scopedProjectIds = candidateProjectIds ?? (
+      await supabase
+        .from("organization_projects")
+        .select("id")
+        .eq("organization_id", organizationId)
+    ).data?.map((project) => project.id) ?? [];
+
+    return new Set(scopedProjectIds.filter((projectId) => !visibleProjectIds.has(projectId)));
+  }
+
+  // Deployment-order fallback: preserve the pre-Stage-2 hidden-workspace rule
+  // until the additive compatibility RPC is available.
   const baseQuery = supabase
     .from("organization_opportunities")
     .select("workspace_project_id")
@@ -161,6 +203,26 @@ export async function getOrganizationProjectBySlugForCurrentUser(
   }
 
   return data ?? null;
+}
+
+export async function getVisibleOrganizationProjectBySlugForCurrentUser(
+  projectSlug: string,
+): Promise<OrganizationProject | null> {
+  const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
+  if (!project) return null;
+
+  const supabase = await createServerSupabaseClient();
+  const compatibility = await resolveProjectLifecycleCompatibility({
+    client: supabase,
+    organizationId: project.organization_id,
+    projectId: project.id,
+  });
+
+  // Deployment-order fallback preserves existing routes until the additive
+  // Stage 2 migration is present.
+  return compatibility === null || (compatibility.isValid && compatibility.isVisible)
+    ? project
+    : null;
 }
 
 export async function getOrganizationProjectByIdForCurrentUser(

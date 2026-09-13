@@ -58,7 +58,7 @@ function deriveCostAreaLabel(row: ProjectCostReportRow) {
       : row.tradesstackCostCode;
   }
 
-  return row.workType ?? row.classificationLabel;
+  return row.classificationLabel;
 }
 
 function deriveRowMetadata(row: ProjectCostReportRow) {
@@ -72,8 +72,6 @@ function deriveRowMetadata(row: ProjectCostReportRow) {
         ? `${row.mappedAccountingCode} ${row.mappedAccountingCodeLabel}`
         : row.mappedAccountingCode
       : null,
-    row.internalCostCode,
-    row.costType,
   ].filter((value): value is string => Boolean(value));
 
   return values;

@@ -1,34 +1,33 @@
 "use client";
 
 import { useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from "react";
-import { buildTakeoffHref } from "@/lib/takeoff/navigation";
+import { useRouter } from "next/navigation";
+import { buildTakeoffHref, buildTakeoffOwnerApiQuery } from "@/lib/takeoff/navigation";
+import type { TakeoffRouteOwner } from "@/lib/takeoff/owner";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
   MAX_DRAWING_SET_UPLOAD_SIZE_BYTES,
   formatFileSize,
 } from "@/lib/drawing-sets";
 import { uploadSourceDrawingSetToProject } from "@/lib/project-drawing-set-upload";
+import type { ProjectDrawingSet } from "@/lib/project-drawing-set-upload";
 
 interface UseTakeoffSourceDrawingUploadOptions {
-  opportunityId: string;
+  owner: TakeoffRouteOwner;
   organizationId: string;
   projectId: string;
-}
-
-const MEASURE_VIEWER_POLL_INTERVAL_MS = 1000;
-const MEASURE_VIEWER_POLL_TIMEOUT_MS = 30000;
-
-function wait(delayMs: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, delayMs);
-  });
+  completionBehavior?: "open-measure" | "stay-on-register";
+  onUploaded?: (drawingSet: ProjectDrawingSet) => void;
 }
 
 export function useTakeoffSourceDrawingUpload({
-  opportunityId,
+  owner,
   organizationId,
   projectId,
+  completionBehavior = "open-measure",
+  onUploaded,
 }: UseTakeoffSourceDrawingUploadOptions) {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -45,42 +44,6 @@ export function useTakeoffSourceDrawingUpload({
     event?.preventDefault();
     event?.stopPropagation();
     inputRef.current?.click();
-  };
-
-  const waitForMeasurePageHref = async (drawingSetId: string) => {
-    const deadline = Date.now() + MEASURE_VIEWER_POLL_TIMEOUT_MS;
-    const measureViewerUrl = new URL("/api/takeoff/measure-viewer", window.location.origin);
-    measureViewerUrl.searchParams.set("opportunityId", opportunityId);
-    measureViewerUrl.searchParams.set("drawingSetId", drawingSetId);
-
-    while (Date.now() < deadline) {
-      try {
-        const response = await fetch(measureViewerUrl.toString(), {
-          cache: "no-store",
-        });
-
-        if (response.ok) {
-          const payload = (await response.json()) as {
-            ok?: boolean;
-            data?: { pageId?: string | null };
-          };
-          const pageId = payload.data?.pageId?.trim() ?? "";
-
-          if (payload.ok && pageId) {
-            return buildTakeoffHref(opportunityId, "measure", {
-              drawingSetId,
-              pageId,
-            });
-          }
-        }
-      } catch {
-        // Keep polling quietly while the first takeoff page is being prepared.
-      }
-
-      await wait(MEASURE_VIEWER_POLL_INTERVAL_MS);
-    }
-
-    throw new Error("The drawing uploaded successfully, but Measure is still preparing the first page. Please refresh in a moment.");
   };
 
   const uploadFile = async (file: File | null) => {
@@ -115,9 +78,27 @@ export function useTakeoffSourceDrawingUpload({
         },
       });
 
-      setStatus("Preparing measure workspace...");
-      const nextUrl = await waitForMeasurePageHref(insertedRow.id);
-      window.location.assign(nextUrl);
+      setStatus("Preparing drawing set...");
+      const preparationUrl = `/api/takeoff/pages/prepare?${buildTakeoffOwnerApiQuery(owner)}&drawingSetId=${encodeURIComponent(insertedRow.id)}`;
+      try {
+        await fetch(preparationUrl, {
+          method: "POST",
+          cache: "no-store",
+          signal: AbortSignal.timeout(12_000),
+        });
+      } catch {
+        // The drawing remains authoritative and its preparation workspace owns retry/recovery.
+      }
+      onUploaded?.(insertedRow);
+      if (completionBehavior === "stay-on-register") {
+        setStatus("Drawing added. Preparation is running.");
+        router.refresh();
+      } else {
+        const nextUrl = buildTakeoffHref(owner, "measure", {
+          drawingSetId: insertedRow.id,
+        });
+        router.push(nextUrl);
+      }
     } catch (uploadError) {
       const fallback = `${file.name} could not be uploaded. Max size is ${formatFileSize(MAX_DRAWING_SET_UPLOAD_SIZE_BYTES)}.`;
       setError(uploadError instanceof Error && uploadError.message ? uploadError.message : fallback);

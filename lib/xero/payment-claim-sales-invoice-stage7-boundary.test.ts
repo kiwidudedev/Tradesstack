@@ -36,7 +36,9 @@ describe("Payment Claim Xero Stage 7 boundary", () => {
     const workspaceIndex = page.indexOf(">Claim Workspace</h2>");
     const paymentBreakdownIndex = page.indexOf(">Payment Breakdown</p>");
     const finalSaveIndex = page.lastIndexOf('isSaving ? "Saving..." : "Save Claim"');
-    const finalExportIndex = page.lastIndexOf('isExporting ? "Exporting..." : "Export PDF"');
+    const finalExportIndex = page.lastIndexOf(
+      'isExportingPaymentClaim ? "Exporting..." : "Export Payment Claim"',
+    );
     const expandedOverlayIndex = page.indexOf("{isLineItemsExpanded ? (");
 
     expect(page.match(/<PaymentClaimXeroPanel/g)).toHaveLength(1);

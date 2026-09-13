@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import type { TakeoffDisplayUnit, TakeoffUnitSystem } from "@/lib/takeoff/units";
 import {
   footerContainerClassName,
   inputClassName,
@@ -11,6 +12,7 @@ import {
   secondaryButtonClassName,
   selectClassName,
 } from "@/components/app/TradesstackDialogPrimitives";
+import { DraggableTakeoffPanel } from "@/components/app/DraggableTakeoffPanel";
 
 export type ConfigurableTool = "calibrate" | "distance" | "polyline" | "area" | "count";
 
@@ -18,8 +20,8 @@ export interface MeasureToolSetupState {
   calibrate: {
     name: string;
     referenceLengthInput: string;
-    displayUnit: string;
-    unitSystem: "metric" | "imperial";
+    displayUnit: TakeoffDisplayUnit;
+    unitSystem: TakeoffUnitSystem;
   };
   distance: {
     name: string;
@@ -50,6 +52,7 @@ export interface MeasureToolSetupState {
 interface TakeoffMeasureToolDialogProps {
   open: boolean;
   tool: ConfigurableTool | null;
+  resetKey: string;
   initialValues: MeasureToolSetupState;
   onOpenChange: (open: boolean) => void;
   onConfirm: (values: MeasureToolSetupState[ConfigurableTool]) => void;
@@ -73,10 +76,14 @@ export const measurementColorOptions = [
   { label: "Slate", value: "#475569" },
 ];
 
-const unitOptions = [
-  { label: "Millimetres (mm)", value: "mm", unitSystem: "metric" as const },
-  { label: "Centimetres (cm)", value: "cm", unitSystem: "metric" as const },
-  { label: "Metres (m)", value: "m", unitSystem: "metric" as const },
+const unitOptions: Array<{
+  label: string;
+  value: TakeoffDisplayUnit;
+  unitSystem: TakeoffUnitSystem;
+}> = [
+  { label: "Millimetres (mm)", value: "mm", unitSystem: "metric" },
+  { label: "Centimetres (cm)", value: "cm", unitSystem: "metric" },
+  { label: "Metres (m)", value: "m", unitSystem: "metric" },
 ];
 
 function getDialogCopy(tool: ConfigurableTool) {
@@ -117,6 +124,7 @@ function getDialogCopy(tool: ConfigurableTool) {
 export function TakeoffMeasureToolDialog({
   open,
   tool,
+  resetKey,
   initialValues,
   onOpenChange,
   onConfirm,
@@ -127,8 +135,9 @@ export function TakeoffMeasureToolDialog({
 
   return (
     <TakeoffMeasureToolDialogForm
-      key={tool}
+      key={`${tool}:${resetKey}`}
       tool={tool}
+      resetKey={resetKey}
       initialValues={initialValues[tool]}
       onOpenChange={onOpenChange}
       onConfirm={onConfirm}
@@ -184,11 +193,13 @@ export function MeasurementColorSelector({
 
 function TakeoffMeasureToolDialogForm({
   tool,
+  resetKey,
   initialValues,
   onOpenChange,
   onConfirm,
 }: {
   tool: ConfigurableTool;
+  resetKey: string;
   initialValues: ToolDialogValues;
   onOpenChange: (open: boolean) => void;
   onConfirm: (values: MeasureToolSetupState[ConfigurableTool]) => void;
@@ -245,11 +256,12 @@ function TakeoffMeasureToolDialogForm({
       : "name" in formValues && formValues.name.trim().length > 0;
 
   return (
-    <div className="w-full max-w-[400px] rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
-      <form onSubmit={handleSubmit}>
-        <div className="space-y-3.5 px-7 pb-4 pt-5">
-          {tool === "calibrate" ? (
-            <>
+    <DraggableTakeoffPanel accessibleLabel={copy.title} resetKey={resetKey}>
+      <div className="w-full max-w-[400px] rounded-[18px] border border-[#E2E8F1] bg-white p-0 shadow-[0_8px_32px_rgba(15,23,42,0.12)]">
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-3.5 px-7 pb-4 pt-5">
+            {tool === "calibrate" ? (
+              <>
               <div>
                 <label htmlFor="measure-calibration-length" className={labelClassName}>
                   Reference Length <span className="text-[#FF4C14]">*</span>
@@ -295,9 +307,9 @@ function TakeoffMeasureToolDialogForm({
                   </svg>
                 </div>
               </div>
-            </>
-          ) : (
-            <>
+              </>
+            ) : (
+              <>
               <div>
                 <label htmlFor="measure-tool-name" className={labelClassName}>
                   Name <span className="text-[#FF4C14]">*</span>
@@ -349,19 +361,20 @@ function TakeoffMeasureToolDialogForm({
                   options={measurementColorOptions}
                 />
               </div>
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </div>
 
-        <div className={footerContainerClassName}>
-          <button type="button" onClick={() => onOpenChange(false)} className={secondaryButtonClassName}>
-            Cancel
-          </button>
-          <button type="submit" disabled={!canSubmit} className={primaryButtonClassName}>
-            {copy.submitLabel}
-          </button>
-        </div>
-      </form>
-    </div>
+          <div className={footerContainerClassName}>
+            <button type="button" onClick={() => onOpenChange(false)} className={secondaryButtonClassName}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!canSubmit} className={primaryButtonClassName}>
+              {copy.submitLabel}
+            </button>
+          </div>
+        </form>
+      </div>
+    </DraggableTakeoffPanel>
   );
 }

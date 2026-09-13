@@ -7,6 +7,7 @@ const worker = read("lib/xero/payment-claim-initial-push-worker.ts");
 const proposal = read("lib/xero/payment-claim-initial-push-proposal.ts");
 const confirmation = read("lib/xero/payment-claim-initial-push-confirmation.ts");
 const actions = read("app/app/(workspace)/projects/[projectId]/preconstruction/claims/[claimId]/actions.ts");
+const actionErrorLogging = read("lib/xero/payment-claim-action-error-logging.ts");
 const panel = read("components/app/PaymentClaimXeroPanel.tsx");
 const sync = read("lib/xero/sync.ts");
 
@@ -22,6 +23,17 @@ describe("Payment Claim Phase 2B route boundary", () => {
     expect(actions).toContain("persistPaymentClaimPushProposal");
     expect(proposal).toContain("The accounting preview has expired.");
     expect(confirmation).toContain('"stale_proposal"');
+  });
+
+  it("maps known proposal validation failures to safe correlated action errors", () => {
+    expect(actions).toContain("error instanceof PaymentClaimXeroPayloadError");
+    expect(actions).toContain('error.code === "not_ready" ? "payment_claim_not_ready" : error.code');
+    expect(actions).toContain("logPaymentClaimProposalValidationError");
+    expect(actionErrorLogging).toContain('import "server-only"');
+    expect(actionErrorLogging).toContain("Payment Claim Xero proposal validation failed.");
+    expect(actionErrorLogging).toContain("supportReference: reference");
+    expect(actionErrorLogging).toContain("resolvedAccountTaxType");
+    expect(actionErrorLogging).not.toContain("error.diagnostics?.payload");
   });
 
   it("executes the exact confirmed job immediately instead of waiting for cron", () => {

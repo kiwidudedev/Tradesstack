@@ -1,11 +1,13 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { hasOrganizationPermission } from "@/lib/permissions-server";
 import { uploadAndExtractMaterialImportBatch } from "@/lib/materials/import-service";
 import { validateMaterialImportFile } from "@/lib/materials/validation";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { scheduleMaterialSupplierPricingWorker } from "@/lib/materials/import-job-kick";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const currentMember = await getCurrentOrganizationMember();
@@ -48,6 +50,14 @@ export async function POST(request: Request) {
       supplierId,
       file,
     });
+
+    if (result.queued) {
+      scheduleMaterialSupplierPricingWorker(after, {
+        batchId: result.batch.id,
+        jobId: result.jobId,
+        trigger: "create",
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error) {

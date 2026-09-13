@@ -5,6 +5,7 @@ export interface TakeoffNavigationParams {
   pageId?: string | null;
   calibrationStatus?: "saved" | "replaced" | "error" | null;
   measurementStatus?: "created" | "archived" | "deleted" | "restored" | "error" | null;
+  drawingScope?: "all" | null;
 }
 
 export function readSearchParam(value: string | string[] | undefined): string | null {
@@ -20,8 +21,21 @@ export function readSearchParam(value: string | string[] | undefined): string | 
   return null;
 }
 
+function takeoffBaseHref(ownerInput: string | TakeoffRouteOwner) {
+  const owner = typeof ownerInput === "string"
+    ? { kind: "opportunity" as const, slug: ownerInput }
+    : ownerInput;
+  return owner.kind === "project"
+    ? `/app/projects/${owner.slug}/takeoff`
+    : `/app/leads-clients/opportunities/${owner.slug}/takeoff`;
+}
+
+export function buildTakeoffRegisterHref(owner: string | TakeoffRouteOwner) {
+  return takeoffBaseHref(owner);
+}
+
 export function buildTakeoffHref(
-  opportunityId: string,
+  owner: string | TakeoffRouteOwner,
   section: TakeoffSection,
   params: TakeoffNavigationParams
 ) {
@@ -43,8 +57,17 @@ export function buildTakeoffHref(
     search.set("measurementStatus", params.measurementStatus);
   }
 
+  if (params.drawingScope === "all") {
+    search.set("drawingScope", "all");
+  }
+
   const query = search.toString();
-  return query
-    ? `/app/leads-clients/opportunities/${opportunityId}/takeoff/${section}?${query}`
-    : `/app/leads-clients/opportunities/${opportunityId}/takeoff/${section}`;
+  const baseHref = takeoffBaseHref(owner);
+  return query ? `${baseHref}/${section}?${query}` : `${baseHref}/${section}`;
 }
+
+export function buildTakeoffOwnerApiQuery(owner: TakeoffRouteOwner) {
+  const search = new URLSearchParams({ ownerKind: owner.kind, ownerSlug: owner.slug });
+  return search.toString();
+}
+import type { TakeoffRouteOwner } from "@/lib/takeoff/owner";

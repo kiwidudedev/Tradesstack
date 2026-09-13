@@ -5,9 +5,10 @@ import {
   persistCommercialItemVariationLinksSafely,
 } from "@/lib/commercial-items/variation-linking";
 import type { CommercialItemsClient } from "@/lib/commercial-items/types";
+import type { VariationCostSection } from "@/lib/commercial-items/variation-sections";
+import { listCommercialItemsByIds } from "@/lib/commercial-items/service";
 
 type VariationStatus = "Draft" | "Priced" | "Sent" | "Client Review" | "Approved" | "Rejected" | "Invoiced";
-type VariationCostSection = "Labour" | "Materials" | "Subcontractors" | "Plant" | "Margin";
 
 const MUTABLE_VARIATION_STATUSES = new Set<VariationStatus>(["Draft", "Priced"]);
 const IMMUTABLE_VARIATION_MESSAGE = "This variation can no longer be changed from the pricing worksheet.";
@@ -91,6 +92,19 @@ export interface VariationDestinationPublishResult {
   variationLineIds: string[];
   partialLinkFailureMessage: string | null;
   message: string;
+}
+
+export function buildVariationPublicationRequestKey(params: {
+  organizationId: string;
+  variationId: string;
+  rows: Array<{ sourceSignature: string; section: VariationCostSection }>;
+}) {
+  return [
+    "worksheet-variation-v1",
+    params.organizationId,
+    params.variationId,
+    ...params.rows.map((row) => `${row.sourceSignature}:${row.section}`).sort(),
+  ].join(":");
 }
 
 function rowCountLabel(count: number, noun: string) {
@@ -253,6 +267,122 @@ export const variationDestinationAdapter: WorksheetPublishDestinationAdapter<
   VariationDestinationPublishResult
 > = {
   destination: "variation",
+  async publishSelection(input) {
+    if (!input.projectId) throw new Error("Variation project context is missing.");
+    if (input.target.lineSelections.length === 0) throw new Error("Select at least one eligible row before adding it to the variation.");
+    const variation = await loadVariation({ client: input.client, organizationId: input.organizationId, projectId: input.projectId, variationId: input.target.variationId });
+    if (!MUTABLE_VARIATION_STATUSES.has((variation.status ?? "") as VariationStatus)) throw new Error(IMMUTABLE_VARIATION_MESSAGE);
+    if (!variation.updated_at) throw new Error("Variation version is missing. Please refresh and try again.");
+    const lineSelectionByRowId = new Map(input.target.lineSelections.map((selection) => [selection.rowId, selection]));
+    const [existingLineItems, attachments] = await Promise.all([
+      loadVariationLineItems({ client: input.client, organizationId: input.organizationId, projectId: input.projectId, variationId: variation.id }),
+      loadVariationAttachments({ client: input.client, organizationId: input.organizationId, variationId: variation.id }),
+    ]);
+    const rows = input.publishedSelection.commercialRows.map((row) => {
+      const selection = lineSelectionByRowId.get(row.rowId);
+      if (!selection) throw new Error("One or more selected worksheet rows could not be mapped to the variation.");
+      return { row, section: selection.section, lineId: row.rowId };
+    });
+    const requestKey = buildVariationPublicationRequestKey({
+      organizationId: input.organizationId,
+      variationId: variation.id,
+      rows: rows.map(({ row, section }) => ({ sourceSignature: row.sourceSignature, section })),
+    });
+    const rpcResponse = await input.client.rpc("publish_worksheet_commercial_variation_v1" as never, {
+      p_input: {
+        requestKey,
+        organizationId: input.organizationId,
+        opportunityId: input.opportunityId,
+        projectId: input.projectId,
+        variationId: variation.id,
+        expectedUpdatedAt: variation.updated_at,
+        workbookId: input.workbookId,
+        worksheetId: input.worksheetId,
+        sheetId: input.sheetId,
+        worksheetVersion: input.worksheetVersion,
+        skippedRowCount: input.publishedSelection.skippedRows.length,
+        variation: {
+          title: variation.variation_title,
+          number: variation.variation_number,
+          status: variation.status,
+          origin: variation.origin,
+          requestedBy: variation.requested_by,
+          requestedDate: variation.requested_date,
+          dueDate: variation.due_date,
+          sentToClientAt: variation.sent_to_client_at,
+          approvedAt: variation.approved_at,
+          invoiceReady: variation.invoice_ready,
+          notes: variation.notes,
+          marginPercent: Number(numberOrZero(variation.margin_percent).toFixed(3)),
+          discountAmount: Number(numberOrZero(variation.discount_amount).toFixed(2)),
+          contingencyAmount: Number(numberOrZero(variation.contingency_amount).toFixed(2)),
+          gstPercent: Number(numberOrZero(variation.gst_percent).toFixed(3)),
+          includeMarginInExport: variation.include_margin_in_export ?? true,
+          includeDiscountInExport: variation.include_discount_in_export ?? false,
+          includeContingencyInExport: variation.include_contingency_in_export ?? false,
+          validityPeriod: variation.validity_period ?? "",
+          paymentTerms: variation.payment_terms ?? "",
+          leadTime: variation.lead_time ?? "",
+          termsInclusions: variation.terms_inclusions ?? "",
+          termsExclusions: variation.terms_exclusions ?? "",
+          clarifications: variation.clarifications ?? "",
+          assumptions: variation.assumptions ?? "",
+        },
+        existingLineItems: existingLineItems.map((line) => ({
+          id: line.id, section: line.section, description: line.description, quantity: normalizeNullableNumber(line.quantity), unit: line.unit, rate: normalizeNullableNumber(line.rate), total: normalizeNullableNumber(line.total),
+          sourceProjectQuoteId: line.source_project_quote_id, sourceProjectQuoteLineItemId: line.source_project_quote_line_item_id, sourceProjectQuoteNumber: line.source_project_quote_number ?? "",
+          sourcePurchaseOrderId: line.source_purchase_order_id, sourcePurchaseOrderLineItemId: line.source_purchase_order_line_item_id, sourcePurchaseOrderNumber: line.source_purchase_order_number ?? "",
+        })),
+        attachments: attachments.map((attachment) => ({ id: attachment.id, name: attachment.file_name, type: attachment.file_kind, storagePath: attachment.storage_path, externalUrl: attachment.external_url })),
+        commercialRows: rows.map(({ row, section, lineId }) => ({
+          rowId: row.rowId,
+          lineId,
+          section,
+          sourceRange: row.sourceRangeLabel,
+          sourceSignature: row.sourceSignature,
+          description: row.description,
+          quantity: row.quantity,
+          unit: row.unit,
+          rate: row.rate,
+          total: row.total,
+          snapshotJson: row.snapshotJson,
+          sourceLinkJson: row.sourceLinkJson,
+          lockedMetadataJson: row.lockedMetadataJson,
+        })),
+      },
+    } as never);
+    if (rpcResponse.error) throw new Error(rpcResponse.error.message);
+    const saved = (Array.isArray(rpcResponse.data) ? rpcResponse.data[0] : null) as {
+      id: string;
+      updated_at: string;
+      status: string;
+      variation_number: string;
+      added_line_count: number;
+      skipped_row_count: number;
+      variation_line_ids: string[];
+      commercial_item_ids: string[];
+    } | null;
+    if (!saved?.id) throw new Error("Variation was saved but no result was returned.");
+    const commercialItems = await listCommercialItemsByIds(input.client, { organizationId: input.organizationId, commercialItemIds: saved.commercial_item_ids });
+    const itemsById = new Map(commercialItems.map((item) => [item.id, item]));
+    const publishedRows = rows.map(({ row }, index) => {
+      const item = itemsById.get(saved.commercial_item_ids[index] ?? "");
+      if (!item) throw new Error("Variation was published but its commercial source could not be reloaded.");
+      return { ...row, commercialItem: item, reusedCommercialItem: false };
+    });
+    return {
+      publishedRows,
+      result: {
+        variationId: saved.id,
+        variationNumber: saved.variation_number,
+        addedLineCount: saved.added_line_count,
+        skippedRowCount: saved.skipped_row_count,
+        variationLineIds: saved.variation_line_ids,
+        partialLinkFailureMessage: null,
+        message: buildSuccessMessage({ variationNumber: saved.variation_number, addedCount: saved.added_line_count, skippedCount: saved.skipped_row_count }),
+      },
+    };
+  },
   async publish(input) {
     if (!input.projectId) {
       throw new Error("Variation project context is missing.");

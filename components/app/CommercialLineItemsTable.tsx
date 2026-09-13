@@ -411,7 +411,7 @@ export function CommercialLineMoneyDisplay({
   className,
 }: CommercialLineMoneyDisplayProps) {
   return (
-    <span className={cn("text-right text-sm font-medium text-[var(--text-primary)]", className)}>
+    <span className={cn("whitespace-nowrap text-right text-sm font-medium text-[var(--text-primary)]", className)}>
       {formatCommercialDocumentMoney(value)}
     </span>
   );

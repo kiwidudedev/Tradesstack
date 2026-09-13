@@ -1,10 +1,13 @@
 import type { TakeoffCalibration, TakeoffMeasurementWithPoints } from "@/lib/takeoff-server";
-import { formatAreaPerimeterDisplay, formatCountValue, formatQuantityValue } from "@/lib/takeoff/measurement-display";
+import { convertBaseLengthToDisplayValue, formatAreaPerimeterDisplay, formatCountValue, formatQuantityValue } from "@/lib/takeoff/measurement-display";
+import { buildTakeoffHref } from "@/lib/takeoff/navigation";
+import type { TakeoffRouteOwner } from "@/lib/takeoff/owner";
 
 export interface QuantityTableRow {
   id: string;
   measurementId: string;
   drawingSetId: string;
+  drawingDisplayName: string;
   pageId: string;
   pageLabel: string;
   pageNumber: number;
@@ -12,7 +15,7 @@ export interface QuantityTableRow {
   description: string | null;
   colorHex: string | null;
   typeLabel: "Area" | "Linear" | "Count";
-  unitLabel: "m²" | "m" | "count";
+  unitLabel: string;
   quantityValue: number | null;
   quantityDisplay: string;
   secondaryQuantityValue: number | null;
@@ -39,9 +42,12 @@ function getMeasurementFallbackLabel(params: {
 export function mapTakeoffToQuantityRows(
   measurements: TakeoffMeasurementWithPoints[],
   activeCalibration: TakeoffCalibration | null,
+  calibrationsById: ReadonlyMap<string, TakeoffCalibration>,
   options: {
     drawingSetId: string;
-    opportunityId: string;
+    drawingDisplayName?: string;
+    opportunityId?: string;
+    owner?: TakeoffRouteOwner;
     pageId: string;
     pageLabel: string;
     pageNumber: number;
@@ -55,18 +61,17 @@ export function mapTakeoffToQuantityRows(
         measurement.measurement_kind === "count"
     )
     .map((measurement) => {
+      const measurementCalibration = measurement.calibration_id
+        ? calibrationsById.get(measurement.calibration_id) ?? null
+        : null;
+      const displayCalibration = measurementCalibration ?? activeCalibration;
       const typeLabel =
         measurement.measurement_kind === "count"
           ? "Count"
           : measurement.measurement_kind === "area"
             ? "Area"
             : "Linear";
-      const unitLabel =
-        measurement.measurement_kind === "count"
-          ? "count"
-          : measurement.measurement_kind === "area"
-            ? "m²"
-            : "m";
+      const unitLabel = measurement.display_unit?.trim() || (measurement.measurement_kind === "count" ? "count" : "");
       const quantityValue =
         measurement.measurement_kind === "count"
           ? (measurement.count_value ?? measurement.display_value ?? null)
@@ -79,34 +84,27 @@ export function mapTakeoffToQuantityRows(
         measurement.measurement_kind === "area"
           ? formatAreaPerimeterDisplay({
               measuredPerimeterBase: measurement.measured_perimeter_base,
-              activeCalibration,
+              activeCalibration: displayCalibration,
             }) ?? "—"
           : "—";
       const secondaryQuantityValue =
-        measurement.measurement_kind === "area" && activeCalibration && measurement.measured_perimeter_base !== null
-          ? (
-              activeCalibration.base_unit === "mm" && activeCalibration.display_unit === "m"
-                ? measurement.measured_perimeter_base / 1000
-                : activeCalibration.base_unit === "mm" && activeCalibration.display_unit === "cm"
-                  ? measurement.measured_perimeter_base / 10
-                  : activeCalibration.base_unit === "mm" && activeCalibration.display_unit === "mm"
-                    ? measurement.measured_perimeter_base
-                    : activeCalibration.base_unit === "in" && activeCalibration.display_unit === "ft"
-                      ? measurement.measured_perimeter_base / 12
-                      : activeCalibration.base_unit === "in" && activeCalibration.display_unit === "in"
-                        ? measurement.measured_perimeter_base
-                        : null
-            )
+        measurement.measurement_kind === "area" && displayCalibration && measurement.measured_perimeter_base !== null
+          ? convertBaseLengthToDisplayValue({
+              baseUnit: displayCalibration.base_unit,
+              displayUnit: displayCalibration.display_unit,
+              value: measurement.measured_perimeter_base,
+            })
           : null;
       const secondaryUnitLabel =
         measurement.measurement_kind === "area"
-          ? activeCalibration?.display_unit ?? null
+          ? displayCalibration?.display_unit ?? null
           : null;
 
       return {
         id: measurement.id,
         measurementId: measurement.id,
         drawingSetId: options.drawingSetId,
+        drawingDisplayName: options.drawingDisplayName?.trim() || "Drawing set",
         pageId: options.pageId,
         pageLabel: options.pageLabel,
         pageNumber: options.pageNumber,
@@ -123,7 +121,11 @@ export function mapTakeoffToQuantityRows(
         secondaryUnitLabel,
         secondaryQuantityDisplay,
         status: measurement.status === "archived" ? "archived" : "active",
-        viewHref: `/app/leads-clients/opportunities/${options.opportunityId}/takeoff/measure?drawingSetId=${encodeURIComponent(options.drawingSetId)}&pageId=${encodeURIComponent(options.pageId)}&measurementId=${encodeURIComponent(measurement.id)}`,
+        viewHref: buildTakeoffHref(
+          options.owner ?? { kind: "opportunity", slug: options.opportunityId ?? "" },
+          "measure",
+          { drawingSetId: options.drawingSetId, pageId: options.pageId },
+        ) + `&measurementId=${encodeURIComponent(measurement.id)}`,
       };
     });
 }

@@ -1,4 +1,5 @@
 import type { WorksheetPublishDestinationAdapter } from "@/lib/commercial-items/destination-adapter";
+import { resolveEffectiveCommercialLineValues } from "@/lib/commercial-items/commercial-line-effective-values";
 import type { PublishedWorksheetCommercialRowWithItem } from "@/lib/commercial-items/published-worksheet-selection";
 import {
   buildPurchaseOrderCommercialItemLink,
@@ -154,11 +155,12 @@ export async function resolvePurchaseOrderPublishOptions(params: {
   };
 }
 
-function buildPurchaseOrderLineDraft(params: {
+export function buildPurchaseOrderLineDraft(params: {
   row: PublishedWorksheetCommercialRowWithItem;
   purchaseOrderSection: Exclude<PurchaseOrderCostSection, "Margin">;
 }) {
   const lineUid = crypto.randomUUID();
+  const effective = resolveEffectiveCommercialLineValues("purchase_order", params.row);
 
   return {
     id: crypto.randomUUID(),
@@ -167,9 +169,9 @@ function buildPurchaseOrderLineDraft(params: {
     sourceCostItemId: null,
     section: params.purchaseOrderSection,
     description: params.row.description,
-    quantity: params.row.quantity ?? 0,
+    quantity: effective.quantity,
     unit: params.row.unit ?? "",
-    rate: params.row.rate ?? 0,
+    rate: effective.rate,
     sourceTimeSheetEntryId: null,
     commercialItemLink: buildPurchaseOrderCommercialItemLink(params.row.commercialItem),
   };

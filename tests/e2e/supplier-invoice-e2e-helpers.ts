@@ -1,9 +1,14 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { requireLocalTestPassword } from "./local-test-credentials";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { FullConfig, Page } from "@playwright/test";
 import { SUPPLIER_INVOICE_DOCUMENTS_BUCKET } from "../../lib/supplier-invoices";
 import type { Database } from "../../lib/supabase/types";
+import {
+  loadE2ETestEnvironment,
+  requireLocalE2ETarget,
+} from "./test-target-guard";
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -16,49 +21,16 @@ type E2EContext = {
 };
 
 const E2E_EMAIL = "supplier-invoice-e2e@tradesstack.local";
-const E2E_PASSWORD = "TradesstackE2E!234";
 const E2E_ORG_NAME = "Supplier Invoice E2E Org";
 const E2E_DISPLAY_NAME = "Supplier Invoice E2E";
 const MATCHED_SUPPLIER_NAME = "TRADE BUILD SUPPLY";
 const MATCHED_SUPPLIER_TAX_NUMBER = "98-765-432";
 
-let envLoaded = false;
 let cachedContext: E2EContext | null = null;
 
 function loadLocalEnv() {
-  if (envLoaded) {
-    return;
-  }
-
-  const envPath = join(process.cwd(), ".env.local");
-  const raw = readFileSync(envPath, "utf8");
-
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    let value = trimmed.slice(separatorIndex + 1).trim();
-    if (
-      (value.startsWith("\"") && value.endsWith("\""))
-      || (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    if (!process.env[key]) {
-      process.env[key] = value;
-    }
-  }
-
-  envLoaded = true;
+  loadE2ETestEnvironment();
+  requireLocalE2ETarget();
 }
 
 function createAdminClient() {
@@ -246,25 +218,31 @@ export async function countSupplierInvoiceStorageObjects(
   return paths.length;
 }
 
-export async function resetSupplierInvoiceOrgState(organizationId: string) {
+export async function resetSupplierInvoiceOrgState(
+  organizationId: string,
+  targets: { invoiceIds: string[]; storagePaths: string[] },
+) {
+  requireLocalE2ETarget();
+  if (targets.invoiceIds.length === 0 && targets.storagePaths.length === 0) {
+    throw new Error("Fixture cleanup requires IDs recorded by the current test run.");
+  }
   const admin = createE2EAdminClient();
-  const storagePaths = await listSupplierInvoiceStoragePaths(organizationId);
-  if (storagePaths.length > 0) {
+  if (targets.storagePaths.length > 0) {
     const { error } = await admin.storage
       .from(SUPPLIER_INVOICE_DOCUMENTS_BUCKET)
-      .remove(storagePaths);
+      .remove(targets.storagePaths);
     if (error) {
       throw error;
     }
   }
 
-  const { error: deleteInvoicesError } = await admin
-    .from("supplier_invoices")
-    .delete()
-    .eq("organization_id", organizationId);
-
-  if (deleteInvoicesError) {
-    throw deleteInvoicesError;
+  if (targets.invoiceIds.length > 0) {
+    const { error: deleteInvoicesError } = await admin
+      .from("supplier_invoices")
+      .delete()
+      .eq("organization_id", organizationId)
+      .in("id", targets.invoiceIds);
+    if (deleteInvoicesError) throw deleteInvoicesError;
   }
 }
 
@@ -273,6 +251,8 @@ export async function ensureSupplierInvoiceE2EContext(): Promise<E2EContext> {
     return cachedContext;
   }
 
+  loadLocalEnv();
+  const E2E_PASSWORD = requireLocalTestPassword();
   const admin = createAdminClient();
   let user = await findUserByEmail(admin, E2E_EMAIL);
 
@@ -354,8 +334,6 @@ export async function ensureSupplierInvoiceE2EContext(): Promise<E2EContext> {
   }
 
   const supplierId = await ensureSupplier(admin, organizationId, user.id);
-  await resetSupplierInvoiceOrgState(organizationId);
-
   cachedContext = {
     organizationId,
     supplierId,
@@ -378,10 +356,14 @@ export async function ensureSupplierInvoiceLoggedIn(page: Page, baseURL: string)
   await page.getByLabel("Work email*").fill(context.email);
   await page.getByLabel("Password*").fill(context.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/app\//);
+  await page.waitForURL((url) => url.pathname.startsWith("/app/"));
 
   if (!page.url().includes("/app/company/supplier-invoices")) {
     await page.goto(`${baseURL}/app/company/supplier-invoices`);
+  }
+
+  if (page.url().includes("/login")) {
+    throw new Error("Playwright authentication did not persist for protected app routes.");
   }
 
   return context;

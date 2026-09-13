@@ -6,7 +6,6 @@ import {
   ACCOUNTING_PAYMENT_BADGE_CLASSES,
   ACCOUNTING_SYNC_BADGE_CLASSES,
   AccountingSyncPanel,
-  formatAccountingNzd,
 } from "@/components/app/AccountingSyncPanel";
 import type {
   RetentionClaimImmutableXeroPanelState,
@@ -286,31 +285,6 @@ export function RetentionClaimXeroPanel(props: {
       fullyPaidAt={state.fullyPaidAt}
       xeroUrl={state.xeroUrl}
       infoMessage={successMessage ?? infoMessage}
-      guidance={state.authoritativeInheritedTax
-        && state.invoiceSubtotalMinor != null
-        && state.invoiceTaxMinor != null
-        && state.invoiceTotalMinor != null ? (
-          <dl className="grid gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm sm:grid-cols-3">
-            <div>
-              <dt className="text-[var(--text-secondary)]">Retention excl. GST</dt>
-              <dd className="font-semibold">
-                {formatAccountingNzd(state.invoiceSubtotalMinor / 100)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--text-secondary)]">GST</dt>
-              <dd className="font-semibold">
-                {formatAccountingNzd(state.invoiceTaxMinor / 100)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--text-secondary)]">Total incl. GST</dt>
-              <dd className="font-semibold">
-                {formatAccountingNzd(state.invoiceTotalMinor / 100)}
-              </dd>
-            </div>
-          </dl>
-        ) : null}
       safeErrorMessage={safeErrorMessage}
       attachmentFailureMessage={null}
       permissionMessage={!state.canManage

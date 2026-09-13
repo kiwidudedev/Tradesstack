@@ -13,6 +13,17 @@ export interface WorksheetPublishDestinationContext {
 
 export interface WorksheetPublishDestinationAdapter<TTarget, TResult> {
   destination: PublishedWorksheetSelection["destination"];
+  publishSelection?(input: WorksheetPublishDestinationContext & {
+    workbookId: string;
+    worksheetId: string;
+    sheetId: string;
+    worksheetVersion: number;
+    publishedSelection: PublishedWorksheetSelection;
+    target: TTarget;
+  }): Promise<{
+    publishedRows: PublishedWorksheetCommercialRowWithItem[];
+    result: TResult;
+  }>;
   publish(input: WorksheetPublishDestinationContext & {
     publishedSelection: PublishedWorksheetSelection;
     publishedRows: PublishedWorksheetCommercialRowWithItem[];
