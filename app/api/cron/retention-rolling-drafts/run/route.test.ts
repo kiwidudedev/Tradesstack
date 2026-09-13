@@ -9,6 +9,7 @@ describe("GET /api/cron/retention-rolling-drafts/run", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "retention-rolling-drafts,material-source-retention");
   });
 
   it("rejects requests without the configured bearer secret", async () => {

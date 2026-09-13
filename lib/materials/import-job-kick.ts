@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { runMaterialSupplierPricingWorker } from "@/lib/materials/import-job-service";
 
 export type MaterialImportWorkerKickContext = {
@@ -8,34 +9,20 @@ export type MaterialImportWorkerKickContext = {
 
 export type MaterialImportPostResponseScheduler = (task: () => Promise<unknown>) => void;
 
-const IMMEDIATE_WORKER_CONCURRENCY = 4;
-
-function safeKickMessage(error: unknown) {
-  return (error instanceof Error ? error.message : "Unable to start the Material import worker.")
-    .replace(/[\r\n]+/g, " ")
-    .slice(0, 300);
+function safeKickMessage() {
+  return "Unable to start the Material import worker.";
 }
 
 export async function kickMaterialSupplierPricingWorker(
   context: MaterialImportWorkerKickContext,
   worker: typeof runMaterialSupplierPricingWorker = runMaterialSupplierPricingWorker,
 ) {
+  if (!isBackgroundJobEnabled("material-supplier-pricing")) return { started: false, disabled: true } as const;
   try {
     console.info("material_import_worker_kick_started", context);
-    const results = (await Promise.all(Array.from(
-      { length: IMMEDIATE_WORKER_CONCURRENCY },
-      async (_, lane) => {
-        const laneResults = [];
-        while (true) {
-          const result = await worker(
-            `material-${context.trigger}-${context.jobId}-${lane + 1}-${laneResults.length + 1}`,
-          );
-          if (!result.claimed) break;
-          laneResults.push(result);
-        }
-        return laneResults;
-      },
-    ))).flat();
+    // A request wakes only its own durable job; cron handles the bounded backlog.
+    const result = await worker(`material-${context.trigger}-${context.jobId}-1-1`, context.jobId);
+    const results = result.claimed ? [result] : [];
     const targetResult = results.find((result) => result.jobId === context.jobId);
     console.info("material_import_worker_kick_completed", {
       ...context,
@@ -55,7 +42,7 @@ export async function kickMaterialSupplierPricingWorker(
       jobId: context.jobId,
       trigger: context.trigger,
       errorCode: "worker_kick_failed",
-      message: safeKickMessage(error),
+      message: safeKickMessage(),
     });
     return { started: false, recoverable: true, errorCode: "worker_kick_failed" } as const;
   }
@@ -65,6 +52,7 @@ export function scheduleMaterialSupplierPricingWorker(
   scheduler: MaterialImportPostResponseScheduler,
   context: MaterialImportWorkerKickContext,
 ) {
+  if (!isBackgroundJobEnabled("material-supplier-pricing")) return { scheduled: false, disabled: true } as const;
   try {
     scheduler(async () => {
       console.info("material_import_worker_after_entered", context);
@@ -78,7 +66,7 @@ export function scheduleMaterialSupplierPricingWorker(
       jobId: context.jobId,
       trigger: context.trigger,
       errorCode: "worker_schedule_failed",
-      message: safeKickMessage(error),
+      message: safeKickMessage(),
     });
     return { scheduled: false, recoverable: true, errorCode: "worker_schedule_failed" } as const;
   }

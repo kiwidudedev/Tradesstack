@@ -13,6 +13,7 @@ describe("GET /api/cron/worksheet-memory-evidence-pools/run", () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.env.CRON_SECRET = "test-cron-secret";
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "worksheet-memory-evidence-pools,material-source-retention");
   });
 
   afterAll(() => {

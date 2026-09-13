@@ -13,6 +13,7 @@ describe("GET /api/cron/worksheet-event-classifications/run", () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.env.CRON_SECRET = "test-cron-secret";
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "worksheet-event-classifications,material-source-retention");
   });
 
   afterAll(() => {

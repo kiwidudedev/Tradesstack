@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { runSupplierBillUclRefreshWorker } from "@/lib/universal-learning/supplier-bill-refresh-worker";
 
@@ -15,6 +16,9 @@ export async function GET(request: Request) {
   }
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if (!isBackgroundJobEnabled("universal-construction-learning/supplier-bills")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
   }
 
   const { searchParams } = new URL(request.url);
@@ -46,7 +50,7 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Supplier Bill UCL refresh failed.";
+    const message = "Supplier Bill UCL refresh failed.";
     console.error("[supplier-bill-ucl-refresh-cron] failed", {
       organizationId,
       error: message,

@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { runUniversalLearningQueueWorker } from "@/lib/universal-learning/worker";
 import {
@@ -46,6 +47,9 @@ export async function GET(request: Request) {
   if (!authorization.authorized) {
     return NextResponse.json({ error: authorization.error }, { status: authorization.status });
   }
+  if (!isBackgroundJobEnabled("universal-construction-learning")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
+  }
 
   const { searchParams } = new URL(request.url);
   const organizationId = normalizeOptionalString(searchParams.get("organizationId"));
@@ -76,7 +80,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to run Universal Construction Learning queue worker.";
+    const message = "Unable to run Universal Construction Learning queue worker.";
     console.error("[universal-construction-learning-run-cron] Run failed", {
       organizationId,
       containerType,

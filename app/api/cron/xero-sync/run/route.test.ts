@@ -10,6 +10,7 @@ describe("GET /api/cron/xero-sync/run", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
     runXeroSyncWorker.mockReset();
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "xero-sync,material-source-retention");
   });
 
   it("requires CRON_SECRET", async () => {

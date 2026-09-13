@@ -10,6 +10,7 @@ describe("GET /api/cron/xero-bill-status/run", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "xero-bill-status,material-source-retention");
   });
 
   it("rejects unauthorized requests", async () => {

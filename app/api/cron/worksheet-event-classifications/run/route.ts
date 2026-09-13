@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import {
   runWorksheetEventSemanticClassificationRunner,
@@ -54,6 +55,9 @@ export async function GET(request: Request) {
   if (!authorization.authorized) {
     return NextResponse.json({ error: authorization.error }, { status: authorization.status });
   }
+  if (!isBackgroundJobEnabled("worksheet-event-classifications")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
+  }
 
   const { searchParams } = new URL(request.url);
   const requestedBatchSize = normalizePositiveInteger(searchParams.get("batchSize"), DEFAULT_BATCH_SIZE);
@@ -86,7 +90,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(summary);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to run worksheet semantic classifications.";
+    const message = "Unable to run worksheet semantic classifications.";
     console.error("[worksheet-event-classification-cron] Run failed", {
       error: message,
       batchSize,

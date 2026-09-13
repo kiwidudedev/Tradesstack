@@ -9,6 +9,7 @@ describe("material supplier pricing worker route", () => {
     vi.unstubAllEnvs();
     runMaterialSupplierPricingWorker.mockReset();
     purgeExpiredMaterialImportSources.mockReset();
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "material-supplier-pricing,material-source-retention");
   });
 
   it("fails closed when CRON_SECRET is absent", async () => {
@@ -31,4 +32,12 @@ describe("material supplier pricing worker route", () => {
     expect(response.status).toBe(200);
     expect(runMaterialSupplierPricingWorker).toHaveBeenCalledTimes(1);
   });
+  it("does not run work when authenticated but not activated", async () => {
+    vi.stubEnv("CRON_SECRET", "synthetic-cron-secret");
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "");
+    const { GET } = await import("./route");
+    const response = await GET(new Request("https://example.test", { headers: { authorization: "Bearer synthetic-cron-secret" } }));
+    expect(await response.json()).toMatchObject({ skipped: true });
+  });
+
 });

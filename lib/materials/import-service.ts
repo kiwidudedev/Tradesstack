@@ -565,14 +565,14 @@ async function classifyImportRowDraft(params: {
   };
 }
 
-export async function insertImportRows(params: {
+export async function prepareImportRows(params: {
   supabase: MaterialsSupabaseClient;
   organizationId: string;
   batchId: string;
   rows: MaterialImportCandidateRow[];
-}) {
+}): Promise<OrganizationMaterialImportRowInsert[]> {
   if (params.rows.length === 0) {
-    return [] as OrganizationMaterialImportRowRow[];
+    return [];
   }
 
   const payload: OrganizationMaterialImportRowInsert[] = [];
@@ -613,6 +613,12 @@ export async function insertImportRows(params: {
     });
   }
 
+  return payload;
+}
+
+export async function insertImportRows(params: Parameters<typeof prepareImportRows>[0]): Promise<OrganizationMaterialImportRowRow[]> {
+  const payload = await prepareImportRows(params);
+  if (payload.length === 0) return [];
   const { data, error } = await params.supabase
     .from("organization_material_import_rows")
     .insert(payload)

@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { enqueueScheduledRetentionClaimPaymentRefreshes } from "@/lib/retention/phase10-payment-reconciliation";
 import { getCronEnv } from "@/lib/xero/env";
@@ -14,6 +15,9 @@ export async function GET(request: Request) {
   const secret = getCronEnv().cronSecret;
   if (request.headers.get("authorization")?.trim() !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if (!isBackgroundJobEnabled("xero-retention-claim-status")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
   }
   const jobs = await enqueueScheduledRetentionClaimPaymentRefreshes(
     limit(new URL(request.url).searchParams.get("limit")),

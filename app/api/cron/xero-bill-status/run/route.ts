@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { getCronEnv } from "@/lib/xero/env";
 import { enqueueEligibleXeroBillRefreshes } from "@/lib/xero/bill-refresh";
@@ -12,6 +13,9 @@ export async function GET(request: Request) {
   const secret = getCronEnv().cronSecret;
   if (request.headers.get("authorization")?.trim() !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if (!isBackgroundJobEnabled("xero-bill-status")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
   }
 
   const limit = normalizeLimit(new URL(request.url).searchParams.get("limit"));

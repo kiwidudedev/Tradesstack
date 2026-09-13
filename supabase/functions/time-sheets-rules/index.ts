@@ -29,8 +29,8 @@ function parseBearerToken(headerValue: string | null) {
   if (!headerValue) {
     return null;
   }
-  const [scheme, token] = headerValue.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
+  const [scheme, token, extra] = headerValue.split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token || extra !== undefined) {
     return null;
   }
   return token;
@@ -44,11 +44,12 @@ Deno.serve(async (request) => {
     });
   }
 
-  if (CRON_SECRET) {
-    const token = parseBearerToken(request.headers.get("authorization"));
-    if (!token || token !== CRON_SECRET) {
-      return unauthorized();
-    }
+  const token = parseBearerToken(request.headers.get("authorization"));
+  if (!CRON_SECRET?.trim() || !token || token !== CRON_SECRET.trim()) {
+    return unauthorized();
+  }
+  if (Deno.env.get("TIME_SHEETS_RULES_ENABLED") !== "true") {
+    return Response.json({ skipped: true, reason: "Background job is disabled." });
   }
 
   let body: { project_id?: string; max_rows?: number } = {};
@@ -68,7 +69,7 @@ Deno.serve(async (request) => {
   });
 
   if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Time-sheet processing failed." }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

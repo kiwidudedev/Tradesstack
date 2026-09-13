@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 
 import { runRollingRetentionWorker } from "@/lib/retention/rolling-retention-worker";
@@ -20,6 +21,9 @@ export async function GET(request: Request) {
   }
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if (!isBackgroundJobEnabled("retention-rolling-drafts")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
   }
 
   const requested = Number(new URL(request.url).searchParams.get("limit"));

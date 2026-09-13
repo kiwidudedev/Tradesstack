@@ -30,6 +30,7 @@ describe("document Storage cleanup cron", () => {
       retriedCount: 0,
       deadLetteredCount: 0,
     });
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "document-storage-cleanup,material-source-retention");
   });
 
   it("rejects public execution", async () => {
@@ -73,4 +74,12 @@ describe("document Storage cleanup cron", () => {
       schedule: "* * * * *",
     });
   });
+  it("does not run work when authenticated but not activated", async () => {
+    vi.stubEnv("CRON_SECRET", "synthetic-cron-secret");
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "");
+    const { GET } = await import("./route");
+    const response = await GET(new Request("https://example.test", { headers: { authorization: "Bearer synthetic-cron-secret" } }));
+    expect(await response.json()).toMatchObject({ skipped: true });
+  });
+
 });

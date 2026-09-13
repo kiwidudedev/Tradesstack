@@ -18,7 +18,13 @@ begin
   return query select resolved_source_count, resolved_reused_count, resolved_created_count;'
   );
 
-  if patched_definition = function_definition then
+  if patched_definition = function_definition and position(
+    'and source.clone_kind is null and source.archived_at is null
+    and source.award_locked_at is null;
+
+  return query select resolved_source_count, resolved_reused_count, resolved_created_count;'
+    in function_definition
+  ) = 0 then
     raise exception 'Could not locate the source-lock update boundary in %', target_signature;
   end if;
 

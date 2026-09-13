@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { runWorksheetMemorySemanticPoolWorker } from "@/lib/worksheet-memory-semantic-pools";
 
@@ -50,6 +51,9 @@ export async function GET(request: Request) {
   if (!authorization.authorized) {
     return NextResponse.json({ error: authorization.error }, { status: authorization.status });
   }
+  if (!isBackgroundJobEnabled("worksheet-memory-semantic-pools")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
+  }
 
   const { searchParams } = new URL(request.url);
   const batchSize = Math.min(
@@ -73,7 +77,7 @@ export async function GET(request: Request) {
     console.info("[worksheet-memory-semantic-pools-cron] Run completed", summary);
     return NextResponse.json(summary);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to run worksheet memory semantic pool worker.";
+    const message = "Unable to run worksheet memory semantic pool worker.";
     console.error("[worksheet-memory-semantic-pools-cron] Run failed", {
       error: message,
       batchSize,

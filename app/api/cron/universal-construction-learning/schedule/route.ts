@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { scheduleUniversalLearningMonthlyReviews } from "@/lib/universal-learning/scheduler";
 import {
@@ -38,6 +39,9 @@ export async function GET(request: Request) {
   if (!authorization.authorized) {
     return NextResponse.json({ error: authorization.error }, { status: authorization.status });
   }
+  if (!isBackgroundJobEnabled("universal-construction-learning/schedule")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
+  }
 
   const { searchParams } = new URL(request.url);
   const organizationId = normalizeOptionalString(searchParams.get("organizationId"));
@@ -62,7 +66,7 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to schedule Universal Construction Learning reviews.";
+    const message = "Unable to schedule Universal Construction Learning reviews.";
     console.error("[universal-construction-learning-schedule-cron] Run failed", {
       organizationId,
       containerType,

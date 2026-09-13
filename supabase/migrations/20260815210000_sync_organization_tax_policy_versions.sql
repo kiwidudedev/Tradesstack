@@ -3,15 +3,15 @@ create function public.sync_organization_tax_policy_version()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare
   v_now timestamptz := statement_timestamp();
-  v_country text := upper(coalesce(nullif(new.country, ''), 'UNKNOWN'));
-  v_rate numeric := coalesce(new.default_tax_rate, 0);
-  v_basis text := case when lower(coalesce(new.default_tax_mode, '')) like '%incl%' then 'inclusive' else 'exclusive' end;
-  v_registration text := case lower(coalesce(new.tax_registration_status, '')) when 'registered' then 'registered' when 'unregistered' then 'unregistered' else 'unknown' end;
+  v_country text := upper(coalesce(nullif((to_jsonb(new)->>'country'), ''), 'UNKNOWN'));
+  v_rate numeric := coalesce(nullif(to_jsonb(new)->>'default_tax_rate', '')::numeric, 0);
+  v_basis text := case when lower(coalesce((to_jsonb(new)->>'default_tax_mode'), '')) like '%incl%' then 'inclusive' else 'exclusive' end;
+  v_registration text := case lower(coalesce((to_jsonb(new)->>'tax_registration_status'), '')) when 'registered' then 'registered' when 'unregistered' then 'unregistered' else 'unknown' end;
 begin
-  if new.country is not distinct from old.country
-    and new.default_tax_mode is not distinct from old.default_tax_mode
-    and new.default_tax_rate is not distinct from old.default_tax_rate
-    and new.tax_registration_status is not distinct from old.tax_registration_status then return new; end if;
+  if (to_jsonb(new)->>'country') is not distinct from (to_jsonb(old)->>'country')
+    and (to_jsonb(new)->>'default_tax_mode') is not distinct from (to_jsonb(old)->>'default_tax_mode')
+    and nullif(to_jsonb(new)->>'default_tax_rate', '')::numeric is not distinct from nullif(to_jsonb(old)->>'default_tax_rate', '')::numeric
+    and (to_jsonb(new)->>'tax_registration_status') is not distinct from (to_jsonb(old)->>'tax_registration_status') then return new; end if;
   update public.organization_tax_policies set effective_to = v_now
   where organization_id = new.id and effective_to is null;
   insert into public.organization_tax_policies (
@@ -29,7 +29,9 @@ begin
 end;
 $$;
 create trigger organizations_sync_tax_policy_version
-after update of country, default_tax_mode, default_tax_rate, tax_registration_status
+-- Some fresh-install baselines predate these optional organization settings.
+-- Compare their JSON values in the function, as the policy backfill already does.
+after update
 on public.organizations for each row execute function public.sync_organization_tax_policy_version();
 revoke all on function public.sync_organization_tax_policy_version() from public, anon, authenticated;
 

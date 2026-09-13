@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runMaterialSupplierPricingWorker = vi.fn();
 vi.mock("@/lib/materials/import-job-service", () => ({ runMaterialSupplierPricingWorker }));
 
 describe("immediate Material import worker kick", () => {
-  beforeEach(() => runMaterialSupplierPricingWorker.mockReset());
+  afterEach(() => vi.unstubAllEnvs());
+  beforeEach(() => {
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "material-supplier-pricing");
+    runMaterialSupplierPricingWorker.mockReset();
+  });
 
   it("reuses the durable worker claim boundary", async () => {
     runMaterialSupplierPricingWorker
@@ -13,12 +17,11 @@ describe("immediate Material import worker kick", () => {
     const { kickMaterialSupplierPricingWorker } = await import("@/lib/materials/import-job-kick");
     await expect(kickMaterialSupplierPricingWorker({ batchId: "batch-1", jobId: "job-1", trigger: "create" }, runMaterialSupplierPricingWorker))
       .resolves.toMatchObject({ started: true, targetClaimed: true });
-    expect(runMaterialSupplierPricingWorker).toHaveBeenCalledWith("material-create-job-1-1-1");
+    expect(runMaterialSupplierPricingWorker).toHaveBeenCalledWith("material-create-job-1-1-1", "job-1");
   });
 
-  it("drains eligible backlog so an older job cannot consume the new job's only wake-up", async () => {
+  it("targets only the requested job without draining older tenant backlog", async () => {
     runMaterialSupplierPricingWorker
-      .mockResolvedValueOnce({ claimed: true, jobId: "older-job", status: "completed" })
       .mockResolvedValueOnce({ claimed: true, jobId: "new-job", status: "completed" })
       .mockResolvedValue({ claimed: false });
     const { kickMaterialSupplierPricingWorker } = await import("@/lib/materials/import-job-kick");
@@ -27,7 +30,7 @@ describe("immediate Material import worker kick", () => {
       runMaterialSupplierPricingWorker,
     );
     expect(result).toMatchObject({ started: true, targetClaimed: true });
-    expect(runMaterialSupplierPricingWorker).toHaveBeenCalledTimes(6);
+    expect(runMaterialSupplierPricingWorker).toHaveBeenCalledTimes(1);
   });
 
   it("keeps scheduling failure recoverable instead of failing the durable job", async () => {
@@ -50,4 +53,15 @@ describe("immediate Material import worker kick", () => {
     expect(warning).toHaveBeenCalledWith("material_import_worker_schedule_failed", expect.objectContaining({ batchId: "batch-3", jobId: "job-3" }));
     warning.mockRestore();
   });
+  it("does not schedule or claim while disabled", async () => {
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "");
+    const scheduler = vi.fn();
+    const { scheduleMaterialSupplierPricingWorker, kickMaterialSupplierPricingWorker } = await import("./import-job-kick");
+    const context = { batchId: "batch", jobId: "job", trigger: "create" as const };
+    expect(scheduleMaterialSupplierPricingWorker(scheduler, context)).toMatchObject({ disabled: true });
+    expect(await kickMaterialSupplierPricingWorker(context, runMaterialSupplierPricingWorker)).toMatchObject({ disabled: true });
+    expect(scheduler).not.toHaveBeenCalled();
+    expect(runMaterialSupplierPricingWorker).not.toHaveBeenCalled();
+  });
+
 });

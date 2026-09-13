@@ -12584,6 +12584,10 @@ export type Database = {
       }
       project_qa_evidence_cleanup_jobs: {
         Row: {
+          lease_token: string | null
+          lease_expires_at: string | null
+          next_attempt_at: string
+          dead_lettered_at: string | null
           attempt_count: number
           completed_at: string | null
           created_at: string
@@ -12594,6 +12598,10 @@ export type Database = {
           storage_path: string
         }
         Insert: {
+          lease_token?: string | null
+          lease_expires_at?: string | null
+          next_attempt_at?: string
+          dead_lettered_at?: string | null
           attempt_count?: number
           completed_at?: string | null
           created_at?: string
@@ -12604,6 +12612,10 @@ export type Database = {
           storage_path: string
         }
         Update: {
+          lease_token?: string | null
+          lease_expires_at?: string | null
+          next_attempt_at?: string
+          dead_lettered_at?: string | null
           attempt_count?: number
           completed_at?: string | null
           created_at?: string
@@ -25415,6 +25427,24 @@ export type Database = {
       }
     }
     Functions: {
+      claim_material_source_cleanup_v1: {
+        Args: { p_limit?: number }
+        Returns: { id: string; batch_id: string; storage_path: string; lease_token: string | null; lease_expires_at: string | null; attempt_count: number }[]
+      }
+      finish_material_source_cleanup_v1: {
+        Args: { p_job_id: string; p_lease_token: string; p_success: boolean }
+        Returns: undefined
+      }
+
+      claim_project_qa_cleanup_jobs_v1: {
+        Args: { p_limit?: number }
+        Returns: Database["public"]["Tables"]["project_qa_evidence_cleanup_jobs"]["Row"][]
+      }
+      finish_project_qa_cleanup_job_v1: {
+        Args: { p_job_id: string; p_lease_token: string; p_success: boolean }
+        Returns: undefined
+      }
+
       _enqueue_supplier_bill_ucl_refresh: {
         Args: {
           p_confirmed_deletion?: boolean

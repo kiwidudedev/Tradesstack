@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { runDocumentCleanupWorker } from "@/lib/documents/cleanup-worker";
 
@@ -25,6 +26,9 @@ export async function GET(request: Request) {
   }
   if (request.headers.get("authorization") !== `Bearer ${configuredSecret}`) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if (!isBackgroundJobEnabled("document-storage-cleanup")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
   }
 
   const { searchParams } = new URL(request.url);
@@ -59,9 +63,7 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error
-      ? error.message
-      : "Document Storage cleanup failed.";
+    const message = "Document Storage cleanup failed.";
     console.error("[document-storage-cleanup-cron] failed", {
       error: message,
     });

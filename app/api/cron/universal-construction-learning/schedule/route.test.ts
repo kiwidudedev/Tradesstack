@@ -10,6 +10,7 @@ describe("GET /api/cron/universal-construction-learning/schedule", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
     scheduleUniversalLearningMonthlyReviews.mockReset();
+    vi.stubEnv("TRADESSTACK_ENABLED_BACKGROUND_JOBS", "universal-construction-learning/schedule,material-source-retention");
   });
 
   it("requires CRON_SECRET", async () => {

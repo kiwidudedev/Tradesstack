@@ -1,3 +1,4 @@
+import { isBackgroundJobEnabled } from "@/lib/background-jobs";
 import { NextResponse } from "next/server";
 import { runXeroSyncWorker } from "@/lib/xero/sync";
 import { getCronEnv } from "@/lib/xero/env";
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
   const configuredSecret = getCronSecret();
   if (!isAuthorized(request, configuredSecret)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if (!isBackgroundJobEnabled("xero-sync")) {
+    return NextResponse.json({ skipped: true, reason: "Background job is disabled." });
   }
 
   const { searchParams } = new URL(request.url);
