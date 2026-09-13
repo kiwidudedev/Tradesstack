@@ -1,3 +1,4 @@
+import { readBoundedBody, RequestBodyTooLargeError } from "@/lib/security/bounded-body";
 import { NextResponse } from "next/server";
 import { initiateDocumentUpload } from "@/lib/documents/server";
 import {
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const body = JSON.parse(new TextDecoder().decode(await readBoundedBody(request, MAX_REQUEST_BYTES)));
     const input = parseDocumentUploadInitiationInput(body);
     const reservation = await initiateDocumentUpload(supabase, input);
     return NextResponse.json(reservation, {
@@ -53,6 +54,9 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: "Upload request is too large.", code: "request_too_large" }, { status: 413 });
+    }
     const safe = toSafeDocumentError(error);
     if (safe.status === 500) {
       console.error("[documents/upload-initiate] failed", {

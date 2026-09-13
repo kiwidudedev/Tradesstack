@@ -1,3 +1,4 @@
+import { assertSpreadsheetArchiveBudget, assertWorksheetBudget } from "@/lib/security/spreadsheet-budget";
 import ExcelJS from "exceljs";
 import type { DocumentSourcePart } from "@/lib/document-intelligence/contracts";
 
@@ -21,10 +22,13 @@ export async function createSpreadsheetSourceParts(input: {
   bytes: Uint8Array;
   rowsPerChunk?: number;
 }): Promise<DocumentSourcePart[]> {
+  assertSpreadsheetArchiveBudget(input.bytes);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(input.bytes as never);
-  const rowsPerChunk = Math.max(50, input.rowsPerChunk ?? 150);
+  assertWorksheetBudget(workbook.worksheets);
+  const rowsPerChunk = Number.isFinite(input.rowsPerChunk) ? Math.min(500, Math.max(50, Math.floor(input.rowsPerChunk ?? 150))) : 150;
   const parts: DocumentSourcePart[] = [];
+  let contentCharacters = 0;
 
   for (const worksheet of workbook.worksheets) {
     const mergedRanges = (worksheet.model as unknown as { merges?: string[] }).merges ?? [];
@@ -45,6 +49,8 @@ export async function createSpreadsheetSourceParts(input: {
         }
         rows.push(`ROW ${rowNumber}: ${cells.join(" | ")}`);
       }
+      contentCharacters += rows.reduce((total, row) => total + row.length, 0);
+      if (contentCharacters > 4_000_000 || parts.length >= 200) throw new Error("Spreadsheet content exceeds processing limits.");
       parts.push({
         id: `sheet-${worksheet.id}-rows-${start}-${end}`,
         kind: "spreadsheet",

@@ -1,3 +1,4 @@
+import { assertSpreadsheetArchiveBudget, assertWorksheetBudget } from "@/lib/security/spreadsheet-budget";
 import ExcelJS from "exceljs";
 import type { MaterialImportCandidateRow, MaterialImportExtractionResult } from "@/lib/materials/types";
 
@@ -247,15 +248,21 @@ function extractRowsFromMatrix(matrix: string[][], sourceLabel: string): Materia
 }
 
 function extractRowsFromCsvText(text: string): MaterialImportExtractionResult {
+  if (text.length > 4_000_000) throw new Error("CSV content exceeds processing limits.");
+  let lineCount = 0;
+  for (const char of text) if (char === "\n" && ++lineCount >= 20000) throw new Error("CSV row count exceeds processing limits.");
   const matrix = text
     .split(/\r?\n/)
     .map((line) => parseDelimitedLine(line));
+  assertWorksheetBudget([{ rowCount: matrix.length, columnCount: Math.max(0, ...matrix.map((row) => row.length)) }]);
   return extractRowsFromMatrix(matrix, "csv");
 }
 
 async function extractRowsFromSpreadsheet(buffer: ArrayBuffer): Promise<MaterialImportExtractionResult> {
+  assertSpreadsheetArchiveBudget(new Uint8Array(buffer));
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(new Uint8Array(buffer) as never);
+  assertWorksheetBudget(workbook.worksheets);
   const worksheet = workbook.worksheets[0];
 
   if (!worksheet) {

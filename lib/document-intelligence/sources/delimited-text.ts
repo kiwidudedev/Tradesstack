@@ -1,23 +1,26 @@
 import type { DocumentSourcePart } from "@/lib/document-intelligence/contracts";
 
 export function parseCsvMatrix(text: string): string[][] {
+  if (text.length > 4_000_000) throw new Error("CSV content exceeds processing limits.");
   const rows: string[][] = [];
+  let cellCount = 0;
   let row: string[] = [];
   let cell = "";
   let quoted = false;
   for (let index = 0; index < text.length; index += 1) {
+    if (rows.length >= 20000 || row.length >= 256 || cellCount >= 500000) throw new Error("CSV dimensions exceed processing limits.");
     const char = text[index];
     if (char === '"') {
       if (quoted && text[index + 1] === '"') { cell += '"'; index += 1; }
       else quoted = !quoted;
     } else if (char === "," && !quoted) {
-      row.push(cell); cell = "";
+      row.push(cell); cellCount += 1; cell = "";
     } else if ((char === "\n" || char === "\r") && !quoted) {
       if (char === "\r" && text[index + 1] === "\n") index += 1;
-      row.push(cell); rows.push(row); row = []; cell = "";
+      row.push(cell); cellCount += 1; rows.push(row); row = []; cell = "";
     } else cell += char;
   }
-  if (cell.length > 0 || row.length > 0) { row.push(cell); rows.push(row); }
+  if (cell.length > 0 || row.length > 0) { row.push(cell); cellCount += 1; rows.push(row); }
   return rows;
 }
 
@@ -27,7 +30,7 @@ export function createCsvSourceParts(input: {
   rowsPerChunk?: number;
 }): DocumentSourcePart[] {
   const rows = parseCsvMatrix(Buffer.from(input.bytes).toString("utf8"));
-  const size = Math.max(100, input.rowsPerChunk ?? 250);
+  const size = Number.isFinite(input.rowsPerChunk) ? Math.min(500, Math.max(100, Math.floor(input.rowsPerChunk ?? 250))) : 250;
   const parts: DocumentSourcePart[] = [];
   for (let startIndex = 0; startIndex < rows.length; startIndex += size) {
     const slice = rows.slice(startIndex, startIndex + size);

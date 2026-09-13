@@ -1,3 +1,4 @@
+import { readBoundedBody, RequestBodyTooLargeError } from "@/lib/security/bounded-body";
 import { after, NextResponse } from "next/server";
 import { hasOrganizationPermission } from "@/lib/permissions-server";
 import { uploadAndExtractMaterialImportBatch } from "@/lib/materials/import-service";
@@ -20,7 +21,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    const bytes = await readBoundedBody(request, 26 * 1024 * 1024);
+    formData = await new Response(bytes, { headers: { "Content-Type": request.headers.get("content-type") ?? "" } }).formData();
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof RequestBodyTooLargeError ? "Upload request is too large." : "Invalid upload request." }, { status: error instanceof RequestBodyTooLargeError ? 413 : 400 });
+  }
   const file = formData.get("file");
   const supplierIdValue = formData.get("supplierId");
 

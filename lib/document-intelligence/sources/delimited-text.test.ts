@@ -14,3 +14,11 @@ describe("neutral CSV transport", () => {
     expect(parts[0]?.content).toContain('B="B,C"');
   });
 });
+
+
+describe("CSV resource limits", () => {
+  it("rejects excessive rows and columns before constructing an unbounded matrix", () => {
+    expect(() => parseCsvMatrix("a\n".repeat(20001))).toThrow(/limits/);
+    expect(() => parseCsvMatrix("a,".repeat(300))).toThrow(/limits/);
+  });
+});
