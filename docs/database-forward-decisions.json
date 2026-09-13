@@ -1,0 +1,3033 @@
+[
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.client_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.contact_kind",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.created_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.label",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.organization_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.receives_messages",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.sort_order",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.updated_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_contacts.value",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.address_line_1",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.city",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.client_id",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.country",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.created_at",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.id",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.is_primary",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.organization_id",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.postal_code",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.region",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.sort_order",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_client_locations.updated_at",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.client_status",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.client_type",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.credit_risk",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.default_margin_percent",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.first_name",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.last_name",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.lead_source",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.notes",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.payment_terms_days",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.primary_name_source",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organization_clients.referred_by",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.address_line_1",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.address_line_2",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.brand_accent_color",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.brand_primary_color",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.business_number",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.city",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.contact_email",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.contact_name",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.contact_phone",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.country",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.default_currency",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.default_tax_mode",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.default_tax_rate",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.gst_number",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.organizations.postcode",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.budgeted_cost",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.budgeted_hours",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.cost_code",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.cost_code_label",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.created_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.created_by",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.organization_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.project_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.quoted_allowance_cost",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.quoted_allowance_hours",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_budgets.updated_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.approved_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.approved_by",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.auto_clocked_out",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.auto_clocked_out_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.break_minutes",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.clock_in_accuracy_meters",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.clock_in_latitude",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.clock_in_longitude",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.clock_out_accuracy_meters",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.clock_out_latitude",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.clock_out_longitude",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.cost_code",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.cost_code_label",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.created_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.created_by",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.end_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.entry_date",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.hourly_rate",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.hours_worked",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_break_missed",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_early_finish",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_late_start",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_no_show",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_productive",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_project_mismatch",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.is_variation_work",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.labour_cost",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.manual_edit_required_approval",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.notes",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.organization_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.project_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.project_stage",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.reminder_sent_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.start_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.status",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.submitted",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.supervisor_name",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.task_area",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.team_name",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.time_category",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.updated_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.variation_reference",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.worker_member_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.worker_name",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_labour_time_entries.worker_user_id",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_time_sheet_entries.client_entry_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_time_sheet_entries.created_from_device_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_time_sheet_entries.source",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_time_sheet_entries.synced_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.created_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.is_active",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.organization_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.project_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.updated_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.worker_member_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_project_assignments.worker_user_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.created_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.is_active",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.organization_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.project_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.purchase_order_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.updated_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.worker_member_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.worker_purchase_order_assignments.worker_user_id",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.attempt_count",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.batch_id",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.completed_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.created_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.dead_lettered_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.id",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.last_error",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.lease_expires_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.lease_token",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.next_attempt_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.material_source_cleanup_jobs.storage_path",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_qa_evidence_cleanup_jobs.dead_lettered_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_qa_evidence_cleanup_jobs.lease_expires_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_qa_evidence_cleanup_jobs.lease_token",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "columns",
+    "object": "public.project_qa_evidence_cleanup_jobs.next_attempt_at",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_client_contacts.organization_client_contacts_client_org_fk",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_client_contacts.organization_client_contacts_organization_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_client_contacts.organization_client_contacts_pkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_client_locations.organization_client_locations_client_org_fk",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_client_locations.organization_client_locations_organization_id_fkey",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_client_locations.organization_client_locations_pkey",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "constraints",
+    "object": "public.organization_clients.organization_clients_id_organization_id_unique",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_created_by_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_organization_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_pkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_project_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_unique_cost_code_per_project",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_approved_by_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_created_by_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_organization_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_pkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_project_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_worker_member_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_worker_user_id_fkey",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.project_purchase_order_assignments.project_purchase_order_assignments_unique_active",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_project_assignments.worker_project_assignments_organization_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_project_assignments.worker_project_assignments_pkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_project_assignments.worker_project_assignments_project_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_project_assignments.worker_project_assignments_worker_member_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_project_assignments.worker_project_assignments_worker_user_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_organization_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_pkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_project_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_purchase_order_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_worker_member_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_worker_user_id_fkey",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "constraints",
+    "object": "public.material_source_cleanup_jobs.material_source_cleanup_jobs_batch_id_fkey",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.material_source_cleanup_jobs.material_source_cleanup_jobs_batch_id_key",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "constraints",
+    "object": "public.material_source_cleanup_jobs.material_source_cleanup_jobs_pkey",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "default_privileges",
+    "object": "0b78622c8bed0fa8a96dec59695e09ab81e690344cd628e47c69a028322b1ef9",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "1ee48d3a53e50d6af5be04c16e7037c79ae65fa700ee03050959fb2289e3bac8",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "2b993169ee142100ccafb18d4e5953f619568c5a1b542c81e0ce5378e1cb86cd",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "4e1c8a2374b8f52a453c2b1afdda88d69f02f931a0c2eb0220fb88150793df98",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "586e60000bb1fe7ae52c27bc52237f5ec851c26736aeb43d172ee44de9820804",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "86739192fe1adadbfad57e4fc21970f36ef49947f8ae7c6cac289d00e1a37da7",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "8b1ab2f70c4bfc06c1fa1b339d0839e42c96c38e0b712012d4a1fe286f10355a",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "8bcac48b3daab786f4bebbdc898d82f499b6e371bcb822b1be0703e87b4f1803",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "8dc8099676407806f0c75f7ad7611a66f00f3395686d4c4eadb377c19223d8b3",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "97804f61adea57e74da6ac732e72e0c7d0f01f1eea67c6a39e5dcefff98910dd",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "c4ede576fd8c4b417b686c85d1a996f4b758cbdd9778b5a12653aecc225ac3bf",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "default_privileges",
+    "object": "c5163e5b19290e67e44b6186e257d483b1d42d9727ca8683f6234d99b970f3a1",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "extensions",
+    "object": "pg_stat_statements",
+    "direction": "target_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "extensions",
+    "object": "pgcrypto",
+    "direction": "target_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "extensions",
+    "object": "supabase_vault",
+    "direction": "target_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "extensions",
+    "object": "uuid-ossp",
+    "direction": "target_only",
+    "decision": "B",
+    "reason": "Managed platform/bootstrap inventory difference, not application DDL drift. Preserve managed installation; operator preflight must confirm extension versions and role topology. Do not replay local platform ACL defaults onto hosted roles."
+  },
+  {
+    "category": "functions",
+    "object": "public.can_run_spec_finishes_once(uuid,uuid)",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve target-only legacy overload/helper without fresh recreation. Quote overload checks quotes.write; claim overload uses same authenticated organization-membership contract as current claim RPC; spec helper is a read-only authenticated membership check. Current app uses current signatures."
+  },
+  {
+    "category": "functions",
+    "object": "public.save_project_claim_draft(uuid,uuid,uuid,pg_catalog.timestamptz,text,text,text,date,date,date,date,pg_catalog.numeric,pg_catalog.numeric,text,jsonb)",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve target-only legacy overload/helper without fresh recreation. Quote overload checks quotes.write; claim overload uses same authenticated organization-membership contract as current claim RPC; spec helper is a read-only authenticated membership check. Current app uses current signatures."
+  },
+  {
+    "category": "functions",
+    "object": "public.save_project_quote_draft(uuid,uuid,uuid,pg_catalog.timestamptz,text,text,text,text,text,text,text,text,text,date,date,text,text,text,text,text,pg_catalog.numeric,pg_catalog.numeric,pg_catalog.numeric,pg_catalog.numeric,text,text,text,text,text,text,text,jsonb)",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve target-only legacy overload/helper without fresh recreation. Quote overload checks quotes.write; claim overload uses same authenticated organization-membership contract as current claim RPC; spec helper is a read-only authenticated membership check. Current app uses current signatures."
+  },
+  {
+    "category": "functions",
+    "object": "public.set_updated_at_timestamp()",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Selected target required trigger helper function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.claim_material_import_job_v2(text,pg_catalog.int4,uuid)",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.claim_material_source_cleanup_v1(pg_catalog.int4)",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.claim_project_qa_cleanup_jobs_v1(pg_catalog.int4)",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.finalize_material_import_job_v2(uuid,uuid,text,jsonb,jsonb,jsonb,pg_catalog.int4)",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.finish_material_source_cleanup_v1(uuid,uuid,pg_catalog.bool)",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.finish_project_qa_cleanup_job_v1(uuid,uuid,pg_catalog.bool)",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.guard_material_job_source_retention_v1()",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "functions",
+    "object": "public.handle_material_purchase_order_change()",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain unused historical repository trigger helper; no active trigger calls it. No new dependency or target recreation is introduced."
+  },
+  {
+    "category": "functions",
+    "object": "private.decide_supplier_invoice_site_review_phase_ab_legacy(uuid,text,text,jsonb,uuid[])",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "private.record_supplier_invoice_accounts_approval_phase_ab_legacy(uuid,uuid,text,text)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "private.save_supplier_invoice_capture_phase_ab_legacy(uuid,uuid,text,text,date,date,text,pg_catalog.numeric,pg_catalog.numeric,pg_catalog.numeric,text,text,jsonb,pg_catalog.bool)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "private.submit_supplier_invoice_for_site_review_phase_ab_legacy(uuid,text)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.create_takeoff_commercial_item(jsonb)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.delete_opportunity_pricing_workbook_sheet(uuid,uuid,uuid,uuid,uuid,uuid)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.get_accounting_sync_completion_evidence(uuid,uuid)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.has_permission(text)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.is_admin_of_organization(uuid)",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.log_organization_invite_audit()",
+    "direction": "different",
+    "decision": "A",
+    "reason": "Selected target function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.resolve_cost_item_document_context(text,uuid)",
+    "direction": "different",
+    "decision": "A",
+    "reason": "Selected target function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.sync_organization_tax_policy_version()",
+    "direction": "different",
+    "decision": "B",
+    "reason": "Selected repository function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "functions",
+    "object": "public.sync_project_job_todo_completion_fields()",
+    "direction": "different",
+    "decision": "A",
+    "reason": "Selected target function body carried forward in 20260913150000. See function decision table."
+  },
+  {
+    "category": "grants",
+    "object": "0e937dc1e919a810521377bb735edb646262704b06b66e59e78ed50c336287ee",
+    "direction": "target_only",
+    "decision": "C",
+    "reason": "Replace broad target grants with authenticated CRUD protected by permission-key RLS; anon has no table access, service retains ALL."
+  },
+  {
+    "category": "grants",
+    "object": "0e96815ba5c459da4d5eaab4668868ed420c96a18eb13156c0efbbb658e9ee1d",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "11cf51b58eb3eeb36a5d0bdec791a82cba91024b6fee433f7504b3ab4b964ae9",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "grants",
+    "object": "273ba041c878fb895f43efef3fc0f6d80f8ed0163996830d6478ffe76c078627",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "grants",
+    "object": "4b1dddeb85c22371135dad75dd25dbb65243cb8606ddff8fdde744dc9c47aab4",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "grants",
+    "object": "4c9d1ead37fcf22557d9e6fe43425dd8389141367176a9d132fa074e38962228",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "5debc6392abf546e606dc077f1dc1bf8f749c377635c0f25761830aa5f4c11bb",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "6602e864d81bbe0823644f7dfa7d2d5c0713a36ba149a826c3b35e2a2d73cb7e",
+    "direction": "target_only",
+    "decision": "C",
+    "reason": "Replace broad target grants with authenticated CRUD protected by permission-key RLS; anon has no table access, service retains ALL."
+  },
+  {
+    "category": "grants",
+    "object": "6dfe1dd55fff4976c720071aca51f03fe478f05f27c8a3588555a970ab203170",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "76c23e783a1bfd85f651990d4f400866e85249d0d22069cd0c68f5e006e414ff",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "grants",
+    "object": "7903fee0c9de55d273e1433ee2700ddcc918ca1ecb7ea883fc40284c0ab4f22e",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "7e0e38bf8169295f5767de88d5464dac97c6318a4b376c26d8cfcd4a40403647",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "837d76f7cef007d2cb11e2b154ffc2b27bcb9e6771a486ddacc1079bda15568d",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "8a3b69af2b5a647d9d617ac1e4f59310c94321244df1f2899cbaa408f472aa22",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "grants",
+    "object": "8b0a401a8c1b851708b1eebf12e35ae192f25ad761f1d09a7fced2c2099f9863",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "grants",
+    "object": "8f42aa4081dcabf322d33f2bc98a995f1fb5d493cf0c1854ba9ff12ebe2f064e",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "909d581e604c57962d142af79dcc4aec75c10a9a20bd6a87ea5be363b07dce94",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "936b723a4e582882b19a9e860f4a15fcb99255388cc0ad85754af78d65d1bbcb",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "97516882facb3e4d1f96afac67d93065976514817b0bee869821287e9980ec80",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "a4d891bf8f5251c8093386ece389dc89044580b109bcf6094655933e3e748182",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "aef0627198e1586d5968c13e017c68f57af35c4c33385f1b3f5e90f7f01407b9",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Preserve timestamp trigger helper; trigger function cannot be invoked as an ordinary RPC. No application-row read/write grant added."
+  },
+  {
+    "category": "grants",
+    "object": "b9f4c60ef417e5be259cae9d7ca1aaf9e84aea0f76e4404290657b80be0bfde4",
+    "direction": "target_only",
+    "decision": "C",
+    "reason": "Replace broad target grants with authenticated CRUD protected by permission-key RLS; anon has no table access, service retains ALL."
+  },
+  {
+    "category": "grants",
+    "object": "bb8d5d126e1fdd10bb487e91090eea8b630dc95a211990f0c147bce73f0c21ee",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "bb911cfc10ab1644cd77cdff104f32bca3555188cd4146fc4a0264c2b5eb861a",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "c8771d082417f7d933b80c93ada3783681ddeb619fe0d52c6ba195f3bd11b18b",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "d92f6668daf8c0bb5c28c4103822698fb5c69613d02f594dfa8809130207a5b0",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Preserve timestamp trigger helper; trigger function cannot be invoked as an ordinary RPC. No application-row read/write grant added."
+  },
+  {
+    "category": "grants",
+    "object": "dc855fc307ed7e1781f520ed382caa8e24d13bca7dcb71e2a52b1ea6e43eb7bc",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Preserve timestamp trigger helper; trigger function cannot be invoked as an ordinary RPC. No application-row read/write grant added."
+  },
+  {
+    "category": "grants",
+    "object": "efaf5087af11328b7f45ea6f8715cf23967edaf8ef91fa89b796ef1a63991c80",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve ACL for unchanged target-only legacy overload/helper; no new fresh-schema client contract."
+  },
+  {
+    "category": "grants",
+    "object": "f76e870ba6540e2db1c81e3a8ff9f499f81ff1432b27debce883bc810a75d02f",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "fdbd5a2a7c300d1c173fedf5fe552c61be278071fa457b647acb782efd6fe2b1",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "grants",
+    "object": "1596cc033c15c4aad24fe4a94efd4b642f24f287d0a0d1a7357da94c009460e9",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "326c336cc8c091e951c13cf0e22273ee68d33d4048f15ad42f1e4574155dddda",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "3b7aae84341bd4b09166c84fcaae3618e2afb1d29764a69f9a3619c64155081c",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "3f6dc2d891695ae31defddd403bb71a7962261682499a0a6dbea3aa9e819a848",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "4af33652660fb711d3c823ca5f74357806d23d9f8a9bebf58a42c067420d1b70",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "4bfb1f287fb520cfcbe8b04dbe092952f312d34238e79400fa20908bd0739dda",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "5ea6a9e8913d91405df6c9e8c776e00b9cdef96cdc9d9e9545c6ce50c2835f5d",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "66c1531125866bc536d8c6d5f738e17030d031cac9a57bafba485b648f82bfbd",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "8032169a4cd9ed9c3bd3500a1ac36a69058f51a53c74aeaf06a42156cb1ddf09",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "8462e04f43a40c952819289740394b68f67106ac08acfdec95e0158761fa919f",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "84c70944c4b7f791950f533dc12297db136ad4b6205abf4ddc8cf74f31b26b02",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "8e0221ee5b2141c72fd875b570a52f16adadfaea9aa00e862804bae448a0c43a",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "b629f7f45e7ab0a1e91876ee82ed723063e86ead93673b66510412190ec1223b",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "be9e71f62cfcd1cff5b28629c05487e6a7319661ac49b29982851b254ba19af0",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "c0e144a880a4bab096f288537e74d9770e7770add6636672485dbe5c6c20b8b8",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "cf4c4072873878432c082bf7443c075c2a66f235d8d0fe479b196590541a2589",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "d06a00b2cc9ed170c459b3669e848670239379371846696bb5c1d2222cb8ee88",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "grants",
+    "object": "fad305f6720c052d2f79ba9b349fcb8e36fdbf259bfed7f1212e5531a8b26ff1",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain repository worker service-only EXECUTE/ACL contract (or unchanged historical trigger helper); no anon/authenticated worker EXECUTE. Verified by SQL privilege tests."
+  },
+  {
+    "category": "indexes",
+    "object": "public.change_detection_runs.change_detection_runs_project_created_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_client_contacts.organization_client_contacts_client_kind_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_client_contacts.organization_client_contacts_org_client_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_client_locations.organization_client_locations_client_primary_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_client_locations.organization_client_locations_org_client_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_clients.organization_clients_org_status_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_clients.organization_clients_org_type_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.organization_members.organization_members_org_display_name_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_budgets.project_labour_budgets_org_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_budgets.project_labour_budgets_project_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_active_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_org_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_project_date_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_status_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_worker_date_idx",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_purchase_order_assignments.idx_po_assignments_member",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_purchase_order_assignments.idx_po_assignments_org_project",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_purchase_order_assignments.idx_po_assignments_po",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_quality_issues.project_quality_issues_org_project_updated_desc_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_quality_sign_offs.project_quality_sign_offs_org_project_updated_desc_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_quotes.project_quotes_org_project_updated_desc_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_time_sheet_entries.project_time_sheet_entries_client_entry_id_uidx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_time_sheet_entries.project_time_sheet_entries_one_open_shift_per_worker_uidx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_time_sheet_entries.project_time_sheet_entries_org_project_clock_in_desc_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.project_time_sheet_events.project_time_sheet_events_org_project_created_desc_idx",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_project_assignments.worker_project_assignments_member_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_project_assignments.worker_project_assignments_org_project_active_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_project_assignments.worker_project_assignments_worker_active_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_member_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_org_project_active_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_po_active_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "indexes",
+    "object": "public.worker_purchase_order_assignments.worker_purchase_order_assignments_worker_active_idx",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_status_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_client_contacts.organization_client_contacts_kind_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_client_contacts.organization_client_contacts_label_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_client_contacts.organization_client_contacts_value_not_blank",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_client_locations.organization_client_locations_address_not_blank",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_clients.organization_clients_client_status_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_clients.organization_clients_client_type_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_clients.organization_clients_credit_risk_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_clients.organization_clients_default_margin_percent_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_clients.organization_clients_payment_terms_days_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organization_clients.organization_clients_primary_name_source_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organizations.organizations_default_currency_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organizations.organizations_default_tax_mode_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.organizations.organizations_default_tax_rate_check",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_budgeted_cost_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_budgeted_hours_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_cost_code_not_blank",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_quoted_allowance_cost_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_budgets.project_labour_budgets_quoted_allowance_hours_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_break_minutes_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_clock_in_latitude_range",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_clock_in_longitude_range",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_clock_out_latitude_range",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_clock_out_longitude_range",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_hourly_rate_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_hours_worked_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_labour_cost_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_status_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_time_category_check",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.project_labour_time_entries.project_labour_time_entries_worker_name_not_blank",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_baseline_revision_not_blank",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_result_json_object",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_revised_file_name_not_blank",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_revised_revision_not_blank",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_status_valid",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.change_detection_runs.change_detection_runs_validation_json_object",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.spec_finishes_runs.spec_finishes_runs_trade_id_not_blank",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.spec_finishes_runs.spec_finishes_runs_trade_label_not_blank",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "inline_constraints",
+    "object": "public.takeoff_measurements.takeoff_measurements_calibration_required",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "owners",
+    "object": "public.organization_client_contacts",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "owners",
+    "object": "public.organization_client_locations",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "owners",
+    "object": "public.project_labour_budgets",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "owners",
+    "object": "public.project_labour_time_entries",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "owners",
+    "object": "public.worker_project_assignments",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "owners",
+    "object": "public.worker_purchase_order_assignments",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "owners",
+    "object": "public.material_source_cleanup_jobs",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_contacts.Admins can delete organization client contacts",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_contacts.Members can create organization client contacts",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_contacts.Members can update organization client contacts",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_contacts.Members can view organization client contacts",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_locations.Admins can delete organization client locations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_locations.Members can create organization client locations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_locations.Members can update organization client locations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_client_locations.Members can view organization client locations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_clients.Admins can delete organization clients",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_clients.Members can create organization clients",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_clients.Members can update organization clients",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_opportunities.Admins can delete organization opportunities",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_opportunities.Members can create organization opportunities",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organization_opportunities.Members can update organization opportunities",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.organizations.Members can update organization",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_budgets.Admins can delete labour budgets",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_budgets.Members can create labour budgets",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_budgets.Members can update labour budgets",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_budgets.Members can view labour budgets",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_time_entries.Admins can delete labour time entries",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_time_entries.Members can create labour time entries",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_time_entries.Members can update labour time entries",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_labour_time_entries.Members can view labour time entries",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_attachments.Admins can delete purchase order attachments",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_attachments.Members can create purchase order attachments",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_attachments.Members can update purchase order attachments",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_invoice_items.Admins can delete purchase order invoice items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_invoice_items.Members can create purchase order invoice items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_invoice_items.Members can update purchase order invoice items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_line_items.Admins can delete purchase order line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_line_items.Members can create purchase order line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_line_items.Members can update purchase order line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_status_events.Admins can delete purchase order status events",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_order_status_events.Members can create purchase order status events",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_orders.Admins can delete purchase orders",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_orders.Members can create purchase orders",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_purchase_orders.Members can update purchase orders",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_quote_line_items.Admins can delete quote line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_quote_line_items.Members can create quote line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_quote_line_items.Members can update quote line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_quotes.Admins can delete project quotes",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_quotes.Members can create project quotes",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_quotes.Members can update project quotes",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_attachments.Admins can delete variation attachments",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_attachments.Members can create variation attachments",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_attachments.Members can update variation attachments",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_invoice_items.Admins can delete variation invoice items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_invoice_items.Members can create variation invoice items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_invoice_items.Members can update variation invoice items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_line_items.Admins can delete variation line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_line_items.Members can create variation line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_line_items.Members can update variation line items",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_status_events.Admins can delete variation status events",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variation_status_events.Members can create variation status events",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variations.Admins can delete project variations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variations.Members can create project variations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.project_variations.Members can update project variations",
+    "direction": "target_only",
+    "decision": "F",
+    "reason": "Remove historical write bypass in 20260913140000; retain current permission-key policies and existing member reads. Mobile does not require this broad write access."
+  },
+  {
+    "category": "policies",
+    "object": "public.worker_project_assignments.Workers can view own project assignments",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "policies",
+    "object": "public.worker_purchase_order_assignments.Workers can view own purchase order assignments",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "rls",
+    "object": "public.organization_client_contacts.enabled",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "rls",
+    "object": "public.organization_client_contacts.forced",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "rls",
+    "object": "public.organization_client_locations.enabled",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "rls",
+    "object": "public.organization_client_locations.forced",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "rls",
+    "object": "public.project_labour_budgets.enabled",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "rls",
+    "object": "public.project_labour_budgets.forced",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "rls",
+    "object": "public.project_labour_time_entries.enabled",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "rls",
+    "object": "public.project_labour_time_entries.forced",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "rls",
+    "object": "public.worker_project_assignments.enabled",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "rls",
+    "object": "public.worker_project_assignments.forced",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "rls",
+    "object": "public.worker_purchase_order_assignments.enabled",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "rls",
+    "object": "public.worker_purchase_order_assignments.forced",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "rls",
+    "object": "public.material_source_cleanup_jobs.enabled",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "rls",
+    "object": "public.material_source_cleanup_jobs.forced",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "tables",
+    "object": "public.organization_client_contacts",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "tables",
+    "object": "public.organization_client_locations",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "tables",
+    "object": "public.project_labour_budgets",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "tables",
+    "object": "public.project_labour_time_entries",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "tables",
+    "object": "public.worker_project_assignments",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "tables",
+    "object": "public.worker_purchase_order_assignments",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "tables",
+    "object": "public.material_source_cleanup_jobs",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "triggers",
+    "object": "public.organization_client_contacts.set_organization_client_contacts_updated_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "triggers",
+    "object": "public.organization_client_locations.set_organization_client_locations_updated_at",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "triggers",
+    "object": "public.project_labour_budgets.set_project_labour_budgets_updated_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "triggers",
+    "object": "public.project_labour_time_entries.set_project_labour_time_entries_updated_at",
+    "direction": "target_only",
+    "decision": "E",
+    "reason": "Preserve existing target legacy object and associated grants/constraints; no current application dependency. Do not recreate it in fresh replay or delete target data."
+  },
+  {
+    "category": "triggers",
+    "object": "public.project_purchase_order_assignments.set_project_po_assignments_updated_at",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "triggers",
+    "object": "public.project_purchase_order_assignments.validate_project_purchase_order_assignment_trigger",
+    "direction": "target_only",
+    "decision": "A",
+    "reason": "Recover exact authoritative active target schema/index/constraint/trigger with guarded new forward DDL; normalized final shared definitions match. Equivalent status CHECK name is renamed without changing its expression."
+  },
+  {
+    "category": "triggers",
+    "object": "public.worker_project_assignments.set_worker_project_assignments_updated_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "triggers",
+    "object": "public.worker_purchase_order_assignments.set_worker_purchase_order_assignments_updated_at",
+    "direction": "target_only",
+    "decision": "D",
+    "reason": "Formalize exact exported mobile foundation with guarded DDL in 20260913130000 and own-worker SELECT/service-write grants in 20260913140000; retain own-timesheet RLS."
+  },
+  {
+    "category": "triggers",
+    "object": "public.organization_material_import_jobs.material_import_job_source_retention",
+    "direction": "replay_only",
+    "decision": "B",
+    "reason": "Retain current repository contract. Pending worker DDL remains forward-only; missing target CHECK rules are added NOT VALID in 20260913160000 to preserve existing data."
+  },
+  {
+    "category": "triggers",
+    "object": "public.organizations.organizations_sync_tax_policy_version",
+    "direction": "different",
+    "decision": "C",
+    "reason": "Align tax-policy trigger with selected JSON-compatible repository function in 20260913150000."
+  }
+]

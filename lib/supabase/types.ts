@@ -7,10 +7,408 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
+  // Preserve the existing PostgREST API contract; local CLI generation omits this metadata.
+  __InternalSupabase: { PostgrestVersion: "14.5" }
+  private: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      approve_supplier_invoice_commercially_phase_ab_legacy: {
+        Args: {
+          p_accepted_variances?: Json
+          p_approval_note?: string
+          p_expected_finance_hash: string
+          p_no_po_explanation?: string
+          p_no_po_reason?: string
+          p_organization_id: string
+          p_supplier_invoice_id: string
+        }
+        Returns: string
+      }
+      create_retention_successor_draft: {
+        Args: { p_correlation_id: string; p_submitted_claim_id: string }
+        Returns: Json
+      }
+      current_effective_retention_legacy_case: {
+        Args: { p_project_id: string }
+        Returns: string
+      }
+      current_legacy_committed_by_origin: {
+        Args: { p_project_id: string }
+        Returns: {
+          amount: number
+          originating_payment_claim_id: string
+        }[]
+      }
+      decide_supplier_invoice_site_review_phase_ab_legacy: {
+        Args: {
+          p_accepted_variances?: Json
+          p_decision: string
+          p_decision_id: string
+          p_disputed_allocation_ids?: string[]
+          p_note: string
+        }
+        Returns: string
+      }
+      enqueue_retention_rolling_draft: {
+        Args: { p_operation: string; p_originating_payment_claim_id: string }
+        Returns: undefined
+      }
+      ensure_master_retention_claim: {
+        Args: {
+          p_actor_user_id: string
+          p_organization_id: string
+          p_project_id: string
+        }
+        Returns: string
+      }
+      evaluate_retention_variance_origin: {
+        Args: {
+          p_correlation_id?: string
+          p_originating_payment_claim_id: string
+          p_project_id: string
+        }
+        Returns: Json
+      }
+      evaluate_retention_variance_project: {
+        Args: {
+          p_correlation_id?: string
+          p_origin_ids?: string[]
+          p_project_id: string
+        }
+        Returns: Json
+      }
+      generate_activation_reminders: {
+        Args: { p_schedule_id: string }
+        Returns: number
+      }
+      generate_retention_claim_number: {
+        Args: { p_organization_id: string; p_project_id: string }
+        Returns: string
+      }
+      maintain_retention_rolling_draft: {
+        Args: {
+          p_correlation_id: string
+          p_operation: string
+          p_originating_payment_claim_id: string
+          p_retry_count?: number
+        }
+        Returns: Json
+      }
+      maintain_retention_rolling_draft_pre_document_lock: {
+        Args: {
+          p_correlation_id: string
+          p_operation: string
+          p_originating_payment_claim_id: string
+          p_retry_count?: number
+        }
+        Returns: Json
+      }
+      master_retention_claim_source: {
+        Args: { p_retention_claim_id: string }
+        Returns: Json
+      }
+      master_retention_claim_source_v2: {
+        Args: { p_retention_claim_id: string }
+        Returns: Json
+      }
+      master_retention_date_edit_context: {
+        Args: { p_lock?: boolean; p_retention_claim_id: string }
+        Returns: Json
+      }
+      phase2b_actor_has_push_permission: {
+        Args: { p_actor_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      populate_retention_legacy_sources: {
+        Args: { p_case_id: string; p_source_state: Json }
+        Returns: number
+      }
+      record_retention_claim_event: {
+        Args: {
+          p_actor_user_id: string
+          p_correlation_id: string
+          p_event_type: string
+          p_metadata?: Json
+          p_new_status: string
+          p_organization_id: string
+          p_previous_status: string
+          p_project_id: string
+          p_reason: string
+          p_retention_claim_id: string
+        }
+        Returns: string
+      }
+      record_retention_legacy_event: {
+        Args: {
+          p_case_id: string
+          p_correlation_id?: string
+          p_event_type: string
+          p_metadata?: Json
+          p_new_status: string
+          p_previous_status: string
+          p_reason: string
+        }
+        Returns: string
+      }
+      record_retention_reminder_event: {
+        Args: {
+          p_correlation_id?: string
+          p_event_type: string
+          p_metadata?: Json
+          p_new_state: string
+          p_previous_state: string
+          p_reason: string
+          p_reminder_id: string
+        }
+        Returns: string
+      }
+      record_retention_schedule_event: {
+        Args: {
+          p_correlation_id?: string
+          p_event_type: string
+          p_metadata?: Json
+          p_new_status: string
+          p_previous_status: string
+          p_reason: string
+          p_schedule_id: string
+        }
+        Returns: string
+      }
+      record_retention_variance_event: {
+        Args: {
+          p_correlation_id?: string
+          p_event_type: string
+          p_metadata?: Json
+          p_new_severity: string
+          p_new_state: string
+          p_previous_severity: string
+          p_previous_state: string
+          p_reason: string
+          p_variance_id: string
+        }
+        Returns: string
+      }
+      record_supplier_invoice_accounts_approval_phase_ab_legacy: {
+        Args: {
+          p_approval_note?: string
+          p_expected_finance_hash: string
+          p_site_review_submission_id: string
+          p_supplier_invoice_id: string
+        }
+        Returns: string
+      }
+      refresh_retention_legacy_case_totals: {
+        Args: { p_case_id: string }
+        Returns: undefined
+      }
+      reject_retention_claim_submission: {
+        Args: {
+          p_correlation_id: string
+          p_details: Json
+          p_error_code: string
+          p_retention_claim_id: string
+        }
+        Returns: Json
+      }
+      reject_retention_document_save: {
+        Args: {
+          p_claim: Database["public"]["Tables"]["retention_claims"]["Row"]
+          p_correlation_id: string
+          p_details?: Json
+          p_error_code: string
+        }
+        Returns: Json
+      }
+      reject_supplier_invoice_commercially_phase_ab_legacy: {
+        Args: {
+          p_organization_id: string
+          p_reason: string
+          p_supplier_invoice_id: string
+        }
+        Returns: string
+      }
+      retention_claim_chronological_sequence: {
+        Args: { p_claim_id: string; p_project_id: string }
+        Returns: number
+      }
+      retention_claim_current_origin_details: {
+        Args: { p_retention_claim_id: string }
+        Returns: Json
+      }
+      retention_claim_document_source: {
+        Args: { p_retention_claim_id: string }
+        Returns: Json
+      }
+      retention_claim_draft_origin_set_hash: {
+        Args: { p_retention_claim_id: string }
+        Returns: string
+      }
+      retention_claim_header_json: {
+        Args: { p_retention_claim_id: string }
+        Returns: Json
+      }
+      retention_claim_operation_context: {
+        Args: {
+          p_permission_key: string
+          p_project_id: string
+          p_require_internal_gate: boolean
+        }
+        Returns: Json
+      }
+      retention_claim_origin_state_hash: {
+        Args: { p_originating_payment_claim_id: string }
+        Returns: string
+      }
+      retention_claim_phase3_gate_enabled: { Args: never; Returns: boolean }
+      retention_eligibility_state: {
+        Args: { p_project_id: string }
+        Returns: Json
+      }
+      retention_eligibility_state_phase4_pre_legacy_reconciliation: {
+        Args: { p_project_id: string }
+        Returns: Json
+      }
+      retention_legacy_case_json: { Args: { p_case_id: string }; Returns: Json }
+      retention_legacy_source_state: {
+        Args: { p_project_id: string }
+        Returns: Json
+      }
+      retention_phase10_context: {
+        Args: { p_permission_key: string; p_retention_claim_id: string }
+        Returns: Json
+      }
+      retention_phase10_gate_enabled: { Args: never; Returns: boolean }
+      retention_phase2c_actor_can_push: {
+        Args: { p_actor_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      retention_phase4_context: {
+        Args: {
+          p_permission_key: string
+          p_project_id: string
+          p_require_internal_gate?: boolean
+        }
+        Returns: Json
+      }
+      retention_phase4_gate_enabled: { Args: never; Returns: boolean }
+      retention_phase5_context: {
+        Args: {
+          p_permission_key: string
+          p_project_id: string
+          p_require_internal_gate?: boolean
+        }
+        Returns: Json
+      }
+      retention_phase5_gate_enabled: { Args: never; Returns: boolean }
+      retention_phase6_context: {
+        Args: {
+          p_permission_key: string
+          p_project_id: string
+          p_require_internal_gate?: boolean
+        }
+        Returns: Json
+      }
+      retention_phase6_gate_enabled: { Args: never; Returns: boolean }
+      retention_phase8_actor_has_permission: {
+        Args: {
+          p_actor_user_id: string
+          p_organization_id: string
+          p_permission_key: string
+        }
+        Returns: boolean
+      }
+      retention_phase8_context: {
+        Args: {
+          p_permission_key: string
+          p_project_id: string
+          p_require_internal_gate?: boolean
+        }
+        Returns: Json
+      }
+      retention_phase8_gate_enabled: { Args: never; Returns: boolean }
+      retention_phase9_context: {
+        Args: { p_permission_key: string; p_retention_claim_id: string }
+        Returns: Json
+      }
+      retention_phase9_gate_enabled: { Args: never; Returns: boolean }
+      retention_rolling_record_event: {
+        Args: {
+          p_correlation_id: string
+          p_error_classification?: string
+          p_metadata?: Json
+          p_operation: string
+          p_organization_id: string
+          p_originating_payment_claim_id: string
+          p_project_id: string
+          p_result: string
+          p_retention_claim_id: string
+          p_retry_count: number
+        }
+        Returns: undefined
+      }
+      retention_schedule_header_json: {
+        Args: { p_schedule_id: string }
+        Returns: Json
+      }
+      retention_schedule_origins_json: {
+        Args: { p_schedule_id: string }
+        Returns: Json
+      }
+      retention_variance_blocking_details: {
+        Args: { p_origin_ids?: string[]; p_project_id: string }
+        Returns: Json
+      }
+      retention_variance_read_json: {
+        Args: { p_variance_id: string }
+        Returns: Json
+      }
+      retention_variance_snapshot: {
+        Args: { p_originating_payment_claim_id: string; p_project_id: string }
+        Returns: Json
+      }
+      retention_variance_snapshot_phase5_pre_legacy_reconciliation: {
+        Args: { p_originating_payment_claim_id: string; p_project_id: string }
+        Returns: Json
+      }
+      save_supplier_invoice_capture_phase_ab_legacy: {
+        Args: {
+          p_create?: boolean
+          p_currency: string
+          p_due_date: string
+          p_invoice_date: string
+          p_invoice_id: string
+          p_invoice_number: string
+          p_lines?: Json
+          p_notes: string
+          p_source: string
+          p_subtotal: number
+          p_supplier_id: string
+          p_supplier_po_reference: string
+          p_tax_total: number
+          p_total: number
+        }
+        Returns: string
+      }
+      submit_supplier_invoice_for_site_review_phase_ab_legacy: {
+        Args: { p_expected_finance_hash: string; p_supplier_invoice_id: string }
+        Returns: string
+      }
+      validate_retention_legacy_case: {
+        Args: { p_case_id: string }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -3320,6 +3718,56 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      material_source_cleanup_jobs: {
+        Row: {
+          attempt_count: number
+          batch_id: string
+          completed_at: string | null
+          created_at: string
+          dead_lettered_at: string | null
+          id: string
+          last_error: string | null
+          lease_expires_at: string | null
+          lease_token: string | null
+          next_attempt_at: string
+          storage_path: string
+        }
+        Insert: {
+          attempt_count?: number
+          batch_id: string
+          completed_at?: string | null
+          created_at?: string
+          dead_lettered_at?: string | null
+          id?: string
+          last_error?: string | null
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          storage_path: string
+        }
+        Update: {
+          attempt_count?: number
+          batch_id?: string
+          completed_at?: string | null
+          created_at?: string
+          dead_lettered_at?: string | null
+          id?: string
+          last_error?: string | null
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_source_cleanup_jobs_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: true
+            referencedRelation: "organization_material_import_batches"
             referencedColumns: ["id"]
           },
         ]
@@ -6796,60 +7244,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "organization_capabilities_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      organization_client_contacts: {
-        Row: {
-          client_id: string
-          contact_kind: string
-          created_at: string
-          id: string
-          label: string
-          organization_id: string
-          receives_messages: boolean
-          sort_order: number
-          updated_at: string
-          value: string
-        }
-        Insert: {
-          client_id: string
-          contact_kind: string
-          created_at?: string
-          id?: string
-          label: string
-          organization_id: string
-          receives_messages?: boolean
-          sort_order?: number
-          updated_at?: string
-          value: string
-        }
-        Update: {
-          client_id?: string
-          contact_kind?: string
-          created_at?: string
-          id?: string
-          label?: string
-          organization_id?: string
-          receives_messages?: boolean
-          sort_order?: number
-          updated_at?: string
-          value?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "organization_client_contacts_client_org_fk"
-            columns: ["client_id", "organization_id"]
-            isOneToOne: false
-            referencedRelation: "organization_clients"
-            referencedColumns: ["id", "organization_id"]
-          },
-          {
-            foreignKeyName: "organization_client_contacts_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -11642,6 +12036,24 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "project_job_todos_issue_scope_fkey"
+            columns: ["linked_issue_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_issues"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_job_todos_item_scope_fkey"
+            columns: [
+              "linked_inspection_item_id",
+              "organization_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspection_items"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_job_todos_linked_client_id_fkey"
             columns: ["linked_client_id"]
             isOneToOne: false
@@ -11725,248 +12137,19 @@ export type Database = {
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
           },
-        ]
-      }
-      project_labour_budgets: {
-        Row: {
-          budgeted_cost: number
-          budgeted_hours: number
-          cost_code: string
-          cost_code_label: string
-          created_at: string
-          created_by: string
-          id: string
-          organization_id: string
-          project_id: string
-          quoted_allowance_cost: number
-          quoted_allowance_hours: number
-          updated_at: string
-        }
-        Insert: {
-          budgeted_cost?: number
-          budgeted_hours?: number
-          cost_code?: string
-          cost_code_label?: string
-          created_at?: string
-          created_by: string
-          id?: string
-          organization_id: string
-          project_id: string
-          quoted_allowance_cost?: number
-          quoted_allowance_hours?: number
-          updated_at?: string
-        }
-        Update: {
-          budgeted_cost?: number
-          budgeted_hours?: number
-          cost_code?: string
-          cost_code_label?: string
-          created_at?: string
-          created_by?: string
-          id?: string
-          organization_id?: string
-          project_id?: string
-          quoted_allowance_cost?: number
-          quoted_allowance_hours?: number
-          updated_at?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "project_labour_budgets_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_labour_budgets_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "project_job_todos_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "organization_projects"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "organization_id"]
           },
           {
-            foreignKeyName: "project_labour_budgets_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "project_job_todos_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
-            referencedColumns: ["project_id"]
-          },
-        ]
-      }
-      project_labour_time_entries: {
-        Row: {
-          approved_at: string | null
-          approved_by: string | null
-          auto_clocked_out: boolean
-          auto_clocked_out_at: string | null
-          break_minutes: number
-          clock_in_accuracy_meters: number | null
-          clock_in_latitude: number | null
-          clock_in_longitude: number | null
-          clock_out_accuracy_meters: number | null
-          clock_out_latitude: number | null
-          clock_out_longitude: number | null
-          cost_code: string | null
-          cost_code_label: string | null
-          created_at: string
-          created_by: string
-          end_at: string | null
-          entry_date: string
-          hourly_rate: number
-          hours_worked: number | null
-          id: string
-          is_break_missed: boolean
-          is_early_finish: boolean
-          is_late_start: boolean
-          is_no_show: boolean
-          is_productive: boolean
-          is_project_mismatch: boolean
-          is_variation_work: boolean
-          labour_cost: number | null
-          manual_edit_required_approval: boolean
-          notes: string
-          organization_id: string
-          project_id: string
-          project_stage: string
-          reminder_sent_at: string | null
-          start_at: string | null
-          status: string
-          submitted: boolean
-          supervisor_name: string
-          task_area: string
-          team_name: string
-          time_category: string
-          updated_at: string
-          variation_reference: string
-          worker_member_id: string | null
-          worker_name: string
-          worker_user_id: string | null
-        }
-        Insert: {
-          approved_at?: string | null
-          approved_by?: string | null
-          auto_clocked_out?: boolean
-          auto_clocked_out_at?: string | null
-          break_minutes?: number
-          clock_in_accuracy_meters?: number | null
-          clock_in_latitude?: number | null
-          clock_in_longitude?: number | null
-          clock_out_accuracy_meters?: number | null
-          clock_out_latitude?: number | null
-          clock_out_longitude?: number | null
-          cost_code?: string | null
-          cost_code_label?: string | null
-          created_at?: string
-          created_by: string
-          end_at?: string | null
-          entry_date?: string
-          hourly_rate?: number
-          hours_worked?: number | null
-          id?: string
-          is_break_missed?: boolean
-          is_early_finish?: boolean
-          is_late_start?: boolean
-          is_no_show?: boolean
-          is_productive?: boolean
-          is_project_mismatch?: boolean
-          is_variation_work?: boolean
-          labour_cost?: number | null
-          manual_edit_required_approval?: boolean
-          notes?: string
-          organization_id: string
-          project_id: string
-          project_stage?: string
-          reminder_sent_at?: string | null
-          start_at?: string | null
-          status?: string
-          submitted?: boolean
-          supervisor_name?: string
-          task_area?: string
-          team_name?: string
-          time_category?: string
-          updated_at?: string
-          variation_reference?: string
-          worker_member_id?: string | null
-          worker_name: string
-          worker_user_id?: string | null
-        }
-        Update: {
-          approved_at?: string | null
-          approved_by?: string | null
-          auto_clocked_out?: boolean
-          auto_clocked_out_at?: string | null
-          break_minutes?: number
-          clock_in_accuracy_meters?: number | null
-          clock_in_latitude?: number | null
-          clock_in_longitude?: number | null
-          clock_out_accuracy_meters?: number | null
-          clock_out_latitude?: number | null
-          clock_out_longitude?: number | null
-          cost_code?: string | null
-          cost_code_label?: string | null
-          created_at?: string
-          created_by?: string
-          end_at?: string | null
-          entry_date?: string
-          hourly_rate?: number
-          hours_worked?: number | null
-          id?: string
-          is_break_missed?: boolean
-          is_early_finish?: boolean
-          is_late_start?: boolean
-          is_no_show?: boolean
-          is_productive?: boolean
-          is_project_mismatch?: boolean
-          is_variation_work?: boolean
-          labour_cost?: number | null
-          manual_edit_required_approval?: boolean
-          notes?: string
-          organization_id?: string
-          project_id?: string
-          project_stage?: string
-          reminder_sent_at?: string | null
-          start_at?: string | null
-          status?: string
-          submitted?: boolean
-          supervisor_name?: string
-          task_area?: string
-          team_name?: string
-          time_category?: string
-          updated_at?: string
-          variation_reference?: string
-          worker_member_id?: string | null
-          worker_name?: string
-          worker_user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_labour_time_entries_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_labour_time_entries_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "organization_projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_labour_time_entries_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_lifecycle_reconciliation_v1"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_labour_time_entries_worker_member_id_fkey"
-            columns: ["worker_member_id"]
-            isOneToOne: false
-            referencedRelation: "organization_members"
-            referencedColumns: ["id"]
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -12584,43 +12767,43 @@ export type Database = {
       }
       project_qa_evidence_cleanup_jobs: {
         Row: {
-          lease_token: string | null
-          lease_expires_at: string | null
-          next_attempt_at: string
-          dead_lettered_at: string | null
           attempt_count: number
           completed_at: string | null
           created_at: string
+          dead_lettered_at: string | null
           id: string
           last_error: string | null
+          lease_expires_at: string | null
+          lease_token: string | null
+          next_attempt_at: string
           reason: string
           storage_bucket: string
           storage_path: string
         }
         Insert: {
-          lease_token?: string | null
-          lease_expires_at?: string | null
-          next_attempt_at?: string
-          dead_lettered_at?: string | null
           attempt_count?: number
           completed_at?: string | null
           created_at?: string
+          dead_lettered_at?: string | null
           id?: string
           last_error?: string | null
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
           reason: string
           storage_bucket?: string
           storage_path: string
         }
         Update: {
-          lease_token?: string | null
-          lease_expires_at?: string | null
-          next_attempt_at?: string
-          dead_lettered_at?: string | null
           attempt_count?: number
           completed_at?: string | null
           created_at?: string
+          dead_lettered_at?: string | null
           id?: string
           last_error?: string | null
+          lease_expires_at?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
           reason?: string
           storage_bucket?: string
           storage_path?: string
@@ -13050,9 +13233,9 @@ export type Database = {
           run_id: string
           section_sort_order: number
           selected_options: Json
-          signature_attestation: string | null
           signature_artifact_metadata: Json | null
           signature_artifact_sha256: string | null
+          signature_attestation: string | null
           signature_evidence_id: string | null
           signature_method: string | null
           signature_recorded_by_name: string | null
@@ -13086,9 +13269,9 @@ export type Database = {
           run_id: string
           section_sort_order: number
           selected_options?: Json
-          signature_attestation?: string | null
           signature_artifact_metadata?: Json | null
           signature_artifact_sha256?: string | null
+          signature_attestation?: string | null
           signature_evidence_id?: string | null
           signature_method?: string | null
           signature_recorded_by_name?: string | null
@@ -13122,9 +13305,9 @@ export type Database = {
           run_id?: string
           section_sort_order?: number
           selected_options?: Json
-          signature_attestation?: string | null
           signature_artifact_metadata?: Json | null
           signature_artifact_sha256?: string | null
+          signature_attestation?: string | null
           signature_evidence_id?: string | null
           signature_method?: string | null
           signature_recorded_by_name?: string | null
@@ -13137,18 +13320,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "project_qa_responses_signature_evidence_fkey"
-            columns: ["id", "signature_evidence_id"]
-            isOneToOne: false
-            referencedRelation: "project_qa_response_evidence"
-            referencedColumns: ["project_qa_response_id", "id"]
-          },
-          {
             foreignKeyName: "project_qa_responses_run_fkey"
             columns: ["organization_id", "project_id", "run_id"]
             isOneToOne: false
             referencedRelation: "project_qa_runs"
             referencedColumns: ["organization_id", "project_id", "id"]
+          },
+          {
+            foreignKeyName: "project_qa_responses_signature_evidence_fkey"
+            columns: ["id", "signature_evidence_id"]
+            isOneToOne: false
+            referencedRelation: "project_qa_response_evidence"
+            referencedColumns: ["project_qa_response_id", "id"]
           },
         ]
       }
@@ -13455,6 +13638,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_quality_inspection_activity_inspection_scope_fkey"
+            columns: ["inspection_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspections"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_inspection_activity_item_scope_fkey"
+            columns: ["inspection_item_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspection_items"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_inspection_activity_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -13474,6 +13671,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_inspection_activity_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_inspection_activity_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -13529,6 +13740,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_quality_inspection_items_inspection_scope_fkey"
+            columns: ["inspection_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspections"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_inspection_items_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -13548,6 +13766,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_inspection_items_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_inspection_items_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -13622,6 +13854,20 @@ export type Database = {
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
           },
+          {
+            foreignKeyName: "project_quality_inspections_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_inspections_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
+          },
         ]
       }
       project_quality_issue_activity: {
@@ -13667,6 +13913,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_quality_issue_activity_issue_scope_fkey"
+            columns: ["issue_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_issues"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_issue_activity_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -13686,6 +13939,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issue_activity_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issue_activity_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -13729,6 +13996,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_quality_issue_comments_issue_scope_fkey"
+            columns: ["issue_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_issues"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_issue_comments_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -13748,6 +14022,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issue_comments_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issue_comments_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -13788,6 +14076,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_quality_issue_photos_issue_scope_fkey"
+            columns: ["issue_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_issues"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_issue_photos_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -13807,6 +14102,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issue_photos_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issue_photos_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -13906,6 +14215,27 @@ export type Database = {
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
           },
+          {
+            foreignKeyName: "project_quality_issues_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issues_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_issues_proof_scope_fkey"
+            columns: ["linked_work_proof_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_work_proofs"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
         ]
       }
       project_quality_photos: {
@@ -14004,6 +14334,31 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "project_quality_photos_inspection_scope_fkey"
+            columns: ["linked_inspection_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspections"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_photos_issue_scope_fkey"
+            columns: ["linked_issue_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_issues"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_photos_item_scope_fkey"
+            columns: [
+              "linked_inspection_item_id",
+              "organization_id",
+              "project_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspection_items"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_photos_linked_inspection_id_fkey"
             columns: ["linked_inspection_id"]
             isOneToOne: false
@@ -14051,6 +14406,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_photos_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_photos_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_photos_proof_scope_fkey"
+            columns: ["linked_work_proof_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_work_proofs"
+            referencedColumns: ["id", "organization_id", "project_id"]
           },
         ]
       }
@@ -14102,6 +14478,20 @@ export type Database = {
             referencedColumns: ["project_id"]
           },
           {
+            foreignKeyName: "project_quality_sign_off_work_proofs_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_sign_off_work_proofs_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
+          },
+          {
             foreignKeyName: "project_quality_sign_off_work_proofs_sign_off_id_fkey"
             columns: ["sign_off_id"]
             isOneToOne: false
@@ -14114,6 +14504,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_quality_work_proofs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoff_links_proof_scope_fkey"
+            columns: ["work_proof_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_work_proofs"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoff_links_signoff_scope_fkey"
+            columns: ["sign_off_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_sign_offs"
+            referencedColumns: ["id", "organization_id", "project_id"]
           },
         ]
       }
@@ -14248,6 +14652,41 @@ export type Database = {
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
           },
+          {
+            foreignKeyName: "project_quality_sign_offs_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_sign_offs_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoffs_inspection_scope_fkey"
+            columns: ["linked_inspection_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_inspections"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoffs_issue_scope_fkey"
+            columns: ["linked_issue_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_issues"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoffs_proof_scope_fkey"
+            columns: ["linked_work_proof_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_work_proofs"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
         ]
       }
       project_quality_signoff_activity: {
@@ -14293,6 +14732,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_quality_signoff_activity_parent_scope_fkey"
+            columns: ["signoff_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_sign_offs"
+            referencedColumns: ["id", "organization_id", "project_id"]
+          },
+          {
             foreignKeyName: "project_quality_signoff_activity_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -14305,6 +14751,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoff_activity_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_signoff_activity_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
           {
             foreignKeyName: "project_quality_signoff_activity_signoff_id_fkey"
@@ -14375,11 +14835,32 @@ export type Database = {
             referencedColumns: ["project_id"]
           },
           {
+            foreignKeyName: "project_quality_work_proof_checklist_items_project_org_scope_fk"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_work_proof_checklist_items_project_org_scope_fk"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
+          },
+          {
             foreignKeyName: "project_quality_work_proof_checklist_items_work_proof_id_fkey"
             columns: ["work_proof_id"]
             isOneToOne: false
             referencedRelation: "project_quality_work_proofs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_quality_work_proof_items_parent_scope_fkey"
+            columns: ["work_proof_id", "organization_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "project_quality_work_proofs"
+            referencedColumns: ["id", "organization_id", "project_id"]
           },
         ]
       }
@@ -14447,6 +14928,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "project_lifecycle_reconciliation_v1"
             referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_quality_work_proofs_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_quality_work_proofs_project_org_scope_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "project_lifecycle_reconciliation_v1"
+            referencedColumns: ["project_id", "organization_id"]
           },
         ]
       }
@@ -25427,24 +25922,6 @@ export type Database = {
       }
     }
     Functions: {
-      claim_material_source_cleanup_v1: {
-        Args: { p_limit?: number }
-        Returns: { id: string; batch_id: string; storage_path: string; lease_token: string | null; lease_expires_at: string | null; attempt_count: number }[]
-      }
-      finish_material_source_cleanup_v1: {
-        Args: { p_job_id: string; p_lease_token: string; p_success: boolean }
-        Returns: undefined
-      }
-
-      claim_project_qa_cleanup_jobs_v1: {
-        Args: { p_limit?: number }
-        Returns: Database["public"]["Tables"]["project_qa_evidence_cleanup_jobs"]["Row"][]
-      }
-      finish_project_qa_cleanup_job_v1: {
-        Args: { p_job_id: string; p_lease_token: string; p_success: boolean }
-        Returns: undefined
-      }
-
       _enqueue_supplier_bill_ucl_refresh: {
         Args: {
           p_confirmed_deletion?: boolean
@@ -26124,6 +26601,10 @@ export type Database = {
         Args: { object_path: string }
         Returns: boolean
       }
+      can_access_project_member_v1: {
+        Args: { p_organization_id: string; p_project_id: string }
+        Returns: boolean
+      }
       can_access_project_quality_photo_storage_object: {
         Args: { object_path: string }
         Returns: boolean
@@ -26171,19 +26652,14 @@ export type Database = {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: boolean
       }
-      can_run_spec_finishes_once:
-        | {
-            Args: { p_organization_id: string; p_project_id: string }
-            Returns: boolean
-          }
-        | {
-            Args: {
-              p_organization_id: string
-              p_project_id: string
-              p_trade_id: string
-            }
-            Returns: boolean
-          }
+      can_run_spec_finishes_once: {
+        Args: {
+          p_organization_id: string
+          p_project_id: string
+          p_trade_id: string
+        }
+        Returns: boolean
+      }
       can_run_trade_pack_builder_once: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: boolean
@@ -26413,6 +26889,60 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_material_import_job_v2: {
+        Args: {
+          p_job_id?: string
+          p_lease_seconds?: number
+          p_worker_id: string
+        }
+        Returns: {
+          attempt_count: number
+          cancel_requested_at: string | null
+          created_at: string
+          heartbeat_at: string | null
+          id: string
+          import_batch_id: string
+          last_error_code: string | null
+          last_error_message: string | null
+          lease_expires_at: string | null
+          lease_owner: string | null
+          lease_token: string | null
+          max_attempts: number
+          organization_id: string
+          run_after: string
+          run_id: string
+          state: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "organization_material_import_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_material_source_cleanup_v1: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_count: number
+          batch_id: string
+          completed_at: string | null
+          created_at: string
+          dead_lettered_at: string | null
+          id: string
+          last_error: string | null
+          lease_expires_at: string | null
+          lease_token: string | null
+          next_attempt_at: string
+          storage_path: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "material_source_cleanup_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_next_accounting_revision_attempt_phase2a: {
         Args: { p_lease_seconds?: number; p_worker_id: string }
         Returns: {
@@ -26453,6 +26983,29 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_project_qa_cleanup_jobs_v1: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_count: number
+          completed_at: string | null
+          created_at: string
+          dead_lettered_at: string | null
+          id: string
+          last_error: string | null
+          lease_expires_at: string | null
+          lease_token: string | null
+          next_attempt_at: string
+          reason: string
+          storage_bucket: string
+          storage_path: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "project_qa_evidence_cleanup_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_retention_variance_scan_batch: {
         Args: {
           p_lease_seconds?: number
@@ -26472,6 +27025,7 @@ export type Database = {
         Returns: Json
       }
       claim_worksheet_event_classification_batch: {
+        // PostgreSQL accepts NULL here; preserve explicit-null callers/default-null filters.
         Args: {
           p_classification_version?: number
           p_lease_seconds?: number
@@ -27669,9 +28223,38 @@ export type Database = {
         Args: { p_inputs: Json }
         Returns: Json
       }
+      finalize_drawn_project_qa_signature_v1: {
+        Args: {
+          p_attestation: string
+          p_image_height: number
+          p_image_width: number
+          p_metadata: Json
+          p_sha256: string
+          p_signer_name: string
+          p_upload_id: string
+        }
+        Returns: {
+          evidence_id: string
+          response_lock_version: number
+          run_lock_version: number
+          signed_at: string
+        }[]
+      }
       finalize_learning_review_batch: {
         Args: { p_inputs: Json }
         Returns: Json
+      }
+      finalize_material_import_job_v2: {
+        Args: {
+          p_batch: Json
+          p_job_id: string
+          p_lease_token: string
+          p_outcome: string
+          p_retry_seconds?: number
+          p_rows: Json
+          p_run: Json
+        }
+        Returns: string
       }
       finalize_opportunity_award_pricing_core_v1: {
         Args: {
@@ -27703,23 +28286,6 @@ export type Database = {
           source_workbook_count: number
           working_quote_id: string
           worksheet_line_count: number
-        }[]
-      }
-      finalize_drawn_project_qa_signature_v1: {
-        Args: {
-          p_attestation: string
-          p_image_height: number
-          p_image_width: number
-          p_metadata: Json
-          p_sha256: string
-          p_signer_name: string
-          p_upload_id: string
-        }
-        Returns: {
-          evidence_id: string
-          response_lock_version: number
-          run_lock_version: number
-          signed_at: string
         }[]
       }
       finalize_opportunity_promotion_shadow_v1: {
@@ -27938,6 +28504,14 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      finish_material_source_cleanup_v1: {
+        Args: { p_job_id: string; p_lease_token: string; p_success: boolean }
+        Returns: undefined
+      }
+      finish_project_qa_cleanup_job_v1: {
+        Args: { p_job_id: string; p_lease_token: string; p_success: boolean }
+        Returns: undefined
       }
       format_accounting_sales_invoice_number_phase2a: {
         Args: { p_sequence: number }
@@ -28706,6 +29280,7 @@ export type Database = {
         Returns: string
       }
       list_classified_worksheet_memory_events: {
+        // PostgreSQL accepts NULL here; preserve explicit-null callers/default-null filters.
         Args: { p_limit?: number; p_organization_id?: string | null }
         Returns: Json
       }
@@ -30416,81 +30991,50 @@ export type Database = {
         }
         Returns: Json
       }
-      save_project_claim_draft:
-        | {
-            Args: {
-              p_claim_date: string
-              p_claim_id: string
-              p_claim_title: string
-              p_claim_type: string
-              p_due_date: string
-              p_expected_updated_at: string
-              p_line_items: Json
-              p_notes: string
-              p_organization_id: string
-              p_paid_amount: number
-              p_percent_complete: number
-              p_period_end: string
-              p_period_start: string
-              p_project_id: string
-              p_status: string
-            }
-            Returns: {
-              claim_amount: number
-              linked_approved_variations: number
-              linked_quote_value: number
-              paid_amount: number
-              percent_complete: number
-              previous_claims_total: number
-              revised_contract_value: number
-              status: string
-              updated_at: string
-            }[]
-          }
-        | {
-            Args: {
-              p_claim_date: string
-              p_claim_id: string
-              p_claim_title: string
-              p_claim_type: string
-              p_due_date: string
-              p_expected_updated_at: string
-              p_line_items: Json
-              p_notes: string
-              p_organization_id: string
-              p_paid_amount: number
-              p_percent_complete: number
-              p_period_end: string
-              p_period_start: string
-              p_project_id: string
-              p_retention_method: string
-              p_retention_percent: number
-              p_retention_released_amount: number
-              p_retention_scale_bands: Json
-              p_status: string
-            }
-            Returns: {
-              claim_amount: number
-              gst_amount: number
-              id: string
-              linked_approved_variations: number
-              linked_quote_value: number
-              net_claim_excl_gst: number
-              paid_amount: number
-              percent_complete: number
-              previous_claims_total: number
-              retention_balance: number
-              retention_held_to_date: number
-              retention_percent: number
-              retention_released_amount: number
-              retention_released_to_date: number
-              retention_withheld_amount: number
-              revised_contract_value: number
-              status: string
-              total_payable: number
-              updated_at: string
-            }[]
-          }
+      save_project_claim_draft: {
+        Args: {
+          p_claim_date: string
+          p_claim_id: string
+          p_claim_title: string
+          p_claim_type: string
+          p_due_date: string
+          p_expected_updated_at: string
+          p_line_items: Json
+          p_notes: string
+          p_organization_id: string
+          p_paid_amount: number
+          p_percent_complete: number
+          p_period_end: string
+          p_period_start: string
+          p_project_id: string
+          p_retention_method: string
+          p_retention_percent: number
+          p_retention_released_amount: number
+          p_retention_scale_bands: Json
+          p_status: string
+        }
+        Returns: {
+          claim_amount: number
+          gst_amount: number
+          id: string
+          linked_approved_variations: number
+          linked_quote_value: number
+          net_claim_excl_gst: number
+          paid_amount: number
+          percent_complete: number
+          previous_claims_total: number
+          retention_balance: number
+          retention_held_to_date: number
+          retention_percent: number
+          retention_released_amount: number
+          retention_released_to_date: number
+          retention_withheld_amount: number
+          revised_contract_value: number
+          status: string
+          total_payable: number
+          updated_at: string
+        }[]
+      }
       save_project_purchase_order_draft: {
         Args: {
           p_approved_at: string
@@ -30573,99 +31117,54 @@ export type Database = {
           run_lock_version: number
         }[]
       }
-      save_project_quote_draft:
-        | {
-            Args: {
-              p_acceptance_notes: string
-              p_assumptions: string
-              p_clarifications: string
-              p_client_email: string
-              p_client_name: string
-              p_client_phone: string
-              p_company_name: string
-              p_contact_person: string
-              p_contingency_amount: number
-              p_discount_amount: number
-              p_expected_updated_at: string
-              p_expiry_date: string
-              p_gst_percent: number
-              p_lead_time: string
-              p_line_items: Json
-              p_margin_percent: number
-              p_optional_items_notes: string
-              p_organization_id: string
-              p_payment_terms: string
-              p_project_id: string
-              p_project_name: string
-              p_quote_date: string
-              p_quote_id: string
-              p_quote_number: string
-              p_quote_title: string
-              p_scope_exclusions: string
-              p_scope_notes: string
-              p_site_address: string
-              p_status: string
-              p_terms_exclusions: string
-              p_terms_inclusions: string
-              p_validity_period: string
-            }
-            Returns: {
-              gst_amount: number
-              id: string
-              optional_subtotal: number
-              status: string
-              subtotal: number
-              total_quote_price: number
-              updated_at: string
-            }[]
-          }
-        | {
-            Args: {
-              p_acceptance_notes: string
-              p_assumptions: string
-              p_clarifications: string
-              p_client_email: string
-              p_client_name: string
-              p_client_phone: string
-              p_company_name: string
-              p_contact_person: string
-              p_contingency_amount: number
-              p_discount_amount: number
-              p_expected_updated_at: string
-              p_expiry_date: string
-              p_gst_percent: number
-              p_lead_time: string
-              p_line_items: Json
-              p_margin_percent: number
-              p_optional_items_notes: string
-              p_organization_id: string
-              p_payment_terms: string
-              p_project_id: string
-              p_project_name: string
-              p_quote_date: string
-              p_quote_id: string
-              p_quote_number: string
-              p_quote_title: string
-              p_retention_percent_default: number
-              p_scope_exclusions: string
-              p_scope_notes: string
-              p_site_address: string
-              p_status: string
-              p_terms_exclusions: string
-              p_terms_inclusions: string
-              p_validity_period: string
-            }
-            Returns: {
-              gst_amount: number
-              id: string
-              optional_subtotal: number
-              status: string
-              subtotal: number
-              total_quote_price: number
-              updated_at: string
-            }[]
-          }
+      save_project_quote_draft: {
+        Args: {
+          p_acceptance_notes: string
+          p_assumptions: string
+          p_clarifications: string
+          p_client_email: string
+          p_client_name: string
+          p_client_phone: string
+          p_company_name: string
+          p_contact_person: string
+          p_contingency_amount: number
+          p_discount_amount: number
+          p_expected_updated_at: string
+          p_expiry_date: string
+          p_gst_percent: number
+          p_lead_time: string
+          p_line_items: Json
+          p_margin_percent: number
+          p_optional_items_notes: string
+          p_organization_id: string
+          p_payment_terms: string
+          p_project_id: string
+          p_project_name: string
+          p_quote_date: string
+          p_quote_id: string
+          p_quote_number: string
+          p_quote_title: string
+          p_retention_percent_default: number
+          p_scope_exclusions: string
+          p_scope_notes: string
+          p_site_address: string
+          p_status: string
+          p_terms_exclusions: string
+          p_terms_inclusions: string
+          p_validity_period: string
+        }
+        Returns: {
+          gst_amount: number
+          id: string
+          optional_subtotal: number
+          status: string
+          subtotal: number
+          total_quote_price: number
+          updated_at: string
+        }[]
+      }
       save_project_variation_draft: {
+        // PostgreSQL accepts NULL here; preserve explicit-null callers/default-null filters.
         Args: {
           p_approved_at: string | null
           p_assumptions: string
@@ -30707,6 +31206,17 @@ export type Database = {
           total_variation_price: number
           updated_at: string
         }[]
+      }
+      save_qa_template_definition_internal_v1: {
+        Args: {
+          p_description: string
+          p_name: string
+          p_organization_id: string
+          p_sections: Json
+          p_status: string
+          p_template_id: string
+        }
+        Returns: number
       }
       save_qa_template_definition_v1: {
         Args: {
@@ -31619,6 +32129,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  private: {
+    Enums: {},
+  },
   public: {
     Enums: {
       takeoff_event_type: [

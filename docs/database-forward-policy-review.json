@@ -1,0 +1,606 @@
+[
+  {
+    "removed_policy": "public.organization_client_locations.Admins can delete organization client locations",
+    "target_ddl": "CREATE POLICY \"Admins can delete organization client locations\" ON \"public\".\"organization_client_locations\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {},
+    "permission_keys": [
+      "leads.clients.write (new location policies)"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_client_locations.Members can create organization client locations",
+    "target_ddl": "CREATE POLICY \"Members can create organization client locations\" ON \"public\".\"organization_client_locations\" FOR INSERT WITH CHECK (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {},
+    "permission_keys": [
+      "leads.clients.write (new location policies)"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_client_locations.Members can update organization client locations",
+    "target_ddl": "CREATE POLICY \"Members can update organization client locations\" ON \"public\".\"organization_client_locations\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {},
+    "permission_keys": [
+      "leads.clients.write (new location policies)"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_client_locations.Members can view organization client locations",
+    "target_ddl": "CREATE POLICY \"Members can view organization client locations\" ON \"public\".\"organization_client_locations\" FOR SELECT USING (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {},
+    "permission_keys": [
+      "leads.clients.write (new location policies)"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_clients.Admins can delete organization clients",
+    "target_ddl": "CREATE POLICY \"Admins can delete organization clients\" ON \"public\".\"organization_clients\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.organization_clients.Members can view organization clients": "CREATE POLICY \"Members can view organization clients\" ON public.organization_clients FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.organization_clients.Privileged members can create organization clients": "CREATE POLICY \"Privileged members can create organization clients\" ON public.organization_clients FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'leads.clients.write'::text)));",
+      "public.organization_clients.Privileged members can delete organization clients": "CREATE POLICY \"Privileged members can delete organization clients\" ON public.organization_clients FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'leads.clients.write'::text));",
+      "public.organization_clients.Privileged members can update organization clients": "CREATE POLICY \"Privileged members can update organization clients\" ON public.organization_clients FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'leads.clients.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'leads.clients.write'::text));"
+    },
+    "permission_keys": [
+      "leads.clients.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_clients.Members can create organization clients",
+    "target_ddl": "CREATE POLICY \"Members can create organization clients\" ON \"public\".\"organization_clients\" FOR INSERT WITH CHECK (((\"created_by\" = \"auth\".\"uid\"()) AND \"public\".\"is_member_of_organization\"(\"organization_id\")));",
+    "retained_repository_policies": {
+      "public.organization_clients.Members can view organization clients": "CREATE POLICY \"Members can view organization clients\" ON public.organization_clients FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.organization_clients.Privileged members can create organization clients": "CREATE POLICY \"Privileged members can create organization clients\" ON public.organization_clients FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'leads.clients.write'::text)));",
+      "public.organization_clients.Privileged members can delete organization clients": "CREATE POLICY \"Privileged members can delete organization clients\" ON public.organization_clients FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'leads.clients.write'::text));",
+      "public.organization_clients.Privileged members can update organization clients": "CREATE POLICY \"Privileged members can update organization clients\" ON public.organization_clients FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'leads.clients.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'leads.clients.write'::text));"
+    },
+    "permission_keys": [
+      "leads.clients.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_clients.Members can update organization clients",
+    "target_ddl": "CREATE POLICY \"Members can update organization clients\" ON \"public\".\"organization_clients\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.organization_clients.Members can view organization clients": "CREATE POLICY \"Members can view organization clients\" ON public.organization_clients FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.organization_clients.Privileged members can create organization clients": "CREATE POLICY \"Privileged members can create organization clients\" ON public.organization_clients FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'leads.clients.write'::text)));",
+      "public.organization_clients.Privileged members can delete organization clients": "CREATE POLICY \"Privileged members can delete organization clients\" ON public.organization_clients FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'leads.clients.write'::text));",
+      "public.organization_clients.Privileged members can update organization clients": "CREATE POLICY \"Privileged members can update organization clients\" ON public.organization_clients FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'leads.clients.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'leads.clients.write'::text));"
+    },
+    "permission_keys": [
+      "leads.clients.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_opportunities.Admins can delete organization opportunities",
+    "target_ddl": "CREATE POLICY \"Admins can delete organization opportunities\" ON \"public\".\"organization_opportunities\" FOR DELETE TO \"authenticated\" USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.organization_opportunities.Members can view organization opportunities": "CREATE POLICY \"Members can view organization opportunities\" ON public.organization_opportunities FOR SELECT TO authenticated USING (public.is_member_of_organization(organization_id));",
+      "public.organization_opportunities.Privileged members can create organization opportunities": "CREATE POLICY \"Privileged members can create organization opportunities\" ON public.organization_opportunities FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'leads.opportunities.write'::text)));",
+      "public.organization_opportunities.Privileged members can delete organization opportunities": "CREATE POLICY \"Privileged members can delete organization opportunities\" ON public.organization_opportunities FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'leads.opportunities.write'::text));",
+      "public.organization_opportunities.Privileged members can update organization opportunities": "CREATE POLICY \"Privileged members can update organization opportunities\" ON public.organization_opportunities FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'leads.opportunities.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'leads.opportunities.write'::text));"
+    },
+    "permission_keys": [
+      "leads.opportunities.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_opportunities.Members can create organization opportunities",
+    "target_ddl": "CREATE POLICY \"Members can create organization opportunities\" ON \"public\".\"organization_opportunities\" FOR INSERT TO \"authenticated\" WITH CHECK (((\"created_by\" = \"auth\".\"uid\"()) AND \"public\".\"is_member_of_organization\"(\"organization_id\") AND ((\"client_id\" IS NULL) OR (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_clients\" \"c\"\n  WHERE ((\"c\".\"id\" = \"organization_opportunities\".\"client_id\") AND (\"c\".\"organization_id\" = \"organization_opportunities\".\"organization_id\"))))) AND ((\"workspace_project_id\" IS NULL) OR (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"organization_opportunities\".\"workspace_project_id\") AND (\"p\".\"organization_id\" = \"organization_opportunities\".\"organization_id\"))))) AND ((\"converted_project_id\" IS NULL) OR (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"organization_opportunities\".\"converted_project_id\") AND (\"p\".\"organization_id\" = \"organization_opportunities\".\"organization_id\")))))));",
+    "retained_repository_policies": {
+      "public.organization_opportunities.Members can view organization opportunities": "CREATE POLICY \"Members can view organization opportunities\" ON public.organization_opportunities FOR SELECT TO authenticated USING (public.is_member_of_organization(organization_id));",
+      "public.organization_opportunities.Privileged members can create organization opportunities": "CREATE POLICY \"Privileged members can create organization opportunities\" ON public.organization_opportunities FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'leads.opportunities.write'::text)));",
+      "public.organization_opportunities.Privileged members can delete organization opportunities": "CREATE POLICY \"Privileged members can delete organization opportunities\" ON public.organization_opportunities FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'leads.opportunities.write'::text));",
+      "public.organization_opportunities.Privileged members can update organization opportunities": "CREATE POLICY \"Privileged members can update organization opportunities\" ON public.organization_opportunities FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'leads.opportunities.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'leads.opportunities.write'::text));"
+    },
+    "permission_keys": [
+      "leads.opportunities.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organization_opportunities.Members can update organization opportunities",
+    "target_ddl": "CREATE POLICY \"Members can update organization opportunities\" ON \"public\".\"organization_opportunities\" FOR UPDATE TO \"authenticated\" USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND ((\"client_id\" IS NULL) OR (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_clients\" \"c\"\n  WHERE ((\"c\".\"id\" = \"organization_opportunities\".\"client_id\") AND (\"c\".\"organization_id\" = \"organization_opportunities\".\"organization_id\"))))) AND ((\"workspace_project_id\" IS NULL) OR (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"organization_opportunities\".\"workspace_project_id\") AND (\"p\".\"organization_id\" = \"organization_opportunities\".\"organization_id\"))))) AND ((\"converted_project_id\" IS NULL) OR (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"organization_opportunities\".\"converted_project_id\") AND (\"p\".\"organization_id\" = \"organization_opportunities\".\"organization_id\")))))));",
+    "retained_repository_policies": {
+      "public.organization_opportunities.Members can view organization opportunities": "CREATE POLICY \"Members can view organization opportunities\" ON public.organization_opportunities FOR SELECT TO authenticated USING (public.is_member_of_organization(organization_id));",
+      "public.organization_opportunities.Privileged members can create organization opportunities": "CREATE POLICY \"Privileged members can create organization opportunities\" ON public.organization_opportunities FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'leads.opportunities.write'::text)));",
+      "public.organization_opportunities.Privileged members can delete organization opportunities": "CREATE POLICY \"Privileged members can delete organization opportunities\" ON public.organization_opportunities FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'leads.opportunities.write'::text));",
+      "public.organization_opportunities.Privileged members can update organization opportunities": "CREATE POLICY \"Privileged members can update organization opportunities\" ON public.organization_opportunities FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'leads.opportunities.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'leads.opportunities.write'::text));"
+    },
+    "permission_keys": [
+      "leads.opportunities.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.organizations.Members can update organization",
+    "target_ddl": "CREATE POLICY \"Members can update organization\" ON \"public\".\"organizations\" FOR UPDATE TO \"authenticated\" USING ((EXISTS ( SELECT 1\n   FROM \"public\".\"organization_members\" \"m\"\n  WHERE ((\"m\".\"organization_id\" = \"organizations\".\"id\") AND (\"m\".\"user_id\" = \"auth\".\"uid\"()))))) WITH CHECK ((EXISTS ( SELECT 1\n   FROM \"public\".\"organization_members\" \"m\"\n  WHERE ((\"m\".\"organization_id\" = \"organizations\".\"id\") AND (\"m\".\"user_id\" = \"auth\".\"uid\"())))));",
+    "retained_repository_policies": {
+      "public.organizations.Privileged members can update organization": "CREATE POLICY \"Privileged members can update organization\" ON public.organizations FOR UPDATE TO authenticated USING (public.has_org_permission(id, 'settings.organization.update'::text)) WITH CHECK (public.has_org_permission(id, 'settings.organization.update'::text));",
+      "public.organizations.Users can read own organization": "CREATE POLICY \"Users can read own organization\" ON public.organizations FOR SELECT USING ((public.is_member_of_organization(id) OR (created_by = auth.uid())));"
+    },
+    "permission_keys": [
+      "settings.organization.update"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_attachments.Admins can delete purchase order attachments",
+    "target_ddl": "CREATE POLICY \"Admins can delete purchase order attachments\" ON \"public\".\"project_purchase_order_attachments\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_attachments.Members can view purchase order attachments": "CREATE POLICY \"Members can view purchase order attachments\" ON public.project_purchase_order_attachments FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_attachments.Privileged members can create purchase order attachments": "CREATE POLICY \"Privileged members can create purchase order attachments\" ON public.project_purchase_order_attachments FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_attachments.Privileged members can delete purchase order attachments": "CREATE POLICY \"Privileged members can delete purchase order attachments\" ON public.project_purchase_order_attachments FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_attachments.Privileged members can update purchase order attachments": "CREATE POLICY \"Privileged members can update purchase order attachments\" ON public.project_purchase_order_attachments FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_attachments.Members can create purchase order attachments",
+    "target_ddl": "CREATE POLICY \"Members can create purchase order attachments\" ON \"public\".\"project_purchase_order_attachments\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_attachments\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_attachments\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_attachments\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_attachments.Members can view purchase order attachments": "CREATE POLICY \"Members can view purchase order attachments\" ON public.project_purchase_order_attachments FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_attachments.Privileged members can create purchase order attachments": "CREATE POLICY \"Privileged members can create purchase order attachments\" ON public.project_purchase_order_attachments FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_attachments.Privileged members can delete purchase order attachments": "CREATE POLICY \"Privileged members can delete purchase order attachments\" ON public.project_purchase_order_attachments FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_attachments.Privileged members can update purchase order attachments": "CREATE POLICY \"Privileged members can update purchase order attachments\" ON public.project_purchase_order_attachments FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_attachments.Members can update purchase order attachments",
+    "target_ddl": "CREATE POLICY \"Members can update purchase order attachments\" ON \"public\".\"project_purchase_order_attachments\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_attachments\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_attachments\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_attachments\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_attachments.Members can view purchase order attachments": "CREATE POLICY \"Members can view purchase order attachments\" ON public.project_purchase_order_attachments FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_attachments.Privileged members can create purchase order attachments": "CREATE POLICY \"Privileged members can create purchase order attachments\" ON public.project_purchase_order_attachments FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_attachments.Privileged members can delete purchase order attachments": "CREATE POLICY \"Privileged members can delete purchase order attachments\" ON public.project_purchase_order_attachments FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_attachments.Privileged members can update purchase order attachments": "CREATE POLICY \"Privileged members can update purchase order attachments\" ON public.project_purchase_order_attachments FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_invoice_items.Admins can delete purchase order invoice items",
+    "target_ddl": "CREATE POLICY \"Admins can delete purchase order invoice items\" ON \"public\".\"project_purchase_order_invoice_items\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_invoice_items.Members can view purchase order invoice items": "CREATE POLICY \"Members can view purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_invoice_items.Privileged members can create purchase order invoice items": "CREATE POLICY \"Privileged members can create purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_invoice_items.Privileged members can delete purchase order invoice items": "CREATE POLICY \"Privileged members can delete purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_invoice_items.Privileged members can update purchase order invoice items": "CREATE POLICY \"Privileged members can update purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_invoice_items.Members can create purchase order invoice items",
+    "target_ddl": "CREATE POLICY \"Members can create purchase order invoice items\" ON \"public\".\"project_purchase_order_invoice_items\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_invoice_items\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_invoice_items\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_invoice_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_invoice_items.Members can view purchase order invoice items": "CREATE POLICY \"Members can view purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_invoice_items.Privileged members can create purchase order invoice items": "CREATE POLICY \"Privileged members can create purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_invoice_items.Privileged members can delete purchase order invoice items": "CREATE POLICY \"Privileged members can delete purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_invoice_items.Privileged members can update purchase order invoice items": "CREATE POLICY \"Privileged members can update purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_invoice_items.Members can update purchase order invoice items",
+    "target_ddl": "CREATE POLICY \"Members can update purchase order invoice items\" ON \"public\".\"project_purchase_order_invoice_items\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_invoice_items\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_invoice_items\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_invoice_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_invoice_items.Members can view purchase order invoice items": "CREATE POLICY \"Members can view purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_invoice_items.Privileged members can create purchase order invoice items": "CREATE POLICY \"Privileged members can create purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_invoice_items.Privileged members can delete purchase order invoice items": "CREATE POLICY \"Privileged members can delete purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_invoice_items.Privileged members can update purchase order invoice items": "CREATE POLICY \"Privileged members can update purchase order invoice items\" ON public.project_purchase_order_invoice_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_line_items.Admins can delete purchase order line items",
+    "target_ddl": "CREATE POLICY \"Admins can delete purchase order line items\" ON \"public\".\"project_purchase_order_line_items\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_line_items.Members can view purchase order line items": "CREATE POLICY \"Members can view purchase order line items\" ON public.project_purchase_order_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_line_items.Privileged members can create purchase order line items": "CREATE POLICY \"Privileged members can create purchase order line items\" ON public.project_purchase_order_line_items FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_line_items.Privileged members can delete purchase order line items": "CREATE POLICY \"Privileged members can delete purchase order line items\" ON public.project_purchase_order_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_line_items.Privileged members can update purchase order line items": "CREATE POLICY \"Privileged members can update purchase order line items\" ON public.project_purchase_order_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_line_items.Members can create purchase order line items",
+    "target_ddl": "CREATE POLICY \"Members can create purchase order line items\" ON \"public\".\"project_purchase_order_line_items\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_line_items\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_line_items\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_line_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_line_items.Members can view purchase order line items": "CREATE POLICY \"Members can view purchase order line items\" ON public.project_purchase_order_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_line_items.Privileged members can create purchase order line items": "CREATE POLICY \"Privileged members can create purchase order line items\" ON public.project_purchase_order_line_items FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_line_items.Privileged members can delete purchase order line items": "CREATE POLICY \"Privileged members can delete purchase order line items\" ON public.project_purchase_order_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_line_items.Privileged members can update purchase order line items": "CREATE POLICY \"Privileged members can update purchase order line items\" ON public.project_purchase_order_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_line_items.Members can update purchase order line items",
+    "target_ddl": "CREATE POLICY \"Members can update purchase order line items\" ON \"public\".\"project_purchase_order_line_items\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_line_items\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_line_items\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_line_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_line_items.Members can view purchase order line items": "CREATE POLICY \"Members can view purchase order line items\" ON public.project_purchase_order_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_line_items.Privileged members can create purchase order line items": "CREATE POLICY \"Privileged members can create purchase order line items\" ON public.project_purchase_order_line_items FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_line_items.Privileged members can delete purchase order line items": "CREATE POLICY \"Privileged members can delete purchase order line items\" ON public.project_purchase_order_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_line_items.Privileged members can update purchase order line items": "CREATE POLICY \"Privileged members can update purchase order line items\" ON public.project_purchase_order_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_status_events.Admins can delete purchase order status events",
+    "target_ddl": "CREATE POLICY \"Admins can delete purchase order status events\" ON \"public\".\"project_purchase_order_status_events\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_status_events.Members can view purchase order status events": "CREATE POLICY \"Members can view purchase order status events\" ON public.project_purchase_order_status_events FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_status_events.Privileged members can create purchase order status events": "CREATE POLICY \"Privileged members can create purchase order status events\" ON public.project_purchase_order_status_events FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_status_events.Privileged members can delete purchase order status events": "CREATE POLICY \"Privileged members can delete purchase order status events\" ON public.project_purchase_order_status_events FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_order_status_events.Members can create purchase order status events",
+    "target_ddl": "CREATE POLICY \"Members can create purchase order status events\" ON \"public\".\"project_purchase_order_status_events\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_purchase_orders\" \"po\"\n  WHERE ((\"po\".\"id\" = \"project_purchase_order_status_events\".\"purchase_order_id\") AND (\"po\".\"project_id\" = \"project_purchase_order_status_events\".\"project_id\") AND (\"po\".\"organization_id\" = \"project_purchase_order_status_events\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_order_status_events.Members can view purchase order status events": "CREATE POLICY \"Members can view purchase order status events\" ON public.project_purchase_order_status_events FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_order_status_events.Privileged members can create purchase order status events": "CREATE POLICY \"Privileged members can create purchase order status events\" ON public.project_purchase_order_status_events FOR INSERT TO authenticated WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_order_status_events.Privileged members can delete purchase order status events": "CREATE POLICY \"Privileged members can delete purchase order status events\" ON public.project_purchase_order_status_events FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_orders.Admins can delete purchase orders",
+    "target_ddl": "CREATE POLICY \"Admins can delete purchase orders\" ON \"public\".\"project_purchase_orders\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_purchase_orders.Members can view purchase orders": "CREATE POLICY \"Members can view purchase orders\" ON public.project_purchase_orders FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_orders.Privileged members can create purchase orders": "CREATE POLICY \"Privileged members can create purchase orders\" ON public.project_purchase_orders FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'purchase_orders.write'::text)));",
+      "public.project_purchase_orders.Privileged members can delete purchase orders": "CREATE POLICY \"Privileged members can delete purchase orders\" ON public.project_purchase_orders FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_orders.Privileged members can update purchase orders": "CREATE POLICY \"Privileged members can update purchase orders\" ON public.project_purchase_orders FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_orders.Members can create purchase orders",
+    "target_ddl": "CREATE POLICY \"Members can create purchase orders\" ON \"public\".\"project_purchase_orders\" FOR INSERT WITH CHECK (((\"created_by\" = \"auth\".\"uid\"()) AND \"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"project_purchase_orders\".\"project_id\") AND (\"p\".\"organization_id\" = \"project_purchase_orders\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_orders.Members can view purchase orders": "CREATE POLICY \"Members can view purchase orders\" ON public.project_purchase_orders FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_orders.Privileged members can create purchase orders": "CREATE POLICY \"Privileged members can create purchase orders\" ON public.project_purchase_orders FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'purchase_orders.write'::text)));",
+      "public.project_purchase_orders.Privileged members can delete purchase orders": "CREATE POLICY \"Privileged members can delete purchase orders\" ON public.project_purchase_orders FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_orders.Privileged members can update purchase orders": "CREATE POLICY \"Privileged members can update purchase orders\" ON public.project_purchase_orders FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_purchase_orders.Members can update purchase orders",
+    "target_ddl": "CREATE POLICY \"Members can update purchase orders\" ON \"public\".\"project_purchase_orders\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"project_purchase_orders\".\"project_id\") AND (\"p\".\"organization_id\" = \"project_purchase_orders\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_purchase_orders.Members can view purchase orders": "CREATE POLICY \"Members can view purchase orders\" ON public.project_purchase_orders FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_purchase_orders.Privileged members can create purchase orders": "CREATE POLICY \"Privileged members can create purchase orders\" ON public.project_purchase_orders FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'purchase_orders.write'::text)));",
+      "public.project_purchase_orders.Privileged members can delete purchase orders": "CREATE POLICY \"Privileged members can delete purchase orders\" ON public.project_purchase_orders FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text));",
+      "public.project_purchase_orders.Privileged members can update purchase orders": "CREATE POLICY \"Privileged members can update purchase orders\" ON public.project_purchase_orders FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'purchase_orders.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'purchase_orders.write'::text));"
+    },
+    "permission_keys": [
+      "purchase_orders.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_quote_line_items.Admins can delete quote line items",
+    "target_ddl": "CREATE POLICY \"Admins can delete quote line items\" ON \"public\".\"project_quote_line_items\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_quote_line_items.Members can view quote line items": "CREATE POLICY \"Members can view quote line items\" ON public.project_quote_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_quote_line_items.Privileged members can create quote line items": "CREATE POLICY \"Privileged members can create quote line items\" ON public.project_quote_line_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'quotes.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_quotes q\n  WHERE ((q.id = project_quote_line_items.quote_id) AND (q.project_id = project_quote_line_items.project_id) AND (q.organization_id = project_quote_line_items.organization_id))))));",
+      "public.project_quote_line_items.Privileged members can delete quote line items": "CREATE POLICY \"Privileged members can delete quote line items\" ON public.project_quote_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text));",
+      "public.project_quote_line_items.Privileged members can update quote line items": "CREATE POLICY \"Privileged members can update quote line items\" ON public.project_quote_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'quotes.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_quotes q\n  WHERE ((q.id = project_quote_line_items.quote_id) AND (q.project_id = project_quote_line_items.project_id) AND (q.organization_id = project_quote_line_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "quotes.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_quote_line_items.Members can create quote line items",
+    "target_ddl": "CREATE POLICY \"Members can create quote line items\" ON \"public\".\"project_quote_line_items\" FOR INSERT WITH CHECK (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_quote_line_items.Members can view quote line items": "CREATE POLICY \"Members can view quote line items\" ON public.project_quote_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_quote_line_items.Privileged members can create quote line items": "CREATE POLICY \"Privileged members can create quote line items\" ON public.project_quote_line_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'quotes.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_quotes q\n  WHERE ((q.id = project_quote_line_items.quote_id) AND (q.project_id = project_quote_line_items.project_id) AND (q.organization_id = project_quote_line_items.organization_id))))));",
+      "public.project_quote_line_items.Privileged members can delete quote line items": "CREATE POLICY \"Privileged members can delete quote line items\" ON public.project_quote_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text));",
+      "public.project_quote_line_items.Privileged members can update quote line items": "CREATE POLICY \"Privileged members can update quote line items\" ON public.project_quote_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'quotes.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_quotes q\n  WHERE ((q.id = project_quote_line_items.quote_id) AND (q.project_id = project_quote_line_items.project_id) AND (q.organization_id = project_quote_line_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "quotes.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_quote_line_items.Members can update quote line items",
+    "target_ddl": "CREATE POLICY \"Members can update quote line items\" ON \"public\".\"project_quote_line_items\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_quote_line_items.Members can view quote line items": "CREATE POLICY \"Members can view quote line items\" ON public.project_quote_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_quote_line_items.Privileged members can create quote line items": "CREATE POLICY \"Privileged members can create quote line items\" ON public.project_quote_line_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'quotes.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_quotes q\n  WHERE ((q.id = project_quote_line_items.quote_id) AND (q.project_id = project_quote_line_items.project_id) AND (q.organization_id = project_quote_line_items.organization_id))))));",
+      "public.project_quote_line_items.Privileged members can delete quote line items": "CREATE POLICY \"Privileged members can delete quote line items\" ON public.project_quote_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text));",
+      "public.project_quote_line_items.Privileged members can update quote line items": "CREATE POLICY \"Privileged members can update quote line items\" ON public.project_quote_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'quotes.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_quotes q\n  WHERE ((q.id = project_quote_line_items.quote_id) AND (q.project_id = project_quote_line_items.project_id) AND (q.organization_id = project_quote_line_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "quotes.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_quotes.Admins can delete project quotes",
+    "target_ddl": "CREATE POLICY \"Admins can delete project quotes\" ON \"public\".\"project_quotes\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_quotes.Members can view project quotes": "CREATE POLICY \"Members can view project quotes\" ON public.project_quotes FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_quotes.Privileged members can create project quotes": "CREATE POLICY \"Privileged members can create project quotes\" ON public.project_quotes FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'quotes.write'::text)));",
+      "public.project_quotes.Privileged members can delete project quotes": "CREATE POLICY \"Privileged members can delete project quotes\" ON public.project_quotes FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text));",
+      "public.project_quotes.Privileged members can update project quotes": "CREATE POLICY \"Privileged members can update project quotes\" ON public.project_quotes FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'quotes.write'::text));"
+    },
+    "permission_keys": [
+      "quotes.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_quotes.Members can create project quotes",
+    "target_ddl": "CREATE POLICY \"Members can create project quotes\" ON \"public\".\"project_quotes\" FOR INSERT WITH CHECK (((\"created_by\" = \"auth\".\"uid\"()) AND \"public\".\"is_member_of_organization\"(\"organization_id\")));",
+    "retained_repository_policies": {
+      "public.project_quotes.Members can view project quotes": "CREATE POLICY \"Members can view project quotes\" ON public.project_quotes FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_quotes.Privileged members can create project quotes": "CREATE POLICY \"Privileged members can create project quotes\" ON public.project_quotes FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'quotes.write'::text)));",
+      "public.project_quotes.Privileged members can delete project quotes": "CREATE POLICY \"Privileged members can delete project quotes\" ON public.project_quotes FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text));",
+      "public.project_quotes.Privileged members can update project quotes": "CREATE POLICY \"Privileged members can update project quotes\" ON public.project_quotes FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'quotes.write'::text));"
+    },
+    "permission_keys": [
+      "quotes.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_quotes.Members can update project quotes",
+    "target_ddl": "CREATE POLICY \"Members can update project quotes\" ON \"public\".\"project_quotes\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK (\"public\".\"is_member_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_quotes.Members can view project quotes": "CREATE POLICY \"Members can view project quotes\" ON public.project_quotes FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_quotes.Privileged members can create project quotes": "CREATE POLICY \"Privileged members can create project quotes\" ON public.project_quotes FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'quotes.write'::text)));",
+      "public.project_quotes.Privileged members can delete project quotes": "CREATE POLICY \"Privileged members can delete project quotes\" ON public.project_quotes FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text));",
+      "public.project_quotes.Privileged members can update project quotes": "CREATE POLICY \"Privileged members can update project quotes\" ON public.project_quotes FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'quotes.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'quotes.write'::text));"
+    },
+    "permission_keys": [
+      "quotes.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_attachments.Admins can delete variation attachments",
+    "target_ddl": "CREATE POLICY \"Admins can delete variation attachments\" ON \"public\".\"project_variation_attachments\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_variation_attachments.Members can view variation attachments": "CREATE POLICY \"Members can view variation attachments\" ON public.project_variation_attachments FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_attachments.Privileged members can create variation attachments": "CREATE POLICY \"Privileged members can create variation attachments\" ON public.project_variation_attachments FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_attachments.variation_id) AND (v.project_id = project_variation_attachments.project_id) AND (v.organization_id = project_variation_attachments.organization_id))))));",
+      "public.project_variation_attachments.Privileged members can delete variation attachments": "CREATE POLICY \"Privileged members can delete variation attachments\" ON public.project_variation_attachments FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_attachments.Privileged members can update variation attachments": "CREATE POLICY \"Privileged members can update variation attachments\" ON public.project_variation_attachments FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_attachments.variation_id) AND (v.project_id = project_variation_attachments.project_id) AND (v.organization_id = project_variation_attachments.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_attachments.Members can create variation attachments",
+    "target_ddl": "CREATE POLICY \"Members can create variation attachments\" ON \"public\".\"project_variation_attachments\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_attachments\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_attachments\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_attachments\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_attachments.Members can view variation attachments": "CREATE POLICY \"Members can view variation attachments\" ON public.project_variation_attachments FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_attachments.Privileged members can create variation attachments": "CREATE POLICY \"Privileged members can create variation attachments\" ON public.project_variation_attachments FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_attachments.variation_id) AND (v.project_id = project_variation_attachments.project_id) AND (v.organization_id = project_variation_attachments.organization_id))))));",
+      "public.project_variation_attachments.Privileged members can delete variation attachments": "CREATE POLICY \"Privileged members can delete variation attachments\" ON public.project_variation_attachments FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_attachments.Privileged members can update variation attachments": "CREATE POLICY \"Privileged members can update variation attachments\" ON public.project_variation_attachments FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_attachments.variation_id) AND (v.project_id = project_variation_attachments.project_id) AND (v.organization_id = project_variation_attachments.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_attachments.Members can update variation attachments",
+    "target_ddl": "CREATE POLICY \"Members can update variation attachments\" ON \"public\".\"project_variation_attachments\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_attachments\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_attachments\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_attachments\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_attachments.Members can view variation attachments": "CREATE POLICY \"Members can view variation attachments\" ON public.project_variation_attachments FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_attachments.Privileged members can create variation attachments": "CREATE POLICY \"Privileged members can create variation attachments\" ON public.project_variation_attachments FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_attachments.variation_id) AND (v.project_id = project_variation_attachments.project_id) AND (v.organization_id = project_variation_attachments.organization_id))))));",
+      "public.project_variation_attachments.Privileged members can delete variation attachments": "CREATE POLICY \"Privileged members can delete variation attachments\" ON public.project_variation_attachments FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_attachments.Privileged members can update variation attachments": "CREATE POLICY \"Privileged members can update variation attachments\" ON public.project_variation_attachments FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_attachments.variation_id) AND (v.project_id = project_variation_attachments.project_id) AND (v.organization_id = project_variation_attachments.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_invoice_items.Admins can delete variation invoice items",
+    "target_ddl": "CREATE POLICY \"Admins can delete variation invoice items\" ON \"public\".\"project_variation_invoice_items\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_variation_invoice_items.Members can view variation invoice items": "CREATE POLICY \"Members can view variation invoice items\" ON public.project_variation_invoice_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_invoice_items.Privileged members can create variation invoice items": "CREATE POLICY \"Privileged members can create variation invoice items\" ON public.project_variation_invoice_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_invoice_items.variation_id) AND (v.project_id = project_variation_invoice_items.project_id) AND (v.organization_id = project_variation_invoice_items.organization_id))))));",
+      "public.project_variation_invoice_items.Privileged members can delete variation invoice items": "CREATE POLICY \"Privileged members can delete variation invoice items\" ON public.project_variation_invoice_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_invoice_items.Privileged members can update variation invoice items": "CREATE POLICY \"Privileged members can update variation invoice items\" ON public.project_variation_invoice_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_invoice_items.variation_id) AND (v.project_id = project_variation_invoice_items.project_id) AND (v.organization_id = project_variation_invoice_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_invoice_items.Members can create variation invoice items",
+    "target_ddl": "CREATE POLICY \"Members can create variation invoice items\" ON \"public\".\"project_variation_invoice_items\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_invoice_items\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_invoice_items\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_invoice_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_invoice_items.Members can view variation invoice items": "CREATE POLICY \"Members can view variation invoice items\" ON public.project_variation_invoice_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_invoice_items.Privileged members can create variation invoice items": "CREATE POLICY \"Privileged members can create variation invoice items\" ON public.project_variation_invoice_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_invoice_items.variation_id) AND (v.project_id = project_variation_invoice_items.project_id) AND (v.organization_id = project_variation_invoice_items.organization_id))))));",
+      "public.project_variation_invoice_items.Privileged members can delete variation invoice items": "CREATE POLICY \"Privileged members can delete variation invoice items\" ON public.project_variation_invoice_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_invoice_items.Privileged members can update variation invoice items": "CREATE POLICY \"Privileged members can update variation invoice items\" ON public.project_variation_invoice_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_invoice_items.variation_id) AND (v.project_id = project_variation_invoice_items.project_id) AND (v.organization_id = project_variation_invoice_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_invoice_items.Members can update variation invoice items",
+    "target_ddl": "CREATE POLICY \"Members can update variation invoice items\" ON \"public\".\"project_variation_invoice_items\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_invoice_items\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_invoice_items\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_invoice_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_invoice_items.Members can view variation invoice items": "CREATE POLICY \"Members can view variation invoice items\" ON public.project_variation_invoice_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_invoice_items.Privileged members can create variation invoice items": "CREATE POLICY \"Privileged members can create variation invoice items\" ON public.project_variation_invoice_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_invoice_items.variation_id) AND (v.project_id = project_variation_invoice_items.project_id) AND (v.organization_id = project_variation_invoice_items.organization_id))))));",
+      "public.project_variation_invoice_items.Privileged members can delete variation invoice items": "CREATE POLICY \"Privileged members can delete variation invoice items\" ON public.project_variation_invoice_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_invoice_items.Privileged members can update variation invoice items": "CREATE POLICY \"Privileged members can update variation invoice items\" ON public.project_variation_invoice_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_invoice_items.variation_id) AND (v.project_id = project_variation_invoice_items.project_id) AND (v.organization_id = project_variation_invoice_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_line_items.Admins can delete variation line items",
+    "target_ddl": "CREATE POLICY \"Admins can delete variation line items\" ON \"public\".\"project_variation_line_items\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_variation_line_items.Members can view variation line items": "CREATE POLICY \"Members can view variation line items\" ON public.project_variation_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_line_items.Privileged members can create variation line items": "CREATE POLICY \"Privileged members can create variation line items\" ON public.project_variation_line_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_line_items.variation_id) AND (v.project_id = project_variation_line_items.project_id) AND (v.organization_id = project_variation_line_items.organization_id))))));",
+      "public.project_variation_line_items.Privileged members can delete variation line items": "CREATE POLICY \"Privileged members can delete variation line items\" ON public.project_variation_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_line_items.Privileged members can update variation line items": "CREATE POLICY \"Privileged members can update variation line items\" ON public.project_variation_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_line_items.variation_id) AND (v.project_id = project_variation_line_items.project_id) AND (v.organization_id = project_variation_line_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_line_items.Members can create variation line items",
+    "target_ddl": "CREATE POLICY \"Members can create variation line items\" ON \"public\".\"project_variation_line_items\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_line_items\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_line_items\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_line_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_line_items.Members can view variation line items": "CREATE POLICY \"Members can view variation line items\" ON public.project_variation_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_line_items.Privileged members can create variation line items": "CREATE POLICY \"Privileged members can create variation line items\" ON public.project_variation_line_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_line_items.variation_id) AND (v.project_id = project_variation_line_items.project_id) AND (v.organization_id = project_variation_line_items.organization_id))))));",
+      "public.project_variation_line_items.Privileged members can delete variation line items": "CREATE POLICY \"Privileged members can delete variation line items\" ON public.project_variation_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_line_items.Privileged members can update variation line items": "CREATE POLICY \"Privileged members can update variation line items\" ON public.project_variation_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_line_items.variation_id) AND (v.project_id = project_variation_line_items.project_id) AND (v.organization_id = project_variation_line_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_line_items.Members can update variation line items",
+    "target_ddl": "CREATE POLICY \"Members can update variation line items\" ON \"public\".\"project_variation_line_items\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_line_items\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_line_items\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_line_items\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_line_items.Members can view variation line items": "CREATE POLICY \"Members can view variation line items\" ON public.project_variation_line_items FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_line_items.Privileged members can create variation line items": "CREATE POLICY \"Privileged members can create variation line items\" ON public.project_variation_line_items FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_line_items.variation_id) AND (v.project_id = project_variation_line_items.project_id) AND (v.organization_id = project_variation_line_items.organization_id))))));",
+      "public.project_variation_line_items.Privileged members can delete variation line items": "CREATE POLICY \"Privileged members can delete variation line items\" ON public.project_variation_line_items FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variation_line_items.Privileged members can update variation line items": "CREATE POLICY \"Privileged members can update variation line items\" ON public.project_variation_line_items FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_line_items.variation_id) AND (v.project_id = project_variation_line_items.project_id) AND (v.organization_id = project_variation_line_items.organization_id))))));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_status_events.Admins can delete variation status events",
+    "target_ddl": "CREATE POLICY \"Admins can delete variation status events\" ON \"public\".\"project_variation_status_events\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_variation_status_events.Members can view variation status events": "CREATE POLICY \"Members can view variation status events\" ON public.project_variation_status_events FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_status_events.Privileged members can create variation status events": "CREATE POLICY \"Privileged members can create variation status events\" ON public.project_variation_status_events FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_status_events.variation_id) AND (v.project_id = project_variation_status_events.project_id) AND (v.organization_id = project_variation_status_events.organization_id))))));",
+      "public.project_variation_status_events.Privileged members can delete variation status events": "CREATE POLICY \"Privileged members can delete variation status events\" ON public.project_variation_status_events FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variation_status_events.Members can create variation status events",
+    "target_ddl": "CREATE POLICY \"Members can create variation status events\" ON \"public\".\"project_variation_status_events\" FOR INSERT WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"project_variations\" \"v\"\n  WHERE ((\"v\".\"id\" = \"project_variation_status_events\".\"variation_id\") AND (\"v\".\"project_id\" = \"project_variation_status_events\".\"project_id\") AND (\"v\".\"organization_id\" = \"project_variation_status_events\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variation_status_events.Members can view variation status events": "CREATE POLICY \"Members can view variation status events\" ON public.project_variation_status_events FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variation_status_events.Privileged members can create variation status events": "CREATE POLICY \"Privileged members can create variation status events\" ON public.project_variation_status_events FOR INSERT TO authenticated WITH CHECK ((public.has_org_permission(organization_id, 'variations.write'::text) AND (EXISTS ( SELECT 1\n   FROM public.project_variations v\n  WHERE ((v.id = project_variation_status_events.variation_id) AND (v.project_id = project_variation_status_events.project_id) AND (v.organization_id = project_variation_status_events.organization_id))))));",
+      "public.project_variation_status_events.Privileged members can delete variation status events": "CREATE POLICY \"Privileged members can delete variation status events\" ON public.project_variation_status_events FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variations.Admins can delete project variations",
+    "target_ddl": "CREATE POLICY \"Admins can delete project variations\" ON \"public\".\"project_variations\" FOR DELETE USING (\"public\".\"is_admin_of_organization\"(\"organization_id\"));",
+    "retained_repository_policies": {
+      "public.project_variations.Members can view project variations": "CREATE POLICY \"Members can view project variations\" ON public.project_variations FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variations.Privileged members can create project variations": "CREATE POLICY \"Privileged members can create project variations\" ON public.project_variations FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'variations.write'::text)));",
+      "public.project_variations.Privileged members can delete project variations": "CREATE POLICY \"Privileged members can delete project variations\" ON public.project_variations FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variations.Privileged members can update project variations": "CREATE POLICY \"Privileged members can update project variations\" ON public.project_variations FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'variations.write'::text));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variations.Members can create project variations",
+    "target_ddl": "CREATE POLICY \"Members can create project variations\" ON \"public\".\"project_variations\" FOR INSERT WITH CHECK (((\"created_by\" = \"auth\".\"uid\"()) AND \"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"project_variations\".\"project_id\") AND (\"p\".\"organization_id\" = \"project_variations\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variations.Members can view project variations": "CREATE POLICY \"Members can view project variations\" ON public.project_variations FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variations.Privileged members can create project variations": "CREATE POLICY \"Privileged members can create project variations\" ON public.project_variations FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'variations.write'::text)));",
+      "public.project_variations.Privileged members can delete project variations": "CREATE POLICY \"Privileged members can delete project variations\" ON public.project_variations FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variations.Privileged members can update project variations": "CREATE POLICY \"Privileged members can update project variations\" ON public.project_variations FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'variations.write'::text));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  },
+  {
+    "removed_policy": "public.project_variations.Members can update project variations",
+    "target_ddl": "CREATE POLICY \"Members can update project variations\" ON \"public\".\"project_variations\" FOR UPDATE USING (\"public\".\"is_member_of_organization\"(\"organization_id\")) WITH CHECK ((\"public\".\"is_member_of_organization\"(\"organization_id\") AND (EXISTS ( SELECT 1\n   FROM \"public\".\"organization_projects\" \"p\"\n  WHERE ((\"p\".\"id\" = \"project_variations\".\"project_id\") AND (\"p\".\"organization_id\" = \"project_variations\".\"organization_id\"))))));",
+    "retained_repository_policies": {
+      "public.project_variations.Members can view project variations": "CREATE POLICY \"Members can view project variations\" ON public.project_variations FOR SELECT USING (public.is_member_of_organization(organization_id));",
+      "public.project_variations.Privileged members can create project variations": "CREATE POLICY \"Privileged members can create project variations\" ON public.project_variations FOR INSERT TO authenticated WITH CHECK (((created_by = auth.uid()) AND public.has_org_permission(organization_id, 'variations.write'::text)));",
+      "public.project_variations.Privileged members can delete project variations": "CREATE POLICY \"Privileged members can delete project variations\" ON public.project_variations FOR DELETE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text));",
+      "public.project_variations.Privileged members can update project variations": "CREATE POLICY \"Privileged members can update project variations\" ON public.project_variations FOR UPDATE TO authenticated USING (public.has_org_permission(organization_id, 'variations.write'::text)) WITH CHECK (public.has_org_permission(organization_id, 'variations.write'::text));"
+    },
+    "permission_keys": [
+      "variations.write"
+    ],
+    "mobile_requirement": "No broad member write required. Assignment reads remain worker-scoped; time-entry own-write rules unchanged."
+  }
+]
