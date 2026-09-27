@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "registryStatus": "OPERATING_INDEX_ONLY",
+  "externalResourcesCreated": true,
+  "clients": [
+    {
+      "clientId": "client-alpha",
+      "displayName": "Client Alpha",
+      "environment": "hosted-fictional-proof",
+      "lifecycleStatus": "ACTIVE",
+      "targetRelease": "0.0.0-phase1vr.local",
+      "repositoryReference": "github:kiwidudedev/tradesstack-client-alpha",
+      "databaseProjectReference": "supabase:ibjyzpyuqupsxqakpzxj",
+      "runtimeReference": "vercel:hi-5577s-projects/tradesstack-client-alpha",
+      "domainReference": "https://tradesstack-client-alpha.vercel.app",
+      "releaseProvenance": {
+        "repositorySha": "1656a21e8a3a5090fe688e3990e7b01d0c9e3a3b",
+        "deploymentId": "dpl_CpiWATCWCkcjQpzhPy7VptFjCCEV",
+        "applicationShellRelease": "0.0.0-phase1r.2",
+        "applicationShellSourceSha": "361bf3f094a8abbb58d20606413686cebc242e66",
+        "applicationShellFingerprint": "36dbdd5f238240183e64171e1ddc23f00f64ad0b8bfcb8a144c4ad607f58f35e",
+        "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d"
+      },
+      "database": {
+        "baseline": "phase1o-1",
+        "migrationTarget": "20260927100000_fix_document_storage_owner_policy.sql",
+        "storageBucket": "organization-documents",
+        "storagePrivate": true,
+        "hostedForwardFix": "Applied through Alpha SQL Editor; CLI migration-ledger reconciliation remains pending"
+      },
+      "operations": {
+        "vercelPlan": "Hobby",
+        "supabasePlan": "Free",
+        "supabaseRegion": "Sydney (ap-southeast-2)",
+        "backupStatus": "No managed database backups verified on Free tier; Storage recovery remains dependent on object retention/export procedure",
+        "observability": "Vercel runtime/deployment logs and Supabase logs/health only; no third-party monitoring",
+        "retention": "Keep as fictional hosted proof/reference; remove only with explicit approval",
+        "hostedUpgrade": "Deferred: no clean, approved release delta after the current Master validation gate"
+      },
+      "notes": "Fictional hosted proof only; AI, Xero, email, cron, workers, and custom DNS remain off. No Master cloud resources changed."
+    }
+  ]
+}
