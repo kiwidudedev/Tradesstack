@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "phase": "1X-A3",
-  "capturedAt": "2026-09-29T20:25:00+13:00",
+  "capturedAt": "2026-09-29T20:35:00+13:00",
   "currentAudit": {
     "supabaseWritesDuringAudit": false,
-    "hostedDeploymentId": "dpl_8Lx2JyRDZWod9XGara7vftp1ojjF",
+    "hostedDeploymentId": "dpl_pzkREWV2XHBnjQyR5iGvZutQMQe7",
     "hostedDeploymentStatus": "READY",
-    "hostedRepositorySha": "774ebad24f3c7675d6fde8eed9931243eaec7e93",
+    "hostedRepositorySha": "657c6df7aa0f18002eebc98f1bf6e9533afa5f46",
     "latestLocalValidation": "PASS_RELEASE_LINT_0_ERRORS_RELEASE_TESTS_4619_PASS_RELEASE_VALIDATION_ALL_GATES_MIGRATION_PREFLIGHT_PASS",
     "latestLocalValidationWarnings": "156_existing_lint_warnings; no lint errors",
     "latestAuthorizationContractSweep": "2_passed_files_12_passed_tests_1_skipped_file_5_skipped_tests; hosted_restricted_roles_provisioned_and_browser-proven",
-    "latestAnonymousSmoke": "root_200; protected_workspace_routes_307_to_login; POST_/api/projects/create_401_Unauthorized; no_credentials_exposed",
+    "latestAnonymousSmoke": "root_200; protected_workspace_routes_307_to_login; POST_/api/projects/create_401_Unauthorized; no_credentials_exposed; responsive_dashboard_verified_at_375x667",
     "routeShellsVerified": ["opportunity-overview", "opportunity-files", "opportunity-scope", "opportunity-pricing", "opportunity-quote", "project-overview", "project-dashboard", "project-job-management", "project-todos", "project-qa", "project-files", "project-preconstruction", "project-quote", "project-purchase-orders", "project-variations", "project-claims", "project-retention", "project-time-sheets", "project-safety", "project-hazards", "project-daily-logs", "company-supplier-invoices", "company-payment-claims"],
     "hostedOpenFailures": ["project quote worksheet URL returns 404 only for the older manually-created unconverted fixture", "serial 33-test local E2E run timed out once in the opportunity-file menu after 5.5 minutes; the isolated workflow passed after the shared readiness correction"],
     "slowLoadObservations": ["company-payment-claims showed its loading boundary initially, then rendered the expected No Payment Claims for this period empty state after the normal hosted load window"],
@@ -41,7 +41,7 @@
     "github": {
       "expected": "kiwidudedev/tradesstack-client-alpha",
       "status": "ACTIVE_PRIVATE",
-      "evidence": "kiwidudedev/tradesstack-client-alpha verified private; main SHA 774ebad24f3c7675d6fde8eed9931243eaec7e93; approved manual controlled deployment path used because Hobby private-repository Git integration remains restricted"
+      "evidence": "kiwidudedev/tradesstack-client-alpha verified private; main SHA 657c6df7aa0f18002eebc98f1bf6e9533afa5f46; approved manual controlled deployment path used because Hobby private-repository Git integration remains restricted"
     },
     "supabase": {
       "projectRef": "ibjyzpyuqupsxqakpzxj",
@@ -59,21 +59,21 @@
       "nodeReportedByPlatform": "22.x project setting; READY redeployed production with Alpha service-role secret",
       "declaredNodeRange": ">=22.22.2 <23",
       "productionUrl": "https://tradesstack-client-alpha.vercel.app",
-      "deploymentId": "dpl_8Lx2JyRDZWod9XGara7vftp1ojjF",
+      "deploymentId": "dpl_pzkREWV2XHBnjQyR5iGvZutQMQe7",
       "httpStatus": 200,
       "previewProtection": "preview-only"
     }
   },
   "releaseProvenance": {
-    "deployedRepositorySha": "774ebad24f3c7675d6fde8eed9931243eaec7e93",
+    "deployedRepositorySha": "657c6df7aa0f18002eebc98f1bf6e9533afa5f46",
     "localAlphaLedgerCommit": "b504d3a",
     "applicationShellRelease": "0.0.0-phase1vr.local",
-    "applicationShellSourceSha": "4fbdca2b92b05b1238859b9ccaa3dc58de18dcfd",
-    "applicationShellFingerprint": "523ebe7bceadd7699984fd801a9e0c4e21aa93ced2ed1e1c3d8f33d340d8be46",
+    "applicationShellSourceSha": "50af0967fd892c7a16ddd21bb81b724c1a522bf0",
+    "applicationShellFingerprint": "49e15b4334512ea545c8b11fa9dec954c2bf739a8724d16b76a6d3505cc7ffbe",
     "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d",
     "upgradeStatus": "COMPLETE_CONTROLLED_MANUAL_HOSTED_DEPLOYMENT;_HOBBY_CRON_OFF;_LEGACY_FIXTURE_RETAINED_AS_STALE_NONPRODUCT_DATA",
-    "deploymentSource": "Vercel CLI controlled production deployment from clean Alpha checkout at main SHA 774ebad24f3c7675d6fde8eed9931243eaec7e93 with Production-only server configuration; cron definitions remain disabled for Hobby",
-    "provenanceCommits": ["b504d3a", "55a89bc", "093bb90", "029d616", "2a195b0", "6dd91aa", "9cd9c21", "5efb974", "774ebad"]
+    "deploymentSource": "Vercel CLI controlled production deployment from clean Alpha checkout at main SHA 657c6df7aa0f18002eebc98f1bf6e9533afa5f46 with Master responsive fix 50af0967fd892c7a16ddd21bb81b724c1a522bf0 and Production-only server configuration; cron definitions remain disabled for Hobby",
+    "provenanceCommits": ["b504d3a", "55a89bc", "093bb90", "029d616", "2a195b0", "6dd91aa", "9cd9c21", "5efb974", "774ebad", "657c6df"]
   },
   "syntheticEvidence": {
     "authUsers": 6,

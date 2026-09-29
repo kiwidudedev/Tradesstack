@@ -843,3 +843,20 @@ The approved active hosted scope is commissioned. The stale legacy fixture is
 retained as synthetic data because repairing it would require inventing source
 lineage; it does not block the supported workflow. Real-customer status remains
 **NOT READY — PHASE 1X-B PRODUCTION HARDENING REMAINS**.
+
+### Phase 1X-A3 responsive correction
+
+The owner-provided Chrome iPhone SE capture at 375x667 exposed a genuine
+dashboard overflow: the hero summary was forced to remain on one line and the
+hero flex child could not shrink. This was corrected generically in Master by
+allowing the hero content to shrink, wrapping the summary text, and preserving
+safe word breaking in `app/app/(workspace)/dashboard/dashboard.module.css`.
+
+The fix was validated through the existing Master release gates, promoted at
+product commit `50af0967fd892c7a16ddd21bb81b724c1a522bf0`, copied into Alpha at
+commit `657c6df7aa0f18002eebc98f1bf6e9533afa5f46`, and deployed as READY
+production deployment `dpl_pzkREWV2XHBnjQyR5iGvZutQMQe7`. The deployed Alpha
+dashboard loaded with the existing fictional authenticated data; Alpha
+configuration, database records, Auth users, private Storage objects, and
+authorization boundaries were not changed. Vercel remains Hobby, Supabase
+remains Free/NANO, and all previously excluded integrations remain OFF.

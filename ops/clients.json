@@ -14,11 +14,11 @@
       "runtimeReference": "vercel:hi-5577s-projects/tradesstack-client-alpha",
       "domainReference": "https://tradesstack-client-alpha.vercel.app",
       "releaseProvenance": {
-        "repositorySha": "774ebad24f3c7675d6fde8eed9931243eaec7e93",
-        "deploymentId": "dpl_8Lx2JyRDZWod9XGara7vftp1ojjF",
+        "repositorySha": "657c6df7aa0f18002eebc98f1bf6e9533afa5f46",
+        "deploymentId": "dpl_pzkREWV2XHBnjQyR5iGvZutQMQe7",
         "applicationShellRelease": "0.0.0-phase1vr.local",
-        "applicationShellSourceSha": "4fbdca2b92b05b1238859b9ccaa3dc58de18dcfd",
-        "applicationShellFingerprint": "523ebe7bceadd7699984fd801a9e0c4e21aa93ced2ed1e1c3d8f33d340d8be46",
+        "applicationShellSourceSha": "50af0967fd892c7a16ddd21bb81b724c1a522bf0",
+        "applicationShellFingerprint": "49e15b4334512ea545c8b11fa9dec954c2bf739a8724d16b76a6d3505cc7ffbe",
         "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d"
       },
       "database": {
@@ -39,7 +39,7 @@
         "backupStatus": "No managed database backups verified on Free tier; Storage recovery remains dependent on object retention/export procedure",
         "observability": "Vercel runtime/deployment logs and Supabase logs/health only; no third-party monitoring",
         "retention": "Keep as fictional hosted proof/reference; remove only with explicit approval",
-        "hostedUpgrade": "Controlled manual READY production deployment dpl_8Lx2JyRDZWod9XGara7vftp1ojjF from Alpha main SHA 774ebad24f3c7675d6fde8eed9931243eaec7e93 using promoted Master release 0.0.0-phase1vr.local; Hobby retained and cron remains OFF",
+        "hostedUpgrade": "Controlled manual READY production deployment dpl_pzkREWV2XHBnjQyR5iGvZutQMQe7 from Alpha main SHA 657c6df7aa0f18002eebc98f1bf6e9533afa5f46 using promoted Master responsive fix 50af0967fd892c7a16ddd21bb81b724c1a522bf0; Hobby retained and cron remains OFF",
     "pendingSharedFixes": "None for the approved active hosted scope; legacy manually-created Alpha quote fixture remains an intentionally retained stale fixture without source lineage and was not repaired by SQL"
       },
       "notes": "Fictional hosted proof only; AI, Xero, email, cron, workers, and custom DNS remain off. Master Supabase received the explicitly authorized forward migration set; no Master runtime deployment was changed."
