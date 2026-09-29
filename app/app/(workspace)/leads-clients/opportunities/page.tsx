@@ -97,7 +97,11 @@ export default async function LeadsClientsOpportunitiesPage({
       }
     }
 
-    if (row.stage !== "Lost" && row.stage !== "Won" && !submittedQuote && row.dueDateIso) {
+    // Active pipeline opportunities belong in Upcoming Quotes even when a due
+    // date has not been set yet. The table already renders a missing due date
+    // safely, and filtering these rows out made newly-created opportunities
+    // disappear from the main pipeline until someone added a due date.
+    if (row.stage !== "Lost" && row.stage !== "Won" && !submittedQuote) {
       activeRows.push(row);
     }
     if (latestQuoteStatus === "Sent" || latestQuoteStatus === "Viewed") {
