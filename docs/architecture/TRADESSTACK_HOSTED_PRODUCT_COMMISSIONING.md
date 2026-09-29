@@ -860,3 +860,21 @@ dashboard loaded with the existing fictional authenticated data; Alpha
 configuration, database records, Auth users, private Storage objects, and
 authorization boundaries were not changed. Vercel remains Hobby, Supabase
 remains Free/NANO, and all previously excluded integrations remain OFF.
+
+### Phase 1X-A3 opportunity visibility correction
+
+The owner reported that an opportunity created under `corey@metroci.co.nz`
+was visible through the Client detail quote route but missing from the
+Opportunities page. The cause was a generic page-filter defect: active pipeline
+rows were only included in “Upcoming Quotes” when `due_date` was non-null.
+New opportunities without a due date were therefore silently hidden even
+though the underlying Alpha records and quote linkage were present.
+
+Master commit `8b471160f0bf339ca4f94c347b8f2725f5b1e074` removes that incorrect
+due-date requirement while preserving Lost/Won and submitted-quote tab
+semantics. The fix was applied to Alpha at commit
+`377f0f09630d383690ef6916e24d931545ea7ffa`, deployed as READY production
+deployment `dpl_5moVVqmJWb1DSzsnoQSFgkRjKisy`, and verified in the live browser:
+the active Opportunities page now shows `NP Control Tower`, `Clelands
+Construction`, and quote `26001 · Original`. No database, migration, or
+Supabase data change was required.
