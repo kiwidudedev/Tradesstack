@@ -558,16 +558,12 @@ export default async function RetentionClaimDetailPage({
             ) : null}
             {!isDraft ? <RetentionClaimDateEditingHeaderActions /> : null}
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-9 px-3"
-                  aria-label="Retention Claim actions"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
+              <DropdownMenuTrigger
+                type="button"
+                className="ui-button inline-flex h-9 items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-sm font-medium text-[var(--text-primary)]"
+                aria-label="Retention Claim actions"
+              >
+                <ChevronDown className="h-4 w-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 side="bottom"

@@ -1,0 +1,9 @@
+{
+  "name": "tradesstack-dedicated-client-provisioning-proof",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "proof": "node scripts/run-repeatable-proof.mjs"
+  }
+}

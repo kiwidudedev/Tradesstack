@@ -11,6 +11,8 @@ const request = () => new Request("https://example.test/api/contact", { method: 
 beforeEach(() => {
   vi.resetModules(); mocked.send.mockReset(); mocked.construct.mockReset();
   vi.stubEnv("RESEND_API_KEY", undefined);
+  vi.stubEnv("RESEND_CONTACT_FROM_EMAIL", undefined);
+  vi.stubEnv("CONTACT_RECIPIENT_EMAIL", undefined);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
@@ -42,6 +44,18 @@ describe("optional contact email service", () => {
     expect(mocked.send).toHaveBeenCalledWith({ from: "Corey – TradesStack <hello@mail.tradesstack.com>", to: "hi@tradesstack.com", replyTo: form.email, subject: "New Contact Form Submission", html: expect.stringContaining("<strong>Name:</strong> Test Person") });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true, data: { id: "synthetic-message" } });
+  });
+  it("uses deployment-configured sender and recipient when supplied", async () => {
+    vi.stubEnv("RESEND_API_KEY", "synthetic-test-key");
+    vi.stubEnv("RESEND_CONTACT_FROM_EMAIL", "Client <contact@client.example>");
+    vi.stubEnv("CONTACT_RECIPIENT_EMAIL", "ops@client.example");
+    mocked.send.mockResolvedValue({ data: { id: "synthetic-message" }, error: null });
+    const { POST } = await import("./route");
+    await POST(request());
+    expect(mocked.send).toHaveBeenCalledWith(expect.objectContaining({
+      from: "Client <contact@client.example>",
+      to: "ops@client.example",
+    }));
   });
   it.each(["provider error", "send throws", "constructor throws"])("does not expose details when %s", async (failure) => {
     const secret = "synthetic-private-marker";

@@ -17,14 +17,14 @@ export async function loadProjectPricingWorksheetRouteContext(
   worksheetId?: string,
 ): Promise<ProjectPricingWorksheetRouteContext | null> {
   const project = await getTradePackWorkspaceBySlugForCurrentUser(projectSlug);
-  if (!project?.source_opportunity_id) {
+  if (!project) {
     return null;
   }
 
   const supabase = await createServerSupabaseClient();
   const { data: quote, error: quoteError } = await supabase
     .from("project_quotes")
-    .select("id")
+    .select("id, source_opportunity_id, originating_opportunity_id")
     .eq("organization_id", project.organization_id)
     .eq("project_id", project.id)
     .eq("id", quoteId)
@@ -34,12 +34,24 @@ export async function loadProjectPricingWorksheetRouteContext(
     return null;
   }
 
+  // Older converted projects may not have the opportunity copied onto the
+  // project row even though their canonical quote retains the lineage needed
+  // to resolve the project working workbook. Prefer the project value when it
+  // exists, then fall back to the validated quote lineage.
+  const opportunityId =
+    project.source_opportunity_id ??
+    quote.source_opportunity_id ??
+    quote.originating_opportunity_id;
+  if (!opportunityId) {
+    return null;
+  }
+
   if (worksheetId) {
     const { data: worksheet, error: worksheetError } = await supabase
       .from("opportunity_pricing_worksheets")
       .select("id")
       .eq("organization_id", project.organization_id)
-      .eq("opportunity_id", project.source_opportunity_id)
+      .eq("opportunity_id", opportunityId)
       .eq("project_id", project.id)
       .eq("id", worksheetId)
       .is("variation_id", null)
@@ -55,7 +67,7 @@ export async function loadProjectPricingWorksheetRouteContext(
   return {
     owner: buildProjectPricingWorksheetOwner({
       organizationId: project.organization_id,
-      opportunityId: project.source_opportunity_id,
+      opportunityId,
       projectId: project.id,
       projectSlug: project.slug,
       readOnly: false,

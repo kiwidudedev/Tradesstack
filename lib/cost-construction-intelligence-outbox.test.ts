@@ -125,6 +125,23 @@ function buildAdminStub(options: {
         };
       }
       return {
+        upsert() {
+          return {
+            select() {
+              return {
+                limit() {
+                  return Promise.resolve({ data: [{ id: "pool-1" }], error: null });
+                },
+              };
+            },
+            then(onFulfilled: (value: { data: null; error: null }) => unknown) {
+              return Promise.resolve(onFulfilled({ data: null, error: null }));
+            },
+          };
+        },
+        insert() {
+          return Promise.resolve({ data: null, error: null });
+        },
         update(values: Record<string, unknown>) {
           return {
             eq(column: string, value: string) {

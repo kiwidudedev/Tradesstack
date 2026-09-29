@@ -11,7 +11,7 @@ function toReviewMonthDate(reviewMonth: string) {
 export async function getUniversalLearningCursor(
   selection: Pick<UniversalLearningRunSelection, "organizationId" | "containerType" | "scopeKey">,
 ): Promise<UniversalLearningCursor> {
-  const admin = createAdminSupabaseClient() as any;
+  const admin = createAdminSupabaseClient();
   const { data, error } = await admin
     .from("learning_review_cursors")
     .select("last_cursor_updated_at, last_cursor_id")
@@ -36,7 +36,7 @@ export async function advanceUniversalLearningCursor(input: {
   nextCursor: UniversalLearningCursor;
   selectedRecordCount: number;
 }) {
-  const admin = createAdminSupabaseClient() as any;
+  const admin = createAdminSupabaseClient();
   const payload = {
     organization_id: input.selection.organizationId,
     container_type: input.selection.containerType,

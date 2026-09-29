@@ -452,7 +452,7 @@ export function FilesWorkspace({
                       <OperationalTableCell className="hidden lg:table-cell">{batch.originalParentName ?? "Files root"}</OperationalTableCell>
                       <OperationalTableCell className="hidden xl:table-cell">{formatDocumentBytes(batch.byteSize)}</OperationalTableCell>
                       <OperationalTableCell>
-                        <DropdownMenu>
+                        <DropdownMenu modal={false}>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" aria-label={`Actions for deleted ${batch.displayName}`}><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
@@ -542,7 +542,7 @@ export function FilesWorkspace({
                       <OperationalTableCell className="hidden sm:table-cell">{formatDate(node.updatedAt)}</OperationalTableCell>
                       <OperationalTableCell className="hidden lg:table-cell">{formatDocumentBytes(node.byteSize)}</OperationalTableCell>
                       <OperationalTableCell>
-                        <DropdownMenu>
+                        <DropdownMenu modal={false}>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" aria-label={`Actions for ${node.displayName}`}><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>

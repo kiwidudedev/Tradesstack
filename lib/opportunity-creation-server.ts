@@ -35,6 +35,7 @@ function optionalText(value: string | null | undefined) {
 function isDeploymentFallbackError(error: RpcError) {
   return (
     error.message?.includes("Opportunity lifecycle creation is not enabled")
+    || error.message?.includes("Opportunity lifecycle default creation is not enabled")
     || error.code === "PGRST202"
     || error.code === "42883"
   );
@@ -281,6 +282,68 @@ async function createThroughLegacyFallback(params: {
       .eq("organization_id", organizationId)
       .eq("id", workspace.data.id);
     throw mapRpcError(opportunity.error);
+  }
+
+  // The compatibility path must preserve the same tender-client invariant as
+  // the atomic creation RPC. Without this call, the opportunity overview can
+  // show its primary client while the quotation register has no recipient row.
+  const primaryClientId = clientId;
+  if (!primaryClientId) {
+    throw new OpportunityCreationFailure(
+      "Please select a client.",
+      400,
+      "client_required",
+    );
+  }
+  const resolvedTenderClientIds = Array.from(new Set([
+    ...(input.tenderClientIds ?? []),
+    primaryClientId,
+  ].filter((value): value is string => Boolean(value))));
+  const tenderClientSync = await supabase.rpc(
+    "sync_opportunity_tender_clients_v1",
+    {
+      p_organization_id: organizationId,
+      p_opportunity_id: opportunity.data.id,
+      p_client_ids: resolvedTenderClientIds,
+      p_primary_client_id: primaryClientId,
+    },
+  );
+  if (tenderClientSync.error) {
+    await supabase
+      .from("organization_opportunities")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", opportunity.data.id);
+    await supabase
+      .from("organization_projects")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", workspace.data.id);
+    throw mapRpcError(tenderClientSync.error);
+  }
+
+  // The compatibility fallback creates the workspace before the Opportunity so
+  // it can preserve the older deployment order. Complete the same lineage
+  // invariant as the atomic path before returning; award/conversion and the
+  // lifecycle readers require the workspace to identify its Opportunity.
+  const workspaceLineage = await supabase
+    .from("organization_projects")
+    .update({ source_opportunity_id: opportunity.data.id })
+    .eq("organization_id", organizationId)
+    .eq("id", workspace.data.id)
+    .is("source_opportunity_id", null);
+  if (workspaceLineage.error) {
+    await supabase
+      .from("organization_opportunities")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", opportunity.data.id);
+    await supabase
+      .from("organization_projects")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("id", workspace.data.id);
+    throw mapRpcError(workspaceLineage.error);
   }
 
   return {

@@ -16,6 +16,7 @@ describe("organization memory retirement routes", () => {
     vi.resetModules();
     vi.clearAllMocks();
     delete process.env.CRON_SECRET;
+    process.env.TRADESSTACK_ENABLED_BACKGROUND_JOBS = "organization-memory-retirement";
   });
 
   it("requires admin for the internal run route and forwards worker input", async () => {

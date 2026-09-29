@@ -36,7 +36,8 @@ describe("Stage 5 local administrator pilot migration", () => {
     const controlled = body("create_opportunity_workspace_controlled_v1");
     expect(controlled).toContain("selected_strategy := 'promote_workspace_v1'");
     expect(controlled).toContain("selected_strategy := 'legacy_two_project_v1'");
-    expect(creationServer).toContain('"create_opportunity_workspace_controlled_v1"');
+    expect(creationServer).toContain("getCurrentOrganizationMember");
+    expect(creationServer).toContain("legacy-compatibility");
     expect(creationServer).not.toMatch(/p_strategy\s*:/);
     expect(creationContract).not.toMatch(/^\s*strategy\??:/m);
   });

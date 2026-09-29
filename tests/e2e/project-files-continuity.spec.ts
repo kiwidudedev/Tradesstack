@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import {
   createE2EAdminClient,
@@ -9,7 +9,7 @@ import {
 const creationRequestId = crypto.randomUUID();
 let opportunityId = "";
 let e2eOrganizationId = "";
-const acceptedQuoteId = crypto.randomUUID();
+let acceptedQuoteId = "";
 const directProjectId = crypto.randomUUID();
 const runSuffix = Date.now().toString(36);
 let opportunitySlug = "";
@@ -19,6 +19,13 @@ const nestedFolder = `Issued ${runSuffix}`;
 const opportunityFile = `Opportunity Contract ${runSuffix}.pdf`;
 const projectFile = `Project Addition ${runSuffix}.pdf`;
 const renamedProjectFile = `Project Addition Renamed ${runSuffix}.pdf`;
+
+async function waitForFilesWorkspaceHydration(page: Page) {
+  await page.waitForFunction(() => Boolean(
+    document.querySelector('button[aria-label^="Actions for"]'),
+  ));
+  await page.waitForTimeout(2000);
+}
 
 async function workspaceIdsForEntities() {
   const admin = createE2EAdminClient();
@@ -45,7 +52,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
         pilot_scope: "local_admin_pilot",
         pilot_environment: "local_development",
         updated_by: context.userId,
-      });
+      }, { onConflict: "organization_id" });
     if (rolloutError) throw rolloutError;
 
     const authenticated = createClient(
@@ -89,21 +96,59 @@ test.describe("Opportunity-to-Project Files continuity", () => {
     opportunityId = created.opportunity_id;
     opportunitySlug = created.opportunity_slug;
 
+    const { data: opportunityClient, error: opportunityClientError } = await admin
+      .from("organization_opportunities")
+      .select("client_id")
+      .eq("organization_id", context.organizationId)
+      .eq("id", opportunityId)
+      .single();
+    if (opportunityClientError) throw opportunityClientError;
+    if (!opportunityClient.client_id) throw new Error("Atomic Opportunity fixture has no primary client.");
+
+    const { error: tenderClientError } = await admin
+      .from("opportunity_tender_clients")
+      .insert({
+        organization_id: context.organizationId,
+        opportunity_id: opportunityId,
+        client_id: opportunityClient.client_id,
+        created_by: context.userId,
+        is_primary: true,
+      });
+    if (tenderClientError) throw tenderClientError;
+
+    const initializedQuote = await (authenticated.rpc as unknown as (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{
+      data: Array<{ revision_id: string }> | null;
+      error: { message: string } | null;
+    }>) ("initialize_primary_opportunity_quote_v1", {
+      p_organization_id: context.organizationId,
+      p_opportunity_id: opportunityId,
+    });
+    if (initializedQuote.error) throw initializedQuote.error;
+    acceptedQuoteId = initializedQuote.data?.[0]?.revision_id ?? "";
+    if (!acceptedQuoteId) throw new Error("Atomic Quote Series fixture creation returned no revision.");
+
     const { error: quoteError } = await admin
       .from("project_quotes")
-      .insert({
-        id: acceptedQuoteId,
-        organization_id: context.organizationId,
-        created_by: context.userId,
-        originating_opportunity_id: opportunityId,
-        source_opportunity_id: opportunityId,
-        quote_title: "Phase 4 Files accepted quote",
-        quote_number: `P4-${runSuffix}`,
-        status: "Accepted",
-        subtotal: 1,
-        quote_date: "2026-08-01",
-      });
+      .update({ status: "Accepted" })
+      .eq("id", acceptedQuoteId)
+      .eq("organization_id", context.organizationId);
     if (quoteError) throw quoteError;
+
+    const acceptance = await (authenticated.rpc as unknown as (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ error: { message: string } | null }>) (
+      "select_opportunity_accepted_quote_revision_v1",
+      {
+        p_organization_id: context.organizationId,
+        p_opportunity_id: opportunityId,
+        p_quote_revision_id: acceptedQuoteId,
+      },
+    );
+    if (acceptance.error) throw acceptance.error;
 
     const { error: projectError } = await admin
       .from("organization_projects")
@@ -148,7 +193,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
     await page.getByRole("button", { name: "New folder" }).click();
     await page.getByLabel("New folder").getByRole("textbox").fill(sharedFolder);
     await page.getByRole("button", { name: "Save" }).click();
-    await page.getByRole("button", { name: sharedFolder, exact: true }).click();
+    await page.getByRole("link", { name: sharedFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" })
         .getByText(sharedFolder, { exact: true }),
@@ -156,7 +201,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
     await page.getByRole("button", { name: "New folder" }).click();
     await page.getByLabel("New folder").getByRole("textbox").fill(nestedFolder);
     await page.getByRole("button", { name: "Save" }).click();
-    await page.getByRole("button", { name: nestedFolder, exact: true }).click();
+    await page.getByRole("link", { name: nestedFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" })
         .getByText(nestedFolder, { exact: true }),
@@ -252,8 +297,8 @@ test.describe("Opportunity-to-Project Files continuity", () => {
       "href",
       `/app/projects/${convertedProjectSlug}/files`,
     );
-    await page.getByRole("button", { name: sharedFolder, exact: true }).click();
-    await page.getByRole("button", { name: nestedFolder, exact: true }).click();
+    await page.getByRole("link", { name: sharedFolder, exact: true }).click();
+    await page.getByRole("link", { name: nestedFolder, exact: true }).click();
     await expect(page.getByRole("button", {
       name: opportunityFile,
       exact: true,
@@ -287,6 +332,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
       name: projectFile,
       exact: true,
     })).toBeVisible();
+    await waitForFilesWorkspaceHydration(page);
     await page.getByLabel(`Actions for ${projectFile}`).click();
     await page.getByRole("menuitem", { name: "Rename" }).click();
     await page.getByLabel("Rename item").getByRole("textbox")
@@ -298,6 +344,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
       name: renamedProjectFile,
       exact: true,
     })).toBeVisible();
+    await waitForFilesWorkspaceHydration(page);
     await page.getByLabel(`Actions for ${renamedProjectFile}`).click();
     await page.getByRole("menuitem", { name: "Move" }).click();
     await page.getByLabel("Destination folder").selectOption({
@@ -307,7 +354,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
 
     await page.goto(`/app/leads-clients/opportunities/${opportunitySlug}/files`);
     await expect(page).toHaveURL(`/app/projects/${convertedProjectSlug}/files`);
-    await page.getByRole("button", { name: sharedFolder, exact: true }).click();
+    await page.getByRole("link", { name: sharedFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" })
         .getByText(sharedFolder, { exact: true }),
@@ -318,18 +365,19 @@ test.describe("Opportunity-to-Project Files continuity", () => {
     })).toBeVisible();
 
     await page.goto(`/app/projects/${convertedProjectSlug}/files`);
-    await page.getByRole("button", { name: sharedFolder, exact: true }).click();
+    await page.getByRole("link", { name: sharedFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" })
         .getByText(sharedFolder, { exact: true }),
     ).toBeVisible();
+    await waitForFilesWorkspaceHydration(page);
     await page.getByLabel(`Actions for ${renamedProjectFile}`).click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("button", { name: "Delete" }).click();
 
     await page.goto(`/app/leads-clients/opportunities/${opportunitySlug}/files`);
     await expect(page).toHaveURL(`/app/projects/${convertedProjectSlug}/files`);
-    await page.getByRole("button", { name: sharedFolder, exact: true }).click();
+    await page.getByRole("link", { name: sharedFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" })
         .getByText(sharedFolder, { exact: true }),
@@ -389,7 +437,7 @@ test.describe("Opportunity-to-Project Files continuity", () => {
     await page.getByLabel("New folder").getByRole("textbox")
       .fill(`Direct Plans ${runSuffix}`);
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", {
+    await expect(page.getByRole("link", {
       name: `Direct Plans ${runSuffix}`,
       exact: true,
     })).toBeVisible();

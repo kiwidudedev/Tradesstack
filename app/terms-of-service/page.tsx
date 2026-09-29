@@ -25,8 +25,8 @@ export default function TermsOfServicePage() {
             <div className="mt-8 rounded-2xl border border-white/10 bg-[rgba(8,34,72,0.82)] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] sm:p-8">
               <div className={`${akzidenzBlack.className} space-y-7 text-[16px] leading-[1.75] text-white/86`}>
                 <p>
-                  These Terms of Service ("Terms") govern your access to and use of the TradesStack website, platform, and related
-                  services (collectively, the "Service").
+                  These Terms of Service (&quot;Terms&quot;) govern your access to and use of the TradesStack website, platform, and related
+                  services (collectively, the &quot;Service&quot;).
                 </p>
                 <p>
                   TradesStack provides AI-assisted tools designed to help construction professionals organize, analyze, and review project
@@ -198,7 +198,7 @@ export default function TermsOfServicePage() {
                     <li>financial losses</li>
                   </ul>
                   <p className="mt-2">resulting from the use of the platform or reliance on its outputs.</p>
-                  <p className="mt-2">TradesStack is provided "as is" without warranties of any kind.</p>
+                  <p className="mt-2">TradesStack is provided &quot;as is&quot; without warranties of any kind.</p>
                 </section>
 
                 <section>

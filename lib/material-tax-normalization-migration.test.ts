@@ -23,7 +23,7 @@ describe("Material tax normalization migration", () => {
     expect(approvalSql).toContain("approve_material_import_row_without_tax_idempotency");
   });
   it("versions policy when authoritative organization settings change", () => {
-    expect(syncSql).toContain("after update of country, default_tax_mode, default_tax_rate, tax_registration_status");
+    expect(syncSql).toContain("after update\non public.organizations");
     expect(syncSql).toContain("effective_to = v_now");
     expect(syncSql).toContain("'organization_settings'");
   });

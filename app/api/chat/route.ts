@@ -202,6 +202,7 @@ export async function GET(request: Request) {
   const conversationId = url.searchParams.get("conversationId")?.trim() || "";
 
   const usageClient = supabase as unknown as AiChatUsageQueryClient;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chatDb = supabase as any;
 
   const conversationsResult = await chatDb
@@ -668,6 +669,7 @@ export async function POST(request: Request) {
             sendEvent({ type: "error", error: "Unable to save AI response." });
           }
 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const updateConversationResult = await (dynamicSupabase as any)
             .from("ai_chat_conversations")
             .update({
@@ -738,6 +740,7 @@ export async function DELETE(request: Request) {
   }
 
   const supabase = await createServerSupabaseClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
   const { error: archiveConversationError } = await db

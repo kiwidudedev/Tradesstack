@@ -13,7 +13,7 @@ export async function writeUniversalLearningActionResult(input: {
   confidenceAdjustment?: number | null;
   reason?: string | null;
 }) {
-  const admin = createAdminSupabaseClient() as any;
+  const admin = createAdminSupabaseClient();
   const { error } = await admin.from("learning_review_action_results").insert({
     review_run_id: input.reviewRunId,
     organization_id: input.organizationId,

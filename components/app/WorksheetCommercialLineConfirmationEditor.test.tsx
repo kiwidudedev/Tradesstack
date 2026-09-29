@@ -36,7 +36,7 @@ describe("CommercialLineConfirmationEditor", () => {
       />,
     );
 
-    expect(markup).toContain("Commercial line");
+    expect(markup).not.toContain("Commercial line");
     expect(markup).toContain("Board Supply Cost");
     expect(markup).toContain("Add another line");
     expect(markup).not.toContain("Line 1");

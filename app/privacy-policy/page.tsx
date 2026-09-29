@@ -29,7 +29,7 @@ export default function PrivacyPolicyPage() {
                 className={`${akzidenzBlack.className} space-y-7 text-[16px] leading-[1.75] text-[#0B2639]/88 [&_h2]:!text-[#0B2639] [&_h2]:tracking-[-0.03em] [&_h3]:!text-[#0B2639] [&_p]:text-[#0B2639]/88 [&_ul]:text-[#0B2639]/88`}
               >
                 <p>
-                  TradesStack ("TradesStack", "we", "our", or "us") operates a cloud-based software platform designed for construction
+                  TradesStack (&quot;TradesStack&quot;, &quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) operates a cloud-based software platform designed for construction
                   professionals including builders, estimators, quantity surveyors, and project managers.
                 </p>
                 <p>
@@ -297,7 +297,7 @@ export default function PrivacyPolicyPage() {
                 </section>
 
                 <section>
-                  <h2 className="text-[26px] font-semibold uppercase tracking-[0.02em] text-[#F74917]">11. Children's Privacy</h2>
+                  <h2 className="text-[26px] font-semibold uppercase tracking-[0.02em] text-[#F74917]">11. Children&apos;s Privacy</h2>
                   <p className="mt-3">TradesStack is intended for professional use by construction industry participants.</p>
                   <p className="mt-2">The platform is not intended for individuals under the age of 18.</p>
                 </section>
@@ -307,7 +307,7 @@ export default function PrivacyPolicyPage() {
                   <p className="mt-3">
                     We may update this Privacy Policy periodically to reflect changes in the platform, technology, or legal requirements.
                   </p>
-                  <p className="mt-2">When updates occur we will revise the "Last Updated" date.</p>
+                  <p className="mt-2">When updates occur we will revise the &quot;Last Updated&quot; date.</p>
                   <p className="mt-2">Continued use of the platform after changes indicates acceptance of the updated policy.</p>
                 </section>
 

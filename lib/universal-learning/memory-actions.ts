@@ -11,8 +11,9 @@ import type {
   UniversalLearningResponse,
   UniversalLearningRunSelection,
 } from "@/lib/universal-learning/types";
+import type { Json } from "@/lib/supabase/types";
 
-type JsonRecord = Record<string, unknown>;
+type JsonRecord = { [key: string]: Json | undefined };
 type ResolvedSourceScope = NonNullable<UniversalLearningLearningItem["evidence"]["supportingRecords"][number]["sourceScope"]>;
 type SourceResolutionCandidate = {
   sourceScope: ResolvedSourceScope;
@@ -852,7 +853,9 @@ function preflightUniversalLearningMemoryActions(input: {
   }
 }
 
-async function getMemoryById(admin: any, organizationId: string, memoryId: string) {
+type LearningAdminClient = ReturnType<typeof createAdminSupabaseClient>;
+
+async function getMemoryById(admin: LearningAdminClient, organizationId: string, memoryId: string) {
   const { data, error } = await admin
     .from("organization_memory_items")
     .select("*")
@@ -867,7 +870,7 @@ async function getMemoryById(admin: any, organizationId: string, memoryId: strin
   return data ? toRecord(data) : null;
 }
 
-async function upsertMemoryItem(admin: any, input: {
+async function upsertMemoryItem(admin: LearningAdminClient, input: {
   organizationId: string;
   containerType: string;
   title: string;
@@ -935,7 +938,7 @@ async function upsertMemoryItem(admin: any, input: {
   return toRecord(data);
 }
 
-async function updateMemoryItem(admin: any, input: {
+async function updateMemoryItem(admin: LearningAdminClient, input: {
   memoryId: string;
   organizationId: string;
   patch: JsonRecord;
@@ -955,7 +958,7 @@ async function updateMemoryItem(admin: any, input: {
   return toRecord(data);
 }
 
-async function insertLifecycleHistory(admin: any, input: {
+async function insertLifecycleHistory(admin: LearningAdminClient, input: {
   organizationId: string;
   memoryId: string;
   lifecycleEventType: string;
@@ -984,7 +987,7 @@ async function insertLifecycleHistory(admin: any, input: {
   return lifecycleId;
 }
 
-async function insertConfidenceHistory(admin: any, input: {
+async function insertConfidenceHistory(admin: LearningAdminClient, input: {
   organizationId: string;
   memoryId: string;
   lifecycleHistoryId: string | null;
@@ -1018,7 +1021,7 @@ async function insertConfidenceHistory(admin: any, input: {
   return typeof data?.id === "string" ? data.id : null;
 }
 
-async function writeProvenanceLinks(admin: any, input: {
+async function writeProvenanceLinks(admin: LearningAdminClient, input: {
   organizationId: string;
   memoryId: string;
   learning: UniversalLearningLearningItem;
@@ -1043,7 +1046,7 @@ async function writeProvenanceLinks(admin: any, input: {
   }
 }
 
-async function applyCreateOrUpdate(admin: any, input: {
+async function applyCreateOrUpdate(admin: LearningAdminClient, input: {
   reviewRunId: string;
   selection: UniversalLearningRunSelection;
   action: UniversalLearningMemoryAction;
@@ -1215,7 +1218,7 @@ async function applyCreateOrUpdate(admin: any, input: {
   return String(row.id);
 }
 
-async function applyRetirement(admin: any, input: {
+async function applyRetirement(admin: LearningAdminClient, input: {
   reviewRunId: string;
   selection: UniversalLearningRunSelection;
   action: UniversalLearningMemoryAction;
@@ -1368,7 +1371,7 @@ export async function applyUniversalLearningMemoryActions(input: {
     recordsBySourceId,
   });
 
-  const admin = createAdminSupabaseClient() as any;
+  const admin = createAdminSupabaseClient();
   const learnings = flattenLearnings(provenanceNormalizedResponse);
   let appliedCount = 0;
 

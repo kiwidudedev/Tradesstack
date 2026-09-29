@@ -88,7 +88,8 @@ describe("Opportunity Files workspace", () => {
     expect(markup).not.toContain("Drop files here");
     expect(markup.indexOf("Upload files")).toBeLessThan(markup.indexOf("New folder"));
     expect(markup.indexOf("New folder")).toBeLessThan(markup.indexOf("Recycle bin"));
-    expect(markup).toContain('data-folder="Files root"');
+    expect(markup).toContain('<span aria-current="page"');
+    expect(markup).toContain(">Files</span>");
   });
 
   it("renders folders and files in a semantic responsive table", () => {

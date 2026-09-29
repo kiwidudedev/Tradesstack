@@ -22,8 +22,7 @@ export function WorksheetSelectedCellsDisclosure({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-[var(--text-primary)]">Commercial line</p>
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={() => setShowSelectedCells((current) => !current)}
@@ -35,7 +34,6 @@ export function WorksheetSelectedCellsDisclosure({
 
       {showSelectedCells ? (
         <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm text-[var(--text-secondary)]">
-          <p className="font-medium text-[var(--text-primary)]">Selected cells</p>
           <p className="mt-1">{sourceRangeLabel}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {selectedValues.length > 0 ? (
@@ -93,27 +91,11 @@ export function CommercialLineConfirmationEditor<TLine extends CommercialLineDra
         />
 
         <div className="space-y-4">
-          {lines.map((line, index) => (
+          {lines.map((line) => (
             <article
               key={line.id}
               className="rounded-[16px] border border-[var(--border)] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
             >
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-[var(--text-primary)]">
-                  {multipleLines ? `Commercial line ${index + 1}` : "Commercial line"}
-                </p>
-                {multipleLines ? (
-                  <button
-                    type="button"
-                    onClick={() => onRemoveLine(line.id)}
-                    className="text-xs font-medium text-[var(--text-secondary)]"
-                    disabled={isSubmitting}
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </div>
-
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,0.8fr))]">
                 {[
                   ["Description", "description", "text"],
@@ -144,6 +126,19 @@ export function CommercialLineConfirmationEditor<TLine extends CommercialLineDra
               </div>
 
               {renderLineExtras ? renderLineExtras(line) : null}
+
+              {multipleLines ? (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onRemoveLine(line.id)}
+                    disabled={isSubmitting}
+                    className="text-xs font-medium text-[var(--text-secondary)] disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
             </article>
           ))}
         </div>

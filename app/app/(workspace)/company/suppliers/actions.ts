@@ -7,10 +7,9 @@ import {
   saveSupplier,
   setSupplierActiveState,
   SupplierDuplicateWarningError,
-  SupplierValidationError,
 } from "@/lib/supplier-service";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { SupplierWriteInput } from "@/lib/supplier-validation";
+import { SupplierValidationError, type SupplierWriteInput } from "@tradesstack/suppliers";
 import type { SupplierDuplicateWarning } from "@/lib/suppliers";
 import {
   createAndLinkXeroContactFromSupplier,

@@ -1,0 +1,9 @@
+{
+  "name": "tradesstack-application-shell-release-proof",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "proof": "node scripts/run-release-upgrade-proof.mjs"
+  }
+}

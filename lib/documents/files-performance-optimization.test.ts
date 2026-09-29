@@ -14,7 +14,7 @@ describe("Files performance optimization contracts", () => {
     const page = source(file);
     expect(page).not.toContain("listDocumentFolders");
     expect(page).not.toContain("getDocumentStorageUsage");
-    expect(page).toContain("FilesContext");
+    expect(page).toMatch(/get(?:Project|Opportunity)FilesEntry/);
   });
 
   it("loads Move destinations only from the on-demand authorized endpoint", () => {

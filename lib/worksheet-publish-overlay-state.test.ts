@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 
 const registerPagePath = join(
   process.cwd(),
-  "app/app/(workspace)/leads-clients/opportunities/[opportunityId]/pricing-worksheet/page.tsx",
+  "components/app/PricingWorksheetRegisterPage.tsx",
+);
+
+const overlayLifecyclePath = join(
+  process.cwd(),
+  "lib/pricing-worksheet-overlay-lifecycle.ts",
 );
 
 const worksheetBoardPath = join(
@@ -14,11 +19,13 @@ const worksheetBoardPath = join(
 
 describe("worksheet publish overlay state", () => {
   const registerPageSource = readFileSync(registerPagePath, "utf8");
+  const overlayLifecycleSource = readFileSync(overlayLifecyclePath, "utf8");
   const worksheetBoardSource = readFileSync(worksheetBoardPath, "utf8");
 
   it("restores the active worksheet overlay from pathname, history state, or persisted overlay state if the register page remounts", () => {
-    expect(registerPageSource).toContain("function resolveOverlayWorksheetIdFromPathname");
-    expect(registerPageSource).toContain("function resolveOverlayWorksheetIdFromHistoryState");
+    expect(registerPageSource).toContain("resolveOverlayWorksheetIdFromPathname");
+    expect(overlayLifecycleSource).toContain("resolveRestoredPricingWorksheetId");
+    expect(overlayLifecycleSource).toContain("historyState");
     expect(registerPageSource).toContain("function readPersistedOverlayWorksheetId");
     expect(registerPageSource).toContain("function writePersistedOverlayWorksheetId");
     expect(registerPageSource).toContain("const overlayWorksheetIdFromPathname = useMemo(");
@@ -33,9 +40,9 @@ describe("worksheet publish overlay state", () => {
   it("captures the worksheet selection before closing the context menu and blocks default click behavior", () => {
     expect(worksheetBoardSource).toContain("function cloneWorksheetSelectionRange");
     expect(worksheetBoardSource).toContain("const preservedRange = cloneWorksheetSelectionRange(range);");
-    expect(worksheetBoardSource).toContain("beginWorksheetPublishToQuote(preservedRange, preservedSelectionRanges)");
-    expect(worksheetBoardSource).toContain("beginWorksheetPublishToPurchaseOrder(preservedRange, preservedSelectionRanges)");
-    expect(worksheetBoardSource).toContain("beginWorksheetPublishToVariation(preservedRange, preservedSelectionRanges)");
+    expect(worksheetBoardSource).toContain("startQuoteCommercialMapping(preservedRange, preservedSelectionRanges, startingCell)");
+    expect(worksheetBoardSource).toContain("startPurchaseOrderCommercialMapping(preservedRange, preservedSelectionRanges, startingCell)");
+    expect(worksheetBoardSource).toContain("startVariationCommercialMapping(preservedRange, preservedSelectionRanges, startingCell)");
     expect(worksheetBoardSource).toContain("event.preventDefault();");
     expect(worksheetBoardSource).toContain("event.stopPropagation();");
     expect(worksheetBoardSource).toContain("onMouseDown={(event) => {");
@@ -50,8 +57,8 @@ describe("worksheet publish overlay state", () => {
     expect(worksheetBoardSource).toContain("toggleWorksheetRowSelection(current, worksheetRef.current, rowIndex)");
     expect(worksheetBoardSource).toContain("toggleWorksheetColumnSelection(current, worksheetRef.current, columnIndex)");
     expect(worksheetBoardSource).toContain("const preservedSelectionRanges = cloneWorksheetSelectionRanges(getContextMenuSelectionRanges(contextMenu));");
-    expect(worksheetBoardSource).toContain("beginWorksheetPublishToQuote(preservedRange, preservedSelectionRanges)");
-    expect(worksheetBoardSource).toContain("beginWorksheetPublishToPurchaseOrder(preservedRange, preservedSelectionRanges)");
+    expect(worksheetBoardSource).toContain("startQuoteCommercialMapping(preservedRange, preservedSelectionRanges, startingCell)");
+    expect(worksheetBoardSource).toContain("startPurchaseOrderCommercialMapping(preservedRange, preservedSelectionRanges, startingCell)");
   });
 
   it("does not navigate to a quote route from the worksheet publish board", () => {

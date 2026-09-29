@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { OpportunityPricingWorksheetBoard } from "@/components/app/OpportunityPricingWorksheetBoard";
 import { PricingWorksheetOwnerProvider } from "@/components/app/PricingWorksheetOwnerProvider";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { countPricingWorksheetPerformance } from "@/lib/pricing-worksheet-performance";
 import type { PricingWorksheetOwnerContextValue } from "@/lib/pricing-worksheet-owner";
 
@@ -33,6 +33,9 @@ export const PricingWorksheetOverlayDialog = memo(function PricingWorksheetOverl
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogTitle className="sr-only">Pricing worksheet editor</DialogTitle>
+        <DialogDescription className="sr-only">
+          Edit worksheet cells, mappings, and commercial outputs.
+        </DialogDescription>
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-hidden">
             <PricingWorksheetOwnerProvider owner={owner}>

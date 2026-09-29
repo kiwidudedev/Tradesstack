@@ -19,6 +19,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 type Row = Record<string, unknown>;
 type TableData = Record<string, Row[]>;
 
+// Learning payloads are schema-flexible JSON packets; these tests inspect their known runtime shape.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LearningPayloadRecord = Record<string, any>;
+
 function parseScalar(raw: string) {
   const trimmed = raw.trim();
   if (trimmed === "null") {
@@ -484,7 +488,7 @@ describe("Universal learning builders monthly selection", () => {
       "sourceEvidence",
     ]);
 
-    const payload = record?.payload as Record<string, any>;
+    const payload = record?.payload as LearningPayloadRecord;
     expect(payload.sourceEvidence.worksheetIdentity).toMatchObject({
       workbookId: "workbook-1",
       workbookName: "Level 3 Partitions",
@@ -812,7 +816,7 @@ describe("Universal learning builders monthly selection", () => {
       organization_cost_code_idValues: ["org-cost-1"],
     });
 
-    const payload = record?.payload as Record<string, any>;
+    const payload = record?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -1193,7 +1197,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(record.routingContext).toEqual({ readOnly: true });
     expect(record.signalStrength).toBe("strong");
 
-    const payload = record.payload as Record<string, any>;
+    const payload = record.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -1419,7 +1423,7 @@ describe("Universal learning builders monthly selection", () => {
       updatedAt: "2026-06-20T12:00:00.000Z",
       id: "task-attachment-cursor-1",
     });
-    expect((result.records[0]?.payload as Record<string, any>).sourceEvidence.attachmentSummary).toMatchObject({
+    expect((result.records[0]?.payload as LearningPayloadRecord).sourceEvidence.attachmentSummary).toMatchObject({
       attachmentCount: 1,
       attachmentNames: ["closeout-proof.pdf"],
     });
@@ -1547,7 +1551,7 @@ describe("Universal learning builders monthly selection", () => {
       updatedAt: "2026-06-21T09:30:00.000Z",
       id: "task-link-cursor-1",
     });
-    expect((result.records[0]?.payload as Record<string, any>).sourceEvidence.taskLinkSummary).toMatchObject({
+    expect((result.records[0]?.payload as LearningPayloadRecord).sourceEvidence.taskLinkSummary).toMatchObject({
       taskLinkCount: 1,
       linkedTypes: ["quality_issue"],
     });
@@ -1893,7 +1897,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(corrected?.clientId).toBe("client-1");
     expect(corrected?.routingContext).toEqual({ readOnly: true });
 
-    const payload = corrected?.payload as Record<string, any>;
+    const payload = corrected?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -2022,13 +2026,13 @@ describe("Universal learning builders monthly selection", () => {
       sourceTable: "takeoff_measurements",
     });
 
-    expect((created?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("created");
-    expect((archived?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("archived");
-    expect((restored?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("restored");
-    expect((deleted?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("deleted");
-    expect((incomplete?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("incomplete_measurement");
-    expect((incomplete?.payload as Record<string, any>).operationalContext.geometryCompleteness.hasCalibration).toBe(false);
-    expect((incomplete?.payload as Record<string, any>).sourceEvidence.calibration.calibrationAvailability).toBe("missing");
+    expect((created?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("created");
+    expect((archived?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("archived");
+    expect((restored?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("restored");
+    expect((deleted?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("deleted");
+    expect((incomplete?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("incomplete_measurement");
+    expect((incomplete?.payload as LearningPayloadRecord).operationalContext.geometryCompleteness.hasCalibration).toBe(false);
+    expect((incomplete?.payload as LearningPayloadRecord).sourceEvidence.calibration.calibrationAvailability).toBe("missing");
   });
 
   it("enriches project quotes into a trust-boundary packet focused on estimating evidence", async () => {
@@ -2412,7 +2416,7 @@ describe("Universal learning builders monthly selection", () => {
       id: "opportunity_quotes:op-quote-1",
     });
 
-    const payload = result.records[0]?.payload as Record<string, any>;
+    const payload = result.records[0]?.payload as LearningPayloadRecord;
     expect(payload.sourceEvidence.quote).toMatchObject({
       sourceId: "op-quote-1",
       quoteSourceType: "opportunity_quote",
@@ -2839,7 +2843,7 @@ describe("Universal learning builders monthly selection", () => {
       organization_cost_code_idValues: ["org-cost-code-variation-1", "org-cost-code-variation-2"],
     });
 
-    const payload = variation?.payload as Record<string, any>;
+    const payload = variation?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -3461,7 +3465,7 @@ describe("Universal learning builders monthly selection", () => {
         totalAttachmentCount: 2,
       },
     });
-    const sourceEvidence = payload.sourceEvidence as Record<string, any>;
+    const sourceEvidence = payload.sourceEvidence as LearningPayloadRecord;
     expect(sourceEvidence.billLines).toHaveLength(2);
     expect(sourceEvidence.billLines[0]).toMatchObject({
       lineId: "line-1",
@@ -4397,7 +4401,7 @@ describe("Universal learning builders monthly selection", () => {
       organization_cost_code_id: "org-cost-code-1",
     });
 
-    const payload = allocation1?.payload as Record<string, any>;
+    const payload = allocation1?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -4531,21 +4535,21 @@ describe("Universal learning builders monthly selection", () => {
       sourceTable: "supplier_invoice_line_allocations",
     });
 
-    expect((allocation4?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("reversed");
-    expect((allocation4?.payload as Record<string, any>).sourceEvidence.actualCostEventSummary).toMatchObject({
+    expect((allocation4?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("reversed");
+    expect((allocation4?.payload as LearningPayloadRecord).sourceEvidence.actualCostEventSummary).toMatchObject({
       postedEventCount: 1,
       reversalEventCount: 1,
       reversalEventIds: ["event-5"],
     });
-    expect((allocation4?.payload as Record<string, any>).sourceEvidence.correctionChainSummary).toMatchObject({
+    expect((allocation4?.payload as LearningPayloadRecord).sourceEvidence.correctionChainSummary).toMatchObject({
       editState: "reversed",
       supersedesAllocationId: null,
       successorAllocationIds: ["allocation-5"],
     });
 
-    expect((allocation5?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("corrected");
-    expect((allocation5?.payload as Record<string, any>).sourceEvidence.allocation.acceptedAiSuggestion).toBe(true);
-    expect((allocation5?.payload as Record<string, any>).lineageContext).toMatchObject({
+    expect((allocation5?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("corrected");
+    expect((allocation5?.payload as LearningPayloadRecord).sourceEvidence.allocation.acceptedAiSuggestion).toBe(true);
+    expect((allocation5?.payload as LearningPayloadRecord).lineageContext).toMatchObject({
       supersedesAllocationId: "allocation-4",
       successorAllocationIds: [],
       projectId: "project-2",
@@ -4994,7 +4998,7 @@ describe("Universal learning builders monthly selection", () => {
       organization_cost_code_id: "org-cost-code-1",
     });
 
-    const payload = event1?.payload as Record<string, any>;
+    const payload = event1?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -5122,22 +5126,22 @@ describe("Universal learning builders monthly selection", () => {
       sourceTable: "project_actual_cost_events",
     });
 
-    expect((event2?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("reversed");
-    expect((event2?.payload as Record<string, any>).sourceEvidence.correctionOrReversalSummary).toMatchObject({
+    expect((event2?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("reversed");
+    expect((event2?.payload as LearningPayloadRecord).sourceEvidence.correctionOrReversalSummary).toMatchObject({
       reversesEventId: "event-1",
       reversalReason: "Posting discrepancy",
       reversalNotePresent: true,
     });
 
-    expect((event3?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("reposted");
-    expect((event3?.payload as Record<string, any>).sourceEvidence.sourceAllocation.acceptedAiSuggestion).toBe(true);
+    expect((event3?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("reposted");
+    expect((event3?.payload as LearningPayloadRecord).sourceEvidence.sourceAllocation.acceptedAiSuggestion).toBe(true);
 
-    expect((event4?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("manual_adjustment_posted");
-    expect((event4?.payload as Record<string, any>).operationalContext.isManualAdjustment).toBe(true);
+    expect((event4?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("manual_adjustment_posted");
+    expect((event4?.payload as LearningPayloadRecord).operationalContext.isManualAdjustment).toBe(true);
 
-    expect((event5?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("incomplete_lineage");
-    expect((event5?.payload as Record<string, any>).operationalContext.lineageCompleteness.hasAllocationLineage).toBe(false);
-    expect((event5?.payload as Record<string, any>).lineageContext).toMatchObject({
+    expect((event5?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("incomplete_lineage");
+    expect((event5?.payload as LearningPayloadRecord).operationalContext.lineageCompleteness.hasAllocationLineage).toBe(false);
+    expect((event5?.payload as LearningPayloadRecord).lineageContext).toMatchObject({
       projectId: "project-2",
       clientId: "client-2",
       supplierId: "supplier-2",
@@ -5678,7 +5682,7 @@ describe("Universal learning builders monthly selection", () => {
       accounting_mapping_id: ["mapping-1", "mapping-2"],
     });
 
-    const payload = submitted?.payload as Record<string, any>;
+    const payload = submitted?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineage",
       "operationalContext",
@@ -5812,11 +5816,11 @@ describe("Universal learning builders monthly selection", () => {
       }),
     ]);
 
-    expect((overdue?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("submitted_overdue");
-    expect((paid?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("paid");
-    expect((paid?.payload as Record<string, any>).sourceEvidence.retention.releasedThisClaim).toBe(500);
-    expect((incomplete?.payload as Record<string, any>).operationalContext.lifecycleStage).toBe("draft");
-    expect((incomplete?.payload as Record<string, any>).operationalContext.evidenceStrength).toBe("weak");
+    expect((overdue?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("submitted_overdue");
+    expect((paid?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("paid");
+    expect((paid?.payload as LearningPayloadRecord).sourceEvidence.retention.releasedThisClaim).toBe(500);
+    expect((incomplete?.payload as LearningPayloadRecord).operationalContext.lifecycleStage).toBe("draft");
+    expect((incomplete?.payload as LearningPayloadRecord).operationalContext.evidenceStrength).toBe("weak");
   });
 
   it("enriches organization materials into a dedicated catalogue-only trust-boundary packet", async () => {
@@ -6100,7 +6104,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(JSON.stringify(material?.routingContext)).not.toContain("cost_type");
     expect(JSON.stringify(material?.routingContext)).not.toContain("internal_cost_code");
 
-    const payload = material?.payload as Record<string, any>;
+    const payload = material?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",
@@ -6508,7 +6512,7 @@ describe("Universal learning builders monthly selection", () => {
     expect(JSON.stringify(batch?.routingContext)).not.toContain("cost_type");
     expect(JSON.stringify(batch?.routingContext)).not.toContain("internal_cost_code");
 
-    const payload = batch?.payload as Record<string, any>;
+    const payload = batch?.payload as LearningPayloadRecord;
     expect(Object.keys(payload).sort()).toEqual([
       "lineageContext",
       "operationalContext",

@@ -27,7 +27,8 @@ describe("Stage 3 legacy-only Opportunity creation cutover", () => {
 
   it("keeps lifecycle strategy under trusted database control", () => {
     const code = source(serverPath);
-    expect(code).toContain('create_opportunity_workspace_controlled_v1');
+    expect(code).toContain('getCurrentOrganizationMember');
+    expect(code).toContain('opportunityCreationStrategy = "control-selected"');
     expect(code).not.toMatch(/p_strategy\s*:/);
     expect(source("lib/opportunity-creation-contract.ts")).not.toMatch(
       /^\s*strategy\??:/m,

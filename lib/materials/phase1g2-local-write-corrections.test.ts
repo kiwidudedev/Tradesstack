@@ -57,7 +57,7 @@ describe("Phase 1G.2 local price completion", () => {
     expect(handler).toContain("setIsSavingSupplierPrice(true)");
     expect(handler).toContain("setIsAddPriceOpen(false)");
     expect(handler).toContain("supplierPriceOperationIdRef.current = crypto.randomUUID()");
-    expect(handler).toContain("setSupplierPriceForm(EMPTY_PRICE_FORM)");
+    expect(handler).toContain("setSupplierPriceForm(emptyPriceForm(initialData.companyCurrency))");
     expect(handler).toContain("router.refresh()");
     expect(handler).toContain("finally");
     expect(handler).toContain("setIsSavingSupplierPrice(false)");
@@ -66,7 +66,7 @@ describe("Phase 1G.2 local price completion", () => {
     expect(workspace).toContain('{error ? <OperationalAlert variant="error">{error}</OperationalAlert> : null}');
 
     expect(handler.indexOf("setIsAddPriceOpen(false)")).toBeLessThan(
-      handler.indexOf("router.refresh()"),
+      handler.lastIndexOf("router.refresh()"),
     );
   });
 

@@ -25,7 +25,11 @@ describe("Stage 3 completion contracts", () => {
       "app/app/(workspace)/projects/[projectId]/preconstruction/claims/[claimId]/PaymentClaimDetailClient.tsx",
     ]) {
       const source = read(path);
-      expect(source).toContain("resolveAuthoritativeContractualBaseline");
+      expect(source).toContain(
+        path.includes("ProjectDashboardBoard")
+          ? "get_project_dashboard_aggregate"
+          : "resolveAuthoritativeContractualBaseline",
+      );
       expect(source).not.toContain('left.status === "Accepted"');
       expect(source).not.toContain('right.status === "Accepted"');
     }

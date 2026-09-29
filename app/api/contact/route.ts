@@ -11,12 +11,15 @@ export async function POST(req: Request) {
 
   try {
     const resend = new Resend(apiKey);
+    const from = process.env.RESEND_CONTACT_FROM_EMAIL?.trim()
+      || "Corey – TradesStack <hello@mail.tradesstack.com>";
+    const to = process.env.CONTACT_RECIPIENT_EMAIL?.trim() || "hi@tradesstack.com";
     const body = await req.json();
     const { firstName, lastName, email, phone, country, message } = body;
 
     const { data, error } = await resend.emails.send({
-      from: "Corey – TradesStack <hello@mail.tradesstack.com>",
-      to: "hi@tradesstack.com",
+      from,
+      to,
       replyTo: email,
       subject: "New Contact Form Submission",
       html: `

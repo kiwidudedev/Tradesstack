@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "node": "22.22.2",
+  "npm": "11.6.2",
+  "next": "16.3.3",
+  "source": "package.json engines/packageManager and declared Next dependency"
+}

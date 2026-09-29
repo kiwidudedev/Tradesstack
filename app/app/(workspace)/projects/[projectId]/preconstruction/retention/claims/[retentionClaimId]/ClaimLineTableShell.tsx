@@ -19,34 +19,34 @@ export function ClaimLineTableShell({
   return (
     <>
       <section className="border-b border-[var(--border-subtle)] py-5">
-        <button
-          type="button"
-          onClick={() => setIsOpen((current) => !current)}
-          className="flex w-full items-center justify-between"
-        >
-          <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>
-            {title}
-          </h2>
+        <div className="flex w-full items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setIsOpen((current) => !current)}
+            className="flex min-w-0 flex-1 items-center justify-between text-left"
+            aria-expanded={isOpen}
+          >
+            <h2 className={`${interMedium.className} ${styles.quoteSectionTitle}`}>
+              {title}
+            </h2>
+            <ChevronDown
+              className={`mr-2 h-4 w-4 shrink-0 text-[var(--text-secondary)] transition-transform ${
+                isOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
           <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsExpanded(true);
-              }}
+              onClick={() => setIsExpanded(true)}
               className={`${styles.quoteButtonLabel} h-9 rounded-full border-[var(--border)] bg-[var(--surface-muted)] px-4`}
             >
               <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
               Expand
             </Button>
-            <ChevronDown
-              className={`h-4 w-4 text-[var(--text-secondary)] transition-transform ${
-                isOpen ? "rotate-180" : ""
-              }`}
-            />
           </div>
-        </button>
+        </div>
         {isOpen ? <div className="mt-4 space-y-4">{children}</div> : null}
       </section>
 

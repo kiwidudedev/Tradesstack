@@ -2,17 +2,17 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { getSupplierDisplayName, type OrganizationSupplierRow } from "@/lib/suppliers";
+import type { SupplierReference } from "@tradesstack/suppliers";
 import { interMedium } from "@/lib/fonts";
 
 type SupplierPickerProps = {
-  suppliers: OrganizationSupplierRow[];
+  suppliers: SupplierReference[];
   searchQuery: string;
   isOpen: boolean;
   onSearchQueryChange: (value: string) => void;
   onOpenChange: (value: boolean) => void;
   onClearSelection: () => void;
-  onSelectSupplier: (supplier: OrganizationSupplierRow) => void;
+  onSelectSupplier: (supplier: SupplierReference) => void;
   onCreateNew: () => void;
   placeholder?: string;
   disabled?: boolean;
@@ -51,7 +51,7 @@ export function SupplierPicker({
         <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[8px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_14px_28px_rgba(15,23,42,0.14)]">
           {suppliers.length > 0 ? (
             suppliers.map((supplier) => {
-              const label = getSupplierDisplayName(supplier);
+              const label = supplier.displayName;
               return (
                 <button
                   key={supplier.id}
@@ -64,7 +64,7 @@ export function SupplierPicker({
                   className={`${interMedium.className} flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--surface-muted)]`}
                 >
                   <span className="truncate">{label}</span>
-                  {!supplier.is_active ? (
+                  {!supplier.isActive ? (
                     <Badge variant="secondary" className="bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                       Inactive
                     </Badge>

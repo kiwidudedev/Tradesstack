@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { listCommercialItemsByIds } from "./commercial-items/service";
+import type { CommercialItemsClient } from "./commercial-items/types";
 
 function resolveCatalogDatabaseUrl() {
   const raw = process.env.SUPABASE_DB_URL ?? process.env.DATABASE_URL ?? "";
@@ -60,6 +62,34 @@ describe.runIf(Boolean(catalogDbUrl))("commercial items security catalog", () =>
 
     expect(result.rows[0]?.anon_execute).toBe(false);
     expect(result.rows[0]?.authenticated_execute).toBe(false);
+  });
+
+  it("allows authenticated reads of every column used to reload published commercial items", async () => {
+    let projection = "";
+    const queryClient = {
+      from: () => ({
+        select: (columns: string) => {
+          projection = columns;
+          return { eq: () => ({ in: async () => ({ data: [], error: null }) }) };
+        },
+      }),
+    } as unknown as CommercialItemsClient;
+
+    await listCommercialItemsByIds(queryClient, {
+      organizationId: "catalog-test",
+      commercialItemIds: ["catalog-test"],
+    });
+    const columns = projection.split(",").map((column) => column.trim());
+    expect(columns).toContain("source_takeoff_measurement_id");
+    expect(columns).not.toContain("locked_metadata_json");
+
+    const result = await client.query<{ column_name: string; can_read: boolean }>(`
+      select column_name,
+        has_column_privilege('authenticated', 'public.commercial_items', column_name, 'SELECT') as can_read
+      from unnest($1::text[]) as column_name
+    `, [columns]);
+
+    expect(result.rows.filter((row) => !row.can_read)).toEqual([]);
   });
 
   it("keeps default commercial item rpc results free of locked metadata", async () => {

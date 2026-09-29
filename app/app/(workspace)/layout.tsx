@@ -5,10 +5,12 @@ import { SidebarStateProvider } from "@/components/app/SidebarState";
 import { Topbar } from "@/components/app/Topbar";
 import { WorkspaceSidebarBackdrop } from "@/components/app/WorkspaceSidebarBackdrop";
 import { getCurrentOrganizationBranding } from "@/lib/branding-server";
+import { getMasterClientConfig } from "@/lib/client-config";
 import { hasOrganizationPermission } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+  const clientConfig = getMasterClientConfig();
   const [branding, member] = await Promise.all([
     getCurrentOrganizationBranding(),
     getCurrentOrganizationMember(),
@@ -22,8 +24,8 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
 
   return (
     <BrandThemeProvider
-      platformColor={branding.platformColor}
-      actionColor={branding.actionColor}
+      platformColor={branding.platformColor ?? clientConfig.theme.platformColor}
+      actionColor={branding.actionColor ?? clientConfig.theme.actionColor}
     >
       <SidebarStateProvider>
         <div className="relative min-h-screen bg-[var(--background)]">

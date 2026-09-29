@@ -1,0 +1,28 @@
+{
+  "phase": "1V-G",
+  "scope": "local-only",
+  "generatedAt": "2026-09-27",
+  "authoritativeCommands": ["corepack npm run lint:release", "corepack npm run test:release", "corepack npm run typecheck:release", "corepack npm run ops:validate-release", "corepack npm run ops:prehosting"],
+  "observedTestFailureCount": 32,
+  "openTestFailureCount": 0,
+  "baselineLintErrors": 101,
+  "baselineLintWarnings": 157,
+  "finalLintErrors": 0,
+  "finalLintWarnings": 156,
+  "records": [
+    {"id":"T01","files":["lib/ai-pricing-worksheet-edit-assistant.test.ts"],"count":1,"category":"C","status":"resolved","evidence":"Matched explicitly disabled web-search configuration and audit metadata."},
+    {"id":"T02","files":["lib/cost-construction-intelligence-outbox.test.ts"],"count":1,"category":"B","status":"resolved","evidence":"Added current upsert/select/limit and insert behavior to the admin test double."},
+    {"id":"T03","files":["lib/material-tax-normalization-migration.test.ts"],"count":1,"category":"C","status":"resolved","evidence":"Matched the current JSON-compatible AFTER UPDATE trigger contract."},
+    {"id":"T04","files":["lib/opportunity-promotion-stage3-completion.contract.test.ts","lib/opportunity-promotion-stage3-cutover.test.ts","lib/opportunity-promotion-stage5-migration.test.ts","lib/opportunity-promotion-stage6-migration.test.ts","lib/opportunity-promotion-stage7-migration.test.ts"],"count":5,"category":"C","status":"resolved","evidence":"Matched current compatibility creation, aggregate-RPC, and controlled promotion paths."},
+    {"id":"T05","files":["lib/organization-memory-inspection.test.ts"],"count":6,"category":"B","status":"resolved","evidence":"Added newer construction-memory, evidence-pool, and intelligence-event tables to the inspection mock."},
+    {"id":"T06","files":["lib/organization-memory-retirement.test.ts"],"count":1,"category":"C","status":"resolved","evidence":"Used a current relative grace-period fixture; worker semantics unchanged."},
+    {"id":"T07","files":["lib/worksheet-publish-overlay-state.test.ts"],"count":3,"category":"C","status":"resolved","evidence":"Matched shared register/lifecycle authority and explicit commercial-mapping context-menu flow."},
+    {"id":"T08","files":["components/app/add-supplier-dialog-presentation.test.ts"],"count":1,"category":"C","status":"resolved","evidence":"Matched shared supplier combobox contract."},
+    {"id":"T09","files":["lib/documents/files-performance-optimization.test.ts"],"count":2,"category":"C","status":"resolved","evidence":"Matched current files-context server entry points."},
+    {"id":"T10","files":["lib/materials/phase1g2-local-write-corrections.test.ts"],"count":1,"category":"C","status":"resolved","evidence":"Matched parameterized company-currency reset helper."},
+    {"id":"T11","files":["lib/materials/service.test.ts"],"count":7,"category":"B","status":"resolved","evidence":"Expanded materials query/RPC double and supplied supplier-product lineage."},
+    {"id":"T12","files":["app/api/internal/organization-memory-retirement/routes.test.ts","app/api/internal/worksheet-memory-synthesis/routes.test.ts"],"count":2,"category":"B","status":"resolved","evidence":"Enabled exactly the named background job in each route fixture."},
+    {"id":"T13","files":["components/app/files/FilesWorkspace.test.tsx"],"count":1,"category":"C","status":"resolved","evidence":"Matched current accessible Files breadcrumb contract."},
+    {"id":"L01","files":["maintained release lint set"],"count":258,"category":"B","status":"resolved","evidence":"Reduced release lint from 101 errors/157 warnings to 0 errors/156 warnings; warnings remain reported."}
+  ]
+}

@@ -7,6 +7,9 @@ import {
   type WorksheetPricingSummary,
 } from "@/lib/opportunity-pricing-worksheet-defaults";
 import type { Database, Json } from "@/lib/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+type PricingWorkbookSupabaseClient = SupabaseClient<Database>;
 
 const LEGACY_DEFAULT_SHEET_ID_PREFIX = "legacy-default-sheet:";
 
@@ -123,7 +126,7 @@ type CreateWorkbookParams = {
   pricingSummary: WorksheetPricingSummary;
   quoteId?: string | null;
   saveRequestId?: string | null;
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   tradePackage: string | null;
   userId: string;
   variationId?: string | null;
@@ -568,6 +571,8 @@ function normalizePricingWorkbookOwnerScope(
   };
 }
 
+// The query builder is passed through several owner-scope filters.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyWorkbookOwnerFilters(query: any, owner: PricingWorkbookOwnerScope) {
   const normalizedOwner = normalizePricingWorkbookOwnerScope(owner);
 
@@ -597,7 +602,7 @@ function applyWorkbookOwnerFilters(query: any, owner: PricingWorkbookOwnerScope)
 }
 
 async function loadWorkbookParentRow(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
@@ -635,7 +640,7 @@ async function loadWorkbookParentRow(params: {
 }
 
 async function loadWorkbookSheetRows(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   workbookId: string;
   organizationId: string;
   owner: PricingWorkbookOwnerScope;
@@ -661,7 +666,7 @@ async function loadWorkbookSheetRows(params: {
 }
 
 export async function loadOpportunityPricingWorkbook(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
@@ -695,7 +700,7 @@ export async function loadOpportunityPricingWorkbook(params: {
 }
 
 export async function setOpportunityPricingWorkbookLastActiveSheet(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
@@ -797,7 +802,7 @@ export async function saveOpportunityPricingWorkbookActiveSheet(
   };
   const normalizedPricingSummary = normalizePricingSummary(params.pricingSummary as unknown as Json);
   let persistedQuoteId = normalizedOwner.quoteId;
-  if (normalizedOwner.kind === "project" && params.workbookId) {
+  if (normalizedOwner.kind === "project" && normalizedOwner.projectId && params.workbookId) {
     const { data: ownedWorkbook, error: ownerError } = await params.supabase
       .from("opportunity_pricing_worksheets")
       .select("quote_id")
@@ -842,7 +847,7 @@ export async function saveOpportunityPricingWorkbookActiveSheet(
 }
 
 export async function renameOpportunityPricingWorkbook(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string;
   projectId?: string | null;
@@ -877,7 +882,7 @@ export async function renameOpportunityPricingWorkbook(params: {
 }
 
 export async function duplicateOpportunityPricingWorkbook(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string;
   projectId?: string | null;
@@ -909,7 +914,7 @@ export async function duplicateOpportunityPricingWorkbook(params: {
 }
 
 export async function createOpportunityPricingWorkbookSheet(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
@@ -980,7 +985,7 @@ export async function createOpportunityPricingWorkbookSheet(params: {
 }
 
 export async function renameOpportunityPricingWorkbookSheet(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;
@@ -1071,7 +1076,7 @@ export async function renameOpportunityPricingWorkbookSheet(params: {
 }
 
 export async function deleteOpportunityPricingWorkbookSheet(params: {
-  supabase: any;
+  supabase: PricingWorkbookSupabaseClient;
   organizationId: string;
   opportunityId: string | null;
   projectId?: string | null;

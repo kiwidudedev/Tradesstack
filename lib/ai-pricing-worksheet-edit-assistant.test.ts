@@ -1197,8 +1197,8 @@ describe("buildPricingWorksheetEditAssistantPreview", () => {
       },
     });
 
-    expect(result.providerAudit.webSearchEnabled).toBe(true);
-    expect(result.preview.storageSummary.webSearchEnabled).toBe(true);
+    expect(result.providerAudit.webSearchEnabled).toBe(false);
+    expect(result.preview.storageSummary.webSearchEnabled).toBe(false);
   });
 
   it("fails safely when anthropic is selected without an Anthropic API key", async () => {

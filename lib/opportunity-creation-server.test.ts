@@ -50,6 +50,27 @@ describe("authoritative Opportunity creation service", () => {
     });
   });
 
+  it("recognizes the current lifecycle-default activation error for compatibility fallback", async () => {
+    process.env.OPPORTUNITY_CREATION_MODE = "atomic-required";
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: "TS409",
+        message: "Opportunity lifecycle default creation is not enabled",
+      },
+    });
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({ rpc } as never);
+
+    await expect(createOpportunityForCurrentUser({
+      creationRequestId: crypto.randomUUID(),
+      name: "Current activation guard",
+      clientId: crypto.randomUUID(),
+    })).rejects.toMatchObject({
+      status: 503,
+      code: "atomic_creation_not_activated",
+    });
+  });
+
   it("always invokes the trusted control-selected atomic RPC without a browser strategy", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{
@@ -178,6 +199,86 @@ describe("authoritative Opportunity creation service", () => {
     expect(result.recordsCreated).toBe(false);
     expect(result.opportunityId).toBe("33333333-3333-4333-8333-333333333333");
     expect(result.workspaceProjectId).toBe("44444444-4444-4444-8444-444444444444");
+  });
+
+  it("preserves tender-client recipients when the legacy fallback is selected", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: "PGRST202", message: "Opportunity lifecycle creation is not enabled" },
+      })
+      .mockResolvedValueOnce({ data: null, error: null });
+    let opportunityFromCalls = 0;
+    let projectFromCalls = 0;
+    const supabase = {
+      rpc,
+      from: vi.fn((table: string) => {
+        if (table === "organization_opportunities") {
+          opportunityFromCalls += 1;
+          if (opportunityFromCalls === 1) {
+            return {
+              select: () => ({
+                eq: () => ({
+                  like: async () => ({ data: [], error: null }),
+                }),
+              }),
+            };
+          }
+          return {
+            insert: () => ({
+              select: () => ({
+                single: async () => ({
+                  data: { id: "33333333-3333-4333-8333-333333333333", slug: "legacy-stage-3" },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        projectFromCalls += 1;
+        if (projectFromCalls === 1) {
+          return {
+            select: () => ({
+              eq: () => ({
+                like: async () => ({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: () => ({
+            select: () => ({
+              single: async () => ({ data: { id: "44444444-4444-4444-8444-444444444444" }, error: null }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              eq: () => ({
+                is: async () => ({ error: null }),
+              }),
+            }),
+          }),
+        };
+      }),
+    };
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
+
+    await createOpportunityForCurrentUser({
+      creationRequestId: "66666666-6666-4666-8666-666666666666",
+      name: "Legacy Stage 3",
+      clientId: "77777777-7777-4777-8777-777777777777",
+      tenderClientIds: ["88888888-8888-4888-8888-888888888888", "77777777-7777-4777-8777-777777777777"],
+    });
+
+    expect(rpc).toHaveBeenNthCalledWith(2, "sync_opportunity_tender_clients_v1", {
+      p_organization_id: member.organization_id,
+      p_opportunity_id: "33333333-3333-4333-8333-333333333333",
+      p_client_ids: [
+        "88888888-8888-4888-8888-888888888888",
+        "77777777-7777-4777-8777-777777777777",
+      ],
+      p_primary_client_id: "77777777-7777-4777-8777-777777777777",
+    });
   });
 
   it("maps every new-client and form field into the atomic request", async () => {

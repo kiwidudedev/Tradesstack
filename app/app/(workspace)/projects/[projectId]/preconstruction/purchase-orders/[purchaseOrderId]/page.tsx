@@ -28,6 +28,7 @@ import { SupplierInvoiceTeamReviewModal } from "@/components/app/SupplierInvoice
 import { WorksheetSourceLink } from "@/components/app/WorksheetSourceLink";
 import { StatusBadge, type StatusBadgeProps } from "@/components/app/StatusBadge";
 import { SupplierPicker } from "@/components/app/SupplierPicker";
+import type { SupplierReference } from "@tradesstack/suppliers";
 import { PurchaseOrderSupplierPricingDrawer } from "@/components/app/PurchaseOrderSupplierPricingDrawer";
 import { PurchaseOrderImportQuoteDrawer } from "@/components/app/PurchaseOrderImportQuoteDrawer";
 import { PurchaseOrderImportVariationDrawer } from "@/components/app/PurchaseOrderImportVariationDrawer";
@@ -981,6 +982,14 @@ export default function ProjectVariationsPage() {
     }
     return suppliers.filter((supplier) => getSupplierDisplayName(supplier).toLowerCase().includes(query));
   }, [supplierSearchQuery, suppliers]);
+  const filteredSupplierReferences = useMemo<SupplierReference[]>(
+    () => filteredSuppliers.map((supplier) => ({
+      id: supplier.id,
+      displayName: getSupplierDisplayName(supplier),
+      isActive: supplier.is_active,
+    })),
+    [filteredSuppliers],
+  );
   const sourceOptionsById = useMemo(() => {
     const entries = [...quoteSourceOptions, ...variationSourceOptions].map((option) => [option.id, option] as const);
     return new Map(entries);
@@ -2392,7 +2401,7 @@ export default function ProjectVariationsPage() {
                 <div className="space-y-1.5">
                   <label className={styles.quoteBodyLabel}>Issued To</label>
                   <SupplierPicker
-                    suppliers={filteredSuppliers}
+                    suppliers={filteredSupplierReferences}
                     searchQuery={supplierSearchQuery}
                     isOpen={isSupplierMenuOpen}
                     onSearchQueryChange={(value) => {
@@ -2402,8 +2411,8 @@ export default function ProjectVariationsPage() {
                     onOpenChange={setIsSupplierMenuOpen}
                     onClearSelection={() => updateActiveVariation("issuedToSupplierId", "")}
                     onSelectSupplier={(supplier) => {
-                      const label = getSupplierDisplayName(supplier);
                       updateActiveVariation("issuedToSupplierId", supplier.id);
+                      const label = supplier.displayName;
                       updateActiveVariation("issuedToLabel", label);
                       setSupplierSearchQuery(label);
                     }}

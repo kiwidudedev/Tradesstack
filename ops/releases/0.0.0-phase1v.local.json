@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "0.0.0-phase1vr.local",
+  "sourceSha": "361bf3f094a8abbb58d20606413686cebc242e66",
+  "applicationShell": {
+    "releaseId": "0.0.0-phase1r.2",
+    "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
+  },
+  "packageIdentities": {
+    "@tradesstack/core-contracts": "0.0.0",
+    "@tradesstack/client-config": "0.0.0",
+    "@tradesstack/shared-ui": "0.0.0",
+    "@tradesstack/pdf-utils": "0.0.0",
+    "@tradesstack/suppliers": "0.0.0"
+  },
+  "database": {
+    "baseline": "phase1o-1",
+    "baselineSha256": "52ac69bea6587301c9d50fca809847bb077f03471406476b1d01ed2520c5a372",
+    "migrationTarget": "20260927110000_reconcile_required_storage_buckets.sql",
+    "promotionStatus": "LOCAL_BASELINE_AND_STORAGE_RECONCILIATION_PROVEN; CONTROLLED_ALPHA_MANUAL_DEPLOYMENT dpl_2ZKi2DQ9wLCeVjEdeF7PVkBUaByN READY; QUOTE_ROUTE_REMEDIATION_OPEN"
+  },
+  "clientConfig": {
+    "contract": "@tradesstack/client-config@0.0.0",
+    "schemaVersion": 1
+  },
+  "toolchain": {
+    "node": "22.22.2",
+    "npm": "11.6.2",
+    "next": "16.3.3"
+  },
+  "validation": {
+    "status": "LOCAL_CHECKS_REQUIRED",
+    "externalAccess": "PROHIBITED"
+  },
+  "approval": {
+    "fictionalHostedProof": "PENDING_LOCAL_GATE",
+    "realClient": "BLOCKED"
+  },
+  "createdAt": "2026-09-27T00:00:00.000Z"
+}

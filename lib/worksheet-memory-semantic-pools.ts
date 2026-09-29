@@ -3588,7 +3588,7 @@ export async function runWorksheetMemorySemanticPoolWorker(
             })();
 
         const exactEventsById = new Map(batch.events.map((event) => [event.eventId, event] as const));
-        let completed = true;
+        const completed = true;
         let queueOutcome: SemanticGroupingRunDiagnostic["outcome"] = "no_pool";
         let noPoolReasonCode: SemanticNoPoolReasonCode | null = null;
         let noPoolReasonSummary: string | null = null;
@@ -3598,12 +3598,12 @@ export async function runWorksheetMemorySemanticPoolWorker(
         let sourceRevisionHash: string | null = null;
         let stage8QueueInsertCount = 0;
         let reasonSummary: string | null = null;
-        let diagnosticCanonicalTargetSemanticPoolId = batch.existingDomainContext.canonicalTargetSemanticPoolId;
-        let diagnosticCanonicalTargetSelectionReason = batch.existingDomainContext.canonicalTargetSelectionReason;
-        let diagnosticCollapsedAlternativeSemanticPoolIds = batch.existingDomainContext.collapsedAlternativeSemanticPoolIds;
-        let diagnosticCollapsedAlternativeMemoryIds = batch.existingDomainContext.collapsedAlternativeMemoryIds;
-        let diagnosticTargetEquivalenceKey = batch.existingDomainContext.targetEquivalenceKey;
-        let diagnosticTargetRankingInputs: Record<string, Json | null> | null =
+        const diagnosticCanonicalTargetSemanticPoolId = batch.existingDomainContext.canonicalTargetSemanticPoolId;
+        const diagnosticCanonicalTargetSelectionReason = batch.existingDomainContext.canonicalTargetSelectionReason;
+        const diagnosticCollapsedAlternativeSemanticPoolIds = batch.existingDomainContext.collapsedAlternativeSemanticPoolIds;
+        const diagnosticCollapsedAlternativeMemoryIds = batch.existingDomainContext.collapsedAlternativeMemoryIds;
+        const diagnosticTargetEquivalenceKey = batch.existingDomainContext.targetEquivalenceKey;
+        const diagnosticTargetRankingInputs: Record<string, Json | null> | null =
           batch.existingDomainContext.canonicalTargetSemanticPoolId
             ? batch.existingDomainContext.relatedSemanticPools.find((pool) => pool.id === batch.existingDomainContext.canonicalTargetSemanticPoolId)?.targetRankingInputs ?? null
             : null;

@@ -348,7 +348,9 @@ export function CommercialLinePrefixedNumberInput({
     }
 
     const parsed = parseCommercialNumericInput(value);
-    setDisplayValue(parsed === null ? value : formatter(parsed));
+    queueMicrotask(() => {
+      setDisplayValue(parsed === null ? value : formatter(parsed));
+    });
   }, [formatter, isFocused, value]);
 
   return (

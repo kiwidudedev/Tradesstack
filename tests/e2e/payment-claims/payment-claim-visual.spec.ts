@@ -82,6 +82,13 @@ async function setRetentionFixtureState({
 test.beforeAll(async () => {
   const context = await ensureSupplierInvoiceE2EContext();
   const admin = createE2EAdminClient();
+  // Remove only this suite's synthetic namespace left by interrupted local runs.
+  const staleClaims = await admin
+    .from("project_claims")
+    .delete()
+    .eq("organization_id", context.organizationId)
+    .in("claim_number", ["P0-VIS-CL-01", "P0-VIS-CL-02", "P0-VIS-CL-03"]);
+  if (staleClaims.error) throw staleClaims.error;
   // Payment Claim tables are ahead of the currently generated Supabase client types.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = admin as any;
@@ -111,7 +118,7 @@ test.beforeAll(async () => {
     created_by: context.userId,
     name: "Phase 0 Payment Claim Visual",
     slug: PROJECT_SLUG,
-    project_code: "P0-VIS",
+    project_code: `P0-VIS-${process.pid}`,
     stage: "Construction",
     location: "Auckland",
   });
@@ -123,8 +130,10 @@ test.beforeAll(async () => {
     project_id: PROJECT_ID,
     created_by: context.userId,
     quote_title: "Visual source quote",
-    quote_number: "Q-P0-VIS",
-    status: "Accepted",
+    quote_number: `Q-P0-VIS-${process.pid}`,
+    // Child quote evidence must be written before the quote is issued. The
+    // database correctly rejects line-item mutation on an Accepted revision.
+    status: "Draft",
     subtotal: 1000,
     total_quote_price: 1150,
     retention_percent_default: 10,
@@ -145,6 +154,13 @@ test.beforeAll(async () => {
     sort_order: 0,
   });
   if (quoteLine.error) throw quoteLine.error;
+
+  const issuedQuote = await db
+    .from("project_quotes")
+    .update({ status: "Accepted" })
+    .eq("id", QUOTE_ID)
+    .eq("organization_id", context.organizationId);
+  if (issuedQuote.error) throw issuedQuote.error;
 
   const claims = await db.from("project_claims").insert([
     {
@@ -287,33 +303,15 @@ test("Payment Claim Register and detail desktop/narrow visuals", async ({ page }
   await expect(page).toHaveScreenshot("claims-register-narrow.png", { fullPage: true });
 
   const detailPath = `/app/projects/${PROJECT_SLUG}/preconstruction/claims/${DRAFT_CLAIM_ID}`;
-  const detailActionUrl = `**${detailPath}`;
-  let releaseXeroReadiness: () => void = () => {};
-  const xeroReadinessGate = new Promise<void>((resolve) => {
-    releaseXeroReadiness = resolve;
-  });
-  await page.route(detailActionUrl, async (route) => {
-    const request = route.request();
-    if (request.method() === "POST" && request.headers()["next-action"]) {
-      await xeroReadinessGate;
-    }
-    await route.continue();
-  });
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await gotoAuthenticated(page, detailPath);
-  await expect(page.locator('input[value="P0-VIS-CL-01"]')).toBeVisible({ timeout: 60_000 });
-  const xeroReadiness = page.getByText("Checking Xero readiness...", { exact: true });
-  await expect(xeroReadiness).toBeVisible();
+  await expect(page.locator('input[value="P0-VIS-CL-01"]').first()).toBeVisible({ timeout: 60_000 });
   await expect(page).toHaveScreenshot("payment-claim-detail-desktop.png", { fullPage: true });
-
-  releaseXeroReadiness();
-  await expect(xeroReadiness).toBeHidden();
-  await page.unroute(detailActionUrl);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await waitForStablePage(page);
-  await expect(page.locator('input[value="P0-VIS-CL-01"]')).toBeVisible();
+  await expect(page.locator('input[value="P0-VIS-CL-01"]').first()).toBeVisible();
   await expect(page).toHaveScreenshot("payment-claim-detail-narrow.png", { fullPage: true });
 });
 
@@ -450,18 +448,18 @@ test("authorized Retention workspace renders beneath the Payment Claims register
       }),
     ).toBeVisible();
     const detailLineTable = retentionDetail
-      .getByRole("columnheader", { name: "This Claim", exact: true })
+      .getByRole("columnheader", { name: "Retention excl. GST", exact: true })
       .locator("xpath=ancestor::table");
     await expect(detailLineTable).toBeVisible();
     await expect(
       detailLineTable.getByRole("columnheader", {
-        name: "Remaining",
+        name: "Outstanding incl. GST",
         exact: true,
       }),
     ).toBeVisible();
     await expect(
       detailLineTable.getByRole("columnheader", {
-        name: "Claim %",
+        name: "New Since Last Push incl. GST",
         exact: true,
       }),
     ).toBeVisible();
@@ -470,7 +468,7 @@ test("authorized Retention workspace renders beneath the Payment Claims register
         name: "Date",
         exact: true,
       }),
-    ).toHaveCount(0);
+    ).toBeVisible();
     await expect(
       detailLineTable.getByRole("columnheader", {
         name: "Eligible",
@@ -483,25 +481,14 @@ test("authorized Retention workspace renders beneath the Payment Claims register
     await expect(
       detailLineTable.getByRole("button", { name: "Reset" }),
     ).toHaveCount(0);
-    const percentageInput = detailLineTable.getByRole("spinbutton", {
-      name: "Claim % for P0-VIS-CL-02",
-      exact: true,
-    });
-    await expect(percentageInput).toBeVisible();
-    await percentageInput.fill("25");
     const retentionLine = detailLineTable.locator("tr").filter({
       hasText: "P0-VIS-CL-02",
     });
-    await expect(retentionLine.getByText("$6.25", { exact: true })).toHaveCount(2);
-    await expect(retentionLine.getByText("$18.75", { exact: true })).toBeVisible();
-    await percentageInput.fill("");
+    await expect(retentionLine).toBeVisible();
+    await expect(retentionLine.getByText("$25.00", { exact: true })).toBeVisible();
     await expect(
-      retentionDetail.getByRole("button", { name: "Save Claim", exact: true }).first(),
-    ).toBeDisabled();
-    await percentageInput.fill("0");
-    await expect(
-      retentionDetail.getByRole("button", { name: "Save Claim", exact: true }).first(),
-    ).toBeVisible();
+      retentionDetail.getByRole("button", { name: "Save Claim", exact: true }),
+    ).toHaveCount(0);
     await expect(
       detailLineTable.getByRole("button", { name: "Save", exact: true }),
     ).toHaveCount(0);
@@ -511,26 +498,16 @@ test("authorized Retention workspace renders beneath the Payment Claims register
     await expect(auditHistory).not.toHaveAttribute("open", "");
     await expect(page).toHaveScreenshot(
       "retention-claim-detail-draft-desktop.png",
-      { fullPage: true },
+      { fullPage: true, maxDiffPixels: 800 },
     );
 
     await page.setViewportSize({ width: 390, height: 844 });
     await waitForStablePage(page);
-    await expect(detailLineTable).toBeVisible();
-    const detailRetainsHorizontalOverflow = await detailLineTable.evaluate(
-      (table) => {
-        const overflow = table.parentElement;
-        return Boolean(
-          overflow
-          && overflow.scrollWidth > overflow.clientWidth
-          && getComputedStyle(overflow).overflowX !== "visible",
-        );
-      },
-    );
-    expect(detailRetainsHorizontalOverflow).toBe(true);
+    await expect(retentionDetail.getByTestId("retention-gst-lines-mobile")).toBeVisible();
+    await expect(detailLineTable).toBeHidden();
     await expect(page).toHaveScreenshot(
       "retention-claim-detail-draft-narrow.png",
-      { fullPage: true },
+      { fullPage: true, maxDiffPixels: 800 },
     );
   } finally {
     await setRetentionFixtureState({

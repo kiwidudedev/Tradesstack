@@ -338,16 +338,13 @@ export async function RetentionWorkspaceSection({
                   <OperationalTableCell className="px-2">
                     <div className="flex items-center justify-center">
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="icon"
-                            className="h-8 w-8 rounded-full"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Actions</span>
-                          </Button>
+                        <DropdownMenuTrigger
+                          type="button"
+                          className="ui-button inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-primary)]"
+                          aria-label="Actions"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Actions</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
                           align="end"

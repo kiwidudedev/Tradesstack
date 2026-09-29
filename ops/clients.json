@@ -14,8 +14,8 @@
       "runtimeReference": "vercel:hi-5577s-projects/tradesstack-client-alpha",
       "domainReference": "https://tradesstack-client-alpha.vercel.app",
       "releaseProvenance": {
-        "repositorySha": "1656a21e8a3a5090fe688e3990e7b01d0c9e3a3b",
-        "deploymentId": "dpl_CpiWATCWCkcjQpzhPy7VptFjCCEV",
+        "repositorySha": "9cd9c21",
+        "deploymentId": "dpl_H1L5TZG5wGj2oJvStUmX8oL9HGKy",
         "applicationShellRelease": "0.0.0-phase1r.2",
         "applicationShellSourceSha": "361bf3f094a8abbb58d20606413686cebc242e66",
         "applicationShellFingerprint": "36dbdd5f238240183e64171e1ddc23f00f64ad0b8bfcb8a144c4ad607f58f35e",
@@ -23,21 +23,26 @@
       },
       "database": {
         "baseline": "phase1o-1",
-        "migrationTarget": "20260927100000_fix_document_storage_owner_policy.sql",
-        "storageBucket": "organization-documents",
+    "migrationTarget": "20260927110000_reconcile_required_storage_buckets.sql",
+    "storageBucket": "organization-documents, project-drawing-sets",
         "storagePrivate": true,
-        "hostedForwardFix": "Applied through Alpha SQL Editor; CLI migration-ledger reconciliation remains pending"
+        "hostedForwardFix": "Applied through Alpha SQL Editor; exact 20260927100000 history entry reconciled as applied; no SQL replay performed",
+    "migrationLedger": "Alpha remote matches local through 20260927100000; 20260810190000_cleanup_phase1_material_test_fixtures.sql remains pending and intentionally deferred",
+    "hostedStorageDrift": "Approved existing-migration repair restored private project-drawing-sets and its three Storage policies; other source-defined forward buckets remain intentionally uncreated and unproven.",
+    "hostedManualRepair": "2026-09-27: executed the existing project-drawing-sets bucket/policy repair in Alpha Supabase SQL Editor after explicit authorization; no historical migration file was modified."
       },
       "operations": {
         "vercelPlan": "Hobby",
+        "vercelNodeRuntime": "22.x project setting; READY Git-connected production deployment verified",
         "supabasePlan": "Free",
         "supabaseRegion": "Sydney (ap-southeast-2)",
         "backupStatus": "No managed database backups verified on Free tier; Storage recovery remains dependent on object retention/export procedure",
         "observability": "Vercel runtime/deployment logs and Supabase logs/health only; no third-party monitoring",
         "retention": "Keep as fictional hosted proof/reference; remove only with explicit approval",
-        "hostedUpgrade": "Deferred: no clean, approved release delta after the current Master validation gate"
+        "hostedUpgrade": "Controlled manual READY production deployment dpl_H1L5TZG5wGj2oJvStUmX8oL9HGKy from clean Alpha main SHA 9cd9c21 with Production-only server configuration; Git-connected private-repository deployment was blocked by Hobby collaboration rules; legacy opportunity tender-client synchronization fix proven through the application",
+    "pendingSharedFixes": "Required Storage reconciliation and supplier-invoice totals are promoted; local generic Files/retention menu and hydration fixes pass the release suite but remain pending Master promotion and controlled Alpha upgrade; older manually-created Alpha quote fixture remains invalid without source lineage and was not repaired by SQL"
       },
-      "notes": "Fictional hosted proof only; AI, Xero, email, cron, workers, and custom DNS remain off. No Master cloud resources changed."
+      "notes": "Fictional hosted proof only; AI, Xero, email, cron, workers, and custom DNS remain off. Master Supabase received the explicitly authorized forward migration set; no Master runtime deployment was changed."
     }
   ]
 }

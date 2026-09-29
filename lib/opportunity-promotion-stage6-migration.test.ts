@@ -47,7 +47,8 @@ describe("Stage 6 hosted-development allowlist migration", () => {
     const creation = body("create_opportunity_workspace_controlled_v1");
     expect(creation).toContain("selected_strategy := 'promote_workspace_v1'");
     expect(creation).toContain("public.is_opportunity_promotion_rollout_scope_v1(");
-    expect(creationServer).toContain('"create_opportunity_workspace_controlled_v1"');
+    expect(creationServer).toContain("getCurrentOrganizationMember");
+    expect(creationServer).toContain("legacy-compatibility");
     expect(creationServer).not.toMatch(/p_strategy\s*:/);
   });
 

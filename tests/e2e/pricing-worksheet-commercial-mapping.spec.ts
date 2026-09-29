@@ -183,7 +183,8 @@ async function mapField(page: Page, field: "description" | "quantity" | "unit" |
 
 async function mapVariationField(page: Page, lineIndex: number, field: "description" | "quantity" | "unit" | "rate" | "total", cellKey: string) {
   const drawer = page.getByRole("complementary", { name: "Variation commercial mapping" });
-  const mappingField = drawer.locator(`[data-testid$="-field-${field}"]`).nth(lineIndex);
+  const line = drawer.locator('section[data-testid^="variation-mapping-line-"]').nth(lineIndex);
+  const mappingField = line.locator(`[data-testid$="-field-${field}"]`);
   await mappingField.locator('button[aria-pressed]').click();
   await page.locator(`[data-worksheet-cell="${cellKey}"]`).click();
   await expect(mappingField).toContainText(cellKey);

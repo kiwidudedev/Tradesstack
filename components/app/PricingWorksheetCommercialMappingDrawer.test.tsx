@@ -271,12 +271,50 @@ describe("PricingWorksheetCommercialMappingDrawer", () => {
     expect(markup).toContain("Add to Variation");
     expect(markup).toContain("V1");
     expect(markup).toContain("Client changes");
-    expect(markup).toContain("Commercial line 1");
-    expect(markup).toContain("Commercial line 2");
+    expect(markup).not.toContain("Commercial line 1");
+    expect(markup).not.toContain("Commercial line 2");
     expect(markup).toContain("Add Another");
+    expect(markup).toContain('aria-label="Remove commercial line 1"');
+    expect(markup).toContain('aria-label="Remove commercial line 2"');
     expect(markup).toContain('aria-label="Variation section for commercial line 1"');
     expect(markup).toContain('value="Materials" selected');
     expect(markup).toContain("NZ$7,720.80");
     expect(markup).not.toContain("View selected cells");
+  });
+
+  it("formats floating-point quantity noise in the variation preview line", () => {
+    const noop = vi.fn();
+    const noisyResolved = {
+      ...resolved,
+      fields: {
+        ...resolved.fields,
+        quantity: { ...resolved.fields.quantity, value: 600.0000000000001, displayValue: "600.0000000000001" },
+      },
+      line: { ...resolved.line, description: "100 × 50 Timber", quantity: 600.0000000000001, unit: null, rate: 4.55, total: 2730 },
+      effective: { quantity: 600.0000000000001, rate: 4.55, total: 2730, derivedQuantity: false, derivedRate: false },
+    } as ResolvedWorksheetCommercialLine;
+    const markup = renderToStaticMarkup(<PricingWorksheetVariationMappingDrawer
+      variationNumber="V2"
+      variationTitle="Timber supply"
+      variationStatus="Draft"
+      sheetName="Page 1"
+      lines={[{ line: { id: "line-1", section: "Materials", mapping: { ...session, destination: "variation" as const } }, resolved: noisyResolved }]}
+      isPublishing={false}
+      onClose={noop}
+      onEscape={noop}
+      onArmField={noop}
+      onClearField={noop}
+      onAssignField={noop}
+      onHighlightField={noop}
+      onBeginDescriptionEdit={noop}
+      onCommitDescription={noop}
+      onSectionChange={noop}
+      onAddLine={noop}
+      onRemoveLine={noop}
+      onPublish={noop}
+    />);
+
+    expect(markup).toContain("600 × $4.55");
+    expect(markup).not.toContain("600.0000000000001");
   });
 });

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { saveSupplierAction } from "@/app/app/(workspace)/company/suppliers/actions";
-import { normalizeSupplierWebsite, type SupplierPaymentTermsType } from "@/lib/supplier-validation";
+import { normalizeSupplierWebsite, type SupplierPaymentTermsType } from "@tradesstack/suppliers";
 import type { OrganizationSupplierRow, SupplierDuplicateWarning } from "@/lib/suppliers";
 
 type AddSupplierDialogProps = {

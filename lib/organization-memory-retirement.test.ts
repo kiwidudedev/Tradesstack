@@ -88,7 +88,7 @@ function createAdminClient(state: ReturnType<typeof createState>) {
     rpc,
     from: (table: string) => {
       if (table === "organization_memory_items") {
-        let filters: Array<{ column: string; value: unknown }> = [];
+        const filters: Array<{ column: string; value: unknown }> = [];
         let updatePayload: Record<string, unknown> | null = null;
         const builder = {
           select: vi.fn(() => builder),
@@ -255,7 +255,9 @@ describe("organization memory retirement worker", () => {
 
   it("blocks retirement during the grace period", async () => {
     const state = createState();
-    state.memoryRows.get("memory-1")!.last_contradicted_at = "2026-06-10T00:00:00.000Z";
+    state.memoryRows.get("memory-1")!.last_contradicted_at = new Date(
+      Date.now() - 10 * 24 * 60 * 60 * 1000,
+    ).toISOString();
     createAdminSupabaseClient.mockReturnValue(createAdminClient(state));
     const { runOrganizationMemoryRetirementWorker } = await import("./organization-memory-retirement");
 

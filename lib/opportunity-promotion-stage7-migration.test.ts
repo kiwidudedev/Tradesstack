@@ -55,7 +55,8 @@ describe("Stage 7 default Opportunity lifecycle migration", () => {
   });
 
   it("keeps strategy out of browser input and immutable after creation", () => {
-    expect(creationServer).toContain('"create_opportunity_workspace_controlled_v1"');
+    expect(creationServer).toContain("getCurrentOrganizationMember");
+    expect(creationServer).toContain("legacy-compatibility");
     expect(creationServer).not.toMatch(/p_strategy\s*:/);
     expect(migration).not.toMatch(/update\s+public\.opportunity_lifecycles/i);
     expect(migration).not.toMatch(/strategy\s*=\s*default_row/i);

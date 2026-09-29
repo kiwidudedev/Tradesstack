@@ -1,11 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { CORE_CONTRACTS_PACKAGE_VERSION } from "@tradesstack/core-contracts";
 import { akzidenzProBoldEx, interMedium, mulishBody, mulishHeading } from "@/lib/fonts";
+import { APPLICATION_SHELL_RELEASE } from "@/lib/application-shell-release";
+import { getMasterClientConfig } from "@/lib/client-config";
 import "@/styles/globals.css";
 
+// Invisible reference-app consumption proof; this has no rendered or runtime product effect.
+void CORE_CONTRACTS_PACKAGE_VERSION;
+void APPLICATION_SHELL_RELEASE;
+
+const clientConfig = getMasterClientConfig();
+
 export const metadata: Metadata = {
-  title: "Tradesstack",
-  description: "Tradesstack prototype app",
+  title: clientConfig.identity.displayName,
+  description: clientConfig.identity.description,
   icons: {
     icon: [
       { url: "/favicon-48.png", sizes: "48x48", type: "image/png" },

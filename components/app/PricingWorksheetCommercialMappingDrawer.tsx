@@ -53,6 +53,12 @@ function formatQuantity(value: number) {
   return commercialQuantityFormatter.format(value);
 }
 
+function formatPreviewQuantityUnit(quantity: number | null | undefined, unit: string | null | undefined) {
+  const formattedQuantity = quantity === null || quantity === undefined ? "—" : formatQuantity(quantity);
+  const trimmedUnit = unit?.trim();
+  return trimmedUnit ? `${formattedQuantity} ${trimmedUnit}` : formattedQuantity;
+}
+
 function formatMappedFieldValue(field: CommercialMappingField, value: string | number | null, displayValue: string) {
   if (typeof value === "number") {
     if (field === "rate") return formatMoneyOperational(value, { decimals: 2 });
@@ -234,10 +240,6 @@ function VariationMappingLineCard({
 
   return (
     <section data-testid={`variation-mapping-line-${line.id}`} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-3 py-2.5">
-        <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Commercial line {lineNumber}</h3>
-        {canRemove ? <Button type="button" variant="ghost" size="icon" aria-label={`Remove commercial line ${lineNumber}`} onClick={() => onRemove(line.id)} className="h-8 w-8 text-[var(--text-muted)]"><Trash2 className="h-4 w-4" /></Button> : null}
-      </div>
       <div className="overflow-hidden">
         <div className="border-b border-[var(--border-subtle)]">{mappingField("description")}</div>
         <div className="grid grid-cols-2 divide-x divide-[var(--border-subtle)] border-b border-[var(--border-subtle)]">{mappingField("quantity")}{mappingField("unit")}</div>
@@ -255,8 +257,11 @@ function VariationMappingLineCard({
         {hasPreview ? <div data-testid={`variation-mapping-line-${line.id}-preview`} className="mt-3 border-t border-[var(--border-subtle)] pt-3 text-sm">
           {resolved.line.description ? <p className="break-words font-medium text-[var(--text-primary)]">{resolved.line.description}</p> : null}
           <div className="mt-1.5 flex items-end justify-between gap-3 text-[12px] text-[var(--text-secondary)]">
-            <span>{resolved.effective?.quantity ?? "—"} {resolved.line.unit ?? ""} × {resolved.effective?.rate === null || resolved.effective?.rate === undefined ? "—" : formatMoneyOperational(resolved.effective.rate, { decimals: 2 })}</span>
-            <span className="font-semibold tabular-nums text-[var(--text-primary)]">{resolved.effective?.total === null || resolved.effective?.total === undefined ? "—" : formatCommercialDocumentMoney(resolved.effective.total)}</span>
+            <span>{formatPreviewQuantityUnit(resolved.effective?.quantity, resolved.line.unit)} × {resolved.effective?.rate === null || resolved.effective?.rate === undefined ? "—" : formatMoneyOperational(resolved.effective.rate, { decimals: 2 })}</span>
+            <span className="flex items-center gap-1">
+              <span className="font-semibold tabular-nums text-[var(--text-primary)]">{resolved.effective?.total === null || resolved.effective?.total === undefined ? "—" : formatCommercialDocumentMoney(resolved.effective.total)}</span>
+              {canRemove ? <Button type="button" variant="ghost" size="icon" aria-label={`Remove commercial line ${lineNumber}`} onClick={() => onRemove(line.id)} className="h-7 w-7 shrink-0 rounded-[8px] p-0 text-[var(--text-muted)] opacity-70 hover:bg-[var(--error-light)] hover:text-[var(--error)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"><Trash2 className="h-3.5 w-3.5" /></Button> : null}
+            </span>
           </div>
         </div> : null}
       </div>
@@ -318,7 +323,6 @@ export function PricingWorksheetVariationMappingDrawer({
           <p className="mt-1 text-xs text-[var(--text-secondary)]">{variationTitle.trim() || "Untitled variation"}</p>
           <p className="mt-1 text-[11px] text-[var(--text-muted)]">Status: {variationStatus}</p>
         </div>
-        <p className="text-xs leading-5 text-[var(--text-secondary)]">Map worksheet cells into the current Variation. Each line keeps its own worksheet sources and section.</p>
         {lines.map(({ line, resolved }, index) => <VariationMappingLineCard key={line.id} line={line} resolved={resolved} lineNumber={index + 1} canRemove={lines.length > 1} onArmField={onArmField} onClearField={onClearField} onAssignField={onAssignField} onHighlightField={onHighlightField} onBeginDescriptionEdit={onBeginDescriptionEdit} onCommitDescription={onCommitDescription} onSectionChange={onSectionChange} onRemove={onRemoveLine} />)}
         <Button type="button" variant="secondary" onClick={onAddLine} disabled={isPublishing} className="w-full"><Plus className="h-4 w-4" />Add Another</Button>
       </WorksheetSidePanelBody>
@@ -509,7 +513,7 @@ export function PricingWorksheetCommercialMappingDrawer({
           {hasMappedUnit && !hasMappedNumericValue ? <p className="mt-1.5 text-sm text-[var(--text-secondary)]">Unit: <span className="font-medium text-[var(--text-primary)]">{resolved.line.unit}</span></p> : null}
           {hasMappedNumericValue ? <div className="mt-2 flex min-w-0 items-end justify-between gap-3">
             <p className="min-w-0 text-[12px] text-[var(--text-secondary)]">
-              {previewQuantity === null ? "—" : formatQuantity(previewQuantity)} {previewUnit} × {previewRate === null ? "—" : formatMoneyOperational(previewRate, { decimals: 2 })}
+              {formatPreviewQuantityUnit(previewQuantity, previewUnit)} × {previewRate === null ? "—" : formatMoneyOperational(previewRate, { decimals: 2 })}
             </p>
             <p className="shrink-0 text-right text-[15px] font-semibold tabular-nums text-[var(--text-primary)]">
               {previewTotal === null ? "—" : formatCommercialDocumentMoney(previewTotal)}

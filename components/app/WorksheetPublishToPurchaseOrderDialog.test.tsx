@@ -63,7 +63,7 @@ describe("WorksheetPublishToPurchaseOrderDialog", () => {
     );
 
     expect(markup).toContain("Add to Purchase Order");
-    expect(markup).toContain("Commercial line");
+    expect(markup).not.toContain("Commercial line");
     expect(markup).toContain("Board Supply Cost");
     expect(markup).toContain("Wall Framing Package");
     expect(markup).toContain("Variation: 26028-VAR-03");

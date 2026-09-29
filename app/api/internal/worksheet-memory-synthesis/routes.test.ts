@@ -18,6 +18,7 @@ describe("worksheet memory synthesis routes", () => {
     vi.resetModules();
     vi.clearAllMocks();
     delete process.env.CRON_SECRET;
+    process.env.TRADESSTACK_ENABLED_BACKGROUND_JOBS = "worksheet-memory-synthesis";
   });
 
   it("requires admin for the internal run route and forwards worker input", async () => {

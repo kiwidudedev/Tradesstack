@@ -7609,7 +7609,7 @@ export function OpportunityPricingWorksheetBoard({
 
     const nextSheet = workbookSheetsRef.current.find((sheet) => sheet.id === nextSheetId);
     const currentWorkbookId = explicitWorksheetId ?? worksheetId;
-    if (!nextSheet || !currentWorkbookId || !session?.organizationId) {
+    if (!nextSheet || !currentWorkbookId || !session?.organizationId || !supabase) {
       return;
     }
 

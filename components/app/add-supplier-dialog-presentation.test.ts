@@ -110,7 +110,7 @@ describe("shared Add Supplier consumers", () => {
     const importStart = materialsSource.indexOf("<Dialog open={isImportOpen}");
     const addSupplierStart = materialsSource.indexOf("<AddSupplierDialog", importStart);
     expect(materialsSource).toContain('id="import-supplier"');
-    expect(materialsSource).toContain("{supplierOptions.map((supplier) => (");
+    expect(materialsSource).toContain("suppliers={supplierOptions}");
     expect(materialsSource).toContain("onClick={() => setIsAddSupplierOpen(true)}");
     expect(addSupplierStart).toBeGreaterThan(importStart);
     expect(materialsSource.slice(importStart, addSupplierStart)).toContain("</Dialog>");

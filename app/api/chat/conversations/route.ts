@@ -104,6 +104,8 @@ export async function GET(request: Request) {
   const cursor = parseCursor(url.searchParams.get("cursor"));
 
   const supabase = await createServerSupabaseClient();
+  // The legacy chat tables are not in generated Database types; keep this dynamic boundary narrow.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
   let conversationsQuery = db
@@ -212,6 +214,7 @@ export async function DELETE(request: Request) {
   }
 
   const supabase = await createServerSupabaseClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
   const { error: archiveConversationError } = await db

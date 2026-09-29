@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
 import { formatTimestamp, getInspectionProgress, getInspectionStatus, inspectionStatusTone } from "@/lib/quality-assurance/helpers";
@@ -33,6 +33,7 @@ export function CreateQualityInspectionSheet(props: CreateQualityInspectionSheet
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
+        <DialogDescription className="sr-only">Create a quality inspection record.</DialogDescription>
         <div className="space-y-0">
           <div className="px-7 pb-6 pt-7">
             <p className={`${interMedium.className} text-[13px] font-semibold text-[var(--text-secondary)]`}>New inspection</p>
@@ -117,6 +118,7 @@ export function QualityInspectionDetailSheet(props: QualityInspectionDetailSheet
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
+        <DialogDescription className="sr-only">Review and update the quality inspection record.</DialogDescription>
         {props.selectedInspection ? (
           <div className="space-y-0">
             <div className="px-7 pb-6 pt-7">

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { processNextTakeoffRenderJob } from "@/lib/takeoff-server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function getWorkerEnvDiagnostics() {
   return {
@@ -24,6 +23,11 @@ function isAuthorizedWorkerRequest(authHeader: string | null): boolean {
 export async function POST(request: Request) {
   const authorization = request.headers.get("authorization");
   const tokenAuthorized = isAuthorizedWorkerRequest(authorization);
+
+  if (!tokenAuthorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const envDiagnostics = getWorkerEnvDiagnostics();
 
   if (!envDiagnostics.hasSupabaseUrl || !envDiagnostics.hasSupabaseServiceRoleKey) {
@@ -42,18 +46,6 @@ export async function POST(request: Request) {
       },
       { status: 500 }
     );
-  }
-
-  if (!tokenAuthorized) {
-    const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
   }
 
   try {

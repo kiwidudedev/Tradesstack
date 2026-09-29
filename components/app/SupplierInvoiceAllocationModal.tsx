@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -162,6 +163,7 @@ export function SupplierInvoiceAllocationModal({
             <DialogTitle className="text-[22px] font-semibold tracking-[-0.02em] sm:text-[27px]">
               Allocate Supplier Invoice Line
             </DialogTitle>
+            <DialogDescription>Allocate this supplier invoice amount against the purchase order lines.</DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-6">

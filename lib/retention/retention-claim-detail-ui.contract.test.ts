@@ -192,12 +192,16 @@ describe("Retention Claim detail Payment Claim-aligned UI contract", () => {
   });
 
   it("matches Payment Claim header action dimensions and dropdown treatment", () => {
-    for (const candidate of [paymentDetail, source, editor]) {
+    for (const candidate of [paymentDetail, editor]) {
       expect(candidate).toContain('variant="secondary"');
       expect(candidate).toContain('size="sm"');
       expect(candidate).toContain('className="h-9 px-3"');
       expect(candidate).toContain('<ChevronDown className="h-4 w-4" />');
     }
+    expect(source).toContain(
+      'className="ui-button inline-flex h-9 items-center justify-center',
+    );
+    expect(source).toContain('<ChevronDown className="h-4 w-4" />');
     expect(source).not.toContain("MoreHorizontal");
     expect(editor).not.toContain("MoreHorizontal");
     expect(source).not.toContain("Export PDF");

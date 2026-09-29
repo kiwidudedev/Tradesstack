@@ -2,7 +2,7 @@
 
 import { Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { interMedium } from "@/lib/fonts";
 import { formatTimestamp } from "@/lib/quality-assurance/helpers";
@@ -63,6 +63,7 @@ export function CreateQualityPhotoSheet(props: CreateQualityPhotoSheetProps) {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
+        <DialogDescription className="sr-only">Add a quality photo.</DialogDescription>
         <div className="space-y-0">
           <div className="px-7 pb-6 pt-7">
             <p className={`${interMedium.className} text-[13px] font-semibold text-[var(--text-secondary)]`}>New photo</p>
@@ -256,6 +257,7 @@ export function QualityPhotoDetailSheet(props: QualityPhotoDetailSheetProps) {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-0 shadow-[var(--shadow-overlay)]">
+        <DialogDescription className="sr-only">Review and update the quality photo.</DialogDescription>
         {props.selectedPhoto ? (
           <div className="space-y-0">
             <div className="px-7 pb-6 pt-7">

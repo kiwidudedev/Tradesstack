@@ -291,16 +291,40 @@ export function NewSupplierInvoiceReviewPanel({
                     <div className="space-y-2.5 text-[13px]">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-[var(--text-secondary)]">Subtotal</span>
-                        <span className="font-medium text-[var(--text-primary)]">{toMoney(documentSubtotal)}</span>
+                        <Input
+                          id="invoice-subtotal"
+                          inputMode="decimal"
+                          value={formState.subtotal}
+                          onChange={(event) => onUpdateFormState({ subtotal: event.target.value })}
+                          aria-label="Invoice subtotal"
+                          className="h-9 w-32 text-right"
+                          placeholder="0.00"
+                        />
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-[var(--text-secondary)]">GST ({gstPercentLabel}%)</span>
-                        <span className="font-medium text-[var(--text-primary)]">{toMoney(documentTax)}</span>
+                        <Input
+                          id="invoice-tax-total"
+                          inputMode="decimal"
+                          value={formState.taxTotal}
+                          onChange={(event) => onUpdateFormState({ taxTotal: event.target.value })}
+                          aria-label="Invoice GST"
+                          className="h-9 w-32 text-right"
+                          placeholder="0.00"
+                        />
                       </div>
                       <div className="h-px bg-[var(--border)]" />
                       <div className="flex items-center justify-between gap-3 pt-0.5">
                         <span className="text-[15px] font-semibold text-[var(--text-primary)]">Total</span>
-                        <span className="text-[15px] font-semibold text-[var(--text-primary)]">{toMoney(documentTotal)}</span>
+                        <Input
+                          id="invoice-total"
+                          inputMode="decimal"
+                          value={formState.total}
+                          onChange={(event) => onUpdateFormState({ total: event.target.value })}
+                          aria-label="Invoice total"
+                          className="h-9 w-32 text-right font-semibold"
+                          placeholder="0.00"
+                        />
                       </div>
                     </div>
                     </div>

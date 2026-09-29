@@ -520,7 +520,7 @@ test.describe("Takeoff Measure PDF.js browser runtime", () => {
     await expect(liveMeasurement.locator("polygon")).toHaveCount(1);
 
     await summaryRow.click({ button: "right" });
-    await page.getByRole("button", { name: "Hide from PDF export", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Hide from PDF export", exact: true }).click();
     await expect(summaryRow).toBeVisible();
     await expect(liveMeasurement).toBeVisible();
     await expect(liveMeasurement.locator("polygon")).toBeVisible();

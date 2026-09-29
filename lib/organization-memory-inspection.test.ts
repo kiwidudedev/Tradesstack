@@ -634,6 +634,9 @@ function createState() {
           updated_at: "2026-06-20T11:42:00.000Z",
         },
       ],
+      construction_memory_semantic_pools: [],
+      construction_memory_evidence_pools: [],
+      cost_construction_intelligence_events: [],
     } satisfies Record<string, MockRow[]>,
   };
 }

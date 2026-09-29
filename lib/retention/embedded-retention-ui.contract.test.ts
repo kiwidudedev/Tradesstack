@@ -87,7 +87,9 @@ describe("embedded Retention workspace UI contract", () => {
     expect(retentionSection).not.toContain('title="Previous Retention Claims"');
     expect(retentionSection).not.toContain('title="Create Retention Claim"');
     expect(retentionSection).not.toContain("Open Retention Claim");
-    expect(retentionSection).toContain('className="h-8 w-8 rounded-full"');
+    expect(retentionSection).toContain(
+      'className="ui-button inline-flex h-8 w-8 items-center justify-center rounded-full',
+    );
   });
 
   it("removes Retention-navigation-only reads and props while retaining detail breadcrumbs", () => {

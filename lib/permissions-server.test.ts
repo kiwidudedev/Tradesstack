@@ -117,4 +117,36 @@ describe("permissions server", () => {
       },
     );
   });
+
+  it("resolves the legacy permission entry point against the current organization", async () => {
+    const projects = await import("@/lib/projects-server");
+    vi.mocked(projects.getCurrentOrganizationMember).mockResolvedValue({
+      organization_id: "org-1",
+    } as never);
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+    createServerSupabaseClient.mockResolvedValue({ rpc });
+
+    const { hasPermission } = await import("./permissions-server");
+
+    await expect(hasPermission("leads.clients.write")).resolves.toBe(true);
+    expect(rpc).toHaveBeenCalledWith("has_org_permission", {
+      p_organization_id: "org-1",
+      p_permission_key: "leads.clients.write",
+    });
+    expect(rpc).not.toHaveBeenCalledWith("has_permission", expect.anything());
+  });
+
+  it("preserves denied organization-scoped permissions", async () => {
+    const projects = await import("@/lib/projects-server");
+    vi.mocked(projects.getCurrentOrganizationMember).mockResolvedValue({
+      organization_id: "org-1",
+    } as never);
+    createServerSupabaseClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: false, error: null }),
+    });
+
+    const { hasPermission } = await import("./permissions-server");
+
+    await expect(hasPermission("leads.clients.write")).resolves.toBe(false);
+  });
 });

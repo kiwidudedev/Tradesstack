@@ -70,17 +70,17 @@ test.describe("Opportunity Files workspace", () => {
     await page.getByRole("button", { name: "New folder" }).click();
     await page.getByLabel("New folder").getByRole("textbox").fill(contractsFolder);
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", { name: contractsFolder, exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: contractsFolder, exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: contractsFolder, exact: true }).click();
+    await page.getByRole("link", { name: contractsFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" }).getByText(contractsFolder, { exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "New folder" }).click();
     await page.getByLabel("New folder").getByRole("textbox").fill(signedFolder);
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", { name: signedFolder, exact: true })).toBeVisible();
-    await page.getByRole("button", { name: signedFolder, exact: true }).click();
+    await expect(page.getByRole("link", { name: signedFolder, exact: true })).toBeVisible();
+    await page.getByRole("link", { name: signedFolder, exact: true }).click();
     await expect(
       page.getByRole("navigation", { name: "Breadcrumb" }).getByText(signedFolder, { exact: true }),
     ).toBeVisible();
@@ -157,6 +157,8 @@ test.describe("Opportunity Files workspace", () => {
     await page.getByLabel("Search all files").fill(`Executed Contract ${runSuffix}`);
     await page.getByLabel("Search all files").press("Enter");
     await expect(page.getByRole("button", { name: renamedUploadName, exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
 
     await page.getByLabel(`Actions for ${renamedUploadName}`).click();
     await page.getByRole("menuitem", { name: "Move" }).click();
@@ -165,13 +167,16 @@ test.describe("Opportunity Files workspace", () => {
 
     await page.getByLabel("Search all files").fill(`Executed Contract ${runSuffix}`);
     await page.getByLabel("Search all files").press("Enter");
+    await page.waitForTimeout(500);
     await page.getByLabel(`Actions for ${renamedUploadName}`).click();
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
     await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("button", { name: "Delete" }).click();
     await expect(page.getByText("No matching files")).toBeVisible();
 
     await page.getByRole("button", { name: "Recycle bin" }).click();
     await expect(page.getByRole("heading", { name: "Deleted files" })).toBeVisible();
+    await page.waitForTimeout(2000);
     await page.getByLabel(`Actions for deleted ${renamedUploadName}`).click();
     await page.getByRole("menuitem", { name: "Restore batch" }).click();
     await page.getByRole("button", { name: "Restore", exact: true }).click();
@@ -223,7 +228,10 @@ test.describe("Opportunity Files workspace", () => {
       .eq("user_id", e2eUserId);
     expect(ownerPromotionError).toBeNull();
 
+    await page.reload();
     await page.getByRole("button", { name: "Recycle bin" }).click();
+    await expect(page.getByRole("heading", { name: "Deleted files" })).toBeVisible();
+    await page.waitForTimeout(2000);
     await page.getByLabel(`Actions for deleted ${renamedUploadName}`).click();
     await page.getByRole("menuitem", { name: "Permanently purge" }).click();
     await page.getByRole("button", { name: "Permanently purge", exact: true }).click();

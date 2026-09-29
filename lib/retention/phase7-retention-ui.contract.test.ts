@@ -68,7 +68,9 @@ describe("Phase 7 Retention UI contract", () => {
     expect(register).toContain("row.automaticDraft");
     expect(register).toContain('<OperationalPanel contentClassName="p-0">');
     expect(register).toContain("text-right [font-variant-numeric:tabular-nums]");
-    expect(register).toContain('className="h-8 w-8 rounded-full"');
+    expect(register).toContain(
+      'className="ui-button inline-flex h-8 w-8 items-center justify-center rounded-full',
+    );
     expect(register).not.toContain('title="Current Retention Claim"');
     expect(register).not.toContain('title="Previous Retention Claims"');
     expect(register).not.toContain("Open Retention Claim");

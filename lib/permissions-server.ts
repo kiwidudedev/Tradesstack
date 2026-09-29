@@ -11,14 +11,7 @@ export async function hasPermission(permissionKey: string): Promise<boolean> {
     return false;
   }
 
-  const supabase = await createServerSupabaseClient();
-  const { data, error } = await supabase.rpc("has_permission", { p_permission_key: permissionKey });
-
-  if (error) {
-    return false;
-  }
-
-  return Boolean(data);
+  return hasOrganizationPermission(member.organization_id, permissionKey);
 }
 
 const hasOrganizationPermissionCached = cache(async (

@@ -42,22 +42,28 @@ export function SidebarStateProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     try {
       const storedCollapsed = window.localStorage.getItem(STORAGE_KEY_COLLAPSED);
-      if (storedCollapsed === "true") {
-        setIsCollapsedState(true);
-      }
       const storedWidth = window.localStorage.getItem(STORAGE_KEY_WIDTH);
-      if (storedWidth) {
-        const parsed = parseInt(storedWidth, 10);
-        if (!Number.isNaN(parsed)) {
-          setWidthState(clampWidth(parsed));
+      queueMicrotask(() => {
+        if (cancelled) return;
+        if (storedCollapsed === "true") setIsCollapsedState(true);
+        if (storedWidth) {
+          const parsed = parseInt(storedWidth, 10);
+          if (!Number.isNaN(parsed)) setWidthState(clampWidth(parsed));
         }
-      }
+        setIsHydrated(true);
+      });
     } catch {
       // localStorage unavailable — keep defaults
+      queueMicrotask(() => {
+        if (!cancelled) setIsHydrated(true);
+      });
     }
-    setIsHydrated(true);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setCollapsed = useCallback((collapsed: boolean) => {

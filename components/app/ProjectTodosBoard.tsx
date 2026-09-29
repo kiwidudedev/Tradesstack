@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { AlertCircle, Calendar, FileText, Flag, ListTodo, Pencil, Search, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FormLabel } from "@/components/app/FormLabel";
 import {
@@ -1290,6 +1290,7 @@ export function ProjectTodosBoard() {
               <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[var(--text-primary)]`}>
                 Add Task
               </DialogTitle>
+              <DialogDescription>Create a project task and assign its initial workflow details.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3.5 px-7 pb-4">
@@ -1422,6 +1423,7 @@ export function ProjectTodosBoard() {
                 <DialogTitle className={`${ibmPlexSans.className} m-0 text-[33px] font-semibold leading-none tracking-[-0.02em] text-[var(--text-primary)]`}>
                   Edit Task
                 </DialogTitle>
+                <DialogDescription>Review and update the selected project task.</DialogDescription>
               </DialogHeader>
 
               <div className="space-y-3.5 px-7 pb-4">

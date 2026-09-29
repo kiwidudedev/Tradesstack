@@ -23,9 +23,12 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"],
+      "@tradesstack/core-contracts": ["./packages/core-contracts/src/index.ts"],
+      "@tradesstack/client-config": ["./packages/client-config/src/index.ts"],
+      "@tradesstack/shared-ui": ["./packages/shared-ui/src/index.ts"],
+      "@tradesstack/pdf-utils": ["./packages/pdf-utils/src/index.ts"],
+      "@tradesstack/suppliers": ["./packages/suppliers/src/index.ts"]
     }
   },
   "include": [

@@ -15,8 +15,8 @@ const mocks = vi.hoisted(() => ({
     slug: string;
   } | null,
   quotes: new Map([
-    ["quote-a", { id: "quote-a", organizationId: "organization-a", projectId: "project-a" }],
-    ["quote-b", { id: "quote-b", organizationId: "organization-a", projectId: "project-b" }],
+    ["quote-a", { id: "quote-a", organizationId: "organization-a", projectId: "project-a", sourceOpportunityId: "opportunity-a", originatingOpportunityId: "opportunity-a" }],
+    ["quote-b", { id: "quote-b", organizationId: "organization-a", projectId: "project-b", sourceOpportunityId: "opportunity-b", originatingOpportunityId: "opportunity-b" }],
   ]),
   worksheets: new Map([
     ["worksheet-a", {
@@ -56,7 +56,16 @@ function createQuery(table: string) {
         const matches = quote
           && quote.organizationId === filters.organization_id
           && quote.projectId === filters.project_id;
-        return { data: matches ? { id: quote.id } : null, error: null };
+        return {
+          data: matches
+            ? {
+                id: quote.id,
+                source_opportunity_id: quote.sourceOpportunityId,
+                originating_opportunity_id: quote.originatingOpportunityId,
+              }
+            : null,
+          error: null,
+        };
       }
 
       const worksheet = mocks.worksheets.get(String(filters.id));
@@ -160,5 +169,36 @@ describe("Project Pricing Worksheet route context", () => {
     ).resolves.toBeNull();
 
     worksheet.archived = false;
+  });
+
+  it("falls back to validated quote lineage for converted projects without a source opportunity", async () => {
+    mocks.project = {
+      id: "project-a",
+      organization_id: "organization-a",
+      source_opportunity_id: null,
+      slug: "project-a",
+    };
+
+    const context = await loadProjectPricingWorksheetRouteContext("project-a", "quote-a");
+
+    expect(context?.owner.opportunityId).toBe("opportunity-a");
+  });
+
+  it("accepts the canonical quote source lineage when originating lineage is absent", async () => {
+    mocks.project = {
+      id: "project-a",
+      organization_id: "organization-a",
+      source_opportunity_id: null,
+      slug: "project-a",
+    };
+
+    const quote = mocks.quotes.get("quote-a");
+    if (!quote) throw new Error("Missing test quote.");
+    quote.originatingOpportunityId = "";
+
+    const context = await loadProjectPricingWorksheetRouteContext("project-a", "quote-a");
+
+    expect(context?.owner.opportunityId).toBe("opportunity-a");
+    quote.originatingOpportunityId = "opportunity-a";
   });
 });

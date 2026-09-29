@@ -1,0 +1,17 @@
+{
+  "name": "tradesstack-client-consumption-proof",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test dist/index.test.js"
+  },
+  "dependencies": {
+    "@tradesstack/suppliers": "file:.artifacts/releases/0.0.0-phase1m.1/tradesstack-suppliers-0.0.0-phase1m.1.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.10",
+    "typescript": "^5.9.2"
+  }
+}
