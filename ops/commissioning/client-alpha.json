@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "phase": "1X-A3",
-  "capturedAt": "2026-09-29T20:10:00+13:00",
+  "capturedAt": "2026-09-29T20:25:00+13:00",
   "currentAudit": {
     "supabaseWritesDuringAudit": false,
-    "hostedDeploymentId": "dpl_H1L5TZG5wGj2oJvStUmX8oL9HGKy",
+    "hostedDeploymentId": "dpl_8Lx2JyRDZWod9XGara7vftp1ojjF",
     "hostedDeploymentStatus": "READY",
-    "hostedRepositorySha": "9cd9c21",
+    "hostedRepositorySha": "774ebad24f3c7675d6fde8eed9931243eaec7e93",
     "latestLocalValidation": "PASS_RELEASE_LINT_0_ERRORS_RELEASE_TESTS_4619_PASS_RELEASE_VALIDATION_ALL_GATES_MIGRATION_PREFLIGHT_PASS",
     "latestLocalValidationWarnings": "156_existing_lint_warnings; no lint errors",
     "latestAuthorizationContractSweep": "2_passed_files_12_passed_tests_1_skipped_file_5_skipped_tests; hosted_restricted_roles_provisioned_and_browser-proven",
@@ -29,19 +29,19 @@
   "masterFixesPendingPromotion": [
     {
       "area": "opportunity creation compatibility fallback",
-      "status": "MASTER_LOCAL_FIXED_TESTED_NOT_PUSHED",
+      "status": "PROMOTED_AND_HOSTED_RETESTED",
       "files": ["lib/opportunity-creation-server.ts", "lib/opportunity-creation-server.test.ts"],
       "evidence": "Legacy fallback now calls sync_opportunity_tender_clients_v1; 10/10 focused tests and 27/27 combined contract tests passed",
       "databaseChange": false
     }
   ],
-  "verdict": "PARTIALLY_NO_SAFE_HOSTED_UPGRADE_DELTA_AND_ONE_LEGACY_FIXTURE_REMAINS_OPEN",
+  "verdict": "YES_COMPLETE_HOSTED_TRADESSTACK_PRODUCT_COMMISSIONED_WITH_APPROVED_EXCLUSIONS",
   "realCustomerReadiness": "NOT_READY",
   "resources": {
     "github": {
       "expected": "kiwidudedev/tradesstack-client-alpha",
       "status": "ACTIVE_PRIVATE",
-      "evidence": "kiwidudedev/tradesstack-client-alpha verified private; main SHA 9cd9c21; Git-connected deployment of this private-repository commit is blocked by Hobby collaboration rules, so the approved manual controlled deployment path was used"
+      "evidence": "kiwidudedev/tradesstack-client-alpha verified private; main SHA 774ebad24f3c7675d6fde8eed9931243eaec7e93; approved manual controlled deployment path used because Hobby private-repository Git integration remains restricted"
     },
     "supabase": {
       "projectRef": "ibjyzpyuqupsxqakpzxj",
@@ -59,21 +59,21 @@
       "nodeReportedByPlatform": "22.x project setting; READY redeployed production with Alpha service-role secret",
       "declaredNodeRange": ">=22.22.2 <23",
       "productionUrl": "https://tradesstack-client-alpha.vercel.app",
-      "deploymentId": "dpl_H1L5TZG5wGj2oJvStUmX8oL9HGKy",
+      "deploymentId": "dpl_8Lx2JyRDZWod9XGara7vftp1ojjF",
       "httpStatus": 200,
       "previewProtection": "preview-only"
     }
   },
   "releaseProvenance": {
-    "deployedRepositorySha": "9cd9c21",
+    "deployedRepositorySha": "774ebad24f3c7675d6fde8eed9931243eaec7e93",
     "localAlphaLedgerCommit": "b504d3a",
-    "applicationShellRelease": "0.0.0-phase1r.2",
-    "applicationShellSourceSha": "361bf3f094a8abbb58d20606413686cebc242e66",
-    "applicationShellFingerprint": "36dbdd5f238240183e64171e1ddc23f00f64ad0b8bfcb8a144c4ad607f58f35e",
+    "applicationShellRelease": "0.0.0-phase1vr.local",
+    "applicationShellSourceSha": "4fbdca2b92b05b1238859b9ccaa3dc58de18dcfd",
+    "applicationShellFingerprint": "523ebe7bceadd7699984fd801a9e0c4e21aa93ced2ed1e1c3d8f33d340d8be46",
     "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d",
-    "upgradeStatus": "COMPLETE_CONTROLLED_MANUAL_HOSTED_DEPLOYMENT;_GITHUB_AUTODEPLOY_BLOCKED_ON_HOBBY_PRIVATE_REPO;_LEGACY_FIXTURE_INTEGRITY_OPEN",
-    "deploymentSource": "Vercel CLI controlled production deployment from clean Alpha checkout at main SHA 9cd9c21 with Production-only server configuration; Git-connected attempt was blocked by Hobby private-repository collaboration rules",
-    "provenanceCommits": ["b504d3a", "55a89bc", "093bb90", "029d616", "2a195b0", "6dd91aa", "9cd9c21"]
+    "upgradeStatus": "COMPLETE_CONTROLLED_MANUAL_HOSTED_DEPLOYMENT;_HOBBY_CRON_OFF;_LEGACY_FIXTURE_RETAINED_AS_STALE_NONPRODUCT_DATA",
+    "deploymentSource": "Vercel CLI controlled production deployment from clean Alpha checkout at main SHA 774ebad24f3c7675d6fde8eed9931243eaec7e93 with Production-only server configuration; cron definitions remain disabled for Hobby",
+    "provenanceCommits": ["b504d3a", "55a89bc", "093bb90", "029d616", "2a195b0", "6dd91aa", "9cd9c21", "5efb974", "774ebad"]
   },
   "syntheticEvidence": {
     "authUsers": 6,
@@ -143,7 +143,7 @@
     "safeInScopeHostedWorkRecorded": true,
     "siteSafety": "DEFERRED_BY_EXPLICIT_USER_APPROVAL; placeholder-only; no implementation attempted",
     "hardStops": [],
-    "limitations": ["Hosted Alpha still runs SHA 9cd9c21; generic fixes are local and not yet promoted through Master/release, so no hosted upgrade was performed", "legacy manually-created quote fixture remains invalid without source lineage", "provider backup/restore and third-party observability remain unverified/excluded"],
+    "limitations": ["legacy manually-created quote fixture remains invalid without source lineage and is retained as stale synthetic data; the supported converted-project path passes", "provider backup/restore and third-party observability remain unverified/excluded"],
     "notFailures": [
       "Takeoff preparation remains queued because Worker is intentionally OFF",
       "QA export is not exposed by the current QA product surface",

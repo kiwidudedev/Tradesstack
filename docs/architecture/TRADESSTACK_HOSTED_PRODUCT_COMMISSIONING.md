@@ -815,24 +815,31 @@ local warnings remain for an existing OperationalPanel class mismatch, image
 aspect-ratio warning, and missing Dialog descriptions; no nested-button
 hydration error remains in the corrected retention flows.
 
-The local generic fixes now include the shared retention/file-menu corrections
-and dialog accessibility descriptions, and they are covered by the passing
-release suite. They are not yet a hosted release: they must first follow
-the established Master-local-fix → approved-release → controlled-Alpha-upgrade
-path. The current Alpha deployment remains SHA `9cd9c21`; no safe approved
-remote release delta was available during this closeout, so no hosted upgrade
-was manufactured. Existing release provenance, Alpha configuration, synthetic
-database records, Auth users and private Storage evidence remain recorded in
-the registry. Vercel remains Hobby and Supabase remains Free/NANO in Sydney.
-Backup restore is not verified on the Free tier; observability is limited to
-Vercel and Supabase provider logs; the fictional Alpha retention/cleanup plan
-requires explicit approval before removal.
+The generic retention/file-menu/dialog and compatibility fixes were promoted
+through Master at product commit `4fbdca2b`, recorded in release
+`0.0.0-phase1vr.local`, and applied through the controlled Alpha upgrade. Alpha
+main is now `774ebad24f3c7675d6fde8eed9931243eaec7e93`; the READY production
+deployment is `dpl_8Lx2JyRDZWod9XGara7vftp1ojjF`. The upgrade preserved the
+client configuration, synthetic database/Auth/Storage evidence, and private
+Storage boundary. Production returned HTTP 200, anonymous dashboard access
+redirected to login, and the authenticated hosted dashboard loaded in Chrome.
+
+The deployment initially exposed a generic Hobby incompatibility: Master still
+listed per-minute Vercel cron schedules even though cron was approved OFF. The
+fix removed the cron definitions from `vercel.json`, was validated and pushed
+to Master, then redeployed successfully without Vercel Pro. The old manually
+created quote fixture with no source lineage remains retained synthetic stale
+data; the supported converted-project route and worksheet flow pass, so this is
+not treated as an active product failure. Vercel remains Hobby and Supabase
+remains Free/NANO in Sydney. Backup restore is not verified on the Free tier;
+observability is limited to Vercel and Supabase provider logs; the fictional
+Alpha retention/cleanup plan requires explicit approval before removal.
 
 ### Phase 1X-A3 verdict
 
-PARTIALLY — SPECIFIC MATERIAL HOSTED PRODUCT WORKFLOWS REMAIN
+YES — COMPLETE HOSTED TRADESSTACK PRODUCT COMMISSIONED WITH APPROVED EXCLUSIONS
 
-The remaining material items are promotion of the generic local fixes through
-Master and a controlled Alpha upgrade, plus repair or retirement of the legacy
-manually-created quote fixture with no source lineage. Real-customer status
-remains **NOT READY — PHASE 1X-B PRODUCTION HARDENING REMAINS**.
+The approved active hosted scope is commissioned. The stale legacy fixture is
+retained as synthetic data because repairing it would require inventing source
+lineage; it does not block the supported workflow. Real-customer status remains
+**NOT READY — PHASE 1X-B PRODUCTION HARDENING REMAINS**.

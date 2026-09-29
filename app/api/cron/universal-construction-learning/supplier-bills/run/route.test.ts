@@ -49,15 +49,14 @@ describe("Supplier Bill UCL refresh cron route", () => {
     });
   });
 
-  it("is scheduled every minute by the deployment configuration", () => {
+  it("is not scheduled while background jobs are OFF", () => {
     const config = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"),
     ) as { crons?: Array<{ path?: string; schedule?: string }> };
 
-    expect(config.crons).toContainEqual({
+    expect(config.crons ?? []).not.toContainEqual(expect.objectContaining({
       path: "/api/cron/universal-construction-learning/supplier-bills/run",
-      schedule: "* * * * *",
-    });
+    }));
   });
   it("does not run work when authenticated but not activated", async () => {
     vi.stubEnv("CRON_SECRET", "synthetic-cron-secret");

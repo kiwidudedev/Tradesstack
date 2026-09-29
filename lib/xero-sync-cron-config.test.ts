@@ -6,27 +6,18 @@ type VercelConfig = {
 };
 
 describe("Xero sync deployment schedule", () => {
-  it("runs the general Xero worker frequently enough to process queued Draft Bill exports", () => {
+  it("remains disabled while Xero is OFF", () => {
     const config = JSON.parse(readFileSync("vercel.json", "utf8")) as VercelConfig;
-    expect(config.crons).toContainEqual({
-      path: "/api/cron/xero-sync/run",
-      schedule: "* * * * *",
-    });
+    expect(config.crons ?? []).not.toContainEqual(expect.objectContaining({ path: "/api/cron/xero-sync/run" }));
   });
 
-  it("refreshes exported Xero Bill payment status without a multi-hour delay", () => {
+  it("does not schedule Xero Bill payment refresh while Xero is OFF", () => {
     const config = JSON.parse(readFileSync("vercel.json", "utf8")) as VercelConfig;
-    expect(config.crons).toContainEqual({
-      path: "/api/cron/xero-bill-status/run",
-      schedule: "*/5 * * * *",
-    });
+    expect(config.crons ?? []).not.toContainEqual(expect.objectContaining({ path: "/api/cron/xero-bill-status/run" }));
   });
 
-  it("refreshes linked Payment Claim Sales Invoice payment status on the same cadence", () => {
+  it("does not schedule linked Payment Claim Sales Invoice refresh while Xero is OFF", () => {
     const config = JSON.parse(readFileSync("vercel.json", "utf8")) as VercelConfig;
-    expect(config.crons).toContainEqual({
-      path: "/api/cron/xero-sales-invoice-status/run",
-      schedule: "*/5 * * * *",
-    });
+    expect(config.crons ?? []).not.toContainEqual(expect.objectContaining({ path: "/api/cron/xero-sales-invoice-status/run" }));
   });
 });

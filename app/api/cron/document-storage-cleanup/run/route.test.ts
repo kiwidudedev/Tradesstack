@@ -64,15 +64,14 @@ describe("document Storage cleanup cron", () => {
     });
   });
 
-  it("is registered with the production scheduler", () => {
+  it("is not registered while background jobs are OFF", () => {
     const config = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"),
     ) as { crons?: Array<{ path: string; schedule: string }> };
 
-    expect(config.crons).toContainEqual({
+    expect(config.crons ?? []).not.toContainEqual(expect.objectContaining({
       path: "/api/cron/document-storage-cleanup/run",
-      schedule: "* * * * *",
-    });
+    }));
   });
   it("does not run work when authenticated but not activated", async () => {
     vi.stubEnv("CRON_SECRET", "synthetic-cron-secret");

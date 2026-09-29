@@ -54,7 +54,7 @@ describe("explicit project-ledger Retention Claim workflow migration", () => {
     expect(sql).toContain("'processed', 0");
     expect(worker).not.toContain("createAdminSupabaseClient");
     expect(worker).not.toContain("process_retention_rolling_draft_jobs");
-    expect(vercel.crons?.some(
+    expect((vercel.crons ?? []).some(
       (cron) => cron.path === "/api/cron/retention-rolling-drafts/run",
     )).toBe(false);
   });
