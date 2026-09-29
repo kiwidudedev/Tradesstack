@@ -22,7 +22,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  min-width: 0;
   padding: 25px 0 0.35rem;
+}
+
+.heroBlock > div:first-child {
+  min-width: 0;
 }
 
 .heroActions {
@@ -51,11 +56,12 @@
 
 .heroSummary {
   margin: 0.65rem 0 0;
-  max-width: none;
+  max-width: 52rem;
   color: var(--dash-muted);
   font-size: 15px;
   line-height: 1.45;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .heroBadgeButton {
