@@ -77,6 +77,18 @@
     "tailwind-merge": "^3.3.1",
     "tus-js-client": "^4.3.1"
   },
+  "overrides": {
+    "glob": {
+      "minimatch": {
+        "brace-expansion": "^1.1.21"
+      }
+    },
+    "readdir-glob": {
+      "minimatch": {
+        "brace-expansion": "^2.1.7"
+      }
+    }
+  },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@testing-library/react": "^16.3.3",
