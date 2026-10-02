@@ -62,7 +62,7 @@ export async function renderTakeoffPdfPreviews(params: {
 
   const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsModule;
   const loadingTask = pdfjs.getDocument({
-    data: params.sourcePdfBytes,
+    data: new Uint8Array(params.sourcePdfBytes),
     disableFontFace: true,
     isEvalSupported: false,
     useWorkerFetch: false,
