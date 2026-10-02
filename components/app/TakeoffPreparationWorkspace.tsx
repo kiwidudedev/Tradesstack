@@ -12,6 +12,11 @@ interface TakeoffPreparationWorkspaceProps {
   drawingSetId: string;
 }
 
+// The hosted worker is intentionally external to the browser and runs on a
+// five-minute GitHub Actions cadence. Keep the page open across one full
+// cadence plus runner/startup variance before presenting a terminal error.
+const PREPARATION_DEADLINE_MS = 8 * 60_000;
+
 async function fetchTakeoffPreparation(input: RequestInfo | URL, init: RequestInit = {}) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
@@ -30,7 +35,6 @@ export function TakeoffPreparationWorkspace({
 }: TakeoffPreparationWorkspaceProps) {
   const owner = ownerProp ?? { kind: "opportunity" as const, slug: opportunityId ?? "" };
   const router = useRouter();
-  const workerRunningRef = useRef(false);
   const refreshTriggeredRef = useRef(false);
   const [helperText, setHelperText] = useState("Measure is starting the preview preparation pipeline for this drawing set.");
   const [terminalError, setTerminalError] = useState<string | null>(null);
@@ -39,45 +43,23 @@ export function TakeoffPreparationWorkspace({
 
   useEffect(() => {
     let cancelled = false;
-    let terminal = false;
-    const preparationDeadline = Date.now() + 120_000;
+    const preparationDeadline = Date.now() + PREPARATION_DEADLINE_MS;
     refreshTriggeredRef.current = false;
 
     async function enqueuePreparation() {
       try {
         const response = await fetchTakeoffPreparation(preparationUrl, { method: "POST", cache: "no-store" });
         if (!response.ok) {
-          terminal = true;
           setTerminalError("Measure could not start page preparation. You can retry safely.");
         }
       } catch {
-        terminal = true;
         setTerminalError("Measure could not start page preparation. Check your connection and retry.");
       }
     }
 
-    async function kickWorker() {
-      if (workerRunningRef.current || cancelled || terminal) {
-        return;
-      }
-
-      workerRunningRef.current = true;
-      try {
-        await fetchTakeoffPreparation("/api/takeoff/render-jobs/run?limit=1", {
-          method: "POST",
-          cache: "no-store",
-        });
-      } catch {
-        // Leave the workspace message calm and keep polling.
-      } finally {
-        workerRunningRef.current = false;
-      }
-    }
-
-    void enqueuePreparation().then(kickWorker);
-    const workerInterval = window.setInterval(() => {
-      void kickWorker();
-    }, 4000);
+    // The render route requires the private worker token and must never be
+    // invoked from the browser. The external worker polls the queued job.
+    void enqueuePreparation();
 
     const statusInterval = window.setInterval(async () => {
         if (cancelled || refreshTriggeredRef.current) {
@@ -85,7 +67,6 @@ export function TakeoffPreparationWorkspace({
         }
 
         if (Date.now() >= preparationDeadline) {
-          terminal = true;
           setHelperText("Page preparation did not complete within the expected window.");
           setTerminalError("Measure preparation timed out. Retry to start a fresh worker attempt.");
           return;
@@ -120,7 +101,6 @@ export function TakeoffPreparationWorkspace({
           }
 
           if (payload.status === "failed") {
-            terminal = true;
             setTerminalError(payload.error || "Measure could not prepare this PDF.");
           }
         } catch {
@@ -130,7 +110,6 @@ export function TakeoffPreparationWorkspace({
 
     return () => {
       cancelled = true;
-      window.clearInterval(workerInterval);
       window.clearInterval(statusInterval);
     };
   }, [attempt, preparationUrl, router]);
