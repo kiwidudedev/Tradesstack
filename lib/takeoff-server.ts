@@ -1,11 +1,9 @@
 import { assertJsonValue } from "@/lib/json-contract";
 import "server-only";
 
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
 import { PROJECT_DRAWING_SETS_BUCKET, toTakeoffPagePreviewStoragePath } from "@/lib/drawing-sets";
@@ -23,6 +21,7 @@ import {
   writeTakeoffIntelligenceEvent,
 } from "@/lib/takeoff-intelligence";
 import { resolveTakeoffMeasurementStatusTransition } from "@/lib/takeoff/measurement-lifecycle";
+import { renderTakeoffPdfPreviews } from "@/lib/takeoff-pdf-preview-renderer";
 import type { TakeoffDrawingSetSummaryMeasurement } from "@/lib/takeoff/measurement-summary";
 import { getAuthorizedTakeoffContext, resolveAuthorizedTakeoffContext } from "@/lib/takeoff-owner-server";
 import { parseTakeoffOwnerKey, type TakeoffRouteOwner } from "@/lib/takeoff/owner";
@@ -67,7 +66,7 @@ const takeoffMeasurementGroupSelect =
   "id, organization_id, project_id, opportunity_id, parent_group_id, name, code, color_hex, sort_order, status, trade_id, trade_label, metadata, created_by, created_at, updated_at";
 const projectDrawingSetSelect =
   "id, organization_id, project_id, uploaded_by, file_name, display_name, sort_order, archived_at, archived_by, source_type, source_revision, storage_path, file_size_bytes, mime_type, uploaded_at, created_at, updated_at";
-export const TAKEOFF_PREVIEW_RENDER_VERSION = "swift-pdfkit-v4";
+export const TAKEOFF_PREVIEW_RENDER_VERSION = "pdfjs-canvas-v1";
 export const TAKEOFF_PAGE_METADATA_RENDER_VERSION = "pdf-lib-metadata-v1";
 const TAKEOFF_PREVIEW_TARGET_PIXELS_PER_POINT = 3;
 const TAKEOFF_PREVIEW_MAX_EDGE_PX = 6144;
@@ -79,7 +78,6 @@ const TAKEOFF_PAGE_PREPARATION_MAX_BYTES = Number.isFinite(configuredPreparation
 const TAKEOFF_PAGE_PREPARATION_MAX_PAGES = Number.isFinite(configuredPreparationMaxPages) && configuredPreparationMaxPages > 0
   ? configuredPreparationMaxPages
   : DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_PAGES;
-const execFileAsync = promisify(execFile);
 
 export type TakeoffPage = Database["public"]["Tables"]["takeoff_pages"]["Row"];
 export type TakeoffPageSummary = Pick<TakeoffPage,
@@ -1676,8 +1674,6 @@ async function renderAndStoreTakeoffPagePreviews(params: {
   }
 
   const tempDirectory = await mkdtemp(join(tmpdir(), "tradesstack-takeoff-preview-"));
-  const sourcePdfPath = join(tempDirectory, "source.pdf");
-  const manifestPath = join(tempDirectory, "manifest.json");
   const outputDirectory = join(tempDirectory, "pages");
   const sourcePdfBytes =
     params.sourcePdfBytes
@@ -1695,53 +1691,25 @@ async function renderAndStoreTakeoffPagePreviews(params: {
         })();
 
   try {
-    await writeFile(sourcePdfPath, sourcePdfBytes);
-
-    const manifest = {
-      pdfPath: sourcePdfPath,
-      maxEdgePx: TAKEOFF_PREVIEW_MAX_EDGE_PX,
-      targetPixelsPerPoint: TAKEOFF_PREVIEW_TARGET_PIXELS_PER_POINT,
-      pages: pagesNeedingPreviews.map((page) => {
-        const geometry = getTakeoffPageRenderGeometry(page);
-        return {
-          pageNumber: page.page_number,
-          widthPts: geometry.rawWidthPts,
-          heightPts: geometry.rawHeightPts,
-          rotationDegrees: geometry.rotationDegrees,
-          outputWidthPts: geometry.displayWidthPts,
-          outputHeightPts: geometry.displayHeightPts,
-          outputPath: join(outputDirectory, `page-${String(page.page_number).padStart(4, "0")}.png`),
-        };
-      }),
-    };
-
-    await writeFile(manifestPath, JSON.stringify(manifest));
-    console.info("[takeoff-worker] Starting Swift preview renderer", {
+    console.info("[takeoff-worker] Starting PDF.js preview renderer", {
       drawingSetId: params.drawingSet.id,
       pageNumbers: pagesNeedingPreviews.map((page) => page.page_number),
       outputDirectory,
     });
-    try {
-      await execFileAsync("swift", [join(process.cwd(), "scripts/render_takeoff_pdf_previews.swift"), manifestPath], {
-        maxBuffer: 1024 * 1024 * 8,
-        env: {
-          ...process.env,
-          SWIFT_MODULECACHE_PATH: join(tempDirectory, "swift-module-cache"),
-          CLANG_MODULE_CACHE_PATH: join(tempDirectory, "swift-module-cache"),
-        },
-      });
-    } catch (error) {
-      const execError = error as Error & { stdout?: string; stderr?: string };
-      throw new TakeoffWorkerError("Swift preview renderer failed.", {
-        stage: "swift-render",
-        details: {
-          scriptPath: join(process.cwd(), "scripts/render_takeoff_pdf_previews.swift"),
-          stdout: execError.stdout ?? null,
-          stderr: execError.stderr ?? null,
-        },
-      });
-    }
-    console.info("[takeoff-worker] Swift preview renderer completed", {
+    await renderTakeoffPdfPreviews({
+      sourcePdfBytes,
+      pages: pagesNeedingPreviews.map((page) => {
+        const geometry = getTakeoffPageRenderGeometry(page);
+        return {
+          pageNumber: page.page_number,
+          outputPath: join(outputDirectory, `page-${String(page.page_number).padStart(4, "0")}.png`),
+          outputWidthPts: geometry.displayWidthPts,
+          outputHeightPts: geometry.displayHeightPts,
+          rotationDegrees: geometry.rotationDegrees,
+        };
+      }),
+    });
+    console.info("[takeoff-worker] PDF.js preview renderer completed", {
       drawingSetId: params.drawingSet.id,
       pageNumbers: pagesNeedingPreviews.map((page) => page.page_number),
     });
