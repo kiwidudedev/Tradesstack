@@ -25,7 +25,7 @@ describe("takeoff PDF preview renderer", () => {
       height: 48,
       color: rgb(0.2, 0.4, 0.6),
     });
-    const outputPath = join(directory, "page-0001.png");
+    const outputPath = join(directory, "pages", "page-0001.png");
 
     await renderTakeoffPdfPreviews({
       sourcePdfBytes: await pdf.save(),

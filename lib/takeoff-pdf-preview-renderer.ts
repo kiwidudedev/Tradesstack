@@ -1,5 +1,6 @@
 import { createCanvas } from "@napi-rs/canvas";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 type PdfPage = {
   getViewport: (params: { scale: number; rotation?: number }) => { width: number; height: number };
@@ -94,6 +95,7 @@ export async function renderTakeoffPdfPreviews(params: {
         background: "#ffffff",
       }).promise;
 
+      await mkdir(dirname(page.outputPath), { recursive: true });
       await writeFile(page.outputPath, canvas.toBuffer("image/png"));
     }
   } finally {
