@@ -125,6 +125,9 @@ function resolveClientRoot(client, workspace) {
 
 function currentBranch(root) { return capture("git", ["branch", "--show-current"], root); }
 function status(root) { return capture("git", ["status", "--porcelain"], root); }
+function localBranchExists(root, branch) {
+  return Boolean(capture("git", ["branch", "--list", branch], root));
+}
 
 function clientManifest(root) {
   const file = path.join(root, "release-manifest.json");
@@ -308,7 +311,13 @@ function promoteClient(client, release, options, releaseRoot) {
   } else if (options.skipClientValidation) {
     prepared.validation = { status: "SKIPPED_BY_OPERATOR", checks: [], reason: "Alpha release snapshot excludes client test support paths used by the broad client test suite" };
   }
-  run("git", ["switch", "-c", branch], root);
+  if (localBranchExists(root, branch)) {
+    if (status(root)) return { ...prepared, status: "BLOCKED_EXISTING_RELEASE_BRANCH_DIRTY", branch, errors: ["existing controlled release branch has uncommitted changes"] };
+    run("git", ["switch", branch], root);
+    run("git", ["merge", "--ff-only", client.defaultBranch ?? "main"], root);
+  } else {
+    run("git", ["switch", "-c", branch], root);
+  }
   materializeRelease(root, release, validation.previous, releaseRoot);
   run("git", ["add", "-A"], root);
   if (!status(root)) return { ...prepared, status: "ALREADY_CURRENT", branch, errors: [] };
