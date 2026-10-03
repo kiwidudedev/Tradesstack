@@ -11,7 +11,7 @@ const defaultRegistry = path.join(repositoryRoot, "ops/clients.json");
 const generatedFiles = new Set(["next-env.d.ts", "package-lock.json", "tsconfig.tsbuildinfo", "tsconfig.build.tsbuildinfo"]);
 
 function parseArgs(argv) {
-  const options = { apply: false, push: false, clone: false, applyDb: false, validate: false, skipDb: false, workspace: repositoryRoot };
+  const options = { apply: false, push: false, clone: false, applyDb: false, validate: false, skipDb: false, forceReleaseOwned: false, workspace: repositoryRoot };
   for (let index = 2; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--apply") options.apply = true;
@@ -20,6 +20,7 @@ function parseArgs(argv) {
     else if (argument === "--apply-db") options.applyDb = true;
     else if (argument === "--validate") options.validate = true;
     else if (argument === "--skip-db") options.skipDb = true;
+    else if (argument === "--force-release-owned") options.forceReleaseOwned = true;
     else if (argument.startsWith("--")) options[argument.slice(2)] = argv[++index];
   }
   return options;
@@ -133,7 +134,7 @@ function validateClient(root, client, release, options) {
   let divergent = [];
   if (previous && Array.isArray(previous.files) && previous.fileHashes) {
     divergent = previous.files.filter((file) => generatedFiles.has(file) ? false : !fs.existsSync(path.join(root, file)) || sha256File(path.join(root, file)) !== previous.fileHashes[file]);
-    if (divergent.length) errors.push(`release-owned divergence: ${divergent.slice(0, 12).join(", ")}${divergent.length > 12 ? "…" : ""}`);
+    if (divergent.length && !options.forceReleaseOwned) errors.push(`release-owned divergence: ${divergent.slice(0, 12).join(", ")}${divergent.length > 12 ? "…" : ""}`);
   }
   if (previous?.releaseId === release.manifest.releaseId && previous?.sourceSha === release.manifest.sourceSha && divergent.length === 0) errors.push("client already declares this release");
   const migration = release.manifest.database.migrationTarget;
