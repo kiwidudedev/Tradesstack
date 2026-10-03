@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "releaseId": "0.0.0-phase1vs.local",
-  "sourceSha": "97038e9c66a7eedfd62024b101d3c7c3168f7b0d",
+  "sourceSha": "4d68608ce16a5dbae38b920fd6d4ec8dc657c4de",
   "releaseFingerprint": "f99180a8c04c9ec5461744ba7d85e0be1b2d8977d63c9d310943b7c5eb9f7929",
   "applicationShell": {
     "releaseId": "0.0.0-phase1r.2",
