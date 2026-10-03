@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLIENT_SCHEDULER_DISPATCH_PATH,
   ClientConfigValidationError,
   defineTradesStackClientConfig,
   MASTER_CLIENT_CONFIG,
@@ -46,6 +47,47 @@ describe("@tradesstack/client-config", () => {
     expect(() => defineTradesStackClientConfig({
       ...alpha,
       apiKey: "must-not-be-config",
+    })).toThrow("unknown fields are not allowed");
+  });
+
+  it("validates provider-independent scheduler configuration without accepting secrets", () => {
+    const resolved = defineTradesStackClientConfig({
+      ...alpha,
+      scheduler: {
+        adapter: "vercel-cron",
+        dispatcherPath: CLIENT_SCHEDULER_DISPATCH_PATH,
+        enabledJobs: ["retention-rolling-drafts", "document-storage-cleanup"],
+      },
+    });
+    expect(resolved.scheduler).toEqual({
+      adapter: "vercel-cron",
+      dispatcherPath: "/api/cron/dispatch",
+      enabledJobs: ["retention-rolling-drafts", "document-storage-cleanup"],
+    });
+    expect(() => defineTradesStackClientConfig({
+      ...alpha,
+      scheduler: {
+        adapter: "vercel-cron",
+        dispatcherPath: "/api/cron/dispatch",
+        enabledJobs: ["retention-rolling-drafts", "retention-rolling-drafts"],
+      },
+    })).toThrow("must not contain duplicates");
+    expect(() => defineTradesStackClientConfig({
+      ...alpha,
+      scheduler: {
+        adapter: "vercel-cron",
+        dispatcherPath: "/api/cron/dispatch",
+        enabledJobs: ["not-a-client-job"],
+      },
+    })).toThrow("not an allowlisted scheduler job");
+    expect(() => defineTradesStackClientConfig({
+      ...alpha,
+      scheduler: {
+        adapter: "vercel-cron",
+        dispatcherPath: "/api/cron/dispatch",
+        enabledJobs: [],
+        cronSecret: "must-not-be-config",
+      },
     })).toThrow("unknown fields are not allowed");
   });
 });

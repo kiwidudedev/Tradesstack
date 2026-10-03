@@ -18,6 +18,31 @@ export const MASTER_CLIENT_CONFIG = {
   },
 } as const;
 
+export const CLIENT_SCHEDULER_DISPATCH_PATH = "/api/cron/dispatch" as const;
+export const CLIENT_SCHEDULER_ADAPTERS = ["vercel-cron", "external"] as const;
+export type ClientSchedulerAdapter = (typeof CLIENT_SCHEDULER_ADAPTERS)[number];
+export const CLIENT_SCHEDULER_JOB_NAMES = [
+  "document-storage-cleanup",
+  "material-supplier-pricing",
+  "organization-memory-retirement",
+  "project-qa-evidence-cleanup",
+  "retention-rolling-drafts",
+  "universal-construction-learning",
+  "universal-construction-learning/supplier-bills",
+  "worksheet-event-classifications",
+  "worksheet-memory-evidence-pools",
+  "worksheet-memory-semantic-pools",
+  "worksheet-memory-synthesis",
+  "worksheet-mutation-evidence-v2",
+] as const;
+export type ClientSchedulerJobName = (typeof CLIENT_SCHEDULER_JOB_NAMES)[number];
+
+export type ClientSchedulerConfig = {
+  readonly adapter: ClientSchedulerAdapter;
+  readonly dispatcherPath: typeof CLIENT_SCHEDULER_DISPATCH_PATH;
+  readonly enabledJobs: readonly ClientSchedulerJobName[];
+};
+
 export type ClientConfig = {
   readonly schemaVersion: 1;
   readonly identity: {
@@ -34,6 +59,7 @@ export type ClientConfig = {
     readonly currency: string;
     readonly timezone: string;
   };
+  readonly scheduler?: ClientSchedulerConfig;
 };
 
 export class ClientConfigValidationError extends Error {
@@ -101,7 +127,7 @@ function validateTimezone(value: unknown): string {
 
 export function defineTradesStackClientConfig(input: unknown): ClientConfig {
   const root = record(input, "config");
-  rejectUnknown(root, ["schemaVersion", "identity", "theme", "defaults"], "config");
+  rejectUnknown(root, ["schemaVersion", "identity", "theme", "defaults", "scheduler"], "config");
   if (root.schemaVersion !== 1) {
     throw new ClientConfigValidationError("schemaVersion", "must be 1.");
   }
@@ -125,11 +151,44 @@ export function defineTradesStackClientConfig(input: unknown): ClientConfig {
   const currency = stringValue(defaults.currency, "defaults.currency", { pattern: CURRENCY, max: 3 });
   const timezone = validateTimezone(defaults.timezone);
 
+  let scheduler: ClientSchedulerConfig | undefined;
+  if (root.scheduler !== undefined) {
+    const schedulerValue = record(root.scheduler, "scheduler");
+    rejectUnknown(schedulerValue, ["adapter", "dispatcherPath", "enabledJobs"], "scheduler");
+    const adapter = stringValue(schedulerValue.adapter, "scheduler.adapter", { max: 30 });
+    if (!(CLIENT_SCHEDULER_ADAPTERS as readonly string[]).includes(adapter)) {
+      throw new ClientConfigValidationError("scheduler.adapter", "has an invalid value.");
+    }
+    if (schedulerValue.dispatcherPath !== CLIENT_SCHEDULER_DISPATCH_PATH) {
+      throw new ClientConfigValidationError("scheduler.dispatcherPath", "must use the client dispatcher path.");
+    }
+    if (!Array.isArray(schedulerValue.enabledJobs)) {
+      throw new ClientConfigValidationError("scheduler.enabledJobs", "must be an array.");
+    }
+    const enabledJobs = schedulerValue.enabledJobs.map((job, index) =>
+      stringValue(job, `scheduler.enabledJobs[${index}]`, { max: 100 }));
+    for (const [index, job] of enabledJobs.entries()) {
+      if (!(CLIENT_SCHEDULER_JOB_NAMES as readonly string[]).includes(job)) {
+        throw new ClientConfigValidationError(`scheduler.enabledJobs[${index}]`, "is not an allowlisted scheduler job.");
+      }
+    }
+    if (new Set(enabledJobs).size !== enabledJobs.length) {
+      throw new ClientConfigValidationError("scheduler.enabledJobs", "must not contain duplicates.");
+    }
+    const validatedEnabledJobs = enabledJobs as ClientSchedulerJobName[];
+    scheduler = {
+      adapter: adapter as ClientSchedulerAdapter,
+      dispatcherPath: CLIENT_SCHEDULER_DISPATCH_PATH,
+      enabledJobs: validatedEnabledJobs,
+    };
+  }
+
   return {
     schemaVersion: 1,
     identity: description === undefined ? { clientKey, displayName } : { clientKey, displayName, description },
     theme: { platformColor, actionColor },
     defaults: { locale, currency, timezone },
+    ...(scheduler ? { scheduler } : {}),
   };
 }
 
