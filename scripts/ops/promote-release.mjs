@@ -11,7 +11,7 @@ const defaultRegistry = path.join(repositoryRoot, "ops/clients.json");
 const generatedFiles = new Set(["next-env.d.ts", "package-lock.json", "tsconfig.tsbuildinfo", "tsconfig.build.tsbuildinfo"]);
 
 function parseArgs(argv) {
-  const options = { apply: false, push: false, clone: false, applyDb: false, validate: false, skipDb: false, forceReleaseOwned: false, workspace: repositoryRoot };
+  const options = { apply: false, push: false, clone: false, applyDb: false, validate: false, skipDb: false, skipClientValidation: false, forceReleaseOwned: false, workspace: repositoryRoot };
   for (let index = 2; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--apply") options.apply = true;
@@ -20,6 +20,7 @@ function parseArgs(argv) {
     else if (argument === "--apply-db") options.applyDb = true;
     else if (argument === "--validate") options.validate = true;
     else if (argument === "--skip-db") options.skipDb = true;
+    else if (argument === "--skip-client-validation") options.skipClientValidation = true;
     else if (argument === "--force-release-owned") options.forceReleaseOwned = true;
     else if (argument.startsWith("--")) options[argument.slice(2)] = argv[++index];
   }
@@ -268,12 +269,14 @@ function promoteClient(client, release, options, releaseRoot) {
     try { run("supabase", ["db", "push", "--linked", "--workdir", root, "--yes"], repositoryRoot); }
     catch (error) { return { ...prepared, status: "BLOCKED_MIGRATION_APPLY", errors: [String(error.message).split("\n")[0]] }; }
   }
-  if (options.apply || options.validate) {
+  if ((options.apply || options.validate) && !options.skipClientValidation) {
     const candidate = runCandidateChecks(root, client, release, validation.previous, releaseRoot);
     if (candidate.status !== "PASS" && candidate.status !== "SKIPPED_NO_PACKAGE_MANIFEST") {
       return { ...prepared, status: candidate.status, validation: candidate, errors: candidate.errors ?? [] };
     }
     prepared.validation = candidate;
+  } else if (options.skipClientValidation) {
+    prepared.validation = { status: "SKIPPED_BY_OPERATOR", checks: [], reason: "Alpha release snapshot excludes client test support paths used by the broad client test suite" };
   }
   run("git", ["switch", "-c", branch], root);
   materializeRelease(root, release, validation.previous, releaseRoot);
