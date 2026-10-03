@@ -1,0 +1,31 @@
+name: Publish Control Plane operational contract
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ops/clients.json"
+      - "ops/releases/**"
+      - "ops/commissioning/**"
+      - "ops/hardening/**"
+      - "ops/differences/**"
+      - "scripts/ops/control-plane-contract.mjs"
+      - "scripts/ops/publish-control-plane-contract.mjs"
+      - ".github/workflows/publish-control-plane-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out Main
+        uses: actions/checkout@v4
+
+      - name: Publish private Control Plane contract
+        env:
+          CONTROL_PLANE_CONTRACT_REPOSITORY: kiwidudedev/tradesstack-control-plane-contract
+          CONTROL_PLANE_ARTIFACT_TOKEN: ${{ secrets.CONTROL_PLANE_ARTIFACT_TOKEN }}
+        run: node scripts/ops/publish-control-plane-contract.mjs
