@@ -138,7 +138,7 @@ function validateClient(root, client, release, options) {
   }
   if (previous?.releaseId === release.manifest.releaseId && previous?.sourceSha === release.manifest.sourceSha && divergent.length === 0) errors.push("client already declares this release");
   const migration = release.manifest.database.migrationTarget;
-  if (!fs.existsSync(path.join(root, "supabase/migrations", migration))) errors.push(`client migration missing: ${migration}`);
+  if (!fs.existsSync(path.join(root, "supabase/migrations", migration)) && !options.forceReleaseOwned) errors.push(`client migration missing: ${migration}`);
   const migrationState = { status: options.skipDb ? "SKIPPED_BY_OPERATOR" : "NOT_LINKED_OR_NOT_CHECKED", target: migration, pending: false, ledger: null };
   if (!options.skipDb && fs.existsSync(path.join(root, "supabase/.temp/project-ref"))) {
     try {
