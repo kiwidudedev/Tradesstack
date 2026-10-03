@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "releaseId": "0.0.0-phase1vs.local",
-  "sourceSha": "300736d294f2dddd25dd20910c41ea57f4acbc86",
-  "releaseFingerprint": "f99180a8c04c9ec5461744ba7d85e0be1b2d8977d63c9d310943b7c5eb9f7929",
+  "sourceSha": "bfd4eb0b6263341e2b39b79255db8dbdfaf500dc",
+  "releaseFingerprint": "0f324111c463bcd1ed7b898597614688cb956dedcae49e84ca440187870153ef",
   "applicationShell": {
     "releaseId": "0.0.0-phase1r.2",
     "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
@@ -2533,6 +2533,10 @@
     "tailwind.config.ts",
     "test-support/next-font-local.ts",
     "test-support/server-only.ts",
+    "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.pdf",
+    "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.ts",
+    "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test.pdf",
+    "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test_provider_fallback.pdf",
     "tsconfig.build.json",
     "tsconfig.json",
     "types/pdfjs-dist-min.d.ts",
@@ -5036,6 +5040,10 @@
     "tailwind.config.ts": "7a30c665445f07b4f9d362bfe6ac804141d30df44b51174ea08c391301ce31b0",
     "test-support/next-font-local.ts": "9fbcc3823ff62a1d63757da18eb5ad7367a867bc495133ef81cc4b3fd79e8ceb",
     "test-support/server-only.ts": "d3b8cf4275da27205fe5cc7860c2244a84c0bcf037d2c8b9ae3c9445461b30df",
+    "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.pdf": "f263f45a21c0ca711ffa428e08f41a03c5092d0532f2ccae8111a779abc418af",
+    "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.ts": "93cebdad1b7e9de6e1a36476c2ccbb7794904f9772426436ff2dcefd3a09d7f4",
+    "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test.pdf": "496650d4b087e419c06d4736baa7116cf694515465af9a5a5fba672022386719",
+    "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test_provider_fallback.pdf": "75a180023f2aa0bf61bc8a49f33ee4ca592463ed36b8f90ed22b61dd5e157a02",
     "tsconfig.build.json": "cd3892328c6f8e513883570d564f3f98ab3c6a789dcbe60ecada6d9490e5807d",
     "tsconfig.json": "b2b6abca7efb3226d9721760fc5678d470c80e956e53ac7d26ad15dca98d2cca",
     "types/pdfjs-dist-min.d.ts": "9df2f2a2e76c70945f59fba80ae96a657286c7f41cfddf55128ddc01044f3259",
