@@ -77,7 +77,7 @@ function loadRelease(manifestPath) {
 const releaseRootFiles = [
   ".gitattributes", ".gitignore", ".nvmrc", ".env.example", "eslint.config.mjs", "next.config.ts",
   "package.json", "package-lock.json", "postcss.config.js", "proxy.ts", "tailwind.config.ts",
-  "tsconfig.json", "tsconfig.build.json", "vercel.json", "vitest.config.ts",
+  "tsconfig.json", "tsconfig.build.json", "vercel.json", "vitest.config.ts", "vitest.release.config.ts",
 ];
 const releaseDirectories = ["app", "components", "hooks", "lib", "packages", "public", "styles", "types"];
 const releaseExclusions = new Set([".git", ".next", ".tmp", ".dsh-drop", "artifacts", "docs", "proofs", "scripts", "client", "node_modules"]);
