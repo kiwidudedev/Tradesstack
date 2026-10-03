@@ -43,10 +43,12 @@
     "ops:migrations": "node scripts/ops/migrations.mjs",
     "ops:security": "node scripts/ops/security.mjs",
     "ops:drift": "node scripts/ops/drift.mjs",
+    "ops:control-plane": "node scripts/ops/control-plane-state.mjs",
     "ops:prehosting": "corepack npm run ops:prehosting:check",
     "ops:prehosting:check": "node scripts/ops/prehosting.mjs",
     "ops:validate-release": "corepack npm run ops:validate-release:check",
     "ops:validate-release:check": "node scripts/ops/validate-release.mjs",
+    "ops:version": "node scripts/ops/versioning.mjs",
     "release:promote": "node scripts/ops/promote-release.mjs",
     "client:register": "node scripts/ops/register-client.mjs",
     "test:client-promotion": "node --test scripts/ops/promote-release.test.mjs",
@@ -90,6 +92,9 @@
       "minimatch": {
         "brace-expansion": "^2.1.7"
       }
+    },
+    "exceljs": {
+      "uuid": "14.0.2"
     }
   },
   "devDependencies": {

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, readJson, walkFiles, scanJsonForSecrets, result, printResult, SECRET_PATTERNS } from "./lib.mjs";
+import { ROOT, readJson, latestOfficialReleaseManifest, walkFiles, scanJsonForSecrets, result, printResult, SECRET_PATTERNS } from "./lib.mjs";
 
 const errors = [];
-const manifest = readJson(path.join(ROOT, "ops/releases/0.0.0-phase1v.local.json"));
+const manifest = latestOfficialReleaseManifest().value;
 const registry = readJson(path.join(ROOT, "ops/clients.json"));
 for (const [label, value] of [["release manifest", manifest], ["client registry", registry]]) {
   for (const location of scanJsonForSecrets(value)) errors.push(`${label}: secret-like value at ${location}`);

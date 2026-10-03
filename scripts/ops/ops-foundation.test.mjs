@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { validateReleaseManifest, validateRegistry } from "./lib.mjs";
+import { compareSemver, nextSemver, semver, validateReleaseManifest, validateRegistry } from "./lib.mjs";
 
 const validRelease = {
   schemaVersion: 1,
-  releaseId: "test-release",
+  releaseId: "1.0.1",
+  version: "1.0.1",
+  displayLabel: "TradesStack 1.0.1",
+  releaseType: "OFFICIAL",
+  status: "APPROVED",
+  releaseDate: "2026-10-03",
+  previousRelease: "1.0.0",
   sourceSha: "361bf3f094a8abbb58d20606413686cebc242e66",
   applicationShell: { releaseId: "0.0.0-phase1r.2", fingerprint: "730107a9922d91f8b4a30f50b418a849639c82ba54d82e3d0679b051246525d6" },
   database: { baseline: "phase1o-1", migrationTarget: "20260926100000_fix_organization_logo_storage_policy_scope.sql" },
   clientConfig: { contract: "@tradesstack/client-config@0.0.0" },
   toolchain: { node: "22.22.2", npm: "11.6.2", next: "16.3.3" },
-  validation: { status: "LOCAL_CHECKS_REQUIRED" },
-  approval: { realClient: "BLOCKED" },
+  validation: { status: "PASS" },
+  approval: { realClient: "APPROVED" },
 };
 
 describe("local production operations foundation", () => {
@@ -66,5 +72,14 @@ describe("local production operations foundation", () => {
         operations: { scheduler: { ...valid.clients[0].operations.scheduler, dispatcherPath: "/unsafe" } },
       }],
     }, ["known"])).toContain("client-alpha: operations.scheduler.dispatcherPath invalid");
+  });
+
+  it("enforces semantic version ordering and bump rules", () => {
+    expect(semver("1.0.0")).toBe(true);
+    expect(semver("0.0.0-phase1vs.local")).toBe(false);
+    expect(compareSemver("1.1.0", "1.0.0")).toBeGreaterThan(0);
+    expect(nextSemver("1.0.0", "minor")).toBe("1.1.0");
+    expect(nextSemver("1.1.0", "patch")).toBe("1.1.1");
+    expect(nextSemver("1.1.1", "major")).toBe("2.0.0");
   });
 });

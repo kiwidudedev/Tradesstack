@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { latestOfficialReleaseManifest } from "./lib.mjs";
 
 const repositoryRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const args = new Map();
@@ -12,10 +13,9 @@ for (let index = 2; index < process.argv.length; index += 1) {
   index += 1;
 }
 
-const mainManifestPath = path.resolve(
-  repositoryRoot,
-  args.get("--main-manifest") ?? "ops/releases/0.0.0-phase1v.local.json",
-);
+const mainManifestPath = args.get("--main-manifest")
+  ? path.resolve(repositoryRoot, args.get("--main-manifest"))
+  : latestOfficialReleaseManifest(repositoryRoot).path;
 const clientRoot = path.resolve(repositoryRoot, args.get("--client-root") ?? "..");
 const clientManifestPath = path.resolve(
   clientRoot,

@@ -5,10 +5,15 @@
 The Main repository is the product authority. Client repositories consume an
 approved Main release; they do not independently author core product fixes.
 
+The official product version is stored in `ops/product-version.json`. Each
+approved release has one immutable semantic-versioned manifest directly under
+`ops/releases/`, such as `ops/releases/1.0.0.json`. The customer-facing label
+is the manifest's `displayLabel`, for example `TradesStack 1.0.0`.
+
 The promotion engine is `scripts/ops/promote-release.mjs` and is exposed as:
 
 ```text
-npm run release:promote -- --release 0.0.0-phase1vs.local --workspace /path/to/client/workspaces
+  npm run release:promote -- --release 1.0.0 --workspace /path/to/client/workspaces
 ```
 
 The default is a read-only fan-out preflight. It loads enabled clients from
@@ -23,7 +28,7 @@ An approved operator may prepare client upgrade branches with:
 
 ```text
 npm run release:promote -- \
-  --release 0.0.0-phase1vs.local \
+  --release 1.0.0 \
   --workspace /path/to/client/workspaces \
   --apply \
   --output artifacts/release-rollout.json
@@ -53,6 +58,30 @@ If a forward migration is approved and pending for a client, use `--apply-db`
 with `--apply`; the engine invokes only normal `supabase db push --linked`.
 If Supabase reports an older deferred or ambiguous migration, that client is
 blocked independently and the other clients continue.
+
+## Version rules
+
+Use the version helper before creating a manifest:
+
+```text
+npm run ops:version -- --suggest minor
+npm run ops:version -- --suggest patch
+npm run ops:version -- --suggest major
+npm run ops:version -- --version 1.1.0
+```
+
+`1.0.0` is the current official baseline established from the already-verified
+Main-to-Alpha release. Feature releases increment the minor component, fixes
+increment the patch component, and breaking changes increment the major
+component. Existing official manifest paths cannot be overwritten. Internal
+proof identifiers remain under `ops/releases/internal/` and are never valid
+customer release targets.
+
+Every official manifest records the semantic version, customer-facing label,
+release date, exact Main source SHA, release fingerprint, migration target,
+validation status, and approval state. Customer registry entries reference the
+official version, while customer-owned configuration and data remain outside
+the release version.
 
 ## Registry and onboarding
 

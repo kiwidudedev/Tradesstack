@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "product": "TradesStack",
+  "officialVersion": "1.0.0",
+  "displayLabel": "TradesStack 1.0.0",
+  "approvedReleaseManifest": "ops/releases/1.0.0.json",
+  "approvedSourceSha": "10cec7352ed80d97bfc387b8265736c781d35112",
+  "currentMainHead": "bc224703c67b016d9f1e403adcf14e288c7a8dd0",
+  "releaseFingerprint": "a8ef678a32f9fe1fff3015a34624509707af0ab548e3187066b07c77b9225558",
+  "migrationTarget": "20261003160000_add_mobile_project_variation_capabilities_v1.sql",
+  "releaseDate": "2026-10-03",
+  "validationStatus": "PASS"
+}

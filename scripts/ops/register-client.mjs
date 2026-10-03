@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { latestOfficialReleaseManifest } from "./lib.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const registryPath = path.join(repositoryRoot, "ops/clients.json");
-const releasePath = path.join(repositoryRoot, "ops/releases/0.0.0-phase1v.local.json");
 const options = { apply: false };
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
@@ -20,7 +20,7 @@ if (missing.length) {
 }
 
 const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
-const release = JSON.parse(fs.readFileSync(releasePath, "utf8"));
+const release = latestOfficialReleaseManifest(repositoryRoot).value;
 if (registry.clients.some((client) => client.clientId === options["client-id"])) {
   console.error(`Client already registered: ${options["client-id"]}`);
   process.exit(1);

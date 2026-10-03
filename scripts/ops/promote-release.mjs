@@ -4,9 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { latestOfficialReleaseManifest, semver, validateReleaseManifest } from "./lib.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const defaultReleaseManifest = path.join(repositoryRoot, "ops/releases/0.0.0-phase1v.local.json");
+const defaultReleaseManifest = latestOfficialReleaseManifest(repositoryRoot).path;
 const defaultRegistry = path.join(repositoryRoot, "ops/clients.json");
 const generatedFiles = new Set(["next-env.d.ts", "package-lock.json", "tsconfig.tsbuildinfo", "tsconfig.build.tsbuildinfo"]);
 
@@ -45,13 +46,7 @@ function resolveReleaseManifest(request) {
   const direct = path.isAbsolute(request) ? request : path.resolve(repositoryRoot, request);
   const candidates = [direct, `${direct}.json`, path.join(repositoryRoot, "ops/releases", `${request}.json`)];
   for (const candidate of candidates) if (fs.existsSync(candidate)) return candidate;
-  const releaseDirectory = path.join(repositoryRoot, "ops/releases");
-  for (const file of fs.readdirSync(releaseDirectory).filter((entry) => entry.endsWith(".json"))) {
-    const candidate = path.join(releaseDirectory, file);
-    try {
-      if (readJson(candidate).releaseId === request) return candidate;
-    } catch { /* malformed manifests are reported by validation */ }
-  }
+  if (semver(request)) return path.join(repositoryRoot, "ops/releases", `${request}.json`);
   throw new Error(`Main release manifest not found: ${request}`);
 }
 
@@ -61,7 +56,7 @@ function releaseFingerprint(manifest) {
 
 function loadRelease(manifestPath) {
   const manifest = readJson(manifestPath);
-  const errors = [];
+  const errors = [...validateReleaseManifest(manifest)];
   if (!manifest.releaseId) errors.push("releaseId missing");
   if (!/^[0-9a-f]{40}$/.test(manifest.sourceSha ?? "")) errors.push("sourceSha must be a full SHA-1");
   if (!hasCommit(manifest.sourceSha)) errors.push(`source SHA is not present in Main: ${manifest.sourceSha}`);

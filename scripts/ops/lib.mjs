@@ -38,6 +38,28 @@ export function sha(value) {
   return /^[0-9a-f]{40}$/i.test(value);
 }
 
+export function semver(value) {
+  return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value || "");
+}
+
+export function compareSemver(left, right) {
+  const a = String(left).split(".").map(Number);
+  const b = String(right).split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return 0;
+}
+
+export function nextSemver(current, bump) {
+  if (!semver(current)) throw new Error(`Invalid semantic version: ${current}`);
+  const [major, minor, patch] = current.split(".").map(Number);
+  if (bump === "major") return `${major + 1}.0.0`;
+  if (bump === "minor") return `${major}.${minor + 1}.0`;
+  if (bump === "patch") return `${major}.${minor}.${patch + 1}`;
+  throw new Error(`Unknown version bump: ${bump}`);
+}
+
 export function fingerprint(value) {
   return /^[0-9a-f]{64}$/i.test(value);
 }
@@ -48,10 +70,17 @@ export function migrationName(value) {
 
 export function validateReleaseManifest(manifest) {
   const errors = [];
-  const required = ["schemaVersion", "releaseId", "sourceSha", "applicationShell", "database", "clientConfig", "toolchain", "validation", "approval"];
+  const required = ["schemaVersion", "releaseId", "version", "displayLabel", "releaseType", "status", "releaseDate", "sourceSha", "applicationShell", "database", "clientConfig", "toolchain", "validation", "approval"];
   for (const field of required) if (!(field in manifest)) errors.push(`missing ${field}`);
   if (manifest.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   if (typeof manifest.releaseId !== "string" || !manifest.releaseId) errors.push("releaseId must be non-empty");
+  if (!semver(manifest.version)) errors.push("version must be strict semantic versioning MAJOR.MINOR.PATCH");
+  if (manifest.releaseId !== manifest.version) errors.push("releaseId must equal version");
+  if (manifest.displayLabel !== `TradesStack ${manifest.version}`) errors.push("displayLabel must be TradesStack plus the official version");
+  if (manifest.releaseType !== "OFFICIAL") errors.push("releaseType must be OFFICIAL");
+  if (manifest.status !== "APPROVED") errors.push("status must be APPROVED");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(manifest.releaseDate || "")) errors.push("releaseDate must be YYYY-MM-DD");
+  if (manifest.previousRelease !== null && !semver(manifest.previousRelease)) errors.push("previousRelease must be null or semantic version");
   if (!sha(manifest.sourceSha)) errors.push("sourceSha must be a 40-character SHA-1");
   if (!manifest.applicationShell || typeof manifest.applicationShell.releaseId !== "string") errors.push("applicationShell.releaseId missing");
   if (!manifest.applicationShell || !fingerprint(manifest.applicationShell.fingerprint)) errors.push("applicationShell.fingerprint must be SHA-256");
@@ -62,10 +91,30 @@ export function validateReleaseManifest(manifest) {
   if (!manifest.toolchain || !/^v?\d+\.\d+\.\d+$/.test(manifest.toolchain.node)) errors.push("toolchain.node missing/invalid");
   if (!manifest.toolchain || !/^\d+\.\d+\.\d+$/.test(manifest.toolchain.npm)) errors.push("toolchain.npm missing/invalid");
   if (!manifest.toolchain || !/^\d+\.\d+\.\d+$/.test(manifest.toolchain.next)) errors.push("toolchain.next missing/invalid");
-  if (!manifest.validation || manifest.validation.status !== "LOCAL_CHECKS_REQUIRED") errors.push("validation.status must remain LOCAL_CHECKS_REQUIRED");
-  if (!manifest.approval || manifest.approval.realClient !== "BLOCKED") errors.push("approval.realClient must remain BLOCKED");
+  if (!manifest.validation || manifest.validation.status !== "PASS") errors.push("validation.status must be PASS for an official release");
+  if (!manifest.approval || manifest.approval.realClient !== "APPROVED") errors.push("approval.realClient must be APPROVED for an official release");
   errors.push(...scanJsonForSecrets(manifest).map((location) => `secret-like value at ${location}`));
   return errors;
+}
+
+export function officialReleaseManifests(root = ROOT) {
+  const directory = path.join(root, "ops/releases");
+  const releases = fs.readdirSync(directory)
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => ({ file, value: readJson(path.join(directory, file)) }))
+    .filter(({ value }) => value.releaseType === "OFFICIAL" && semver(value.version));
+  const seen = new Set();
+  for (const release of releases) {
+    if (seen.has(release.value.version)) throw new Error(`Duplicate official release version: ${release.value.version}`);
+    seen.add(release.value.version);
+  }
+  return releases;
+}
+
+export function latestOfficialReleaseManifest(root = ROOT) {
+  const releases = officialReleaseManifests(root).sort((left, right) => compareSemver(right.value.version, left.value.version));
+  if (!releases[0]) throw new Error("No official semantic release manifest exists");
+  return { path: path.join(root, "ops/releases", releases[0].file), ...releases[0] };
 }
 
 export function validateRegistry(registry, knownReleaseIds = []) {

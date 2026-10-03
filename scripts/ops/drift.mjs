@@ -1,8 +1,8 @@
 import path from "node:path";
-import { ROOT, readJson, result, printResult } from "./lib.mjs";
+import { ROOT, readJson, latestOfficialReleaseManifest, result, printResult } from "./lib.mjs";
 
 const registry = readJson(path.join(ROOT, "ops/clients.json"));
-const release = readJson(path.join(ROOT, "ops/releases/0.0.0-phase1v.local.json"));
+const release = latestOfficialReleaseManifest().value;
 const details = ["provider drift is intentionally not inspected without provider access"];
 const errors = [];
 for (const client of registry.clients || []) {

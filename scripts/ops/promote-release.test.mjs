@@ -56,9 +56,20 @@ test("one Main release fans out while preserving two client configurations", () 
     fixture(alpha, "one"); fixture(beta, "two"); fixture(blocked, "blocked", true);
     const release = {
       schemaVersion: 1,
-      releaseId: "0.0.0-proof-fanout",
+      releaseId: "9.9.9",
+      version: "9.9.9",
+      displayLabel: "TradesStack 9.9.9",
+      releaseType: "OFFICIAL",
+      status: "APPROVED",
+      releaseDate: "2026-10-03",
+      previousRelease: "9.9.8",
       sourceSha,
-      database: { migrationTarget: files.at(-1).split("/").at(-1) },
+      applicationShell: { releaseId: "1.0.0", fingerprint: "730107a9922d91f8b4a30f50b418a849639c82ba54d82e3d0679b051246525d6" },
+      database: { baseline: "phase1o-1", migrationTarget: files.at(-1).split("/").at(-1) },
+      clientConfig: { contract: "@tradesstack/client-config@0.0.0" },
+      toolchain: { node: "22.22.2", npm: "11.6.2", next: "16.3.3" },
+      validation: { status: "PASS" },
+      approval: { realClient: "APPROVED" },
       files,
       fileHashes: Object.fromEntries(files.map((file) => [file, hash(path.join(repositoryRoot, file))])),
     };

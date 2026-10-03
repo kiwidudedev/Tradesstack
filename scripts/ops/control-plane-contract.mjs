@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { ROOT, readJson, scanJsonForSecrets, sha } from "./lib.mjs";
+import { ROOT, compareSemver, readJson, scanJsonForSecrets, semver, sha } from "./lib.mjs";
 
 export const CONTRACT_SCHEMA_VERSION = 1;
 export const VERIFICATION_STATES = ["VERIFIED", "NOT_VERIFIED", "UNKNOWN", "STALE", "BLOCKED", "ERROR"];
@@ -50,13 +50,13 @@ function emptyObserved(value = null) {
 
 function customerRecord(client, release, commissioning, hardening, differences, mainHead) {
   const registrySource = "ops/clients.json";
-  const releaseSource = "ops/releases/0.0.0-phase1v.local.json";
+  const releaseSource = `ops/releases/${release.version}.json`;
   const commissioningSource = "ops/commissioning/client-alpha.json";
   const hardeningSource = "ops/hardening/client-alpha.json";
   const commissionProv = commissioning?.releaseProvenance ?? {};
   const hardeningInfra = hardening?.infrastructure ?? {};
-  const recordedDeploymentId = hardeningInfra.lastRecordedDeployment ?? client.releaseProvenance?.deploymentId ?? commissionProv.deploymentId ?? null;
-  const recordedRepositorySha = hardeningInfra.lastRecordedRepositorySha ?? client.releaseProvenance?.repositorySha ?? commissionProv.deployedRepositorySha ?? null;
+  const recordedDeploymentId = client.releaseProvenance?.deploymentId ?? hardeningInfra.lastRecordedDeployment ?? commissionProv.deploymentId ?? null;
+  const recordedRepositorySha = client.releaseProvenance?.repositorySha ?? hardeningInfra.lastRecordedRepositorySha ?? commissionProv.deployedRepositorySha ?? null;
   const historicalSha = commissionProv.deployedRepositorySha ?? client.releaseProvenance?.repositorySha ?? null;
   const historicalDeployment = commissionProv.deploymentId ?? client.releaseProvenance?.deploymentId ?? null;
 
@@ -75,9 +75,13 @@ function customerRecord(client, release, commissioning, hardening, differences, 
     release: {
       currentMainHead: fact(mainHead, "OBSERVED", "git:HEAD", mainHead ? "VERIFIED" : "UNKNOWN", null, mainHead ? "CURRENT" : "UNKNOWN", "REPOSITORY_STATE"),
       approvedMainRelease: fact(release.releaseId, "EXPECTED", releaseSource, "VERIFIED"),
+      approvedMainVersion: fact(release.version, "EXPECTED", releaseSource, "VERIFIED"),
+      approvedMainLabel: fact(release.displayLabel, "EXPECTED", releaseSource, "VERIFIED"),
       approvedMainSourceSha: fact(release.sourceSha, "EXPECTED", releaseSource, "VERIFIED"),
       customerTargetRelease: fact(client.targetRelease ?? null, "EXPECTED", registrySource, "VERIFIED"),
-      recordedCustomerRelease: fact(commissionProv.applicationShellRelease ?? client.releaseProvenance?.applicationShellRelease ?? null, "HISTORICAL", commissioningSource, "VERIFIED", commissioning?.capturedAt ?? null, "STALE", "HISTORICAL_RECORD"),
+      currentCustomerVersion: fact(client.targetRelease ?? null, "OBSERVED", registrySource, "VERIFIED"),
+      recordedCustomerRelease: fact(client.releaseProvenance?.applicationShellRelease ?? client.targetRelease ?? commissionProv.applicationShellRelease ?? null, "HISTORICAL", registrySource, "VERIFIED", null, "CURRENT", "REPOSITORY_RECORD"),
+      updateAvailable: fact(semver(client.targetRelease) && compareSemver(client.targetRelease, release.version) < 0, "DERIVED", "scripts/ops/control-plane-contract.mjs", "VERIFIED"),
     },
     migration: {
       expectedMigrationTarget: fact(release.database?.migrationTarget ?? null, "EXPECTED", releaseSource, "VERIFIED"),
@@ -114,7 +118,7 @@ function customerRecord(client, release, commissioning, hardening, differences, 
 export function assembleOperationalContract({ root = ROOT } = {}) {
   const registry = readJson(path.join(root, "ops/clients.json"));
   const releaseFiles = fs.readdirSync(path.join(root, "ops/releases")).filter((file) => file.endsWith(".json")).sort();
-  const releases = releaseFiles.map((file) => ({ file, value: readJson(path.join(root, "ops/releases", file)) }));
+  const releases = releaseFiles.map((file) => ({ file, value: readJson(path.join(root, "ops/releases", file)) })).filter(({ value }) => value.releaseType === "OFFICIAL" && semver(value.version));
   const releaseById = new Map(releases.map(({ value }) => [value.releaseId, value]));
   const commissioningDir = path.join(root, "ops/commissioning");
   const hardeningDir = path.join(root, "ops/hardening");
@@ -143,6 +147,8 @@ export function assembleOperationalContract({ root = ROOT } = {}) {
     },
     main: {
       currentHead: fact(root === ROOT ? gitHead() : null, "OBSERVED", "git:HEAD", root === ROOT ? "VERIFIED" : "UNKNOWN", null, root === ROOT ? "CURRENT" : "UNKNOWN", "REPOSITORY_STATE"),
+      latestApprovedVersion: fact(releases.sort((left, right) => compareSemver(right.value.version, left.value.version))[0]?.value.version ?? null, "EXPECTED", "ops/releases", "VERIFIED"),
+      latestApprovedLabel: fact(releases[0]?.value.displayLabel ?? null, "EXPECTED", "ops/releases", "VERIFIED"),
       releaseSources: releases.map(({ file, value }) => ({ releaseId: value.releaseId, source: `ops/releases/${file}`, sourceSha: value.sourceSha })),
     },
     orphanDifferenceFiles,
