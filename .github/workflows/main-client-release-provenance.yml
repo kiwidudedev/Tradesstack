@@ -18,6 +18,11 @@ on:
         required: true
         default: false
         type: boolean
+      apply_db:
+        description: Apply approved pending Main migrations through Supabase
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -59,11 +64,13 @@ jobs:
         env:
           APPLY_RELEASE: ${{ inputs.apply }}
           PUSH_RELEASE: ${{ inputs.push }}
+          APPLY_DB: ${{ inputs.apply_db }}
         run: |
           set -euo pipefail
           args=(--release "${{ inputs.release }}" --workspace "${RUNNER_TEMP}/clients" --clone --output "${RUNNER_TEMP}/release-rollout.json")
           if [[ "${APPLY_RELEASE}" == "true" ]]; then args+=(--apply); fi
           if [[ "${PUSH_RELEASE}" == "true" ]]; then args+=(--push); fi
+          if [[ "${APPLY_DB}" == "true" ]]; then args+=(--apply-db); fi
           npm run release:promote -- "${args[@]}"
 
       - name: Publish rollout audit
