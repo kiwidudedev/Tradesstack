@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "releaseId": "0.0.0-phase1vs.local",
-  "sourceSha": "bfd4eb0b6263341e2b39b79255db8dbdfaf500dc",
-  "releaseFingerprint": "0f324111c463bcd1ed7b898597614688cb956dedcae49e84ca440187870153ef",
+  "sourceSha": "9067cb96bf145c7aa031b9941951435641ee647c",
+  "releaseFingerprint": "a8ef678a32f9fe1fff3015a34624509707af0ab548e3187066b07c77b9225558",
   "applicationShell": {
     "releaseId": "0.0.0-phase1r.2",
     "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
@@ -2007,6 +2007,7 @@
     "public/tradesstacktradepack.mp4",
     "public/xero logo.png",
     "styles/globals.css",
+    "supabase/config.toml",
     "supabase/functions/_shared/stale-time-sheet.ts",
     "supabase/functions/mobile_app_bootstrap/deno.json",
     "supabase/functions/mobile_app_bootstrap/index.ts",
@@ -4514,6 +4515,7 @@
     "public/tradesstacktradepack.mp4": "b300a7c650edfe6b60ad82069fb7a117ff561a94884906da752f2c02cf9b504c",
     "public/xero logo.png": "823875e9d4d4823a4ca8effb2a571a1064153928beaa318ebfb43ec54bca8e31",
     "styles/globals.css": "0b0850dd4b176cbc87a19dd6fe5a35c95b5e06d5a377191c6cddd5facc20a744",
+    "supabase/config.toml": "68c1aa8e83bb51c7258d5410a728e47277c9c8b3da5adb9ce6a13630be864d1e",
     "supabase/functions/_shared/stale-time-sheet.ts": "4a45ac132a9e200f0fcb597e428411516a82005fc92eaa1f80aed488d6f02f0d",
     "supabase/functions/mobile_app_bootstrap/deno.json": "776494746017e3d2b06d84933befb734499e53c2ef2e951566801b8cb65882ba",
     "supabase/functions/mobile_app_bootstrap/index.ts": "6b8597a80f7bce12cdb189e24e566dcf53cfaccd71034e913e003a35db2a16a8",
