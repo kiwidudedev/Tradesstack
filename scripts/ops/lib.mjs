@@ -55,6 +55,7 @@ export function validateReleaseManifest(manifest) {
   if (!sha(manifest.sourceSha)) errors.push("sourceSha must be a 40-character SHA-1");
   if (!manifest.applicationShell || typeof manifest.applicationShell.releaseId !== "string") errors.push("applicationShell.releaseId missing");
   if (!manifest.applicationShell || !fingerprint(manifest.applicationShell.fingerprint)) errors.push("applicationShell.fingerprint must be SHA-256");
+  if (manifest.releaseFingerprint !== undefined && !fingerprint(manifest.releaseFingerprint)) errors.push("releaseFingerprint must be SHA-256 when present");
   if (!manifest.database || manifest.database.baseline !== "phase1o-1") errors.push("database.baseline must be phase1o-1");
   if (!manifest.database || !migrationName(manifest.database.migrationTarget)) errors.push("database.migrationTarget must be a migration filename");
   if (!manifest.clientConfig || manifest.clientConfig.contract !== "@tradesstack/client-config@0.0.0") errors.push("clientConfig.contract is not the known contract");
@@ -79,12 +80,45 @@ export function validateRegistry(registry, knownReleaseIds = []) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(client.clientId || "")) errors.push(`clients[${index}].clientId invalid`);
     if (seen.has(client.clientId)) errors.push(`duplicate client ID ${client.clientId}`); seen.add(client.clientId);
     if (!lifecycle.has(client.lifecycleStatus)) errors.push(`${client.clientId}: invalid lifecycleStatus`);
+    if (typeof client.defaultBranch !== "string" || !client.defaultBranch.trim()) errors.push(`${client.clientId}: defaultBranch missing`);
+    if (!['ENABLED', 'DISABLED'].includes(client.rolloutStatus)) errors.push(`${client.clientId}: rolloutStatus invalid`);
+    if (typeof client.releaseChannel !== "string" || !client.releaseChannel.trim()) errors.push(`${client.clientId}: releaseChannel missing`);
+    if (!Array.isArray(client.clientOwnedPaths) || client.clientOwnedPaths.some((value) => typeof value !== "string" || !value.trim())) {
+      errors.push(`${client.clientId}: clientOwnedPaths invalid`);
+    }
     if (client.targetRelease !== "NOT_APPLICABLE" && client.targetRelease !== "UNKNOWN" && !knownReleaseIds.includes(client.targetRelease)) errors.push(`${client.clientId}: unknown targetRelease`);
     for (const key of ["databaseProjectReference", "runtimeReference", "domainReference"]) {
       const ref = client[key];
       if (ref && !["NOT_APPLICABLE", "NOT_PROVISIONED", "PENDING", "UNKNOWN"].includes(ref)) {
         if (resourceRefs.has(ref)) errors.push(`${client.clientId}: duplicate resource reference ${ref}`);
         resourceRefs.add(ref);
+      }
+    }
+    const scheduler = client.operations?.scheduler;
+    if (scheduler !== undefined) {
+      if (!scheduler || typeof scheduler !== "object" || Array.isArray(scheduler)) {
+        errors.push(`${client.clientId}: operations.scheduler must be an object`);
+      } else {
+        if (!["vercel-cron", "external"].includes(scheduler.adapter)) {
+          errors.push(`${client.clientId}: operations.scheduler.adapter invalid`);
+        }
+        if (scheduler.dispatcherPath !== "/api/cron/dispatch") {
+          errors.push(`${client.clientId}: operations.scheduler.dispatcherPath invalid`);
+        }
+        if (!Array.isArray(scheduler.enabledJobs)) {
+          errors.push(`${client.clientId}: operations.scheduler.enabledJobs must be an array`);
+        } else {
+          const jobs = scheduler.enabledJobs;
+          if (jobs.some((job) => typeof job !== "string" || !job.trim())) {
+            errors.push(`${client.clientId}: operations.scheduler.enabledJobs contains an invalid job`);
+          }
+          if (new Set(jobs).size !== jobs.length) {
+            errors.push(`${client.clientId}: operations.scheduler.enabledJobs contains duplicates`);
+          }
+        }
+        if (typeof scheduler.activationStatus !== "string" || !scheduler.activationStatus) {
+          errors.push(`${client.clientId}: operations.scheduler.activationStatus missing`);
+        }
       }
     }
     errors.push(...scanJsonForSecrets(client, `clients[${index}]`).map((location) => `secret-like value at ${location}`));

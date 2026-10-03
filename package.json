@@ -47,6 +47,9 @@
     "ops:prehosting:check": "node scripts/ops/prehosting.mjs",
     "ops:validate-release": "corepack npm run ops:validate-release:check",
     "ops:validate-release:check": "node scripts/ops/validate-release.mjs",
+    "release:promote": "node scripts/ops/promote-release.mjs",
+    "client:register": "node scripts/ops/register-client.mjs",
+    "test:client-promotion": "node --test scripts/ops/promote-release.test.mjs",
     "takeoff:worker": "bash scripts/run_takeoff_render_worker.sh"
   },
   "dependencies": {

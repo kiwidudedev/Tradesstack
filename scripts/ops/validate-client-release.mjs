@@ -47,6 +47,7 @@ const targetMigration = main.database?.migrationTarget;
 if (!hasCommit(main.sourceSha)) errors.push(`Main release source SHA is not a repository commit: ${main.sourceSha}`);
 if (client.releaseId !== main.releaseId) errors.push(`client release ${client.releaseId} does not match Main ${main.releaseId}`);
 if (client.sourceSha !== main.sourceSha) errors.push(`client source SHA ${client.sourceSha} does not match Main ${main.sourceSha}`);
+if (main.releaseFingerprint && client.mainReleaseFingerprint !== main.releaseFingerprint) errors.push(`client Main release fingerprint does not match Main ${main.releaseFingerprint}`);
 if (!String(client.databaseCompatibility ?? "").includes(targetMigration)) {
   errors.push(`client database compatibility does not include Main migration target ${targetMigration}`);
 }
