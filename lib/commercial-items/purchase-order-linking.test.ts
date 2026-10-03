@@ -57,6 +57,22 @@ describe("purchase order linking", () => {
     );
   });
 
+  it("builds a project quote worksheet source href", () => {
+    const link = buildPurchaseOrderCommercialItemLink(buildCommercialItem({
+      sourceLinkJson: {
+        worksheetName: "Pricing worksheet",
+        sheetName: "Sheet 1",
+        ownerType: "quote",
+        projectSlug: "airport-fitout",
+        quoteId: "quote-1",
+      },
+    }));
+
+    expect(buildPurchaseOrderCommercialItemSourceHref({ commercialItemLink: link })).toBe(
+      "/app/projects/airport-fitout/preconstruction/quote/quote-1/pricing-worksheet/workbook-1?sheetId=sheet-1",
+    );
+  });
+
   it("does not expose locked metadata on the purchase order line link", () => {
     const link = buildPurchaseOrderCommercialItemLink(buildCommercialItem());
 

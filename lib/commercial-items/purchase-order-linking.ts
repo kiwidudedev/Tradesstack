@@ -23,9 +23,10 @@ export interface PurchaseOrderCommercialItemLink {
   sourceTakeoffMeasurementId: string | null;
   sourceWorksheetName: string | null;
   sourceSheetName: string | null;
-  sourceOwnerType: "opportunity" | "variation" | null;
+  sourceOwnerType: "opportunity" | "project" | "quote" | "variation" | null;
   sourceOpportunitySlug: string | null;
   sourceProjectSlug: string | null;
+  sourceQuoteId: string | null;
   sourceVariationId: string | null;
   sourceTakeoffOwnerType: "opportunity" | "project" | null;
   sourceTakeoffOwnerSlug: string | null;
@@ -136,11 +137,15 @@ export function buildPurchaseOrderCommercialItemLink(item: CommercialItemPayload
     sourceWorksheetName: asString(sourceLink?.worksheetName),
     sourceSheetName: asString(sourceLink?.sheetName),
     sourceOwnerType:
-      sourceLink?.ownerType === "opportunity" || sourceLink?.ownerType === "variation"
+      sourceLink?.ownerType === "opportunity"
+        || sourceLink?.ownerType === "project"
+        || sourceLink?.ownerType === "quote"
+        || sourceLink?.ownerType === "variation"
         ? sourceLink.ownerType
         : null,
     sourceOpportunitySlug: asString(sourceLink?.opportunitySlug),
     sourceProjectSlug: asString(sourceLink?.projectSlug),
+    sourceQuoteId: asString(sourceLink?.quoteId),
     sourceVariationId: asString(sourceLink?.variationId),
     sourceTakeoffOwnerType: takeoffOwnerType,
     sourceTakeoffOwnerSlug: asString(sourceLink?.ownerSlug),
@@ -178,6 +183,14 @@ export function buildPurchaseOrderCommercialItemSourceHref(
 
   if (link.sourceOwnerType === "variation" && link.sourceProjectSlug && link.sourceVariationId) {
     return `/app/projects/${link.sourceProjectSlug}/preconstruction/variations/${link.sourceVariationId}/pricing-worksheet/${link.sourceWorksheetId}${query}`;
+  }
+
+  if (link.sourceOwnerType === "quote" && link.sourceProjectSlug && link.sourceQuoteId) {
+    return `/app/projects/${link.sourceProjectSlug}/preconstruction/quote/${link.sourceQuoteId}/pricing-worksheet/${link.sourceWorksheetId}${query}`;
+  }
+
+  if (link.sourceOwnerType === "project" && link.sourceProjectSlug) {
+    return `/app/projects/${link.sourceProjectSlug}/preconstruction/pricing-worksheet/${link.sourceWorksheetId}${query}`;
   }
 
   if (link.sourceOpportunitySlug) {
