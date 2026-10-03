@@ -36,4 +36,35 @@ describe("local production operations foundation", () => {
     const errors = validateRegistry({ schemaVersion: 1, clients: [{ clientId: "client-alpha", lifecycleStatus: "NOT_PROVISIONED", targetRelease: "UNKNOWN", note: "sk-proj-12345678901234567890" }] });
     expect(errors.some((error) => error.includes("secret-like"))).toBe(true);
   });
+
+  it("validates non-secret scheduler metadata", () => {
+    const valid = {
+      schemaVersion: 1,
+      clients: [{
+        clientId: "client-alpha",
+        lifecycleStatus: "ACTIVE",
+        defaultBranch: "main",
+        rolloutStatus: "ENABLED",
+        releaseChannel: "stable",
+        clientOwnedPaths: ["client/**"],
+        targetRelease: "known",
+        operations: {
+          scheduler: {
+            adapter: "vercel-cron",
+            dispatcherPath: "/api/cron/dispatch",
+            enabledJobs: ["retention-rolling-drafts"],
+            activationStatus: "NOT_ACTIVATED",
+          },
+        },
+      }],
+    };
+    expect(validateRegistry(valid, ["known"])).toEqual([]);
+    expect(validateRegistry({
+      ...valid,
+      clients: [{
+        ...valid.clients[0],
+        operations: { scheduler: { ...valid.clients[0].operations.scheduler, dispatcherPath: "/unsafe" } },
+      }],
+    }, ["known"])).toContain("client-alpha: operations.scheduler.dispatcherPath invalid");
+  });
 });
