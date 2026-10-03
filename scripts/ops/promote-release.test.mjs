@@ -76,7 +76,7 @@ test("one Main release fans out while preserving two client configurations", () 
     const result = promoteRegistry({ registryPath, releaseManifestPath: releasePath, workspace: root, apply: true, push: false, skipDb: true });
     assert.deepEqual(result.results.map((item) => item.status), ["UPGRADE_PREPARED", "UPGRADE_PREPARED", "BLOCKED"]);
     assert.equal(result.results[0].validation.status, "PASS");
-    assert.deepEqual(result.results[0].validation.checks.map((check) => check.status), ["PASS", "PASS", "PASS"]);
+    assert.deepEqual(result.results[0].validation.checks.map((check) => check.status), ["PASS", "PASS", "PASS", "PASS"]);
     assert.equal(result.results[0].migration.status, "SKIPPED_BY_OPERATOR");
     assert.equal(result.results[0].sourceSha, sourceSha);
     assert.equal(result.results[0].fingerprint, result.results[1].fingerprint);

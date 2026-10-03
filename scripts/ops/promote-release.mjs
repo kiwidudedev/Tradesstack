@@ -189,13 +189,35 @@ function runCandidateChecks(root, client, release, previous, releaseRoot) {
     const packageFile = path.join(worktree, "package.json");
     if (!fs.existsSync(packageFile)) return { status: "SKIPPED_NO_PACKAGE_MANIFEST", checks };
     const scripts = readJson(packageFile).scripts ?? {};
+    try {
+      run("corepack", ["npm", fs.existsSync(path.join(worktree, "package-lock.json")) ? "ci" : "install", "--ignore-scripts"], worktree, { timeout: 15 * 60 * 1000, stdio: "pipe" });
+      checks.push({ label: "dependencies", status: "PASS" });
+    } catch (error) {
+      const output = [error.stdout, error.stderr, error.message]
+        .filter(Boolean)
+        .map(String)
+        .join("\n")
+        .trim()
+        .split("\n")
+        .slice(-20)
+        .join("\n");
+      checks.push({ label: "dependencies", status: "FAIL", detail: output });
+      return { status: "BLOCKED_CLIENT_VALIDATION", checks, errors: [`client dependencies failed: ${output}`] };
+    }
     for (const [label, script] of [["tests", "test:release"], ["typecheck", "typecheck:release"], ["build", "build"]]) {
       if (!scripts[script]) { checks.push({ label, status: "SKIPPED_NOT_DECLARED" }); continue; }
       try {
         run("corepack", ["npm", "run", script], worktree, { timeout: 15 * 60 * 1000, stdio: "pipe" });
         checks.push({ label, status: "PASS" });
       } catch (error) {
-        const output = String(error.stdout || error.stderr || error.message || "").trim().split("\n").slice(-8).join("\n");
+        const output = [error.stdout, error.stderr, error.message]
+          .filter(Boolean)
+          .map(String)
+          .join("\n")
+          .trim()
+          .split("\n")
+          .slice(-20)
+          .join("\n");
         checks.push({ label, status: "FAIL", detail: output });
         return { status: "BLOCKED_CLIENT_VALIDATION", checks, errors: [`client ${label} failed: ${checks.at(-1).detail}`] };
       }
