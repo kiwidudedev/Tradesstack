@@ -5,7 +5,7 @@
   "displayLabel": "TradesStack 1.0.0",
   "approvedReleaseManifest": "ops/releases/1.0.0.json",
   "approvedSourceSha": "10cec7352ed80d97bfc387b8265736c781d35112",
-  "currentMainHead": "0c7c6b623244795616cad7b16f5a1f0add552304",
+  "currentMainHead": "90702daf1bd78f10691229e3a5fcca0aafa0f1f8",
   "releaseFingerprint": "a8ef678a32f9fe1fff3015a34624509707af0ab548e3187066b07c77b9225558",
   "migrationTarget": "20261003160000_add_mobile_project_variation_capabilities_v1.sql",
   "releaseDate": "2026-10-03",
