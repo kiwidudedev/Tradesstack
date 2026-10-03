@@ -30,7 +30,7 @@
     "next": "16.3.3"
   },
   "validation": {
-    "status": "AUTHORITATIVE LOCAL RELEASE VALIDATION PASSED",
+    "status": "LOCAL_CHECKS_REQUIRED",
     "externalAccess": "PROHIBITED"
   },
   "approval": {
