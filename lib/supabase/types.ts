@@ -28666,6 +28666,69 @@ export type Database = {
         Args: { p_attempt_id: string; p_revision_id: string }
         Returns: Json
       }
+      get_mobile_project_variation_detail_v1: {
+        Args: { p_project_id: string; p_variation_id: string }
+        Returns: {
+          approved_at: string | null
+          assumptions: string
+          attachments: Json
+          can_approve: boolean
+          can_change_status: boolean
+          can_edit: boolean
+          can_reject: boolean
+          clarifications: string
+          client_viewed_at: string | null
+          contingency_amount: number
+          created_at: string
+          created_by: string
+          discount_amount: number
+          due_date: string | null
+          gst_percent: number
+          gst_total: number
+          include_contingency_in_export: boolean
+          include_discount_in_export: boolean
+          include_margin_in_export: boolean
+          invoice_ready: boolean
+          invoice_reference: string
+          labour_total: number
+          lead_time: string
+          line_items: Json
+          margin_percent: number
+          margin_total: number
+          materials_total: number
+          notes: string
+          origin: string
+          payment_terms: string
+          plant_total: number
+          project_id: string
+          rejected_at: string | null
+          requested_by: string
+          requested_date: string | null
+          sent_to_client_at: string | null
+          source_reference: string
+          status: string
+          status_events: Json
+          subcontractors_total: number
+          subtotal: number
+          terms_exclusions: string
+          terms_inclusions: string
+          total_variation_price: number
+          updated_at: string
+          validity_period: string
+          variation_id: string
+          variation_number: string
+          variation_title: string
+        }[]
+      }
+      get_mobile_project_variation_capabilities_v1: {
+        Args: { p_project_id: string }
+        Returns: {
+          can_change_status: boolean
+          can_create: boolean
+          can_edit: boolean
+          project_id: string
+        }[]
+      }
       get_mobile_project_purchase_order_detail_v2: {
         Args: { p_project_id: string; p_purchase_order_id: string }
         Returns: {
@@ -28742,6 +28805,22 @@ export type Database = {
           last_observed_at: string
           mismatches: number
           total_runs: number
+        }[]
+      }
+      get_project_variation_mobile_edit_snapshot_v1: {
+        Args: { p_project_id: string; p_variation_id: string }
+        Returns: {
+          can_approve: boolean
+          can_change_status: boolean
+          can_edit: boolean
+          can_reject: boolean
+          editable_actions: Json
+          editable_fields: Json
+          is_locked: boolean
+          lock_reason: string | null
+          project_id: string
+          updated_at: string
+          variation_id: string
         }[]
       }
       get_opportunity_quotation_workspace_v1: {
@@ -29398,6 +29477,26 @@ export type Database = {
           updated_at: string
         }[]
       }
+      list_mobile_project_variations_v1: {
+        Args: { p_project_id: string }
+        Returns: {
+          can_change_status: boolean
+          can_edit: boolean
+          created_at: string
+          due_date: string | null
+          invoice_ready: boolean
+          origin: string
+          project_id: string
+          requested_by: string
+          requested_date: string | null
+          status: string
+          total_variation_price: number
+          updated_at: string
+          variation_id: string
+          variation_number: string
+          variation_title: string
+        }[]
+      }
       list_mobile_worker_project_purchase_orders: {
         Args: { p_project_id: string }
         Returns: {
@@ -29443,6 +29542,17 @@ export type Database = {
           role: string
           updated_at: string
           user_id: string
+        }[]
+      }
+      create_mobile_project_variation_v1: {
+        Args: { p_project_id: string; p_title?: string }
+        Returns: {
+          project_id: string
+          status: string
+          updated_at: string
+          variation_id: string
+          variation_number: string
+          variation_title: string
         }[]
       }
       list_project_qa_run_summaries_v1: {
@@ -29655,6 +29765,22 @@ export type Database = {
           total_purchase_order_price: number
           updated_at: string
         }[]
+      }
+      mobile_mutate_project_variation_manual_line_v1: {
+        Args: {
+          p_description: string
+          p_expected_updated_at: string
+          p_line_item_id: string
+          p_operation: string
+          p_project_id: string
+          p_quantity: number
+          p_rate: number
+          p_section: string
+          p_sort_order: number
+          p_unit: string
+          p_variation_id: string
+        }
+        Returns: Json
       }
       move_document_node: {
         Args: { p_node_id: string; p_target_parent_node_id: string }
@@ -31736,6 +31862,36 @@ export type Database = {
           total_purchase_order_price: number
           updated_at: string
         }[]
+      }
+      update_mobile_project_variation_header_v1: {
+        Args: {
+          p_assumptions: string
+          p_clarifications: string
+          p_due_date: string | null
+          p_expected_updated_at: string
+          p_lead_time: string
+          p_notes: string
+          p_origin: string
+          p_payment_terms: string
+          p_project_id: string
+          p_requested_by: string
+          p_requested_date: string | null
+          p_terms_exclusions: string
+          p_terms_inclusions: string
+          p_validity_period: string
+          p_variation_id: string
+          p_variation_title: string
+        }
+        Returns: Json
+      }
+      update_mobile_project_variation_status_v1: {
+        Args: {
+          p_expected_updated_at: string
+          p_project_id: string
+          p_status: string
+          p_variation_id: string
+        }
+        Returns: Json
       }
       update_opportunity_details_and_tender_clients_v1: {
         Args: {
