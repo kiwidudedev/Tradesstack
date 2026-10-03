@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "releaseId": "0.0.0-phase1vr.local",
-  "sourceSha": "8b471160f0bf339ca4f94c347b8f2725f5b1e074",
+  "releaseId": "0.0.0-phase1vs.local",
+  "sourceSha": "afade963d9b19793184beeeec8d64646e297a2b8",
   "applicationShell": {
     "releaseId": "0.0.0-phase1r.2",
     "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
@@ -16,8 +16,8 @@
   "database": {
     "baseline": "phase1o-1",
     "baselineSha256": "52ac69bea6587301c9d50fca809847bb077f03471406476b1d01ed2520c5a372",
-    "migrationTarget": "20260927110000_reconcile_required_storage_buckets.sql",
-    "promotionStatus": "LOCAL_BASELINE_AND_STORAGE_RECONCILIATION_PROVEN; CONTROLLED_ALPHA_MANUAL_DEPLOYMENT dpl_2ZKi2DQ9wLCeVjEdeF7PVkBUaByN READY; QUOTE_ROUTE_REMEDIATION_OPEN"
+    "migrationTarget": "20261003130000_allow_project_quote_worksheet_source_links.sql",
+    "promotionStatus": "LOCAL_BASELINE_AND_STORAGE_RECONCILIATION_PROVEN; PO_WORKSHEET_SOURCE_LINK_FIX_VALIDATED_IN_MAIN; ALPHA_UPGRADE_AND_HOSTED_DEPLOYMENT_PENDING; UNRELATED_FIXTURE_CLEANUP_REMAINS_DEFERRED"
   },
   "clientConfig": {
     "contract": "@tradesstack/client-config@0.0.0",
