@@ -14,7 +14,7 @@
       "runtimeReference": "vercel:hi-5577s-projects/tradesstack-client-alpha",
       "domainReference": "https://tradesstack-client-alpha.vercel.app",
       "releaseProvenance": {
-        "repositorySha": "48325fd1d24d7865a247f3197ab1d06602c5acb8",
+        "repositorySha": "48325fd32ec649f80c37ec8c4ee6df63a0bbb3f4",
         "deploymentId": "dpl_FhqSGJtybaibTyBDcL7KxgQNJHNA",
         "applicationShellRelease": "0.0.0-phase1vs.local",
         "applicationShellSourceSha": "afade9636fe8cc19ce65cfd3f921527b8de7cc6f",
