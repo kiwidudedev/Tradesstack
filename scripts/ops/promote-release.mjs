@@ -194,7 +194,8 @@ function runCandidateChecks(root, client, release, previous, releaseRoot) {
         run("corepack", ["npm", "run", script], worktree, { timeout: 15 * 60 * 1000, stdio: "pipe" });
         checks.push({ label, status: "PASS" });
       } catch (error) {
-        checks.push({ label, status: "FAIL", detail: String(error.message).split("\n")[0] });
+        const output = String(error.stdout || error.stderr || error.message || "").trim().split("\n").slice(-8).join("\n");
+        checks.push({ label, status: "FAIL", detail: output });
         return { status: "BLOCKED_CLIENT_VALIDATION", checks, errors: [`client ${label} failed: ${checks.at(-1).detail}`] };
       }
     }
