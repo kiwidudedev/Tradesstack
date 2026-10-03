@@ -80,7 +80,7 @@ const releaseRootFiles = [
   "package.json", "package-lock.json", "postcss.config.js", "proxy.ts", "tailwind.config.ts",
   "tsconfig.json", "tsconfig.build.json", "vercel.json", "vitest.config.ts", "vitest.release.config.ts",
 ];
-const releaseDirectories = ["app", "components", "hooks", "lib", "packages", "public", "styles", "types"];
+const releaseDirectories = ["app", "components", "hooks", "lib", "packages", "public", "styles", "types", "test-support"];
 const releaseExclusions = new Set([".git", ".next", ".tmp", ".dsh-drop", "artifacts", "docs", "proofs", "scripts", "client", "node_modules"]);
 
 function listReleaseFiles(root) {

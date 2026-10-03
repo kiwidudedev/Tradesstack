@@ -10,8 +10,8 @@ export default defineConfig({
       "@tradesstack/shared-ui": path.resolve(__dirname, "packages/shared-ui/src/index.ts"),
       "@tradesstack/pdf-utils": path.resolve(__dirname, "packages/pdf-utils/src/index.ts"),
       "@tradesstack/suppliers": path.resolve(__dirname, "packages/suppliers/src/index.ts"),
-      "server-only": path.resolve(__dirname, "scripts/test-stubs/server-only.ts"),
-      "next/font/local": path.resolve(__dirname, "scripts/test-stubs/next-font-local.ts"),
+      "server-only": path.resolve(__dirname, "test-support/server-only.ts"),
+      "next/font/local": path.resolve(__dirname, "test-support/next-font-local.ts"),
     },
   },
   test: {
@@ -21,7 +21,6 @@ export default defineConfig({
       "components/**/*.test.{ts,tsx}",
       "lib/**/*.test.{ts,tsx}",
       "packages/**/src/**/*.test.{ts,tsx}",
-      "scripts/ops/**/*.test.mjs",
     ],
     exclude: [
       "**/*.integration.test.{ts,tsx}",
@@ -29,6 +28,17 @@ export default defineConfig({
       "**/node_modules/**",
       "lib/**/live*.test.{ts,tsx}",
       "scripts/ops/promote-release.test.mjs",
+      // These characterize Main-only migration/operations scripts. The scripts
+      // directory is intentionally not part of a customer release snapshot.
+      "lib/accounting/retention-gst-inheritance-phase1-migration.test.ts",
+      "lib/material-supplier-price-attachment.test.ts",
+      "lib/promoted-project-metadata-migration.test.ts",
+      "lib/material-supplier-product-preflight-audit.test.ts",
+      "lib/opportunity-promotion-stage7-migration.test.ts",
+      "lib/material-supplier-relationship-hardening.test.ts",
+      "lib/opportunity-award-pricing-backfill.test.ts",
+      "lib/material-supplier-product-backfill.test.ts",
+      "lib/opportunity-promotion-stage6-migration.test.ts",
       "proofs/**",
       "tests/**",
       ".tmp/**",
