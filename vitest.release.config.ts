@@ -28,6 +28,7 @@ export default defineConfig({
       "**/dist/**",
       "**/node_modules/**",
       "lib/**/live*.test.{ts,tsx}",
+      "scripts/ops/promote-release.test.mjs",
       "proofs/**",
       "tests/**",
       ".tmp/**",
