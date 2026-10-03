@@ -82,6 +82,7 @@ const releaseRootFiles = [
 ];
 const releaseDirectories = ["app", "components", "hooks", "lib", "packages", "public", "styles", "types", "test-support"];
 const releaseSupportFiles = [
+  "supabase/config.toml",
   "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.pdf",
   "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.ts",
   "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test.pdf",
