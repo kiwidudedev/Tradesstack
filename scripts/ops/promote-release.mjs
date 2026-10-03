@@ -81,6 +81,12 @@ const releaseRootFiles = [
   "tsconfig.json", "tsconfig.build.json", "vercel.json", "vitest.config.ts", "vitest.release.config.ts",
 ];
 const releaseDirectories = ["app", "components", "hooks", "lib", "packages", "public", "styles", "types", "test-support"];
+const releaseSupportFiles = [
+  "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.pdf",
+  "tests/fixtures/materials/supplier-pricing/trade-direct-gib-2026.ts",
+  "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test.pdf",
+  "tests/fixtures/supplier-invoices/TradeSupplier_Invoice_OCR_Test_provider_fallback.pdf",
+];
 const releaseExclusions = new Set([".git", ".next", ".tmp", ".dsh-drop", "artifacts", "docs", "proofs", "scripts", "client", "node_modules"]);
 
 function listReleaseFiles(root) {
@@ -96,6 +102,7 @@ function listReleaseFiles(root) {
     const full = path.join(root, directory);
     if (fs.existsSync(full)) visit(full);
   }
+  for (const file of releaseSupportFiles) if (fs.existsSync(path.join(root, file))) files.push(file);
   for (const file of ["supabase/config.toml"]) if (fs.existsSync(path.join(root, file))) files.push(file);
   return [...new Set(files)].filter((file) => ![...releaseExclusions].some((excluded) => file === excluded || file.startsWith(`${excluded}/`))).sort();
 }
