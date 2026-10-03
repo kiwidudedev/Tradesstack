@@ -8,6 +8,16 @@ on:
         required: true
         default: 0.0.0-phase1vs.local
         type: string
+      apply:
+        description: Prepare isolated client upgrade branches
+        required: true
+        default: false
+        type: boolean
+      push:
+        description: Push branches and request controlled client PRs
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -46,4 +56,20 @@ jobs:
           done <"${RUNNER_TEMP}/client-repositories.txt"
 
       - name: Run Main-to-client provenance preflight
-        run: npm run release:promote -- --release "${{ inputs.release }}" --workspace "${RUNNER_TEMP}/clients" --skip-db
+        env:
+          APPLY_RELEASE: ${{ inputs.apply }}
+          PUSH_RELEASE: ${{ inputs.push }}
+        run: |
+          set -euo pipefail
+          args=(--release "${{ inputs.release }}" --workspace "${RUNNER_TEMP}/clients" --clone --output "${RUNNER_TEMP}/release-rollout.json")
+          if [[ "${APPLY_RELEASE}" == "true" ]]; then args+=(--apply); fi
+          if [[ "${PUSH_RELEASE}" == "true" ]]; then args+=(--push); fi
+          npm run release:promote -- "${args[@]}"
+
+      - name: Publish rollout audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradesstack-release-rollout-${{ inputs.release }}
+          path: ${{ runner.temp }}/release-rollout.json
+          if-no-files-found: ignore

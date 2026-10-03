@@ -138,19 +138,70 @@ function validateClient(root, client, release, options) {
   if (previous?.releaseId === release.manifest.releaseId && previous?.sourceSha === release.manifest.sourceSha && divergent.length === 0) errors.push("client already declares this release");
   const migration = release.manifest.database.migrationTarget;
   if (!fs.existsSync(path.join(root, "supabase/migrations", migration))) errors.push(`client migration missing: ${migration}`);
-  let migrationPending = false;
+  const migrationState = { status: options.skipDb ? "SKIPPED_BY_OPERATOR" : "NOT_LINKED_OR_NOT_CHECKED", target: migration, pending: false, ledger: null };
   if (!options.skipDb && fs.existsSync(path.join(root, "supabase/.temp/project-ref"))) {
     try {
       const listing = capture("supabase", ["migration", "list", "--linked", "--workdir", root], repositoryRoot);
       const target = listing.split("\n").find((line) => line.includes(migration));
-      if (!target || !target.includes(migration.split("_")[0])) errors.push(`migration target not visible in linked ledger: ${migration}`);
-      else migrationPending = target.split("|").map((value) => value.trim())[1] !== migration.split("_")[0];
+      migrationState.ledger = target?.trim() ?? null;
+      if (!target || !target.includes(migration.split("_")[0])) {
+        migrationState.status = "AMBIGUOUS_OR_MISSING_TARGET";
+        errors.push(`migration target not visible in linked ledger: ${migration}`);
+      } else {
+        migrationState.pending = target.split("|").map((value) => value.trim())[1] !== migration.split("_")[0];
+        migrationState.status = migrationState.pending ? "PENDING" : "APPLIED";
+      }
     } catch (error) {
+      migrationState.status = "PREFLIGHT_FAILED";
       errors.push(`migration preflight failed: ${String(error.message).split("\n")[0]}`);
     }
   }
-  if (errors.length) return { status: "BLOCKED", errors };
-  return { status: "READY", errors: [], previous, migrationPending };
+  if (errors.length) return { status: "BLOCKED", errors, previous, migration: migrationState };
+  return { status: "READY", errors: [], previous, migration: migrationState };
+}
+
+function copyPathIfPresent(sourceRoot, targetRoot, pattern) {
+  if (pattern.endsWith("/**")) {
+    const source = path.join(sourceRoot, pattern.slice(0, -3));
+    if (fs.existsSync(source)) fs.cpSync(source, path.join(targetRoot, pattern.slice(0, -3)), { recursive: true });
+    return;
+  }
+  if (pattern.endsWith("*")) {
+    const prefix = pattern.slice(0, -1);
+    for (const entry of fs.readdirSync(sourceRoot).filter((name) => name.startsWith(prefix))) {
+      fs.cpSync(path.join(sourceRoot, entry), path.join(targetRoot, entry), { recursive: true });
+    }
+    return;
+  }
+  const source = path.join(sourceRoot, pattern);
+  if (fs.existsSync(source)) fs.cpSync(source, path.join(targetRoot, pattern), { recursive: true });
+}
+
+function runCandidateChecks(root, client, release, previous, releaseRoot) {
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), "tradesstack-client-check-"));
+  const checks = [];
+  try {
+    run("git", ["worktree", "add", "--detach", worktree, "HEAD"], root);
+    for (const ownedPath of client.clientOwnedPaths ?? []) copyPathIfPresent(root, worktree, ownedPath);
+    materializeRelease(worktree, release, previous, releaseRoot);
+    const packageFile = path.join(worktree, "package.json");
+    if (!fs.existsSync(packageFile)) return { status: "SKIPPED_NO_PACKAGE_MANIFEST", checks };
+    const scripts = readJson(packageFile).scripts ?? {};
+    for (const [label, script] of [["tests", "test:release"], ["typecheck", "typecheck:release"], ["build", "build"]]) {
+      if (!scripts[script]) { checks.push({ label, status: "SKIPPED_NOT_DECLARED" }); continue; }
+      try {
+        run("corepack", ["npm", "run", script], worktree, { timeout: 15 * 60 * 1000, stdio: "pipe" });
+        checks.push({ label, status: "PASS" });
+      } catch (error) {
+        checks.push({ label, status: "FAIL", detail: String(error.message).split("\n")[0] });
+        return { status: "BLOCKED_CLIENT_VALIDATION", checks, errors: [`client ${label} failed: ${checks.at(-1).detail}`] };
+      }
+    }
+    return { status: "PASS", checks };
+  } finally {
+    try { run("git", ["worktree", "remove", "--force", worktree], root); } catch { /* isolated worktree cleanup is best effort */ }
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
 }
 
 function materializeRelease(root, release, previous, releaseRoot) {
@@ -191,39 +242,57 @@ function promoteClient(client, release, options, releaseRoot) {
     run("gh", ["repo", "clone", repository, root], repositoryRoot);
     run("git", ["switch", client.defaultBranch ?? "main"], root);
   }
-  const base = { clientId: client.clientId, releaseId: release.manifest.releaseId, repositoryReference: client.repositoryReference ?? null };
+  const base = {
+    clientId: client.clientId,
+    targetRelease: release.manifest.releaseId,
+    previousRelease: null,
+    sourceSha: release.manifest.sourceSha,
+    fingerprint: release.fingerprint,
+    repositoryReference: client.repositoryReference ?? null,
+    branch: null,
+    clientCommitSha: null,
+    migration: { status: "NOT_CHECKED", target: release.manifest.database.migrationTarget },
+    validation: { status: "NOT_RUN", checks: [] },
+    pullRequest: { status: "NOT_CREATED" },
+    deployment: { status: "NOT_READY", target: client.deploymentTarget ?? null },
+  };
   const validation = validateClient(root, client, release, options);
-  if (validation.status !== "READY") return { ...base, status: validation.status, errors: validation.errors };
-  if (!options.apply) return { ...base, status: validation.migrationPending ? "READY_FOR_MIGRATION" : "READY_FOR_CONTROLLED_UPGRADE", branch: `shell-upgrade/${release.manifest.releaseId}`, migrationPending: validation.migrationPending, errors: [] };
-  if (validation.migrationPending && !options.applyDb) return { ...base, status: "BLOCKED_MIGRATION_APPROVAL_REQUIRED", branch: `shell-upgrade/${release.manifest.releaseId}`, errors: ["approved forward migration is pending; rerun with --apply-db after migration approval"] };
-  if (validation.migrationPending && options.applyDb) {
-    try { run("supabase", ["db", "push", "--linked", "--workdir", root, "--yes"], repositoryRoot); }
-    catch (error) { return { ...base, status: "BLOCKED_MIGRATION_APPLY", errors: [String(error.message).split("\n")[0]] }; }
-  }
+  const prepared = { ...base, previousRelease: validation.previous?.releaseId ?? null, migration: validation.migration ?? base.migration };
+  if (validation.status !== "READY") return { ...prepared, status: validation.status, errors: validation.errors };
   const branch = `shell-upgrade/${release.manifest.releaseId}`;
+  if (!options.apply) return { ...prepared, status: validation.migration.pending ? "READY_FOR_MIGRATION" : "READY_FOR_CONTROLLED_UPGRADE", branch, errors: [] };
+  if (validation.migration.pending && !options.applyDb) return { ...prepared, status: "BLOCKED_MIGRATION_APPROVAL_REQUIRED", branch, errors: ["approved forward migration is pending; rerun with --apply-db after migration approval"] };
+  if (validation.migration.pending && options.applyDb) {
+    try { run("supabase", ["db", "push", "--linked", "--workdir", root, "--yes"], repositoryRoot); }
+    catch (error) { return { ...prepared, status: "BLOCKED_MIGRATION_APPLY", errors: [String(error.message).split("\n")[0]] }; }
+  }
+  if (options.apply || options.validate) {
+    const candidate = runCandidateChecks(root, client, release, validation.previous, releaseRoot);
+    if (candidate.status !== "PASS" && candidate.status !== "SKIPPED_NO_PACKAGE_MANIFEST") {
+      return { ...prepared, status: candidate.status, validation: candidate, errors: candidate.errors ?? [] };
+    }
+    prepared.validation = candidate;
+  }
   run("git", ["switch", "-c", branch], root);
   materializeRelease(root, release, validation.previous, releaseRoot);
   run("git", ["add", "-A"], root);
-  if (!status(root)) return { ...base, status: "ALREADY_CURRENT", branch, errors: [] };
+  if (!status(root)) return { ...prepared, status: "ALREADY_CURRENT", branch, errors: [] };
   run("git", ["commit", "-m", `upgrade: ${release.manifest.releaseId}`], root);
   const commit = capture("git", ["rev-parse", "HEAD"], root);
+  const result = { ...prepared, status: "UPGRADE_PREPARED", branch, clientCommitSha: commit, migration: { ...validation.migration, status: validation.migration.pending ? "APPLIED_BY_ROLLOUT" : validation.migration.status }, errors: [] };
   if (options.push) {
     run("git", ["push", "--set-upstream", "origin", branch], root);
+    result.pullRequest = { status: "PUSHED_PR_REQUESTED" };
     if (client.repositoryReference) {
-      try { run("gh", ["pr", "create", "--base", client.defaultBranch ?? "main", "--head", branch, "--title", `Upgrade ${client.clientId} to ${release.manifest.releaseId}`, "--body", `Promotes Main source ${release.manifest.sourceSha}.`], root); }
-      catch { /* An existing PR or unavailable gh is reported without undoing the client branch. */ }
+      try {
+        const pr = run("gh", ["pr", "create", "--base", client.defaultBranch ?? "main", "--head", branch, "--title", `Upgrade ${client.clientId} to ${release.manifest.releaseId}`, "--body", `Promotes Main source ${release.manifest.sourceSha}.`], root).trim();
+        result.pullRequest = { status: "OPENED", reference: pr };
+      } catch { result.pullRequest = { status: "PUSHED_PR_CREATE_FAILED" }; }
     }
   }
-  return {
-    ...base,
-    status: "UPGRADE_PREPARED",
-    branch,
-    commit,
-    pushed: options.push,
-    migrationTarget: release.manifest.database.migrationTarget,
-    deployment: { status: options.push ? "AWAITING_APPROVED_PR_MERGE" : "READY_TO_PUSH_AND_DEPLOY", target: client.deploymentTarget ?? null },
-    errors: [],
-  };
+  result.pushed = options.push;
+  result.deployment = { status: options.push ? "AWAITING_APPROVED_PR_MERGE" : "READY_TO_PUSH_AND_DEPLOY", target: client.deploymentTarget ?? null, expectedRepositorySha: commit, expectedMainSourceSha: release.manifest.sourceSha };
+  return result;
 }
 
 export function promoteRegistry({ registryPath = defaultRegistry, releaseManifestPath = defaultReleaseManifest, ...options } = {}) {
@@ -241,7 +310,7 @@ export function promoteRegistry({ registryPath = defaultRegistry, releaseManifes
       try { return promoteClient(client, release, options, releaseRoot); }
       catch (error) { return { clientId: client.clientId, status: "FAILED_ISOLATED", errors: [String(error.message)] }; }
     });
-    return { releaseId: release.manifest.releaseId, sourceSha: release.manifest.sourceSha, fingerprint: release.fingerprint, results };
+    return { releaseId: release.manifest.releaseId, sourceSha: release.manifest.sourceSha, fingerprint: release.fingerprint, results, summary: results.map(({ clientId, status, errors = [] }) => ({ clientId, status, reason: errors[0] ?? null })) };
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }
@@ -255,6 +324,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       releaseManifestPath: resolveReleaseManifest(options.release),
       ...options,
     });
+    if (options.output) writeJson(path.resolve(repositoryRoot, options.output), result);
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = result.results.some((item) => ["BLOCKED", "BLOCKED_CLIENT_ROOT_UNAVAILABLE", "FAILED_ISOLATED"].includes(item.status)) ? 1 : 0;
   } catch (error) {

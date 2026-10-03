@@ -29,6 +29,14 @@ function fixture(root, id, dirty = false) {
   }
   fs.mkdirSync(path.join(root, "client"), { recursive: true });
   fs.writeFileSync(path.join(root, "client", `${id}.config`), `${id}-owned\n`);
+  writeJson(path.join(root, "package.json"), {
+    name: `fixture-${id}`,
+    scripts: {
+      "test:release": "node -e \"process.stdout.write('fixture tests passed\\n')\"",
+      "typecheck:release": "node -e \"process.stdout.write('fixture typecheck passed\\n')\"",
+      build: "node -e \"process.stdout.write('fixture build passed\\n')\"",
+    },
+  });
   const hashes = Object.fromEntries(files.map((file) => [file, hash(path.join(root, file))]));
   writeJson(path.join(root, "release-manifest.json"), { releaseId: "fixture-old", sourceSha, files, fileHashes: hashes });
   run(["init", "-q", "-b", "main"], root);
@@ -67,6 +75,12 @@ test("one Main release fans out while preserving two client configurations", () 
     writeJson(releasePath, release); writeJson(registryPath, registry);
     const result = promoteRegistry({ registryPath, releaseManifestPath: releasePath, workspace: root, apply: true, push: false, skipDb: true });
     assert.deepEqual(result.results.map((item) => item.status), ["UPGRADE_PREPARED", "UPGRADE_PREPARED", "BLOCKED"]);
+    assert.equal(result.results[0].validation.status, "PASS");
+    assert.deepEqual(result.results[0].validation.checks.map((check) => check.status), ["PASS", "PASS", "PASS"]);
+    assert.equal(result.results[0].migration.status, "SKIPPED_BY_OPERATOR");
+    assert.equal(result.results[0].sourceSha, sourceSha);
+    assert.equal(result.results[0].fingerprint, result.results[1].fingerprint);
+    assert.equal(result.results[2].errors.some((error) => error.includes("release-owned divergence:")), true);
     for (const [client, id] of [[alpha, "one"], [beta, "two"]]) {
       assert.equal(fs.readFileSync(path.join(client, "client", `${id}.config`), "utf8"), `${id}-owned\n`);
       assert.equal(hash(path.join(client, files[1])), release.fileHashes[files[1]]);
