@@ -27,6 +27,13 @@ describe("assistant tool selection", () => {
     expect(selectAssistantTools("Which VOs and POs are still pending?", all)).toEqual(["project_overview", "purchase_orders", "variations"]);
   });
 
+  it("selects variation line detail for component questions", () => {
+    expect(selectAssistantTools("What is the total material value in the variations?", [...all, "variation_details"]))
+      .toEqual(["project_overview", "variations", "variation_details"]);
+    expect(selectAssistantTools("Which variation has the highest labour value?", [...all, "variation_details"]))
+      .toEqual(["project_overview", "variations", "variation_details"]);
+  });
+
   it("exposes a read-only registry with explicit source and scope metadata", () => {
     expect(ASSISTANT_READ_REGISTRY.purchase_orders).toMatchObject({
       sourceService: "listPurchaseOrders",
@@ -35,5 +42,11 @@ describe("assistant tool selection", () => {
       readOnly: true,
     });
     expect(Object.values(ASSISTANT_READ_REGISTRY).every((tool) => tool.readOnly)).toBe(true);
+    expect(ASSISTANT_READ_REGISTRY.variation_details).toMatchObject({
+      sourceService: "project_variations + project_variation_line_items",
+      projectScoped: true,
+      organizationScoped: true,
+      readOnly: true,
+    });
   });
 });

@@ -21,8 +21,11 @@ export const ASSISTANT_READ_REGISTRY: Record<string, AssistantReadToolDefinition
   project_activity: { name: "project_activity", description: "Recent project creation and drawing activity.", domain: "activity", sourceService: "organization_projects + project_drawing_sets", requiredPermission: null, projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   quotes: { name: "quotes", description: "Project quote register records.", domain: "quotes", sourceService: "project_quotes", requiredPermission: null, projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   purchase_orders: { name: "purchase_orders", description: "Purchase order register, status and commitment eligibility.", domain: "procurement", sourceService: "listPurchaseOrders", requiredPermission: null, projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
+  purchase_order_details: { name: "purchase_order_details", description: "Purchase order pricing lines with structured cost sections and commitment state.", domain: "procurement detail", sourceService: "project_purchase_orders + project_purchase_order_line_items", requiredPermission: null, projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   variations: { name: "variations", description: "Variation register with approval state and value.", domain: "variations", sourceService: "project_variations + project_variation_line_items", requiredPermission: null, projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
+  variation_details: { name: "variation_details", description: "Variation pricing lines with structured cost sections, totals and source lineage.", domain: "variation pricing", sourceService: "project_variations + project_variation_line_items", requiredPermission: null, projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   payment_claims: { name: "payment_claims", description: "Payment claim register and retention withheld values.", domain: "claims", sourceService: "project_claims", requiredPermission: "accounting.sales_invoices.view", projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
+  claim_details: { name: "claim_details", description: "Payment claim lines, source lineage and claimed amounts.", domain: "claim detail", sourceService: "project_claims + project_claim_line_items", requiredPermission: "accounting.sales_invoices.view", projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   retentions: { name: "retentions", description: "Deterministic retention position and origins.", domain: "retention", sourceService: "getProjectRetentionPosition", requiredPermission: "accounting.sales_invoices.view", projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   contacts: { name: "contacts", description: "Organization client and supplier directory records.", domain: "CRM and suppliers", sourceService: "organization_clients + organization_suppliers", requiredPermission: null, projectScoped: false, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
   qa: { name: "qa", description: "Current project QA definitions; legacy quality records are not included in V1.", domain: "quality assurance", sourceService: "project_qas", requiredPermission: "qa.view", projectScoped: true, organizationScoped: true, readOnly: true, maxRows: ASSISTANT_MAX_ROWS },
@@ -123,6 +126,78 @@ export async function runAssistantTool(context: AssistantContext, toolName: stri
       return okResult(toolName, definition.sourceService, { records, registerTotal: records.reduce((sum, row) => sum + row.total, 0), taxBasis: "excl. GST", note: "Draft purchase orders are register records and are not included in committed cost until they reach a commitment-eligible status." }, records.map((row) => citation(context, "purchase_order", row.id, `${row.number}: ${row.title}`, `preconstruction/purchase-orders/${row.id}`)), records.length, rows.length, rows.length > visibleRows.length);
     }
 
+    if (toolName === "purchase_order_details") {
+      // Purchase-order sections are constrained by the database to the same
+      // canonical cost categories used by variation pricing.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ordersResult = await (supabase as any)
+        .from("project_purchase_orders")
+        .select("id,purchase_order_number,purchase_order_title,status,subtotal,labour_total,materials_total,subcontractors_total,plant_total,margin_total,gst_total,total_purchase_order_price,updated_at", { count: "exact" })
+        .eq("organization_id", context.organizationId)
+        .eq("project_id", context.projectId)
+        .order("updated_at", { ascending: false })
+        .limit(ASSISTANT_MAX_ROWS);
+      if (ordersResult.error) throw ordersResult.error;
+      const orderRows = (ordersResult.data ?? []) as Array<Record<string, unknown>>;
+      if (!orderRows.length) return emptyResult(toolName, definition.sourceService);
+      const orderIds = orderRows.map((row) => String(row.id));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const linesResult = await (supabase as any)
+        .from("project_purchase_order_line_items")
+        .select("id,purchase_order_id,section,description,quantity,unit,rate,total,sort_order,cost_item_id,source_cost_item_id,source_time_sheet_entry_id")
+        .eq("organization_id", context.organizationId)
+        .eq("project_id", context.projectId)
+        .in("purchase_order_id", orderIds)
+        .order("sort_order", { ascending: true });
+      if (linesResult.error) throw linesResult.error;
+      const linesByOrder = new Map<string, Array<Record<string, unknown>>>();
+      for (const line of (linesResult.data ?? []) as Array<Record<string, unknown>>) {
+        const orderId = String(line.purchase_order_id);
+        linesByOrder.set(orderId, [...(linesByOrder.get(orderId) ?? []), line]);
+      }
+      const sections = ["Materials", "Labour", "Subcontractors", "Plant", "Margin"] as const;
+      const records = orderRows.map((order) => {
+        const lines = linesByOrder.get(String(order.id)) ?? [];
+        const components = Object.fromEntries(sections.map((section) => [section, lines.reduce((sum, line) => sum + (line.section === section ? Number(line.total) || 0 : 0), 0)]));
+        return {
+          id: order.id,
+          number: order.purchase_order_number,
+          title: order.purchase_order_title,
+          status: order.status,
+          commitmentEligible: ["Approved", "Issued", "Received", "Invoiced"].includes(String(order.status)),
+          taxBasis: "excl. GST",
+          valueBasis: "purchase order pricing line value before margin and GST",
+          components,
+          lines: lines.map((line) => ({ id: line.id, section: line.section, description: line.description, quantity: line.quantity, unit: line.unit, rate: line.rate, total: line.total, costItemId: line.cost_item_id, sourceCostItemId: line.source_cost_item_id, sourceTimeSheetEntryId: line.source_time_sheet_entry_id })),
+          headerTotals: { subtotal: order.subtotal, labour: order.labour_total, materials: order.materials_total, subcontractors: order.subcontractors_total, plant: order.plant_total, margin: order.margin_total, gst: order.gst_total, total: order.total_purchase_order_price },
+          evidence: { classificationAuthority: "project_purchase_order_line_items.section", unsupportedInference: "PO title, supplier and description are not used to classify cost type." },
+          updatedAt: order.updated_at,
+        };
+      });
+      const citations = records.flatMap((record) => [
+        citation(context, "purchase_order", String(record.id), `${record.number}: ${record.title}`, `preconstruction/purchase-orders/${record.id}`),
+        ...record.lines.map((line) => citation(context, "purchase_order_line_item", String(line.id), `${record.number}: ${line.description || "Pricing line"}`, `preconstruction/purchase-orders/${record.id}`)),
+      ]);
+      const materialValueByStatus = records.reduce<Record<string, number>>((totals, record) => {
+        const materialValue = Number(record.components.Materials) || 0;
+        const status = String(record.status);
+        totals[status] = (totals[status] ?? 0) + materialValue;
+        return totals;
+      }, {});
+      const commitmentEligibleMaterialValue = records.reduce((sum, record) => sum + (record.commitmentEligible ? Number(record.components.Materials) || 0 : 0), 0);
+      return okResult(toolName, definition.sourceService, {
+        records,
+        taxBasis: "excl. GST",
+        classificationAuthority: "project_purchase_order_line_items.section",
+        summary: {
+          materialValueByStatus,
+          commitmentEligibleMaterialValue,
+          nonCommittedMaterialValue: records.reduce((sum, record) => sum + (!record.commitmentEligible ? Number(record.components.Materials) || 0 : 0), 0),
+          note: "A purchase order is treated as commitment-eligible only when its status is Approved, Issued, Received or Invoiced. Draft values are not ordered or committed values.",
+        },
+      }, citations, records.length, ordersResult.count ?? null, (ordersResult.count ?? records.length) > records.length);
+    }
+
     const tableByTool: Record<string, { table: string; select: string; suffix: string }> = {
       quotes: { table: "project_quotes", select: "id,status,subtotal,updated_at", suffix: "preconstruction/quote" },
       payment_claims: { table: "project_claims", select: "id,claim_number,status,claim_amount,retention_withheld_amount,updated_at", suffix: "preconstruction/claims" },
@@ -138,6 +213,68 @@ export async function runAssistantTool(context: AssistantContext, toolName: stri
       return okResult(toolName, definition.sourceService, { records: rows }, rows.map((row: Record<string, unknown>) => citation(context, toolName === "quotes" ? "quote" : "payment_claim", String(row.id), String(row.number ?? `${toolName} ${row.id}`), `${config.suffix}/${row.id}`)), rows.length, result.count ?? null, (result.count ?? rows.length) > rows.length);
     }
 
+    if (toolName === "claim_details") {
+      // Claim line source_kind/source_line_item_id is the authoritative bridge
+      // for answering what variation work has actually been claimed.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const claimsResult = await (supabase as any)
+        .from("project_claims")
+        .select("id,claim_number,status,claim_amount,retention_withheld_amount,updated_at", { count: "exact" })
+        .eq("organization_id", context.organizationId)
+        .eq("project_id", context.projectId)
+        .order("updated_at", { ascending: false })
+        .limit(ASSISTANT_MAX_ROWS);
+      if (claimsResult.error) throw claimsResult.error;
+      const claims = (claimsResult.data ?? []) as Array<Record<string, unknown>>;
+      if (!claims.length) return emptyResult(toolName, definition.sourceService);
+      const claimIds = claims.map((claim) => String(claim.id));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const linesResult = await (supabase as any)
+        .from("project_claim_line_items")
+        .select("id,claim_id,section,description,quantity,unit,rate,claim_amount,previously_claimed_amount,cumulative_claimed_amount,source_kind,source_document_id,source_line_item_id,source_number,source_title,source_total,sort_order")
+        .eq("organization_id", context.organizationId)
+        .eq("project_id", context.projectId)
+        .in("claim_id", claimIds)
+        .order("sort_order", { ascending: true });
+      if (linesResult.error) throw linesResult.error;
+      const linesByClaim = new Map<string, Array<Record<string, unknown>>>();
+      for (const line of (linesResult.data ?? []) as Array<Record<string, unknown>>) {
+        const claimId = String(line.claim_id);
+        linesByClaim.set(claimId, [...(linesByClaim.get(claimId) ?? []), line]);
+      }
+      const records = claims.map((claim) => ({
+        id: claim.id,
+        number: claim.claim_number,
+        status: claim.status,
+        claimAmount: claim.claim_amount,
+        retentionWithheld: claim.retention_withheld_amount,
+        lines: (linesByClaim.get(String(claim.id)) ?? []).map((line) => ({
+          id: line.id,
+          section: line.section,
+          description: line.description,
+          quantity: line.quantity,
+          unit: line.unit,
+          rate: line.rate,
+          claimAmount: line.claim_amount,
+          previouslyClaimedAmount: line.previously_claimed_amount,
+          cumulativeClaimedAmount: line.cumulative_claimed_amount,
+          sourceKind: line.source_kind,
+          sourceDocumentId: line.source_document_id,
+          sourceLineItemId: line.source_line_item_id,
+          sourceNumber: line.source_number,
+          sourceTitle: line.source_title,
+          sourceTotal: line.source_total,
+        })),
+        evidence: { sourceAuthority: "project_claim_line_items.source_kind/source_line_item_id", taxBasis: "claim values follow the stored claim line amounts; GST treatment remains claim-record specific" },
+        updatedAt: claim.updated_at,
+      }));
+      const citations = records.flatMap((record) => [
+        citation(context, "payment_claim", String(record.id), String(record.number), `preconstruction/claims/${record.id}`),
+        ...record.lines.map((line) => citation(context, "claim_line_item", String(line.id), `${record.number}: ${line.description || "Claim line"}`, `preconstruction/claims/${record.id}`)),
+      ]);
+      return okResult(toolName, definition.sourceService, { records, variationClaimLines: records.flatMap((record) => record.lines.filter((line) => String(line.sourceKind).toLowerCase().includes("variation"))) }, citations, records.length, claimsResult.count ?? null, (claimsResult.count ?? records.length) > records.length);
+    }
+
     if (toolName === "variations") {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (supabase as any).from("project_variations").select("id,variation_number,variation_title,status,requested_by,requested_date,sent_to_client_at,approved_at,total_variation_price,updated_at", { count: "exact" }).eq("organization_id", context.organizationId).eq("project_id", context.projectId).order("updated_at", { ascending: false }).limit(ASSISTANT_MAX_ROWS);
@@ -146,6 +283,103 @@ export async function runAssistantTool(context: AssistantContext, toolName: stri
       if (!rawRows.length) return emptyResult(toolName, definition.sourceService);
       const rows = rawRows.map((row: Record<string, unknown>) => ({ id: row.id, number: row.variation_number, title: row.variation_title, status: row.status, requestedBy: row.requested_by, requestedDate: row.requested_date, sentToClientAt: row.sent_to_client_at, approvedAt: row.approved_at, value: row.total_variation_price, approvalState: row.status === "Approved" ? "approved" : row.status === "Rejected" ? "rejected" : "pending", updatedAt: row.updated_at }));
       return okResult(toolName, definition.sourceService, { records: rows }, rows.map((row: Record<string, unknown>) => citation(context, "variation", String(row.id), `${row.number}: ${row.title}`, `preconstruction/variations/${row.id}`)), rows.length, result.count ?? null, (result.count ?? rows.length) > rows.length);
+    }
+
+    if (toolName === "variation_details") {
+      // The application variation editor and save RPC use these canonical sections.
+      // A line is never classified from its description or variation title.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const variationsResult = await (supabase as any)
+        .from("project_variations")
+        .select("id,variation_number,variation_title,status,subtotal,labour_total,materials_total,subcontractors_total,plant_total,margin_total,gst_total,total_variation_price,updated_at", { count: "exact" })
+        .eq("organization_id", context.organizationId)
+        .eq("project_id", context.projectId)
+        .order("updated_at", { ascending: false })
+        .limit(ASSISTANT_MAX_ROWS);
+      if (variationsResult.error) throw variationsResult.error;
+      const variationRows = (variationsResult.data ?? []) as Array<Record<string, unknown>>;
+      if (!variationRows.length) return emptyResult(toolName, definition.sourceService);
+
+      const variationIds = variationRows.map((row) => String(row.id));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const linesResult = await (supabase as any)
+        .from("project_variation_line_items")
+        .select("id,variation_id,section,description,quantity,unit,rate,total,sort_order,source_project_quote_id,source_project_quote_line_item_id,source_purchase_order_id,source_purchase_order_line_item_id")
+        .eq("organization_id", context.organizationId)
+        .eq("project_id", context.projectId)
+        .in("variation_id", variationIds)
+        .order("sort_order", { ascending: true });
+      if (linesResult.error) throw linesResult.error;
+
+      const linesByVariation = new Map<string, Array<Record<string, unknown>>>();
+      for (const line of (linesResult.data ?? []) as Array<Record<string, unknown>>) {
+        const variationId = String(line.variation_id);
+        const current = linesByVariation.get(variationId) ?? [];
+        current.push(line);
+        linesByVariation.set(variationId, current);
+      }
+
+      const canonicalSections = new Set(["Materials", "Labour", "Subcontractors", "Plant", "Margin"]);
+      const numericValue = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+      const records = variationRows.map((variation) => {
+        const lines = linesByVariation.get(String(variation.id)) ?? [];
+        const lineRecords = lines.map((line) => ({
+          id: line.id,
+          section: line.section,
+          description: line.description,
+          quantity: line.quantity,
+          unit: line.unit,
+          rate: line.rate,
+          total: line.total,
+          sortOrder: line.sort_order,
+          sourceProjectQuoteId: line.source_project_quote_id,
+          sourceProjectQuoteLineItemId: line.source_project_quote_line_item_id,
+          sourcePurchaseOrderId: line.source_purchase_order_id,
+          sourcePurchaseOrderLineItemId: line.source_purchase_order_line_item_id,
+        }));
+        const componentTotals = Object.fromEntries([...canonicalSections].map((section) => [section, lines.reduce((sum, line) => sum + (line.section === section ? numericValue(line.total) ?? 0 : 0), 0)]));
+        const unclassifiedLines = lines.filter((line) => !canonicalSections.has(String(line.section))).length;
+        const linesMissingTotals = lines.filter((line) => numericValue(line.total) === null).length;
+        const complete = lines.length > 0 && unclassifiedLines === 0 && linesMissingTotals === 0;
+        return {
+          id: variation.id,
+          number: variation.variation_number,
+          title: variation.variation_title,
+          status: variation.status,
+          taxBasis: "excl. GST",
+          lineCount: lines.length,
+          lines: lineRecords,
+          components: componentTotals,
+          evidence: {
+            status: complete ? "complete" : lines.length === 0 ? "missing_line_detail" : "partial",
+            linesMissingTotals,
+            unclassifiedLines,
+            calculation: "sum(project_variation_line_items.total) grouped by project_variation_line_items.section",
+          },
+          headerTotals: {
+            subtotal: variation.subtotal,
+            labour: variation.labour_total,
+            materials: variation.materials_total,
+            subcontractors: variation.subcontractors_total,
+            plant: variation.plant_total,
+            margin: variation.margin_total,
+            gst: variation.gst_total,
+            total: variation.total_variation_price,
+          },
+          updatedAt: variation.updated_at,
+        };
+      });
+      const citations = records.flatMap((record) => [
+        citation(context, "variation", String(record.id), `${record.number}: ${record.title}`, `preconstruction/variations/${record.id}`),
+        ...record.lines.map((line) => citation(context, "variation_line_item", String(line.id), `${record.number}: ${line.description || "Pricing line"}`, `preconstruction/variations/${record.id}`)),
+      ]);
+      return okResult(toolName, definition.sourceService, {
+        records,
+        valueBasis: "variation pricing line value before variation margin and GST",
+        taxBasis: "excl. GST",
+        classificationAuthority: "project_variation_line_items.section",
+        unsupportedInference: "Line descriptions, variation titles and supplier names are not used to classify cost type.",
+      }, citations, records.length, variationsResult.count ?? null, (variationsResult.count ?? records.length) > records.length);
     }
 
     if (toolName === "contacts") {
@@ -196,8 +430,11 @@ export function selectAssistantTools(message: string, enabledModules: string[]) 
   if (/activity|recent|uploaded|latest|what changed|timeline|today|attention|worry|chase/.test(text)) selected.add("project_activity");
   if (/quote|tender|price|pricing|estimate/.test(text)) selected.add("quotes");
   if (/purchase order|\bpos?\b|procurement|supplier commitment|bought|buy/.test(text)) selected.add("purchase_orders");
+  if (/material|labour|labor|component|breakdown|committed|ordered|bought|purchased|line item/.test(text) && /purchase order|\bpos?\b|procurement|bought|buy|ordered|purchased/.test(text)) selected.add("purchase_order_details");
   if (/variation|change order|\bvos?\b|extra|signed off/.test(text)) selected.add("variations");
+  if (/material|labour|labor|component|breakdown|highest|percentage|cost type|line item/.test(text) && /variation|change order|\bvos?\b|extra/.test(text)) selected.add("variation_details");
   if (/claim|invoice|payment/.test(text)) selected.add("payment_claims");
+  if (/claim|claimed|claimed to date|variation.*claim|claim.*variation|claim line/.test(text)) selected.add("claim_details");
   if (/retention/.test(text)) selected.add("retentions");
   if (/contact|client|supplier/.test(text)) selected.add("contacts");
   if (/qa|quality|inspection|defect|hold point/.test(text)) selected.add("qa");
