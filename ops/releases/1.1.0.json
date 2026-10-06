@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "1.1.0",
+  "version": "1.1.0",
+  "displayLabel": "TradesStack 1.1.0",
+  "releaseType": "OFFICIAL",
+  "status": "APPROVED",
+  "releaseDate": "2026-10-06",
+  "previousRelease": "1.0.0",
+  "sourceSha": "79e84ed5241bd83df2d251d0c7be63e433e30d66",
+  "releaseFingerprint": "e38af68182be40681a350ba490214188a76ace0e1d395d05771de1ccd69e7d3e",
+  "applicationShell": {
+    "releaseId": "0.0.0-phase1r.2",
+    "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
+  },
+  "packageIdentities": {
+    "@tradesstack/core-contracts": "0.0.0",
+    "@tradesstack/client-config": "0.0.0",
+    "@tradesstack/shared-ui": "0.0.0",
+    "@tradesstack/pdf-utils": "0.0.0",
+    "@tradesstack/suppliers": "0.0.0"
+  },
+  "database": {
+    "baseline": "phase1o-1",
+    "baselineSha256": "52ac69bea6587301c9d50fca809847bb077f03471406476b1d01ed2520c5a372",
+    "migrationTarget": "20261006120000_harden_assistant_tool_execution_status.sql",
+    "promotionStatus": "APPLIED_TO_MAIN_HOSTED;_PENDING_ALPHA_RECONCILIATION"
+  },
+  "clientConfig": {
+    "contract": "@tradesstack/client-config@0.0.0",
+    "schemaVersion": 1
+  },
+  "toolchain": {
+    "node": "22.22.2",
+    "npm": "11.6.2",
+    "next": "16.3.8"
+  },
+  "validation": {
+    "status": "PASS",
+    "assistantTests": "36 passed",
+    "typecheck": "PASS",
+    "lint": "PASS_WITH_PREEXISTING_WARNINGS",
+    "build": "PASS",
+    "liveProject26028": "PASS",
+    "externalAccess": "PROHIBITED"
+  },
+  "approval": {
+    "fictionalHostedProof": "VERIFIED",
+    "realClient": "APPROVED"
+  },
+  "createdAt": "2026-10-06T00:00:00.000Z"
+}
