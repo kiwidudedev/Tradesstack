@@ -7,8 +7,8 @@
   "status": "APPROVED",
   "releaseDate": "2026-10-06",
   "previousRelease": "1.0.0",
-  "sourceSha": "79e84ed5241bd83df2d251d0c7be63e433e30d66",
-  "releaseFingerprint": "e38af68182be40681a350ba490214188a76ace0e1d395d05771de1ccd69e7d3e",
+  "sourceSha": "89fc43673048d30a43b2282b08d01f87ad90b116",
+  "releaseFingerprint": "bbd4f663e9f4bcb33aa51662b9060feb5f01cdd70126ee9f93c47d66d7850f68",
   "applicationShell": {
     "releaseId": "0.0.0-phase1r.2",
     "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
