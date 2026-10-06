@@ -36,12 +36,13 @@ export function AssistantShellProvider({
   const pathname = usePathname();
 
   const routeProjectSlug = useMemo(() => getRouteProjectSlug(pathname, projects), [pathname, projects]);
-  const [selectedProjectOverride, setSelectedProjectOverride] = useState<string | null | undefined>(undefined);
-  const selectedProjectSlug = selectedProjectOverride === undefined ? routeProjectSlug ?? null : selectedProjectOverride;
+  const [selectedProjectOverride, setSelectedProjectOverride] = useState<{ pathname: string; slug: string | null } | null>(null);
+  const routeHasOverride = selectedProjectOverride?.pathname === pathname;
+  const selectedProjectSlug = routeHasOverride ? selectedProjectOverride.slug : routeProjectSlug ?? null;
   const selectedProject = projects.find((project) => project.slug === selectedProjectSlug);
 
   const selectProject = (slug: string | null) => {
-    setSelectedProjectOverride(slug);
+    setSelectedProjectOverride({ pathname, slug });
     setIsProjectPickerOpen(false);
     setNewChatKey((key) => key + 1);
   };
