@@ -895,7 +895,7 @@ export function AiChatbotPanel({
                 </span>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
+              <div className="mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col px-5 pb-4 md:px-8">
                 <div className="flex min-h-0 flex-1 items-center justify-center">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full text-[var(--text-muted)]">
                     <Bot className="h-12 w-12" strokeWidth={1.2} />
@@ -997,7 +997,7 @@ export function AiChatbotPanel({
                       void loadOlderMessages();
                     }
                   }}
-                  className="flex-1 overflow-x-hidden overflow-y-auto px-8 pt-6 pb-4 space-y-6 [scrollbar-gutter:stable]"
+                  className="flex-1 overflow-x-hidden overflow-y-auto px-5 pt-6 pb-4 md:px-8 [scrollbar-gutter:stable]"
                 >
                   {isLoadingMoreMessages ? (
                     <p className="text-center text-[11.5px] text-[var(--text-muted)]">Loading older messages…</p>
@@ -1011,18 +1011,18 @@ export function AiChatbotPanel({
                     return (
                       <div
                         key={message.id}
-                        className={message.role === "user" ? "flex w-full justify-end" : "flex w-full items-start gap-3"}
+                        className={message.role === "user" ? "mx-auto flex w-full max-w-[760px] justify-end" : "mx-auto flex w-full max-w-[760px] items-start gap-3"}
                       >
                         {message.role === "assistant" ? (
-                          <div className="max-w-[76%]">
-                            <div className="rounded-[var(--radius-md)] bg-[var(--surface-muted)] px-4 py-3.5">
+                          <div className="w-full max-w-[760px]">
+                            <div className="rounded-2xl bg-[#edf2fa] px-5 py-4 md:px-6 md:py-5">
                               <div className="break-words">{renderAssistantContent(message.content)}</div>
                               {message.citations?.length ? (
-                                <div className="mt-3 border-t border-[var(--border)] pt-2">
-                                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Sources</p>
+                                <div className="mt-5 border-t border-[#d9e1ee] pt-3">
+                                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Sources</p>
                                   <div className="flex flex-wrap gap-1.5">
                                     {message.citations.map((source) => (
-                                      <a key={`${source.href}-${source.label}`} href={source.href} className="rounded-full bg-[var(--surface)] px-2.5 py-1 text-[11px] text-[var(--primary)] hover:underline">
+                                      <a key={`${source.href}-${source.label}`} href={source.href} className="rounded-full border border-[#d9e1ee] bg-white px-3 py-1.5 text-[11px] text-[var(--primary)] transition hover:border-[var(--primary)] hover:underline">
                                         {source.label}
                                       </a>
                                     ))}
@@ -1033,8 +1033,8 @@ export function AiChatbotPanel({
                             <p className="mt-1.5 ml-1 text-[11px] text-[var(--text-muted)]">{formatShortTimestamp(message.createdAt)}</p>
                           </div>
                         ) : (
-                          <div className="flex max-w-[72%] flex-col items-end gap-1">
-                            <div className="rounded-[var(--radius-md)] bg-[var(--navy-primary)] px-4 py-3">
+                          <div className="flex max-w-[82%] flex-col items-end gap-1">
+                            <div className="rounded-2xl bg-[var(--navy-primary)] px-4 py-3">
                               <p className="whitespace-pre-wrap text-[14px] leading-[1.55] text-white">{message.content}</p>
                             </div>
                             <p className="mr-1 text-[11px] text-[var(--text-muted)]">{formatShortTimestamp(message.createdAt)}</p>
@@ -1047,7 +1047,7 @@ export function AiChatbotPanel({
                   {/* Thinking indicator */}
                   {isLoading ? (
                     <div className="flex items-start gap-3">
-                      <div className="rounded-[var(--radius-md)] bg-[var(--surface-muted)] px-4 py-3.5">
+                      <div className="mx-auto w-full max-w-[760px] px-1">
                         <span className="inline-flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)]">
                           Thinking
                           <span className="flex gap-0.5">
@@ -1062,7 +1062,7 @@ export function AiChatbotPanel({
                 </div>
 
                 {/* Composer — bottom of chat flow */}
-                <div className="bg-[var(--surface)] px-8 pt-2 pb-6">
+                <div className="border-t border-[var(--border-subtle)] bg-[var(--surface)] px-5 pt-3 pb-5 md:px-8 md:pb-6">
                   {error ? (
                     <div className="mb-3 flex items-center gap-2 rounded-[var(--radius-md)] bg-[#FEF2F2] px-3.5 py-2.5 text-[13px] text-[#B91C1C]">
                       <span className="font-semibold">Error:</span> {error}
@@ -1074,7 +1074,7 @@ export function AiChatbotPanel({
                       void handleSend();
                     }}
                   >
-                    <div className="flex items-end gap-3 rounded-[var(--radius-md)] bg-[var(--surface)] px-4 py-3 shadow-[0_0_0_1px_var(--primary),0_0_0_4px_var(--primary-soft)]">
+                    <div className="mx-auto flex max-w-[760px] items-end gap-3 rounded-2xl bg-[var(--surface)] px-4 py-3 shadow-[0_0_0_1px_var(--primary),0_0_0_4px_var(--primary-soft)]">
                       <textarea
                         ref={textareaRef}
                         value={inputValue}

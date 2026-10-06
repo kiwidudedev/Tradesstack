@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { Bot, ChevronDown, MoreHorizontal, Pin } from "lucide-react";
+import { Bot, Check, ChevronDown, MoreHorizontal, Pin, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import type { OrganizationProject } from "@/lib/projects";
 import { AiChatbotPanel } from "@/components/app/AiChatbotPanel";
@@ -32,10 +32,19 @@ export function AssistantShellProvider({
     typeof window !== "undefined" && window.location.search.includes("assistant=open"),
   );
   const [newChatKey, setNewChatKey] = useState(0);
+  const [isProjectPickerOpen, setIsProjectPickerOpen] = useState(false);
   const pathname = usePathname();
 
-  const projectSlug = useMemo(() => getRouteProjectSlug(pathname, projects), [pathname, projects]);
-  const selectedProject = projects.find((project) => project.slug === projectSlug);
+  const routeProjectSlug = useMemo(() => getRouteProjectSlug(pathname, projects), [pathname, projects]);
+  const [selectedProjectOverride, setSelectedProjectOverride] = useState<string | null | undefined>(undefined);
+  const selectedProjectSlug = selectedProjectOverride === undefined ? routeProjectSlug ?? null : selectedProjectOverride;
+  const selectedProject = projects.find((project) => project.slug === selectedProjectSlug);
+
+  const selectProject = (slug: string | null) => {
+    setSelectedProjectOverride(slug);
+    setIsProjectPickerOpen(false);
+    setNewChatKey((key) => key + 1);
+  };
   const contextValue = useMemo(
     () => ({ open: () => setIsOpen(true), close: () => setIsOpen(false), isOpen }),
     [isOpen],
@@ -73,27 +82,83 @@ export function AssistantShellProvider({
           aria-label="TradesStack AI Assistant"
           className={`pointer-events-auto absolute right-0 top-14 flex h-[calc(100dvh-3.5rem)] w-full max-w-full flex-col border-l border-[var(--border)] bg-white shadow-[-12px_0_32px_rgba(15,23,42,0.12)] transition-transform duration-200 ease-out md:w-[min(520px,28vw)] ${isOpen ? "translate-x-0" : "translate-x-full"}`}
         >
-          <div className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Bot className="h-4 w-4 text-[var(--text-secondary)]" strokeWidth={1.8} />
-              <span className="truncate text-[14px] font-semibold text-[var(--text-primary)]">TradesStack AI</span>
-            </div>
+          <div className="relative flex h-14 shrink-0 items-center justify-center border-b border-[var(--border-subtle)] px-3">
+            <button
+              type="button"
+              onClick={() => setNewChatKey((key) => key + 1)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[15px] font-semibold text-[var(--text-primary)] transition hover:bg-[var(--surface-muted)]"
+              aria-label="Start a new chat"
+            >
+              New chat <ChevronDown className="h-4 w-4 text-[var(--text-secondary)]" />
+            </button>
             <div className="flex items-center gap-1">
               <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" aria-label="Pin assistant" title="Pin assistant">
                 <Pin className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+              <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" aria-label="Chat actions" title="Chat actions">
+                <MoreHorizontal className="h-4 w-4" />
               </button>
               <button type="button" onClick={() => setIsOpen(false)} aria-label="Hide chat" className="inline-flex h-8 w-8 items-center justify-center rounded text-[var(--text-secondary)] hover:bg-[var(--surface-muted)]">
                 <span className="text-xl leading-none">×</span>
               </button>
             </div>
           </div>
-          <div className="flex h-12 shrink-0 items-center justify-center border-b border-[var(--border-subtle)] px-3">
-            <button type="button" onClick={() => setNewChatKey((key) => key + 1)} className="inline-flex items-center gap-1 rounded px-2 py-1 text-[14px] text-[var(--text-primary)] hover:bg-[var(--surface-muted)]">
-              New chat <ChevronDown className="h-3.5 w-3.5" />
-            </button>
-            <button type="button" className="absolute right-3 inline-flex h-8 w-8 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--surface-muted)]" aria-label="Chat actions" title="Chat actions">
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
+          <div className="relative shrink-0 border-b border-[var(--border-subtle)] px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Current project</p>
+                <div className="relative mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsProjectPickerOpen((open) => !open)}
+                    aria-expanded={isProjectPickerOpen}
+                    aria-haspopup="listbox"
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--text-primary)] shadow-sm transition hover:border-[var(--primary)]"
+                  >
+                    <span className="truncate">{selectedProject?.name ?? "No project selected"}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+                  </button>
+                  {isProjectPickerOpen ? (
+                    <div role="listbox" aria-label="Select current project" className="absolute left-0 top-[calc(100%+6px)] z-20 max-h-64 w-[min(320px,calc(100vw-48px))] overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={!selectedProject}
+                        onClick={() => selectProject(null)}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)]"
+                      >
+                        <span>No project selected</span>
+                        {!selectedProject ? <Check className="h-3.5 w-3.5 text-[var(--primary)]" /> : null}
+                      </button>
+                      {projects.map((project) => (
+                        <button
+                          key={project.slug}
+                          type="button"
+                          role="option"
+                          aria-selected={selectedProject?.slug === project.slug}
+                          onClick={() => selectProject(project.slug)}
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-[var(--text-primary)] transition hover:bg-[var(--surface-muted)]"
+                        >
+                          <span className="truncate">{project.name}</span>
+                          {selectedProject?.slug === project.slug ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--primary)]" /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              {selectedProject ? (
+                <button
+                  type="button"
+                  onClick={() => selectProject(null)}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
+                  aria-label="Clear current project"
+                  title="Clear current project"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="min-h-0 flex-1">
             {selectedProject ? (
