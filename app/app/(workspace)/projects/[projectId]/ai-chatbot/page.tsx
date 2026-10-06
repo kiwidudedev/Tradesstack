@@ -1,6 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getTradePackWorkspaceBySlugForCurrentUser } from "@/lib/trade-pack-workspaces-server";
-import { AiChatbotPanel } from "@/components/app/AiChatbotPanel";
 
 export default async function ProjectAiChatbotPage({
   params,
@@ -14,5 +13,5 @@ export default async function ProjectAiChatbotPage({
     notFound();
   }
 
-  return <AiChatbotPanel projectSlug={projectId} projectName={project.name} />;
+  redirect(`/app/ai-assistant?project=${encodeURIComponent(project.slug)}`);
 }

@@ -117,6 +117,15 @@ export function normalizePurchaseOrderRegisterRow(
   };
 }
 
+/** The purchase-order register presents the calculated subtotal/margin position excluding GST. */
+export function calculatePurchaseOrderPreGstTotal(row: Pick<PurchaseOrderRegisterRow, "subtotal" | "marginPercent" | "discountAmount" | "contingencyAmount">): number {
+  const subtotal = asNumber(row.subtotal);
+  const marginPercent = asNumber(row.marginPercent);
+  const discountAmount = asNumber(row.discountAmount);
+  const contingencyAmount = asNumber(row.contingencyAmount);
+  return Math.max(0, subtotal + subtotal * (marginPercent / 100) + contingencyAmount - discountAmount);
+}
+
 export function normalizePurchaseOrderRegisterRowList(
   rows: Array<
     Pick<

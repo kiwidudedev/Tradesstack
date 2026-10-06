@@ -25,6 +25,7 @@ import {
   listPurchaseOrders,
   updatePurchaseOrderStatus as updatePurchaseOrderStatusMutation,
 } from "@/lib/purchase-orders/service";
+import { calculatePurchaseOrderPreGstTotal } from "@/lib/purchase-orders/normalization";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { canManageCommercialData } from "@/lib/role-permissions";
 
@@ -44,14 +45,6 @@ interface PurchaseOrderRegisterRow {
   contingency_amount: number | null;
   total_purchase_order_price: number | null;
   updated_at: string;
-}
-
-function calculatePurchaseOrderPreGstTotal(row: PurchaseOrderRegisterRow) {
-  const subtotal = Number(row.subtotal ?? 0);
-  const marginPercent = Number(row.margin_percent ?? 0);
-  const discountAmount = Number(row.discount_amount ?? 0);
-  const contingencyAmount = Number(row.contingency_amount ?? 0);
-  return Math.max(0, subtotal + subtotal * (marginPercent / 100) + contingencyAmount - discountAmount);
 }
 
 function toMoney(value: number) {
@@ -190,7 +183,12 @@ export default function ProjectVariationRegisterPage() {
   }, [routeProjectSlug, sessionOrganizationId, supabase]);
 
   const totalPurchaseOrderValue = useMemo(() => {
-    return purchaseOrderRows.reduce((sum, row) => sum + calculatePurchaseOrderPreGstTotal(row), 0);
+    return purchaseOrderRows.reduce((sum, row) => sum + calculatePurchaseOrderPreGstTotal({
+      subtotal: row.subtotal ?? 0,
+      marginPercent: row.margin_percent ?? 0,
+      discountAmount: row.discount_amount ?? 0,
+      contingencyAmount: row.contingency_amount ?? 0,
+    }), 0);
   }, [purchaseOrderRows]);
 
   const createPurchaseOrderAndOpen = useCallback(async () => {
@@ -348,7 +346,7 @@ export default function ProjectVariationRegisterPage() {
                           </DropdownMenu>
                         </OperationalTableCell>
                         <OperationalTableCell className="font-semibold text-[var(--text-primary)]">
-                          {toMoney(calculatePurchaseOrderPreGstTotal(row))}
+                          {toMoney(calculatePurchaseOrderPreGstTotal({ subtotal: row.subtotal ?? 0, marginPercent: row.margin_percent ?? 0, discountAmount: row.discount_amount ?? 0, contingencyAmount: row.contingency_amount ?? 0 }))}
                         </OperationalTableCell>
                         <OperationalTableCell className="px-2">
                           <div className="flex items-center justify-center">

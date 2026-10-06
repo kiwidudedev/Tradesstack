@@ -1,4 +1,5 @@
 import { AppShellFrame } from "@/components/app/AppShellFrame";
+import { AssistantShellProvider } from "@/components/app/AssistantShell";
 import { BrandThemeProvider } from "@/components/app/BrandThemeProvider";
 import { Sidebar } from "@/components/app/Sidebar";
 import { SidebarStateProvider } from "@/components/app/SidebarState";
@@ -8,12 +9,14 @@ import { getCurrentOrganizationBranding } from "@/lib/branding-server";
 import { getMasterClientConfig } from "@/lib/client-config";
 import { hasOrganizationPermission } from "@/lib/permissions-server";
 import { getCurrentOrganizationMember } from "@/lib/projects-server";
+import { getOrganizationProjectsForCurrentUser } from "@/lib/projects-server";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const clientConfig = getMasterClientConfig();
-  const [branding, member] = await Promise.all([
+  const [branding, member, projects] = await Promise.all([
     getCurrentOrganizationBranding(),
     getCurrentOrganizationMember(),
+    getOrganizationProjectsForCurrentUser(),
   ]);
   const canViewPaymentClaims = member
     ? await hasOrganizationPermission(
@@ -28,14 +31,16 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
       actionColor={branding.actionColor ?? clientConfig.theme.actionColor}
     >
       <SidebarStateProvider>
-        <div className="relative min-h-screen bg-[var(--background)]">
-          <Topbar canViewPaymentClaims={canViewPaymentClaims} />
-          <div className="relative flex min-h-[calc(100vh-3.5rem)] w-full items-start gap-0 pt-14">
-            <WorkspaceSidebarBackdrop />
-            <Sidebar canViewPaymentClaims={canViewPaymentClaims} />
-            <AppShellFrame>{children}</AppShellFrame>
+        <AssistantShellProvider projects={projects}>
+          <div className="relative min-h-screen bg-[var(--background)]">
+            <Topbar canViewPaymentClaims={canViewPaymentClaims} />
+            <div className="relative flex min-h-[calc(100vh-3.5rem)] w-full items-start gap-0 pt-14">
+              <WorkspaceSidebarBackdrop />
+              <Sidebar canViewPaymentClaims={canViewPaymentClaims} />
+              <AppShellFrame>{children}</AppShellFrame>
+            </div>
           </div>
-        </div>
+        </AssistantShellProvider>
       </SidebarStateProvider>
     </BrandThemeProvider>
   );

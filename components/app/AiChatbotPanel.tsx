@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, MoreHorizontal, Plus, Search, Send, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { Bot, MessageSquare, MoreHorizontal, Plus, Search, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,12 +12,14 @@ import {
 import styles from "./trade-pack-builder.module.css";
 
 type ChatRole = "user" | "assistant";
+type AssistantMode = "auto" | "pm" | "qs" | "estimator" | "procurement" | "qa" | "accounts";
 
 interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   createdAt?: string;
+  citations?: Array<{ label: string; href: string }>;
 }
 
 interface ChatUsage {
@@ -50,12 +53,6 @@ interface ConversationsPage {
 const CONVERSATIONS_FETCH_LIMIT = 50;
 const MESSAGES_FETCH_LIMIT = 200;
 
-const EXAMPLE_PROMPTS = [
-  "What trades are in the latest drawing?",
-  "Show me the cost breakdown",
-  "Identify any project risks",
-  "Estimate materials for this scope",
-];
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -113,7 +110,7 @@ function isConversation(value: ChatConversation | null): value is ChatConversati
   return value !== null;
 }
 
-function normalizeMessage(message: { id?: string; role?: ChatRole; content?: string; createdAt?: string }): ChatMessage | null {
+function normalizeMessage(message: { id?: string; role?: ChatRole; content?: string; createdAt?: string; citations?: Array<{ label?: string; href?: string }> }): ChatMessage | null {
   if ((message.role !== "user" && message.role !== "assistant") || typeof message.content !== "string") {
     return null;
   }
@@ -128,11 +125,48 @@ function normalizeMessage(message: { id?: string; role?: ChatRole; content?: str
     role: message.role,
     content,
     createdAt: typeof message.createdAt === "string" ? message.createdAt : undefined,
+    citations: Array.isArray(message.citations)
+      ? message.citations.filter((citation): citation is { label: string; href: string } => typeof citation?.label === "string" && typeof citation?.href === "string")
+      : undefined,
   } satisfies ChatMessage;
 }
 
 function isMessage(value: ChatMessage | null): value is ChatMessage {
   return value !== null;
+}
+
+function renderInlineMarkdown(line: string): ReactNode {
+  const tokenPattern = /(\*\*(\[[^\]]+\]\(([^)]+)\))\*\*|(\[[^\]]+\]\(([^)]+)\))|\*\*[^*]+\*\*)/g;
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let tokenIndex = 0;
+  while ((match = tokenPattern.exec(line)) !== null) {
+    if (match.index > cursor) parts.push(line.slice(cursor, match.index));
+    const token = match[0];
+    const linkToken = match[2] ?? match[4] ?? "";
+    if (linkToken) {
+      const label = linkToken.slice(1, linkToken.indexOf("]("));
+      const rawHref = match[3] ?? match[5] ?? "";
+      let href: string | null = null;
+      try {
+        const parsed = new URL(rawHref, window.location.origin);
+        if (parsed.origin === window.location.origin || parsed.origin === "https://tradesstack.app") {
+          href = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+      } catch {
+        href = null;
+      }
+      const link = href ? <a key={`link-${tokenIndex}`} href={href} className="text-[var(--primary)] underline-offset-2 hover:underline">{label}</a> : label;
+      parts.push(match[1] ? <strong key={`bold-link-${tokenIndex}`} className="font-semibold">{link}</strong> : link);
+    } else {
+      parts.push(<strong key={`bold-${tokenIndex}`} className="font-semibold">{token.slice(2, -2)}</strong>);
+    }
+    cursor = match.index + token.length;
+    tokenIndex += 1;
+  }
+  if (cursor < line.length) parts.push(line.slice(cursor));
+  return parts.length ? parts : line;
 }
 
 function renderAssistantContent(content: string) {
@@ -145,7 +179,7 @@ function renderAssistantContent(content: string) {
     if (isHeading) {
       return (
         <p key={`${index}-${line}`} className="mb-2.5 whitespace-pre-wrap text-[15px] font-semibold leading-[1.4] text-[var(--text-primary)]">
-          {line}
+          {renderInlineMarkdown(line)}
         </p>
       );
     }
@@ -159,13 +193,23 @@ function renderAssistantContent(content: string) {
             : "whitespace-pre-wrap text-[14px] leading-[1.7] text-[var(--text-primary)]"
         }
       >
-        {line}
+        {renderInlineMarkdown(line)}
       </p>
     );
   });
 }
 
-export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectName?: string }) {
+export function AiChatbotPanel({
+  projectSlug,
+  projectName,
+  drawer = false,
+  resetKey = 0,
+}: {
+  projectSlug: string;
+  projectName?: string;
+  drawer?: boolean;
+  resetKey?: number;
+}) {
   const [inputValue, setInputValue] = useState("");
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -188,6 +232,15 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
   const canSend = useMemo(() => inputValue.trim().length > 0 && !isLoading, [inputValue, isLoading]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [assistantMode, setAssistantMode] = useState<AssistantMode>("auto");
+  const suggestedPrompts = [
+    "How are we looking?",
+    "What should I chase today?",
+    "Give me the QS view.",
+    "What VOs haven't been signed off?",
+    "What POs are still Draft?",
+    "Any QA holding us up?",
+  ];
   const topicItems = useMemo(() => {
     const trimmed = searchQuery.trim().toLowerCase();
     if (!trimmed) {
@@ -198,7 +251,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
     );
   }, [conversations, searchQuery]);
 
-  const fetchConversationsPage = async (cursor?: string): Promise<ConversationsPage> => {
+  const fetchConversationsPage = useCallback(async (cursor?: string): Promise<ConversationsPage> => {
     const searchParams = new URLSearchParams({
       projectSlug,
       limit: String(CONVERSATIONS_FETCH_LIMIT),
@@ -249,9 +302,9 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
       nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null,
       usage,
     };
-  };
+  }, [projectSlug]);
 
-  const fetchConversationMessages = async (conversationId: string, cursor?: string): Promise<MessagesPage> => {
+  const fetchConversationMessages = useCallback(async (conversationId: string, cursor?: string): Promise<MessagesPage> => {
     const searchParams = new URLSearchParams({
       projectSlug,
       conversationId,
@@ -267,7 +320,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
     }
 
     const body = (await response.json()) as {
-      messages?: Array<{ id?: string; role?: ChatRole; content?: string; createdAt?: string }>;
+      messages?: Array<{ id?: string; role?: ChatRole; content?: string; createdAt?: string; citations?: Array<{ label?: string; href?: string }> }>;
       hasMore?: boolean;
       nextCursor?: string | null;
     };
@@ -277,7 +330,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
       hasMore: Boolean(body.hasMore),
       nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null,
     };
-  };
+  }, [projectSlug]);
 
   const scrollToBottom = () => {
     const container = scrollContainerRef.current;
@@ -319,13 +372,14 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
         }
 
         const nextConversations: ChatConversation[] = page.conversations;
-        const initialConversationId =
-          (typeof page.activeConversationId === "string" &&
-          nextConversations.some((conversation) => conversation.id === page.activeConversationId)
-            ? page.activeConversationId
-            : "") ||
-          nextConversations[0]?.id ||
-          null;
+        const initialConversationId = drawer
+          ? null
+          : (typeof page.activeConversationId === "string" &&
+            nextConversations.some((conversation) => conversation.id === page.activeConversationId)
+              ? page.activeConversationId
+              : "") ||
+            nextConversations[0]?.id ||
+            null;
 
         let historicalMessages: ChatMessage[] = [];
         if (initialConversationId) {
@@ -370,7 +424,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
     return () => {
       isMounted = false;
     };
-  }, [projectSlug]);
+  }, [drawer, fetchConversationMessages, fetchConversationsPage, projectSlug]);
 
   useEffect(() => {
     resizeComposer();
@@ -393,13 +447,16 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
     let didSendSucceed = false;
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectSlug,
           conversationId: activeConversationId,
-          messages: nextMessages.map((message) => ({ role: message.role, content: message.content })),
+          message: nextText,
+          route: window.location.pathname,
+          module: "project",
+          mode: assistantMode,
         }),
       });
 
@@ -461,9 +518,9 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
             continue;
           }
 
-          let payload: { type?: string; delta?: string; error?: string } | null = null;
+          let payload: { type?: string; delta?: string; error?: string; citations?: Array<{ label?: string; href?: string }> } | null = null;
           try {
-            payload = JSON.parse(payloadText) as { type?: string; delta?: string; error?: string };
+            payload = JSON.parse(payloadText) as { type?: string; delta?: string; error?: string; citations?: Array<{ label?: string; href?: string }> };
           } catch {
             continue;
           }
@@ -476,6 +533,11 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
 
           if (payload?.type === "error" && payload.error) {
             setError(payload.error);
+          }
+
+          if (payload?.type === "citations" && Array.isArray(payload.citations)) {
+            const citations = payload.citations.filter((citation): citation is { label: string; href: string } => typeof citation?.label === "string" && typeof citation?.href === "string");
+            setMessages((previous) => previous.map((item) => item.id === assistantMessage.id ? { ...item, citations } : item));
           }
         }
       }
@@ -562,6 +624,12 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
       container.scrollTop = 0;
     }
   };
+
+  useEffect(() => {
+    if (drawer && resetKey > 0) {
+      handleNewChat();
+    }
+  }, [drawer, resetKey]);
 
   const deleteConversation = async (conversationId: string) => {
     setDeletingConversationId(conversationId);
@@ -666,13 +734,17 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
   };
 
   return (
-    <main className={`${styles.scope} -mb-8 -mt-6 pt-0 pb-0`} style={{ background: "var(--background)" }}>
-      <div className="w-full">
+    <main
+      aria-label={projectName ? `TradesStack AI for ${projectName}` : "TradesStack AI"}
+      className={`${styles.scope} h-full ${drawer ? "" : "-mb-8 -mt-6"} pt-0 pb-0`}
+      style={{ background: drawer ? "#ffffff" : "var(--background)" }}
+    >
+      <div className={`w-full ${drawer ? "h-full" : ""}`}>
         {/* Workspace surface — no outer card chrome */}
-        <div className="overflow-hidden h-[calc(100vh-168px)] grid lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className={`h-full overflow-hidden grid ${drawer ? "grid-cols-1" : "h-[calc(100vh-168px)] lg:grid-cols-[260px_minmax(0,1fr)]"}`}>
 
           {/* ── Sidebar ─ blends into workspace ────────────────── */}
-          <aside className="flex flex-col border-r border-[var(--border-subtle)] min-h-0">
+          <aside className={`${drawer ? "hidden" : "flex"} flex-col border-r border-[var(--border-subtle)] min-h-0`}>
             {/* New chat */}
             <div className="space-y-px px-2 pt-4 pb-2">
               <button
@@ -814,7 +886,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
           </aside>
 
           {/* ── Main chat area ──────────────────────────────────── */}
-          <section className="flex min-w-0 min-h-0 flex-col bg-[var(--surface)]">
+          <section className={`flex min-w-0 min-h-0 flex-col ${drawer ? "bg-white" : "bg-[var(--surface)]"}`}>
             {isLoadingHistory ? (
               <div className="flex flex-1 items-center justify-center">
                 <span className="inline-flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
@@ -823,67 +895,93 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
                 </span>
               </div>
             ) : messages.length === 0 ? (
-              /* Centered hero — composer as focal point, prompts below */
-              <div className="flex flex-1 flex-col items-center justify-center px-6 pb-8">
-                <div className="w-full max-w-[720px]">
-                  <div className="mb-8 flex flex-col items-center text-center">
-                    <h1 className="text-[22px] font-semibold leading-[1.25] text-[var(--text-primary)]">
-                      How can I help you today?
-                    </h1>
-                  </div>
-
-                  {error ? (
-                    <div className="mb-3 flex items-center gap-2 rounded-[var(--radius-md)] bg-[#FEF2F2] px-3.5 py-2.5 text-[13px] text-[#B91C1C]">
-                      <span className="font-semibold">Error:</span> {error}
-                    </div>
-                  ) : null}
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void handleSend();
-                    }}
-                  >
-                    <div className="flex items-end gap-3 rounded-[var(--radius-md)] bg-[var(--surface)] px-4 py-3 shadow-[0_0_0_1px_var(--primary),0_0_0_4px_var(--primary-soft)]">
-                      <textarea
-                        ref={textareaRef}
-                        value={inputValue}
-                        onChange={(event) => setInputValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault();
-                            void handleSend();
-                          }
-                        }}
-                        placeholder="Ask me anything about your projects..."
-                        disabled={isLoading}
-                        rows={1}
-                        className="min-h-[28px] flex-1 resize-none bg-transparent text-[14px] leading-[1.5] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!canSend}
-                        className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary)] text-white transition hover:bg-[var(--primary-hover)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label="Send message"
-                      >
-                        <Send className="h-3.5 w-3.5" strokeWidth={2.2} />
-                      </button>
-                    </div>
-                  </form>
-
-                  {/* Suggested prompts — directly below composer */}
-                  <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                    {EXAMPLE_PROMPTS.map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        onClick={() => void handleSend(prompt)}
-                        className="rounded-full bg-[var(--surface-muted)] px-3.5 py-1.5 text-[12.5px] font-medium text-[var(--text-secondary)] transition hover:bg-[var(--border-subtle)] hover:text-[var(--text-primary)]"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
+              <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
+                <div className="flex min-h-0 flex-1 items-center justify-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full text-[var(--text-muted)]">
+                    <Bot className="h-12 w-12" strokeWidth={1.2} />
                   </div>
                 </div>
+
+                {error ? (
+                  <div className="mb-3 flex items-center gap-2 rounded-[var(--radius-md)] bg-[#FEF2F2] px-3.5 py-2.5 text-[13px] text-[#B91C1C]">
+                    <span className="font-semibold">Error:</span> {error}
+                  </div>
+                ) : null}
+                <div className="mb-3 flex flex-wrap gap-1.5" aria-label="Suggested construction questions">
+                  {suggestedPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        void handleSend(prompt);
+                      }}
+                      onClick={(event) => event.preventDefault()}
+                      className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSend();
+                  }}
+                  className="w-full"
+                >
+                  <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.05)] focus-within:border-[var(--primary)] focus-within:ring-4 focus-within:ring-[var(--primary-soft)]">
+                    <textarea
+                      ref={textareaRef}
+                      value={inputValue}
+                      onChange={(event) => setInputValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleSend();
+                        }
+                      }}
+                      placeholder={drawer ? "Do anything" : "Ask me anything about your projects..."}
+                      disabled={isLoading}
+                      rows={2}
+                      className="min-h-[44px] w-full resize-none bg-transparent text-[14px] leading-[1.5] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"
+                    />
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center gap-3 text-[var(--text-muted)]">
+                        <button type="button" aria-label="Add files and options" className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--surface-muted)]">
+                          <Plus className="h-5 w-5" strokeWidth={1.8} />
+                        </button>
+                        <button type="button" aria-label="Choose approval mode" className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--surface-muted)]">
+                          <ShieldCheck className="h-5 w-5" strokeWidth={1.8} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <select
+                          aria-label="Assistant role mode"
+                          value={assistantMode}
+                          onChange={(event) => setAssistantMode(event.target.value as AssistantMode)}
+                          className="bg-transparent text-[12px] font-medium text-[var(--text-primary)] outline-none"
+                        >
+                          <option value="auto">Auto</option>
+                          <option value="pm">PM view</option>
+                          <option value="qs">QS view</option>
+                          <option value="estimator">Estimator</option>
+                          <option value="procurement">Procurement</option>
+                          <option value="qa">QA</option>
+                          <option value="accounts">Accounts</option>
+                        </select>
+                        <button
+                          type="submit"
+                          disabled={!canSend}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-muted)] text-[var(--text-muted)] transition hover:bg-[var(--border-subtle)] disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label="Send message"
+                        >
+                          <Send className="h-4 w-4" strokeWidth={2} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
               </div>
             ) : (
               <>
@@ -919,6 +1017,18 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
                           <div className="max-w-[76%]">
                             <div className="rounded-[var(--radius-md)] bg-[var(--surface-muted)] px-4 py-3.5">
                               <div className="break-words">{renderAssistantContent(message.content)}</div>
+                              {message.citations?.length ? (
+                                <div className="mt-3 border-t border-[var(--border)] pt-2">
+                                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Sources</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {message.citations.map((source) => (
+                                      <a key={`${source.href}-${source.label}`} href={source.href} className="rounded-full bg-[var(--surface)] px-2.5 py-1 text-[11px] text-[var(--primary)] hover:underline">
+                                        {source.label}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                             <p className="mt-1.5 ml-1 text-[11px] text-[var(--text-muted)]">{formatShortTimestamp(message.createdAt)}</p>
                           </div>
@@ -975,7 +1085,7 @@ export function AiChatbotPanel({ projectSlug }: { projectSlug: string; projectNa
                             void handleSend();
                           }
                         }}
-                        placeholder="Ask me anything about your projects..."
+                        placeholder={drawer ? "Ask TradesStack AI..." : "Ask me anything about your projects..."}
                         disabled={isLoading}
                         rows={1}
                         className="min-h-[28px] flex-1 resize-none bg-transparent text-[14px] leading-[1.5] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"

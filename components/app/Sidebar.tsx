@@ -18,6 +18,7 @@ import { useState, type ReactNode } from "react";
 import { ibmPlexSans } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useAssistantShell } from "@/components/app/AssistantShell";
 import {
   SIDEBAR_COMPACT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -84,6 +85,7 @@ export function SidebarNavContent({
 }: SidebarNavContentProps) {
   const pathname = usePathname();
   const { toggle: toggleSidebar } = useSidebarState();
+  const { open: openAssistant } = useAssistantShell();
   const [isCompanyExpanded, setIsCompanyExpanded] = useState(() =>
     pathname.startsWith("/app/company")
   );
@@ -154,7 +156,7 @@ export function SidebarNavContent({
             // Non-href button (AI Assistant)
             return (
               <Tooltip key={item.label} label={item.label} side="right">
-                <button type="button" aria-label={item.label} className={itemClass}>
+                <button type="button" onClick={openAssistant} aria-label={item.label} className={itemClass}>
                   <Icon strokeWidth={2} className={iconClass} />
                 </button>
               </Tooltip>
@@ -258,6 +260,7 @@ export function SidebarNavContent({
             <button
               key={item.label}
               type="button"
+              onClick={item.label === "AI Assistant" ? openAssistant : undefined}
               className={cn(sidebarItemBaseClass, sidebarItemInactiveClass, "w-full")}
             >
               <span className="flex items-center gap-3">
