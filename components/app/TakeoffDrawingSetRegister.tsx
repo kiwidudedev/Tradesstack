@@ -203,7 +203,7 @@ export function TakeoffDrawingSetRegister({
         description="Upload and manage the PDF drawing sets used for takeoff measurements."
         actions={
           <>
-            <input ref={upload.inputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={upload.onFileChange} />
+            <input ref={upload.inputRef} type="file" accept="application/pdf,.pdf" multiple className="sr-only" onChange={upload.onFileChange} />
             <Button type="button" variant="secondary" onClick={upload.onChooseFile} disabled={upload.isUploading}>
               <Plus className="h-4 w-4" />
               {upload.isUploading ? "Uploading..." : "Add Drawing Set"}
@@ -230,6 +230,7 @@ export function TakeoffDrawingSetRegister({
         />
       ) : (
         <OperationalPanel contentClassName="p-0">
+          <div className="hidden md:block">
           <OperationalTable>
             <OperationalTableHeader>
               <OperationalTableRow>
@@ -256,8 +257,8 @@ export function TakeoffDrawingSetRegister({
                       }
                     }}
                   >
-                    <OperationalTableCell className="font-semibold text-[var(--text-primary)]">{row.displayName}</OperationalTableCell>
-                    <OperationalTableCell className="max-w-[320px] truncate text-[var(--text-secondary)]" title={row.sourceFilename}>{row.sourceFilename}</OperationalTableCell>
+                    <OperationalTableCell className="max-w-[34%] whitespace-normal break-words font-semibold text-[var(--text-primary)]">{row.displayName}</OperationalTableCell>
+                    <OperationalTableCell className="max-w-[320px] whitespace-normal break-words text-[var(--text-secondary)]" title={row.sourceFilename}>{row.sourceFilename}</OperationalTableCell>
                     <OperationalTableCell>
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${status.className}`}>{status.label}</span>
                     </OperationalTableCell>
@@ -314,6 +315,27 @@ export function TakeoffDrawingSetRegister({
               })}
             </OperationalTableBody>
           </OperationalTable>
+          </div>
+          <div className="grid gap-3 p-3 md:hidden">
+            {rows.map((row) => {
+              const status = statusPresentation[row.status];
+              return (
+                <article key={row.drawingSetId} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-sm)]" onClick={() => openRow(row)}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="break-words text-sm font-semibold text-[var(--text-primary)]">{row.displayName}</h3>
+                      <p className="mt-1 break-all text-xs text-[var(--text-secondary)]" title={row.sourceFilename}>{row.sourceFilename}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ring-inset ${status.className}`}>{status.label}</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--text-muted)]">
+                    <span>{formatDate(row.updatedAt || row.uploadedAt)}</span>
+                    <Button type="button" variant="secondary" size="sm" className="min-h-9" onClick={(event) => { event.stopPropagation(); openRow(row); }}>Open</Button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </OperationalPanel>
       )}
 

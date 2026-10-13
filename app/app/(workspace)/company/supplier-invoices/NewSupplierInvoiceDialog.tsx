@@ -37,7 +37,9 @@ import {
   type SupplierInvoiceBatchValidationIssue,
 } from "./new-supplier-invoice-batch";
 import {
+  calculateLineDraftTotal,
   lineDraftsToCreatePayload,
+  lineDraftTotalValue,
   makeBlankNewSupplierInvoiceLineDraft,
 } from "./new-supplier-invoice-line-drafts";
 
@@ -46,6 +48,8 @@ type NewSupplierInvoiceDialogProps = {
   onOpenChange: (open: boolean) => void;
   onCreateSuccessMessage: (message: string) => void;
   suppliers: OrganizationSupplierRow[];
+  currency: string;
+  automaticTaxRatePercent: number;
   canWrite: boolean;
 };
 
@@ -97,6 +101,8 @@ export function NewSupplierInvoiceDialog({
   onOpenChange,
   onCreateSuccessMessage,
   suppliers,
+  currency,
+  automaticTaxRatePercent,
   canWrite,
 }: NewSupplierInvoiceDialogProps) {
   const router = useRouter();
@@ -487,11 +493,42 @@ export function NewSupplierInvoiceDialog({
     if (!selectedItem) {
       return;
     }
-    updateItem(selectedItem.id, (current) =>
-      markBatchItemDirty(current, {
-        lineDrafts: current.lineDrafts.map((line) => (line.id === lineId ? { ...line, ...updates } : line)),
-      })
-    );
+    updateItem(selectedItem.id, (current) => {
+      const line = current.lineDrafts.find((candidate) => candidate.id === lineId);
+      if (!line) {
+        return current;
+      }
+
+      const nextLine = { ...line, ...updates };
+      if ("quantity" in updates || "unitPrice" in updates) {
+        const calculatedTotal = calculateLineDraftTotal(nextLine.quantity, nextLine.unitPrice);
+        if (calculatedTotal) {
+          nextLine.lineTotal = calculatedTotal;
+        }
+      }
+
+      const nextLineDrafts = current.lineDrafts.map((candidate) =>
+        candidate.id === lineId ? nextLine : candidate,
+      );
+      const nextSubtotal = nextLineDrafts.reduce((sum, candidate) => sum + lineDraftTotalValue(candidate), 0);
+      const isManualInvoice = !current.file;
+      const nextTaxTotal = isManualInvoice
+        ? Number((nextSubtotal * (automaticTaxRatePercent / 100)).toFixed(2))
+        : Number(current.formState.taxTotal || 0);
+      const nextFormState = nextSubtotal > 0
+        ? {
+            ...current.formState,
+            subtotal: nextSubtotal.toFixed(2),
+            taxTotal: nextTaxTotal.toFixed(2),
+            total: (nextSubtotal + nextTaxTotal).toFixed(2),
+          }
+        : current.formState;
+
+      return markBatchItemDirty(current, {
+        lineDrafts: nextLineDrafts,
+        formState: nextFormState,
+      });
+    });
   }
 
   function addSelectedLine() {
@@ -605,7 +642,7 @@ export function NewSupplierInvoiceDialog({
         payload.set("taxTotal", item.formState.taxTotal);
         payload.set("total", item.formState.total);
         payload.set("notes", item.formState.notes);
-        payload.set("lines", JSON.stringify(lineDraftsToCreatePayload(item.lineDrafts)));
+        payload.set("lines", JSON.stringify(lineDraftsToCreatePayload(item.lineDrafts, !item.file ? automaticTaxRatePercent : 0)));
         if (item.file) {
           payload.set("document", item.file);
         }
@@ -866,6 +903,8 @@ export function NewSupplierInvoiceDialog({
                     canWrite={canWrite}
                     isSaving={isCreating}
                     isBusy={selectedItem.extractionStatus === "extracting" || isCreating}
+                    currency={currency}
+                    automaticTaxRatePercent={selectedItem.file ? 0 : automaticTaxRatePercent}
                   />
                 </main>
               </div>

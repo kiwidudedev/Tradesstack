@@ -495,7 +495,7 @@ export function ProjectDashboardBoard() {
       ] = await Promise.all([
         projectRow.client_id
           ? clientsTable
-              .select("name")
+              .select("name, company_name")
               .eq("organization_id", resolvedOrganizationId)
               .eq("id", String(projectRow.client_id))
               .maybeSingle()
@@ -693,7 +693,11 @@ export function ProjectDashboardBoard() {
           stage: String(projectRow.stage ?? "Planning"),
           location: String(projectRow.location ?? ""),
           createdAt: typeof projectRow.created_at === "string" ? projectRow.created_at : nowIso,
-          clientName: String(clientResult.data?.name ?? "Unassigned"),
+          clientName: String(
+            (typeof clientResult.data?.company_name === "string" && clientResult.data.company_name.trim())
+              || clientResult.data?.name
+              || "Unassigned"
+          ),
         },
         metrics: {
           overdueTasks,

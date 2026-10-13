@@ -3,6 +3,7 @@ import { DOCUMENT_DOWNLOAD_LIFETIME_SECONDS, DOCUMENT_STORAGE_BUCKET } from "@/l
 import type { DocumentUploadInitiationInput } from "@/lib/documents/validation";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/types";
+import { getConfiguredStorageProviderKind, getConfiguredR2StorageProvider } from "@/lib/storage/provider";
 
 type DocumentClient = SupabaseClient<Database>;
 
@@ -17,6 +18,7 @@ export interface DocumentUploadReservation {
   claimedMimeType: string;
   byteSize: number;
   bucket: typeof DOCUMENT_STORAGE_BUCKET;
+  provider: "supabase" | "r2";
 }
 
 function firstRow<T>(data: T | T[] | null): T | null {
@@ -56,6 +58,7 @@ export async function initiateDocumentUpload(
     claimedMimeType: row.claimed_mime_type,
     byteSize: Number(row.byte_size),
     bucket: DOCUMENT_STORAGE_BUCKET,
+    provider: getConfiguredStorageProviderKind(),
   };
 }
 
@@ -80,6 +83,36 @@ export async function completeDocumentUpload(params: {
     byteSize: Number(row.byte_size),
     verifiedMimeType: row.verified_mime_type,
     activatedAt: row.activated_at,
+  };
+}
+
+export async function completeR2DocumentUpload(params: {
+  actorUserId: string;
+  versionId: string;
+  size: number;
+  contentType: string;
+  etag: string;
+  storageObjectId: string;
+}) {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.rpc("complete_document_upload_r2" as never, {
+    p_version_id: params.versionId,
+    p_actor_user_id: params.actorUserId,
+    p_actual_size: params.size,
+    p_actual_mime_type: params.contentType,
+    p_storage_etag: params.etag,
+    p_storage_object_id: params.storageObjectId,
+  } as never);
+  const row = firstRow(data as never);
+  if (error || !row) throw new Error(error?.message || "Unable to complete R2 document upload.");
+  return {
+    nodeId: (row as { node_id: string }).node_id,
+    versionId: (row as { version_id: string }).version_id,
+    versionNumber: (row as { version_number: number }).version_number,
+    displayName: (row as { display_name: string }).display_name,
+    byteSize: Number((row as { byte_size: number }).byte_size),
+    verifiedMimeType: (row as { verified_mime_type: string }).verified_mime_type,
+    activatedAt: (row as { activated_at: string }).activated_at,
   };
 }
 
@@ -112,6 +145,18 @@ export async function createDocumentDownload(params: {
   const row = firstRow(data);
   if (error || !row) {
     throw new Error(error?.message || "Document file not found or access denied.");
+  }
+
+  if (getConfiguredStorageProviderKind() === "r2") {
+    const storage = await getConfiguredR2StorageProvider();
+    const object = await storage.get(row.storage_key);
+    if (!object) throw new Error("Document file not found or access denied.");
+    return {
+      url: `/api/documents/nodes/${encodeURIComponent(params.nodeId)}/download/file`,
+      expiresInSeconds: DOCUMENT_DOWNLOAD_LIFETIME_SECONDS,
+      displayName: row.display_name,
+      versionId: row.version_id,
+    };
   }
 
   const admin = createAdminSupabaseClient();

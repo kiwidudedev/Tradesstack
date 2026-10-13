@@ -173,6 +173,7 @@ import {
 } from "@/lib/pricing-worksheet-material-price-review";
 import { getWorksheetCellMaterialPricingProvenance } from "@/lib/worksheet-material-pricing-provenance";
 import {
+  buildWorksheetHtmlFromRange,
   buildWorksheetTsvFromRange,
   extendRangeFromAnchor,
   getWorksheetSelectionRange,
@@ -207,12 +208,22 @@ import {
   type WorksheetSelectionAggregate,
 } from "@/lib/opportunity-pricing-worksheet-selection-aggregate";
 import {
+  applyWorksheetClipboardPayloadToCells,
   applyWorksheetPasteToCells,
+  buildWorksheetClipboardPayload,
   buildWorksheetCellKey,
   expandWorksheetToFitPaste,
   getWorksheetAnchorPosition,
+  getWorksheetPasteSelectionRange,
   parseWorksheetCellKey,
+  parseWorksheetClipboardHtml,
+  parseWorksheetClipboardPayload,
   parseWorksheetClipboardText,
+  normalizeExternalWorksheetClipboardInput,
+  mergeExternalWorksheetClipboard,
+  serializeWorksheetClipboardPayload,
+  WORKSHEET_CLIPBOARD_MIME,
+  type WorksheetClipboardPayload,
 } from "@/lib/opportunity-pricing-worksheet-paste";
 import { shiftFormulaForFill } from "@/lib/opportunity-pricing-worksheet-formula-shift";
 import {
@@ -1203,6 +1214,7 @@ type WorksheetCellViewProps = {
   commercialMappingHighlight?: boolean;
   cell: WorksheetCell | undefined;
   cellKey: string;
+  copiedRange: WorksheetSelectionRange | null;
   columnIndex: number;
   editingCellValue: string;
   fillPreviewRange: WorksheetSelectionRange | null;
@@ -1238,6 +1250,7 @@ export const WorksheetCellView = memo(function WorksheetCellView({
   commercialMappingHighlight = false,
   cell,
   cellKey,
+  copiedRange,
   columnIndex,
   editingCellValue,
   fillPreviewRange,
@@ -1311,6 +1324,7 @@ export const WorksheetCellView = memo(function WorksheetCellView({
     .filter((entry) => entry.edgeFlags.isInRange);
   const activeSelectionEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, activeSelectedRange);
   const fillPreviewEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, fillPreviewRange);
+  const copiedEdgeFlags = getRangeEdgeFlagsByIndex(rowIndex, columnIndex, copiedRange);
   const selectionShadows = selectionEdgeFlags.map(({ range, edgeFlags }) =>
     buildSelectionShadow(
       edgeFlags,
@@ -1414,6 +1428,19 @@ export const WorksheetCellView = memo(function WorksheetCellView({
       onMouseEnter={(event) => onCellMouseEnter(cellKey, event)}
       onDoubleClick={isEditing ? undefined : (event) => onBeginCellEdit(cellKey, cell, event)}
     >
+      {copiedEdgeFlags.isInRange ? (
+        <div
+          aria-hidden="true"
+          data-worksheet-copy-outline="true"
+          className="pointer-events-none absolute inset-0 z-20"
+          style={{
+            borderTop: copiedEdgeFlags.isTopEdge ? `1.5px dashed ${SELECTION_OUTLINE_COLOR}` : undefined,
+            borderRight: copiedEdgeFlags.isRightEdge ? `1.5px dashed ${SELECTION_OUTLINE_COLOR}` : undefined,
+            borderBottom: copiedEdgeFlags.isBottomEdge ? `1.5px dashed ${SELECTION_OUTLINE_COLOR}` : undefined,
+            borderLeft: copiedEdgeFlags.isLeftEdge ? `1.5px dashed ${SELECTION_OUTLINE_COLOR}` : undefined,
+          }}
+        />
+      ) : null}
       {formulaReferenceStyle && !isEditing ? (
         <div
           aria-hidden="true"
@@ -1550,6 +1577,7 @@ type WorksheetRowViewProps = {
   activeEditor: "cell" | "formulaBar" | null;
   canWriteWorksheet: boolean;
   commercialMappingHighlightCellKeys: Set<string>;
+  copiedRange: WorksheetSelectionRange | null;
   editingCellValue: string;
   fillPreviewRange: WorksheetSelectionRange | null;
   formulaReferenceHighlightByCellKey: Map<string, { colorIndex: number }>;
@@ -1592,6 +1620,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
   activeEditor,
   canWriteWorksheet,
   commercialMappingHighlightCellKeys,
+  copiedRange,
   editingCellValue,
   fillPreviewRange,
   formulaReferenceHighlightByCellKey,
@@ -1674,6 +1703,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
             activeEditor={activeEditor}
             canWriteWorksheet={canWriteWorksheet}
             commercialMappingHighlight={commercialMappingHighlightCellKeys.has(cellKey)}
+            copiedRange={copiedRange}
             cell={cell}
             cellKey={cellKey}
             columnIndex={visibleColumnStartIndex + columnOffset}
@@ -1751,6 +1781,12 @@ const WorksheetRowView = memo(function WorksheetRowView({
   const nextFillSignature = nextProps.fillPreviewRange
     ? buildRangeSignature([nextProps.fillPreviewRange], nextProps.rowIndex)
     : "";
+  const previousCopiedSignature = previousProps.copiedRange
+    ? buildRangeSignature([previousProps.copiedRange], previousProps.rowIndex)
+    : "";
+  const nextCopiedSignature = nextProps.copiedRange
+    ? buildRangeSignature([nextProps.copiedRange], nextProps.rowIndex)
+    : "";
   const buildFormulaRangeSignature = (ranges: FormulaReferenceRangeHighlight[], rowIndex: number) => ranges
     .filter((range) => rowIndex >= range.startRowIndex && rowIndex <= range.endRowIndex)
     .map((range) => [
@@ -1780,6 +1816,7 @@ const WorksheetRowView = memo(function WorksheetRowView({
     previousProps.commercialMappingDragCellKey !== nextProps.commercialMappingDragCellKey ||
     previousProps.commercialMappingHighlightCellKeys !== nextProps.commercialMappingHighlightCellKeys ||
     previousFillSignature !== nextFillSignature ||
+    previousCopiedSignature !== nextCopiedSignature ||
     previousFormulaRangeSignature !== nextFormulaRangeSignature ||
     buildDirectFormulaSignature(previousProps) !== buildDirectFormulaSignature(nextProps) ||
     previousProps.gridTemplateColumns !== nextProps.gridTemplateColumns ||
@@ -1895,16 +1932,19 @@ function getFillPreview(
     return null;
   }
 
-  const rowDelta = focusPosition.rowIndex - sourceRange.endRowIndex;
-  const columnDelta = focusPosition.columnIndex - sourceRange.endColumnIndex;
+  const rowDeltaDown = focusPosition.rowIndex - sourceRange.endRowIndex;
+  const rowDeltaUp = sourceRange.startRowIndex - focusPosition.rowIndex;
+  const columnDeltaRight = focusPosition.columnIndex - sourceRange.endColumnIndex;
+  const columnDeltaLeft = sourceRange.startColumnIndex - focusPosition.columnIndex;
 
-  if (rowDelta <= 0 && columnDelta <= 0) {
+  if (rowDeltaDown <= 0 && rowDeltaUp <= 0 && columnDeltaRight <= 0 && columnDeltaLeft <= 0) {
     return null;
   }
 
-  const useRightward = columnDelta > rowDelta;
+  const verticalDistance = Math.max(rowDeltaDown, rowDeltaUp);
+  const horizontalDistance = Math.max(columnDeltaRight, columnDeltaLeft);
 
-  if (useRightward && columnDelta > 0) {
+  if (horizontalDistance > verticalDistance && columnDeltaRight > 0) {
     return {
       direction: "right" as const,
       range: {
@@ -1916,12 +1956,36 @@ function getFillPreview(
     };
   }
 
-  if (rowDelta > 0) {
+  if (horizontalDistance > verticalDistance && columnDeltaLeft > 0) {
+    return {
+      direction: "left" as const,
+      range: {
+        startRowIndex: sourceRange.startRowIndex,
+        endRowIndex: sourceRange.endRowIndex,
+        startColumnIndex: focusPosition.columnIndex,
+        endColumnIndex: sourceRange.startColumnIndex - 1,
+      } satisfies WorksheetSelectionRange,
+    };
+  }
+
+  if (rowDeltaDown > 0) {
     return {
       direction: "down" as const,
       range: {
         startRowIndex: sourceRange.endRowIndex + 1,
         endRowIndex: focusPosition.rowIndex,
+        startColumnIndex: sourceRange.startColumnIndex,
+        endColumnIndex: sourceRange.endColumnIndex,
+      } satisfies WorksheetSelectionRange,
+    };
+  }
+
+  if (rowDeltaUp > 0) {
+    return {
+      direction: "up" as const,
+      range: {
+        startRowIndex: focusPosition.rowIndex,
+        endRowIndex: sourceRange.startRowIndex - 1,
         startColumnIndex: sourceRange.startColumnIndex,
         endColumnIndex: sourceRange.endColumnIndex,
       } satisfies WorksheetSelectionRange,
@@ -2115,6 +2179,7 @@ export function OpportunityPricingWorksheetBoard({
   const [isDraggingFill, setIsDraggingFill] = useState(false);
   const [fillSourceRange, setFillSourceRange] = useState<WorksheetSelectionRange | null>(null);
   const [fillPreviewFocusCellKey, setFillPreviewFocusCellKey] = useState<string | null>(null);
+  const [copiedRange, setCopiedRange] = useState<WorksheetSelectionRange | null>(null);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
   const [columnResizeStartX, setColumnResizeStartX] = useState(0);
   const [columnResizeStartWidth, setColumnResizeStartWidth] = useState(0);
@@ -2181,6 +2246,7 @@ export function OpportunityPricingWorksheetBoard({
   const handledFormulaReferenceMouseDownRef = useRef(false);
   const fillSourceRangeRef = useRef<WorksheetSelectionRange | null>(null);
   const fillPreviewFocusCellKeyRef = useRef<string | null>(null);
+  const copiedPayloadRef = useRef<{ payload: WorksheetClipboardPayload; text: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<WorksheetContextMenuState>(null);
   const locationHrefRef = useRef("");
   const requestedSheetIdRef = useRef<string | null>(initialSheetId ?? null);
@@ -5201,7 +5267,22 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     const clipboardText = event.clipboardData.getData("text/plain");
-    const parsedPaste = parseWorksheetClipboardText(clipboardText);
+    const structuredPayload = parseWorksheetClipboardPayload(event.clipboardData.getData(WORKSHEET_CLIPBOARD_MIME));
+    const internalPayload = !structuredPayload && copiedPayloadRef.current?.text === clipboardText
+      ? copiedPayloadRef.current.payload
+      : null;
+    const effectiveStructuredPayload = structuredPayload ?? internalPayload;
+    const htmlPaste = parseWorksheetClipboardHtml(event.clipboardData.getData("text/html"));
+    const plainPaste = parseWorksheetClipboardText(clipboardText);
+    const externalPaste = mergeExternalWorksheetClipboard(plainPaste, htmlPaste);
+    const parsedPaste = effectiveStructuredPayload
+      ? {
+          rows: effectiveStructuredPayload.rows.map((row) => row.map((cell) => cell.input)),
+          rowCount: effectiveStructuredPayload.rows.length,
+          columnCount: effectiveStructuredPayload.rows.reduce((max, row) => Math.max(max, row.length), 0),
+          isTabular: true,
+        }
+      : externalPaste;
     if (!parsedPaste) {
       return;
     }
@@ -5235,12 +5316,37 @@ export function OpportunityPricingWorksheetBoard({
       }
 
       const expandedWorksheet = expandWorksheetToFitPaste(current, anchorPosition, parsedPaste);
-      const patchedWorksheet = applyWorksheetPasteToCells(
-        expandedWorksheet,
-        anchorPosition,
-        parsedPaste,
-        normalizeWorksheetCell
-      );
+      const patchedWorksheet = effectiveStructuredPayload
+        ? applyWorksheetClipboardPayloadToCells(
+            expandedWorksheet,
+            anchorPosition,
+            effectiveStructuredPayload,
+            normalizeWorksheetCell,
+            (input, rowDelta, columnDelta) => shiftFormulaForFill(input, rowDelta, columnDelta),
+          )
+        : applyWorksheetPasteToCells(
+            expandedWorksheet,
+            anchorPosition,
+            {
+              ...parsedPaste,
+              rows: parsedPaste.rows.map((row, rowIndex) => row.map((input, columnIndex) =>
+                normalizeExternalWorksheetClipboardInput(input, parsedPaste.formats?.[rowIndex]?.[columnIndex])
+              )),
+            },
+            normalizeWorksheetCell,
+          );
+
+      if (!effectiveStructuredPayload && parsedPaste.formats) {
+        parsedPaste.formats.forEach((rowFormats, rowOffset) => rowFormats.forEach((format, columnOffset) => {
+          if (!format) return;
+          const row = patchedWorksheet.rows[anchorPosition.rowIndex + rowOffset];
+          const column = patchedWorksheet.columns[anchorPosition.columnIndex + columnOffset];
+          if (!row || !column) return;
+          const key = buildWorksheetCellKey(column.id, row.id);
+          const cell = patchedWorksheet.cells[key];
+          if (cell) patchedWorksheet.cells[key] = { ...cell, metadata: { ...cell.metadata, format: format as unknown as Json } };
+        }));
+      }
 
       return patchedWorksheet;
     }, { trackLearning: true });
@@ -5251,7 +5357,18 @@ export function OpportunityPricingWorksheetBoard({
     setActiveCellKey(null);
     setActiveEditor(null);
     setEditingCellValue("");
-    replaceSelection(anchorCellKey, anchorCellKey);
+    const anchorPosition = getWorksheetAnchorPosition(worksheetRef.current, anchorCellKey);
+    if (anchorPosition) {
+      const pasteRange = getWorksheetPasteSelectionRange(anchorPosition, parsedPaste);
+      const endColumn = worksheetRef.current.columns[pasteRange.endColumnIndex];
+      const endRow = worksheetRef.current.rows[pasteRange.endRowIndex];
+      replaceSelection(
+        anchorCellKey,
+        endColumn && endRow ? buildWorksheetCellKey(endColumn.id, endRow.id) : anchorCellKey,
+      );
+    } else {
+      replaceSelection(anchorCellKey, anchorCellKey);
+    }
     focusWorksheetSurface();
   };
 
@@ -6265,8 +6382,33 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
+    const payload = buildWorksheetClipboardPayload(worksheetRef.current, range);
+    const text = buildWorksheetTsvFromRange(worksheetRef.current, range);
+    copiedPayloadRef.current = { payload, text };
+    setCopiedRange({ ...range });
     try {
-      await navigator.clipboard.writeText(buildWorksheetTsvFromRange(worksheetRef.current, range));
+      const html = buildWorksheetHtmlFromRange(worksheetRef.current, range);
+      const serializedPayload = serializeWorksheetClipboardPayload(payload);
+      if (navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              [WORKSHEET_CLIPBOARD_MIME]: new Blob([serializedPayload], { type: WORKSHEET_CLIPBOARD_MIME }),
+              "text/plain": new Blob([text], { type: "text/plain" }),
+              "text/html": new Blob([html], { type: "text/html" }),
+            }),
+          ]);
+        } catch {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/plain": new Blob([text], { type: "text/plain" }),
+              "text/html": new Blob([html], { type: "text/html" }),
+            }),
+          ]);
+        }
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
     } catch {
       setError("Unable to copy from the context menu. Use keyboard copy instead.");
     }
@@ -6712,14 +6854,14 @@ export function OpportunityPricingWorksheetBoard({
   const applyFillDrag = useCallback((
     sourceRange: WorksheetSelectionRange,
     previewRange: WorksheetSelectionRange,
-    direction: "down" | "right"
+    direction: "up" | "down" | "left" | "right"
   ) => {
     applyCommittedWorksheetChange((current) => {
       const nextCells = { ...current.cells };
       const sourceHeight = sourceRange.endRowIndex - sourceRange.startRowIndex + 1;
       const sourceWidth = sourceRange.endColumnIndex - sourceRange.startColumnIndex + 1;
       const canUseVerticalNumericSeries =
-        direction === "down" &&
+        (direction === "down" || direction === "up") &&
         sourceWidth === 1 &&
         Array.from({ length: sourceHeight }, (_, offset) => {
           const row = current.rows[sourceRange.startRowIndex + offset];
@@ -6729,7 +6871,7 @@ export function OpportunityPricingWorksheetBoard({
             : null;
         }).every((value) => typeof value === "number");
       const canUseHorizontalNumericSeries =
-        direction === "right" &&
+        (direction === "right" || direction === "left") &&
         sourceHeight === 1 &&
         Array.from({ length: sourceWidth }, (_, offset) => {
           const row = current.rows[sourceRange.startRowIndex];
@@ -6753,13 +6895,13 @@ export function OpportunityPricingWorksheetBoard({
           }
 
           const sourceRowIndex =
-            direction === "down"
+            direction === "down" || direction === "up"
               ? sourceRange.startRowIndex +
                 ((rowIndex - previewRange.startRowIndex) % sourceHeight)
               : sourceRange.startRowIndex +
                 ((rowIndex - sourceRange.startRowIndex) % sourceHeight);
           const sourceColumnIndex =
-            direction === "right"
+            direction === "right" || direction === "left"
               ? sourceRange.startColumnIndex +
                 ((columnIndex - previewRange.startColumnIndex) % sourceWidth)
               : sourceRange.startColumnIndex +
@@ -6829,7 +6971,15 @@ export function OpportunityPricingWorksheetBoard({
           if (normalizedCell.type === "empty") {
             delete nextCells[targetCellKey];
           } else {
-            nextCells[targetCellKey] = normalizedCell;
+            nextCells[targetCellKey] = sourceCell?.metadata?.format
+              ? {
+                  ...normalizedCell,
+                  metadata: {
+                    ...normalizedCell.metadata,
+                    format: sourceCell.metadata.format,
+                  },
+                }
+              : normalizedCell;
           }
         }
       }
@@ -6859,7 +7009,16 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     event.preventDefault();
-    event.clipboardData.setData("text/plain", buildWorksheetTsvFromRange(worksheet, selectedRange));
+    const payload = buildWorksheetClipboardPayload(worksheet, selectedRange);
+    copiedPayloadRef.current = {
+      payload,
+      text: buildWorksheetTsvFromRange(worksheet, selectedRange),
+    };
+    setCopiedRange({ ...selectedRange });
+    event.clipboardData.setData(WORKSHEET_CLIPBOARD_MIME, serializeWorksheetClipboardPayload(payload));
+    const tsv = buildWorksheetTsvFromRange(worksheet, selectedRange);
+    event.clipboardData.setData("text/plain", tsv);
+    event.clipboardData.setData("text/html", buildWorksheetHtmlFromRange(worksheet, selectedRange));
   };
 
   const handleUndo = () => {
@@ -6916,6 +7075,14 @@ export function OpportunityPricingWorksheetBoard({
       target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable);
     if (isTextEditingTarget) {
+      return;
+    }
+
+    if (event.key === "Escape" && copiedRange) {
+      event.preventDefault();
+      copiedPayloadRef.current = null;
+      setCopiedRange(null);
+      focusWorksheetSurface({ immediate: true });
       return;
     }
 
@@ -7010,6 +7177,15 @@ export function OpportunityPricingWorksheetBoard({
     if (isRedoShortcut && canMutateWorksheet) {
       event.preventDefault();
       handleRedo();
+      return;
+    }
+
+    if (event.key === "F2" && canMutateWorksheet && selectedSingleCellKey) {
+      event.preventDefault();
+      beginCellEdit(selectedSingleCellKey, worksheetRef.current.cells[selectedSingleCellKey], {
+        editor: "cell",
+        focus: true,
+      });
       return;
     }
 
@@ -9368,6 +9544,15 @@ export function OpportunityPricingWorksheetBoard({
           ) : null}
           {error ? <OperationalAlert variant="error" className="mx-3 mt-3">{error}</OperationalAlert> : null}
           {message ? <OperationalAlert variant="success" className="mx-3 mt-3">{message}</OperationalAlert> : null}
+          {copiedRange ? (
+            <div
+              data-testid="pricing-worksheet-copy-mode"
+              role="status"
+              className="mx-3 mt-3 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--brand-blue)_28%,var(--border))] bg-[var(--primary-soft)] px-3 py-2 text-xs text-[var(--text-secondary)]"
+            >
+              Select a destination and paste. Press Escape to cancel copy mode.
+            </div>
+          ) : null}
 
           <div
             ref={formattingToolbarRef}
@@ -10239,6 +10424,7 @@ export function OpportunityPricingWorksheetBoard({
                         activeEditor={activeEditor}
                         canWriteWorksheet={canMutateWorksheet}
                         commercialMappingHighlightCellKeys={commercialMappingHighlightCellKeys}
+                        copiedRange={copiedRange}
                         commercialMappingDragCellKey={commercialMapping.session || variationCommercialMapping.session ? selectedSingleCellKey : null}
                         editingCellValue={editingCellValue}
                         fillPreviewRange={fillPreview?.range ?? null}

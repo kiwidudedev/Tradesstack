@@ -1,5 +1,13 @@
 Purpose: This document is persistent architectural and construction-domain context for AI coding agents working on TradesStack.
 
+Business/product direction: Read `docs/architecture/TRADESSTACK_BUSINESS_MODEL.md`
+alongside this document. The Business Model document defines what TradesStack
+is, how it is sold, how customer implementations should be approached, and the
+principles future work should follow. This document defines current technical
+and product architecture, domain terminology, implementation contracts and
+source-of-truth guidance. Neither document is proof of current runtime,
+database, deployment or test state.
+
 Authority rule: This document is guidance and historical architectural context. The current repository, current database schema/migrations, and current tests always override it when there is a conflict.
 
 Maintenance rule: When major architecture changes, update this document in the same change or flag the affected section as stale.

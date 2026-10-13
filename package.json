@@ -10,6 +10,10 @@
     "dev": "next dev --webpack",
     "dev:turbopack": "next dev",
     "build": "next build",
+    "cloudflare:build": "opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs",
+    "cloudflare:preview": "if [ -z \"$CLOUDFLARE_ENV\" ]; then echo 'Set CLOUDFLARE_ENV explicitly for a Cloudflare preview (for example alpha or a disposable preview environment).' >&2; exit 1; fi; opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs && wrangler dev --local --env \"$CLOUDFLARE_ENV\"",
+    "cloudflare:deploy": "if [ -z \"$CLOUDFLARE_ENV\" ]; then echo 'Set CLOUDFLARE_ENV explicitly (alpha or a disposable preview environment); unqualified Cloudflare deploys are disabled.' >&2; exit 1; fi; opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs && opennextjs-cloudflare deploy --env \"$CLOUDFLARE_ENV\"",
+    "cloudflare:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
     "lint": "eslint .",
     "lint:release": "eslint app components hooks lib packages scripts/ops supabase/functions *.mjs *.ts",
@@ -55,6 +59,7 @@
     "takeoff:worker": "bash scripts/run_takeoff_render_worker.sh"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -78,9 +83,11 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "resend": "^6.10.0",
+    "server-only": "^0.0.1",
     "sharp": "0.35.4",
     "tailwind-merge": "^3.3.1",
-    "tus-js-client": "^4.3.1"
+    "tus-js-client": "^4.3.1",
+    "tsx": "^4.22.4"
   },
   "overrides": {
     "glob": {
@@ -113,7 +120,8 @@
     "postcss": "^8.5.6",
     "supabase": "^2.100.0",
     "tailwindcss": "^4.2.1",
-    "tsx": "^4.22.4",
+    "wrangler": "^4.50.0",
+    "@opennextjs/cloudflare": "^1.17.1",
     "typescript": "^5.9.2",
     "vitest": "^4.1.7"
   },

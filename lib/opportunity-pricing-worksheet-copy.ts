@@ -1,5 +1,6 @@
 import type { WorksheetData } from "@/lib/opportunity-pricing-worksheet-defaults";
 import { parseWorksheetCellKey } from "@/lib/opportunity-pricing-worksheet-paste";
+import { getCellFormat } from "@/lib/opportunity-pricing-worksheet-formatting";
 
 export interface WorksheetSelectionRange {
   startRowIndex: number;
@@ -188,6 +189,72 @@ export function buildWorksheetTsvFromRange(
   }
 
   return lines.join("\n");
+}
+
+function escapeWorksheetHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildWorksheetCellHtmlStyle(cell: WorksheetData["cells"][string] | undefined) {
+  const format = getCellFormat(cell);
+  const styles: string[] = [];
+  const text = format.text;
+
+  if (text?.bold) styles.push("font-weight:bold");
+  if (text?.italic) styles.push("font-style:italic");
+  const decorations = [
+    text?.underline ? "underline" : "",
+    text?.strikethrough ? "line-through" : "",
+  ].filter(Boolean);
+  if (decorations.length > 0) styles.push(`text-decoration:${decorations.join(" ")}`);
+  if (typeof text?.fontSize === "number") styles.push(`font-size:${text.fontSize}px`);
+  if (text?.color) styles.push(`color:${text.color}`);
+  if (text?.align) styles.push(`text-align:${text.align}`);
+  if (text?.wrap === "wrap") styles.push("white-space:normal");
+  if (text?.wrap === "clip") styles.push("white-space:nowrap;overflow:hidden");
+  if (format.fill?.color) styles.push(`background-color:${format.fill.color}`);
+
+  for (const [side, border] of Object.entries(format.border ?? {})) {
+    if (!border) continue;
+    styles.push(`border-${side}:1px solid ${border.color ?? "#94A3B8"}`);
+  }
+
+  return styles.join(";");
+}
+
+/** Build the style-preserving HTML clipboard representation used by Excel. */
+export function buildWorksheetHtmlFromRange(
+  worksheet: WorksheetData,
+  range: WorksheetSelectionRange,
+) {
+  const rows: string[] = [];
+
+  for (let rowIndex = range.startRowIndex; rowIndex <= range.endRowIndex; rowIndex += 1) {
+    const row = worksheet.rows[rowIndex];
+    const cells: string[] = [];
+
+    for (
+      let columnIndex = range.startColumnIndex;
+      columnIndex <= range.endColumnIndex;
+      columnIndex += 1
+    ) {
+      const column = worksheet.columns[columnIndex];
+      const cell = row && column ? worksheet.cells[`${column.id}${row.id}`] : undefined;
+      const value = cell?.formula ?? (cell?.value === null || cell?.value === undefined ? "" : String(cell.value));
+      const style = buildWorksheetCellHtmlStyle(cell);
+      const styleAttribute = style ? ` style="${escapeWorksheetHtml(style)}"` : "";
+      cells.push(`<td${styleAttribute}>${escapeWorksheetHtml(value)}</td>`);
+    }
+
+    rows.push(`<tr>${cells.join("")}</tr>`);
+  }
+
+  return `<table><tbody>${rows.join("")}</tbody></table>`;
 }
 
 export function moveCellKey(

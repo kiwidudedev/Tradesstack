@@ -147,7 +147,7 @@ export async function listQualityWorkProofs(supabase: any, context: ProjectConte
   const workProofsTable = (supabase as any).from("project_quality_work_proofs");
   const { data, error } = await workProofsTable
     .select(
-      "id, trade_type, work_category, area, note, status, created_by, created_at, updated_at, completed_at, project_quality_work_proof_checklist_items(id, label, checked, checked_by, checked_at)"
+      "id, trade_type, work_category, area, note, status, created_by, created_at, updated_at, completed_at, project_quality_work_proof_checklist_items!project_quality_work_proof_checklist_items_work_proof_id_fkey(id, label, checked, checked_by, checked_at)"
     )
     .eq("organization_id", context.organizationId)
     .eq("project_id", context.projectId)
@@ -192,7 +192,7 @@ export async function listQualityInspections(supabase: any, context: ProjectCont
   const inspectionsTable = (supabase as any).from("project_quality_inspections");
   const { data, error } = await inspectionsTable
     .select(
-      "id, title, trade, location, assignee_name, assignee_user_id, due_date, template_name, scheduled_at, project_quality_inspection_items(id, label, status, notes, photo_url, photo_storage_path)"
+      "id, title, trade, location, assignee_name, assignee_user_id, due_date, template_name, scheduled_at, project_quality_inspection_items!project_quality_inspection_items_inspection_scope_fkey(id, label, status, notes, photo_url, photo_storage_path)"
     )
     .eq("organization_id", context.organizationId)
     .eq("project_id", context.projectId)

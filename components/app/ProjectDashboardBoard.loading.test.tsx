@@ -25,7 +25,7 @@ vi.mock("@/components/app/OperationalKpiCard", () => ({
 const queries: Query[] = [];
 let quotes: Row[];
 let quoteError: string | null;
-const project = { id: "project-1", organization_id: "org-1", slug: "project-slug", name: "Test project", stage: "Planning", location: "Auckland", created_at: "2026-01-01", client_id: null };
+const project = { id: "project-1", organization_id: "org-1", slug: "project-slug", name: "Test project", stage: "Planning", location: "Auckland", created_at: "2026-01-01", client_id: "client-1" };
 const variation = { id: "variation-1", organization_id: "org-1", project_id: "project-1", total_variation_price: 25, status: "Approved", variation_number: "V-001", updated_at: "2026-01-03" };
 
 class Query implements PromiseLike<Result> {
@@ -47,6 +47,7 @@ class Query implements PromiseLike<Result> {
   maybeSingle() { this.single = true; return this; }
   result(): Result {
     let rows: Row[] = this.table === "organization_projects" ? [project]
+      : this.table === "organization_clients" ? [{ id: "client-1", organization_id: "org-1", name: "Contact Name", company_name: "Test Company" }]
       : this.table === "project_quotes" ? quotes
       : this.table === "project_variations" ? [variation] : [];
     rows = rows.filter((row) => this.filters.every(([key, value]) => row[key] === value));
@@ -64,7 +65,7 @@ class Query implements PromiseLike<Result> {
 
 function aggregate(quoteValue = 200): DashboardAggregateResult {
   return {
-    project: { projectId: project.id, projectName: project.name, stage: project.stage, location: project.location, createdAt: project.created_at, clientName: "Unassigned" },
+    project: { projectId: project.id, projectName: project.name, stage: project.stage, location: project.location, createdAt: project.created_at, clientName: "Contact Name" },
     metrics: { overdueTasks: 0, awaitingVariationApproval: 0, claimReadyToSend: 0, openIssues: 0, failedInspections: 0, tasksDueToday: 0, pendingVariations: 0, claimsThisMonth: 0, activeWorkers: 0, pendingSignoffs: 0, inspectionsToday: 0 },
     financials: { quoteValue, variationTotal: 25, claimsSubmitted: 0, claimsPaidAmount: 0, claimsUnpaidAmount: 0, poOutstandingCount: 0, poOutstandingAmount: 0 },
     feeds: { tasks: [], issues: [], variations: [variation], claims: [], time_events: [], signoffs: [] },
@@ -136,6 +137,13 @@ describe("dashboard aggregate and independent legacy fallback", () => {
     expect(latestQuote).toContain("project_id = v_project.id");
     expect(latestQuote).toMatch(/order by updated_at desc\s+limit 1/);
     expect(latestQuote).not.toContain("status");
+  });
+
+  it("uses the company identity instead of the contact name in the legacy fallback", async () => {
+    const view = await loaded("error");
+
+    expect(view.container.textContent).toContain("Test Company");
+    expect(view.container.textContent).not.toContain("Contact Name");
   });
 
   it("uses zero quote value when the project has no quotes", async () => {

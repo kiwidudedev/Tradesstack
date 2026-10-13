@@ -22,6 +22,43 @@ export type AssistantContext = {
   mode?: AssistantRoleMode;
 };
 
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+export type ProjectAIEntity = {
+  entityType: string;
+  id: string;
+  label?: string;
+  fields: Record<string, JsonValue>;
+  relationships?: Array<{ relationshipType: string; targetEntityType: string; targetId: string }>;
+  source?: { authority?: string; asOf?: string };
+  citation?: { label: string; href: string };
+};
+
+export type ProjectAIAuthoritativeValue = {
+  name: string;
+  value: JsonValue;
+  basis: string;
+  sourceEntityIds: string[];
+};
+
+export type ProjectAIAvailability = {
+  source: string;
+  status: "available" | "empty" | "denied" | "failed" | "unavailable" | "truncated";
+  returnedRows?: number;
+  totalRows?: number | null;
+  message?: string;
+};
+
+export type ProjectAIContext = {
+  schemaVersion: "project-ai-context.v1";
+  generatedAt: string;
+  project: { id: string; label: string; slug: string };
+  currentContext: { route?: string; currentEntityType?: string; currentEntityId?: string };
+  entities: ProjectAIEntity[];
+  authoritativeValues: ProjectAIAuthoritativeValue[];
+  availability: ProjectAIAvailability[];
+};
+
 export type AssistantRoleMode = "pm" | "qs" | "estimator" | "procurement" | "qa" | "accounts" | "auto";
 
 export type AssistantActionKind =

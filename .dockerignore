@@ -1,0 +1,15 @@
+node_modules
+.next
+.open-next
+.wrangler
+.git
+.gitignore
+artifacts
+.dsh-drop
+.next-*
+.next.*
+.next*
+.tmp
+*.log
+tradesstack-client-alpha
+public/tradessstackvideo.mp4

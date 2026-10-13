@@ -2,10 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typescript: { tsconfigPath: "tsconfig.build.json" },
+  deploymentId: process.env.DEPLOYMENT_VERSION || process.env.GIT_SHA,
   ...(process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR
     ? { distDir: process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR }
     : {}),
-  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
+  serverExternalPackages: ["pdfjs-dist"],
   images: {
     remotePatterns: [
       {

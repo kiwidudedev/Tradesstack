@@ -1,0 +1,91 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tradesstack-main",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "alpha": {
+      "name": "tradesstack-alpha",
+      "vars": {
+        "TRADESSTACK_STORAGE_PROVIDER": "r2",
+        "TRADESSTACK_R2_DOCUMENTS_ENABLED": "1",
+        "TRADESSTACK_R2_BUCKET_NAME": "tradesstack-alpha-documents",
+        "TAKEOFF_QUEUE_ENABLED": "1",
+        "NEXT_PUBLIC_TRADESSTACK_STORAGE_PROVIDER": "r2",
+        "NEXT_PUBLIC_TRADESSTACK_R2_DOCUMENTS_ENABLED": "1",
+        "TAKEOFF_STORAGE_PROXY_URL": "https://tradesstack-alpha.tradesstack.workers.dev/api/takeoff/drawing-sets"
+      },
+      "limits": {
+        "cpu_ms": 30000
+      },
+      "r2_buckets": [
+        { "binding": "TRADESSTACK_R2_BUCKET", "bucket_name": "tradesstack-alpha-documents" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "TRADESSTACK_TAKEOFF_QUEUE", "queue": "tradesstack-alpha-takeoff-jobs" }
+        ],
+        "consumers": [
+          {
+            "queue": "tradesstack-alpha-takeoff-jobs",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "retry_delay": 30,
+            "visibility_timeout_ms": 300000,
+            "max_concurrency": 1,
+            "dead_letter_queue": "tradesstack-alpha-takeoff-dlq"
+          }
+        ]
+      },
+      "triggers": { "crons": ["*/5 * * * *"] },
+      "containers": [
+        {
+          "class_name": "TakeoffRendererContainer",
+          "image": "./takeoff.Dockerfile",
+          "instance_type": "basic",
+          "max_instances": 1
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "TAKEOFF_CONTAINER", "class_name": "TakeoffRendererContainer" }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "takeoff-renderer-v1",
+          "new_sqlite_classes": ["TakeoffRendererContainer"]
+        }
+      ],
+      "workers_dev": true,
+      "preview_urls": true
+    },
+    "production": {
+      "name": "tradesstack-main",
+      "vars": {
+        "TRADESSTACK_STORAGE_PROVIDER": "r2",
+        "TRADESSTACK_R2_DOCUMENTS_ENABLED": "1",
+        "TRADESSTACK_R2_BUCKET_NAME": "tradesstack-main-documents"
+      },
+      "limits": {
+        "cpu_ms": 30000
+      },
+      "r2_buckets": [
+        { "binding": "TRADESSTACK_R2_BUCKET", "bucket_name": "tradesstack-main-documents" }
+      ],
+      "workers_dev": false,
+      "preview_urls": false
+    }
+  }
+}

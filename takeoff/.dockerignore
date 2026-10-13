@@ -1,0 +1,10 @@
+node_modules
+.next
+.open-next
+.wrangler
+.git
+.gitignore
+artifacts
+.dsh-drop
+.next-*
+*.log

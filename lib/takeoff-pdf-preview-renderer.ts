@@ -1,4 +1,3 @@
-import { createCanvas } from "@napi-rs/canvas";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -60,6 +59,19 @@ export async function renderTakeoffPdfPreviews(params: {
   if (params.pages.length === 0) {
     return;
   }
+
+  // Keep the native renderer out of the normal application import path. The
+  // caller is the dedicated Node-compatible takeoff worker; Cloudflare web
+  // routes only enqueue and read job state. A lazy import also keeps the
+  // renderer's platform-specific binary out of route initialization.
+  // Deliberately keep the package specifier opaque to the web bundler. The
+  // worker runs this module under Node, where the native package is installed;
+  // Cloudflare must never attempt to bundle a platform-specific `.node` file.
+  const loadNodeModule = new Function(
+    "specifier",
+    "try { const moduleApi = process.getBuiltinModule('module'); return Promise.resolve(moduleApi.createRequire(process.cwd() + '/package.json')(specifier)); } catch { return import(specifier); }",
+  ) as (specifier: string) => Promise<{ createCanvas: typeof import("@napi-rs/canvas").createCanvas }>;
+  const { createCanvas } = await loadNodeModule("@napi-rs/canvas");
 
   const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsModule;
   const loadingTask = pdfjs.getDocument({

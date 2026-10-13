@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SupplierInvoiceDraftExtraction } from "@/lib/supplier-invoice-document-extraction";
 import {
+  calculateLineDraftTotal,
+  calculateTaxFromRate,
   calculateLineDraftReconciliation,
+  lineDraftTotalValue,
   formatInvoiceSummaryGstPercent,
   hasMeaningfulLineDrafts,
   lineDraftCollectionsEqual,
@@ -9,6 +12,34 @@ import {
   lineDraftsToCreatePayload,
   makeBlankNewSupplierInvoiceLineDraft,
 } from "./new-supplier-invoice-line-drafts";
+
+describe("supplier invoice line totals", () => {
+  it("calculates amount from quantity and unit price", () => {
+    expect(calculateLineDraftTotal("1", "1000")).toBe("1000.00");
+    expect(calculateLineDraftTotal("2.5", "12.40")).toBe("31.00");
+  });
+
+  it("waits for both editable inputs", () => {
+    expect(calculateLineDraftTotal("1", "")).toBe("");
+    expect(calculateLineDraftTotal("", "1000")).toBe("");
+  });
+
+  it("uses the derived amount when a populated row still has a stale zero", () => {
+    expect(lineDraftTotalValue({ quantity: "1", unitPrice: "1000", lineTotal: "0.00" })).toBe(1000);
+  });
+
+  it("calculates GST from the configured rate for manual entries", () => {
+    expect(calculateTaxFromRate(1000, 15)).toBe(150);
+    expect(calculateLineDraftReconciliation([
+      { ...makeBlankNewSupplierInvoiceLineDraft(), quantity: "1", unitPrice: "1000" },
+    ], "0.00", "0.00", 15)).toEqual({
+      lineSubtotal: 1000,
+      calculatedTax: 150,
+      gstRate: 0.15,
+      lineTotal: 1150,
+    });
+  });
+});
 
 function buildExtraction(): SupplierInvoiceDraftExtraction {
   return {

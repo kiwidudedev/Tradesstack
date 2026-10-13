@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentOrganizationMember, getOrganizationProjectBySlugForCurrentUser } from "@/lib/projects-server";
+import { getCurrentOrganizationMember, getVisibleOrganizationProjectBySlugForCurrentUser } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { enforceRouteGuard } from "@/lib/security/abuse-guard";
 
@@ -10,9 +10,10 @@ interface AiChatMessageRow {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  citations?: Array<{ label?: string; href?: string }>;
 }
 
-const MESSAGES_SELECT = "id, role, content, created_at";
+const MESSAGES_SELECT = "id, role, content, created_at, citations";
 
 function parseCursor(cursorRaw: string | null): { createdAt: string; id: string } | null {
   if (!cursorRaw) {
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing project slug or conversation id." }, { status: 400 });
   }
 
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
+  const project = await getVisibleOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
@@ -100,7 +101,24 @@ export async function GET(request: Request) {
     );
   }
 
-  const messagesResult = await messagesQuery;
+  let messagesResult = await messagesQuery;
+  if (messagesResult.error && /citations.*does not exist|schema cache/i.test(messagesResult.error.message)) {
+    messagesQuery = db
+      .from("ai_chat_messages")
+      .select("id, role, content, created_at")
+      .eq("user_id", member.user_id)
+      .eq("project_slug", projectSlug)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit + 1);
+    if (cursor) {
+      messagesQuery = messagesQuery.or(
+        `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+      );
+    }
+    messagesResult = await messagesQuery;
+  }
 
   if (messagesResult.error) {
     console.error("[chat-messages] failed to load conversation history", messagesResult.error);
@@ -126,6 +144,7 @@ export async function GET(request: Request) {
       role: row.role,
       content: row.content,
       createdAt: row.created_at,
+      citations: Array.isArray(row.citations) ? row.citations : [],
     }));
 
   await guard.release();

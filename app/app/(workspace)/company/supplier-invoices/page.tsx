@@ -3,6 +3,7 @@ import { getCurrentOrganizationMember } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { OrganizationSupplierRow } from "@/lib/suppliers";
 import { matchCountsTowardInvoiceTotal, type SupplierInvoiceRow } from "@/lib/supplier-invoices";
+import { resolveTaxJurisdiction } from "@/lib/jurisdiction/country";
 import { CompanySupplierInvoicesWorkspace } from "./CompanySupplierInvoicesWorkspace";
 
 export default async function CompanySupplierInvoicesPage() {
@@ -23,10 +24,23 @@ export default async function CompanySupplierInvoicesPage() {
 
   const supabase = await createServerSupabaseClient();
   const [
+    { data: organization, error: organizationError },
+    { data: xeroConnection, error: xeroConnectionError },
     { data: invoices, error: invoicesError },
     { data: suppliers, error: suppliersError },
     { data: matches, error: matchesError },
   ] = await Promise.all([
+      supabase
+        .from("organizations")
+        .select("country, default_currency, default_tax_rate, tax_registration_status")
+        .eq("id", currentMember.organization_id)
+        .single(),
+      supabase
+        .from("organization_xero_connections")
+        .select("id, tenant_id, status")
+        .eq("organization_id", currentMember.organization_id)
+        .eq("status", "connected")
+        .maybeSingle(),
       supabase
         .from("supplier_invoices")
         .select("*")
@@ -53,6 +67,39 @@ export default async function CompanySupplierInvoicesPage() {
   }
   if (matchesError) {
     throw new Error(matchesError.message);
+  }
+  if (organizationError) {
+    throw new Error(organizationError.message);
+  }
+  if (xeroConnectionError) {
+    throw new Error(xeroConnectionError.message);
+  }
+
+  const jurisdiction = resolveTaxJurisdiction(organization.country);
+  const standardRate = jurisdiction === "NZ" ? 15 : jurisdiction === "AU" ? 10 : 0;
+  let automaticTaxRatePercent = organization.tax_registration_status === "registered"
+    ? Number(organization.default_tax_rate ?? standardRate)
+    : 0;
+  if (xeroConnection?.tenant_id) {
+    const { data: taxRates, error: taxRatesError } = await supabase
+      .from("organization_accounting_tax_rates")
+      .select("effective_rate, jurisdiction_code, status, is_active, can_apply_to_expenses, metadata")
+      .eq("organization_id", currentMember.organization_id)
+      .eq("accounting_connection_id", xeroConnection.id)
+      .eq("tenant_id", xeroConnection.tenant_id);
+    if (taxRatesError) {
+      throw new Error(taxRatesError.message);
+    }
+    const standardXeroRate = (taxRates ?? []).find((rate) =>
+      rate.is_active
+      && rate.status?.toUpperCase() === "ACTIVE"
+      && rate.can_apply_to_expenses
+      && rate.jurisdiction_code === jurisdiction
+      && Number(rate.effective_rate) === standardRate
+    );
+    if (standardXeroRate?.effective_rate !== null && standardXeroRate?.effective_rate !== undefined) {
+      automaticTaxRatePercent = Number(standardXeroRate.effective_rate);
+    }
   }
 
   const invoiceMatchSummaries = new Map<
@@ -92,6 +139,8 @@ export default async function CompanySupplierInvoicesPage() {
       initialInvoices={(invoices ?? []) as SupplierInvoiceRow[]}
       invoiceMatchSummaries={Object.fromEntries(invoiceMatchSummaries)}
       suppliers={(suppliers ?? []) as OrganizationSupplierRow[]}
+      currency={organization.default_currency}
+      automaticTaxRatePercent={automaticTaxRatePercent}
       canWrite={canWrite}
     />
   );

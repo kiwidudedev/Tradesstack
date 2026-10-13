@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Clock, Download, FileText, Users } from "lucide-react";
 import { OperationalModuleHeader } from "@/components/app/OperationalModuleHeader";
+import { OperationalKpiCard } from "@/components/app/OperationalKpiCard";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
@@ -713,46 +714,34 @@ export function ProjectTimeSheetsBoard() {
 
           {/* Stat cards */}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-sage)]">
-                  <Users className="h-5 w-5 text-[var(--kpi-fg-sage)]" />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>On Site Now</p>
-              </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{summary.onSiteNow}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-sage)]`}>Workers Currently Clocked In</p>
-            </div>
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-red)]">
-                  <AlertTriangle className="h-5 w-5 text-[var(--kpi-fg-red)]" />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>Overtime Alerts</p>
-              </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{summary.overtimeAlerts}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-red)]`}>Entries Over Threshold</p>
-            </div>
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-navy)]">
-                  <CheckCircle2 className="h-5 w-5 text-[var(--kpi-fg-navy)]" />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>Complete</p>
-              </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{Math.max(0, summary.workersToday - summary.missingClockOuts)}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-navy)]`}>Finished Shifts This Range</p>
-            </div>
-            <div className="flex min-h-[160px] flex-col rounded-[14px] border-[1.3px] border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card-elevated)]">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-[3.1rem] w-[3.1rem] items-center justify-center rounded-[1rem] bg-[var(--kpi-bg-amber)]">
-                  <Clock className="h-5 w-5 text-[var(--kpi-fg-orange)]" />
-                </span>
-                <p className={`${ibmPlexSans.className} text-[15px] font-medium text-[var(--text-secondary)]`}>Total Hours</p>
-              </div>
-              <p className={`${ibmPlexSans.className} mt-auto pt-5 text-[clamp(1.6rem,2.5vw,2.2rem)] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)]`}>{formatHours(summary.totalHours)}</p>
-              <p className={`${ibmPlexSans.className} mt-3 text-[14px] font-medium text-[var(--kpi-fg-orange)]`}>Labour Hours In Selected Range</p>
-            </div>
+            <OperationalKpiCard
+              label="On Site Now"
+              value={summary.onSiteNow}
+              helper={<span className="text-[var(--kpi-fg-sage)]">Workers Currently Clocked In</span>}
+              icon={<Users className="h-5 w-5" />}
+              tone="sage"
+            />
+            <OperationalKpiCard
+              label="Overtime Alerts"
+              value={summary.overtimeAlerts}
+              helper={<span className="text-[var(--kpi-fg-red)]">Entries Over Threshold</span>}
+              icon={<AlertTriangle className="h-5 w-5" />}
+              tone="red"
+            />
+            <OperationalKpiCard
+              label="Complete"
+              value={Math.max(0, summary.workersToday - summary.missingClockOuts)}
+              helper={<span className="text-[var(--kpi-fg-navy)]">Finished Shifts This Range</span>}
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              tone="navy"
+            />
+            <OperationalKpiCard
+              label="Total Hours"
+              value={formatHours(summary.totalHours)}
+              helper={<span className="text-[var(--kpi-fg-orange)]">Labour Hours In Selected Range</span>}
+              icon={<Clock className="h-5 w-5" />}
+              tone="amber"
+            />
           </div>
 
           {/* Worker filters + PO selector */}

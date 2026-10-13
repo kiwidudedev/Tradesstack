@@ -137,7 +137,7 @@
     "backupAssessment": "Free Supabase tier managed restore capability was not verified; Storage recovery depends on object export/retention procedure",
     "observabilityAssessment": "Vercel deployment/runtime logs and Supabase logs/health only; third-party monitoring intentionally OFF",
     "cleanupPlan": "Retain fictional Alpha identities and synthetic records as commissioning reference; remove Auth users, memberships, records and Storage objects only with explicit approval after evidence retention",
-    "productionHardeningRemaining": ["promote generic local fixes through Master release and controlled Alpha upgrade", "real-customer backup/restore and retention procedure", "minimum alerting/observability decision", "Site Safety implementation", "worker/cron/AI/Xero/email/provider commissioning under separate approvals", "custom domain and production support/rollback runbook"]
+    "productionHardeningRemaining": ["promote generic local fixes through Master release and controlled Alpha upgrade", "real-customer backup/restore and retention procedure", "minimum alerting/observability decision", "worker/cron/AI/Xero/email/provider commissioning under separate approvals", "custom domain and production support/rollback runbook"]
   },
   "finalAudit": {
     "safeInScopeHostedWorkRecorded": true,

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
 import { PROJECT_DRAWING_SETS_BUCKET, toTakeoffPagePreviewStoragePath } from "@/lib/drawing-sets";
+import { getConfiguredR2StorageProvider, isR2StorageKey } from "@/lib/storage/provider";
 import { getCurrentOrganizationMember, getProjectDrawingSetsForCurrentUser } from "@/lib/projects-server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -21,10 +22,10 @@ import {
   writeTakeoffIntelligenceEvent,
 } from "@/lib/takeoff-intelligence";
 import { resolveTakeoffMeasurementStatusTransition } from "@/lib/takeoff/measurement-lifecycle";
-import { renderTakeoffPdfPreviews } from "@/lib/takeoff-pdf-preview-renderer";
 import type { TakeoffDrawingSetSummaryMeasurement } from "@/lib/takeoff/measurement-summary";
 import { getAuthorizedTakeoffContext, resolveAuthorizedTakeoffContext } from "@/lib/takeoff-owner-server";
 import { parseTakeoffOwnerKey, type TakeoffRouteOwner } from "@/lib/takeoff/owner";
+import { publishTakeoffRenderJobMessage } from "@/lib/takeoff/cloudflare-queue";
 import {
   DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_BYTES,
   DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
@@ -78,6 +79,28 @@ const TAKEOFF_PAGE_PREPARATION_MAX_BYTES = Number.isFinite(configuredPreparation
 const TAKEOFF_PAGE_PREPARATION_MAX_PAGES = Number.isFinite(configuredPreparationMaxPages) && configuredPreparationMaxPages > 0
   ? configuredPreparationMaxPages
   : DEFAULT_TAKEOFF_PAGE_PREPARATION_MAX_PAGES;
+
+async function downloadTakeoffSourcePdf(params: {
+  supabase: SupabaseClient<Database>;
+  drawingSet: Pick<ProjectDrawingSet, "id" | "storage_path">;
+}): Promise<Uint8Array> {
+  if (!isR2StorageKey(params.drawingSet.storage_path)) {
+    const result = await params.supabase.storage.from(PROJECT_DRAWING_SETS_BUCKET).download(params.drawingSet.storage_path);
+    if (result.error || !result.data) throw new Error(result.error?.message ?? "Unable to load the selected drawing set.");
+    return new Uint8Array(await result.data.arrayBuffer());
+  }
+  const proxyUrl = process.env.TAKEOFF_STORAGE_PROXY_URL;
+  if (proxyUrl) {
+    const response = await fetch(`${proxyUrl}/${encodeURIComponent(params.drawingSet.id)}/content`, {
+      headers: { authorization: `Bearer ${process.env.TAKEOFF_CONTAINER_TOKEN ?? ""}` },
+    });
+    if (!response.ok) throw new Error("Unable to load the R2 drawing through the storage proxy.");
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  const object = await (await getConfiguredR2StorageProvider()).get(params.drawingSet.storage_path);
+  if (!object) throw new Error("Unable to load the selected drawing set.");
+  return new Uint8Array(await new Response(object.body).arrayBuffer());
+}
 
 export type TakeoffPage = Database["public"]["Tables"]["takeoff_pages"]["Row"];
 export type TakeoffPageSummary = Pick<TakeoffPage,
@@ -1531,6 +1554,9 @@ export async function createSignedTakeoffDrawingSetUrlForOpportunity(params: {
   }
 
   const supabase = params.supabase ?? await createServerSupabaseClient();
+  if (isR2StorageKey(drawingSet.storage_path)) {
+    return `/api/takeoff/drawing-sets/${encodeURIComponent(drawingSet.id)}/content`;
+  }
   const { data, error } = await supabase.storage
     .from(PROJECT_DRAWING_SETS_BUCKET)
     .createSignedUrl(drawingSet.storage_path, params.expiresInSeconds ?? 60 * 60);
@@ -1679,15 +1705,7 @@ async function renderAndStoreTakeoffPagePreviews(params: {
     params.sourcePdfBytes
       ? Buffer.from(params.sourcePdfBytes)
       : await (async () => {
-          const downloadResult = await params.supabase.storage
-            .from(PROJECT_DRAWING_SETS_BUCKET)
-            .download(params.drawingSet.storage_path);
-
-          if (downloadResult.error || !downloadResult.data) {
-            throw new Error(downloadResult.error?.message ?? "Unable to load the selected drawing set.");
-          }
-
-          return Buffer.from(await downloadResult.data.arrayBuffer());
+          return Buffer.from(await downloadTakeoffSourcePdf({ supabase: params.supabase, drawingSet: params.drawingSet }));
         })();
 
   try {
@@ -1696,6 +1714,10 @@ async function renderAndStoreTakeoffPagePreviews(params: {
       pageNumbers: pagesNeedingPreviews.map((page) => page.page_number),
       outputDirectory,
     });
+    // The renderer is loaded only by the dedicated Node worker path. Keeping
+    // this import out of module scope prevents Cloudflare web route bundles
+    // from pulling in platform-specific native canvas binaries.
+    const { renderTakeoffPdfPreviews } = await import("@/lib/takeoff-pdf-preview-renderer");
     await renderTakeoffPdfPreviews({
       sourcePdfBytes,
       pages: pagesNeedingPreviews.map((page) => {
@@ -1905,19 +1927,13 @@ async function createTakeoffPageMetadataRows(params: {
     maxPages: TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
   });
 
-  const downloadResult = await params.supabase.storage
-    .from(PROJECT_DRAWING_SETS_BUCKET)
-    .download(params.drawingSet.storage_path);
-  if (downloadResult.error || !downloadResult.data) {
-    throw new Error(downloadResult.error?.message ?? "Unable to load the selected drawing set.");
-  }
+  const pdfBytes = await downloadTakeoffSourcePdf({ supabase: params.supabase, drawingSet: params.drawingSet });
   validateTakeoffPdfPreparationBounds({
-    byteLength: downloadResult.data.size,
+    byteLength: pdfBytes.byteLength,
     maxBytes: TAKEOFF_PAGE_PREPARATION_MAX_BYTES,
     maxPages: TAKEOFF_PAGE_PREPARATION_MAX_PAGES,
   });
 
-  const pdfBytes = new Uint8Array(await downloadResult.data.arrayBuffer());
   const { PDFDocument } = await import("pdf-lib");
   const pdf = await PDFDocument.load(pdfBytes, { updateMetadata: false });
   const pdfPages = pdf.getPages();
@@ -2037,6 +2053,7 @@ async function enqueueTakeoffPagePreviewRenderJob(params: {
       status: existingResult.data.status,
       pageCount: params.pageIds.length,
     });
+    await publishTakeoffRenderJobMessage(existingResult.data);
     return existingResult.data;
   }
 
@@ -2067,6 +2084,7 @@ async function enqueueTakeoffPagePreviewRenderJob(params: {
       jobId: insertResult.data.id,
       pageCount: params.pageIds.length,
     });
+    await publishTakeoffRenderJobMessage(insertResult.data);
     return insertResult.data;
   }
 
@@ -2116,6 +2134,7 @@ async function enqueueTakeoffPagePreviewRenderJob(params: {
       jobId: duplicateResult.data.id,
       status: duplicateResult.data.status,
     });
+    await publishTakeoffRenderJobMessage(duplicateResult.data);
     return duplicateResult.data;
   }
 
@@ -2183,6 +2202,7 @@ export async function enqueueTakeoffPageMetadataPreparation(params: {
     .single();
 
   if (!insertResult.error && insertResult.data) {
+    await publishTakeoffRenderJobMessage(insertResult.data);
     return { status: "pending", jobId: insertResult.data.id, pageCount: 0, error: null };
   }
 
@@ -2507,7 +2527,8 @@ export async function claimNextTakeoffRenderJob(): Promise<TakeoffRenderJob | nu
     const nextJobResult = await supabase
       .from("takeoff_render_jobs")
       .select("*")
-      .eq("status", "pending")
+      .in("status", ["pending", "failed"])
+      .lt("attempt_count", 5)
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -2534,7 +2555,7 @@ export async function claimNextTakeoffRenderJob(): Promise<TakeoffRenderJob | nu
         attempt_count: nextJob.attempt_count + 1,
       })
       .eq("id", nextJob.id)
-      .eq("status", "pending")
+      .in("status", ["pending", "failed"])
       .select("*")
       .maybeSingle();
 
@@ -2715,22 +2736,12 @@ export async function processNextTakeoffRenderJob(): Promise<{
       pageNumbers: pagesToRender.map((page) => page.page_number),
     });
 
-    const downloadResult = await supabase.storage
-      .from(PROJECT_DRAWING_SETS_BUCKET)
-      .download(drawingSet.storage_path);
-
-    if (downloadResult.error || !downloadResult.data) {
-      throw new TakeoffWorkerError(downloadResult.error?.message ?? "Unable to load the selected drawing set.", {
+    const sourcePdfBytes = await downloadTakeoffSourcePdf({ supabase, drawingSet }).catch((error) => {
+      throw new TakeoffWorkerError(error instanceof Error ? error.message : "Unable to load the selected drawing set.", {
         stage: "download-source-pdf",
-        details: {
-          jobId: job.id,
-          drawingSetId: drawingSet.id,
-          storagePath: drawingSet.storage_path,
-        },
+        details: { jobId: job.id, drawingSetId: drawingSet.id, storagePath: drawingSet.storage_path },
       });
-    }
-
-    const sourcePdfBytes = new Uint8Array(await downloadResult.data.arrayBuffer());
+    });
     console.info("[takeoff-worker] Downloaded source PDF for render job", {
       jobId: job.id,
       drawingSetId: job.drawing_set_id,

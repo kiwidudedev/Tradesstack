@@ -108,10 +108,33 @@ export function useTakeoffSourceDrawingUpload({
     }
   };
 
+  const uploadFiles = async (files: File[]) => {
+    const supported = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    if (supported.length === 0) {
+      setError("Select one or more PDF drawing files.");
+      return;
+    }
+    if (supported.length === 1) {
+      await uploadFile(supported[0]);
+      return;
+    }
+    setError(null);
+    setStatus(`Uploading 0 of ${supported.length} drawing files...`);
+    for (let index = 0; index < supported.length; index += 1) {
+      try {
+        await uploadFile(supported[index]);
+        setStatus(`Uploaded ${index + 1} of ${supported.length} drawing files. Preparing is running.`);
+      } catch {
+        // uploadFile presents the individual error; continue the batch so one
+        // failed drawing cannot discard successful files.
+      }
+    }
+  };
+
   const onFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    await uploadFile(file);
+    await uploadFiles(files);
   };
 
   return {
@@ -122,5 +145,6 @@ export function useTakeoffSourceDrawingUpload({
     onChooseFile,
     onFileChange,
     uploadFile,
+    uploadFiles,
   };
 }

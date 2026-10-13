@@ -3,13 +3,15 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { NewSupplierInvoiceLineDraft } from "./new-supplier-invoice-line-drafts";
+import { toMoney } from "@/lib/supplier-invoices";
+import { lineDraftTotalValue, type NewSupplierInvoiceLineDraft } from "./new-supplier-invoice-line-drafts";
 
 type NewSupplierInvoiceLineTableProps = {
   lines: NewSupplierInvoiceLineDraft[];
   onChangeLine: (lineId: string, updates: Partial<NewSupplierInvoiceLineDraft>) => void;
   onAddLine: () => void;
   onRemoveLine: (lineId: string) => void;
+  currency: string;
 };
 
 const COLUMN_TEMPLATE = "minmax(340px,2.2fr) 78px 96px 116px 116px 56px";
@@ -19,6 +21,7 @@ export function NewSupplierInvoiceLineTable({
   onChangeLine,
   onAddLine,
   onRemoveLine,
+  currency,
 }: NewSupplierInvoiceLineTableProps) {
   return (
     <section className="space-y-3">
@@ -92,25 +95,23 @@ export function NewSupplierInvoiceLineTable({
                     </div>
 
                     <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                      <Input
-                        aria-label={`Line ${index + 1} unit price`}
-                        inputMode="decimal"
-                        value={line.unitPrice}
-                        onChange={(event) => onChangeLine(line.id, { unitPrice: event.target.value })}
-                        placeholder="0.00"
-                        className="h-9 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
-                      />
+                      <div className="relative w-full">
+                        <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center text-sm text-[var(--text-secondary)]">$</span>
+                        <Input
+                          aria-label={`Line ${index + 1} unit price`}
+                          inputMode="decimal"
+                          value={line.unitPrice}
+                          onChange={(event) => onChangeLine(line.id, { unitPrice: event.target.value })}
+                          placeholder="0.00"
+                          className="h-9 border-0 bg-transparent pl-4 pr-0 text-sm shadow-none focus-visible:ring-0"
+                        />
+                      </div>
                     </div>
 
                     <div className="flex items-center border-l border-[var(--border-subtle)] px-3 py-1.5">
-                      <Input
-                        aria-label={`Line ${index + 1} amount`}
-                        inputMode="decimal"
-                        value={line.lineTotal}
-                        onChange={(event) => onChangeLine(line.id, { lineTotal: event.target.value })}
-                        placeholder="0.00"
-                        className="h-9 border-0 bg-transparent px-0 text-right text-sm shadow-none focus-visible:ring-0"
-                      />
+                      <div aria-label={`Line ${index + 1} amount`} className="w-full text-right text-sm text-[var(--text-primary)]">
+                        {toMoney(lineDraftTotalValue(line), currency)}
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-center border-l border-[var(--border-subtle)] px-0 py-1.5">

@@ -2,7 +2,9 @@
 
 ## Authority and preparation
 
-- Before any substantial TradesStack work, read `docs/architecture/TRADESSTACK_AI_CONTEXT.md` in full.
+- Before substantial TradesStack architecture, product, customer
+  implementation or customization work, read `docs/architecture/TRADESSTACK_BUSINESS_MODEL.md`
+  and `docs/architecture/TRADESSTACK_AI_CONTEXT.md` in full.
 - Treat that document as architectural and product guidance, not as proof of current implementation, schema, deployment, or test state. Verify current claims against repository code, migrations, generated types, tests, and other direct evidence. The current repository, applied database state where available, and current tests override it when they conflict.
 - Before substantial implementation, inspect the relevant routes, components, server actions, services, RPCs, migrations, permissions, tests, and architecture documents. Identify the owning organization/project/opportunity boundary and the canonical source-of-truth table or service.
 - Check both current and legacy paths before extending or replacing behavior. If an architecture document, implementation, migration, or test conflicts, stop and explain the conflict before making a destructive architectural decision.
@@ -15,6 +17,11 @@
 - Preserve takeoff drawing-set ownership, calibrated normalized geometry, measurement lineage, private signed URLs, render-job idempotency, and fallback behavior.
 - Preserve the distinction between estimates, quotes, purchase orders, variations, costs, accounting records, QA definitions/runs, and legacy quality records. Do not create parallel commercial, QA, files, accounting, or intelligence concepts without proving the existing path cannot satisfy the task.
 - Prefer existing components, route shells, contracts, RPCs, validation, permission helpers, design tokens, status patterns, and abstractions. Preserve the existing TradesStack UI and theme unless the task explicitly requires a change.
+- TradesStack Main remains authoritative for reusable core functionality and
+  bug fixes. Before implementing customer-specific functionality, determine
+  whether it belongs in configuration, Main, a controlled extension, or truly
+  customer-specific code. Do not create permanent customer source divergence
+  casually.
 
 ## High-risk changes
 

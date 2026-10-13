@@ -88,6 +88,18 @@ export async function uploadReservedDocumentWithTus(params: {
   ) {
     throw new Error("The selected file does not match its server reservation.");
   }
+
+  if (params.reservation.provider === "r2") {
+    const response = await fetch(`/api/documents/uploads/${params.reservation.versionId}/content`, {
+      method: "PUT",
+      headers: { "content-type": params.reservation.claimedMimeType },
+      body: params.file,
+      signal: params.signal,
+    });
+    if (!response.ok) await readJsonOrThrow(response);
+    params.onProgress?.(params.file.size, params.file.size);
+    return requestDocumentUploadCompletion(params.reservation.versionId);
+  }
   if (Date.parse(params.reservation.uploadExpiresAt) <= Date.now()) {
     throw new Error("The pending upload has expired.");
   }

@@ -44,6 +44,8 @@ type CompanySupplierInvoicesWorkspaceProps = {
     }
   >;
   suppliers: OrganizationSupplierRow[];
+  currency: string;
+  automaticTaxRatePercent: number;
   canWrite: boolean;
 };
 
@@ -67,6 +69,8 @@ export function CompanySupplierInvoicesWorkspace({
   initialInvoices,
   invoiceMatchSummaries,
   suppliers,
+  currency,
+  automaticTaxRatePercent,
   canWrite,
 }: CompanySupplierInvoicesWorkspaceProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -342,6 +346,8 @@ export function CompanySupplierInvoicesWorkspace({
         onOpenChange={setIsCreateOpen}
         onCreateSuccessMessage={setToastMessage}
         suppliers={suppliers}
+        currency={currency}
+        automaticTaxRatePercent={automaticTaxRatePercent}
         canWrite={canWrite}
       />
     </main>

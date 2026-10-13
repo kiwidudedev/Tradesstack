@@ -39,6 +39,8 @@ type NewSupplierInvoiceReviewPanelProps = {
   canWrite: boolean;
   isSaving: boolean;
   isBusy: boolean;
+  currency: string;
+  automaticTaxRatePercent: number;
 };
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
@@ -51,8 +53,6 @@ function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.Re
 
 const FIELD_SELECT_CLASS =
   "h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 text-sm text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
-const FIELD_TEXTAREA_CLASS =
-  "flex w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 const MONEY_TOLERANCE = 0.01;
 
 function parseMoney(value: string) {
@@ -131,12 +131,17 @@ export function NewSupplierInvoiceReviewPanel({
   canWrite,
   isSaving,
   isBusy,
+  currency,
+  automaticTaxRatePercent,
 }: NewSupplierInvoiceReviewPanelProps) {
   const hasReviewHeader = Boolean(title || titleAction);
   const documentSubtotal = parseMoney(formState.subtotal);
   const documentTax = parseMoney(formState.taxTotal);
   const documentTotal = parseMoney(formState.total);
-  const summary = calculateLineDraftReconciliation(lineDrafts, formState.subtotal, formState.taxTotal);
+  const summary = calculateLineDraftReconciliation(lineDrafts, formState.subtotal, formState.taxTotal, automaticTaxRatePercent);
+  const hasCalculatedLineSubtotal = lineDrafts.length > 0 && summary.lineSubtotal > 0;
+  const summarySubtotalValue = hasCalculatedLineSubtotal ? summary.lineSubtotal.toFixed(2) : formState.subtotal;
+  const summaryTotalValue = hasCalculatedLineSubtotal ? summary.lineTotal.toFixed(2) : formState.total;
   const gstPercentLabel = formatInvoiceSummaryGstPercent(summary.gstRate);
   const summaryWarning = invoiceSummaryWarning({
     lineSubtotal: summary.lineSubtotal,
@@ -264,7 +269,8 @@ export function NewSupplierInvoiceReviewPanel({
                 lines={lineDrafts}
                 onChangeLine={onUpdateLine}
                 onAddLine={onAddLine}
-                onRemoveLine={onRemoveLine}
+        onRemoveLine={onRemoveLine}
+        currency={currency}
               />
 
               <div className="pt-2 pb-2">
@@ -291,40 +297,51 @@ export function NewSupplierInvoiceReviewPanel({
                     <div className="space-y-2.5 text-[13px]">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-[var(--text-secondary)]">Subtotal</span>
+                        <div className="relative w-32">
+                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[var(--text-secondary)]">$</span>
                         <Input
                           id="invoice-subtotal"
                           inputMode="decimal"
-                          value={formState.subtotal}
+                          value={summarySubtotalValue}
                           onChange={(event) => onUpdateFormState({ subtotal: event.target.value })}
                           aria-label="Invoice subtotal"
-                          className="h-9 w-32 text-right"
+                          readOnly={hasCalculatedLineSubtotal}
+                          className="h-9 w-32 pl-7 text-right"
                           placeholder="0.00"
                         />
+                        </div>
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-[var(--text-secondary)]">GST ({gstPercentLabel}%)</span>
+                        <div className="relative w-32">
+                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[var(--text-secondary)]">$</span>
                         <Input
                           id="invoice-tax-total"
                           inputMode="decimal"
                           value={formState.taxTotal}
                           onChange={(event) => onUpdateFormState({ taxTotal: event.target.value })}
                           aria-label="Invoice GST"
-                          className="h-9 w-32 text-right"
+                          className="h-9 w-32 pl-7 text-right"
                           placeholder="0.00"
                         />
+                        </div>
                       </div>
                       <div className="h-px bg-[var(--border)]" />
                       <div className="flex items-center justify-between gap-3 pt-0.5">
                         <span className="text-[15px] font-semibold text-[var(--text-primary)]">Total</span>
+                        <div className="relative w-32">
+                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-[var(--text-secondary)]">$</span>
                         <Input
                           id="invoice-total"
                           inputMode="decimal"
-                          value={formState.total}
+                          value={summaryTotalValue}
                           onChange={(event) => onUpdateFormState({ total: event.target.value })}
                           aria-label="Invoice total"
-                          className="h-9 w-32 text-right font-semibold"
+                          readOnly={hasCalculatedLineSubtotal}
+                          className="h-9 w-32 pl-7 text-right font-semibold"
                           placeholder="0.00"
                         />
+                        </div>
                       </div>
                     </div>
                     </div>

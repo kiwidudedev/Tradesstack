@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "clientId": "client-alpha",
+  "environment": "hosted-fictional-proof",
+  "capturedAt": "2026-10-01T20:05:00+13:00",
+  "status": "PARTIAL_PROVIDER_AND_OWNER_READINESS_REQUIRED",
+  "scope": "Synthetic fictional Alpha only; no real customer data or users",
+  "infrastructure": {
+    "repository": "github:kiwidudedev/tradesstack-client-alpha",
+    "runtime": "vercel:hi-5577s-projects/tradesstack-client-alpha",
+    "database": "supabase:ibjyzpyuqupsxqakpzxj",
+    "region": "ap-southeast-2",
+    "vercelPlan": "Hobby",
+    "supabasePlan": "Free/NANO",
+    "productionUrl": "https://tradesstack-client-alpha.vercel.app/",
+    "lastRecordedDeployment": "dpl_5qkbsHXVkFPEYRm1D7s3eaYXeXhz",
+    "lastRecordedRepositorySha": "a1526d51a0dd839dd5010050ca894f06b837519d",
+    "latestRepositorySha": "44777d2c6e1e8b58f294cc1404c4c7457b095dd7",
+    "masterReleaseSha": "444519472abaa120b71e61879c26fa00bc54eebd",
+    "nextVersion": "16.3.8"
+  },
+  "recovery": {
+    "databaseBackup": "SYNTHETIC_ALPHA_LOGICAL_EXPORT_GENERATED",
+    "databaseRestore": "PASS_ISOLATED_DISPOSABLE_TARGET",
+    "storageBackup": "PASS_SYNTHETIC_ALPHA_PRIVATE_OBJECT_EXPORT",
+    "storageRestore": "PASS_ISOLATED_DISPOSABLE_TARGET_CHECKSUM_ROUNDTRIP",
+    "authRecovery": "PARTIAL_USER_INVENTORY_AND_SYNTHETIC_LOGIN_PROOF_EXACT_CONTINUITY_UNPROVEN",
+    "combinedRecovery": "PARTIAL_DB_STORAGE_RELEASE_PROOF_AUTH_CONTINUITY_REMAINS_OPEN",
+    "proposedRpo": "24h maximum data-loss target pending owner/provider approval",
+    "proposedRto": "1 business day current manual target; 4h target requires further capability proof"
+  },
+  "operations": {
+    "monitoring": "PROVIDER_LOGS_AND_PUBLIC_HTTP_SMOKE_ONLY",
+    "alerting": "NOT_OPERATIONAL_NO_OWNER_OR_CHANNEL_PROVEN",
+    "incidentResponse": "DOCUMENTED_AND_TABLETOP_ONLY",
+    "deploymentRollback": "DOCUMENTED_PROVIDER_HISTORY_PATH; LIVE_ROLLBACK NOT_EXECUTED",
+    "breakGlass": "DOCUMENTED; ACCESS_PATH_NOT_TESTED",
+    "clientExport": "SYNTHETIC_ALPHA_SQL_STORAGE_MANIFEST_GENERATED_TEMPORARILY",
+    "offboarding": "DRY_RUN_DOCUMENTED; ALPHA NOT DELETED",
+    "secretRotation": "DOCUMENTED; NO MATERIAL CREDENTIAL ROTATED",
+    "releaseProvenance": "MASTER_TO_ALPHA_REPOSITORY_TO_VERCEL_PROVEN_AND_HTTP_200",
+    "pendingMasterSecurityPatch": "RESOLVED_MASTER_SHA_C7DAD2F_ALPHA_COMMIT_A1526D5_DEPLOYMENT_DPL_5QKBSHXVKFPEYRM1D7S3EAYXEXHZ_READY"
+  },
+  "recoveryProof": {
+    "source": "fictional synthetic Alpha only",
+    "database": {
+      "schemaDumpBytes": 4306919,
+      "dataDumpBytes": 1369031,
+      "schemaRestore": "PASS",
+      "dataRestore": "PASS",
+      "representativeQueries": "PASS",
+      "isolatedTarget": "local disposable Supabase project alpha-recovery-b2"
+    },
+    "storage": {
+      "privateBuckets": ["organization-documents", "project-drawing-sets"],
+      "objectCount": 6,
+      "export": "PASS",
+      "isolatedRestore": "PASS",
+      "checksumRoundTrip": "PASS"
+    },
+    "auth": {
+      "hostedUserCount": 7,
+      "hostedInventory": "PASS_COUNT_ONLY",
+      "syntheticLocalAccounts": 7,
+      "syntheticLogin": "PASS",
+      "exactIdentityAndCredentialContinuity": "NOT_PROVEN"
+    },
+    "secretsIncluded": false
+  },
+  "phase1xB3": {
+    "supabasePlanEvidence": "FREE_PLAN_NO_PROJECT_BACKUPS",
+    "supabaseScheduledBackups": "NOT_AVAILABLE_ON_CURRENT_PLAN",
+    "supabasePitr": "PRO_ADD_ON_NOT_ENABLED",
+    "recommendedDatabaseModel": "DAILY_MANAGED_PRO_BACKUP_AFTER_APPROVAL",
+    "recommendedStorageModel": "DAILY_SEPARATE_PRIVATE_OBJECT_EXPORT_WITH_MANIFEST_AND_CHECKSUMS",
+    "recurringAutomation": "CONFIGURED_LIVE_RUN_PROVEN_GITHUB_ARTIFACT_DESTINATION",
+    "freeTierWorkflow": "ALPHA_REPOSITORY_C26F405_SCHEDULED_0217_UTC_ENCRYPTED_GITHUB_ARTIFACT_30_DAY_RETENTION_LIVE_RUN_36977001303",
+    "freeTierConfiguredSecrets": ["SUPABASE_PROJECT_REF", "SUPABASE_DB_URL", "SUPABASE_DB_PASSWORD", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "BACKUP_ENCRYPTION_KEY"],
+    "freeTierPendingSecrets": [],
+    "backupArtifactEncryption": "AES_256_GCM",
+    "backupFailureDetection": "GITHUB_RUN_FAILURE_STATE_PROVEN_OWNER_NOTIFICATION_DELIVERY_NOT_PROVEN",
+    "rpo": "CONDITIONALLY_PROVEN_DAILY_DB_AUTH_STORAGE_LIVE_RUN_AND_ARTIFACT_RESTORE",
+    "rto": "CONDITIONALLY_PROVEN_TECHNICAL_RESTORE_9_882_SECONDS_HOSTED_AUTH_STORAGE_REHYDRATION_PENDING",
+    "hostedRecoveryTarget": "DEFERRED_PROVIDER_FREE_PROJECT_LIMIT_TWO_ACTIVE_PROJECTS_ALPHA_AND_MASTER_UNTOUCHED",
+    "authModel": "PRESERVE_UUIDS_WHERE_SUPPORTED_INVALIDATE_SESSIONS_REQUIRE_REAUTH",
+    "authUuidForeignKeyConstraints": 226,
+    "authContinuity": "NOT_PROVEN_ON_FREE_PLAN",
+    "monitoring": "GITHUB_FAILURE_STATE_AND_OWNER_EMAIL_DELIVERY_PROVEN",
+    "alertOwner": "COREY_PRIMARY_OWNER",
+    "outsideHours": "BUSINESS_HOURS_APPROVED_OWNER_OPERATED_2026-10-02",
+    "githubMfa": "ENABLED_OWNER_CONFIRMED_2026-10-02",
+    "vercelMfa": "ENABLED_OWNER_CONFIRMED_2026-10-02",
+    "supabaseMfa": "ENABLED_OWNER_CONFIRMED_2026-10-02",
+    "providerOwnership": "MFA_AND_RECOVERY_CONFIRMED_SINGLE_OWNER_MODEL_ALTERNATE_OWNER_NOT_REQUIRED",
+    "secureReleaseRecovery": "PASS_CURRENT_SECURE_RELEASE_REDEPLOY_PATH",
+    "vulnerabilityDisposition": "ZERO_CRITICAL_ZERO_HIGH_TWO_MODERATE_EXCELJS_UUID_REMAIN"
+  },
+  "excludedIntegrations": [
+    "Xero",
+    "OpenAI",
+    "Anthropic",
+    "Resend",
+    "Klaviyo",
+    "Takeoff worker",
+    "nonessential cron",
+    "custom DNS",
+    "third-party monitoring"
+  ],
+  "ownerDecisionsRequired": [
+    "Approve first-customer RPO/RTO and acceptable free-tier risk",
+    "Verify or select a recurring supported database backup and retention mechanism",
+    "Approve the synthetic-proven Storage export/restore procedure for future operations",
+    "Define alert recipient, escalation and outside-hours coverage",
+    "Verify provider account ownership, MFA and recovery access",
+    "Approve whether any paid provider capability is required",
+    "Revisit hosted Auth/Storage rehydration when a disposable recovery target is available"
+  ],
+  "evidence": {
+    "localReleaseValidation": "PASS",
+    "registryAndSecretMetadataChecks": "PASS",
+    "packageBoundaryCheck": "PASS",
+    "publicAlphaHttpSmoke": "PASS_HTTP_200_AFTER_PATCHED_DEPLOYMENT",
+    "providerDashboardOrCredentialProof": "READ_ONLY_CLI_AND_DASHBOARD_ACCESS; GITHUB_VERCEL_SUPABASE_MFA_AND_RECOVERY_OWNER_CONFIRMED; SINGLE_OWNER_MODEL",
+    "npmAudit": "Critical Next.js advisory resolved by 16.3.8; remaining transitive/high and ExcelJS/uuid moderate findings require separate dependency decision"
+  }
+}

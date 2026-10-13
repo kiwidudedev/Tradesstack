@@ -69,6 +69,38 @@ function numberString(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function calculateLineDraftTotal(quantity: string, unitPrice: string) {
+  if (!quantity.trim() || !unitPrice.trim()) {
+    return "";
+  }
+  const quantityValue = Number(quantity);
+  const unitPriceValue = Number(unitPrice);
+  if (!Number.isFinite(quantityValue) || !Number.isFinite(unitPriceValue)) {
+    return "";
+  }
+  return (quantityValue * unitPriceValue).toFixed(2);
+}
+
+export function lineDraftTotalValue(line: Pick<NewSupplierInvoiceLineDraft, "quantity" | "unitPrice" | "lineTotal">) {
+  const calculated = calculateLineDraftTotal(line.quantity, line.unitPrice);
+  return calculated ? numberString(calculated) : numberString(line.lineTotal);
+}
+
+export function calculateTaxFromRate(amount: number, ratePercent: number) {
+  if (!Number.isFinite(amount) || !Number.isFinite(ratePercent) || ratePercent <= 0) {
+    return 0;
+  }
+  return Number((amount * (ratePercent / 100)).toFixed(2));
+}
+
+export function lineDraftTaxValue(
+  line: Pick<NewSupplierInvoiceLineDraft, "quantity" | "unitPrice" | "lineTotal" | "taxAmount">,
+  ratePercent: number,
+) {
+  const enteredTax = numberString(line.taxAmount);
+  return enteredTax > 0 ? enteredTax : calculateTaxFromRate(lineDraftTotalValue(line), ratePercent);
+}
+
 function normalizeLineDraftForComparison(line: NewSupplierInvoiceLineDraft) {
   return {
     description: line.description.trim(),
@@ -161,16 +193,16 @@ export function lineDraftCollectionsEqual(
   });
 }
 
-export function lineDraftsToCreatePayload(lines: NewSupplierInvoiceLineDraft[]): NewSupplierInvoiceCreateLinePayload[] {
+export function lineDraftsToCreatePayload(lines: NewSupplierInvoiceLineDraft[], defaultTaxRatePercent = 0): NewSupplierInvoiceCreateLinePayload[] {
   return lines.map((line, index) => ({
     id: line.id,
     description: line.description.trim(),
     supplierItemCode: line.supplierItemCode.trim() || null,
     quantity: numberString(line.quantity),
     unitPrice: numberString(line.unitPrice),
-    lineTotal: numberString(line.lineTotal),
+    lineTotal: lineDraftTotalValue(line),
     grossLineTotal: line.grossLineTotal?.trim() ? numberString(line.grossLineTotal) : null,
-    taxAmount: numberString(line.taxAmount),
+    taxAmount: lineDraftTaxValue(line, defaultTaxRatePercent),
     taxEvidenceSource: line.taxEvidenceSource ?? "unknown",
     costCodeId: null,
     projectId: null,
@@ -181,12 +213,15 @@ export function lineDraftsToCreatePayload(lines: NewSupplierInvoiceLineDraft[]):
 export function calculateLineDraftReconciliation(
   lines: NewSupplierInvoiceLineDraft[],
   documentSubtotal: string,
-  documentTax: string
+  documentTax: string,
+  defaultTaxRatePercent = 0,
 ) {
-  const lineSubtotal = lines.reduce((sum, line) => sum + numberString(line.lineTotal), 0);
+  const lineSubtotal = lines.reduce((sum, line) => sum + lineDraftTotalValue(line), 0);
   const subtotalValue = numberString(documentSubtotal);
   const taxValue = numberString(documentTax);
-  const gstRate = subtotalValue > 0 ? taxValue / subtotalValue : 0;
+  const gstRate = subtotalValue > 0 && taxValue > 0
+    ? taxValue / subtotalValue
+    : defaultTaxRatePercent / 100;
   const calculatedTax = lineSubtotal > 0 && gstRate > 0 ? lineSubtotal * gstRate : 0;
   const lineTotal = lineSubtotal + calculatedTax;
   return {

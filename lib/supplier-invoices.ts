@@ -222,10 +222,10 @@ export function buildSupplierInvoiceDocumentStoragePath(params: {
   return `${params.organizationId}/supplier-invoices/${params.supplierInvoiceId}/${params.documentId}-${sanitizeFileName(params.fileName)}`;
 }
 
-export function toMoney(value: number) {
+export function toMoney(value: number, currency = "NZD") {
   return new Intl.NumberFormat(undefined, {
     style: "currency",
-    currency: "NZD",
+    currency: currency.trim().toUpperCase() || "NZD",
     maximumFractionDigits: 2,
   }).format(value);
 }

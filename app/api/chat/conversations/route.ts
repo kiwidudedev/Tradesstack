@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentOrganizationMember, getOrganizationProjectBySlugForCurrentUser } from "@/lib/projects-server";
+import { getCurrentOrganizationMember, getVisibleOrganizationProjectBySlugForCurrentUser } from "@/lib/projects-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { enforceRouteGuard } from "@/lib/security/abuse-guard";
 
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing project slug." }, { status: 400 });
   }
 
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
+  const project = await getVisibleOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
@@ -196,7 +196,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Missing project slug or conversation id." }, { status: 400 });
   }
 
-  const project = await getOrganizationProjectBySlugForCurrentUser(projectSlug);
+  const project = await getVisibleOrganizationProjectBySlugForCurrentUser(projectSlug);
   if (!project) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
