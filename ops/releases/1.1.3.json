@@ -8,6 +8,7 @@
   "releaseDate": "2026-10-13",
   "previousRelease": "1.1.2",
   "sourceSha": "3b7ecd6915ff0d81fa554676608d27bb1671d334",
+  "releaseFingerprint": "4a78a942bb2f34135b2b1330c578284a137498765166a1644c9d031aa0843c1a",
   "applicationShell": {
     "releaseId": "0.0.0-phase1v.local",
     "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"

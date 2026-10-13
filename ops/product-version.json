@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "product": "TradesStack",
-  "officialVersion": "1.1.0",
-  "displayLabel": "TradesStack 1.1.0",
-  "approvedReleaseManifest": "ops/releases/1.1.0.json",
-  "approvedSourceSha": "89fc43673048d30a43b2282b08d01f87ad90b116",
-  "currentMainHead": "a5e6996d653039ab7c36a2640e01801eaa9cf76b",
-  "releaseFingerprint": "bbd4f663e9f4bcb33aa51662b9060feb5f01cdd70126ee9f93c47d66d7850f68",
-  "migrationTarget": "20261006120000_harden_assistant_tool_execution_status.sql",
-  "releaseDate": "2026-10-06",
+  "officialVersion": "1.1.3",
+  "displayLabel": "TradesStack 1.1.3",
+  "approvedReleaseManifest": "ops/releases/1.1.3.json",
+  "approvedSourceSha": "3b7ecd6915ff0d81fa554676608d27bb1671d334",
+  "currentMainHead": "16ce37a52d96d615cdd538057cf503bb5f124175",
+  "releaseFingerprint": "4a78a942bb2f34135b2b1330c578284a137498765166a1644c9d031aa0843c1a",
+  "migrationTarget": "20261010123000_fix_r2_activation_actor_permission.sql",
+  "releaseDate": "2026-10-13",
   "validationStatus": "PASS"
 }
