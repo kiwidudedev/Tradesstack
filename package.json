@@ -12,7 +12,7 @@
     "build": "next build",
     "cloudflare:build": "opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs",
     "cloudflare:preview": "if [ -z \"$CLOUDFLARE_ENV\" ]; then echo 'Set CLOUDFLARE_ENV explicitly for a Cloudflare preview (for example alpha or a disposable preview environment).' >&2; exit 1; fi; opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs && wrangler dev --local --env \"$CLOUDFLARE_ENV\"",
-    "cloudflare:deploy": "if [ -z \"$CLOUDFLARE_ENV\" ]; then echo 'Set CLOUDFLARE_ENV explicitly (alpha or a disposable preview environment); unqualified Cloudflare deploys are disabled.' >&2; exit 1; fi; opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs && opennextjs-cloudflare deploy --env \"$CLOUDFLARE_ENV\"",
+    "cloudflare:deploy": "node scripts/ops/validate-cloudflare-deploy.mjs && opennextjs-cloudflare build && node scripts/ops/prepare-cloudflare-assets.mjs && opennextjs-cloudflare deploy --env \"$CLOUDFLARE_ENV\"",
     "cloudflare:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "start": "next start",
     "lint": "eslint .",
