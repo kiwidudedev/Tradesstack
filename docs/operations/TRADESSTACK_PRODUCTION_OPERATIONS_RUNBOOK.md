@@ -27,7 +27,7 @@ Git, logs or exports. Never treat service-role access as permission proof.
 Use [the incident runbook](TRADESSTACK_INCIDENT_RUNBOOK.md), preserve logs and
 release evidence, assign a severity and owner, contain the smallest scope,
 then choose application rollback, forward fix, database restore, Storage
-recovery, credential rotation or provider escalation. Vercel and Supabase
+recovery, credential rotation or provider escalation. Cloudflare and Supabase
 provider outages must be distinguished from TradesStack defects.
 
 ## Recovery
@@ -98,7 +98,7 @@ an implicit workaround.
 Provider recovery must preserve the secure release path. The previous
 vulnerable Next.js deployment is not an eligible rollback target; redeploy the
 known secure Alpha release from the recorded Master SHA and Alpha commit.
-GitHub, Vercel and Supabase MFA/recovery settings must be verified and kept
+GitHub, Cloudflare and Supabase MFA/recovery settings must be verified and kept
 outside repository records.
 
 The Alpha repository now has a daily encrypted backup workflow at

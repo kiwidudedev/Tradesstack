@@ -49,7 +49,7 @@ Main does not apply a global age threshold. Consumers may apply a policy using
 | Customer release | Customer release manifest | Recorded/observed reference |
 | Migration target | Main release manifest | Expected reference |
 | Applied migrations | Customer Supabase database | Unknown until runtime inspection |
-| Deployment status | Vercel | Historical/provider reference only in CP-0 |
+| Deployment status | Cloudflare Workers | Provider reference; current Alpha target |
 | Supabase runtime | Supabase | Historical/provider reference only in CP-0 |
 | Configuration fingerprint | Recorded client metadata | Explicit scope; not source alignment |
 | Approved differences | Machine-readable differences register | Known approved records |
@@ -75,6 +75,6 @@ service-role keys, database passwords, private tokens, or secret values.
 ## Future consumer boundary
 
 `tradesstack-owner` may cache this contract and its evidence timestamps. It
-should retain references to Main, GitHub, Vercel, Supabase, and customer
+should retain references to Main, GitHub, Cloudflare, Supabase, and customer
 repositories rather than copying customer business data or redefining their
 runtime truth.

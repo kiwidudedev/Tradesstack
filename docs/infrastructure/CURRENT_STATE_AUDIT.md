@@ -1,12 +1,12 @@
 # TradesStack current infrastructure audit
 
-Status: verified from the repository on 2026-10-10. This is a code/configuration audit; no Cloudflare account, Supabase project, DNS, production deployment, or live billing account was changed.
+Status: updated 2026-10-13 after the first controlled Cloudflare Alpha deployment. Vercel is rollback-only for Alpha; Cloudflare is the active deployment provider.
 
 ## Executive finding
 
 TradesStack Main is the authoritative Next.js 16.3.8 App Router product and release source using Supabase Auth/PostgreSQL/Storage, private signed URLs, server actions, streaming assistant routes, PDF/Excel processing, and the shared takeoff contract. Main is not a permanent customer-facing application. Alpha is the operational reference implementation under `tradesstack-client-alpha/`, deployed at `https://tradesstack-alpha.tradesstack.workers.dev`; its existing Vercel deployment is retained only as rollback.
 
-The repository now has OpenNext/Cloudflare configuration, an R2 binding adapter and an opt-in R2 document upload/download path. Supabase remains the default and authoritative database/Auth/RLS/metadata provider. It also has release manifests, client registry/provisioning proofs, Vercel-oriented commissioning evidence, Supabase migrations, and a working-but-disabled takeoff worker protocol. Heavy PDF rendering remains external Node-compatible compute until a runtime proof passes.
+The repository now has OpenNext/Cloudflare configuration, an R2 binding adapter and an opt-in R2 document upload/download path. Supabase remains the authoritative database/Auth/RLS/metadata provider. It also has release manifests, client registry/provisioning proofs, historical Vercel commissioning evidence, Supabase migrations, and a Cloudflare Alpha deployment path. Heavy PDF rendering remains external Node-compatible compute until a runtime proof passes.
 
 ## Verified inventory
 
@@ -19,7 +19,7 @@ The repository now has OpenNext/Cloudflare configuration, an R2 binding adapter 
 | Takeoff | `app/api/takeoff/render-jobs/run/route.ts`, `scripts/run_takeoff_render_worker.sh`, `lib/takeoff-pdf-preview-renderer.ts` | Authenticated polling worker; PDF.js + `@napi-rs/canvas`, filesystem temp/output usage; not a normal edge request workload. |
 | AI | `app/api/assistant/route.ts`, `app/api/chat/*`, `lib/assistant/*`, provider adapters | Server-side provider calls, project/org context and persisted usage/conversation paths. Live provider access was not exercised in this audit. |
 | Release governance | `ops/releases/*.json`, `scripts/ops/*`, `ops/clients.json`, `proofs/*` | Main release manifests and client promotion/provisioning proofs exist; provider deployment state is not recorded as verified. |
-| Hosting | `vercel.json`, commissioning JSON | Vercel is the documented/current hosted path; `vercel.json` is empty and there is no Cloudflare config before this change. |
+| Hosting | `wrangler.jsonc`, `open-next.config.ts`, Cloudflare deployment output | Cloudflare Workers is the active Alpha hosted path; Vercel is retained only as rollback. |
 | Mobile | repository search for Edge/mobile contracts and architecture docs | Native/mobile integration is represented by backend contracts/proofs; no native app source repository was found in this workspace. |
 
 ## Runtime risks
@@ -32,14 +32,14 @@ The repository now has OpenNext/Cloudflare configuration, an R2 binding adapter 
 
 ## Verified versus unverified
 
-Verified: repository code/configuration, local dependency versions, storage paths in code/migrations, release/provisioning artifacts, worker protocol, and the existence of current Vercel/Alpha commissioning evidence.
+Verified: repository code/configuration, local dependency versions, storage paths in code/migrations, release/provisioning artifacts, worker protocol, Cloudflare Alpha deployment output and HTTP reachability.
 
-Unverified: Cloudflare account/project names, paid-plan status, current provider bills, DNS, deployed Worker behavior, live R2 buckets, live Supabase migration state, production database backups, real AI provider calls, Xero, email, native mobile runtime, and production cutover.
+Unverified: representative authenticated Cloudflare browser workflows, live R2 object flows, live Supabase migration ledger, production database backups, real AI provider calls, Xero, email, native takeoff execution, and third-party observability.
 
 ## Current recommendation
 
-Use Cloudflare Workers for the web edge only after a real OpenNext preview and representative authenticated browser workflow pass. Keep PostgreSQL/Auth/RLS and document lifecycle metadata on Supabase. Enable R2 only for an isolated Alpha bucket after migration ledger, binding, migration application and private-route tests pass; leave original Supabase objects untouched until explicit cutover approval. Run takeoff/PDF-heavy jobs on dedicated Node-compatible compute using the existing authenticated job endpoint until a separate queue/worker proof demonstrates equivalent reliability.
+Use the explicit `CLOUDFLARE_ENV=alpha` Worker deployment path for Alpha. Keep PostgreSQL/Auth/RLS and document lifecycle metadata on Supabase. Keep R2 isolated to Alpha until migration-ledger and private-route checks are reverified. Run takeoff/PDF-heavy jobs on dedicated Node-compatible compute until the configured Cloudflare container/queue path passes a representative render proof.
 
 ## Local compatibility result
 
-The OpenNext build now passes after removing the native canvas dependency from the static import graph and loading it only from the dedicated Node worker path. Local Wrangler preview also served `/` and `/login` with HTTP 200 after generated assets above Cloudflare's 25 MiB asset limit were excluded. This does not prove native takeoff execution in a Worker: the renderer still requires the separate Node worker, and no production Cloudflare deployment, R2 cutover, live AI call or real takeoff job was commissioned.
+The OpenNext build and first Cloudflare Alpha deployment completed; the public Worker health path must still be exercised through authenticated browser workflows. Wrangler warned that `TakeoffRendererContainer` is configured as a Durable Object but is not exported by the Worker, so native takeoff execution remains unverified and may be unavailable until that binding is reconciled.

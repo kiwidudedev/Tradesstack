@@ -36,7 +36,7 @@ npm run release:promote -- \
 
 The engine fails closed on dirty worktrees, release-owned drift, missing
 migrations, unavailable client repositories, and ambiguous migration state. It
-preserves `client/**`, `.env*`, and `.vercel/project.json`. It never uses
+preserves `client/**`, `.env*`, and provider deployment configuration. It never uses
 `--include-all`, creates a client migration, resets a database, or marks an
 unrelated migration applied. With `--apply`, it materializes the exact release
 in an isolated temporary worktree and runs the declared `test:release`,
@@ -48,11 +48,12 @@ checks, PR state, deployment state, and blocked reason.
 `--push` pushes the controlled `shell-upgrade/<release-id>` branch and opens a
 client PR when GitHub CLI is available. Production deployment remains approval
 gated: merge the PR through the client repository's protected process, then
-allow the Git-connected deployment to run. The result records the migration
-target, expected repository SHA, expected Main source SHA, deployment target,
-and deployment readiness rather than silently deploying an unreviewed branch.
-The repository's deployment integration is therefore the final controlled
-step; the promotion engine does not bypass protected production approval.
+deploy the approved release through the explicit provider command for that
+client. Alpha is always deployed through Cloudflare with
+`CLOUDFLARE_ENV=alpha`; Vercel is rollback-only and must not be used for new
+Alpha releases. The result records the migration target, expected repository
+SHA, expected Main source SHA, deployment target, and deployment readiness
+rather than silently deploying an unreviewed branch.
 
 If a forward migration is approved and pending for a client, use `--apply-db`
 with `--apply`; the engine invokes only normal `supabase db push --linked`.

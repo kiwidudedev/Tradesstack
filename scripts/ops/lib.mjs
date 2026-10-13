@@ -148,7 +148,7 @@ export function validateRegistry(registry, knownReleaseIds = []) {
       if (!scheduler || typeof scheduler !== "object" || Array.isArray(scheduler)) {
         errors.push(`${client.clientId}: operations.scheduler must be an object`);
       } else {
-        if (!["vercel-cron", "external"].includes(scheduler.adapter)) {
+        if (!["cloudflare-cron", "vercel-cron", "external"].includes(scheduler.adapter)) {
           errors.push(`${client.clientId}: operations.scheduler.adapter invalid`);
         }
         if (scheduler.dispatcherPath !== "/api/cron/dispatch") {

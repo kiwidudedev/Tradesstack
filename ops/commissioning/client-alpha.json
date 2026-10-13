@@ -3,6 +3,8 @@
   "phase": "1X-A3",
   "capturedAt": "2026-09-29T20:35:00+13:00",
   "currentAudit": {
+    "currentDeploymentProvider": "Cloudflare Workers via explicit CLOUDFLARE_ENV=alpha; Vercel is rollback-only",
+    "currentDeploymentUrl": "https://tradesstack-alpha.tradesstack.workers.dev",
     "supabaseWritesDuringAudit": false,
     "hostedDeploymentId": "dpl_DxNCmWPz15reQQt7A613HdF7eNAM",
     "hostedDeploymentStatus": "READY",

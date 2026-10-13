@@ -7,16 +7,16 @@
   "scope": "Synthetic fictional Alpha only; no real customer data or users",
   "infrastructure": {
     "repository": "github:kiwidudedev/tradesstack-client-alpha",
-    "runtime": "vercel:hi-5577s-projects/tradesstack-client-alpha",
+    "runtime": "cloudflare:tradesstack-alpha",
     "database": "supabase:ibjyzpyuqupsxqakpzxj",
     "region": "ap-southeast-2",
-    "vercelPlan": "Hobby",
+    "cloudflarePlan": "Workers Paid",
     "supabasePlan": "Free/NANO",
-    "productionUrl": "https://tradesstack-client-alpha.vercel.app/",
-    "lastRecordedDeployment": "dpl_5qkbsHXVkFPEYRm1D7s3eaYXeXhz",
+    "productionUrl": "https://tradesstack-alpha.tradesstack.workers.dev/",
+    "lastRecordedDeployment": "bc7ceaa4-1f0b-4ae7-8ecf-81b655641711",
     "lastRecordedRepositorySha": "a1526d51a0dd839dd5010050ca894f06b837519d",
-    "latestRepositorySha": "44777d2c6e1e8b58f294cc1404c4c7457b095dd7",
-    "masterReleaseSha": "444519472abaa120b71e61879c26fa00bc54eebd",
+    "latestRepositorySha": "b1657a8241765c6fce83045b0a4cb88ce971f90c",
+    "masterReleaseSha": "c63a483a00e20eb06927f74eb8541fbd603e3f05",
     "nextVersion": "16.3.8"
   },
   "recovery": {
@@ -38,7 +38,7 @@
     "clientExport": "SYNTHETIC_ALPHA_SQL_STORAGE_MANIFEST_GENERATED_TEMPORARILY",
     "offboarding": "DRY_RUN_DOCUMENTED; ALPHA NOT DELETED",
     "secretRotation": "DOCUMENTED; NO MATERIAL CREDENTIAL ROTATED",
-    "releaseProvenance": "MASTER_TO_ALPHA_REPOSITORY_TO_VERCEL_PROVEN_AND_HTTP_200",
+    "releaseProvenance": "MASTER_TO_ALPHA_REPOSITORY_TO_CLOUDFLARE_DEPLOYMENT_PROVEN_HTTP_200",
     "pendingMasterSecurityPatch": "RESOLVED_MASTER_SHA_C7DAD2F_ALPHA_COMMIT_A1526D5_DEPLOYMENT_DPL_5QKBSHXVKFPEYRM1D7S3EAYXEXHZ_READY"
   },
   "recoveryProof": {
