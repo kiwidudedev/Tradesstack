@@ -55,6 +55,20 @@ Alpha releases. The result records the migration target, expected repository
 SHA, expected Main source SHA, deployment target, and deployment readiness
 rather than silently deploying an unreviewed branch.
 
+Before each Alpha deployment, synchronize the public Supabase URL and
+publishable key used by the browser build with the matching Cloudflare Worker
+secrets, then run the explicit deploy command:
+
+```text
+set -a; source .env.local; set +a
+printf '%s' "$NEXT_PUBLIC_SUPABASE_URL" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL --env alpha
+printf '%s' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_ANON_KEY --env alpha
+CLOUDFLARE_ENV=alpha npm run cloudflare:deploy
+```
+
+Never commit the values or print them in logs. This keeps browser sign-in and
+Worker session validation on the same Supabase project and key.
+
 If a forward migration is approved and pending for a client, use `--apply-db`
 with `--apply`; the engine invokes only normal `supabase db push --linked`.
 If Supabase reports an older deferred or ambiguous migration, that client is
