@@ -55,15 +55,16 @@ Alpha releases. The result records the migration target, expected repository
 SHA, expected Main source SHA, deployment target, and deployment readiness
 rather than silently deploying an unreviewed branch.
 
-Before each Alpha deployment, synchronize the public Supabase URL and
-publishable key used by the browser build with the matching Cloudflare Worker
-secrets, then run the explicit deploy command:
+Before each Alpha deployment, use Alpha's dedicated Supabase project
+(`ibjyzpyuqupsxqakpzxj`) for both the browser build and the matching Cloudflare
+Worker secrets. Do not source the hosted-development `.env.local` values:
 
 ```text
-set -a; source .env.local; set +a
-printf '%s' "$NEXT_PUBLIC_SUPABASE_URL" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL --env alpha
-printf '%s' "$NEXT_PUBLIC_SUPABASE_ANON_KEY" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_ANON_KEY --env alpha
-CLOUDFLARE_ENV=alpha npm run cloudflare:deploy
+ALPHA_SUPABASE_URL=https://ibjyzpyuqupsxqakpzxj.supabase.co
+ALPHA_SUPABASE_ANON_KEY="$(supabase projects api-keys --project-ref ibjyzpyuqupsxqakpzxj -o json | node --input-type=module -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).find((x)=>x.name==="anon")?.api_key??""))')"
+printf '%s' "$ALPHA_SUPABASE_URL" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL --env alpha
+printf '%s' "$ALPHA_SUPABASE_ANON_KEY" | npx wrangler secret put NEXT_PUBLIC_SUPABASE_ANON_KEY --env alpha
+NEXT_PUBLIC_SUPABASE_URL="$ALPHA_SUPABASE_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ALPHA_SUPABASE_ANON_KEY" CLOUDFLARE_ENV=alpha npm run cloudflare:deploy
 ```
 
 Never commit the values or print them in logs. This keeps browser sign-in and
