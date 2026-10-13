@@ -5,7 +5,7 @@
   "displayLabel": "TradesStack 1.1.4",
   "approvedReleaseManifest": "ops/releases/1.1.4.json",
   "approvedSourceSha": "c63a483a00e20eb06927f74eb8541fbd603e3f05",
-  "currentMainHead": "992d44d527badb06e26ff4d382f91a82e9542bd5",
+  "currentMainHead": "e3428cda5e3eaf22008c9e26aedce9714f02d4ac",
   "releaseFingerprint": "ceafecd2e705feb37c41fcee56e8a15c80d095db91d8ce283c41e43176e9abfe",
   "migrationTarget": "20261010123000_fix_r2_activation_actor_permission.sql",
   "releaseDate": "2026-10-13",
