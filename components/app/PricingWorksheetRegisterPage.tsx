@@ -69,6 +69,11 @@ import {
   type PricingWorksheetOwnerContextValue,
 } from "@/lib/pricing-worksheet-owner";
 import { buildPricingWorksheetRegisterLoadScopeKey } from "@/lib/pricing-worksheet-register-scope";
+import {
+  createPricingWorksheetFromTemplate,
+  listPricingWorksheetTemplates,
+  type PricingWorksheetTemplate,
+} from "@/lib/pricing-worksheet-templates";
 
 type PricingWorksheetRegisterRow = Pick<
   Database["public"]["Tables"]["opportunity_pricing_worksheets"]["Row"],
@@ -259,6 +264,12 @@ export function SharedPricingWorksheetRegisterPage({
   const [isCreating, setIsCreating] = useState(false);
   const [mutatingWorksheetId, setMutatingWorksheetId] = useState<string | null>(null);
   const [actionDialog, setActionDialog] = useState<WorksheetActionDialog>(null);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [templateRows, setTemplateRows] = useState<PricingWorksheetTemplate[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [templateCategory, setTemplateCategory] = useState("all");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isOverlayWorksheetDirty, setIsOverlayWorksheetDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedRegisterScopeKey, setLoadedRegisterScopeKey] = useState<string | null>(null);
@@ -501,7 +512,24 @@ export function SharedPricingWorksheetRegisterPage({
     worksheetOwner.projectId,
   ]);
 
-  const createWorksheet = useCallback(async () => {
+  const openTemplatePicker = useCallback(async () => {
+    if (!supabase || !session?.organizationId) return;
+    setIsTemplatePickerOpen(true);
+    setIsLoadingTemplates(true);
+    setError(null);
+    try {
+      setTemplateRows(await listPricingWorksheetTemplates({
+        supabase,
+        organizationId: session.organizationId,
+      }));
+    } catch (templateError) {
+      setError(mapPricingWorksheetUiErrorMessage(templateError, "Unable to load pricing worksheet templates."));
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  }, [session?.organizationId, supabase]);
+
+  const createWorksheet = useCallback(async (template?: PricingWorksheetTemplate) => {
     if (!supabase || !session?.id || isCreating) {
       return;
     }
@@ -515,20 +543,33 @@ export function SharedPricingWorksheetRegisterPage({
     setError(null);
 
     try {
-      const worksheet = createDefaultWorksheetData({ sheetName: "New Worksheet" });
-      const workbook = await createOpportunityPricingWorkbook({
-        supabase,
-        organizationId: sharedOpportunity.organizationId,
-        opportunityId: sharedOpportunity.opportunityId,
-        projectId: worksheetOwner.ownerType === "project" ? worksheetOwner.projectId : null,
-        projectOwned: worksheetOwner.ownerType === "project",
-        name: "New Worksheet",
-        tradePackage: null,
-        worksheet,
-        pricingSummary: createDefaultWorksheetPricingSummary(),
-        extractedPricingData: createDefaultWorksheetExtractedPricingData(worksheet.version),
-        userId: session.id,
-      });
+      const workbook = template
+        ? await createPricingWorksheetFromTemplate({
+            supabase,
+            organizationId: sharedOpportunity.organizationId,
+            templateVersionId: template.currentVersionId ?? "",
+            opportunityId: sharedOpportunity.opportunityId,
+            projectId: worksheetOwner.ownerType === "project" ? worksheetOwner.projectId : null,
+            userId: session.id,
+            name: template.name,
+            requestId: crypto.randomUUID(),
+          })
+        : await (async () => {
+            const worksheet = createDefaultWorksheetData({ sheetName: "New Worksheet" });
+            return createOpportunityPricingWorkbook({
+              supabase,
+              organizationId: sharedOpportunity.organizationId,
+              opportunityId: sharedOpportunity.opportunityId,
+              projectId: worksheetOwner.ownerType === "project" ? worksheetOwner.projectId : null,
+              projectOwned: worksheetOwner.ownerType === "project",
+              name: "New Worksheet",
+              tradePackage: null,
+              worksheet,
+              pricingSummary: createDefaultWorksheetPricingSummary(),
+              extractedPricingData: createDefaultWorksheetExtractedPricingData(worksheet.version),
+              userId: session.id,
+            });
+          })();
 
       setWorksheetRows((current) => [
         {
@@ -560,14 +601,16 @@ export function SharedPricingWorksheetRegisterPage({
           sheetId: workbook.sheets[0]?.id ?? workbook.id,
           sheetName: workbook.sheets[0]?.name ?? "New Worksheet",
           worksheetId: workbook.id,
-          worksheetName: "New Worksheet",
-          tradePackage: null,
+          worksheetName: template?.name ?? "New Worksheet",
+          tradePackage: workbook.tradePackage,
           worksheet: buildOpportunityPricingWorkbookEditorRecord(workbook).worksheet,
           eventType: "worksheet_created",
           eventFamily: "entity_lifecycle",
           action: "created",
         })
       );
+      setIsTemplatePickerOpen(false);
+      setSelectedTemplateId(null);
     } catch (createError) {
       setError(mapPricingWorksheetUiErrorMessage(createError, "Unable to create pricing worksheet."));
     } finally {
@@ -949,21 +992,38 @@ export function SharedPricingWorksheetRegisterPage({
     }
   }, [actionDialog, requireWritableContext, worksheetOwner]);
 
+  const templateCategories = Array.from(new Set(templateRows.map((template) => template.category).filter(Boolean))) as string[];
+  const visibleTemplates = templateRows.filter((template) => {
+    const matchesSearch = `${template.name} ${template.category ?? ""} ${template.description ?? ""}`
+      .toLowerCase()
+      .includes(templateSearch.trim().toLowerCase());
+    return matchesSearch && (templateCategory === "all" || template.category === templateCategory);
+  });
+  const selectedTemplate = visibleTemplates.find((template) => template.id === selectedTemplateId) ?? null;
+
   return (
     <div className="-mb-8 w-full space-y-6 bg-[var(--background)]">
       <OperationalModuleHeader
         title="Pricing Worksheets"
         description={`Create and manage pricing worksheets for this ${contextLabel}.`}
         actions={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void createWorksheet()}
-            disabled={isCreating || isLoading || !canManageWorksheets}
-          >
-            <Plus className="h-4 w-4" />
-            {isCreating ? "Creating..." : "New Worksheet"}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="secondary" disabled={isCreating || isLoading || !canManageWorksheets}>
+                <Plus className="h-4 w-4" />
+                {isCreating ? "Creating..." : "New Worksheet"}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[12rem] rounded-[10px] p-1">
+              <DropdownMenuItem onSelect={() => void createWorksheet()} className="h-9 rounded-[6px] px-2 text-sm">
+                Blank Worksheet
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void openTemplatePicker()} className="h-9 rounded-[6px] px-2 text-sm">
+                From Template
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
 
@@ -1199,6 +1259,61 @@ export function SharedPricingWorksheetRegisterPage({
             </Button>
             <Button type="button" onClick={() => void archiveWorksheet()} disabled={mutatingWorksheetId !== null}>
               {mutatingWorksheetId ? "Archiving..." : "Archive"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isTemplatePickerOpen} onOpenChange={setIsTemplatePickerOpen}>
+        <DialogContent className="w-full max-w-[720px] p-6">
+          <DialogHeader>
+            <DialogTitle>Choose a Pricing Worksheet Template</DialogTitle>
+            <DialogDescription>Create a new independent workbook from a company template.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <Input value={templateSearch} onChange={(event) => setTemplateSearch(event.target.value)} placeholder="Search templates" className="sm:flex-1" />
+            <div className="relative w-full shrink-0 sm:w-64">
+              <select
+                value={templateCategory}
+                onChange={(event) => setTemplateCategory(event.target.value)}
+                className="h-11 w-full appearance-none rounded-[10px] border border-[var(--border)] bg-white px-4 pr-11 text-base text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+                aria-label="Filter templates by category"
+              >
+                <option value="all">All categories</option>
+                {templateCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+              <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-secondary)]" strokeWidth={1.75} />
+            </div>
+          </div>
+          <div className="mt-4 max-h-[360px] space-y-2 overflow-auto">
+            {isLoadingTemplates ? <p className="py-8 text-center text-sm text-[var(--text-secondary)]">Loading templates...</p> : null}
+            {!isLoadingTemplates && visibleTemplates.length === 0 ? <p className="py-8 text-center text-sm text-[var(--text-secondary)]">No active templates found.</p> : null}
+            {visibleTemplates.map((template) => (
+              <button
+                type="button"
+                key={template.id}
+                onClick={() => setSelectedTemplateId(template.id)}
+                className={`w-full rounded-[12px] border p-4 text-left transition-colors ${selectedTemplateId === template.id ? "border-[var(--brand-blue)] bg-[var(--primary-soft)]" : "border-[var(--border)] bg-white hover:bg-[var(--surface-muted)]"}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[var(--text-primary)]">{template.name}</p>
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">{template.category ?? "Uncategorised"} · Updated {formatUpdatedAt(template.updatedAt)}</p>
+                    {template.description ? <p className="mt-2 text-sm text-[var(--text-secondary)]">{template.description}</p> : null}
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] text-[var(--text-secondary)]">Template</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <DialogFooter className="mt-5">
+            <Button type="button" variant="secondary" onClick={() => setIsTemplatePickerOpen(false)}>Cancel</Button>
+            <Button
+              type="button"
+              onClick={() => selectedTemplate && void createWorksheet(selectedTemplate)}
+              disabled={!selectedTemplate || isCreating}
+            >
+              {isCreating ? "Creating..." : "Use Template"}
             </Button>
           </DialogFooter>
         </DialogContent>

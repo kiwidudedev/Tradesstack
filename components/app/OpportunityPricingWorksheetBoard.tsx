@@ -273,6 +273,7 @@ import {
   startPricingWorksheetPerformanceMeasure,
 } from "@/lib/pricing-worksheet-performance";
 import { mapPricingWorksheetUiErrorMessage } from "@/lib/pricing-worksheet-ui-errors";
+import { savePricingWorksheetAsTemplate, savePricingWorksheetTemplateVersion } from "@/lib/pricing-worksheet-templates";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { Json } from "@/lib/supabase/types";
 import { buildPricingWorksheetAiContext } from "@/lib/pricing-worksheet-ai-context";
@@ -2111,14 +2112,25 @@ export function OpportunityPricingWorksheetBoard({
   initialSheetId,
   onClose,
   onDirtyStateChange,
+  templateEditor,
 }: {
   worksheetId?: string;
   initialSheetId?: string | null;
   onClose?: () => void;
   onDirtyStateChange?: (isDirty: boolean) => void;
+  templateEditor?: {
+    templateId: string;
+    versionId: string;
+    versionNumber: number;
+    name?: string;
+    workbook: OpportunityPricingWorkbook;
+    inputManifest?: import("@/lib/pricing-worksheet-templates").PricingWorksheetTemplateInput[];
+    onSaved?: (versionNumber: number) => void;
+  };
 }) {
   const router = useRouter();
   const worksheetOwner = usePricingWorksheetOwner();
+  const isTemplateEditor = Boolean(templateEditor);
   const { session, isLoading: isAuthLoading } = useAuth();
   const worksheetOpportunityId = worksheetOwner.opportunityId;
   const worksheetProjectId = worksheetOwner.projectId;
@@ -2152,6 +2164,11 @@ export function OpportunityPricingWorksheetBoard({
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateCategory, setTemplateCategory] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [isGeneratingAiPreview, setIsGeneratingAiPreview] = useState(false);
@@ -2426,6 +2443,13 @@ export function OpportunityPricingWorksheetBoard({
   const hasUnsavedWorksheetChanges = isDirty || worksheetTitleAutosave.status !== "idle";
 
   persistWorksheetTitleRef.current = async (nextTitle) => {
+    if (isTemplateEditor) {
+      return {
+        ok: true,
+        title: nextTitle,
+        updatedAt: new Date().toISOString(),
+      };
+    }
     const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
     const sheetId = worksheetSheetIdRef.current;
     const organizationId = session?.organizationId;
@@ -2979,7 +3003,9 @@ export function OpportunityPricingWorksheetBoard({
     };
   }, [activeCellKey, activeEditor, editingCellValue, formulaBarValue]);
   const worksheetDisplayName =
-    worksheetTitleAutosave.status !== "idle"
+    isTemplateEditor && templateEditor?.name
+      ? templateEditor.name
+      : worksheetTitleAutosave.status !== "idle"
       ? normalizePricingWorksheetTitle(worksheetTitleDraft) || worksheetTitleAutosave.confirmedTitle
       : worksheetName?.trim() || worksheet.sheetName.trim() || worksheetTitleAutosave.confirmedTitle;
   const getWorksheetPersistenceName = useCallback(() => resolveWorksheetPersistenceName({
@@ -4834,6 +4860,19 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
+    if (isTemplateEditor && templateEditor) {
+      const scopeKey = `${session?.organizationId ?? templateEditor.workbook.organizationId}:template:${templateEditor.templateId}:${templateEditor.versionId}`;
+      activeWorksheetLoadScopeKeyRef.current = scopeKey;
+      if (loadedWorksheetScopeKeyRef.current === scopeKey) {
+        setIsLoadingWorksheet(false);
+        return;
+      }
+      loadedWorksheetScopeKeyRef.current = scopeKey;
+      hydrateWorkbookEditorState(templateEditor.workbook, requestedSheetIdRef.current ?? templateEditor.workbook.lastActiveSheetId);
+      setIsLoadingWorksheet(false);
+      return;
+    }
+
     if (!supabase || !session?.organizationId || !worksheetOpportunityId) {
       setIsLoadingWorksheet(false);
       setError("Unable to load the pricing worksheet right now.");
@@ -5001,6 +5040,7 @@ export function OpportunityPricingWorksheetBoard({
     explicitWorksheetId,
     hydrateWorkbookEditorState,
     isAuthLoading,
+    isTemplateEditor,
     resetAiPreviewState,
     resetWorksheetViewState,
     session?.organizationId,
@@ -5008,6 +5048,7 @@ export function OpportunityPricingWorksheetBoard({
     supabase,
     synchronizeLoadedWorksheetTitle,
     updateSheetUrlState,
+    templateEditor,
   ]);
 
   const applyCommittedWorksheetChange = useCallback((
@@ -7775,7 +7816,7 @@ export function OpportunityPricingWorksheetBoard({
   ]);
 
   const saveWorksheet = async (options?: { silent?: boolean }) => {
-    if (!supabase || !session?.organizationId || !session?.id || !worksheetOpportunityId) {
+    if (!supabase || !session?.organizationId || !session?.id || (!worksheetOpportunityId && !isTemplateEditor)) {
       setError("Pricing worksheet save is not ready. Please refresh and try again.");
       return false;
     }
@@ -7824,6 +7865,64 @@ export function OpportunityPricingWorksheetBoard({
         calculatedAt: new Date().toISOString(),
       });
       const saveRequestId = crypto.randomUUID();
+
+      if (isTemplateEditor && templateEditor) {
+        const templateSheets = workbookSheetsRef.current.map((sheet) => {
+          if (sheet.id !== worksheetSheetIdRef.current) {
+            return {
+              name: sheet.name,
+              sheetOrder: sheet.sheetOrder,
+              isDefault: sheet.isDefault,
+              worksheetData: sheet.worksheet,
+              pricingSummary: sheet.pricingSummary,
+              extractedPricingData: sheet.extractedPricingData,
+              version: sheet.version,
+            };
+          }
+          return {
+            name: worksheetPersistenceName,
+            sheetOrder: sheet.sheetOrder,
+            isDefault: sheet.isDefault,
+            worksheetData: syncedWorksheet,
+            pricingSummary: nextPricingSummary,
+            extractedPricingData,
+            version: sheet.version,
+          };
+        });
+        const savedTemplate = await savePricingWorksheetTemplateVersion({
+          supabase,
+          organizationId: session.organizationId,
+          templateId: templateEditor.templateId,
+          expectedVersionId: templateEditor.versionId,
+          userId: session.id,
+          sheets: templateSheets,
+          inputManifest: templateEditor.inputManifest,
+          requestId: saveRequestId,
+        });
+        const shouldApplyTemplateSnapshot = shouldApplyWorksheetSaveSnapshot({
+          currentRevision: worksheetMutationRevisionRef.current,
+          savedRevision: saveRevision,
+        });
+        if (shouldApplyTemplateSnapshot) {
+          setWorksheet(syncedWorksheet);
+          worksheetRef.current = syncedWorksheet;
+          pricingSummaryRef.current = nextPricingSummary;
+          setPricingSummary(nextPricingSummary);
+          setWorkbookSheets((current) => current.map((sheet) => sheet.id === worksheetSheetIdRef.current ? {
+            ...sheet,
+            name: worksheetPersistenceName,
+            worksheet: syncedWorksheet,
+            pricingSummary: nextPricingSummary,
+            extractedPricingData,
+            updatedAt: new Date().toISOString(),
+          } : sheet));
+          setIsDirty(false);
+          setLastSavedAt(new Date().toISOString());
+          setMessage("New template version saved.");
+          templateEditor.onSaved?.(savedTemplate.version.versionNumber);
+        }
+        return shouldApplyTemplateSnapshot;
+      }
 
       const targetWorksheetId = explicitWorksheetId ?? worksheetId;
       let persistedWorkbook: OpportunityPricingWorkbook | null = null;
@@ -8014,16 +8113,20 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    const didSaveTitle = await worksheetTitleAutosaveControllerRef.current?.flush();
-    if (didSaveTitle === false) {
-      return;
-    }
-
-    if (isDirty) {
-      const didSave = await saveWorksheet({ silent: true });
-      if (!didSave) {
+    if (!isTemplateEditor) {
+      const didSaveTitle = await worksheetTitleAutosaveControllerRef.current?.flush();
+      if (didSaveTitle === false) {
         return;
       }
+
+      if (isDirty) {
+        const didSave = await saveWorksheet({ silent: true });
+        if (!didSave) {
+          return;
+        }
+      }
+    } else if (isDirty && !window.confirm("Discard unsaved template changes?")) {
+      return;
     }
 
     onClose?.();
@@ -8035,6 +8138,48 @@ export function OpportunityPricingWorksheetBoard({
       return false;
     }
     return isDirty ? saveWorksheet() : true;
+  };
+
+  const saveCurrentWorkbookAsTemplate = async () => {
+    if (!supabase || !session?.organizationId || !session.id || worksheetOwner.readOnly) {
+      setError("You do not have permission to create pricing worksheet templates.");
+      return;
+    }
+    const name = templateName.trim();
+    if (!name) {
+      setError("Template name cannot be blank.");
+      return;
+    }
+    setIsSavingTemplate(true);
+    setError(null);
+    try {
+      const didSaveTitle = await worksheetTitleAutosaveControllerRef.current?.flush();
+      if (didSaveTitle === false) return;
+      if (isDirty && !(await saveWorksheet({ silent: true }))) return;
+      const workbookId = explicitWorksheetId ?? worksheetIdRef.current;
+      if (!workbookId) {
+        throw new Error("Save the worksheet before creating a template.");
+      }
+      await savePricingWorksheetAsTemplate({
+        supabase,
+        organizationId: session.organizationId,
+        workbookId,
+        userId: session.id,
+        name,
+        category: templateCategory.trim() || null,
+        description: templateDescription.trim() || null,
+        requestId: crypto.randomUUID(),
+      });
+      setIsTemplateDialogOpen(false);
+      setTemplateName("");
+      setTemplateCategory("");
+      setTemplateDescription("");
+      setMessage("Template saved. Your original worksheet has not been changed.");
+    } catch (templateError) {
+      setError(mapPricingWorksheetUiErrorMessage(templateError, "Unable to save the pricing worksheet template."));
+    } finally {
+      setIsSavingTemplate(false);
+    }
   };
 
   saveWorksheetRef.current = saveWorksheet;
@@ -8068,7 +8213,18 @@ export function OpportunityPricingWorksheetBoard({
     setMaterialTarget(null);
     consumedMaterialTargetRef.current = null;
 
-    if (isDirty) {
+    if (isTemplateEditor && isDirty && worksheetSheetIdRef.current) {
+      workbookSheetsRef.current = workbookSheetsRef.current.map((sheet) => sheet.id === worksheetSheetIdRef.current ? {
+        ...sheet,
+        name: getWorksheetPersistenceName(),
+        worksheet: worksheetRef.current,
+        pricingSummary: pricingSummaryRef.current,
+        extractedPricingData,
+        updatedAt: new Date().toISOString(),
+      } : sheet);
+      setWorkbookSheets(workbookSheetsRef.current);
+      setIsDirty(false);
+    } else if (isDirty) {
       const didSave = await saveWorksheetRef.current?.({ silent: true });
       if (!didSave) {
         return;
@@ -8076,30 +8232,32 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     const nextSheet = workbookSheetsRef.current.find((sheet) => sheet.id === nextSheetId);
-    const currentWorkbookId = explicitWorksheetId ?? worksheetId;
+    const currentWorkbookId = explicitWorksheetId ?? worksheetId ?? templateEditor?.versionId ?? null;
     if (!nextSheet || !currentWorkbookId || !session?.organizationId || !supabase) {
       return;
     }
 
     await cancelActiveAiJob();
 
-    try {
-      await setOpportunityPricingWorkbookLastActiveSheet({
-        supabase,
-        organizationId: session.organizationId,
-        opportunityId: worksheetOpportunityId,
-        projectId: worksheetProjectId,
-        projectOwned: worksheetOwner.ownerType === "project",
-        quoteId: worksheetOwner.quoteId,
-        variationId: worksheetOwner.variationId,
-        workbookId: currentWorkbookId,
-        sheetId: nextSheetId,
-      });
-      persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
-      persistedLastActiveSheetIdRef.current = nextSheetId;
-    } catch {
-      persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
-      persistedLastActiveSheetIdRef.current = null;
+    if (!isTemplateEditor) {
+      try {
+        await setOpportunityPricingWorkbookLastActiveSheet({
+          supabase,
+          organizationId: session.organizationId,
+          opportunityId: worksheetOpportunityId,
+          projectId: worksheetProjectId,
+          projectOwned: worksheetOwner.ownerType === "project",
+          quoteId: worksheetOwner.quoteId,
+          variationId: worksheetOwner.variationId,
+          workbookId: currentWorkbookId,
+          sheetId: nextSheetId,
+        });
+        persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
+        persistedLastActiveSheetIdRef.current = nextSheetId;
+      } catch {
+        persistedLastActiveWorkbookIdRef.current = currentWorkbookId;
+        persistedLastActiveSheetIdRef.current = null;
+      }
     }
 
     const workbookSnapshot: OpportunityPricingWorkbook = {
@@ -8146,9 +8304,45 @@ export function OpportunityPricingWorksheetBoard({
     worksheetTradePackage,
     updateSheetUrlState,
     variationCommercialMapping.session,
+    isTemplateEditor,
+    extractedPricingData,
+    templateEditor,
   ]);
 
   const addBlankWorkbookSheet = useCallback(async () => {
+    if (isTemplateEditor && session?.id && worksheetId) {
+      if (isMutatingPages) return;
+      setIsMutatingPages(true);
+      setError(null);
+      try {
+        const nextSheetNumber = workbookSheetsRef.current.length + 1;
+        const nextWorksheet = createDefaultWorksheetData({ sheetName: `Page ${nextSheetNumber}` });
+        const now = new Date().toISOString();
+        const createdSheet: OpportunityPricingWorkbookSheet = {
+          createdAt: now,
+          createdBy: session.id,
+          extractedPricingData: createDefaultWorksheetExtractedPricingData(nextWorksheet.version),
+          id: crypto.randomUUID(),
+          isDefault: false,
+          name: `Page ${nextSheetNumber}`,
+          pricingSummary: createDefaultWorksheetPricingSummary(),
+          sheetOrder: workbookSheetsRef.current.length,
+          updatedAt: now,
+          updatedBy: session.id,
+          version: nextWorksheet.version,
+          workbookId: worksheetId,
+          worksheet: nextWorksheet,
+        };
+        const nextSheets = [...workbookSheetsRef.current, createdSheet];
+        workbookSheetsRef.current = nextSheets;
+        setWorkbookSheets(nextSheets);
+        setIsPagesTrayOpen(true);
+        await switchToWorkbookSheet(createdSheet.id);
+      } finally {
+        setIsMutatingPages(false);
+      }
+      return;
+    }
     if (!supabase || !session?.organizationId || !session?.id || !worksheetId || isMutatingPages) {
       return;
     }
@@ -8195,6 +8389,7 @@ export function OpportunityPricingWorksheetBoard({
   }, [
     isDirty,
     isMutatingPages,
+    isTemplateEditor,
     session?.id,
     session?.organizationId,
     worksheetOpportunityId,
@@ -8204,6 +8399,39 @@ export function OpportunityPricingWorksheetBoard({
   ]);
 
   const duplicateWorkbookSheet = useCallback(async (sheetId: string) => {
+    if (isTemplateEditor && session?.id && worksheetId) {
+      if (isMutatingPages) return;
+      const sourceSheet = workbookSheetsRef.current.find((sheet) => sheet.id === sheetId);
+      if (!sourceSheet) return;
+      setIsMutatingPages(true);
+      setError(null);
+      try {
+        const now = new Date().toISOString();
+        const name = `${sourceSheet.name} Copy`;
+        const duplicatedSheet: OpportunityPricingWorkbookSheet = {
+          ...sourceSheet,
+          createdAt: now,
+          createdBy: session.id,
+          id: crypto.randomUUID(),
+          name,
+          sheetOrder: workbookSheetsRef.current.length,
+          updatedAt: now,
+          updatedBy: session.id,
+          workbookId: worksheetId,
+          worksheet: { ...cloneWorksheetData(sourceSheet.worksheet), sheetName: name },
+          pricingSummary: cloneJson(sourceSheet.pricingSummary),
+          extractedPricingData: cloneJson(sourceSheet.extractedPricingData),
+        };
+        const nextSheets = [...workbookSheetsRef.current, duplicatedSheet];
+        workbookSheetsRef.current = nextSheets;
+        setWorkbookSheets(nextSheets);
+        setIsPagesTrayOpen(true);
+        await switchToWorkbookSheet(duplicatedSheet.id);
+      } finally {
+        setIsMutatingPages(false);
+      }
+      return;
+    }
     if (!supabase || !session?.organizationId || !session?.id || !worksheetId || isMutatingPages) {
       return;
     }
@@ -8255,6 +8483,7 @@ export function OpportunityPricingWorksheetBoard({
   }, [
     isDirty,
     isMutatingPages,
+    isTemplateEditor,
     session?.id,
     session?.organizationId,
     worksheetOpportunityId,
@@ -8265,6 +8494,28 @@ export function OpportunityPricingWorksheetBoard({
   ]);
 
   const confirmPageRename = useCallback(async () => {
+    if (pageDialog?.type === "rename" && isTemplateEditor) {
+      const nextName = pageDialog.value.trim();
+      if (!nextName) {
+        setError("Worksheet page name cannot be blank.");
+        return;
+      }
+      const nextSheets = workbookSheetsRef.current.map((sheet) => (
+        sheet.id === pageDialog.sheetId
+          ? { ...sheet, name: nextName, worksheet: { ...sheet.worksheet, sheetName: nextName }, updatedAt: new Date().toISOString() }
+          : sheet
+      ));
+      workbookSheetsRef.current = nextSheets;
+      setWorkbookSheets(nextSheets);
+      if (pageDialog.sheetId === worksheetSheetId) {
+        setWorksheetName(nextName);
+        setWorksheetTitleDraft(nextName);
+        setWorksheetTitleAutosave((current) => ({ ...current, confirmedTitle: nextName, draftTitle: nextName, status: "idle" }));
+      }
+      setPageDialog(null);
+      setIsDirty(true);
+      return;
+    }
     if (pageDialog?.type !== "rename" || !supabase || !session?.organizationId || !session?.id || !worksheetId) {
       return;
     }
@@ -8320,6 +8571,7 @@ export function OpportunityPricingWorksheetBoard({
       setIsMutatingPages(false);
     }
   }, [
+    isTemplateEditor,
     pageDialog,
     session?.id,
     session?.organizationId,
@@ -8331,6 +8583,25 @@ export function OpportunityPricingWorksheetBoard({
   ]);
 
   const confirmPageDelete = useCallback(async () => {
+    if (pageDialog?.type === "delete" && isTemplateEditor) {
+      if (workbookSheetsRef.current.length <= 1) {
+        setError("You must keep at least one worksheet page.");
+        return;
+      }
+      const remainingSheets = workbookSheetsRef.current.filter((sheet) => sheet.id !== pageDialog.sheetId);
+      if (pageDialog.sheetId === worksheetSheetId) {
+        const fallbackSheetId = remainingSheets[0]?.id;
+        if (fallbackSheetId) {
+          await switchToWorkbookSheet(fallbackSheetId);
+        }
+      }
+      const normalizedSheets = remainingSheets.map((sheet, index) => ({ ...sheet, sheetOrder: index }));
+      workbookSheetsRef.current = normalizedSheets;
+      setWorkbookSheets(normalizedSheets);
+      setPageDialog(null);
+      setIsDirty(true);
+      return;
+    }
     if (pageDialog?.type !== "delete" || !supabase || !session?.organizationId || !session?.id || !worksheetId) {
       return;
     }
@@ -8389,6 +8660,7 @@ export function OpportunityPricingWorksheetBoard({
     }
   }, [
     isDirty,
+    isTemplateEditor,
     pageDialog,
     session?.id,
     session?.organizationId,
@@ -9748,6 +10020,7 @@ export function OpportunityPricingWorksheetBoard({
                   </button>
                 )}
                 <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-white/75">
+                  {isTemplateEditor ? <span className="rounded-full bg-white/15 px-2 py-0.5 font-semibold text-white/90">Template editor</span> : null}
                   <span
                     aria-hidden="true"
                     className={`inline-block h-2 w-2 rounded-full ${
@@ -9827,8 +10100,18 @@ export function OpportunityPricingWorksheetBoard({
                 }
                 className="h-9 rounded-[10px] border-0 bg-white/10 px-3 text-[12px] font-semibold text-white shadow-none hover:bg-white/15 disabled:bg-white/10 disabled:text-white/45"
               >
-                {isWorksheetSaveInProgress ? "Saving..." : "Save"}
+                {isWorksheetSaveInProgress ? "Saving..." : isTemplateEditor ? "Save New Version" : "Save"}
               </Button>
+              {!isTemplateEditor ? <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setIsTemplateDialogOpen(true)}
+                disabled={!canMutateWorksheet || isWorksheetSaveInProgress || isLoadingWorksheet}
+                className="h-9 rounded-[10px] border-0 bg-white/10 px-3 text-[12px] font-semibold text-white shadow-none hover:bg-white/15 disabled:bg-white/10 disabled:text-white/45"
+              >
+                Save as Template
+              </Button> : null}
               {onClose ? (
                 <Button
                   type="button"
@@ -9884,7 +10167,7 @@ export function OpportunityPricingWorksheetBoard({
             className="ml-[60px] mt-2.5 w-fit max-w-[calc(100%-72px)] overflow-x-auto rounded-[14px] border border-[var(--border)] bg-white px-2.5 py-1.5 shadow-[var(--shadow-card-elevated)] outline-none"
           >
             <div className="flex min-w-max items-center gap-2">
-              <Button
+              {!isTemplateEditor ? <Button
                 type="button"
                 size="sm"
                 onClick={openAiDialog}
@@ -9893,8 +10176,8 @@ export function OpportunityPricingWorksheetBoard({
               >
                 <Sparkles className="h-3.5 w-3.5" />
                 Ask AI
-              </Button>
-              <div className="h-5 w-px bg-[var(--border)]" />
+              </Button> : null}
+              {!isTemplateEditor ? <div className="h-5 w-px bg-[var(--border)]" /> : null}
               <div className="flex items-center gap-1">
                 <Button
                   variant="secondary"
@@ -10001,7 +10284,7 @@ export function OpportunityPricingWorksheetBoard({
                 </DropdownMenuContent>
               </DropdownMenu>
               </div>
-              <Tooltip label="Browse Material Library">
+              {!isTemplateEditor ? <Tooltip label="Browse Material Library">
                 <Button
                   type="button"
                   variant="secondary"
@@ -10017,8 +10300,8 @@ export function OpportunityPricingWorksheetBoard({
                   <Boxes className="h-4 w-4" strokeWidth={1.75} />
                   Materials
                 </Button>
-              </Tooltip>
-              <Tooltip label="Browse Project Measures">
+              </Tooltip> : null}
+              {!isTemplateEditor ? <Tooltip label="Browse Project Measures">
                 <Button
                   type="button"
                   variant="secondary"
@@ -10034,9 +10317,10 @@ export function OpportunityPricingWorksheetBoard({
                   <Ruler className="h-4 w-4" strokeWidth={1.75} />
                   Measures
                 </Button>
-              </Tooltip>
+              </Tooltip> : null}
               <div className="h-5 w-px bg-[var(--border)]" />
               <div className="flex items-center gap-1">
+                <span className="hidden">
                 <Tooltip label="Fill colour">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
@@ -10128,6 +10412,7 @@ export function OpportunityPricingWorksheetBoard({
                   </DropdownMenuContent>
                 </DropdownMenu>
                 </Tooltip>
+                </span>
                 <Tooltip label="Borders">
                 <DropdownMenu>
                 <DropdownMenuTrigger asChild disabled={!canMutateWorksheet || !selectedRange}>
@@ -11560,6 +11845,55 @@ export function OpportunityPricingWorksheetBoard({
           onInsert={insertMeasureValue}
         />
       ) : null}
+      <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
+        <DialogContent className="w-full max-w-[520px] p-6">
+          <DialogHeader>
+            <DialogTitle>Save as Template</DialogTitle>
+            <DialogDescription>
+              Save the complete workbook as a company template. Your existing worksheet and its history will remain unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 space-y-4">
+            <label className="block text-sm font-medium text-[var(--text-primary)]">
+              Template name
+              <input
+                value={templateName}
+                onChange={(event) => setTemplateName(event.target.value)}
+                autoFocus
+                className="mt-1.5 h-10 w-full rounded-[10px] border border-[var(--border)] bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+                placeholder="Standard ceiling estimate"
+              />
+            </label>
+            <label className="block text-sm font-medium text-[var(--text-primary)]">
+              Category <span className="font-normal text-[var(--text-secondary)]">(optional)</span>
+              <input
+                value={templateCategory}
+                onChange={(event) => setTemplateCategory(event.target.value)}
+                className="mt-1.5 h-10 w-full rounded-[10px] border border-[var(--border)] bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+                placeholder="Ceilings"
+              />
+            </label>
+            <label className="block text-sm font-medium text-[var(--text-primary)]">
+              Description <span className="font-normal text-[var(--text-secondary)]">(optional)</span>
+              <textarea
+                value={templateDescription}
+                onChange={(event) => setTemplateDescription(event.target.value)}
+                rows={3}
+                className="mt-1.5 w-full resize-none rounded-[10px] border border-[var(--border)] bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
+                placeholder="Reusable estimating layout and standard formulas"
+              />
+            </label>
+          </div>
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="secondary" onClick={() => setIsTemplateDialogOpen(false)} disabled={isSavingTemplate}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void saveCurrentWorkbookAsTemplate()} disabled={isSavingTemplate || !templateName.trim()}>
+              {isSavingTemplate ? "Saving..." : "Save Template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <PricingWorksheetAiAssistDialog
         open={isAiDialogOpen}
         canApply={

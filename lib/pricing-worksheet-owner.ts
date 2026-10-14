@@ -1,4 +1,4 @@
-export type PricingWorksheetOwnerType = "opportunity" | "project" | "quote" | "variation";
+export type PricingWorksheetOwnerType = "opportunity" | "project" | "quote" | "variation" | "template";
 
 export interface PricingWorksheetOwnerContextValue {
   ownerType: PricingWorksheetOwnerType;
@@ -11,6 +11,23 @@ export interface PricingWorksheetOwnerContextValue {
   variationId: string | null;
   variationCode: string | null;
   readOnly: boolean;
+}
+
+export function buildPricingWorksheetTemplateOwner(input: {
+  organizationId: string;
+}): PricingWorksheetOwnerContextValue {
+  return {
+    ownerType: "template",
+    organizationId: input.organizationId,
+    opportunityId: null,
+    opportunitySlug: null,
+    projectId: null,
+    projectSlug: null,
+    quoteId: null,
+    variationId: null,
+    variationCode: null,
+    readOnly: false,
+  };
 }
 
 export function buildOpportunityPricingWorksheetOwner(input: {

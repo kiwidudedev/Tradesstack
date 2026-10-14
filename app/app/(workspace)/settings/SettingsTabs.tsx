@@ -13,12 +13,13 @@ const tabs = [
   { href: "/app/settings/platform-preferences", label: "Platform Preferences" },
 ];
 
-export function SettingsTabs({ canViewQATemplates = false }: { canViewQATemplates?: boolean }) {
+export function SettingsTabs({ canViewQATemplates = false, canViewPricingWorksheetTemplates = false }: { canViewQATemplates?: boolean; canViewPricingWorksheetTemplates?: boolean }) {
   const pathname = usePathname();
   const { session } = useAuth();
   const visibleTabs = [
     ...tabs,
     ...(canViewQATemplates ? [{ href: "/app/settings/qa-templates", label: "QA Templates" }] : []),
+    ...(canViewPricingWorksheetTemplates ? [{ href: "/app/settings/pricing-worksheet-templates", label: "Pricing Worksheet Templates" }] : []),
   ].filter((tab) => tab.href !== "/app/settings/users-permissions" || session?.role === "owner");
 
   return (
