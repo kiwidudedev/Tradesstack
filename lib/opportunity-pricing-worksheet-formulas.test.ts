@@ -230,6 +230,91 @@ describe("recalculateWorksheetFormulas", () => {
     expect(getCell(recalculated, "E3")?.displayValue).toBe("#ERROR!");
   });
 
+  it("recovers from a formula error when a dependency changes", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "E2", { formula: "=C2/D3" });
+
+    const errored = recalculateWorksheetFormulas(worksheet);
+    expect(getCell(errored, "E2")?.formula).toBe("=C2/D3");
+    expect(getCell(errored, "E2")?.displayValue).toBe("#DIV/0!");
+
+    setCell(errored, "D3", { value: 2 });
+    const recovered = recalculateWorksheetFormulas(errored);
+    expect(getCell(recovered, "E2")?.formula).toBe("=C2/D3");
+    expect(getCell(recovered, "E2")?.displayValue).toBe("5");
+  });
+
+  it("returns a controlled cycle error and does not recurse indefinitely", () => {
+    const worksheet = buildWorksheet();
+    setCell(worksheet, "E2", { formula: "=F2+1" });
+    setCell(worksheet, "F2", { formula: "=E2+1" });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+    expect(getCell(recalculated, "E2")?.displayValue).toBe("#CYCLE!");
+    expect(getCell(recalculated, "F2")?.displayValue).toBe("#CYCLE!");
+  });
+
+  it("recalculates dependent F3 and J48-style cells without poisoning the chain", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Dependency Chain Test",
+      rowCount: 48,
+      columnCount: 12,
+    });
+    setCell(worksheet, "B3", { value: 2 });
+    setCell(worksheet, "C3", { value: 4 });
+    setCell(worksheet, "F3", { formula: '=IF(AND(B3<>"",C3<>""),C3*2,"")' });
+    setCell(worksheet, "G48", { value: 3 });
+    setCell(worksheet, "I48", { value: 5 });
+    setCell(worksheet, "J48", { formula: "=F3*G48+I48" });
+
+    const initial = recalculateWorksheetFormulas(worksheet);
+    expect(getCell(initial, "F3")?.displayValue).toBe("8");
+    expect(getCell(initial, "J48")?.displayValue).toBe("29");
+
+    setCell(initial, "C3", { value: 6 });
+    const updated = recalculateWorksheetFormulas(initial);
+    expect(getCell(updated, "F3")?.displayValue).toBe("12");
+    expect(getCell(updated, "J48")?.displayValue).toBe("41");
+  });
+
+  it("recalculates the pricing-sheet M48/F3 dependency and recovers from zero", () => {
+    const worksheet = createDefaultWorksheetData({
+      sheetName: "Pricing Dependency Test",
+      rowCount: 48,
+      columnCount: 13,
+    });
+    setCell(worksheet, "F3", { value: 100 });
+    setCell(worksheet, "M45", { value: 1437.5 });
+    setCell(worksheet, "M34", { value: 1255.5375 });
+    setCell(worksheet, "M48", { formula: "=M45+M34" });
+    setCell(worksheet, "J48", { formula: "=M48/F3" });
+
+    const calculated = recalculateWorksheetFormulas(worksheet);
+    expect(getCell(calculated, "M48")?.displayValue).toBe("2693.0375");
+    expect(getCell(calculated, "J48")?.displayValue).toBe("26.930375");
+
+    setCell(calculated, "F3", { value: 0 });
+    const dividedByZero = recalculateWorksheetFormulas(calculated);
+    expect(getCell(dividedByZero, "J48")?.formula).toBe("=M48/F3");
+    expect(getCell(dividedByZero, "J48")?.displayValue).toBe("#DIV/0!");
+
+    setCell(dividedByZero, "F3", { value: 50 });
+    const recovered = recalculateWorksheetFormulas(dividedByZero);
+    expect(getCell(recovered, "J48")?.displayValue).toBe("53.86075");
+  });
+
+  it("recognizes common spreadsheet error literals without converting them to blanks", () => {
+    const worksheet = buildWorksheet();
+    ["#NAME?", "#N/A", "#NUM!", "#NULL!"].forEach((error, index) => {
+      setCell(worksheet, `E${index + 2}`, { formula: `=${error}` });
+    });
+
+    const recalculated = recalculateWorksheetFormulas(worksheet);
+    ["#NAME?", "#N/A", "#NUM!", "#NULL!"].forEach((error, index) => {
+      expect(getCell(recalculated, `E${index + 2}`)?.displayValue).toBe(error);
+    });
+  });
+
   it("rejects IFS formulas with invalid arity", () => {
     const worksheet = buildWorksheet();
     setCell(worksheet, "E2", { formula: "=IFS()" });

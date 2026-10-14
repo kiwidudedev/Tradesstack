@@ -17,6 +17,7 @@ import {
   type Ref,
   type SyntheticEvent as ReactSyntheticEvent,
   type UIEvent as ReactUIEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
   Bold as BoldIcon,
@@ -209,6 +210,7 @@ import {
 } from "@/lib/opportunity-pricing-worksheet-selection-aggregate";
 import {
   applyWorksheetClipboardPayloadToCells,
+  applyWorksheetPasteDimensions,
   applyWorksheetPasteToCells,
   buildWorksheetClipboardPayload,
   buildWorksheetCellKey,
@@ -607,10 +609,38 @@ function normalizeVariationPublishSection(
   return "Labour";
 }
 const WORKSHEET_VIEWPORT_FALLBACK_WIDTH = 1120;
-const WORKSHEET_ZOOM_LEVELS = [0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5] as const;
+const WORKSHEET_ZOOM_LEVELS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
+const WORKSHEET_ZOOM_STORAGE_PREFIX = "tradesstack:pricing-worksheet:zoom:v1";
+const WORKSHEET_CLIPBOARD_STORAGE_KEY = "tradesstack:pricing-worksheet:clipboard:v1";
 const DEFAULT_WORKSHEET_FONT_SIZE = 14;
 const MIN_WORKSHEET_FONT_SIZE = 6;
 const MAX_WORKSHEET_FONT_SIZE = 96;
+
+function persistWorksheetClipboardFallback(payload: WorksheetClipboardPayload, text: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(
+      WORKSHEET_CLIPBOARD_STORAGE_KEY,
+      JSON.stringify({ payload: serializeWorksheetClipboardPayload(payload), text }),
+    );
+  } catch {
+    // Clipboard and session storage can be unavailable in restricted contexts.
+  }
+}
+
+function readWorksheetClipboardFallback(text: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(WORKSHEET_CLIPBOARD_STORAGE_KEY) ?? "null") as {
+      payload?: unknown;
+      text?: unknown;
+    } | null;
+    if (!stored || stored.text !== text || typeof stored.payload !== "string") return null;
+    return parseWorksheetClipboardPayload(stored.payload);
+  } catch {
+    return null;
+  }
+}
 const FILL_SWATCHES = [
   // light / pastel row — slate, blue, green, orange, violet
   "#F1F5F9",
@@ -2193,6 +2223,18 @@ export function OpportunityPricingWorksheetBoard({
   const [worksheetViewportHeight, setWorksheetViewportHeight] = useState(WORKSHEET_VIEWPORT_FALLBACK_HEIGHT);
   const [worksheetViewportWidth, setWorksheetViewportWidth] = useState(WORKSHEET_VIEWPORT_FALLBACK_WIDTH);
   const [worksheetZoom, setWorksheetZoom] = useState(1);
+  const worksheetZoomStorageKey = useMemo(
+    () => [
+      WORKSHEET_ZOOM_STORAGE_PREFIX,
+      session?.organizationId ?? "unknown-org",
+      session?.id ?? "unknown-user",
+      worksheetOpportunityId ?? "unknown-opportunity",
+      explicitWorksheetId ?? worksheetId ?? "unsaved-workbook",
+      worksheetSheetId ?? "unsaved-sheet",
+    ].join(":"),
+    [explicitWorksheetId, session?.id, session?.organizationId, worksheetId, worksheetOpportunityId, worksheetSheetId],
+  );
+  const previousWorksheetZoomStorageKeyRef = useRef<string | null>(null);
   const [isPagesTrayOpen, setIsPagesTrayOpen] = useState(false);
   const [pageDialog, setPageDialog] = useState<WorksheetPageDialogState>(null);
   const [quotePublishDialog, setQuotePublishDialog] = useState<QuotePublishDialogState | null>(null);
@@ -2235,6 +2277,8 @@ export function OpportunityPricingWorksheetBoard({
     mode: "replace" | "add" | "extend";
     baseSelectionState: WorksheetMultiSelectionState;
   } | null>(null);
+  const selectionPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const selectionAutoScrollFrameRef = useRef<number | null>(null);
   const rangeDragAnchorCellKeyRef = useRef<string | null>(null);
   const formulaReferenceDragAnchorCellKeyRef = useRef<string | null>(null);
   const formulaReferenceDragBaseValueRef = useRef<string | null>(null);
@@ -2255,6 +2299,7 @@ export function OpportunityPricingWorksheetBoard({
   const persistedLastActiveWorkbookIdRef = useRef<string | null>(null);
   const persistedLastActiveSheetIdRef = useRef<string | null>(null);
   const pendingLearningWritesRef = useRef<PendingWorksheetLearningWrite[]>([]);
+  const learningFlushInFlightRef = useRef<Promise<void> | null>(null);
   const isWorksheetTitleEditingRef = useRef(false);
   const worksheetTitleDraftRef = useRef("Pricing Worksheet");
   const worksheetTitleSheetIdRef = useRef<string | null>(null);
@@ -2651,6 +2696,27 @@ export function OpportunityPricingWorksheetBoard({
     worksheetProjectId,
     supabase,
   ]);
+
+  const schedulePersistedWorksheetLearningArtifacts = useCallback((params: Parameters<typeof flushPersistedWorksheetLearningArtifacts>[0]) => {
+    const previousFlush = learningFlushInFlightRef.current;
+    const nextFlush = (async () => {
+      if (previousFlush) {
+        await previousFlush;
+      }
+      await flushPersistedWorksheetLearningArtifacts(params);
+    })().catch((error) => {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[pricing-worksheet-learning] background flush failed", error);
+      }
+    });
+
+    learningFlushInFlightRef.current = nextFlush;
+    void nextFlush.then(() => {
+      if (learningFlushInFlightRef.current === nextFlush) {
+        learningFlushInFlightRef.current = null;
+      }
+    });
+  }, [flushPersistedWorksheetLearningArtifacts]);
 
   const logAiPreviewOutcomeEvent = useCallback((params: {
     eventType: "worksheet_ai_preview_accepted" | "worksheet_ai_preview_rejected";
@@ -3066,6 +3132,97 @@ export function OpportunityPricingWorksheetBoard({
     setIsAiDialogOpen(false);
     return editorRecord;
   }, [resetAiPreviewState, resetWorksheetViewState, synchronizeLoadedWorksheetTitle]);
+
+  useEffect(() => {
+    const activeSheet =
+      workbookSheets.find((sheet) => sheet.id === worksheetSheetId) ??
+      workbookSheets[0] ??
+      null;
+
+    if (!activeSheet) {
+      return;
+    }
+
+    const requestedSheetId = requestedSheetIdRef.current;
+    const activeSheetIsOutOfSync = worksheetSheetId !== activeSheet.id;
+    const urlIsOutOfSync = requestedSheetId !== activeSheet.id;
+
+    if (activeSheetIsOutOfSync) {
+      const workbookSnapshot: OpportunityPricingWorkbook = {
+        archivedAt: null,
+        createdAt: activeSheet.createdAt,
+        createdBy: activeSheet.createdBy,
+        id: activeSheet.workbookId,
+        lastActiveSheetId: activeSheet.id,
+        legacySheetFallback: false,
+        name: worksheetName?.trim() || activeSheet.name,
+        opportunityId: worksheetOpportunityId,
+        projectId: worksheetProjectId,
+        quoteId: worksheetOwner.quoteId,
+        variationId: worksheetOwner.variationId,
+        organizationId: session?.organizationId ?? "",
+        sortOrder: null,
+        tradePackage: worksheetTradePackage,
+        updatedAt: activeSheet.updatedAt,
+        updatedBy: activeSheet.updatedBy,
+        version: activeSheet.version,
+        sheets: workbookSheets,
+      };
+
+      setCopiedRange(null);
+      copiedPayloadRef.current = null;
+      hydrateWorkbookEditorState(workbookSnapshot, activeSheet.id, {
+        seedPersistedLastActiveSheet: false,
+      });
+    }
+
+    if (urlIsOutOfSync) {
+      updateSheetUrlState(activeSheet.id);
+      setError((currentError) =>
+        currentError === "Worksheet page not found." ? null : currentError,
+      );
+    }
+  }, [
+    hydrateWorkbookEditorState,
+    session?.organizationId,
+    updateSheetUrlState,
+    workbookSheets,
+    worksheetId,
+    worksheetName,
+    worksheetOwner.quoteId,
+    worksheetProjectId,
+    worksheetSheetId,
+    worksheetOpportunityId,
+    worksheetTradePackage,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedZoom = Number(window.localStorage.getItem(worksheetZoomStorageKey));
+      if (Number.isFinite(storedZoom) && storedZoom > 0) {
+        setWorksheetZoom(clampWorksheetZoom(storedZoom));
+      }
+    } catch {
+      // Browser storage can be unavailable in private/restricted contexts.
+    }
+  }, [worksheetZoomStorageKey]);
+
+  useEffect(() => {
+    if (previousWorksheetZoomStorageKeyRef.current !== worksheetZoomStorageKey) {
+      previousWorksheetZoomStorageKeyRef.current = worksheetZoomStorageKey;
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(worksheetZoomStorageKey, String(worksheetZoom));
+    } catch {
+      // Keep the in-memory preference when browser storage is unavailable.
+    }
+  }, [worksheetZoom, worksheetZoomStorageKey]);
 
   const openAiDialog = useCallback(() => {
     setAiPreviewError(null);
@@ -4337,6 +4494,7 @@ export function OpportunityPricingWorksheetBoard({
       ])
     );
   }, [virtualColumns.visibleColumns, virtualRows.virtualRows, worksheet.cells]);
+
   const activeDescendantCellId = useMemo(() => {
     if (!selectedSingleCellKey) {
       return undefined;
@@ -4459,6 +4617,7 @@ export function OpportunityPricingWorksheetBoard({
     formulaReferenceDragAnchorCellKeyRef.current = null;
     formulaReferenceDragBaseValueRef.current = null;
     formulaReferenceDragSelectionRef.current = null;
+    selectionPointerRef.current = null;
     setIsDraggingSelection(false);
   }, []);
 
@@ -4535,6 +4694,18 @@ export function OpportunityPricingWorksheetBoard({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [clearSelectionDragState]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isDraggingSelectionRef.current) {
+        return;
+      }
+      selectionPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, []);
 
   useEffect(() => {
     const viewport = worksheetViewportRef.current;
@@ -5107,6 +5278,67 @@ export function OpportunityPricingWorksheetBoard({
   const isFormulaReferenceMode =
     isFormulaEditing && activeCellKey !== null;
 
+  useEffect(() => {
+    if (!isDraggingSelection || isFormulaEditing || isFormulaReferenceMode || isDraggingFill) {
+      if (selectionAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(selectionAutoScrollFrameRef.current);
+        selectionAutoScrollFrameRef.current = null;
+      }
+      return;
+    }
+
+    const tick = () => {
+      if (!isDraggingSelectionRef.current) {
+        selectionAutoScrollFrameRef.current = null;
+        return;
+      }
+
+      const viewport = worksheetViewportRef.current;
+      const pointer = selectionPointerRef.current;
+      if (viewport && pointer) {
+        const bounds = viewport.getBoundingClientRect();
+        const edge = 48;
+        const maxStep = 26;
+        const verticalStep = pointer.clientY < bounds.top + edge
+          ? -Math.min(maxStep, bounds.top + edge - pointer.clientY)
+          : pointer.clientY > bounds.bottom - edge
+            ? Math.min(maxStep, pointer.clientY - (bounds.bottom - edge))
+            : 0;
+        const horizontalStep = pointer.clientX < bounds.left + edge
+          ? -Math.min(maxStep, bounds.left + edge - pointer.clientX)
+          : pointer.clientX > bounds.right - edge
+            ? Math.min(maxStep, pointer.clientX - (bounds.right - edge))
+            : 0;
+
+        if (verticalStep !== 0 || horizontalStep !== 0) {
+          viewport.scrollTop = Math.max(0, viewport.scrollTop + verticalStep);
+          viewport.scrollLeft = Math.max(0, viewport.scrollLeft + horizontalStep);
+          setWorksheetViewportScrollTop(viewport.scrollTop);
+          setWorksheetViewportScrollLeft(viewport.scrollLeft);
+
+          const target = document
+            .elementFromPoint(pointer.clientX, pointer.clientY)
+            ?.closest<HTMLElement>("[data-worksheet-cell]");
+          const targetCellKey = target?.dataset.worksheetCell;
+          const anchorCellKey = rangeDragAnchorCellKeyRef.current;
+          if (targetCellKey && anchorCellKey) {
+            replaceSelection(anchorCellKey, targetCellKey);
+          }
+        }
+      }
+
+      selectionAutoScrollFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    selectionAutoScrollFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (selectionAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(selectionAutoScrollFrameRef.current);
+        selectionAutoScrollFrameRef.current = null;
+      }
+    };
+  }, [isDraggingFill, isDraggingSelection, isFormulaEditing, isFormulaReferenceMode, replaceSelection]);
+
   const updateFormulaReferencePickState = useCallback((
     value: string,
     selection: WorksheetTextSelection,
@@ -5216,6 +5448,7 @@ export function OpportunityPricingWorksheetBoard({
     editingSessionRef.current = null;
     editorTextSelectionRef.current = null;
     isFormulaReferencePickArmedRef.current = false;
+    clearSelectionDragState();
     setActiveCellKey(null);
     setActiveEditor(null);
     setEditingCellValue("");
@@ -5223,7 +5456,7 @@ export function OpportunityPricingWorksheetBoard({
       replaceSelection(targetCellKey, targetCellKey);
     }
     focusWorksheetSurface();
-  }, [activeCellKey, activeEditor, focusWorksheetSurface, replaceSelection]);
+  }, [activeCellKey, activeEditor, clearSelectionDragState, focusWorksheetSurface, replaceSelection]);
 
   const commitCellEdit = useCallback((cellKey: string, nextValue: string, nextSelectedCellKey?: string | null) => {
     const formulaBar = formulaBarRef.current;
@@ -5247,11 +5480,12 @@ export function OpportunityPricingWorksheetBoard({
     editingSessionRef.current = null;
     editorTextSelectionRef.current = null;
     isFormulaReferencePickArmedRef.current = false;
+    clearSelectionDragState();
     replaceSelection(nextSelectedCellKey ?? cellKey, nextSelectedCellKey ?? cellKey);
     focusWorksheetSurface({ immediate: true });
-  }, [focusWorksheetSurface, replaceSelection, updateCell]);
+  }, [clearSelectionDragState, focusWorksheetSurface, replaceSelection, updateCell]);
 
-  const handleWorksheetPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+  const handleWorksheetPaste = (event: ReactClipboardEvent<HTMLElement>, anchorCellKeyOverride?: string) => {
     if (!canMutateWorksheet) {
       return;
     }
@@ -5268,9 +5502,9 @@ export function OpportunityPricingWorksheetBoard({
 
     const clipboardText = event.clipboardData.getData("text/plain");
     const structuredPayload = parseWorksheetClipboardPayload(event.clipboardData.getData(WORKSHEET_CLIPBOARD_MIME));
-    const internalPayload = !structuredPayload && copiedPayloadRef.current?.text === clipboardText
-      ? copiedPayloadRef.current.payload
-      : null;
+    const internalPayload = structuredPayload
+      ?? (copiedPayloadRef.current?.text === clipboardText ? copiedPayloadRef.current.payload : null)
+      ?? readWorksheetClipboardFallback(clipboardText);
     const effectiveStructuredPayload = structuredPayload ?? internalPayload;
     const htmlPaste = parseWorksheetClipboardHtml(event.clipboardData.getData("text/html"));
     const plainPaste = parseWorksheetClipboardText(clipboardText);
@@ -5288,6 +5522,7 @@ export function OpportunityPricingWorksheetBoard({
     }
 
     const anchorCellKey =
+      anchorCellKeyOverride ??
       selectionAnchorCellKey ??
       selectionFocusCellKey ??
       activeCellKey ??
@@ -5336,19 +5571,11 @@ export function OpportunityPricingWorksheetBoard({
             normalizeWorksheetCell,
           );
 
-      if (!effectiveStructuredPayload && parsedPaste.formats) {
-        parsedPaste.formats.forEach((rowFormats, rowOffset) => rowFormats.forEach((format, columnOffset) => {
-          if (!format) return;
-          const row = patchedWorksheet.rows[anchorPosition.rowIndex + rowOffset];
-          const column = patchedWorksheet.columns[anchorPosition.columnIndex + columnOffset];
-          if (!row || !column) return;
-          const key = buildWorksheetCellKey(column.id, row.id);
-          const cell = patchedWorksheet.cells[key];
-          if (cell) patchedWorksheet.cells[key] = { ...cell, metadata: { ...cell.metadata, format: format as unknown as Json } };
-        }));
-      }
-
-      return patchedWorksheet;
+      return applyWorksheetPasteDimensions(
+        patchedWorksheet,
+        anchorPosition,
+        effectiveStructuredPayload ?? parsedPaste,
+      );
     }, { trackLearning: true });
 
     if (activeCellKey) {
@@ -5370,6 +5597,60 @@ export function OpportunityPricingWorksheetBoard({
       replaceSelection(anchorCellKey, anchorCellKey);
     }
     focusWorksheetSurface();
+  };
+
+  const pasteWorksheetClipboardAt = async (anchorCellKey: string) => {
+    if (!navigator.clipboard) {
+      setError("Clipboard access is unavailable. Use Cmd+V to paste into the worksheet.");
+      return;
+    }
+
+    try {
+      const values: Record<string, string> = {};
+      if (typeof navigator.clipboard.read === "function") {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          for (const type of [WORKSHEET_CLIPBOARD_MIME, "text/html", "text/plain"]) {
+            if (!item.types.includes(type)) continue;
+            try {
+              values[type] = await (await item.getType(type)).text();
+            } catch {
+              // Continue with any other clipboard representation available.
+            }
+          }
+        }
+      }
+      if (!values["text/plain"] && typeof navigator.clipboard.readText === "function") {
+        values["text/plain"] = await navigator.clipboard.readText();
+      }
+
+      const clipboardData = {
+        getData: (type: string) => values[type] ?? "",
+      } as DataTransfer;
+      handleWorksheetPaste(
+        {
+          clipboardData,
+          target: worksheetSurfaceRef.current ?? document.body,
+          preventDefault: () => undefined,
+        } as unknown as ReactClipboardEvent<HTMLElement>,
+        anchorCellKey,
+      );
+    } catch {
+      setError("Unable to read the clipboard. Use Cmd+V to paste into the worksheet.");
+    }
+  };
+
+  const getContextPasteAnchorCellKey = (menu: WorksheetContextMenuState) => {
+    if (!menu) return null;
+    if (menu.type === "cell") return menu.cellKey;
+    if (menu.type === "row") {
+      const row = worksheetRef.current.rows[menu.rowIndex];
+      const column = worksheetRef.current.columns[0];
+      return row && column ? buildWorksheetCellKey(column.id, row.id) : null;
+    }
+    const row = worksheetRef.current.rows[0];
+    const column = worksheetRef.current.columns[menu.columnIndex];
+    return row && column ? buildWorksheetCellKey(column.id, row.id) : null;
   };
 
   const appendCellReferenceToFormula = useCallback((cellReference: string) => {
@@ -6385,6 +6666,7 @@ export function OpportunityPricingWorksheetBoard({
     const payload = buildWorksheetClipboardPayload(worksheetRef.current, range);
     const text = buildWorksheetTsvFromRange(worksheetRef.current, range);
     copiedPayloadRef.current = { payload, text };
+    persistWorksheetClipboardFallback(payload, text);
     setCopiedRange({ ...range });
     try {
       const html = buildWorksheetHtmlFromRange(worksheetRef.current, range);
@@ -6676,6 +6958,7 @@ export function OpportunityPricingWorksheetBoard({
   }, [appendCellReferenceToFormula, focusWorksheetSurface, isFormulaReferenceMode, replaceSelection, selectionState]);
 
   const updateRangeSelection = useCallback((cellKey: string, event: ReactMouseEvent<HTMLDivElement>) => {
+    selectionPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
     if (isFormulaReferenceMode) {
       const formulaReferenceAnchorCellKey = formulaReferenceDragAnchorCellKeyRef.current;
       const formulaReferenceBaseValue = formulaReferenceDragBaseValueRef.current;
@@ -7014,6 +7297,7 @@ export function OpportunityPricingWorksheetBoard({
       payload,
       text: buildWorksheetTsvFromRange(worksheet, selectedRange),
     };
+    persistWorksheetClipboardFallback(copiedPayloadRef.current.payload, copiedPayloadRef.current.text);
     setCopiedRange({ ...selectedRange });
     event.clipboardData.setData(WORKSHEET_CLIPBOARD_MIME, serializeWorksheetClipboardPayload(payload));
     const tsv = buildWorksheetTsvFromRange(worksheet, selectedRange);
@@ -7051,7 +7335,7 @@ export function OpportunityPricingWorksheetBoard({
     restoreWorksheetSnapshot(redoState.worksheet, redoState.past, redoState.future);
   };
 
-  const adjustWorksheetZoom = (direction: "out" | "in") => {
+  const adjustWorksheetZoom = useCallback((direction: "out" | "in") => {
     setWorksheetZoom((currentZoom) => {
       const currentIndex = WORKSHEET_ZOOM_LEVELS.findIndex((level) => level >= currentZoom);
       const normalizedIndex = currentIndex >= 0 ? currentIndex : WORKSHEET_ZOOM_LEVELS.indexOf(1);
@@ -7061,11 +7345,11 @@ export function OpportunityPricingWorksheetBoard({
           : Math.max(0, normalizedIndex - 1);
       return clampWorksheetZoom(WORKSHEET_ZOOM_LEVELS[nextIndex]);
     });
-  };
+  }, []);
 
-  const resetWorksheetZoom = () => {
+  const resetWorksheetZoom = useCallback(() => {
     setWorksheetZoom(1);
-  };
+  }, []);
 
   const handleWorksheetKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -7274,7 +7558,7 @@ export function OpportunityPricingWorksheetBoard({
       return;
     }
 
-    if (event.key === "Enter") {
+    if (event.key === "Enter" || event.key === "Return") {
       event.preventDefault();
       moveSelection(event.shiftKey ? "up" : "down");
       return;
@@ -7501,6 +7785,14 @@ export function OpportunityPricingWorksheetBoard({
       return false;
     }
 
+    // Save can be invoked while the formula bar or an in-cell editor still
+    // owns the active edit session. Commit that value before taking the
+    // worksheet snapshot; otherwise Save persists the previous cell value
+    // and leaves the formula visible only in the editor.
+    if (activeCellKey && activeEditor) {
+      commitCellEdit(activeCellKey, editingCellValue);
+    }
+
     setIsSavingWorksheet(true);
     setError(null);
     setMessage(null);
@@ -7579,7 +7871,7 @@ export function OpportunityPricingWorksheetBoard({
         }
 
         const editorRecord = buildOpportunityPricingWorkbookEditorRecord(savedWorkbook);
-        await flushPersistedWorksheetLearningArtifacts({
+        schedulePersistedWorksheetLearningArtifacts({
           organizationId,
           userId,
           workbookId: editorRecord.workbookId,
@@ -7644,7 +7936,7 @@ export function OpportunityPricingWorksheetBoard({
         }
 
         const editorRecord = buildOpportunityPricingWorkbookEditorRecord(savedWorkbook);
-        await flushPersistedWorksheetLearningArtifacts({
+        schedulePersistedWorksheetLearningArtifacts({
           organizationId,
           userId,
           workbookId: editorRecord.workbookId,
@@ -9308,6 +9600,20 @@ export function OpportunityPricingWorksheetBoard({
   const stableRowContextMenu = useStableWorksheetEvent(openRowContextMenu);
   const handleWorksheetViewportScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
     const viewport = event.currentTarget;
+    if (isFormulaEditing && activeCellKey && activeEditor === "cell") {
+      // Virtualized rows can unmount the in-cell input while a formula is
+      // being assembled. Keep the edit session alive in the formula bar so
+      // scrolling does not strand keyboard input or Return.
+      suppressBlurCommitCellKeyRef.current = activeCellKey;
+      setActiveEditor("formulaBar");
+      focusFormulaBar({
+        selectAll: false,
+        selection: editorTextSelectionRef.current ?? {
+          start: editingCellValue.length,
+          end: editingCellValue.length,
+        },
+      });
+    }
     const nextHeight = viewport.clientHeight || WORKSHEET_VIEWPORT_FALLBACK_HEIGHT;
     const nextWidth = viewport.clientWidth || WORKSHEET_VIEWPORT_FALLBACK_WIDTH;
     const zoom = worksheetZoom > 0 ? worksheetZoom : 1;
@@ -9341,9 +9647,14 @@ export function OpportunityPricingWorksheetBoard({
       setWorksheetViewportScrollLeft(viewport.scrollLeft);
     }
   }, [
+    activeCellKey,
+    activeEditor,
     columnOffsets,
     effectiveColumns,
     effectiveRows,
+    editingCellValue.length,
+    focusFormulaBar,
+    isFormulaEditing,
     rowOffsets,
     virtualColumns.endIndex,
     virtualColumns.startIndex,
@@ -9351,6 +9662,18 @@ export function OpportunityPricingWorksheetBoard({
     virtualRows.startIndex,
     worksheetZoom,
   ]);
+
+  const handleWorksheetViewportWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+      return;
+    }
+
+    // Handle the spreadsheet gesture only inside the worksheet viewport. A
+    // normal wheel remains a normal scroll, and the browser page is not
+    // zoomed as a side effect of working in the grid.
+    event.preventDefault();
+    adjustWorksheetZoom(event.deltaY > 0 ? "out" : "in");
+  }, [adjustWorksheetZoom]);
 
   const worksheetZoomSliderPercent = (() => {
     const minZoom = WORKSHEET_ZOOM_LEVELS[0];
@@ -10218,6 +10541,11 @@ export function OpportunityPricingWorksheetBoard({
                   return;
                 }
 
+                if (activeCellKey === formulaBarCellKey && activeEditor === "cell") {
+                  setActiveEditor("formulaBar");
+                  return;
+                }
+
                 beginCellEdit(formulaBarCellKey, formulaBarCell, {
                   editor: "formulaBar",
                   focus: false,
@@ -10271,7 +10599,7 @@ export function OpportunityPricingWorksheetBoard({
                   return;
                 }
 
-                if (event.key === "Enter") {
+                if (event.key === "Enter" || event.key === "Return") {
                   event.preventDefault();
                   const nextCellKey = getAdjacentCellKey(
                     formulaBarCellKey,
@@ -10350,6 +10678,7 @@ export function OpportunityPricingWorksheetBoard({
               ref={worksheetViewportRef}
               className="h-full overflow-auto"
               onScroll={handleWorksheetViewportScroll}
+              onWheel={handleWorksheetViewportWheel}
             >
               <div
                 style={{
@@ -10786,6 +11115,20 @@ export function OpportunityPricingWorksheetBoard({
                     }
                   >
                     Copy
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[var(--text-primary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canMutateWorksheet}
+                    onClick={() => {
+                      const anchorCellKey = getContextPasteAnchorCellKey(contextMenu);
+                      if (anchorCellKey) {
+                        runContextMenuAction(() => pasteWorksheetClipboardAt(anchorCellKey));
+                      }
+                    }}
+                  >
+                    Paste
                   </button>
                   <button
                     type="button"

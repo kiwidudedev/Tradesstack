@@ -7,15 +7,11 @@ export type WorksheetSaveValidationResult =
 
 export function validateWorksheetBeforeSave(worksheet: WorksheetData): WorksheetSaveValidationResult {
   const mutationResult = applyWorksheetMutation(worksheet, (current) => current, {
-    validateFormulaOutputs: true,
+    // Spreadsheet errors are valid calculated cell states. They must be
+    // persisted with the formula so that the sheet can recover when its
+    // inputs change; persistence failures are reported by the save request.
+    validateFormulaOutputs: false,
   });
-
-  if (!mutationResult.validation.ok) {
-    return {
-      ok: false,
-      message: mutationResult.validation.message.replace("Mutation blocked", "Save blocked"),
-    };
-  }
 
   return {
     ok: true,

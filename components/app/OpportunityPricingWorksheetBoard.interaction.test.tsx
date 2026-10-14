@@ -121,6 +121,55 @@ describe("WorksheetCellView interaction visuals", () => {
     expect(cancelSource).toContain('setEditingCellValue("")');
     expect(cancelSource).not.toContain("updateCell(");
   });
+
+  it("commits an active formula edit before Save snapshots the worksheet", () => {
+    const saveStart = boardSource.indexOf("const saveWorksheet = async");
+    const saveEnd = boardSource.indexOf("const closeWorksheet", saveStart);
+    const saveSource = boardSource.slice(saveStart, saveEnd);
+
+    expect(saveSource).toContain("commitCellEdit(activeCellKey, editingCellValue)");
+    expect(saveSource.indexOf("commitCellEdit(activeCellKey, editingCellValue)")).toBeLessThan(
+      saveSource.indexOf("setIsSavingWorksheet(true)"),
+    );
+    expect(saveSource).toContain("schedulePersistedWorksheetLearningArtifacts({");
+    expect(saveSource).not.toContain("await flushPersistedWorksheetLearningArtifacts({");
+  });
+
+  it("clears formula-reference drag state when Enter commits the editor", () => {
+    const commitStart = boardSource.indexOf("const commitCellEdit");
+    const commitEnd = boardSource.indexOf("const handleWorksheetPaste", commitStart);
+    const commitSource = boardSource.slice(commitStart, commitEnd);
+
+    expect(commitSource).toContain("clearSelectionDragState();");
+    expect(commitSource).toContain("setActiveEditor(null);");
+    expect(commitSource).toContain("setEditingCellValue(\"\");");
+  });
+
+    it("accepts the macOS Return key as a formula commit key", () => {
+      expect(boardSource).toContain('event.key === "Enter" || event.key === "Return"');
+    });
+
+    it("keeps an in-cell formula edit alive when virtualization scrolls it away", () => {
+      const scrollStart = boardSource.indexOf("const handleWorksheetViewportScroll");
+      const scrollEnd = boardSource.indexOf("const handleWorksheetViewportWheel", scrollStart);
+      const scrollSource = boardSource.slice(scrollStart, scrollEnd);
+
+      expect(scrollSource).toContain('activeEditor === "cell"');
+      expect(scrollSource).toContain("suppressBlurCommitCellKeyRef.current = activeCellKey;");
+      expect(scrollSource).toContain('setActiveEditor("formulaBar")');
+      expect(scrollSource).toContain("focusFormulaBar({");
+      expect(scrollSource).toContain("editorTextSelectionRef.current");
+    });
+
+    it("does not replace an active in-cell edit with the saved value when the formula bar receives focus", () => {
+      const focusStart = boardSource.indexOf("onFocus={(event) => {");
+      const focusEnd = boardSource.indexOf("beginCellEdit(formulaBarCellKey", focusStart);
+      const focusSource = boardSource.slice(focusStart, focusEnd);
+
+      expect(focusSource).toContain('activeEditor === "cell"');
+      expect(focusSource).toContain('setActiveEditor("formulaBar")');
+    });
+
 });
 
 describe("PricingWorksheetSelectionSum", () => {

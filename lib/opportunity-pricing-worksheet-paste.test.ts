@@ -9,6 +9,8 @@ import {
   normalizeExternalWorksheetClipboardInput,
   mergeExternalWorksheetClipboard,
   serializeWorksheetClipboardPayload,
+  applyWorksheetPasteDimensions,
+  applyWorksheetPasteToCells,
 } from "./opportunity-pricing-worksheet-paste";
 import { createDefaultWorksheetData, normalizeWorksheetCell } from "./opportunity-pricing-worksheet-defaults";
 import { applyWorksheetClipboardPayloadToCells } from "./opportunity-pricing-worksheet-paste";
@@ -47,6 +49,25 @@ describe("parseWorksheetClipboardText", () => {
     worksheet.cells.B1 = { ...normalizeWorksheetCell("=A1*2"), metadata: { format: { text: { bold: true } } } };
     const payload = buildWorksheetClipboardPayload(worksheet, { startRowIndex: 0, endRowIndex: 0, startColumnIndex: 1, endColumnIndex: 1 });
     expect(parseWorksheetClipboardPayload(serializeWorksheetClipboardPayload(payload))).toEqual(payload);
+  });
+
+  it("round-trips row heights and column widths with structured clipboard data", () => {
+    const worksheet = createDefaultWorksheetData({ rowCount: 2, columnCount: 2 });
+    worksheet.rows[0] = { ...worksheet.rows[0], height: 72 };
+    worksheet.rows[1] = { ...worksheet.rows[1], height: 48 };
+    worksheet.columns[0] = { ...worksheet.columns[0], width: 220 };
+    worksheet.columns[1] = { ...worksheet.columns[1], width: 96 };
+
+    const payload = buildWorksheetClipboardPayload(worksheet, {
+      startRowIndex: 0,
+      endRowIndex: 1,
+      startColumnIndex: 0,
+      endColumnIndex: 1,
+    });
+    expect(parseWorksheetClipboardPayload(serializeWorksheetClipboardPayload(payload))).toMatchObject({
+      rowHeights: [72, 48],
+      columnWidths: [220, 96],
+    });
   });
 
   it("translates relative references and preserves absolute references on structured paste", () => {
@@ -96,6 +117,74 @@ describe("parseWorksheetClipboardText", () => {
     });
   });
 
+  it("parses Excel row and column dimensions", () => {
+    const parsed = parseWorksheetClipboardHtml(`
+      <table>
+        <colgroup><col style="width: 180px"><col style="width: 72pt"></colgroup>
+        <tr class="xlRow" style="height: 30pt"><td>A</td><td>B</td></tr>
+      </table>
+    `);
+    expect(parsed?.rowHeights).toEqual([40]);
+    expect(parsed?.columnWidths).toEqual([180, 96]);
+
+    const classSized = parseWorksheetClipboardHtml(`
+      <style>.xlRow { height: 24pt; }</style>
+      <table><tr class="xlRow"><td>A</td></tr></table>
+    `);
+    expect(classSized?.rowHeights).toEqual([32]);
+  });
+
+  it("uses cell dimensions when external clipboard HTML omits colgroup and tr sizing", () => {
+    const parsed = parseWorksheetClipboardHtml(`
+      <table>
+        <tr><td style="height: 18pt; width: 144px">A</td><td style="width: 72pt">B</td></tr>
+        <tr><td style="height: 24px; width: 144px">C</td><td style="width: 72pt">D</td></tr>
+      </table>
+    `);
+    expect(parsed?.rowHeights).toEqual([24, 24]);
+    expect(parsed?.columnWidths).toEqual([144, 96]);
+  });
+
+  it("uses CSS class dimensions from spreadsheet clipboard HTML", () => {
+    const parsed = parseWorksheetClipboardHtml(`
+      <style>
+        .xlRow { height: 30pt; }
+        .xlColA { width: 180px; }
+        .xlColB { width: 72pt; }
+      </style>
+      <table>
+        <tr class="xlRow"><td class="xlColA">A</td><td class="xlColB">B</td></tr>
+        <tr class="xlRow"><td class="xlColA">C</td><td class="xlColB">D</td></tr>
+      </table>
+    `);
+
+    expect(parsed?.rowHeights).toEqual([40, 40]);
+    expect(parsed?.columnWidths).toEqual([180, 96]);
+  });
+
+  it("keeps formatting on blank pasted cells and applies pasted dimensions", () => {
+    const worksheet = createDefaultWorksheetData({ rowCount: 2, columnCount: 2 });
+    const pasted = applyWorksheetPasteToCells(worksheet, { rowIndex: 0, columnIndex: 0 }, {
+      rows: [["", "42"]],
+      rowCount: 1,
+      columnCount: 2,
+      isTabular: true,
+      formats: [[{ fill: { color: "#ffff00" }, border: { bottom: { color: "#000000", style: "solid" } } }, undefined]],
+      rowHeights: [54],
+      columnWidths: [240, 88],
+    }, normalizeWorksheetCell);
+    const resized = applyWorksheetPasteDimensions(pasted, { rowIndex: 0, columnIndex: 0 }, {
+      rowHeights: [54],
+      columnWidths: [240, 88],
+    });
+
+    expect(resized.cells.A1?.metadata.format).toMatchObject({ fill: { color: "#ffff00" } });
+    expect(resized.cells.B1?.value).toBe(42);
+    expect(resized.rows[0]?.height).toBe(54);
+    expect(resized.columns[0]?.width).toBe(240);
+    expect(resized.columns[1]?.width).toBe(88);
+  });
+
   it("recovers numeric values from displayed Excel currency and percentage text", () => {
     expect(normalizeExternalWorksheetClipboardInput("$1,234.50", { number: { kind: "currency", decimalPlaces: 2 } })).toBe("1234.5");
     expect(normalizeExternalWorksheetClipboardInput("25%", { number: { kind: "percent" } })).toBe("0.25");
@@ -134,6 +223,6 @@ describe("parseWorksheetClipboardText", () => {
       endRowIndex: 0,
       startColumnIndex: 0,
       endColumnIndex: 0,
-    })).toBe('<table><tbody><tr><td style="font-weight:bold;text-align:right;background-color:#ffff00;border-bottom:1px solid #000000">42</td></tr></tbody></table>');
+    })).toBe('<table><colgroup><col style="width:140px"></colgroup><tbody><tr style="height:36px"><td style="font-weight:bold;text-align:right;background-color:#ffff00;border-bottom:1px solid #000000">42</td></tr></tbody></table>');
   });
 });

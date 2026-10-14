@@ -62,16 +62,43 @@ describe("validateWorksheetBeforeSave", () => {
     }
   });
 
-  it("blocks invalid formula outputs before save", () => {
+  it("persists formula errors without losing the original formula", () => {
     const worksheet = buildWorksheet();
-    setCell(worksheet, "C2", { formula: "=A2/0" });
+    setCell(worksheet, "B2", { value: 0 });
+    setCell(worksheet, "C2", { formula: "=A2/B2" });
 
     const result = validateWorksheetBeforeSave(worksheet);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.message).toContain("Save blocked");
-      expect(result.message).toContain("#DIV/0!");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.worksheet.cells.C2?.formula).toBe("=A2/B2");
+      expect(result.worksheet.cells.C2?.computedValue).toBe("#DIV/0!");
+      expect(result.worksheet.cells.C2?.displayValue).toBe("#DIV/0!");
+
+      setCell(result.worksheet, "B2", { value: 5 });
+      const recovered = validateWorksheetBeforeSave(result.worksheet);
+      expect(recovered.ok).toBe(true);
+      if (recovered.ok) {
+        expect(recovered.worksheet.cells.C2?.formula).toBe("=A2/B2");
+        expect(recovered.worksheet.cells.C2?.displayValue).toBe("2");
+      }
+    }
+  });
+
+  it("preserves supported spreadsheet error states as displayable strings", () => {
+    const worksheet = buildWorksheet();
+    const errors = ["#VALUE!", "#REF!", "#NAME?", "#N/A", "#NUM!", "#NULL!"];
+    errors.forEach((error, index) => setCell(worksheet, `A${index + 3}`, { formula: `=${error}` }));
+
+    const result = validateWorksheetBeforeSave(worksheet);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      errors.forEach((error, index) => {
+        const cell = result.worksheet.cells[`A${index + 3}`];
+        expect(cell?.formula).toBe(`=${error}`);
+        expect(cell?.displayValue).toBe(error);
+      });
     }
   });
 

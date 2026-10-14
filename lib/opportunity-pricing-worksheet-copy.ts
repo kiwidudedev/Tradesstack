@@ -233,6 +233,12 @@ export function buildWorksheetHtmlFromRange(
   range: WorksheetSelectionRange,
 ) {
   const rows: string[] = [];
+  const columns = [] as string[];
+
+  for (let columnIndex = range.startColumnIndex; columnIndex <= range.endColumnIndex; columnIndex += 1) {
+    const column = worksheet.columns[columnIndex];
+    columns.push(`<col${column ? ` style="width:${column.width}px"` : ""}>`);
+  }
 
   for (let rowIndex = range.startRowIndex; rowIndex <= range.endRowIndex; rowIndex += 1) {
     const row = worksheet.rows[rowIndex];
@@ -251,10 +257,10 @@ export function buildWorksheetHtmlFromRange(
       cells.push(`<td${styleAttribute}>${escapeWorksheetHtml(value)}</td>`);
     }
 
-    rows.push(`<tr>${cells.join("")}</tr>`);
+    rows.push(`<tr${row ? ` style="height:${row.height}px"` : ""}>${cells.join("")}</tr>`);
   }
 
-  return `<table><tbody>${rows.join("")}</tbody></table>`;
+  return `<table><colgroup>${columns.join("")}</colgroup><tbody>${rows.join("")}</tbody></table>`;
 }
 
 export function moveCellKey(

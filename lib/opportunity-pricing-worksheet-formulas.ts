@@ -5,12 +5,21 @@ export const FORMULA_REF_ERROR = "#REF!";
 export const FORMULA_VALUE_ERROR = "#VALUE!";
 export const FORMULA_DIV_ZERO_ERROR = "#DIV/0!";
 export const FORMULA_CYCLE_ERROR = "#CYCLE!";
+const MAX_FORMULA_EVALUATIONS_PER_RECALCULATION = 100_000;
 export const FORMULA_ERROR_STRINGS = new Set([
   FORMULA_ERROR,
   FORMULA_REF_ERROR,
   FORMULA_VALUE_ERROR,
   FORMULA_DIV_ZERO_ERROR,
   FORMULA_CYCLE_ERROR,
+  "#NAME?",
+  "#N/A",
+  "#NUM!",
+  "#NULL!",
+  "#SPILL!",
+  "#CALC!",
+  "#FIELD!",
+  "#GETTING_DATA",
 ]);
 
 type FormulaValue =
@@ -1696,6 +1705,8 @@ export function recalculateWorksheetFormulas(worksheet: WorksheetData): Workshee
   });
 
   const cache = new Map<string, FormulaValue>();
+  const evaluationState = new Map<string, "evaluating" | "complete">();
+  let evaluationCount = 0;
 
   const resolveReferencedCellDisplay = (ref: string, stack: string[]) => {
     const parsed = parseCellReference(ref);
@@ -1852,10 +1863,17 @@ export function recalculateWorksheetFormulas(worksheet: WorksheetData): Workshee
       return cache.get(cellKey)!;
     }
 
-    if (stack.includes(cellKey)) {
+    if (evaluationState.get(cellKey) === "evaluating" || stack.includes(cellKey)) {
       const cycle = { ok: false, error: FORMULA_CYCLE_ERROR } satisfies FormulaValue;
       cache.set(cellKey, cycle);
       return cycle;
+    }
+
+    evaluationCount += 1;
+    if (evaluationCount > MAX_FORMULA_EVALUATIONS_PER_RECALCULATION) {
+      const budgetExceeded = { ok: false, error: "#NUM!" } satisfies FormulaValue;
+      cache.set(cellKey, budgetExceeded);
+      return budgetExceeded;
     }
 
     const cell = nextCells[cellKey];
@@ -1870,9 +1888,11 @@ export function recalculateWorksheetFormulas(worksheet: WorksheetData): Workshee
         cell.computedValue ?? cell.value ?? cell.displayValue
       );
       cache.set(cellKey, literal);
+      evaluationState.set(cellKey, "complete");
       return literal;
     }
 
+    evaluationState.set(cellKey, "evaluating");
     try {
       const parser = new FormulaParser(tokenizeFormula(cell.formula), {
         resolveRef: (ref) => resolveRef(ref, [...stack, cellKey]),
@@ -1882,10 +1902,12 @@ export function recalculateWorksheetFormulas(worksheet: WorksheetData): Workshee
       });
       const result = parser.parse();
       cache.set(cellKey, result);
+      evaluationState.set(cellKey, "complete");
       return result;
     } catch {
       const failure = { ok: false, error: FORMULA_ERROR } satisfies FormulaValue;
       cache.set(cellKey, failure);
+      evaluationState.set(cellKey, "complete");
       return failure;
     }
   };

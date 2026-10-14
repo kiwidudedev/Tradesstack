@@ -15,12 +15,18 @@ export interface ParsedWorksheetPaste {
   formats?: Array<Array<WorksheetCellFormat | undefined>>;
   /** Formula text only when the clipboard representation exposes it explicitly. */
   formulas?: Array<Array<string | undefined>>;
+  /** Source row heights in worksheet pixels, when the clipboard exposes them. */
+  rowHeights?: Array<number | undefined>;
+  /** Source column widths in worksheet pixels, when the clipboard exposes them. */
+  columnWidths?: Array<number | undefined>;
 }
 
 export interface WorksheetClipboardPayload {
   version: 1;
   origin: { rowIndex: number; columnIndex: number };
   rows: Array<Array<{ input: string; format?: WorksheetCellFormat }>>;
+  rowHeights?: Array<number | undefined>;
+  columnWidths?: Array<number | undefined>;
 }
 
 export function getWorksheetPasteSelectionRange(
@@ -165,6 +171,39 @@ function parseHtmlNumberFormat(value: string | undefined): WorksheetCellFormat["
   };
 }
 
+function parseHtmlDimension(value: string | undefined) {
+  if (!value) return undefined;
+  const match = value.trim().toLowerCase().replace(/\s*!important\s*$/, "").match(/^([\d.]+)\s*(px|pt|in|cm|mm)?$/);
+  if (!match) return undefined;
+  const numeric = Number(match[1]);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  const unit = match[2] ?? "px";
+  const pixels = unit === "pt"
+    ? numeric * (96 / 72)
+    : unit === "in"
+      ? numeric * 96
+      : unit === "cm"
+        ? numeric * (96 / 2.54)
+        : unit === "mm"
+          ? numeric * (96 / 25.4)
+          : numeric;
+  return Math.round(pixels * 100) / 100;
+}
+
+function getHtmlDimension(attributes: string, property: "width" | "height", inheritedStyle = "") {
+  const style = getHtmlAttribute(attributes, "style") ?? "";
+  const declarations = parseCssDeclarations(`${inheritedStyle};${style}`);
+  const alternateProperties = property === "width"
+    ? ["min-width", "max-width"]
+    : ["min-height", "max-height"];
+  const value = declarations.get(property)
+    ?? alternateProperties.map((name) => declarations.get(name)).find(Boolean)
+    ?? getHtmlAttribute(attributes, property)
+    ?? getHtmlAttribute(attributes, `data-${property}`)
+    ?? getHtmlAttribute(attributes, `data-${property}-px`);
+  return parseHtmlDimension(value);
+}
+
 function parseHtmlCellFormat(style: string, inheritedStyle = ""): WorksheetCellFormat | undefined {
   const declarations = parseCssDeclarations(`${inheritedStyle};${style}`);
   const format: WorksheetCellFormat = {};
@@ -218,14 +257,41 @@ function getExcelHtmlClassStyles(input: string) {
 /** Parse the table/style subset emitted by Excel's HTML clipboard format. */
 export function parseWorksheetClipboardHtml(input: string): ParsedWorksheetPaste | null {
   const table = input.match(/<table[\s\S]*?<\/table>/i)?.[0] ?? input;
-  const rowMatches = [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
+  const rowMatches = [...table.matchAll(/<tr\b([^>]*)>([\s\S]*?)<\/tr>/gi)];
   if (rowMatches.length === 0) return null;
   const classStyles = getExcelHtmlClassStyles(input);
   const rows: string[][] = [];
   const formats: Array<Array<WorksheetCellFormat | undefined>> = [];
   const formulas: Array<Array<string | undefined>> = [];
+  const inferredColumnWidths: Array<number | undefined> = [];
+  const getCellInheritedStyle = (attributes: string) => [
+    "__excel_base_cell",
+    ...(getHtmlAttribute(attributes, "class")?.split(/\s+/) ?? []),
+  ]
+    .map((name) => classStyles.get(name))
+    .filter(Boolean)
+    .join(";");
+  const rowHeights = rowMatches.map((rowMatch) => {
+    const inheritedStyle = (getHtmlAttribute(rowMatch[1], "class")?.split(/\s+/) ?? [])
+      .map((name) => classStyles.get(name))
+      .filter(Boolean)
+      .join(";");
+    const rowHeight = getHtmlDimension(rowMatch[1], "height", inheritedStyle);
+    if (rowHeight !== undefined) return rowHeight;
+
+    const firstCell = rowMatch[2].match(/<(td|th)\b([^>]*)>/i);
+    return firstCell
+      ? getHtmlDimension(firstCell[2], "height", getCellInheritedStyle(firstCell[2]))
+      : undefined;
+  });
   rowMatches.forEach((rowMatch) => {
-    const cells = [...rowMatch[1].matchAll(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi)];
+    const cells = [...rowMatch[2].matchAll(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi)];
+    cells.forEach((cell, columnIndex) => {
+      const width = getHtmlDimension(cell[2], "width", getCellInheritedStyle(cell[2]));
+      if (width !== undefined && inferredColumnWidths[columnIndex] === undefined) {
+        inferredColumnWidths[columnIndex] = width;
+      }
+    });
     rows.push(cells.map((cell) => {
       const formula = getHtmlAttribute(cell[2], "data-formula")
         ?? getHtmlAttribute(cell[2], "formula")
@@ -234,10 +300,7 @@ export function parseWorksheetClipboardHtml(input: string): ParsedWorksheetPaste
       return decodeHtml(formula ?? cell[3]);
     }));
     formats.push(cells.map((cell) => {
-      const classStyle = ["__excel_base_cell", ...(getHtmlAttribute(cell[2], "class")?.split(/\s+/) ?? [])]
-        .map((name) => classStyles.get(name))
-        .filter(Boolean)
-        .join(";");
+      const classStyle = getCellInheritedStyle(cell[2]);
       return parseHtmlCellFormat(getHtmlAttribute(cell[2], "style") ?? "", classStyle);
     }));
     formulas.push(cells.map((cell) => {
@@ -248,6 +311,10 @@ export function parseWorksheetClipboardHtml(input: string): ParsedWorksheetPaste
       return formula ? decodeHtml(formula) : undefined;
     }));
   });
+  const colMatches = [...table.matchAll(/<col\b([^>]*)\/?>(?:<\/col>)?/gi)];
+  const columnWidths = colMatches.length > 0
+    ? colMatches.map((match) => getHtmlDimension(match[1], "width", getCellInheritedStyle(match[1])))
+    : inferredColumnWidths.some((width) => width !== undefined) ? inferredColumnWidths : undefined;
   return {
     rows,
     rowCount: rows.length,
@@ -255,6 +322,8 @@ export function parseWorksheetClipboardHtml(input: string): ParsedWorksheetPaste
     isTabular: true,
     formats,
     formulas,
+    rowHeights,
+    columnWidths,
   };
 }
 
@@ -278,6 +347,8 @@ export function mergeExternalWorksheetClipboard(
     )),
     formats: htmlPaste.formats,
     formulas: htmlPaste.formulas,
+    rowHeights: htmlPaste.rowHeights,
+    columnWidths: htmlPaste.columnWidths,
   } satisfies ParsedWorksheetPaste;
 }
 
@@ -298,6 +369,12 @@ export function buildWorksheetClipboardPayload(
           ...(cell?.metadata.format && typeof cell.metadata.format === "object" ? { format: cell.metadata.format as WorksheetCellFormat } : {}),
         };
       }),
+    ),
+    rowHeights: Array.from({ length: range.endRowIndex - range.startRowIndex + 1 }, (_, rowOffset) =>
+      worksheet.rows[range.startRowIndex + rowOffset]?.height,
+    ),
+    columnWidths: Array.from({ length: range.endColumnIndex - range.startColumnIndex + 1 }, (_, columnOffset) =>
+      worksheet.columns[range.startColumnIndex + columnOffset]?.width,
     ),
   };
 }
@@ -408,11 +485,21 @@ export function applyWorksheetPasteToCells(
 
       const cellKey = buildWorksheetCellKey(column.id, row.id);
       const normalizedCell = normalizeCell(rawValue);
+      const format = paste.formats?.[rowOffset]?.[columnOffset];
 
       if (normalizedCell.type === "empty") {
-        delete nextCells[cellKey];
+        if (format) {
+          nextCells[cellKey] = {
+            ...normalizedCell,
+            metadata: { ...normalizedCell.metadata, format: format as unknown as Json },
+          };
+        } else {
+          delete nextCells[cellKey];
+        }
       } else {
-        nextCells[cellKey] = normalizedCell;
+        nextCells[cellKey] = format
+          ? { ...normalizedCell, metadata: { ...normalizedCell.metadata, format: format as unknown as Json } }
+          : normalizedCell;
       }
     });
   });
@@ -421,6 +508,31 @@ export function applyWorksheetPasteToCells(
     ...worksheet,
     cells: nextCells,
   };
+}
+
+export function applyWorksheetPasteDimensions(
+  worksheet: WorksheetData,
+  anchor: { columnIndex: number; rowIndex: number },
+  paste: Pick<ParsedWorksheetPaste, "rowHeights" | "columnWidths">,
+) {
+  const rows = paste.rowHeights
+    ? worksheet.rows.map((row, index) => {
+        const sourceIndex = index - anchor.rowIndex;
+        const height = paste.rowHeights?.[sourceIndex];
+        return height && Number.isFinite(height) && height > 0 ? { ...row, height } : row;
+      })
+    : worksheet.rows;
+  const columns = paste.columnWidths
+    ? worksheet.columns.map((column, index) => {
+        const sourceIndex = index - anchor.columnIndex;
+        const width = paste.columnWidths?.[sourceIndex];
+        return width && Number.isFinite(width) && width > 0 ? { ...column, width } : column;
+      })
+    : worksheet.columns;
+
+  return rows === worksheet.rows && columns === worksheet.columns
+    ? worksheet
+    : { ...worksheet, rows, columns };
 }
 
 export function applyWorksheetClipboardPayloadToCells(
@@ -440,7 +552,14 @@ export function applyWorksheetClipboardPayloadToCells(
     const normalizedCell = normalizeCell(transformInput(sourceCell.input, rowDelta, columnDelta));
     const cellKey = buildWorksheetCellKey(targetColumn.id, targetRow.id);
     if (normalizedCell.type === "empty") {
-      delete nextCells[cellKey];
+      if (sourceCell.format) {
+        nextCells[cellKey] = {
+          ...normalizedCell,
+          metadata: { ...normalizedCell.metadata, format: sourceCell.format as unknown as Json },
+        };
+      } else {
+        delete nextCells[cellKey];
+      }
       return;
     }
     nextCells[cellKey] = sourceCell.format
