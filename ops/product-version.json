@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "product": "TradesStack",
-  "officialVersion": "1.1.5",
-  "displayLabel": "TradesStack 1.1.5",
-  "approvedReleaseManifest": "ops/releases/1.1.5.json",
-  "approvedSourceSha": "adbb1c68589eddddd7a64f375ad1288e16a1e5c5",
-  "currentMainHead": "adbb1c68589eddddd7a64f375ad1288e16a1e5c5",
-  "releaseFingerprint": "254bf57d6fc280182034738a52e9fc7840914aacbb1bc5dededa93f26ac208b1",
-  "migrationTarget": "20261010123000_fix_r2_activation_actor_permission.sql",
+  "officialVersion": "1.2.0",
+  "displayLabel": "TradesStack 1.2.0",
+  "approvedReleaseManifest": "ops/releases/1.2.0.json",
+  "approvedSourceSha": "ef5b229bd035bf563b8f2711d994d70080997ae0",
+  "currentMainHead": "ef5b229bd035bf563b8f2711d994d70080997ae0",
+  "releaseFingerprint": "b29b08a8a5afc4fa95b551ec2dfbd53a715471d1693afb36abd02ccd86b498f1",
+  "migrationTarget": "20261014133000_create_blank_pricing_worksheet_template.sql",
   "releaseDate": "2026-10-14",
   "validationStatus": "PASS"
 }

@@ -12,7 +12,7 @@
       "rolloutStatus": "ENABLED",
       "releaseChannel": "stable",
       "clientOwnedPaths": ["client/**", ".env*", ".vercel/project.json"],
-      "targetRelease": "1.1.5",
+      "targetRelease": "1.2.0",
       "repositoryReference": "github:kiwidudedev/tradesstack-client-alpha",
       "deploymentTarget": "cloudflare:tradesstack-alpha",
       "databaseProjectReference": "supabase:ibjyzpyuqupsxqakpzxj",
