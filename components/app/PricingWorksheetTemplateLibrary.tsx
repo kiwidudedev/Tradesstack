@@ -37,7 +37,10 @@ export function PricingWorksheetTemplateLibrary() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!supabase || !session?.organizationId) return;
+    if (!supabase || !session?.organizationId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {

@@ -8,9 +8,29 @@ interface SupabaseServiceRoleEnv {
   serviceRoleKey: string;
 }
 
+declare const __TRADESSTACK_SUPABASE_URL__: string | undefined;
+declare const __TRADESSTACK_SUPABASE_ANON_KEY__: string | undefined;
+
+function getPublicSupabaseEnvValue(
+  runtimeValue: string | undefined,
+  buildTimeValue: string | undefined,
+): string | undefined {
+  return runtimeValue || buildTimeValue;
+}
+
 export function getSupabaseEnv(): SupabaseEnv {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = getPublicSupabaseEnvValue(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    typeof __TRADESSTACK_SUPABASE_URL__ === "undefined"
+      ? undefined
+      : __TRADESSTACK_SUPABASE_URL__,
+  );
+  const anonKey = getPublicSupabaseEnvValue(
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    typeof __TRADESSTACK_SUPABASE_ANON_KEY__ === "undefined"
+      ? undefined
+      : __TRADESSTACK_SUPABASE_ANON_KEY__,
+  );
 
   if (!url || !anonKey) {
     throw new Error(

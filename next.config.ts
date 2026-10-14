@@ -6,6 +6,16 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   },
+  compiler: {
+    define: {
+      __TRADESSTACK_SUPABASE_URL__: JSON.stringify(
+        process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+      ),
+      __TRADESSTACK_SUPABASE_ANON_KEY__: JSON.stringify(
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+      ),
+    },
+  },
   deploymentId: process.env.DEPLOYMENT_VERSION || process.env.GIT_SHA,
   ...(process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR
     ? { distDir: process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR }
