@@ -51,6 +51,10 @@ function git(args) {
 
 const mainSourceSha = git(["rev-parse", "HEAD"]);
 const mainStatus = git(["status", "--porcelain"]);
+// Only the contract package's own cleanliness affects the provenance of the
+// vendored artifact; unrelated uncommitted Main work is recorded but not
+// conflated with it.
+const contractStatus = git(["status", "--porcelain", "packages/worker-config"]);
 const packageRoot = path.join(ROOT, "packages/worker-config");
 const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
 // The Worker repository consumes the compiled, dependency-free ESM build plus
@@ -89,6 +93,7 @@ const manifest = {
   mobileApiContractVersion: contract.MOBILE_API_CONTRACT_VERSION,
   mainSourceSha,
   mainWorkingTreeDirty: Boolean(mainStatus),
+  contractSourceDirty: Boolean(contractStatus),
   distribution: "VENDORED_ARTIFACT_FROM_TRADESSTACK_MAIN",
   generatedBy: "scripts/ops/sync-worker-config.mjs",
   files: {
@@ -143,7 +148,8 @@ Main. Do not edit it by hand.
 - Configuration schema: ${contract.WORKER_CONFIG_SCHEMA_VERSION}
 - Application contract: ${contract.WORKER_APP_CONTRACT_VERSION}
 - Mobile API contract: ${contract.MOBILE_API_CONTRACT_VERSION}
-- Main source SHA: ${mainSourceSha}${mainStatus ? " (dirty working tree at sync time)" : ""}
+- Main source SHA: ${mainSourceSha}
+- Contract package clean at sync time: ${contractStatus ? "no" : "yes"}
 
 Regenerate with \`npm run worker:sync-config\` from TradesStack Main. The Worker App
 CI runs \`npm run worker:sync-config:check\` and fails if this copy has drifted.
@@ -155,6 +161,7 @@ console.log(JSON.stringify({
   packageVersion: packageJson.version,
   mainSourceSha,
   mainWorkingTreeDirty: Boolean(mainStatus),
+  contractSourceDirty: Boolean(contractStatus),
   files: Object.keys(manifest.files),
   workerCapabilitiesPath: path.relative(workerRoot, capabilitiesPath),
 }, null, 2));

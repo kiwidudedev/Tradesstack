@@ -75,7 +75,17 @@
           "pendingBackupSecrets": []
         }
       },
-      "notes": "Fictional hosted proof only; AI, Xero, email, cron, workers, and custom DNS remain off. Master Supabase received the explicitly authorized forward migration set; no Master runtime deployment was changed."
+      "notes": "Fictional hosted proof only; AI, Xero, email, cron, workers, and custom DNS remain off. Master Supabase received the explicitly authorized forward migration set; no Master runtime deployment was changed.",
+      "worker": {
+        "profilePath": "ops/worker/profiles/client-alpha.json",
+        "profileFingerprint": "501f73609ecbdad357a40c897e027768454ad031c124b27cbef69bbac43e4ade",
+        "targetWorkerRelease": "1.0.0",
+        "workerRepository": "github:tradesstack/tradesstack-worker-app",
+        "distributionChannel": "internal",
+        "clientExtensions": [],
+        "provisioningRecord": "ops/worker/provisioning/client-alpha.json",
+        "compatibilityStatus": "COMPATIBLE"
+      }
     }
   ]
 }

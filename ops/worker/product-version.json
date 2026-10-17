@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "product": "TradesStack Worker",
+  "workerVersion": "1.0.0",
+  "releaseManifest": "ops/worker/releases/1.0.0.json",
+  "releaseFingerprint": "23fb58ef0a04cf6acbc9db35fdf03d0111423ff0e0c4e54aefb35521a44263e4",
+  "workerRepository": "github:tradesstack/tradesstack-worker-app",
+  "workerSourceSha": "b417e3b9917fa10b000e7f07ee3985a3008efda8",
+  "configContract": "@tradesstack/worker-config@0.0.0 schema 1",
+  "mobileApiContractVersion": 2,
+  "minimumMainRelease": "1.0.0"
+}
