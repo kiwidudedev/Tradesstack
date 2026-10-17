@@ -30,6 +30,7 @@ import {
   validateRegistryWorkerBindings,
   validateWorkerProductVersion,
   validateWorkerReleaseManifest,
+  workerPaths,
 } from "./worker-contract.mjs";
 
 const options = { json: false };
@@ -41,6 +42,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 
 const contract = await loadContract(ROOT);
 const registry = readJson(path.join(ROOT, "ops/clients.json"));
+const paths = workerPaths(ROOT);
 const releases = loadWorkerReleases(ROOT);
 const product = loadWorkerProduct(ROOT);
 const profiles = listWorkerProfiles(ROOT, contract);
@@ -137,9 +139,44 @@ if (workerRoot) {
   }
 }
 
+// Artifact lifecycle records: a pin never substitutes for a build proof.
+const distributionRoot = path.join(paths.directory, "distribution");
+const artifactStates = [];
+if (fs.existsSync(distributionRoot)) {
+  for (const file of fs.readdirSync(distributionRoot).filter((name) => name.endsWith(".json"))) {
+    const record = readJson(path.join(distributionRoot, file));
+    const clientId = file.replace(/\.json$/, "");
+    if (!(registry.clients ?? []).some((client) => client.clientId === clientId)) {
+      errors.push(`distribution record belongs to unknown client: ${clientId}`);
+      continue;
+    }
+    const seen = { BUILT: false, DISTRIBUTED: false, INSTALLED: false };
+    for (const event of record.events ?? []) {
+      if (!semver(event.release)) errors.push(`${clientId}: artifact event has invalid release ${event.release}`);
+      if (!fs.existsSync(path.join(paths.releases, `${event.release}.json`))) {
+        errors.push(`${clientId}: artifact event references unknown release ${event.release}`);
+      }
+      if (event.stage !== "BUILT" && !seen.BUILT) {
+        errors.push(`${clientId}: ${event.stage} recorded before BUILT`);
+      }
+      if (event.stage === "INSTALLED" && !seen.DISTRIBUTED && !String(event.channel ?? "").startsWith("local")) {
+        errors.push(`${clientId}: INSTALLED recorded before DISTRIBUTED`);
+      }
+      seen[event.stage] = true;
+    }
+    artifactStates.push({
+      clientId,
+      target: (registry.clients ?? []).find((client) => client.clientId === clientId)?.worker?.targetWorkerRelease ?? null,
+      artifactState: record.artifactState ?? null,
+      events: (record.events ?? []).length,
+    });
+  }
+}
+if (artifactStates.length) details.push(`artifact lifecycle records ${artifactStates.length}`);
+
 const payload = result("Worker App control plane", errors.length === 0, [...details, ...errors]);
 if (options.json) {
-  console.log(JSON.stringify({ ...payload, bindings, product: product.value, releases: releases.length, profiles: profiles.length }, null, 2));
+  console.log(JSON.stringify({ ...payload, bindings, artifactStates, product: product.value, releases: releases.length, profiles: profiles.length }, null, 2));
   process.exitCode = payload.pass ? 0 : 1;
 } else {
   if (bindings.length) {

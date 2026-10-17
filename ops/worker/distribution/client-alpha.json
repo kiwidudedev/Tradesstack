@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "clientId": "client-alpha",
+  "events": [
+    {
+      "eventId": "client-alpha-1.1.1-built-1",
+      "stage": "BUILT",
+      "release": "1.1.1",
+      "releaseFingerprint": "7cbe422a3c3ec3b7da643b9aadcab3f9dacc67dc942193006dabc64c96d80902",
+      "channel": "internal",
+      "artifactSha256": "27d24ef94a41c9dca139391a91a5bcb94cfab1fa66c77d2e8ab228707953eb27",
+      "evidence": "iOS Release simulator build from Worker commit 5563aaf (Xcode Build Succeeded, CFBundleShortVersionString 1.1.1); Alpha web export PASS",
+      "recordedAt": "2026-10-17T21:47:53.595Z",
+      "recordedBy": "scripts/ops/worker-artifact.mjs"
+    },
+    {
+      "eventId": "client-alpha-1.1.1-installed-2",
+      "stage": "INSTALLED",
+      "release": "1.1.1",
+      "releaseFingerprint": "7cbe422a3c3ec3b7da643b9aadcab3f9dacc67dc942193006dabc64c96d80902",
+      "channel": "local-simulator",
+      "artifactSha256": null,
+      "evidence": "Installed and launched on iPhone 17 Pro simulator with the Alpha profile; dashboard, tabs and organisation rendered",
+      "recordedAt": "2026-10-17T21:47:53.624Z",
+      "recordedBy": "scripts/ops/worker-artifact.mjs"
+    }
+  ],
+  "artifactState": {
+    "targetRelease": "1.1.1",
+    "builtRelease": "1.1.1",
+    "distributedRelease": null,
+    "installedRelease": "1.1.1"
+  }
+}

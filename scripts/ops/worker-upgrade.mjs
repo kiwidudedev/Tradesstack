@@ -180,6 +180,18 @@ const auditRecord = {
     customerDeployment: "NOT_APPROVED",
     storeResubmission: distributionImpact.requiresStoreResubmission ? "REQUIRED" : "NOT_REQUIRED",
   },
+  /**
+   * A release pin is only a target. It never implies that a binary exists,
+   * was distributed or is installed. Those are recorded separately in
+   * ops/worker/distribution/<client>.json by worker-artifact.mjs.
+   */
+  artifactState: {
+    targetRelease: toVersion,
+    builtRelease: null,
+    distributedRelease: null,
+    installedApplicationVersion: null,
+    note: "Control-plane target updated only. No binary was built, distributed or installed by this upgrade.",
+  },
   releases: {
     from: { version: fromRelease.version, fingerprint: fromRelease.releaseFingerprint, sourceSha: fromRelease.sourceSha },
     to: { version: toRelease.version, fingerprint: toRelease.releaseFingerprint, sourceSha: toRelease.sourceSha },
@@ -204,6 +216,12 @@ const summary = {
     quickActions: customisations.quickActions.map((action) => action.id),
   },
   distributionImpact,
+  artifactState: {
+    targetRelease: toVersion,
+    builtRelease: null,
+    distributedRelease: null,
+    installedApplicationVersion: null,
+  },
 };
 
 if (!options.apply) {

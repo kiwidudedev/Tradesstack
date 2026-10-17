@@ -79,16 +79,16 @@
       "worker": {
         "profilePath": "ops/worker/profiles/client-alpha.json",
         "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
-        "targetWorkerRelease": "1.1.0",
+        "targetWorkerRelease": "1.1.1",
         "workerRepository": "github:tradesstack/tradesstack-worker-app",
         "distributionChannel": "internal",
         "clientExtensions": [],
         "provisioningRecord": "ops/worker/provisioning/client-alpha.json",
         "compatibilityStatus": "COMPATIBLE",
         "lastUpgrade": {
-          "fromVersion": "1.0.0",
-          "toVersion": "1.1.0",
-          "record": "ops/worker/upgrades/client-alpha/1.0.0__1.1.0.json",
+          "fromVersion": "1.1.0",
+          "toVersion": "1.1.1",
+          "record": "ops/worker/upgrades/client-alpha/1.1.0__1.1.1.json",
           "status": "RECORDED_AWAITING_DEPLOYMENT_APPROVAL"
         }
       }

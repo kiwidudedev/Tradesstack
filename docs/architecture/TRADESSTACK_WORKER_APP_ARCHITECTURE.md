@@ -198,6 +198,12 @@ environment, distributed through the channel the profile declares.**
 - Over-the-air updates are recorded as unsupported
   (`distribution.supportsOverTheAirUpdate: false`) so that only a reviewed
   binary release can change the runtime.
+- The control plane distinguishes four states and never conflates them:
+  **target** (`ops/clients.json` release pin), **built**,
+  **distributed** and **installed** (`ops/worker/distribution/<client>.json`,
+  append-only evidence records written by `scripts/ops/worker-artifact.mjs`).
+  An upgrade record sets built/distributed/installed to `null` with an explicit
+  note until those events actually occur.
 
 ## G. Release, compatibility and upgrade model
 
@@ -243,13 +249,33 @@ Remaining architectural risks and mitigations:
 ## I. Verification summary
 
 - Main: `ops:worker`, `ops:registry`, `ops:release`, `ops:version`,
-  `ops:security`, `ops:drift`, control-plane contract tests, package
-  boundary check, `tsc -p tsconfig.build.json`, 25 contract tests and 18
-  control-plane tests pass.
-- Worker Main: typecheck, ESLint, 22 contract/configuration/guard tests, vendor
-  integrity and profile validation pass; `expo export --platform web` builds.
-- Alpha: read-only probes only. The web deployment responds 200, but the mobile
-  Edge Functions are **not deployed** (404), so the Worker App cannot operate
-  against Alpha until that approved deployment happens.
-- Not validated: native EAS builds, physical-device testing, store submission,
-  hosted Worker deployment, live Supabase RLS/RPC execution for the Worker.
+  `ops:security`, `ops:drift`, control-plane contract tests, package boundary
+  check, `tsc -p tsconfig.build.json`, 25 contract tests, 24 Worker
+  control-plane tests (including provisioning, upgrade conflict, isolation and
+  artifact-lifecycle ordering) pass. The Main PR's `Worker App control plane`
+  CI workflow passes (the lockfile now includes the new workspace).
+- Worker Main: typecheck, ESLint, 24 contract/configuration/guard tests, vendor
+  integrity and profile validation pass; `expo export --platform web` builds
+  for the Alpha profile. The Worker CI workflow passes on PR #1.
+- Alpha backend: the three required Edge Functions were deployed to Alpha
+  (explicit project ref, server-side bundling) and are ACTIVE; they return 401
+  without a token instead of 404. The mobile RPCs exist and enforce
+  authentication; the mobile Variations contract migration is applied (verified
+  functionally because the DB password is unavailable for a ledger read).
+- Alpha application: a dedicated isolated fixture (organization, worker
+  membership, project, PO, task, variation) was used to run
+  **20/20 API checks**, **32/32 browser checks** and **19/19 read-only
+  readiness checks**. Browser validation covered login, session persistence,
+  foreign-session rejection, dashboard identity, modules/navigation, tasks,
+  purchase orders (list + detail + financial total), variations, clock in/out
+  and settings.
+- Native: Worker `1.1.1` produced an iOS Release build (`Build Succeeded`,
+  `CFBundleShortVersionString 1.1.1`) which was installed and launched on an
+  iPhone 17 Pro simulator with the Alpha profile; the app rendered the Alpha
+  organization, six capability-driven tabs including POs and Time Clock, and the
+  PO quick action. The build and install are recorded as artifact events; no
+  channel distribution occurred. Android was not built (no SDK/Java locally, no
+  EAS project) and nothing was submitted to a store.
+- Not validated: physical devices, Android native build, push notifications,
+  store review/distribution, hosted Worker deployment, and a direct read of the
+  Alpha migration ledger.

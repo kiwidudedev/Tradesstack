@@ -279,7 +279,9 @@ describe('controlled Worker upgrades', () => {
     const profilePath = path.join(workspace, 'ops/worker/profiles/client-alpha.json');
     const before = fs.readFileSync(profilePath, 'utf8');
 
-    const plan = runScript('worker-upgrade.mjs', upgradeArgs(['--to', '1.1.0']));
+    const current = readJson(path.join(workspace, 'ops/clients.json')).clients
+      .find((client) => client.clientId === 'client-alpha').worker.targetWorkerRelease;
+    const plan = runScript('worker-upgrade.mjs', upgradeArgs(['--to', current]));
     expect(plan.status).toBe(0);
     expect(plan.json.status).toBe('ALREADY_CURRENT');
 
@@ -379,5 +381,104 @@ describe('worker profile contract', () => {
     const left = crypto.createHash('sha256').update(contract.canonicalizeWorkerClientConfig(contract.defineWorkerClientConfig(base))).digest('hex');
     const right = crypto.createHash('sha256').update(contract.canonicalizeWorkerClientConfig(contract.defineWorkerClientConfig(reversed))).digest('hex');
     expect(left).toBe(right);
+  });
+});
+
+describe("artifact lifecycle is separate from the release pin", () => {
+  let workspace;
+  beforeEach(() => {
+    workspace = cloneWorkspace();
+  });
+  afterEach(() => {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  });
+
+  const artifactArgs = (extra = []) => ['--client', 'client-alpha', '--workspace', workspace, ...extra];
+  const targetRelease = () => readJson(path.join(workspace, 'ops/clients.json')).clients
+    .find((client) => client.clientId === 'client-alpha').worker.targetWorkerRelease;
+
+  it("does not claim a build, distribution or install from an upgrade pin change", () => {
+    const record = readJson(path.join(workspace, 'ops/worker/upgrades/client-alpha/1.0.0__1.1.0.json'));
+    expect(record.artifactState).toEqual({
+      targetRelease: '1.1.0',
+      builtRelease: null,
+      distributedRelease: null,
+      installedApplicationVersion: null,
+      note: 'Control-plane target updated only. No binary was built, distributed or installed by this upgrade.',
+    });
+  });
+
+  it("enforces build -> distribute -> install ordering with evidence", () => {
+    const target = targetRelease();
+    const distributeFirst = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'DISTRIBUTED', '--evidence', 'test store listing', '--apply',
+    ]));
+    expect(distributeFirst.status).toBe(1);
+    expect(distributeFirst.json.reason).toMatch(/before a BUILT event/);
+
+    const built = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'BUILT', '--channel', 'internal',
+      '--evidence', 'eas build 11111111-1111-1111-1111-111111111111',
+      '--artifact-sha256', 'a'.repeat(64), '--apply',
+    ]));
+    expect(built.status).toBe(0);
+    expect(built.json.status).toBe('RECORDED');
+    expect(built.json.artifactState.builtRelease).toBe(target);
+    expect(built.json.artifactState.distributedRelease).toBeNull();
+
+    const wrongRelease = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', '1.0.0', '--stage', 'DISTRIBUTED', '--evidence', 'should not distribute an old release', '--apply',
+    ]));
+    expect(wrongRelease.status).toBe(1);
+    expect(wrongRelease.json.reason).toMatch(new RegExp(`customer target is ${target.replace(/\./g, '\\.')}`));
+
+    const installedBeforeDistribute = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'INSTALLED', '--channel', 'internal', '--evidence', 'device observation', '--apply',
+    ]));
+    expect(installedBeforeDistribute.status).toBe(1);
+    expect(installedBeforeDistribute.json.reason).toMatch(/DISTRIBUTED event/);
+
+    const distributed = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'DISTRIBUTED', '--channel', 'internal',
+      '--evidence', 'TestFlight build 42', '--apply',
+    ]));
+    expect(distributed.status).toBe(0);
+    expect(distributed.json.artifactState.distributedRelease).toBe(target);
+
+    const duplicate = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'DISTRIBUTED', '--channel', 'internal',
+      '--evidence', 'TestFlight build 42', '--apply',
+    ]));
+    expect(duplicate.json.status).toBe('ALREADY_RECORDED');
+
+    const installed = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'INSTALLED', '--channel', 'internal',
+      '--evidence', `simulator observed Worker ${target}`, '--apply',
+    ]));
+    expect(installed.status).toBe(0);
+    expect(installed.json.artifactState).toEqual({
+      targetRelease: target,
+      builtRelease: target,
+      distributedRelease: target,
+      installedRelease: target,
+    });
+
+    const record = readJson(path.join(workspace, 'ops/worker/distribution/client-alpha.json'));
+    expect(record.events.map((event) => event.stage)).toEqual(['BUILT', 'DISTRIBUTED', 'INSTALLED']);
+    expect(record.events.every((event) => event.evidence.length > 4)).toBe(true);
+  });
+
+  it("allows an explicitly local install observation without a distribution", () => {
+    const target = targetRelease();
+    const built = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'BUILT', '--evidence', 'local ios release build', '--apply',
+    ]));
+    expect(built.status).toBe(0);
+    const installed = runScript('worker-artifact.mjs', artifactArgs([
+      '--release', target, '--stage', 'INSTALLED', '--channel', 'local-simulator',
+      '--evidence', 'installed on iPhone 17 Pro simulator', '--apply',
+    ]));
+    expect(installed.status).toBe(0);
+    expect(installed.json.artifactState.installedRelease).toBe(target);
   });
 });

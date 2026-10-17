@@ -170,6 +170,42 @@ Rollback:
 2. rebuild and redistribute the previous binary;
 3. verify with `npm run ops:worker`.
 
+## 3a. Artifact lifecycle (build / distribution / install)
+
+A release pin is only a **target**. It never means a binary exists. Record the
+real lifecycle, with evidence, separately:
+
+```bash
+# after a customer-specific binary exists
+node scripts/ops/worker-artifact.mjs --client <client-id> --release <X.Y.Z> \
+  --stage BUILT --channel internal \
+  --evidence "EAS build <id> / local iOS Release build" \
+  [--artifact-sha256 <sha256>] --apply
+
+# after publishing to a channel
+node scripts/ops/worker-artifact.mjs --client <client-id> --release <X.Y.Z> \
+  --stage DISTRIBUTED --channel internal \
+  --evidence "TestFlight build <n>" --apply
+
+# after observing an installed version
+node scripts/ops/worker-artifact.mjs --client <client-id> --release <X.Y.Z> \
+  --stage INSTALLED --channel internal \
+  --evidence "device reports Worker <X.Y.Z>" --apply
+```
+
+Rules enforced by the tool and `npm run ops:worker`:
+
+- DISTRIBUTED requires BUILT for the same release and the customer's current
+  target;
+- INSTALLED requires DISTRIBUTED, unless the channel is explicitly local
+  (`local-simulator`, `local-device`) for local validation;
+- events are append-only and live in `ops/worker/distribution/<client>.json`;
+- `ops/worker/upgrades/*.json` records the target with
+  `artifactState.builtRelease/distributedRelease/installedApplicationVersion`
+  set to `null` and a note that no binary was built by the pin change.
+
+Never infer "deployed" from a registry pin.
+
 ## 4. Compatibility policy
 
 | Field | Meaning | Current value |
@@ -181,34 +217,117 @@ Rollback:
 Raise these only when the mobile contract genuinely changes, and record the
 reason in the release review.
 
-## 5. Alpha validation record (read-only)
+## 5. Alpha validation record
 
-Probes performed from this environment on 2026-10-17 (no credentials, no
-mutations):
+Alpha is the controlled Worker validation environment:
+`https://tradesstack-alpha.tradesstack.workers.dev`, Supabase project
+`ibjyzpyuqupsxqakpzxj`.
 
-| Check | Result | Interpretation |
-|---|---|---|
-| `https://tradesstack-alpha.tradesstack.workers.dev/` | HTTP 200 | Alpha web deployment is live |
-| `https://ibjyzpyuqupsxqakpzxj.supabase.co/auth/v1/health` | HTTP 401 `UNAUTHORIZED_MISSING_API_KEY` | Alpha Supabase project is live; endpoint requires the anon key |
-| `POST /functions/v1/mobile_app_bootstrap` on Alpha | HTTP 404 | **Mobile Edge Function is not deployed** |
-| `POST /functions/v1/mobile_clock_in_v2` on Alpha | HTTP 404 | Not deployed |
-| `POST /functions/v1/mobile_clock_out_v2` on Alpha | HTTP 404 | Not deployed |
-| Same probes on the reference project `mvxyxvrxaorzglppxzzz` | HTTP 401 | Functions exist there; confirms the probe method |
+### 5.1 Backend deployment (performed 2026-10-17)
 
-Conclusion: Alpha configuration is prepared (`ops/worker/profiles/client-alpha.json`
-targets project `ibjyzpyuqupsxqakpzxj`), but the Worker App cannot operate
-against Alpha until the mobile Edge Functions are deployed there. That
-deployment is an external, approval-gated action; it was not performed and no
-Alpha database, migration, function or customisation was modified.
+The Worker App requires three Edge Functions. Alpha previously had none
+(HTTP 404). They were deployed from the committed Main source, explicitly
+targeting Alpha:
 
-Also required before declaring Alpha Worker-ready:
+```bash
+supabase functions deploy mobile_app_bootstrap --project-ref ibjyzpyuqupsxqakpzxj --use-api --yes
+supabase functions deploy mobile_clock_in_v2   --project-ref ibjyzpyuqupsxqakpzxj --use-api --yes
+supabase functions deploy mobile_clock_out_v2  --project-ref ibjyzpyuqupsxqakpzxj --use-api --yes
+```
 
-1. confirm Alpha's applied migration ledger is at or beyond
-   `20261003160000_add_mobile_project_variation_capabilities_v1.sql` (recorded
-   registry target is `20261010123000_…`, but the live ledger must be re-read);
-2. verify the mobile RPCs and RLS behaviour with an Alpha test worker account;
-3. deploy the approved Worker build to the internal channel and record the
-   build/version in `ops/clients.json` provenance.
+`supabase functions list --project-ref ibjyzpyuqupsxqakpzxj` now reports all
+three ACTIVE. Each returns HTTP 401 without a bearer token (proof the gateway is
+enforcing auth, not a 404). No database row, policy, secret, migration or
+function on another project was changed.
+
+The older v1 functions (`mobile-bootstrap`, `mobile-clock-in`,
+`mobile-clock-out`) exist only on the reference project and are unused by the
+current Worker App; they were deliberately **not** deployed to Alpha.
+
+### 5.2 Database compatibility
+
+Alpha's migration ledger cannot be read from this workstation because the
+database password is not available (the CLI requires it for
+`supabase migration list`). Compatibility was therefore verified functionally
+instead of by filename:
+
+- every mobile RPC the Worker App calls exists in Alpha
+  (`list_tasks`, `list_mobile_project_purchase_orders_v2`,
+  `list_mobile_project_variations_v1`,
+  `get_mobile_project_variation_capabilities_v1`,
+  `resolve_mobile_project_member_context_v2`) and returns an
+  authentication-required error rather than "function not found";
+- the mobile Variations contract (migration
+  `20261003160000_add_mobile_project_variation_capabilities_v1.sql`) is
+  therefore applied;
+- authenticated calls returned real Alpha rows for tasks, purchase orders and
+  variations.
+
+Re-read the live ledger when a database password is available and record the
+exact migration versions in this section.
+
+### 5.3 Isolated validation fixture
+
+A dedicated, clearly named fixture was created in Alpha (never reusing or
+mutating existing commissioning data):
+
+| Item | Value |
+|---|---|
+| Worker account | `worker-e2e@tradesstack.invalid` (password held only in the operator's temporary env, never committed) |
+| Organization | `worker-e2e Organization` (auto-provisioned by the Alpha user trigger) |
+| Membership | role `worker` |
+| Project | `Worker E2E Fitout` (`E2E01`), active `project_members` row |
+| Records | PO `E2E-PO-001` (Approved, 287.50), task `E2E site check`, variation `E2E-VO-001` (Draft, 138.00) |
+
+Cleanup: delete the auth user `worker-e2e@tradesstack.invalid` (which removes
+its organization membership) and the `Worker E2E Fitout` project/records when
+the environment is retired. Alpha's single-organization-per-user constraint
+means the fixture user cannot join an existing organization.
+
+**Existing Alpha data needed a mobile commissioning step.** Before validation,
+Alpha had **zero `project_members` rows** (the reference project has nine). The
+mobile bootstrap lists only projects assigned through `project_members`, so any
+pre-existing Alpha account saw an empty dashboard and no POs/time clock even
+though Alpha owned real purchase orders. Two memberships were created:
+
+| Account | Organization | Project | Result |
+|---|---|---|---|
+| `alpha-worker.phase1xa3@tradesstack.invalid` | `alpha-owner.phase1w` | `26001 Alpha Fictional Build` | PO `26001-PO-01` (287.50), 1 task, 2 variations |
+| `corey` (owner) | `corey Organization` | `Cashel St Office Fitout` (Construction) | PO `26005-PO-01/02` (13,907.64 / 23,184.00), time clock enabled |
+
+A tender-workspace project rejected the membership with "Project is not
+delivery-eligible"; assign the awarded/delivery project, not the tender
+workspace. This is environment commissioning data, not application code.
+
+Verified in the API, the browser app and the native iOS app:
+- Alpha `corey Organization` dashboard with six tabs including Time Clock and
+  POs, plus the PO quick action;
+- `alpha-owner.phase1w Organization` lists PO `26001-PO-01`, detail total
+  287.50 (subtotal 250.00, GST 37.50), 1 task and 2 variations.
+
+### 5.4 Results (2026-10-17)
+
+| Suite | Result |
+|---|---|
+| `node scripts/verify-worker-alpha.mjs` (read-only readiness) | **19/19 PASS** |
+| Alpha API E2E (login, bootstrap, tasks, POs, variations, clock in/out, cross-org denial, worker permission denial) | **20/20 PASS** |
+| Browser E2E against the Alpha web build (identity, dashboard, modules, tasks, PO list/detail/financials, variations, clock in/out, persistence, foreign-session rejection) | **32/32 PASS** |
+| Native iOS Release build `1.1.1` + install on iPhone 17 Pro simulator | **Build Succeeded**; `CFBundleShortVersionString 1.1.1`, bundle `com.tradesstack.worker.clientalpha`; app launched with the Alpha profile and rendered the Alpha organization, six tabs (including POs and Time Clock) and the PO quick action |
+| Android native build | **NOT EXECUTED** — no Android SDK/Java on this workstation and no EAS project configured |
+| Store distribution | **NOT EXECUTED / NOT APPROVED** |
+
+Defects found and fixed in Worker Main during live validation (released as
+1.1.1):
+
+1. custom request headers broke the Edge Function CORS preflight;
+2. purchase order detail failed entirely when the edit snapshot was denied;
+3. `total_purchase_order_price` was not mapped for display;
+4. the shared bootstrap cache made the time clock render stale state after a
+   clock mutation.
+
+Known contract limitation (not a defect): the mobile purchase-order **list** RPC
+returns no financial total, so the list shows "Total pending"; the detail screen
+shows the authoritative total.
 
 ## 6. Troubleshooting
 

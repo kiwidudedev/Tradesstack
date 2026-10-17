@@ -65,7 +65,9 @@
     "worker:sync-config:check": "node scripts/ops/sync-worker-config.mjs --check",
     "test:worker-ops": "npm run build:worker-config && vitest run scripts/ops/worker-foundation.test.mjs",
     "test:client-promotion": "node --test scripts/ops/promote-release.test.mjs",
-    "takeoff:worker": "bash scripts/run_takeoff_render_worker.sh"
+    "takeoff:worker": "bash scripts/run_takeoff_render_worker.sh",
+    "worker:artifact": "node scripts/ops/worker-artifact.mjs",
+    "verify:alpha-worker": "node scripts/verify-worker-alpha.mjs"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",

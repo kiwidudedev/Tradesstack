@@ -135,6 +135,13 @@
     "customerDeployment": "NOT_APPROVED",
     "storeResubmission": "NOT_REQUIRED"
   },
+  "artifactState": {
+    "targetRelease": "1.1.0",
+    "builtRelease": null,
+    "distributedRelease": null,
+    "installedApplicationVersion": null,
+    "note": "Control-plane target updated only. No binary was built, distributed or installed by this upgrade."
+  },
   "releases": {
     "from": {
       "version": "1.0.0",
@@ -148,6 +155,6 @@
     }
   },
   "webRelease": "1.2.0",
-  "generatedAt": "2026-10-17T20:04:21.805Z",
+  "generatedAt": "2026-10-17T21:31:55.036Z",
   "generatedBy": "scripts/ops/worker-upgrade.mjs"
 }
