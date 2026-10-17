@@ -388,6 +388,9 @@ describe("artifact lifecycle is separate from the release pin", () => {
   let workspace;
   beforeEach(() => {
     workspace = cloneWorkspace();
+    // Lifecycle tests start from no recorded artifacts so ordering rules are
+    // exercised deterministically, independent of committed Alpha evidence.
+    fs.rmSync(path.join(workspace, 'ops/worker/distribution'), { recursive: true, force: true });
   });
   afterEach(() => {
     fs.rmSync(workspace, { recursive: true, force: true });
