@@ -26,7 +26,6 @@ import {
   latestWorkerRelease,
   loadContract,
   loadWorkerProduct,
-  loadWorkerReleases,
   validateWorkerReleaseManifest,
   workerPaths,
   workerReleaseFingerprint,
@@ -153,20 +152,10 @@ function resolveWorkerRoot(options) {
   return workerRoot;
 }
 
-function latestMainRelease() {
-  const files = fs.readdirSync(path.join(repositoryRoot, "ops/releases")).filter((file) => file.endsWith(".json"));
-  const releases = files
-    .map((file) => JSON.parse(fs.readFileSync(path.join(repositoryRoot, "ops/releases", file), "utf8")))
-    .filter((value) => value.releaseType === "OFFICIAL" && semver(value.version))
-    .sort((left, right) => compareSemver(right.version, left.version));
-  return releases[0];
-}
-
 function buildRelease({ version, sourceSha, workerRoot, snapshot, files, options, dirtyPaths = [] }) {
   const fileHashes = Object.fromEntries(files.map((file) => [file, sha256File(path.join(snapshot, file))]));
   const capabilities = JSON.parse(fs.readFileSync(path.join(snapshot, "worker-capabilities.json"), "utf8"));
   const previous = latestWorkerRelease(repositoryRoot);
-  const main = latestMainRelease();
   const manifest = {
     schemaVersion: 1,
     releaseId: version,
@@ -344,6 +333,17 @@ function verify(options) {
         if (!files.includes(file)) continue;
         if (sha256File(path.join(snapshot, file)) !== manifest.fileHashes[file]) {
           errors.push(`worker snapshot content differs for ${file}`);
+        }
+      }
+      // The declared capability surface must equal the snapshot's committed
+      // capabilities file, otherwise a manifest could advertise capability the
+      // released Worker App does not contain.
+      if (manifest.files.includes("worker-capabilities.json")) {
+        const snapshotCapabilities = JSON.parse(
+          fs.readFileSync(path.join(snapshot, "worker-capabilities.json"), "utf8"),
+        );
+        if (JSON.stringify(snapshotCapabilities) !== JSON.stringify(manifest.capabilities)) {
+          errors.push("manifest capabilities differ from the released worker-capabilities.json");
         }
       }
       details.push(`snapshot compared against ${manifest.sourceSha}`);

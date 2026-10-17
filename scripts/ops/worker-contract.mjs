@@ -208,7 +208,7 @@ export function validateWorkerCapabilities(capabilities, contract) {
   return errors;
 }
 
-export function validateWorkerReleaseManifest(manifest, { root = ROOT, contract } = {}) {
+export function validateWorkerReleaseManifest(manifest, { contract } = {}) {
   const errors = [];
   const required = [
     "schemaVersion", "releaseId", "version", "displayLabel", "releaseType", "status",
@@ -419,8 +419,10 @@ export function checkWorkerCompatibility({
 
   const capabilities = workerRelease.value.capabilities;
   const unsupported = [];
-  for (const module of contract.WORKER_MODULES) {
-    if (profile.config.modules[module] && !capabilities.modules.includes(module)) unsupported.push(`module ${module}`);
+  for (const moduleKey of contract.WORKER_MODULES) {
+    if (profile.config.modules[moduleKey] && !capabilities.modules.includes(moduleKey)) {
+      unsupported.push(`module ${moduleKey}`);
+    }
   }
   for (const feature of contract.WORKER_FEATURES) {
     if (profile.config.features[feature] && !capabilities.features.includes(feature)) unsupported.push(`feature ${feature}`);

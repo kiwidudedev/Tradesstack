@@ -385,8 +385,8 @@ describe("capability registry", () => {
       expect(WORKER_TABS).toContain(tab);
       expect(WORKER_TAB_MODULES[tab]).not.toBeUndefined();
     }
-    for (const module of WORKER_MODULES) {
-      expect(typeof config.modules[module]).toBe("boolean");
+    for (const moduleKey of WORKER_MODULES) {
+      expect(typeof config.modules[moduleKey]).toBe("boolean");
     }
   });
 });

@@ -164,6 +164,7 @@ function booleanValue(value, path) {
 }
 function rejectUnknown(value, allowed, path) {
     for (const key of Object.keys(value)) {
+        rejectSecretKey(key, `${path}.${key}`);
         if (!allowed.includes(key)) {
             throw new WorkerConfigValidationError(`${path}.${key}`, "unknown fields are not allowed.");
         }
@@ -279,11 +280,11 @@ export function defineWorkerClientConfig(input) {
     const modulesInput = record(root.modules, "modules");
     rejectUnknown(modulesInput, WORKER_MODULES, "modules");
     const modules = {};
-    for (const module of WORKER_MODULES) {
-        if (!(module in modulesInput)) {
-            throw new WorkerConfigValidationError(`modules.${module}`, "must be declared explicitly.");
+    for (const moduleKey of WORKER_MODULES) {
+        if (!(moduleKey in modulesInput)) {
+            throw new WorkerConfigValidationError(`modules.${moduleKey}`, "must be declared explicitly.");
         }
-        modules[module] = booleanValue(modulesInput[module], `modules.${module}`);
+        modules[moduleKey] = booleanValue(modulesInput[moduleKey], `modules.${moduleKey}`);
     }
     if (!modules.dashboard) {
         throw new WorkerConfigValidationError("modules.dashboard", "must remain enabled; the Worker App has no usable entry screen without it.");
@@ -326,11 +327,11 @@ export function defineWorkerClientConfig(input) {
     // Navigation targets must resolve to enabled modules so the app never shows
     // a link that cannot open.
     for (const tab of tabs) {
-        const module = WORKER_TAB_MODULES[tab];
-        if (!module)
+        const tabModule = WORKER_TAB_MODULES[tab];
+        if (!tabModule)
             continue;
-        if (!modules[module]) {
-            throw new WorkerConfigValidationError("navigation.tabs", `includes ${tab} but modules.${module} is disabled.`);
+        if (!modules[tabModule]) {
+            throw new WorkerConfigValidationError("navigation.tabs", `includes ${tab} but modules.${tabModule} is disabled.`);
         }
     }
     let terminology;
@@ -436,20 +437,20 @@ export function canonicalizeWorkerClientConfig(config) {
 }
 export function resolveWorkerNavigation(config, capabilities = {}) {
     var _a;
-    const enabledModules = WORKER_MODULES.filter((module) => config.modules[module]);
-    const granted = enabledModules.filter((module) => {
-        const capability = WORKER_MODULE_CAPABILITIES[module];
+    const enabledModules = WORKER_MODULES.filter((moduleKey) => config.modules[moduleKey]);
+    const granted = enabledModules.filter((moduleKey) => {
+        const capability = WORKER_MODULE_CAPABILITIES[moduleKey];
         if (!capability)
             return true;
         return capabilities[capability] === true;
     });
-    const withheldModules = enabledModules.filter((module) => !granted.includes(module));
+    const withheldModules = enabledModules.filter((moduleKey) => !granted.includes(moduleKey));
     const grantedSet = new Set(granted);
     const tabs = config.navigation.tabs.filter((tab) => {
-        const module = WORKER_TAB_MODULES[tab];
-        if (!module)
+        const tabModule = WORKER_TAB_MODULES[tab];
+        if (!tabModule)
             return true;
-        return grantedSet.has(module);
+        return grantedSet.has(tabModule);
     });
     const quickActions = config.navigation.quickActions.filter((action) => {
         if (action.target === "time_clock")
@@ -503,9 +504,7 @@ export function validateWorkerEnvironment(config, input) {
         errors.push("supabaseUrl must be an origin without a path.");
     }
     const environment = config.environment;
-    let expectedProjectRef = null;
     if (environment.kind === "hosted") {
-        expectedProjectRef = environment.supabaseProjectRef;
         if (supabaseUrl.protocol !== "https:") {
             errors.push("hosted environments require an https supabaseUrl.");
         }

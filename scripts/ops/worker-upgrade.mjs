@@ -130,7 +130,6 @@ conflicts.push(...compatibility.errors);
 
 // Enabled customer customisations that the target release no longer supports
 // are the core upgrade conflict. They are reported, never removed.
-const capabilitySurface = toRelease.capabilities;
 const customisations = {
   modules: contract.WORKER_MODULES.filter((module) => profileConfig.modules[module]),
   features: contract.WORKER_FEATURES.filter((feature) => profileConfig.features[feature]),

@@ -30,7 +30,6 @@ import {
   validateRegistryWorkerBindings,
   validateWorkerProductVersion,
   validateWorkerReleaseManifest,
-  workerPaths,
 } from "./worker-contract.mjs";
 
 const options = { json: false };

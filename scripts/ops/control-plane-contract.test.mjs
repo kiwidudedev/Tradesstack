@@ -30,6 +30,39 @@ describe("Control Plane operational contract", () => {
     expect(alpha.migration.observedMigrationState.evidence.verification).toBe("NOT_VERIFIED");
   });
 
+  it("exposes the Worker App binding, compatibility and capability surface", () => {
+    const contract = assembleOperationalContract();
+    const alpha = contract.customers.find((customer) => customer.customerId === "client-alpha");
+    expect(validateOperationalContract(contract)).toEqual([]);
+    expect(alpha.worker.release.value).toBe("1.1.0");
+    expect(alpha.worker.compatibility.value).toBe("COMPATIBLE");
+    expect(alpha.worker.compatibilityReasons.value).toEqual([]);
+    expect(alpha.worker.distributionChannel.value).toBe("internal");
+    expect(alpha.worker.profileFingerprintRecorded.value).toBe(true);
+    expect(alpha.worker.enabledCustomisations.value.modules).toEqual(
+      expect.arrayContaining(["dashboard", "time_clock", "tasks", "purchase_orders", "variations"]),
+    );
+    expect(alpha.worker.enabledCustomisations.value.extensions).toEqual(["home-notice"]);
+    expect(alpha.worker.upgradeRecord.value).toMatch(/ops\/worker\/upgrades\/client-alpha\//);
+    expect(alpha.worker.storePublishState.value).toBe("NOT_APPROVED_BY_THIS_CONTRACT");
+    expect(contract.main.workerReleases.map((release) => release.releaseId)).toEqual(["1.1.0", "1.0.0"]);
+  });
+
+  it("rejects a malformed Worker binding record", () => {
+    const contract = minimalContract();
+    contract.customers[0].worker = {
+      compatibility: { value: "NOT_A_STATE" },
+      release: { value: "not-semver" },
+      releaseFingerprint: { value: "short" },
+    };
+    const errors = validateOperationalContract(contract);
+    expect(errors).toEqual(expect.arrayContaining([
+      "customers[0].worker.compatibility invalid",
+      "customers[0].worker.release invalid",
+      "customers[0].worker.releaseFingerprint invalid",
+    ]));
+  });
+
   it("rejects malformed, duplicate and unknown customer records", () => {
     const malformed = minimalContract();
     malformed.customers[0].customerId = "Not Safe";

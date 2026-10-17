@@ -63,7 +63,7 @@
     "worker:upgrade": "node scripts/ops/worker-upgrade.mjs",
     "worker:sync-config": "node scripts/ops/sync-worker-config.mjs",
     "worker:sync-config:check": "node scripts/ops/sync-worker-config.mjs --check",
-    "test:worker-ops": "vitest run scripts/ops/worker-foundation.test.mjs",
+    "test:worker-ops": "npm run build:worker-config && vitest run scripts/ops/worker-foundation.test.mjs",
     "test:client-promotion": "node --test scripts/ops/promote-release.test.mjs",
     "takeoff:worker": "bash scripts/run_takeoff_render_worker.sh"
   },
