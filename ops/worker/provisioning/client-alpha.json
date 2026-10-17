@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "clientId": "client-alpha",
   "status": "PROVISIONED_AWAITING_EXTERNAL_ACTIONS",
-  "planFingerprint": "66b1c58cb44dd795c6feb6081e5d443da7f7459a8fb22cd7843d50abee54d8de",
+  "planFingerprint": "ba29f758db4e35f0556e0dac018a3ecf3651778745772ac86bffac1dc554ac60",
   "inputs": {
     "profilePath": "ops/worker/profiles/client-alpha.json",
-    "profileFingerprint": "501f73609ecbdad357a40c897e027768454ad031c124b27cbef69bbac43e4ade",
+    "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
     "workerRelease": "1.0.0",
     "workerReleaseFingerprint": "23fb58ef0a04cf6acbc9db35fdf03d0111423ff0e0c4e54aefb35521a44263e4",
     "webRelease": "1.2.0",
@@ -44,7 +44,7 @@
     {
       "id": "profile-validated",
       "status": "PASS",
-      "detail": "ops/worker/profiles/client-alpha.json is a valid Worker profile (501f73609ecb…)"
+      "detail": "ops/worker/profiles/client-alpha.json is a valid Worker profile (ecb6610ffe19…)"
     },
     {
       "id": "worker-release-resolved",
@@ -124,6 +124,6 @@
     "registryClientId": "client-alpha",
     "record": "ops/worker/provisioning/client-alpha.json"
   },
-  "generatedAt": "2026-10-17T19:56:46.153Z",
+  "generatedAt": "2026-10-17T19:58:16.396Z",
   "generatedBy": "scripts/ops/worker-provision.mjs"
 }

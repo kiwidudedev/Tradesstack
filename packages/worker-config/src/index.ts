@@ -232,6 +232,16 @@ export type WorkerClientConfig = {
   readonly terminology?: { readonly [Key in WorkerTerminologyKey]?: string };
   readonly features: { readonly [Feature in WorkerFeature]: boolean };
   readonly extensions?: { readonly [Extension in WorkerExtension]?: WorkerExtensionConfig };
+  /**
+   * Display defaults for locale-aware formatting (money, dates). These are
+   * formatting defaults only: transaction currency, tax and persisted
+   * timestamps remain owned by the customer database and Main services.
+   */
+  readonly defaults?: {
+    readonly locale: string;
+    readonly currency: string;
+    readonly timezone: string;
+  };
 };
 
 /* -------------------------------------------------------------------------- */
@@ -365,7 +375,7 @@ export function defineWorkerClientConfig(input: unknown): WorkerClientConfig {
   const root = record(input, "config");
   rejectUnknown(
     root,
-    ["schemaVersion", "clientKey", "identity", "distribution", "environment", "branding", "modules", "navigation", "terminology", "features", "extensions"],
+    ["schemaVersion", "clientKey", "identity", "distribution", "environment", "branding", "modules", "navigation", "terminology", "features", "extensions", "defaults"],
     "config",
   );
   if (root.schemaVersion !== WORKER_CONFIG_SCHEMA_VERSION) {
@@ -556,6 +566,26 @@ export function defineWorkerClientConfig(input: unknown): WorkerClientConfig {
     }
   }
 
+  let defaults: { locale: string; currency: string; timezone: string } | undefined;
+  if (root.defaults !== undefined) {
+    const defaultsInput = record(root.defaults, "defaults");
+    rejectUnknown(defaultsInput, ["locale", "currency", "timezone"], "defaults");
+    const locale = stringValue(defaultsInput.locale, "defaults.locale", { max: 35 });
+    try {
+      if (Intl.getCanonicalLocales(locale).length !== 1) throw new Error();
+    } catch {
+      throw new WorkerConfigValidationError("defaults.locale", "must be a valid BCP 47 locale.");
+    }
+    const currency = stringValue(defaultsInput.currency, "defaults.currency", { pattern: /^[A-Z]{3}$/, max: 3 });
+    const timezone = stringValue(defaultsInput.timezone, "defaults.timezone", { max: 80 });
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+    } catch {
+      throw new WorkerConfigValidationError("defaults.timezone", "must be a valid IANA timezone.");
+    }
+    defaults = { locale, currency, timezone };
+  }
+
   return {
     schemaVersion: 1,
     clientKey,
@@ -585,6 +615,7 @@ export function defineWorkerClientConfig(input: unknown): WorkerClientConfig {
     ...(terminology === undefined ? {} : { terminology }),
     features,
     ...(extensions === undefined ? {} : { extensions }),
+    ...(defaults === undefined ? {} : { defaults }),
   };
 }
 

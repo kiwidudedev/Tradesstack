@@ -163,6 +163,16 @@ export type WorkerClientConfig = {
     readonly extensions?: {
         readonly [Extension in WorkerExtension]?: WorkerExtensionConfig;
     };
+    /**
+     * Display defaults for locale-aware formatting (money, dates). These are
+     * formatting defaults only: transaction currency, tax and persisted
+     * timestamps remain owned by the customer database and Main services.
+     */
+    readonly defaults?: {
+        readonly locale: string;
+        readonly currency: string;
+        readonly timezone: string;
+    };
 };
 export declare class WorkerConfigValidationError extends Error {
     readonly path: string;

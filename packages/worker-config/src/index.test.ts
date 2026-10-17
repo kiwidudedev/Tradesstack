@@ -416,3 +416,30 @@ describe("public Supabase credentials", () => {
     expect(inspectPublicSupabaseKey(jwt({ role: "authenticated" })).ok).toBe(false);
   });
 });
+
+describe("display defaults", () => {
+  it("accepts validated locale, currency and timezone defaults", () => {
+    const config = defineWorkerClientConfig(
+      alphaProfile({ defaults: { locale: "en-AU", currency: "AUD", timezone: "Australia/Sydney" } }),
+    );
+    expect(config.defaults).toEqual({ locale: "en-AU", currency: "AUD", timezone: "Australia/Sydney" });
+  });
+
+  it("rejects invalid or unknown defaults", () => {
+    expect(() =>
+      defineWorkerClientConfig(alphaProfile({ defaults: { locale: "en-NZ", currency: "nzd", timezone: "Pacific/Auckland" } })),
+    ).toThrow(/defaults\.currency/);
+    expect(() =>
+      defineWorkerClientConfig(alphaProfile({ defaults: { locale: "en-NZ", currency: "NZD", timezone: "Mars/Olympus" } })),
+    ).toThrow(/defaults\.timezone/);
+    expect(() =>
+      defineWorkerClientConfig(alphaProfile({ defaults: { locale: "en-NZ", currency: "NZD", timezone: "Pacific/Auckland", taxRate: 0.15 } })),
+    ).toThrow(/unknown fields/);
+  });
+
+  it("includes defaults in the canonical fingerprint", () => {
+    const withDefaults = defineWorkerClientConfig(alphaProfile({ defaults: { locale: "en-NZ", currency: "NZD", timezone: "Pacific/Auckland" } }));
+    const withoutDefaults = defineWorkerClientConfig(alphaProfile());
+    expect(canonicalizeWorkerClientConfig(withDefaults)).not.toBe(canonicalizeWorkerClientConfig(withoutDefaults));
+  });
+});

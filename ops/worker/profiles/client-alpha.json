@@ -64,5 +64,10 @@
         "body": "This Worker App is connected to the fictional Client Alpha environment only."
       }
     }
+  },
+  "defaults": {
+    "locale": "en-NZ",
+    "currency": "NZD",
+    "timezone": "Pacific/Auckland"
   }
 }

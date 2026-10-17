@@ -205,7 +205,7 @@ function uniqueStrings(value, path, allowed, maxItems) {
 /* -------------------------------------------------------------------------- */
 export function defineWorkerClientConfig(input) {
     const root = record(input, "config");
-    rejectUnknown(root, ["schemaVersion", "clientKey", "identity", "distribution", "environment", "branding", "modules", "navigation", "terminology", "features", "extensions"], "config");
+    rejectUnknown(root, ["schemaVersion", "clientKey", "identity", "distribution", "environment", "branding", "modules", "navigation", "terminology", "features", "extensions", "defaults"], "config");
     if (root.schemaVersion !== WORKER_CONFIG_SCHEMA_VERSION) {
         throw new WorkerConfigValidationError("schemaVersion", `must be ${WORKER_CONFIG_SCHEMA_VERSION}.`);
     }
@@ -376,7 +376,29 @@ export function defineWorkerClientConfig(input) {
             throw new WorkerConfigValidationError(`${path}`, "is not a supported extension.");
         }
     }
-    return Object.assign(Object.assign(Object.assign({ schemaVersion: 1, clientKey, identity: Object.assign({ appName,
+    let defaults;
+    if (root.defaults !== undefined) {
+        const defaultsInput = record(root.defaults, "defaults");
+        rejectUnknown(defaultsInput, ["locale", "currency", "timezone"], "defaults");
+        const locale = stringValue(defaultsInput.locale, "defaults.locale", { max: 35 });
+        try {
+            if (Intl.getCanonicalLocales(locale).length !== 1)
+                throw new Error();
+        }
+        catch (_a) {
+            throw new WorkerConfigValidationError("defaults.locale", "must be a valid BCP 47 locale.");
+        }
+        const currency = stringValue(defaultsInput.currency, "defaults.currency", { pattern: /^[A-Z]{3}$/, max: 3 });
+        const timezone = stringValue(defaultsInput.timezone, "defaults.timezone", { max: 80 });
+        try {
+            new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+        }
+        catch (_b) {
+            throw new WorkerConfigValidationError("defaults.timezone", "must be a valid IANA timezone.");
+        }
+        defaults = { locale, currency, timezone };
+    }
+    return Object.assign(Object.assign(Object.assign(Object.assign({ schemaVersion: 1, clientKey, identity: Object.assign({ appName,
             slug,
             scheme }, (description === undefined ? {} : { description })), distribution: {
             channel: channel,
@@ -385,7 +407,7 @@ export function defineWorkerClientConfig(input) {
             updateChannel,
         }, environment: resolvedEnvironment, branding: Object.assign(Object.assign(Object.assign({ platformColor,
             actionColor,
-            splashBackgroundColor }, (iconPath === undefined ? {} : { iconPath })), (logoPath === undefined ? {} : { logoPath })), (splashImagePath === undefined ? {} : { splashImagePath })), modules, navigation: { tabs, quickActions } }, (terminology === undefined ? {} : { terminology })), { features }), (extensions === undefined ? {} : { extensions }));
+            splashBackgroundColor }, (iconPath === undefined ? {} : { iconPath })), (logoPath === undefined ? {} : { logoPath })), (splashImagePath === undefined ? {} : { splashImagePath })), modules, navigation: { tabs, quickActions } }, (terminology === undefined ? {} : { terminology })), { features }), (extensions === undefined ? {} : { extensions })), (defaults === undefined ? {} : { defaults }));
 }
 export function resolveWorkerClientConfig(input) {
     return defineWorkerClientConfig(input);

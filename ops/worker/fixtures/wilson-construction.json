@@ -61,5 +61,10 @@
         "body": "Record site evidence before leaving each job."
       }
     }
+  },
+  "defaults": {
+    "locale": "en-NZ",
+    "currency": "NZD",
+    "timezone": "Pacific/Auckland"
   }
 }
