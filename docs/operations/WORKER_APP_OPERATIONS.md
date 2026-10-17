@@ -221,6 +221,22 @@ Also required before declaring Alpha Worker-ready:
 | `does not support: module …` on upgrade | enabled customisation no longer supported | keep the current release or reimplement the capability in Main first |
 | `worker profile not found` in build | `TRADESSTACK_WORKER_PROFILE` wrong or missing | point at the Main-owned profile or a bundled profile |
 
+## 6a. Known repository access issue
+
+The local Worker repository is configured with the remote
+`github:tradesstack/tradesstack-worker-app`. On 2026-10-17 that repository was
+not resolvable with the available credentials (`Repository not found`), and no
+Worker repository exists under the current owner account. Consequences:
+
+- Worker CI (`.github/workflows/worker-app-ci.yml`) cannot run remotely yet;
+  the same checks run locally (`npm run check`).
+- The Worker release PR cannot be opened until the remote exists.
+- Approved Worker release manifests record the configured repository identity;
+  `ops/worker/product-version.json` records the verification status explicitly.
+
+Creating or repointing the remote is an external owner action and was not
+performed.
+
 ## 7. Audit trail
 
 | Record | Path |
