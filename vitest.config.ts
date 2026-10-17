@@ -10,6 +10,7 @@ export default defineConfig({
         "packages/core-contracts/src/index.ts",
       ),
       "@tradesstack/client-config": path.resolve(__dirname, "packages/client-config/src/index.ts"),
+      "@tradesstack/worker-config": path.resolve(__dirname, "packages/worker-config/src/index.ts"),
       "@tradesstack/shared-ui": path.resolve(__dirname, "packages/shared-ui/src/index.ts"),
       "@tradesstack/pdf-utils": path.resolve(__dirname, "packages/pdf-utils/src/index.ts"),
       "@tradesstack/suppliers": path.resolve(__dirname, "packages/suppliers/src/index.ts"),

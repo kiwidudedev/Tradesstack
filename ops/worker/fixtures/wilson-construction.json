@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "clientKey": "wilson-construction",
+  "identity": {
+    "appName": "Wilson Worker",
+    "slug": "wilson-construction-worker",
+    "scheme": "wilsonworker",
+    "description": "TradesStack Worker App for Wilson Construction"
+  },
+  "distribution": {
+    "channel": "store",
+    "iosBundleIdentifier": "com.tradesstack.worker.wilsonconstruction",
+    "androidPackage": "com.tradesstack.worker.wilsonconstruction",
+    "updateChannel": "wilson-construction"
+  },
+  "environment": {
+    "kind": "hosted",
+    "environmentId": "wilson-construction-production",
+    "displayLabel": "Wilson Construction",
+    "supabaseProjectRef": "wlsnconstruction0001"
+  },
+  "branding": {
+    "platformColor": "#1F3A2E",
+    "actionColor": "#C76B1C",
+    "splashBackgroundColor": "#FFFFFF"
+  },
+  "modules": {
+    "dashboard": true,
+    "time_clock": true,
+    "tasks": true,
+    "purchase_orders": true,
+    "variations": false
+  },
+  "navigation": {
+    "tabs": [
+      "dashboard",
+      "time_clock",
+      "tasks",
+      "purchase_orders",
+      "settings"
+    ],
+    "quickActions": [
+      {
+        "id": "wilson-site-inspection",
+        "label": "Site Inspection",
+        "target": "tasks"
+      }
+    ]
+  },
+  "terminology": {
+    "purchaseOrders": "Site Orders"
+  },
+  "features": {
+    "notifications": true
+  },
+  "extensions": {
+    "home-notice": {
+      "enabled": true,
+      "config": {
+        "title": "Wilson Construction",
+        "body": "Record site evidence before leaving each job."
+      }
+    }
+  }
+}

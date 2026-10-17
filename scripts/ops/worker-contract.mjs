@@ -1,0 +1,559 @@
+/**
+ * Shared Worker App control-plane helpers.
+ *
+ * Main is authoritative for:
+ *   - the Worker App release registry (`ops/worker/releases`),
+ *   - the customer Worker profiles (`ops/worker/profiles`),
+ *   - the per-customer Worker binding in `ops/clients.json`,
+ *   - compatibility between Worker release, web release and database target.
+ *
+ * The Worker App repository is authoritative for the mobile core itself. This
+ * module never edits the Worker repository; it validates metadata and produces
+ * reviewable plans.
+ */
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import {
+  ROOT,
+  compareSemver,
+  fingerprint,
+  migrationName,
+  readJson,
+  scanJsonForSecrets,
+  semver,
+  sha,
+} from "./lib.mjs";
+
+export const WORKER_DIRECTORY = "ops/worker";
+export const WORKER_REQUIRED_FILES = [
+  "app.config.ts",
+  "package.json",
+  "worker-capabilities.json",
+  "scripts/validate-build-environment.mjs",
+  "vendor/tradesstack-worker-config/dist/index.js",
+  "src/config/runtime.ts",
+  "src/config/navigation.ts",
+];
+export const WORKER_APPROVAL_STATES = ["NOT_REQUESTED", "REQUESTED", "APPROVED", "REJECTED"];
+export const WORKER_COMPATIBILITY_STATUSES = ["COMPATIBLE", "BLOCKED"];
+
+/** The contract registry is imported from the built package so this tooling
+ * runs on any supported Node version without TypeScript loaders. */
+export function loadContract(root = ROOT) {
+  const distPath = path.join(root, "packages/worker-config/dist/index.js");
+  if (!fs.existsSync(distPath)) {
+    throw new Error(
+      `worker-config package is not built: ${path.relative(root, distPath)} is missing. Run "npm run build:worker-config".`,
+    );
+  }
+  return import(distPath);
+}
+
+export function workerPaths(root = ROOT) {
+  const directory = path.join(root, WORKER_DIRECTORY);
+  return {
+    directory,
+    productVersion: path.join(directory, "product-version.json"),
+    releases: path.join(directory, "releases"),
+    profiles: path.join(directory, "profiles"),
+    fixtures: path.join(directory, "fixtures"),
+    provisioning: path.join(directory, "provisioning"),
+    upgrades: path.join(directory, "upgrades"),
+    contractPackage: path.join(root, "packages/worker-config"),
+  };
+}
+
+export function sha256Text(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+export function relative(root, file) {
+  return path.relative(root, file).split(path.sep).join("/");
+}
+
+export function workerReleaseFingerprint(manifest) {
+  return sha256Text(manifest.files.map((file) => `${file}:${manifest.fileHashes[file]}`).join("\n"));
+}
+
+export function readJsonFile(file) {
+  return readJson(file);
+}
+
+export function listJsonFiles(directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory).filter((file) => file.endsWith(".json")).sort();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Profiles                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export function loadWorkerProfile(file, contract) {
+  const raw = readJson(file);
+  const errors = [];
+  let config = null;
+  try {
+    config = contract.defineWorkerClientConfig(raw);
+  } catch (error) {
+    errors.push(`${relative(ROOT, file)}: ${error.message}`);
+  }
+  const canonical = config ? contract.canonicalizeWorkerClientConfig(config) : null;
+  return {
+    path: file,
+    relativePath: relative(ROOT, file),
+    raw,
+    config,
+    canonical,
+    fingerprint: canonical ? sha256Text(canonical) : null,
+    errors,
+  };
+}
+
+export function listWorkerProfiles(root = ROOT, contract) {
+  const { profiles, fixtures } = workerPaths(root);
+  const files = [
+    ...listJsonFiles(profiles).map((file) => path.join(profiles, file)),
+    ...listJsonFiles(fixtures).map((file) => path.join(fixtures, file)),
+  ];
+  return files.map((file) => loadWorkerProfile(file, contract));
+}
+
+/**
+ * Profile isolation: no two customer profiles may share an environment,
+ * bundle identifier, scheme or update channel. Fixtures are included so a
+ * real customer cannot accidentally collide with a documented example.
+ */
+export function validateProfileIsolation(profiles, contract) {
+  const errors = [];
+  const valid = profiles.filter((profile) => profile.config);
+  for (let left = 0; left < valid.length; left += 1) {
+    for (let right = left + 1; right < valid.length; right += 1) {
+      const conflicts = contract.findWorkerIsolationConflicts(valid[left].config, valid[right].config);
+      for (const conflict of conflicts) {
+        // Fixtures deliberately use fictional identifiers; only real profile
+        // collisions block a release.
+        const fixtureInvolved = valid[left].relativePath.includes("/fixtures/")
+          || valid[right].relativePath.includes("/fixtures/");
+        const message = `${valid[left].relativePath} <-> ${valid[right].relativePath}: ${conflict}`;
+        if (fixtureInvolved) continue;
+        errors.push(message);
+      }
+    }
+  }
+  return errors;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Releases                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export function loadWorkerProduct(root = ROOT) {
+  const file = workerPaths(root).productVersion;
+  if (!fs.existsSync(file)) return { path: file, value: null };
+  return { path: file, value: readJson(file) };
+}
+
+export function loadWorkerReleases(root = ROOT) {
+  const directory = workerPaths(root).releases;
+  return listJsonFiles(directory)
+    .map((name) => {
+      const file = path.join(directory, name);
+      return { file, relativePath: relative(root, file), value: readJson(file) };
+    })
+    .filter(({ value }) => value.releaseType === "OFFICIAL");
+}
+
+export function latestWorkerRelease(root = ROOT) {
+  const releases = loadWorkerReleases(root).sort((left, right) =>
+    compareSemver(right.value.version, left.value.version));
+  return releases[0] ?? null;
+}
+
+export function findWorkerRelease(root, version) {
+  return loadWorkerReleases(root).find(({ value }) => value.version === version) ?? null;
+}
+
+export function validateWorkerCapabilities(capabilities, contract) {
+  const errors = [];
+  if (!capabilities || typeof capabilities !== "object" || Array.isArray(capabilities)) {
+    return ["capabilities must be an object"];
+  }
+  if (capabilities.schemaVersion !== 1) errors.push("capabilities.schemaVersion must be 1");
+  if (typeof capabilities.contractVersion !== "string" || !capabilities.contractVersion) {
+    errors.push("capabilities.contractVersion missing");
+  }
+  if (!Number.isInteger(capabilities.mobileApiContractVersion) || capabilities.mobileApiContractVersion < 1) {
+    errors.push("capabilities.mobileApiContractVersion must be a positive integer");
+  }
+  const allowed = {
+    modules: contract.WORKER_MODULES,
+    tabs: contract.WORKER_TABS,
+    quickActionTargets: contract.WORKER_QUICK_ACTION_TARGETS,
+    features: contract.WORKER_FEATURES,
+    extensions: contract.WORKER_EXTENSIONS,
+    terminologyKeys: contract.WORKER_TERMINOLOGY_KEYS,
+  };
+  for (const [key, list] of Object.entries(allowed)) {
+    const value = capabilities[key];
+    if (!Array.isArray(value) || value.length === 0) {
+      errors.push(`capabilities.${key} must be a non-empty array`);
+      continue;
+    }
+    if (new Set(value).size !== value.length) errors.push(`capabilities.${key} contains duplicates`);
+    for (const entry of value) {
+      if (!list.includes(entry)) errors.push(`capabilities.${key} contains unsupported value ${entry}`);
+    }
+  }
+  return errors;
+}
+
+export function validateWorkerReleaseManifest(manifest, { root = ROOT, contract } = {}) {
+  const errors = [];
+  const required = [
+    "schemaVersion", "releaseId", "version", "displayLabel", "releaseType", "status",
+    "releaseDate", "previousRelease", "workerRepository", "sourceSha", "capabilities",
+    "configuration", "compatibility", "distribution", "files", "fileHashes",
+    "releaseFingerprint", "validation", "approval",
+  ];
+  for (const field of required) if (!(field in manifest)) errors.push(`missing ${field}`);
+  if (manifest.schemaVersion !== 1) errors.push("schemaVersion must be 1");
+  if (!semver(manifest.version)) errors.push("version must be MAJOR.MINOR.PATCH");
+  if (manifest.releaseId !== manifest.version) errors.push("releaseId must equal version");
+  if (manifest.displayLabel !== `TradesStack Worker ${manifest.version}`) {
+    errors.push("displayLabel must be TradesStack Worker plus the version");
+  }
+  if (manifest.releaseType !== "OFFICIAL") errors.push("releaseType must be OFFICIAL");
+  if (manifest.status !== "APPROVED") errors.push("status must be APPROVED");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(manifest.releaseDate ?? "")) errors.push("releaseDate must be YYYY-MM-DD");
+  if (manifest.previousRelease !== null && !semver(manifest.previousRelease)) {
+    errors.push("previousRelease must be null or a semantic version");
+  }
+  if (typeof manifest.workerRepository !== "string" || !manifest.workerRepository.startsWith("github:")) {
+    errors.push("workerRepository must be a github: reference");
+  }
+  if (!sha(manifest.sourceSha)) errors.push("sourceSha must be a 40-character SHA-1");
+  if (!manifest.capabilities) errors.push("capabilities missing");
+  else errors.push(...validateWorkerCapabilities(manifest.capabilities, contract));
+  if (!manifest.configuration || manifest.configuration.schemaVersion !== 1) {
+    errors.push("configuration.schemaVersion must be 1");
+  }
+  if (!manifest.configuration || typeof manifest.configuration.contract !== "string") {
+    errors.push("configuration.contract missing");
+  }
+  const compatibility = manifest.compatibility ?? {};
+  if (!semver(compatibility.minimumMainRelease)) {
+    errors.push("compatibility.minimumMainRelease must be a semantic version");
+  }
+  if (!migrationName(compatibility.databaseMigrationFloor)) {
+    errors.push("compatibility.databaseMigrationFloor must be a migration filename");
+  }
+  if (!Number.isInteger(compatibility.mobileApiContractVersion)) {
+    errors.push("compatibility.mobileApiContractVersion must be an integer");
+  }
+  if (manifest.capabilities && compatibility.mobileApiContractVersion !== manifest.capabilities.mobileApiContractVersion) {
+    errors.push("compatibility.mobileApiContractVersion must match capabilities");
+  }
+  const distribution = manifest.distribution ?? {};
+  if (!Array.isArray(distribution.channels) || distribution.channels.length === 0) {
+    errors.push("distribution.channels must be a non-empty array");
+  } else {
+    for (const channel of distribution.channels) {
+      if (!contract.WORKER_DISTRIBUTION_CHANNELS.includes(channel)) {
+        errors.push(`distribution.channels contains unsupported value ${channel}`);
+      }
+    }
+  }
+  if (typeof distribution.supportsOverTheAirUpdate !== "boolean") {
+    errors.push("distribution.supportsOverTheAirUpdate must be a boolean");
+  }
+  if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
+    errors.push("files must be a non-empty array");
+  } else {
+    if (new Set(manifest.files).size !== manifest.files.length) errors.push("files contains duplicates");
+    if (JSON.stringify(manifest.files) !== JSON.stringify([...manifest.files].sort())) {
+      errors.push("files must be sorted");
+    }
+    for (const file of WORKER_REQUIRED_FILES) {
+      if (!manifest.files.includes(file)) errors.push(`required Worker App file missing from release: ${file}`);
+    }
+    for (const file of manifest.files) {
+      if (file.startsWith("/") || file.split("/").includes("..")) errors.push(`files contains unsafe path ${file}`);
+    }
+  }
+  if (!manifest.fileHashes || typeof manifest.fileHashes !== "object") {
+    errors.push("fileHashes missing");
+  } else if (Array.isArray(manifest.files)) {
+    for (const file of manifest.files) {
+      if (!fingerprint(manifest.fileHashes[file])) errors.push(`fileHashes missing SHA-256 for ${file}`);
+    }
+    for (const file of Object.keys(manifest.fileHashes)) {
+      if (!manifest.files.includes(file)) errors.push(`fileHashes contains a file not in files: ${file}`);
+    }
+    if (manifest.releaseFingerprint && fingerprint(manifest.releaseFingerprint)) {
+      const computed = workerReleaseFingerprint(manifest);
+      if (computed !== manifest.releaseFingerprint) {
+        errors.push("releaseFingerprint does not match files/fileHashes");
+      }
+    } else if (!fingerprint(manifest.releaseFingerprint)) {
+      errors.push("releaseFingerprint must be SHA-256");
+    }
+  }
+  if (!manifest.validation || manifest.validation.status !== "PASS") {
+    errors.push("validation.status must be PASS for an official Worker release");
+  }
+  if (!manifest.approval || !WORKER_APPROVAL_STATES.includes(manifest.approval.storePublish)) {
+    errors.push("approval.storePublish is invalid");
+  }
+  errors.push(...scanJsonForSecrets(manifest).map((location) => `secret-like value at ${location}`));
+  return [...new Set(errors)];
+}
+
+export function validateWorkerProductVersion(product, releases, manifestPath) {
+  const errors = [];
+  if (!product || typeof product !== "object") return ["Ops Worker product version record is missing"];
+  if (product.schemaVersion !== 1) errors.push("product-version.schemaVersion must be 1");
+  if (product.product !== "TradesStack Worker") errors.push('product-version.product must be "TradesStack Worker"');
+  if (!semver(product.workerVersion)) errors.push("product-version.workerVersion must be MAJOR.MINOR.PATCH");
+  if (!sha(product.workerSourceSha)) errors.push("product-version.workerSourceSha must be a 40-character SHA-1");
+  if (!fingerprint(product.releaseFingerprint)) errors.push("product-version.releaseFingerprint must be SHA-256");
+  if (!Number.isInteger(product.mobileApiContractVersion)) {
+    errors.push("product-version.mobileApiContractVersion must be an integer");
+  }
+  if (!semver(product.minimumMainRelease)) {
+    errors.push("product-version.minimumMainRelease must be a semantic version");
+  }
+  const latest = [...releases].sort((left, right) => compareSemver(right.value.version, left.value.version))[0];
+  if (!latest) {
+    errors.push("no official Worker release manifest exists");
+    return errors;
+  }
+  if (product.workerVersion !== latest.value.version) {
+    errors.push(`product-version.workerVersion ${product.workerVersion} differs from latest release ${latest.value.version}`);
+  }
+  if (product.releaseManifest !== latest.relativePath) {
+    errors.push("product-version.releaseManifest is stale");
+  }
+  if (product.releaseFingerprint !== latest.value.releaseFingerprint) {
+    errors.push("product-version.releaseFingerprint differs from latest release");
+  }
+  if (product.workerSourceSha !== latest.value.sourceSha) {
+    errors.push("product-version.workerSourceSha differs from latest release");
+  }
+  if (product.mobileApiContractVersion !== latest.value.compatibility?.mobileApiContractVersion) {
+    errors.push("product-version.mobileApiContractVersion differs from latest release");
+  }
+  if (product.minimumMainRelease !== latest.value.compatibility?.minimumMainRelease) {
+    errors.push("product-version.minimumMainRelease differs from latest release");
+  }
+  if (manifestPath && !fs.existsSync(manifestPath)) errors.push("product-version.releaseManifest does not exist");
+  return errors;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Client binding + compatibility                                             */
+/* -------------------------------------------------------------------------- */
+
+export function normalizeProjectRef(reference) {
+  if (typeof reference !== "string") return null;
+  const value = reference.startsWith("supabase:") ? reference.slice("supabase:".length) : reference;
+  return /^[a-z0-9]{20}$/.test(value) ? value : null;
+}
+
+/**
+ * Compare one customer Worker binding against its profile, the Worker release
+ * it targets, and the approved Main web release.
+ *
+ * This is the single compatibility authority used by provisioning, upgrade
+ * and validation. It never mutates anything.
+ */
+export function checkWorkerCompatibility({
+  client,
+  profile,
+  workerRelease,
+  mainRelease,
+  contract,
+}) {
+  const checks = [];
+  const errors = [];
+  const add = (id, pass, detail) => {
+    checks.push({ id, status: pass ? "PASS" : "FAIL", detail });
+    if (!pass) errors.push(detail);
+  };
+
+  if (!profile?.config) {
+    add("profile-valid", false, `Worker profile is missing or invalid for ${client.clientId}`);
+    return { status: "BLOCKED", checks, errors };
+  }
+  add("profile-valid", true, `${profile.relativePath} is a valid Worker profile`);
+
+  add(
+    "profile-client-key",
+    profile.config.clientKey === client.clientId,
+    `profile clientKey ${profile.config.clientKey} must equal registry clientId ${client.clientId}`,
+  );
+
+  const registryProjectRef = normalizeProjectRef(client.databaseProjectReference);
+  const profileProjectRef = profile.config.environment.kind === "hosted"
+    ? profile.config.environment.supabaseProjectRef
+    : null;
+  add(
+    "environment-project-ref",
+    registryProjectRef !== null && profileProjectRef === registryProjectRef,
+    `profile environment ${profileProjectRef ?? "local"} must equal registry database project ${registryProjectRef ?? "unset"}`,
+  );
+
+  if (client.worker?.distributionChannel) {
+    add(
+      "distribution-channel",
+      profile.config.distribution.channel === client.worker.distributionChannel,
+      `profile distribution channel ${profile.config.distribution.channel} must equal registry channel ${client.worker.distributionChannel}`,
+    );
+  }
+
+  if (!workerRelease) {
+    add("worker-release", false, `Worker release ${client.worker?.targetWorkerRelease ?? "unset"} does not exist`);
+    return { status: "BLOCKED", checks, errors };
+  }
+  add("worker-release", true, `Worker release ${workerRelease.value.version} found`);
+
+  const capabilities = workerRelease.value.capabilities;
+  const unsupported = [];
+  for (const module of contract.WORKER_MODULES) {
+    if (profile.config.modules[module] && !capabilities.modules.includes(module)) unsupported.push(`module ${module}`);
+  }
+  for (const feature of contract.WORKER_FEATURES) {
+    if (profile.config.features[feature] && !capabilities.features.includes(feature)) unsupported.push(`feature ${feature}`);
+  }
+  for (const extension of contract.WORKER_EXTENSIONS) {
+    if (profile.config.extensions?.[extension]?.enabled && !capabilities.extensions.includes(extension)) {
+      unsupported.push(`extension ${extension}`);
+    }
+  }
+  for (const tab of profile.config.navigation.tabs) {
+    if (!capabilities.tabs.includes(tab)) unsupported.push(`navigation tab ${tab}`);
+  }
+  for (const action of profile.config.navigation.quickActions) {
+    if (!capabilities.quickActionTargets.includes(action.target)) {
+      unsupported.push(`quick action target ${action.target}`);
+    }
+  }
+  add(
+    "capabilities-supported",
+    unsupported.length === 0,
+    unsupported.length === 0
+      ? `Worker release ${workerRelease.value.version} supports every enabled customer customisation`
+      : `Worker release ${workerRelease.value.version} does not support: ${unsupported.join(", ")}`,
+  );
+
+  const minimumMainRelease = workerRelease.value.compatibility.minimumMainRelease;
+  const webTarget = client.targetRelease;
+  add(
+    "web-release-compatibility",
+    semver(webTarget) && compareSemver(webTarget, minimumMainRelease) >= 0,
+    `web release ${webTarget ?? "unset"} must be at least the Worker minimum ${minimumMainRelease}`,
+  );
+
+  if (mainRelease) {
+    add(
+      "web-release-exists",
+      semver(mainRelease.version),
+      `approved Main release ${mainRelease.version} resolved`,
+    );
+  }
+
+  const clientMigrationTarget = client.database?.migrationTarget;
+  const floor = workerRelease.value.compatibility.databaseMigrationFloor;
+  add(
+    "database-compatibility",
+    migrationName(clientMigrationTarget) && clientMigrationTarget >= floor,
+    `customer database target ${clientMigrationTarget ?? "unset"} must be at or after the Worker migration floor ${floor}`,
+  );
+
+  add(
+    "profile-fingerprint",
+    typeof client.worker?.profileFingerprint === "string" && client.worker.profileFingerprint === profile.fingerprint,
+    `registry profile fingerprint must match ${profile.relativePath} (${profile.fingerprint})`,
+  );
+
+  return { status: errors.length === 0 ? "COMPATIBLE" : "BLOCKED", checks, errors };
+}
+
+export function validateRegistryWorkerBindings(registry, { root = ROOT, contract, releases, profiles } = {}) {
+  const errors = [];
+  const availableReleases = releases ?? loadWorkerReleases(root);
+  const availableProfiles = profiles ?? listWorkerProfiles(root, contract);
+  const profileByPath = new Map(availableProfiles.map((profile) => [profile.relativePath, profile]));
+  const releaseVersions = new Set(availableReleases.map(({ value }) => value.version));
+  const usedProfiles = new Set();
+  const usedEnvironments = new Set();
+  const usedIosBundleIds = new Set();
+  const usedAndroidPackages = new Set();
+
+  for (const client of registry.clients ?? []) {
+    const worker = client.worker;
+    if (worker === undefined) continue;
+    const prefix = `${client.clientId}: worker`;
+    if (typeof worker !== "object" || worker === null || Array.isArray(worker)) {
+      errors.push(`${prefix} must be an object`);
+      continue;
+    }
+    if (typeof worker.profilePath !== "string" || !worker.profilePath) {
+      errors.push(`${prefix}.profilePath missing`);
+      continue;
+    }
+    if (usedProfiles.has(worker.profilePath)) errors.push(`${prefix}.profilePath is reused by another client`);
+    usedProfiles.add(worker.profilePath);
+
+    const profile = profileByPath.get(worker.profilePath);
+    if (!profile) {
+      errors.push(`${prefix}.profilePath does not resolve to a Worker profile: ${worker.profilePath}`);
+      continue;
+    }
+    if (profile.config?.clientKey !== client.clientId) {
+      errors.push(`${prefix}.profilePath belongs to ${profile.config?.clientKey}, not ${client.clientId}`);
+    }
+    if (worker.profileFingerprint !== profile.fingerprint) {
+      errors.push(`${prefix}.profileFingerprint is stale; expected ${profile.fingerprint}`);
+    }
+    if (!releaseVersions.has(worker.targetWorkerRelease)) {
+      errors.push(`${prefix}.targetWorkerRelease ${worker.targetWorkerRelease} is not an official Worker release`);
+    }
+    if (!Array.isArray(worker.clientExtensions)) {
+      errors.push(`${prefix}.clientExtensions must be an array`);
+    }
+    const environmentId = profile.config?.environment.environmentId;
+    if (environmentId) {
+      if (usedEnvironments.has(environmentId)) errors.push(`${prefix}.environmentId ${environmentId} is shared`);
+      usedEnvironments.add(environmentId);
+    }
+    const iosId = profile.config?.distribution.iosBundleIdentifier;
+    const androidId = profile.config?.distribution.androidPackage;
+    if (iosId) {
+      if (usedIosBundleIds.has(iosId)) errors.push(`${prefix}.iosBundleIdentifier ${iosId} is shared`);
+      usedIosBundleIds.add(iosId);
+    }
+    if (androidId) {
+      if (usedAndroidPackages.has(androidId)) errors.push(`${prefix}.androidPackage ${androidId} is shared`);
+      usedAndroidPackages.add(androidId);
+    }
+    for (const key of ["profilePath", "targetWorkerRelease", "workerRepository", "distributionChannel"]) {
+      if (key !== "profilePath" && (typeof worker[key] !== "string" || !worker[key])) {
+        errors.push(`${prefix}.${key} missing`);
+      }
+    }
+  }
+  errors.push(...scanJsonForSecrets(registry.clients ?? []).map((location) => `${location}: secret-like value`));
+  return [...new Set(errors)];
+}
+
+/** Resolve the customer's worker binding to loaded artifacts. */
+export function resolveClientWorker(client, { root = ROOT, contract, releases, profiles } = {}) {
+  const availableReleases = releases ?? loadWorkerReleases(root);
+  const availableProfiles = profiles ?? listWorkerProfiles(root, contract);
+  const profile = availableProfiles.find(
+    (entry) => entry.relativePath === client.worker?.profilePath,
+  );
+  const release = availableReleases.find(({ value }) => value.version === client.worker?.targetWorkerRelease);
+  return { profile, release };
+}

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "clientKey": "client-alpha",
+  "identity": {
+    "appName": "Alpha Worker",
+    "slug": "client-alpha-worker",
+    "scheme": "alphaworker",
+    "description": "TradesStack Worker App for the Client Alpha hosted proof environment"
+  },
+  "distribution": {
+    "channel": "internal",
+    "iosBundleIdentifier": "com.tradesstack.worker.clientalpha",
+    "androidPackage": "com.tradesstack.worker.clientalpha",
+    "updateChannel": "client-alpha"
+  },
+  "environment": {
+    "kind": "hosted",
+    "environmentId": "client-alpha-hosted",
+    "displayLabel": "Client Alpha",
+    "supabaseProjectRef": "ibjyzpyuqupsxqakpzxj"
+  },
+  "branding": {
+    "platformColor": "#123456",
+    "actionColor": "#D9480F",
+    "splashBackgroundColor": "#FFFFFF"
+  },
+  "modules": {
+    "dashboard": true,
+    "time_clock": true,
+    "tasks": true,
+    "purchase_orders": true,
+    "variations": true
+  },
+  "navigation": {
+    "tabs": [
+      "dashboard",
+      "time_clock",
+      "tasks",
+      "purchase_orders",
+      "variations",
+      "settings"
+    ],
+    "quickActions": [
+      {
+        "id": "create-todo",
+        "label": "Create a To Do",
+        "target": "tasks"
+      },
+      {
+        "id": "create-po",
+        "label": "Create a PO",
+        "target": "purchase_orders"
+      }
+    ]
+  },
+  "features": {
+    "notifications": true
+  },
+  "extensions": {
+    "home-notice": {
+      "enabled": true,
+      "config": {
+        "title": "Alpha proof environment",
+        "body": "This Worker App is connected to the fictional Client Alpha environment only."
+      }
+    }
+  }
+}
