@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "product": "TradesStack Worker",
+  "workerVersion": "1.1.1",
+  "releaseManifest": "ops/worker/releases/1.1.1.json",
+  "releaseFingerprint": "7cbe422a3c3ec3b7da643b9aadcab3f9dacc67dc942193006dabc64c96d80902",
+  "workerRepository": "github:tradesstack/tradesstack-worker-app",
+  "workerSourceSha": "5563aafbdd9ca33a286929ffa57fa49c0e6d04fd",
+  "configContract": "@tradesstack/worker-config@0.0.0 schema 1",
+  "mobileApiContractVersion": 2,
+  "minimumMainRelease": "1.0.0",
+  "workerRepositoryStatus": "CONFIGURED_REMOTE_NOT_RESOLVABLE_WITH_CURRENT_CREDENTIALS_2026-10-17",
+  "workerRepositoryStatusNote": "The local Worker repository remote is github:tradesstack/tradesstack-worker-app. It could not be resolved with current credentials, so Worker CI and the release PR cannot run until the remote is created or corrected."
+}

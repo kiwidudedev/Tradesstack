@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "clientId": "client-alpha",
+  "fromVersion": "1.1.0",
+  "toVersion": "1.1.1",
+  "status": "READY_FOR_CONTROLLED_UPGRADE",
+  "compatibility": {
+    "status": "COMPATIBLE",
+    "checks": [
+      {
+        "id": "profile-fingerprint",
+        "status": "PASS",
+        "detail": "registry profile fingerprint ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af must match ops/worker/profiles/client-alpha.json (ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af)"
+      },
+      {
+        "id": "sequential-release-chain",
+        "status": "PASS",
+        "detail": "Worker 1.1.1 is the direct successor of 1.1.0"
+      },
+      {
+        "id": "worker-release-approval",
+        "status": "PASS",
+        "detail": "Worker release 1.1.1 is an approved official release"
+      },
+      {
+        "id": "profile-valid",
+        "status": "PASS",
+        "detail": "ops/worker/profiles/client-alpha.json is a valid Worker profile"
+      },
+      {
+        "id": "profile-client-key",
+        "status": "PASS",
+        "detail": "profile clientKey client-alpha must equal registry clientId client-alpha"
+      },
+      {
+        "id": "environment-project-ref",
+        "status": "PASS",
+        "detail": "profile environment ibjyzpyuqupsxqakpzxj must equal registry database project ibjyzpyuqupsxqakpzxj"
+      },
+      {
+        "id": "distribution-channel",
+        "status": "PASS",
+        "detail": "profile distribution channel internal must equal registry channel internal"
+      },
+      {
+        "id": "worker-release",
+        "status": "PASS",
+        "detail": "Worker release 1.1.1 found"
+      },
+      {
+        "id": "capabilities-supported",
+        "status": "PASS",
+        "detail": "Worker release 1.1.1 supports every enabled customer customisation"
+      },
+      {
+        "id": "web-release-compatibility",
+        "status": "PASS",
+        "detail": "web release 1.2.0 must be at least the Worker minimum 1.0.0"
+      },
+      {
+        "id": "web-release-exists",
+        "status": "PASS",
+        "detail": "approved Main release 1.2.0 resolved"
+      },
+      {
+        "id": "database-compatibility",
+        "status": "PASS",
+        "detail": "customer database target 20261010123000_fix_r2_activation_actor_permission.sql must be at or after the Worker migration floor 20261003160000_add_mobile_project_variation_capabilities_v1.sql"
+      },
+      {
+        "id": "profile-fingerprint",
+        "status": "PASS",
+        "detail": "registry profile fingerprint must match ops/worker/profiles/client-alpha.json (ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af)"
+      },
+      {
+        "id": "distribution-compatibility",
+        "status": "PASS",
+        "detail": "Worker release 1.1.1 supports distribution channel internal"
+      }
+    ]
+  },
+  "conflicts": [],
+  "preserved": {
+    "profilePath": "ops/worker/profiles/client-alpha.json",
+    "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
+    "customisations": {
+      "modules": [
+        "dashboard",
+        "time_clock",
+        "tasks",
+        "purchase_orders",
+        "variations"
+      ],
+      "features": [
+        "notifications"
+      ],
+      "extensions": [
+        "home-notice"
+      ],
+      "tabs": [
+        "dashboard",
+        "time_clock",
+        "tasks",
+        "purchase_orders",
+        "variations",
+        "settings"
+      ],
+      "quickActions": [
+        {
+          "id": "create-todo",
+          "target": "tasks"
+        },
+        {
+          "id": "create-po",
+          "target": "purchase_orders"
+        }
+      ]
+    },
+    "clientExtensions": [],
+    "customisationsIntact": true,
+    "note": "Upgrades never rewrite the customer profile. Preserved customisations are recorded and re-validated against the target release."
+  },
+  "distributionImpact": {
+    "applicationVersion": {
+      "from": "1.1.0",
+      "to": "1.1.1"
+    },
+    "bundleIdentifiersChanged": false,
+    "requiresStoreResubmission": false,
+    "requiresCustomerApproval": true,
+    "distributionChannel": "internal"
+  },
+  "approvals": {
+    "engineering": "READY",
+    "customerDeployment": "NOT_APPROVED",
+    "storeResubmission": "NOT_REQUIRED"
+  },
+  "artifactState": {
+    "targetRelease": "1.1.1",
+    "builtRelease": null,
+    "distributedRelease": null,
+    "installedApplicationVersion": null,
+    "note": "Control-plane target updated only. No binary was built, distributed or installed by this upgrade."
+  },
+  "releases": {
+    "from": {
+      "version": "1.1.0",
+      "fingerprint": "da49de8836c9f9ea82539f20c0682805b1789bed87e66c57f9ab63fc160470be",
+      "sourceSha": "cf1fa4d1ff89dcc99c18d9e8b59c04ee3b3e29fd"
+    },
+    "to": {
+      "version": "1.1.1",
+      "fingerprint": "7cbe422a3c3ec3b7da643b9aadcab3f9dacc67dc942193006dabc64c96d80902",
+      "sourceSha": "5563aafbdd9ca33a286929ffa57fa49c0e6d04fd"
+    }
+  },
+  "webRelease": "1.2.0",
+  "generatedAt": "2026-10-17T21:39:24.192Z",
+  "generatedBy": "scripts/ops/worker-upgrade.mjs"
+}

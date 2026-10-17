@@ -9,6 +9,8 @@ on:
       - "ops/commissioning/**"
       - "ops/hardening/**"
       - "ops/differences/**"
+      - "ops/worker/**"
+      - "packages/worker-config/**"
       - "scripts/ops/control-plane-contract.mjs"
       - "scripts/ops/publish-control-plane-contract.mjs"
       - ".github/workflows/publish-control-plane-contract.yml"
