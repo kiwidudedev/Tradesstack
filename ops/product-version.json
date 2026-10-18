@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "product": "TradesStack",
-  "officialVersion": "1.2.0",
-  "displayLabel": "TradesStack 1.2.0",
-  "approvedReleaseManifest": "ops/releases/1.2.0.json",
-  "approvedSourceSha": "ef5b229bd035bf563b8f2711d994d70080997ae0",
-  "currentMainHead": "ef5b229bd035bf563b8f2711d994d70080997ae0",
-  "releaseFingerprint": "b29b08a8a5afc4fa95b551ec2dfbd53a715471d1693afb36abd02ccd86b498f1",
-  "migrationTarget": "20261014133000_create_blank_pricing_worksheet_template.sql",
-  "releaseDate": "2026-10-14",
+  "officialVersion": "1.2.1",
+  "displayLabel": "TradesStack 1.2.1",
+  "approvedReleaseManifest": "ops/releases/1.2.1.json",
+  "approvedSourceSha": "23703756d388c7be4e28cf039c324ab7a6a39262",
+  "currentMainHead": "23703756d388c7be4e28cf039c324ab7a6a39262",
+  "releaseFingerprint": "9681b9f459099bfb170ff3393e7d279c802d4cbf56e3073a0897c1c589cf2be8",
+  "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+  "releaseDate": "2026-10-19",
   "validationStatus": "PASS"
 }

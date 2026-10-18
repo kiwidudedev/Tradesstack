@@ -16,7 +16,7 @@
         ".env*",
         ".vercel/project.json"
       ],
-      "targetRelease": "1.2.0",
+      "targetRelease": "1.2.1",
       "repositoryReference": "github:kiwidudedev/tradesstack-client-alpha",
       "deploymentTarget": "cloudflare:tradesstack-alpha",
       "databaseProjectReference": "supabase:ibjyzpyuqupsxqakpzxj",
@@ -29,15 +29,16 @@
         "applicationShellSourceSha": "adbb1c68589eddddd7a64f375ad1288e16a1e5c5",
         "applicationShellFingerprint": "254bf57d6fc280182034738a52e9fc7840914aacbb1bc5dededa93f26ac208b1",
         "mainReleaseFingerprint": "254bf57d6fc280182034738a52e9fc7840914aacbb1bc5dededa93f26ac208b1",
-        "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d"
+        "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d",
+        "status": "TARGET_1.2.1_PENDING_ALPHA_APPLICATION"
       },
       "database": {
         "baseline": "phase1o-1",
-        "migrationTarget": "20261010123000_fix_r2_activation_actor_permission.sql",
+        "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
         "storageBucket": "organization-documents, project-drawing-sets",
         "storagePrivate": true,
         "hostedForwardFix": "Applied through Alpha SQL Editor; exact 20260927100000 history entry reconciled as applied; no SQL replay performed",
-        "migrationLedger": "Prior Alpha release record declares the approved migration set through 20261010123000_fix_r2_activation_actor_permission.sql; live ledger was not re-read during this application because the controlled rollout used --skip-db; 20260810190000_cleanup_phase1_material_test_fixtures.sql remains pending and intentionally deferred",
+        "migrationLedger": "Target release 1.2.1 declares the approved migration set through 20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql; live ledger verification is recorded after the controlled Alpha application.",
         "hostedStorageDrift": "Approved existing-migration repair restored private project-drawing-sets and its three Storage policies; other source-defined forward buckets remain intentionally uncreated and unproven.",
         "hostedManualRepair": "2026-09-27: executed the existing project-drawing-sets bucket/policy repair in Alpha Supabase SQL Editor after explicit authorization; no historical migration file was modified."
       },
