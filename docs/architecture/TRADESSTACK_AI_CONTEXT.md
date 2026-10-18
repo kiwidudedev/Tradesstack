@@ -1211,3 +1211,28 @@ Before modifying anything:
 - test the actual affected contracts, including migration/security tests where relevant;
 - report the files changed and validation performed.
 Never treat AI output as operational truth. Use existing validation, review, approval, event and correction patterns. Never expose secrets, service-role credentials, Xero tokens or private storage objects. Add forward migrations rather than editing applied migrations.
+
+AL. Worker App (TradesStack Worker Main)
+
+The Worker App is a separate Expo/React Native repository
+(`github:tradesstack/tradesstack-worker-app`) that consumes a portable
+configuration contract owned by Main (`packages/worker-config`, vendored as a
+checksum-recorded compiled artifact). One mobile core serves every customer; a
+customer implementation is a validated profile plus a dedicated Supabase
+environment, never a source fork.
+
+- Configuration: app identity, scheme, bundle identifiers, branding, explicit
+  modules, navigation, terminology, implemented feature flags, registered
+  extensions and optional display defaults.
+- Isolation: a build is bound to exactly one customer environment. The build
+  gate and the runtime both reject a mismatched Supabase project, and a
+  service-role/secret key can never be embedded. Sessions must be issued by the
+  bound project. Permissions, RLS and RPCs remain the authoritative enforcement.
+- Release/upgrade: Main holds immutable Worker release manifests
+  (`ops/worker/releases`), the customer registry binding (`ops/clients.json`),
+  provisioning records and upgrade audit records. Upgrades never rewrite a
+  customer profile and block on unsupported customisations.
+- Authority for this subsystem: `docs/architecture/TRADESSTACK_WORKER_APP_ARCHITECTURE.md`
+  and `docs/operations/WORKER_APP_OPERATIONS.md`. Do not add customer-specific
+  Worker source forks; add a reusable capability or a registered extension in
+  Main and enable it through configuration.

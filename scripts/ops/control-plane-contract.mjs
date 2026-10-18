@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { ROOT, compareSemver, readJson, scanJsonForSecrets, semver, sha } from "./lib.mjs";
+import { ROOT, compareSemver, fingerprint, readJson, scanJsonForSecrets, semver, sha } from "./lib.mjs";
 
 export const CONTRACT_SCHEMA_VERSION = 1;
 export const VERIFICATION_STATES = ["VERIFIED", "NOT_VERIFIED", "UNKNOWN", "STALE", "BLOCKED", "ERROR"];
@@ -112,11 +112,129 @@ function customerRecord(client, release, commissioning, hardening, differences, 
       targetRelease: fact(client.targetRelease ?? null, "EXPECTED", registrySource, "VERIFIED"),
       status: fact("NOT_APPLIED_BY_THIS_CONTRACT", "DERIVED", "scripts/ops/promote-release.mjs", "VERIFIED"),
     },
+    worker: workerCustomerRecord(client, { releases: [], profiles: new Map() }),
+  };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Worker App facts                                                           */
+/* -------------------------------------------------------------------------- */
+
+function readWorkerArtifacts(root) {
+  const directory = path.join(root, "ops/worker");
+  if (!fs.existsSync(directory)) return { releases: [], profiles: new Map() };
+  const releaseDirectory = path.join(directory, "releases");
+  const releases = fs.existsSync(releaseDirectory)
+    ? fs.readdirSync(releaseDirectory)
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => ({ file, value: readJson(path.join(releaseDirectory, file)) }))
+      .filter(({ value }) => value.releaseType === "OFFICIAL" && semver(value.version))
+      .sort((left, right) => compareSemver(right.value.version, left.value.version))
+    : [];
+  const profileDirectory = path.join(directory, "profiles");
+  const profiles = new Map(
+    fs.existsSync(profileDirectory)
+      ? fs.readdirSync(profileDirectory)
+        .filter((file) => file.endsWith(".json"))
+        .map((file) => [`ops/worker/profiles/${file}`, readJson(path.join(profileDirectory, file))])
+      : [],
+  );
+  return { releases, profiles };
+}
+
+function workerCustomerRecord(client, artifacts) {
+  const binding = client.worker ?? null;
+  const source = "ops/clients.json";
+  if (!binding) {
+    return {
+      configuration: fact("NO_WORKER_BINDING", "DERIVED", source, "VERIFIED"),
+      distribution: fact("NOT_PROVISIONED", "DERIVED", source, "VERIFIED"),
+      note: "This customer has no dedicated Worker App implementation recorded.",
+    };
+  }
+  const release = artifacts.releases.find(({ value }) => value.version === binding.targetWorkerRelease)?.value ?? null;
+  const profile = artifacts.profiles.get(binding.profilePath) ?? null;
+  const latest = artifacts.releases[0]?.value ?? null;
+  const enabledModules = profile
+    ? Object.entries(profile.modules ?? {}).filter(([, enabled]) => enabled === true).map(([module]) => module)
+    : [];
+  const enabledFeatures = profile
+    ? Object.entries(profile.features ?? {}).filter(([, enabled]) => enabled === true).map(([feature]) => feature)
+    : [];
+  const enabledExtensions = profile
+    ? Object.entries(profile.extensions ?? {}).filter(([, extension]) => extension?.enabled === true).map(([extension]) => extension)
+    : [];
+  const unsupported = release && profile
+    ? [
+        ...enabledModules.filter((module) => !release.capabilities.modules.includes(module)).map((module) => `module:${module}`),
+        ...enabledFeatures.filter((feature) => !release.capabilities.features.includes(feature)).map((feature) => `feature:${feature}`),
+        ...enabledExtensions.filter((extension) => !release.capabilities.extensions.includes(extension)).map((extension) => `extension:${extension}`),
+        ...((profile.navigation?.tabs ?? []).filter((tab) => !release.capabilities.tabs.includes(tab)).map((tab) => `tab:${tab}`)),
+      ]
+    : ["missing-release-or-profile"];
+  const minimumWeb = release?.compatibility?.minimumMainRelease ?? null;
+  const webCompatible = semver(client.targetRelease) && minimumWeb && compareSemver(client.targetRelease, minimumWeb) >= 0;
+  const databaseFloor = release?.compatibility?.databaseMigrationFloor ?? null;
+  const databaseCompatible = typeof client.database?.migrationTarget === "string"
+    && databaseFloor
+    && client.database.migrationTarget >= databaseFloor;
+  const profileFingerprintMatches = Boolean(profile && binding.profileFingerprint)
+    && typeof binding.profileFingerprint === "string";
+  const compatible = Boolean(release && profile && unsupported.length === 0 && webCompatible && databaseCompatible);
+  return {
+    release: fact(binding.targetWorkerRelease ?? null, "EXPECTED", source, "VERIFIED"),
+    latestRelease: fact(latest?.version ?? null, "EXPECTED", "ops/worker/releases", "VERIFIED"),
+    releaseFingerprint: fact(release?.releaseFingerprint ?? null, "EXPECTED", `ops/worker/releases/${binding.targetWorkerRelease}.json`, release ? "VERIFIED" : "UNKNOWN"),
+    releaseSourceSha: fact(release?.sourceSha ?? null, "EXPECTED", `ops/worker/releases/${binding.targetWorkerRelease}.json`, release ? "VERIFIED" : "UNKNOWN"),
+    upgradeAvailable: fact(
+      Boolean(latest && semver(binding.targetWorkerRelease) && compareSemver(latest.version, binding.targetWorkerRelease) > 0),
+      "DERIVED",
+      "scripts/ops/control-plane-contract.mjs",
+      "VERIFIED",
+    ),
+    profile: fact(binding.profilePath ?? null, "MANUAL", source, "VERIFIED"),
+    profileFingerprint: fact(binding.profileFingerprint ?? null, "EXPECTED", source, "VERIFIED"),
+    recordedProfileFingerprint: fact(profile ? binding.profileFingerprint : null, "HISTORICAL", source, "NOT_VERIFIED", null, "UNKNOWN", "RECORDED_METADATA"),
+    profileFingerprintRecorded: fact(profileFingerprintMatches, "DERIVED", source, "VERIFIED"),
+    environmentId: fact(profile?.environment?.environmentId ?? null, "EXPECTED", binding.profilePath, profile ? "VERIFIED" : "UNKNOWN"),
+    environmentKind: fact(profile?.environment?.kind ?? null, "EXPECTED", binding.profilePath, profile ? "VERIFIED" : "UNKNOWN"),
+    distributionChannel: fact(profile?.distribution?.channel ?? binding.distributionChannel ?? null, "EXPECTED", binding.profilePath, profile ? "VERIFIED" : "UNKNOWN"),
+    bundleIdentifiers: fact(
+      profile
+        ? { ios: profile.distribution.iosBundleIdentifier, android: profile.distribution.androidPackage }
+        : null,
+      "EXPECTED",
+      binding.profilePath,
+      profile ? "VERIFIED" : "UNKNOWN",
+    ),
+    enabledCustomisations: fact({ modules: enabledModules, features: enabledFeatures, extensions: enabledExtensions }, "MANUAL", binding.profilePath, profile ? "VERIFIED" : "UNKNOWN"),
+    compatibility: fact(compatible ? "COMPATIBLE" : "BLOCKED", "DERIVED", "scripts/ops/control-plane-contract.mjs", "VERIFIED"),
+    compatibilityReasons: fact(unsupported, "DERIVED", "scripts/ops/control-plane-contract.mjs", "VERIFIED"),
+    databaseFloor: fact(
+      databaseFloor && client.database?.migrationTarget
+        ? { floor: databaseFloor, customer: client.database.migrationTarget }
+        : null,
+      "EXPECTED",
+      "ops/worker/releases",
+      databaseFloor ? "VERIFIED" : "UNKNOWN",
+    ),
+    upgradeRecord: fact(binding.lastUpgrade?.record ?? null, "HISTORICAL", source, "VERIFIED", null, "UNKNOWN", "RECORDED_METADATA"),
+    provisioningRecord: fact(binding.provisioningRecord ?? null, "HISTORICAL", source, "VERIFIED", null, "UNKNOWN", "RECORDED_METADATA"),
+    distributionModel: fact(
+      "DEDICATED_WHITE_LABEL_BUILD_PER_CUSTOMER",
+      "DERIVED",
+      "docs/architecture/TRADESSTACK_WORKER_APP_ARCHITECTURE.md",
+      "VERIFIED",
+    ),
+    storePublishState: fact("NOT_APPROVED_BY_THIS_CONTRACT", "DERIVED", "scripts/ops/worker-release.mjs", "VERIFIED"),
+    note: "Worker App facts are repository-recorded. No mobile build, store submission or device validation is claimed.",
   };
 }
 
 export function assembleOperationalContract({ root = ROOT } = {}) {
   const registry = readJson(path.join(root, "ops/clients.json"));
+  const artifacts = readWorkerArtifacts(root);
   const releaseFiles = fs.readdirSync(path.join(root, "ops/releases")).filter((file) => file.endsWith(".json")).sort();
   const releases = releaseFiles.map((file) => ({ file, value: readJson(path.join(root, "ops/releases", file)) })).filter(({ value }) => value.releaseType === "OFFICIAL" && semver(value.version));
   const releaseById = new Map(releases.map(({ value }) => [value.releaseId, value]));
@@ -133,7 +251,8 @@ export function assembleOperationalContract({ root = ROOT } = {}) {
     const hardening = readOptional(path.join(hardeningDir, `${client.clientId}.json`));
     const differenceFile = path.join(root, "ops/differences", `${client.clientId}.json`);
     const differences = readOptional(differenceFile)?.differences ?? [];
-    return customerRecord(client, release, commissioning, hardening, differences, root === ROOT ? gitHead() : null);
+    const record = customerRecord(client, release, commissioning, hardening, differences, root === ROOT ? gitHead() : null);
+    return { ...record, worker: workerCustomerRecord(client, artifacts) };
   });
   const contract = {
     schemaVersion: CONTRACT_SCHEMA_VERSION,
@@ -150,6 +269,15 @@ export function assembleOperationalContract({ root = ROOT } = {}) {
       latestApprovedVersion: fact(releases.sort((left, right) => compareSemver(right.value.version, left.value.version))[0]?.value.version ?? null, "EXPECTED", "ops/releases", "VERIFIED"),
       latestApprovedLabel: fact(releases[0]?.value.displayLabel ?? null, "EXPECTED", "ops/releases", "VERIFIED"),
       releaseSources: releases.map(({ file, value }) => ({ releaseId: value.releaseId, source: `ops/releases/${file}`, sourceSha: value.sourceSha })),
+      workerReleases: artifacts.releases.map(({ file, value }) => ({
+        releaseId: value.releaseId,
+        source: `ops/worker/releases/${file}`,
+        sourceSha: value.sourceSha,
+        fingerprint: value.releaseFingerprint,
+        mobileApiContractVersion: value.compatibility?.mobileApiContractVersion ?? null,
+        minimumMainRelease: value.compatibility?.minimumMainRelease ?? null,
+        databaseMigrationFloor: value.compatibility?.databaseMigrationFloor ?? null,
+      })),
     },
     orphanDifferenceFiles,
     customers,
@@ -178,6 +306,24 @@ export function validateOperationalContract(contract) {
     if (!LIFECYCLE_STATES.includes(customer?.lifecycle?.value)) errors.push(`${prefix}.lifecycle invalid`);
     for (const field of ["lifecycle", "repository", "release", "migration", "configuration", "deployment", "providers", "differences", "backup", "health", "upgrade"]) {
       if (!customer || typeof customer[field] !== "object") errors.push(`${prefix}.${field} missing`);
+    }
+    if (customer?.worker !== undefined) {
+      if (!customer.worker || typeof customer.worker !== "object") {
+        errors.push(`${prefix}.worker must be an object`);
+      } else if (customer.worker.compatibility) {
+        const state = customer.worker.compatibility.value;
+        if (!["COMPATIBLE", "BLOCKED", "UNKNOWN"].includes(state)) errors.push(`${prefix}.worker.compatibility invalid`);
+        if (customer.worker.release?.value && !semver(customer.worker.release.value)) errors.push(`${prefix}.worker.release invalid`);
+        if (customer.worker.releaseFingerprint?.value && !fingerprint(customer.worker.releaseFingerprint.value)) {
+          errors.push(`${prefix}.worker.releaseFingerprint invalid`);
+        }
+        if (customer.worker.profileFingerprint?.value && !fingerprint(customer.worker.profileFingerprint.value)) {
+          errors.push(`${prefix}.worker.profileFingerprint invalid`);
+        }
+        if (customer.worker.upgradeAvailable && typeof customer.worker.upgradeAvailable.value !== "boolean") {
+          errors.push(`${prefix}.worker.upgradeAvailable invalid`);
+        }
+      }
     }
     const shaFields = [customer?.repository?.expectedMainSourceSha?.value, customer?.repository?.observedCustomerSha?.value, customer?.repository?.lastRecordedCustomerSha?.value, customer?.repository?.historicalCommissionedSha?.value, customer?.release?.approvedMainSourceSha?.value];
     shaFields.forEach((value) => { if (!validShaOrNull(value)) errors.push(`${prefix} contains malformed SHA`); });

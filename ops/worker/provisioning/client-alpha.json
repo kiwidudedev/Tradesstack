@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "clientId": "client-alpha",
+  "status": "PROVISIONED_AWAITING_EXTERNAL_ACTIONS",
+  "planFingerprint": "ba29f758db4e35f0556e0dac018a3ecf3651778745772ac86bffac1dc554ac60",
+  "inputs": {
+    "profilePath": "ops/worker/profiles/client-alpha.json",
+    "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
+    "workerRelease": "1.0.0",
+    "workerReleaseFingerprint": "23fb58ef0a04cf6acbc9db35fdf03d0111423ff0e0c4e54aefb35521a44263e4",
+    "webRelease": "1.2.0",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "client-alpha-hosted",
+      "supabaseProjectRef": "ibjyzpyuqupsxqakpzxj"
+    },
+    "distribution": {
+      "channel": "internal",
+      "iosBundleIdentifier": "com.tradesstack.worker.clientalpha",
+      "androidPackage": "com.tradesstack.worker.clientalpha",
+      "updateChannel": "client-alpha"
+    },
+    "customisations": {
+      "modules": [
+        "dashboard",
+        "time_clock",
+        "tasks",
+        "purchase_orders",
+        "variations"
+      ],
+      "features": [
+        "notifications"
+      ],
+      "extensions": [
+        "home-notice"
+      ],
+      "quickActions": [
+        "create-todo",
+        "create-po"
+      ]
+    }
+  },
+  "steps": [
+    {
+      "id": "profile-validated",
+      "status": "PASS",
+      "detail": "ops/worker/profiles/client-alpha.json is a valid Worker profile (ecb6610ffe19…)"
+    },
+    {
+      "id": "worker-release-resolved",
+      "status": "PASS",
+      "detail": "Worker release 1.0.0 resolves to 23fb58ef0a04…"
+    },
+    {
+      "id": "web-release-resolved",
+      "status": "PASS",
+      "detail": "Customer web release target 1.2.0"
+    },
+    {
+      "id": "web-release-compatibility",
+      "status": "PASS",
+      "detail": "web release 1.2.0 satisfies Worker minimum 1.0.0"
+    },
+    {
+      "id": "database-floor-compatibility",
+      "status": "PASS",
+      "detail": "web release migration target 20261014133000_create_blank_pricing_worksheet_template.sql satisfies Worker floor 20261003160000_add_mobile_project_variation_capabilities_v1.sql"
+    },
+    {
+      "id": "client-registration",
+      "status": "PASS",
+      "detail": "client client-alpha is already registered as a web implementation; this run attaches its first Worker App implementation"
+    },
+    {
+      "id": "profile-write",
+      "status": "PASS",
+      "detail": "ops/worker/profiles/client-alpha.json is identical"
+    },
+    {
+      "id": "customer-isolation",
+      "status": "PASS",
+      "detail": "environment, bundle identifiers, scheme and update channel are unique"
+    }
+  ],
+  "externalActions": [
+    {
+      "id": "create-supabase-project",
+      "status": "NOT_PERFORMED",
+      "requires": "Supabase account owner approval"
+    },
+    {
+      "id": "apply-database-baseline-and-migrations",
+      "status": "NOT_PERFORMED",
+      "requires": "Migration approval for the new customer environment"
+    },
+    {
+      "id": "set-environment-secrets",
+      "status": "NOT_PERFORMED",
+      "requires": "Worker build environment: EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY"
+    },
+    {
+      "id": "create-store-listing",
+      "status": "NOT_REQUIRED",
+      "requires": "Apple/Google developer account ownership"
+    },
+    {
+      "id": "create-signing-credentials",
+      "status": "NOT_PERFORMED",
+      "requires": "Apple certificates/provisioning and Android keystore approval"
+    },
+    {
+      "id": "create-push-credentials",
+      "status": "NOT_PERFORMED",
+      "requires": "APNs key / FCM credentials"
+    },
+    {
+      "id": "build-and-distribute-worker-app",
+      "status": "NOT_PERFORMED",
+      "requires": "Operator build approval and distribution approval"
+    }
+  ],
+  "artifacts": {
+    "profile": "ops/worker/profiles/client-alpha.json",
+    "registryClientId": "client-alpha",
+    "record": "ops/worker/provisioning/client-alpha.json"
+  },
+  "generatedAt": "2026-10-17T19:58:16.396Z",
+  "generatedBy": "scripts/ops/worker-provision.mjs"
+}

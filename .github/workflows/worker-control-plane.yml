@@ -1,0 +1,60 @@
+name: Worker App control plane
+
+on:
+  pull_request:
+  push:
+    paths:
+      - "ops/worker/**"
+      - "ops/clients.json"
+      - "packages/worker-config/**"
+      - "scripts/ops/worker-*.mjs"
+      - "scripts/ops/sync-worker-config.mjs"
+      - "scripts/ops/registry.mjs"
+      - "docs/architecture/TRADESSTACK_WORKER_APP_ARCHITECTURE.md"
+      - "docs/operations/WORKER_APP_OPERATIONS.md"
+      - ".github/workflows/worker-control-plane.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out Main
+        uses: actions/checkout@v4
+        with:
+          # Worker release manifests reference historical commits.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.2"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Worker configuration contract tests
+        run: npm run test:worker-config
+
+      - name: Worker control-plane foundation tests
+        run: npm run test:worker-ops
+
+      - name: Customer provisioning and Worker source promotion tests
+        run: npm run test:customer-provisioning
+
+      - name: Validate Worker releases, profiles and customer bindings
+        run: npm run ops:worker
+
+      - name: Validate the client registry
+        run: npm run ops:registry
+
+      - name: Reject non-secret operations artifacts
+        run: npm run ops:security
+
+      - name: Package boundaries
+        run: node scripts/check-package-boundaries.mjs

@@ -85,7 +85,7 @@ const releaseSupportFiles = [
 ];
 const releaseExclusions = new Set([".git", ".next", ".tmp", ".dsh-drop", "artifacts", "docs", "proofs", "scripts", "client", "node_modules"]);
 
-function listReleaseFiles(root) {
+export function listReleaseFiles(root) {
   const files = [];
   const visit = (directory) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {

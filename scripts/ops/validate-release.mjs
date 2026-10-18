@@ -11,6 +11,7 @@ const checks = [
   ["migration preflight", "ops:migrations"],
   ["security", "ops:security"],
   ["drift", "ops:drift"],
+  ["worker control plane", "ops:worker"],
 ];
 const details = [];
 let pass = true;
