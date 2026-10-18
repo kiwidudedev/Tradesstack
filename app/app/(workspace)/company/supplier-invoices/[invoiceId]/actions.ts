@@ -433,26 +433,14 @@ export async function submitSupplierInvoiceForSiteApprovalAction(params: {
 }): Promise<SupplierInvoiceWorkflowActionResult> {
   try {
     const { currentMember, supabase } = await requireAccountsWorkflowContext("supplier_invoices.submit_site_review");
-    const taxRepairPreview = await repairSupplierInvoiceTax({
-      supabase,
-      organizationId: currentMember.organization_id,
-      supplierInvoiceId: params.supplierInvoiceId,
-      dryRun: true,
-    });
-    if (taxRepairPreview.automaticallyResolved > 0) {
-      await repairSupplierInvoiceTax({
-        supabase,
-        organizationId: currentMember.organization_id,
-        supplierInvoiceId: params.supplierInvoiceId,
-        dryRun: false,
-        expectedFinanceHash: taxRepairPreview.financeHash,
-      });
-    }
     const workflow = await getSupplierInvoiceWorkflowState({ supabase, organizationId: currentMember.organization_id, supplierInvoiceId: params.supplierInvoiceId });
-    if (!workflow.financeHash) throw new Error("Supplier Invoice finance data is unavailable.");
+    // Site review is an operational gate. Accounting coding and tax treatment
+    // are enforced later at Accounts approval and provider export.
+    if (workflow.siteReviewBlockers.length > 0) throw new Error(workflow.siteReviewBlockers[0]);
+    if (!workflow.operationalHash) throw new Error("Supplier Invoice finance data is unavailable.");
     const { error } = await supabase.rpc("submit_supplier_invoice_for_site_review" as never, {
       p_supplier_invoice_id: params.supplierInvoiceId,
-      p_expected_finance_hash: workflow.financeHash,
+      p_expected_finance_hash: workflow.operationalHash,
     } as never);
     if (error) throw new Error(error.message);
     const refreshed = await getSupplierInvoiceWorkflowState({ supabase, organizationId: currentMember.organization_id, supplierInvoiceId: params.supplierInvoiceId });
@@ -1083,6 +1071,25 @@ export async function approveSupplierInvoiceCommerciallyAction(params: {
   try {
     const { currentMember, supabase } =
       await requireSupplierInvoiceCommercialContext(params.supplierInvoiceId);
+    // Automatic GST resolution belongs to the accounting stage and is performed
+    // by the same users who may set the allocation tax treatment. It no longer
+    // runs during operational site-review submission (which only requires
+    // supplier_invoices.submit_site_review).
+    const taxRepairPreview = await repairSupplierInvoiceTax({
+      supabase,
+      organizationId: currentMember.organization_id,
+      supplierInvoiceId: params.supplierInvoiceId,
+      dryRun: true,
+    });
+    if (taxRepairPreview.automaticallyResolved > 0) {
+      await repairSupplierInvoiceTax({
+        supabase,
+        organizationId: currentMember.organization_id,
+        supplierInvoiceId: params.supplierInvoiceId,
+        dryRun: false,
+        expectedFinanceHash: taxRepairPreview.financeHash,
+      });
+    }
     const comparison = await getSupplierInvoiceCommercialComparison({
       supabase,
       organizationId: currentMember.organization_id,
@@ -1333,9 +1340,6 @@ export async function updateSupplierInvoiceAllocationCommercialCodingAction(para
             ? params.accountingTaxRateId
             : null,
         tax_resolution_status: params.taxResolutionStatus,
-        approval_status: "pending",
-        approved_at: null,
-        approved_by_user_id: null,
       } as never)
       .eq("organization_id", currentMember.organization_id)
       .eq("supplier_invoice_id", params.supplierInvoiceId)

@@ -128,9 +128,11 @@ export type PurchaseOrderInvoiceSummarySource = {
     id: string;
     supplier_invoice_id: string;
     finance_hash: string;
+    operational_hash?: string | null;
     status: string;
     submitted_at: string;
   }>;
+  operationalHashes: Record<string, string>;
   decisions: Array<{
     id: string;
     submission_id: string;
@@ -426,7 +428,10 @@ export function buildPurchaseOrderSupplierInvoiceSummaryPayload(
     const currentFinanceHash = invoiceCommercialApproval?.finance_version_hash
       ?? activeSubmission?.finance_hash
       ?? null;
-    const currentSubmission = activeSubmission?.finance_hash === currentFinanceHash
+    const currentOperationalHash = source.operationalHashes[supplierInvoiceId] ?? null;
+    const currentSubmission = activeSubmission
+      && currentOperationalHash
+      && (activeSubmission.operational_hash ?? activeSubmission.finance_hash) === currentOperationalHash
       ? activeSubmission
       : null;
     const currentDecision = currentSubmission
@@ -518,7 +523,9 @@ export function buildPurchaseOrderSupplierInvoiceSummaryPayload(
         lastStatusSyncedAt: document?.last_status_synced_at ?? null,
         lastStatusSyncError: document?.last_status_sync_error ?? null,
         currentFinanceHash,
-        workflowFinanceHash: currentSubmission?.finance_hash ?? null,
+        workflowFinanceHash: currentSubmission
+          ? currentSubmission.operational_hash ?? currentSubmission.finance_hash
+          : null,
         canReview,
         canView: true,
         nextAction,

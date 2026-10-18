@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { assembleOperationalContract, validateOperationalContract } from "./control-plane-contract.mjs";
 
@@ -34,7 +35,7 @@ describe("Control Plane operational contract", () => {
     const contract = assembleOperationalContract();
     const alpha = contract.customers.find((customer) => customer.customerId === "client-alpha");
     expect(validateOperationalContract(contract)).toEqual([]);
-    const registry = JSON.parse(require("node:fs").readFileSync(new URL("../../ops/clients.json", import.meta.url), "utf8"));
+    const registry = JSON.parse(readFileSync(new URL("../../ops/clients.json", import.meta.url), "utf8"));
     const expectedRelease = registry.clients.find((client) => client.clientId === "client-alpha").worker.targetWorkerRelease;
     expect(alpha.worker.release.value).toBe(expectedRelease);
     expect(alpha.worker.compatibility.value).toBe("COMPATIBLE");
@@ -47,8 +48,7 @@ describe("Control Plane operational contract", () => {
     expect(alpha.worker.enabledCustomisations.value.extensions).toEqual(["home-notice"]);
     expect(alpha.worker.upgradeRecord.value).toMatch(/ops\/worker\/upgrades\/client-alpha\//);
     expect(alpha.worker.storePublishState.value).toBe("NOT_APPROVED_BY_THIS_CONTRACT");
-    const expectedReleases = require("node:fs")
-      .readdirSync(new URL("../../ops/worker/releases", import.meta.url))
+    const expectedReleases = readdirSync(new URL("../../ops/worker/releases", import.meta.url))
       .filter((file) => file.endsWith(".json"))
       .map((file) => file.replace(/\.json$/, ""))
       .sort((left, right) => {

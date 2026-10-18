@@ -21459,6 +21459,7 @@ export type Database = {
           id: string
           invalidated_at: string | null
           invalidation_reason: string | null
+          operational_hash: string | null
           organization_id: string
           status: string
           submitted_at: string
@@ -21472,6 +21473,7 @@ export type Database = {
           id?: string
           invalidated_at?: string | null
           invalidation_reason?: string | null
+          operational_hash?: string | null
           organization_id: string
           status?: string
           submitted_at?: string
@@ -21485,6 +21487,7 @@ export type Database = {
           id?: string
           invalidated_at?: string | null
           invalidation_reason?: string | null
+          operational_hash?: string | null
           organization_id?: string
           status?: string
           submitted_at?: string
@@ -31689,6 +31692,10 @@ export type Database = {
         Returns: number
       }
       supplier_invoice_finance_version_hash: {
+        Args: { p_invoice_id: string }
+        Returns: string
+      }
+      supplier_invoice_operational_version_hash: {
         Args: { p_invoice_id: string }
         Returns: string
       }

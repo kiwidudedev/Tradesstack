@@ -100,6 +100,7 @@ export async function getPurchaseOrderSupplierInvoiceSummaries(params: {
         commercialApprovals: [],
         accountingDocuments: [],
         members: [],
+        operationalHashes: {},
         commercialProgress,
       }),
     };
@@ -113,6 +114,7 @@ export async function getPurchaseOrderSupplierInvoiceSummaries(params: {
     accountsApprovalsResult,
     commercialApprovalsResult,
     accountingDocumentsResult,
+    operationalHashesResult,
   ] = await Promise.all([
     supabase
       .from("supplier_invoices")
@@ -126,7 +128,7 @@ export async function getPurchaseOrderSupplierInvoiceSummaries(params: {
       .in("supplier_invoice_id", invoiceIds),
     supabase
       .from("supplier_invoice_site_review_submissions")
-      .select("id, supplier_invoice_id, finance_hash, status, submitted_at")
+      .select("id, supplier_invoice_id, finance_hash, operational_hash, status, submitted_at")
       .eq("organization_id", currentMember.organization_id)
       .in("supplier_invoice_id", invoiceIds)
       .order("submitted_at", { ascending: false }),
@@ -155,6 +157,10 @@ export async function getPurchaseOrderSupplierInvoiceSummaries(params: {
       .eq("local_document_type", "supplier_invoice")
       .in("local_document_id", invoiceIds)
       .order("updated_at", { ascending: false }),
+    Promise.all(invoiceIds.map((invoiceId) => supabase.rpc(
+      "supplier_invoice_operational_version_hash",
+      { p_invoice_id: invoiceId },
+    ))),
   ]);
 
   const queryResults = [
@@ -166,9 +172,15 @@ export async function getPurchaseOrderSupplierInvoiceSummaries(params: {
     commercialApprovalsResult,
     accountingDocumentsResult,
   ];
-  if (queryResults.some((result) => result.error)) {
+  if (queryResults.some((result) => result.error)
+    || operationalHashesResult.some((result) => result.error)) {
     throw new Error("Unable to load the authoritative Purchase Order invoice summary.");
   }
+
+  const operationalHashes = Object.fromEntries(invoiceIds.map((invoiceId, index) => {
+    const hash = operationalHashesResult[index]?.data;
+    return [invoiceId, typeof hash === "string" ? hash : ""] as const;
+  }));
 
   const supplierIds = Array.from(new Set(
     (invoicesResult.data ?? [])
@@ -221,6 +233,7 @@ export async function getPurchaseOrderSupplierInvoiceSummaries(params: {
         document.local_document_id !== null,
     ),
     members: membersResult.data ?? [],
+    operationalHashes,
     commercialProgress,
   };
 

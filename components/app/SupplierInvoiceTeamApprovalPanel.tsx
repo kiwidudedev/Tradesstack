@@ -31,6 +31,7 @@ function badge(status: SupplierInvoiceTeamApprovalRow["status"]) {
 export function SupplierInvoiceTeamApprovalPanel(props: {
   status: "not_required" | "not_sent" | "waiting" | "partially_reviewed" | "approved" | "declined" | "invalidated";
   groups: SupplierInvoiceTeamApprovalGroup[];
+  blockers?: string[];
   canSend: boolean;
   hasBeenSent: boolean;
   sending: boolean;
@@ -66,6 +67,21 @@ export function SupplierInvoiceTeamApprovalPanel(props: {
           Amend Invoice Capture or the matching in Supplier Invoice Lines, then send the corrected invoice again.
         </p>
       ) : null}
+
+      {props.blockers?.length ? (
+        <div className="mt-3 rounded-[10px] border border-[var(--status-pending)]/30 bg-[var(--status-pending-light)] px-3.5 py-3">
+          <p className={`${interMedium.className} text-[12px] font-semibold text-[var(--text-primary)]`}>
+            Complete these operational checks before sending
+          </p>
+          <ul className={`${ibmPlexSans.className} mt-1.5 list-disc space-y-1 pl-4 text-[12px] text-[var(--text-secondary)]`}>
+            {props.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      <p className={`${ibmPlexSans.className} mt-3 text-[12px] text-[var(--text-secondary)]`}>
+        Site review confirms the supplier, Purchase Order match, received quantities and supporting evidence. Accounting routing, account coding and tax treatment are completed later by Accounts and are not required to send this for site review.
+      </p>
 
       {props.groups.length ? (
         <div className="mt-5 space-y-5">

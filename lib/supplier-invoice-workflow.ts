@@ -34,8 +34,10 @@ export type SupplierInvoiceWorkflowState = {
   responsibleRole: "accounts" | "site_reviewer" | "none";
   nextAction: string;
   blockers: string[];
+  siteReviewBlockers: string[];
   warnings: string[];
   financeHash: string | null;
+  operationalHash: string | null;
   activeSubmissionId: string | null;
   activeAccountsApprovalId: string | null;
   decisionCounts: { pending: number; approved: number; disputed: number };
@@ -69,20 +71,21 @@ export async function getSupplierInvoiceWorkflowState(params: {
   supplierInvoiceId: string;
 }): Promise<SupplierInvoiceWorkflowState> {
   const database = db(params.supabase);
-  const [invoiceResult, linesResult, allocationsResult, matchesResult, submissionsResult, accountsResult, commercialResult, documentResult, hashResult] =
+  const [invoiceResult, linesResult, allocationsResult, matchesResult, submissionsResult, accountsResult, commercialResult, documentResult, hashResult, operationalHashResult] =
     await Promise.all([
-      database.from("supplier_invoices").select("id, supplier_id, invoice_number, invoice_date, total").eq("organization_id", params.organizationId).eq("id", params.supplierInvoiceId).maybeSingle(),
+      database.from("supplier_invoices").select("id, supplier_id, invoice_number, invoice_date, subtotal, total").eq("organization_id", params.organizationId).eq("id", params.supplierInvoiceId).maybeSingle(),
       database.from("supplier_invoice_lines").select("id, line_total").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId),
-      database.from("supplier_invoice_line_allocations").select("id, supplier_invoice_line_id, allocated_amount, allocation_status").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId),
+      database.from("supplier_invoice_line_allocations").select("id, supplier_invoice_line_id, purchase_order_id, purchase_order_line_item_id, allocated_amount, allocation_status").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId),
       database.from("supplier_invoice_purchase_order_matches").select("id, purchase_order_id, match_status").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId).in("match_status", ["accepted", "adjusted"]),
-      database.from("supplier_invoice_site_review_submissions").select("id, finance_hash, status").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId).in("status", ["submitted", "partially_reviewed", "approved", "disputed"]).order("submitted_at", { ascending: false }).limit(1),
+      database.from("supplier_invoice_site_review_submissions").select("id, finance_hash, operational_hash, status").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId).in("status", ["submitted", "partially_reviewed", "approved", "disputed"]).order("submitted_at", { ascending: false }).limit(1),
       database.from("supplier_invoice_accounts_approvals").select("id, finance_hash, status").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId).eq("status", "approved").order("created_at", { ascending: false }).limit(1),
       database.from("supplier_invoice_commercial_approvals").select("id, finance_version_hash, status, no_po_reason").eq("organization_id", params.organizationId).eq("supplier_invoice_id", params.supplierInvoiceId).eq("status", "approved").order("reviewed_at", { ascending: false }).limit(1),
       database.from("organization_accounting_documents").select("export_status, external_document_id, normalized_external_status, last_status_sync_error").eq("organization_id", params.organizationId).eq("local_document_type", "supplier_invoice").eq("local_document_id", params.supplierInvoiceId).order("updated_at", { ascending: false }).limit(1),
       database.rpc("supplier_invoice_finance_version_hash", { p_invoice_id: params.supplierInvoiceId }),
+      database.rpc("supplier_invoice_operational_version_hash", { p_invoice_id: params.supplierInvoiceId }),
     ]);
 
-  const failed = [invoiceResult, linesResult, allocationsResult, matchesResult, submissionsResult, accountsResult, commercialResult, documentResult, hashResult].find((result) => result.error);
+  const failed = [invoiceResult, linesResult, allocationsResult, matchesResult, submissionsResult, accountsResult, commercialResult, documentResult, hashResult, operationalHashResult].find((result) => result.error);
   if (failed?.error) throw new Error("Unable to load the Supplier Invoice workflow state.");
   if (!invoiceResult.data) throw new Error("Supplier Invoice not found.");
 
@@ -95,6 +98,7 @@ export async function getSupplierInvoiceWorkflowState(params: {
   const commercialApproval = ((commercialResult.data ?? [])[0] ?? null) as unknown as Record<string, unknown> | null;
   const accountingDocument = ((documentResult.data ?? [])[0] ?? null) as Record<string, unknown> | null;
   const financeHash = typeof hashResult.data === "string" ? hashResult.data : null;
+  const operationalHash = typeof operationalHashResult.data === "string" ? operationalHashResult.data : null;
   const blockers: string[] = [];
   const warnings: string[] = [];
 
@@ -106,6 +110,28 @@ export async function getSupplierInvoiceWorkflowState(params: {
   if (lines.some((line) => !allocationLineIds.has(String(line.id)))) blockers.push("Allocate every Supplier Invoice line.");
   const allocatedTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.allocated_amount ?? 0), 0);
   if (Math.abs(allocatedTotal - Number(invoice.total ?? 0)) > 0.01) warnings.push("Allocated value does not currently equal the invoice total.");
+
+  // Operational site-review readiness mirrors the database gate. Accounting
+  // coding, tax treatment and provider connection are deliberately absent.
+  const siteReviewBlockers = [...blockers];
+  const allocationCountByLineId = new Map<string, number>();
+  allocations.forEach((allocation) => {
+    const lineId = String(allocation.supplier_invoice_line_id);
+    allocationCountByLineId.set(lineId, (allocationCountByLineId.get(lineId) ?? 0) + 1);
+  });
+  if (lines.some((line) => (allocationCountByLineId.get(String(line.id)) ?? 0) > 1)) {
+    siteReviewBlockers.push("Allocate every Supplier Invoice line exactly once before site review.");
+  }
+  if (matches.length === 0) {
+    siteReviewBlockers.push("Match a Purchase Order before site review.");
+  }
+  if (allocations.some((allocation) => !allocation.purchase_order_id || !allocation.purchase_order_line_item_id)) {
+    siteReviewBlockers.push("Use the explicit no-PO Accounts workflow for invoices without Purchase Orders.");
+  }
+  if (Math.abs(allocatedTotal - Number(invoice.subtotal ?? 0)) > 0.01
+    && Math.abs(allocatedTotal - Number(invoice.total ?? 0)) > 0.01) {
+    siteReviewBlockers.push("Allocated amounts do not reconcile to the Supplier Invoice.");
+  }
 
   const exportStatus = String(accountingDocument?.export_status ?? "");
   if (exportStatus === "exported" && accountingDocument?.external_document_id) {
@@ -162,7 +188,7 @@ export async function getSupplierInvoiceWorkflowState(params: {
     exportStatus: null,
     hasExternalDocument: false,
     hasCurrentAccountsApproval: Boolean(accountsApproval && accountsApproval.finance_hash === financeHash),
-    hasCurrentSubmission: Boolean(submission && submission.finance_hash === financeHash),
+    hasCurrentSubmission: Boolean(submission && (submission.operational_hash ?? submission.finance_hash) === operationalHash),
     pendingDecisions: decisionCounts.pending,
     approvedDecisions: decisionCounts.approved,
     disputedDecisions: decisionCounts.disputed,
@@ -189,8 +215,10 @@ export async function getSupplierInvoiceWorkflowState(params: {
       responsibleRole,
       nextAction,
       blockers,
+      siteReviewBlockers,
       warnings,
       financeHash,
+      operationalHash,
       activeSubmissionId: submission ? String(submission.id) : null,
       activeAccountsApprovalId: accountsApproval ? String(accountsApproval.id) : null,
       decisionCounts: counts,

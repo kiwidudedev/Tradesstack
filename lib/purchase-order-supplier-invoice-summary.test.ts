@@ -29,7 +29,8 @@ function source(
       { id: "allocation-1", supplier_invoice_id: "invoice-a", purchase_order_id: "po-a", allocated_amount: 500, allocation_status: "matched", edit_state: "locked_posted" },
       { id: "allocation-2", supplier_invoice_id: "invoice-a", purchase_order_id: "po-a", allocated_amount: 200, allocation_status: "matched", edit_state: "editable" },
     ],
-    submissions: [{ id: "submission-a", supplier_invoice_id: "invoice-a", finance_hash: "hash-current", status: "approved", submitted_at: "2026-07-18T09:00:00Z" }],
+    submissions: [{ id: "submission-a", supplier_invoice_id: "invoice-a", finance_hash: "hash-current", operational_hash: "hash-current", status: "approved", submitted_at: "2026-07-18T09:00:00Z" }],
+    operationalHashes: { "invoice-a": "hash-current" },
     decisions: [{ id: "decision-a", submission_id: "submission-a", supplier_invoice_id: "invoice-a", purchase_order_id: "po-a", decision: "approved", reviewer_id: "reviewer-a", reviewed_at: "2026-07-18T10:00:00Z", note: "Received on site" }],
     accountsApprovals: [{ id: "accounts-a", supplier_invoice_id: "invoice-a", site_review_submission_id: "submission-a", finance_hash: "hash-current", status: "approved", approved_by: "accounts-user", approved_at: "2026-07-18T11:00:00Z", created_at: "2026-07-18T11:00:00Z" }],
     commercialApprovals: [{ supplier_invoice_id: "invoice-a", finance_version_hash: "hash-current", status: "approved", reviewed_at: "2026-07-18T10:30:00Z" }],
@@ -155,7 +156,7 @@ describe("Purchase Order Supplier Invoice authoritative summaries", () => {
   it("ignores stale site and Accounts hashes", () => {
     const base = source();
     const result = buildPurchaseOrderSupplierInvoiceSummaryPayload(source({
-      submissions: [{ ...base.submissions[0]!, finance_hash: "old-hash" }],
+      submissions: [{ ...base.submissions[0]!, finance_hash: "old-hash", operational_hash: "old-hash" }],
       decisions: [{ ...base.decisions[0]!, submission_id: "submission-a" }],
       accountsApprovals: [{ ...base.accountsApprovals[0]!, finance_hash: "old-hash" }],
       commercialApprovals: [{ ...base.commercialApprovals[0]!, finance_version_hash: "new-hash" }],

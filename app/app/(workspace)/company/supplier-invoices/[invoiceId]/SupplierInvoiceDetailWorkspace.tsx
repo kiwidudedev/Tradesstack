@@ -4271,6 +4271,7 @@ export function SupplierInvoiceDetailWorkspace({
         <SupplierInvoiceTeamApprovalPanel
           status={teamApprovalStatus}
           groups={teamApprovalGroups}
+          blockers={workflowState.siteReviewBlockers}
           canSend={canSubmitSiteReview && ["not_sent", "invalidated"].includes(teamApprovalStatus)}
           hasBeenSent={hasTeamApprovalHistory}
           sending={isUpdatingWorkflow}
@@ -4338,7 +4339,7 @@ export function SupplierInvoiceDetailWorkspace({
                       <Button
                         type="button"
                         variant="secondary"
-                        disabled={!draft?.accountingTaxRateId || !allocation.accounting_mapping_id || isUpdatingCommercialReview}
+                        disabled={!draft?.accountingTaxRateId || !draft?.accountingMappingId || isUpdatingCommercialReview}
                         onClick={() => void saveCommercialCoding(allocation.id)}
                       >
                         Save GST
