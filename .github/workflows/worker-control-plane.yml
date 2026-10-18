@@ -41,6 +41,9 @@ jobs:
       - name: Worker control-plane foundation tests
         run: npm run test:worker-ops
 
+      - name: Customer provisioning and Worker source promotion tests
+        run: npm run test:customer-provisioning
+
       - name: Validate Worker releases, profiles and customer bindings
         run: npm run ops:worker
 

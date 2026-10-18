@@ -46,8 +46,8 @@ const WORKER_MINIMUM_WEB_RELEASE = "1.0.0";
 const WORKER_DATABASE_MIGRATION_FLOOR = "20261003160000_add_mobile_project_variation_capabilities_v1.sql";
 
 const INCLUDE_ROOTS = [
-  ".github", "app", "assets", "components", "constants", "docs", "hooks", "profiles",
-  "public", "scripts", "src", "tests", "vendor",
+  ".github", "app", "assets", "client", "components", "constants", "docs", "hooks",
+  "profiles", "public", "scripts", "src", "tests", "vendor",
 ];
 const INCLUDE_FILES = [
   ".gitignore", ".nvmrc", "app.config.ts", "eas.json", "eslint.config.js", "package-lock.json",

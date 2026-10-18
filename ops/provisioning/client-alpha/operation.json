@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "operationId": "prov-client-alpha-852e9dbde662d327",
+  "customerId": "client-alpha",
+  "state": "READY_FOR_DEPLOYMENT",
+  "inputs": {
+    "customerId": "client-alpha",
+    "displayName": "Client Alpha",
+    "attachWorker": true,
+    "provider": "github",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "client-alpha-hosted",
+      "supabaseProjectRef": "ibjyzpyuqupsxqakpzxj"
+    },
+    "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
+    "webRelease": "1.2.0",
+    "workerRelease": "1.2.0",
+    "webRepository": "github:kiwidudedev/tradesstack-client-alpha",
+    "workerRepository": "github:tradesstack/tradesstack-worker-client-alpha",
+    "deploymentTarget": "PENDING",
+    "domain": "PENDING"
+  },
+  "steps": [
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Customer client-alpha identity validated (client-alpha-hosted)",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:13.126Z",
+      "finishedAt": "2026-10-18T03:06:13.126Z",
+      "updatedAt": "2026-10-18T03:06:13.126Z"
+    },
+    {
+      "id": "web-repository",
+      "status": "PASS",
+      "detail": "Existing web repository reused: github:kiwidudedev/tradesstack-client-alpha",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:13.126Z",
+      "finishedAt": "2026-10-18T03:06:13.126Z",
+      "updatedAt": "2026-10-18T03:06:13.126Z"
+    },
+    {
+      "id": "worker-repository",
+      "status": "PASS",
+      "detail": "Worker repository prepared at customer-repos/client-alpha/worker from 1.2.0",
+      "artifact": {
+        "path": "customer-repos/client-alpha/worker"
+      },
+      "startedAt": "2026-10-18T03:06:21.623Z",
+      "finishedAt": "2026-10-18T03:06:21.623Z",
+      "updatedAt": "2026-10-18T03:06:21.623Z"
+    },
+    {
+      "id": "backend-binding",
+      "status": "PASS",
+      "detail": "Environment client-alpha-hosted bound to ibjyzpyuqupsxqakpzxj; project creation/migrations remain external",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:21.623Z",
+      "finishedAt": "2026-10-18T03:06:21.623Z",
+      "updatedAt": "2026-10-18T03:06:21.623Z"
+    },
+    {
+      "id": "configuration",
+      "status": "PASS",
+      "detail": "Worker profile recorded at ops/worker/profiles/client-alpha.json",
+      "artifact": {
+        "path": "customer-repos/client-alpha/worker"
+      },
+      "startedAt": "2026-10-18T03:06:21.625Z",
+      "finishedAt": "2026-10-18T03:06:21.625Z",
+      "updatedAt": "2026-10-18T03:06:21.625Z"
+    },
+    {
+      "id": "link-validation",
+      "status": "PASS",
+      "detail": "Web and Worker both resolve to client-alpha-hosted (ibjyzpyuqupsxqakpzxj)",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:21.625Z",
+      "finishedAt": "2026-10-18T03:06:21.625Z",
+      "updatedAt": "2026-10-18T03:06:21.625Z"
+    },
+    {
+      "id": "registry",
+      "status": "PASS",
+      "detail": "One registry entry joins web, worker and environment for client-alpha",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:21.626Z",
+      "finishedAt": "2026-10-18T03:06:21.626Z",
+      "updatedAt": "2026-10-18T03:06:21.626Z"
+    },
+    {
+      "id": "ci",
+      "status": "PASS",
+      "detail": "Web CI requires configuration; Worker CI present",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:21.626Z",
+      "finishedAt": "2026-10-18T03:06:21.626Z",
+      "updatedAt": "2026-10-18T03:06:21.626Z"
+    },
+    {
+      "id": "validate",
+      "status": "PASS",
+      "detail": "Web/Worker configuration and vendor integrity validated",
+      "artifact": {
+        "validation": [
+          {
+            "check": "worker vendor integrity",
+            "status": "PASS"
+          },
+          {
+            "check": "worker profile validation",
+            "status": "PASS"
+          }
+        ]
+      },
+      "startedAt": "2026-10-18T03:06:21.866Z",
+      "finishedAt": "2026-10-18T03:06:21.866Z",
+      "updatedAt": "2026-10-18T03:06:21.866Z"
+    },
+    {
+      "id": "finalise",
+      "status": "PASS",
+      "detail": "Customer implementation READY_FOR_DEPLOYMENT",
+      "artifact": null,
+      "startedAt": "2026-10-18T03:06:21.866Z",
+      "finishedAt": "2026-10-18T03:06:21.866Z",
+      "updatedAt": "2026-10-18T03:06:21.866Z"
+    }
+  ],
+  "externalActions": [
+    {
+      "id": "create-supabase-project",
+      "status": "REQUIRED",
+      "detail": "ibjyzpyuqupsxqakpzxj"
+    },
+    {
+      "id": "apply-database-baseline-and-migrations",
+      "status": "REQUIRED",
+      "detail": "Approved baseline + migrations for the customer project"
+    },
+    {
+      "id": "bind-web-environment-secrets",
+      "status": "REQUIRED",
+      "detail": "Web hosting env: NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SITE_URL"
+    },
+    {
+      "id": "bind-worker-build-secrets",
+      "status": "REQUIRED",
+      "detail": "EXPO_PUBLIC_SUPABASE_URL / ANON_KEY / FUNCTIONS_URL"
+    },
+    {
+      "id": "signing-and-store-listing",
+      "status": "NOT_REQUIRED",
+      "detail": "Owner approval required"
+    },
+    {
+      "id": "build-and-distribute",
+      "status": "REQUIRED",
+      "detail": "Web deploy + Worker build/distribution approvals"
+    }
+  ],
+  "errors": [],
+  "createdAt": "2026-10-18T03:06:13.123Z",
+  "updatedAt": "2026-10-18T03:06:21.867Z",
+  "createdBy": "scripts/ops/customer-provision.mjs",
+  "github": {
+    "worker": {
+      "fullName": "tradesstack/tradesstack-worker-client-alpha",
+      "created": true,
+      "pushed": true
+    }
+  }
+}

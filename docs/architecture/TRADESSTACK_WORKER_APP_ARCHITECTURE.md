@@ -51,14 +51,20 @@ outside it.
                     ▼                        ▼                       ▼
                     TRADESSTACK WORKER MAIN (separate Git repo)
                     app/ · src/config · src/providers · vendor/
-                    one mobile core, one build per customer environment
+                    one mobile core, promoted into customer repositories
                                       │
                     ┌─────────────────┴──────────────────┐
                     ▼                                    ▼
+        CUSTOMER A WORKER REPO                CUSTOMER B WORKER REPO
+        Worker release snapshot               Worker release snapshot
+        + client/ (profile, extensions,       + client/ (profile, extensions,
+          assets, customer screens)             assets, customer screens)
+        + release-manifest.json               + release-manifest.json
+                    │                                    │
+                    ▼                                    ▼
             Customer A build                     Customer B build
-            (own profile, bundle IDs,            (own profile, bundle IDs,
-             environment, branding,               environment, branding,
-             modules, extensions)                 modules, extensions)
+            (dedicated bundle IDs,               (dedicated bundle IDs,
+             environment, branding)               environment, branding)
 ```
 
 **Option A** (two independent Mains with no shared contract) was rejected: it
@@ -88,6 +94,64 @@ environment and an approved release pin. No per-customer source fork exists.
 | Registry binding (`ops/clients.json`) | TradesStack Main ops | No |
 | Supabase project, secrets, signing, store listings | Customer environment / TradesStack ops | No (outside repositories) |
 | Enabled modules/extensions/terminology | Customer profile | Yes (configuration) |
+
+## B2. Dedicated customer repositories (mandatory model)
+
+Both products now follow the same dedicated-repository model:
+
+| Customer | Web repository | Worker repository |
+|---|---|---|
+| Alpha | `kiwidudedev/tradesstack-client-alpha` | `tradesstack/tradesstack-worker-client-alpha` |
+| Customer B | `tradesstack/tradesstack-client-<slug>` | `tradesstack/tradesstack-worker-client-<slug>` |
+
+A customer Worker repository is a real source repository, not a wrapper: it has
+its own history, branches, CI, customer screens and extensions, and its own
+`release-manifest.json` recording the Worker Main release it is based on.
+
+### Ownership boundary
+
+| Path | Owner | Promotion behaviour |
+|---|---|---|
+| `app/**`, `components/**`, `src/**`, `vendor/**`, `scripts/**`, `tests/**`, `package.json`, configs | Worker Main | Replaced by the approved release snapshot; a local modification blocks the promotion |
+| `client/**` (profile, extensions, assets, notes) | Customer | Preserved byte-for-byte; never overwritten or deleted |
+| `.env*` | Customer/deployment | Never committed or touched by promotion |
+| `release-manifest.json` | Generated | Rewritten with the promoted release, source SHA, fingerprint and per-file hashes |
+| `package-lock.json`, `expo-env.d.ts`, build caches | Generated/volatile | Excluded from divergence checks |
+
+Customer extensions are registered through the Worker Main-owned
+`HomeExtension` slot (`src/config/extension-host.ts`); the customer owns the
+component in `client/extensions/home/index.tsx`. A Worker Main upgrade replaces
+the slot implementation, never the customer's registration.
+
+### Source promotion
+
+`scripts/ops/worker-promote.mjs` implements the Worker equivalent of the web
+promotion pipeline:
+
+approved release → verify customer baseline manifest → conflict detection →
+branch (or direct baseline adoption for a brand-new repository) → materialise
+Worker Main-owned files → preserve `client/**` → candidate checks (`npm run
+check`) → commit → optional push + PR → Main audit record.
+
+Conflicts block promotion and change nothing. The tool never force-overwrites a
+customer repository, and metadata pins are updated only after the source
+promotion and candidate checks succeed.
+
+### Provisioning
+
+`scripts/ops/customer-provision.mjs` prepares the whole implementation in one
+operation: identity, dedicated Web repository, dedicated Worker repository,
+environment binding, both configurations, one registry record, CI and
+validation, with durable checkpoints. Lifecycle states: `PLANNED`,
+`PROVISIONING`, `PARTIALLY_PROVISIONED`, `READY_FOR_VALIDATION`,
+`READY_FOR_DEPLOYMENT`, `ACTIVE`, `BLOCKED`, `FINALISE_FAILED_RETRYABLE`.
+Re-running identical inputs returns `ALREADY_PROVISIONED`; a partial failure is
+resumed with `--apply --resume`, reusing valid repositories. A lock prevents
+concurrent provisioning of one customer.
+
+Provider infrastructure (Supabase project, migrations, secrets, DNS, signing,
+store listings, deployment) remains an explicit external action; the tool
+records it and never creates paid infrastructure.
 
 ## C. Configuration contract
 
@@ -269,6 +333,11 @@ Remaining architectural risks and mitigations:
   foreign-session rejection, dashboard identity, modules/navigation, tasks,
   purchase orders (list + detail + financial total), variations, clock in/out
   and settings.
+- Dedicated repositories: the Alpha Worker repository was created from Worker
+  release 1.2.0, adopted 1.3.0 as its baseline, and received a real 1.4.0 source
+  promotion on branch `worker-upgrade/1.4.0` (PR open) with its customer
+  extension and profile preserved and candidate checks passing. No merge,
+  distribution or store submission occurred.
 - Native: Worker `1.1.1` produced an iOS Release build (`Build Succeeded`,
   `CFBundleShortVersionString 1.1.1`) which was installed and launched on an
   iPhone 17 Pro simulator with the Alpha profile; the app rendered the Alpha

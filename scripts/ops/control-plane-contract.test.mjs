@@ -34,7 +34,9 @@ describe("Control Plane operational contract", () => {
     const contract = assembleOperationalContract();
     const alpha = contract.customers.find((customer) => customer.customerId === "client-alpha");
     expect(validateOperationalContract(contract)).toEqual([]);
-    expect(alpha.worker.release.value).toBe("1.1.0");
+    const registry = JSON.parse(require("node:fs").readFileSync(new URL("../../ops/clients.json", import.meta.url), "utf8"));
+    const expectedRelease = registry.clients.find((client) => client.clientId === "client-alpha").worker.targetWorkerRelease;
+    expect(alpha.worker.release.value).toBe(expectedRelease);
     expect(alpha.worker.compatibility.value).toBe("COMPATIBLE");
     expect(alpha.worker.compatibilityReasons.value).toEqual([]);
     expect(alpha.worker.distributionChannel.value).toBe("internal");
@@ -45,7 +47,17 @@ describe("Control Plane operational contract", () => {
     expect(alpha.worker.enabledCustomisations.value.extensions).toEqual(["home-notice"]);
     expect(alpha.worker.upgradeRecord.value).toMatch(/ops\/worker\/upgrades\/client-alpha\//);
     expect(alpha.worker.storePublishState.value).toBe("NOT_APPROVED_BY_THIS_CONTRACT");
-    expect(contract.main.workerReleases.map((release) => release.releaseId)).toEqual(["1.1.0", "1.0.0"]);
+    const expectedReleases = require("node:fs")
+      .readdirSync(new URL("../../ops/worker/releases", import.meta.url))
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => file.replace(/\.json$/, ""))
+      .sort((left, right) => {
+        const a = left.split(".").map(Number);
+        const b = right.split(".").map(Number);
+        for (let index = 0; index < 3; index += 1) if (a[index] !== b[index]) return b[index] - a[index];
+        return 0;
+      });
+    expect(contract.main.workerReleases.map((release) => release.releaseId)).toEqual(expectedReleases);
   });
 
   it("rejects a malformed Worker binding record", () => {

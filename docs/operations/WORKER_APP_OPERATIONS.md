@@ -15,7 +15,96 @@ creates provider infrastructure, deploys, signs or publishes a store app.
 - `npm run build:worker-config` in Main (the tooling imports the built contract).
 - No secrets are required for any validation command.
 
-## 1. Provision a new customer Worker App
+## 1. Provision a new customer (Web + Worker, one operation)
+
+The authoritative onboarding workflow is `scripts/ops/customer-provision.mjs`.
+One invocation prepares the dedicated Web repository, the dedicated Worker
+repository, both configurations, the environment binding, the registry entry
+and the lifecycle checkpoints:
+
+```bash
+node scripts/ops/customer-provision.mjs   --customer-id wilson-construction   --display-name "Wilson Construction"   --worker-profile ops/worker/fixtures/wilson-construction.json   --provider github   --web-release 1.2.0   --worker-release 1.4.0   --apply
+```
+
+- `--provider local` (default) writes git repositories under
+  `customer-repos/<base>/web` and `/worker` and performs no provider calls.
+  Use it for dry runs and automated tests.
+- `--provider github` creates/pushes the private repositories (owner
+  `--owner`, default `tradesstack`, names `tradesstack-client-<slug>` and
+  `tradesstack-worker-client-<slug>`). It never deletes or overwrites a
+  repository.
+- `--attach-worker` adds a dedicated Worker repository to an existing web
+  customer (used for Alpha).
+- `--resume` continues a partially completed operation; a lock file prevents
+  concurrent provisioning of the same customer.
+- `--activate` marks the customer `ACTIVE` only after every step passed; the
+  default is `READY_FOR_DEPLOYMENT`.
+
+Checkpoints live in `ops/provisioning/<customer>/operation.json`. Re-running
+identical inputs returns `ALREADY_PROVISIONED` and writes nothing. A failed step
+is `PARTIALLY_PROVISIONED`; valid repositories are reused on resume and only the
+missing work is performed. External actions (Supabase project, migrations,
+secrets, DNS, signing, store listings, deployment, distribution) are recorded
+and never performed by this tool.
+
+### Operator UI status
+
+No operator customer-creation UI exists in TradesStack Main today: the
+`app/` workspace is the customer product surface and the only platform-admin
+surface is a gate in `app/app/layout.tsx`. Customer creation has always been the
+`ops` control plane (`client:register`, release promotion, provisioning).
+Unified provisioning is therefore implemented and tested as that authoritative
+workflow. A UI form requires a new operator service holding a GitHub App token
+(never a personal token), a job runner and server-enforced operator
+authorisation; it must not run `gh` or hold repository credentials inside the
+deployed customer web app. This is recorded as a follow-up, not simulated here.
+
+### Legacy Worker-only provisioning
+
+`worker-provision.mjs` remains for Worker-only repair and is idempotent, but
+`customer-provision.mjs` is the authoritative onboarding path.
+
+## 1a. Promote Worker Main source into a customer repository
+
+```bash
+# plan (no writes)
+node scripts/ops/worker-promote.mjs --client <id> --to <X.Y.Z>   --worker-root <customer worker repo>
+
+# prepare the upgrade branch, materialise, validate and record
+node scripts/ops/worker-promote.mjs --client <id> --to <X.Y.Z>   --worker-root <customer worker repo> --apply
+
+# also push the branch and open the customer PR
+node scripts/ops/worker-promote.mjs --client <id> --to <X.Y.Z>   --worker-root <customer worker repo> --apply --push
+```
+
+Rules:
+
+- promotion is sequential (`to.previousRelease` must equal the customer baseline);
+- Worker Main-owned files are replaced from the immutable release snapshot;
+- `client/**` and `.env*` are preserved byte-for-byte;
+- a locally modified/missing Worker Main-owned file, or customer source outside
+  `client/`, is a conflict: the promotion is `BLOCKED` and nothing changes;
+- the customer's `client/worker-profile.json` must match the registered profile;
+- the candidate runs `npm run check` in the customer repository before the
+  commit is promoted (`SKIPPED_NO_DEPENDENCIES` when dependencies are absent);
+- the Main registry and `ops/worker/promotions/<client>/<from>__<to>.json` are
+  updated only after success;
+- source promotion, build, distribution and installation remain independent
+  events (`ops/worker/distribution/<client>.json`).
+
+## 1b. Alpha Worker implementation (real)
+
+| Item | Value |
+|---|---|
+| Repository | `https://github.com/tradesstack/tradesstack-worker-client-alpha` (private) |
+| Baseline | Worker release 1.2.0, adopted as 1.3.0; then promoted to 1.4.0 on `worker-upgrade/1.4.0` |
+| PR | `https://github.com/tradesstack/tradesstack-worker-client-alpha/pull/1` (open, not merged) |
+| Customer extension | `client/extensions/home/index.tsx` — Alpha-only site notice |
+| Profile | `client/worker-profile.json` → `ibjyzpyuqupsxqakpzxj` only |
+| Candidate build | `expo export --platform web` PASS; Alpha ref present, reference ref 0, extension included, version 1.4.0 |
+| CI | `Worker App CI` on the repository |
+
+## 1c. Provision a new customer Worker App (worker-only)
 
 **Step 1 — create the profile.** Copy the documented fixture and edit it:
 
@@ -222,6 +311,14 @@ reason in the release review.
 Alpha is the controlled Worker validation environment:
 `https://tradesstack-alpha.tradesstack.workers.dev`, Supabase project
 `ibjyzpyuqupsxqakpzxj`.
+
+### 5.0 Dedicated Alpha Worker repository
+
+Alpha now has its own Worker source repository
+(`tradesstack/tradesstack-worker-client-alpha`) based on Worker Main 1.2.0 and
+promoted to 1.3.0/1.4.0. The customer extension and profile live under
+`client/**`; Worker Main remains unchanged by Alpha customisation. See section
+1b.
 
 ### 5.1 Backend deployment (performed 2026-10-17)
 

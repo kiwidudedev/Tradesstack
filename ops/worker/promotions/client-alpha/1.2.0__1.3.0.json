@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "clientId": "client-alpha",
+  "fromVersion": "1.2.0",
+  "toVersion": "1.3.0",
+  "status": "SOURCE_PROMOTED",
+  "customerRepository": "github:tradesstack/tradesstack-worker-client-alpha",
+  "workerMainRepository": "github:tradesstack/tradesstack-worker-app",
+  "branch": "main",
+  "mode": "DIRECT_MAIN_BASELINE_ADOPTION",
+  "commitSha": "722a31e1c95b3345e6e6b48393d54c2363f9fd3c",
+  "release": {
+    "sourceSha": "e51cec8ee1e7c6b0050583370e522455abe7b990",
+    "fingerprint": "d6e66a1935032759995aecfd70ad125fd5c97112005c68e69e77640f512b2d39",
+    "previousRelease": "1.2.0"
+  },
+  "preserved": {
+    "customerOwnedPaths": [
+      "client/**",
+      ".env*"
+    ],
+    "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
+    "releaseOwnedConflicts": []
+  },
+  "validation": {
+    "status": "PASS",
+    "command": "npm run check"
+  },
+  "artifactState": {
+    "targetRelease": "1.2.0",
+    "builtRelease": "1.1.1",
+    "distributedRelease": null,
+    "installedRelease": "1.1.1",
+    "note": "Source promotion is independent of build, distribution and installation. See ops/worker/distribution."
+  },
+  "approvals": {
+    "sourcePromotion": "READY",
+    "build": "NOT_APPROVED",
+    "distribution": "NOT_APPROVED",
+    "merge": "NOT_APPROVED"
+  },
+  "recordedAt": "2026-10-18T03:07:47.385Z",
+  "recordedBy": "scripts/ops/worker-promote.mjs"
+}

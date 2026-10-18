@@ -29,3 +29,6 @@ pnpm-debug.log*
 supabase/.temp/
 supabase/.branches/
 .vercel
+
+# Local working copies of dedicated customer repositories
+customer-repos/
