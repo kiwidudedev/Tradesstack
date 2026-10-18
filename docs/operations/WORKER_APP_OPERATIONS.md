@@ -87,6 +87,11 @@ Rules:
 - the customer's `client/worker-profile.json` must match the registered profile;
 - the candidate runs `npm run check` in the customer repository before the
   commit is promoted (`SKIPPED_NO_DEPENDENCIES` when dependencies are absent);
+- a prepared branch does **not** move the customer baseline: the registry keeps
+  `targetWorkerRelease`/`sourceBaseline` at the current default-branch release
+  and records `pendingPromotion` (`AWAITING_MERGE`). Only after the PR is merged
+  does `--confirm-merged` verify the branch commit is an ancestor of the default
+  branch and then advance the pin and mark the record `SOURCE_PROMOTED/MERGED`;
 - the Main registry and `ops/worker/promotions/<client>/<from>__<to>.json` are
   updated only after success;
 - source promotion, build, distribution and installation remain independent
@@ -97,8 +102,9 @@ Rules:
 | Item | Value |
 |---|---|
 | Repository | `https://github.com/tradesstack/tradesstack-worker-client-alpha` (private) |
-| Baseline | Worker release 1.2.0, adopted as 1.3.0; then promoted to 1.4.0 on `worker-upgrade/1.4.0` |
-| PR | `https://github.com/tradesstack/tradesstack-worker-client-alpha/pull/1` (open, not merged) |
+| Baseline | Worker release 1.2.0, adopted as 1.3.0 on `main` |
+| Prepared upgrade | 1.4.0 on `worker-upgrade/1.4.0` (candidate checks PASS) |
+| PR | `https://github.com/tradesstack/tradesstack-worker-client-alpha/pull/1` (open, **not merged**; `main` remains 1.3.0) |
 | Customer extension | `client/extensions/home/index.tsx` — Alpha-only site notice |
 | Profile | `client/worker-profile.json` → `ibjyzpyuqupsxqakpzxj` only |
 | Candidate build | `expo export --platform web` PASS; Alpha ref present, reference ref 0, extension included, version 1.4.0 |

@@ -38,12 +38,13 @@ import {
   run,
 } from "./worker-repo.mjs";
 
-const options = { apply: false, push: false, skipValidation: false };
+const options = { apply: false, push: false, skipValidation: false, confirmMerged: false };
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
   if (argument === "--apply") options.apply = true;
   else if (argument === "--push") options.push = true;
   else if (argument === "--skip-validation") options.skipValidation = true;
+  else if (argument === "--confirm-merged") options.confirmMerged = true;
   else if (argument.startsWith("--")) options[argument.slice(2)] = process.argv[++index];
 }
 
@@ -107,8 +108,83 @@ const compatibility = checkWorkerCompatibility({
 
 const customerRepo = workerCustomerRepository(client.worker);
 const mainRepo = workerMainRepository(client.worker);
+const defaultBranch = client.defaultBranch ?? "main";
+const branch = options.branch ?? `worker-upgrade/${toVersion}`;
+const directMain = branch === defaultBranch;
 const details = [];
 if (!customerRepo) details.push("registry has no dedicated customer repository yet (expected for a first promotion)");
+
+if (options.confirmMerged) {
+  const root = workerRoot;
+  const branchName = branch;
+  let branchCommit;
+  let head;
+  try {
+    branchCommit = git(root, ["rev-parse", branchName]);
+    head = git(root, ["rev-parse", defaultBranch]);
+  } catch {
+    fail("BLOCKED", `Promotion branch ${branchName} does not exist in the customer repository`);
+  }
+  let ancestor = false;
+  try {
+    run("git", ["merge-base", "--is-ancestor", branchCommit, head], root);
+    ancestor = true;
+  } catch {
+    ancestor = false;
+  }
+  if (!ancestor) {
+    fail("BLOCKED", `Promotion branch ${branchName} (${branchCommit}) is not merged into ${defaultBranch}; merge it first`, [
+      "The registry pin is not advanced until the source is actually on the default branch.",
+    ]);
+  }
+  const mergedRecordPath = path.join(dataRoot, `ops/worker/promotions/${client.clientId}/${fromVersion}__${toVersion}.json`);
+  const mergedRecord = fs.existsSync(mergedRecordPath) ? readJson(mergedRecordPath) : null;
+  const nextRegistry = {
+    ...registry,
+    clients: registry.clients.map((entry) => entry.clientId === client.clientId
+      ? {
+          ...entry,
+          worker: {
+            ...entry.worker,
+            targetWorkerRelease: toVersion,
+            promotedWorkerRelease: toVersion,
+            sourceBaseline: {
+              release: toVersion,
+              sourceSha: toRelease.sourceSha,
+              fingerprint: toRelease.releaseFingerprint,
+            },
+            pendingPromotion: null,
+            lastPromotion: {
+              fromVersion,
+              toVersion,
+              branch: branchName,
+              commitSha: branchCommit,
+              record: path.relative(dataRoot, mergedRecordPath),
+              status: "SOURCE_MERGED_AWAITING_BUILD",
+            },
+          },
+        }
+      : entry),
+  };
+  fs.writeFileSync(registryPath, `${JSON.stringify(nextRegistry, null, 2)}\n`);
+  if (mergedRecord) {
+    mergedRecord.status = "SOURCE_PROMOTED";
+    mergedRecord.mergeState = "MERGED";
+    mergedRecord.mergedCommitSha = head;
+    fs.writeFileSync(mergedRecordPath, `${JSON.stringify(mergedRecord, null, 2)}\n`);
+  }
+  console.log(JSON.stringify({
+    status: "MERGE_CONFIRMED",
+    clientId: client.clientId,
+    fromVersion,
+    toVersion,
+    branch: branchName,
+    mergedInto: defaultBranch,
+    mergedCommitSha: head,
+    record: path.relative(dataRoot, mergedRecordPath),
+  }, null, 2));
+  process.exit(0);
+}
 
 // Repository integrity and baseline.
 try {
@@ -116,9 +192,6 @@ try {
 } catch (error) {
   fail("BLOCKED", error.message, details);
 }
-const defaultBranch = client.defaultBranch ?? "main";
-const branch = options.branch ?? `worker-upgrade/${toVersion}`;
-const directMain = branch === defaultBranch;
 const currentBranch = git(workerRoot, ["branch", "--show-current"]);
 if (currentBranch !== defaultBranch) {
   fail("BLOCKED", `Customer repository must be on ${defaultBranch} before promotion (currently ${currentBranch})`);
@@ -259,7 +332,12 @@ const record = {
   clientId: client.clientId,
   fromVersion,
   toVersion,
-  status: validation.status === "FAIL" ? "BLOCKED_CANDIDATE_VALIDATION" : "SOURCE_PROMOTED",
+  status: validation.status === "FAIL"
+    ? "BLOCKED_CANDIDATE_VALIDATION"
+    : directMain
+      ? "SOURCE_PROMOTED"
+      : "SOURCE_PREPARED_AWAITING_MERGE",
+  mergeState: directMain ? "BASELINE_ADOPTED" : "NOT_MERGED",
   customerRepository: customerRepo ?? path.relative(dataRoot, workerRoot),
   workerMainRepository: mainRepo,
   branch,
@@ -310,20 +388,34 @@ const nextRegistry = {
         ...entry,
         worker: {
           ...entry.worker,
-          targetWorkerRelease: toVersion,
-          promotedWorkerRelease: toVersion,
-          sourceBaseline: {
-            release: toVersion,
-            sourceSha: toRelease.sourceSha,
-            fingerprint: toRelease.releaseFingerprint,
-          },
+          ...(directMain
+            ? {
+                targetWorkerRelease: toVersion,
+                promotedWorkerRelease: toVersion,
+                sourceBaseline: {
+                  release: toVersion,
+                  sourceSha: toRelease.sourceSha,
+                  fingerprint: toRelease.releaseFingerprint,
+                },
+              }
+            : {}),
+          pendingPromotion: directMain
+            ? null
+            : {
+                toVersion,
+                fromVersion,
+                branch,
+                commitSha,
+                record: promotionRecordPath,
+                status: "AWAITING_MERGE",
+              },
           lastPromotion: {
             fromVersion,
             toVersion,
             branch,
             commitSha,
             record: promotionRecordPath,
-            status: "SOURCE_PROMOTED_AWAITING_BUILD",
+            status: directMain ? "SOURCE_PROMOTED_AWAITING_BUILD" : "SOURCE_PREPARED_AWAITING_MERGE",
           },
         },
       }

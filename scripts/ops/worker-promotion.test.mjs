@@ -152,16 +152,37 @@ describe.skipIf(!HAS_WORKER_MAIN)('Worker Main to customer source promotion', { 
     expect(manifest.releaseOwnedFiles).not.toEqual(expect.arrayContaining(['client/extensions/home/index.tsx']));
 
     const client = readJson(path.join(workspace, 'ops/clients.json')).clients.find((entry) => entry.clientId === CUSTOMER);
-    expect(client.worker.targetWorkerRelease).toBe('1.3.0');
-    expect(client.worker.promotedWorkerRelease).toBe('1.3.0');
-    expect(client.worker.sourceBaseline.release).toBe('1.3.0');
+    // A prepared branch does not move the customer's actual baseline.
+    expect(client.worker.targetWorkerRelease).toBe('1.2.0');
+    expect(client.worker.promotedWorkerRelease).toBe('1.2.0');
+    expect(client.worker.sourceBaseline.release).toBe('1.2.0');
+    expect(client.worker.pendingPromotion.toVersion).toBe('1.3.0');
+    expect(client.worker.pendingPromotion.status).toBe('AWAITING_MERGE');
 
     const record = readJson(path.join(workspace, 'ops/worker/promotions', CUSTOMER, '1.2.0__1.3.0.json'));
-    expect(record.status).toBe('SOURCE_PROMOTED');
+    expect(record.status).toBe('SOURCE_PREPARED_AWAITING_MERGE');
+    expect(record.mergeState).toBe('NOT_MERGED');
     expect(record.preserved.releaseOwnedConflicts).toEqual([]);
     expect(record.artifactState.builtRelease).toBeNull();
     expect(record.artifactState.distributedRelease).toBeNull();
     expect(record.artifactState.installedRelease).toBeNull();
+
+    // Confirm the merge only after the branch is actually on the default branch.
+    git(root, ['switch', 'main']);
+    git(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'merge', '--no-ff', '-m', 'merge promotion', 'worker-upgrade/1.3.0']);
+    const confirmed = run('worker-promote.mjs', [
+      '--client', CUSTOMER, '--from', '1.2.0', '--to', '1.3.0',
+      '--worker-root', root, '--workspace', workspace, '--confirm-merged',
+    ], workspace);
+    expect(confirmed.status).toBe(0);
+    expect(confirmed.json.status).toBe('MERGE_CONFIRMED');
+    const mergedClient = readJson(path.join(workspace, 'ops/clients.json')).clients.find((entry) => entry.clientId === CUSTOMER);
+    expect(mergedClient.worker.targetWorkerRelease).toBe('1.3.0');
+    expect(mergedClient.worker.sourceBaseline.release).toBe('1.3.0');
+    expect(mergedClient.worker.pendingPromotion).toBeNull();
+    const mergedRecord = readJson(path.join(workspace, 'ops/worker/promotions', CUSTOMER, '1.2.0__1.3.0.json'));
+    expect(mergedRecord.status).toBe('SOURCE_PROMOTED');
+    expect(mergedRecord.mergeState).toBe('MERGED');
   });
 
   it('detects a modified Worker Main-owned file and changes nothing', () => {

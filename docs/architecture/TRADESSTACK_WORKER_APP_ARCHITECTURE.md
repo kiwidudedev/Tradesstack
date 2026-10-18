@@ -334,9 +334,11 @@ Remaining architectural risks and mitigations:
   purchase orders (list + detail + financial total), variations, clock in/out
   and settings.
 - Dedicated repositories: the Alpha Worker repository was created from Worker
-  release 1.2.0, adopted 1.3.0 as its baseline, and received a real 1.4.0 source
-  promotion on branch `worker-upgrade/1.4.0` (PR open) with its customer
-  extension and profile preserved and candidate checks passing; the candidate
+  release 1.2.0, adopted 1.3.0 as its default-branch baseline, and has a
+  prepared 1.4.0 source promotion on branch `worker-upgrade/1.4.0` (PR open, not
+  merged) with its customer extension and profile preserved and candidate
+  checks passing; the registry keeps the 1.3.0 baseline and tracks the pending
+  1.4.0 merge separately; the candidate
   web build passed 8/8 browser checks against Alpha (customer extension card,
   existing Alpha PO with detail total, no reference-project data, no page
   errors). No merge, distribution or store submission occurred.

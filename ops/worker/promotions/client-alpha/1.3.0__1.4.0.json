@@ -3,7 +3,7 @@
   "clientId": "client-alpha",
   "fromVersion": "1.3.0",
   "toVersion": "1.4.0",
-  "status": "SOURCE_PROMOTED",
+  "status": "SOURCE_PREPARED_AWAITING_MERGE",
   "customerRepository": "github:tradesstack/tradesstack-worker-client-alpha",
   "workerMainRepository": "github:tradesstack/tradesstack-worker-app",
   "branch": "worker-upgrade/1.4.0",
@@ -44,5 +44,6 @@
   "pullRequest": {
     "status": "OPENED",
     "reference": "https://github.com/tradesstack/tradesstack-worker-client-alpha/pull/1"
-  }
+  },
+  "mergeState": "NOT_MERGED"
 }
