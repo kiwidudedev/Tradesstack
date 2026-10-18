@@ -11,7 +11,11 @@
       "defaultBranch": "main",
       "rolloutStatus": "ENABLED",
       "releaseChannel": "stable",
-      "clientOwnedPaths": ["client/**", ".env*", ".vercel/project.json"],
+      "clientOwnedPaths": [
+        "client/**",
+        ".env*",
+        ".vercel/project.json"
+      ],
       "targetRelease": "1.2.0",
       "repositoryReference": "github:kiwidudedev/tradesstack-client-alpha",
       "deploymentTarget": "cloudflare:tradesstack-alpha",
@@ -71,7 +75,14 @@
           "supabaseMfa": "ENABLED_OWNER_CONFIRMED_2026-10-02",
           "secureReleaseRecovery": "PROVEN_CURRENT_RELEASE_REDEPLOY_PATH",
           "backupWorkflow": "ALPHA_COMMIT_65B4C5A_DAILY_0217_UTC_ENCRYPTED_ARTIFACT_LIVE_RUN_36977001303_RESTORE_VERIFY_RUN_36979459575",
-          "configuredBackupSecrets": ["SUPABASE_PROJECT_REF", "SUPABASE_DB_URL", "SUPABASE_DB_PASSWORD", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "BACKUP_ENCRYPTION_KEY"],
+          "configuredBackupSecrets": [
+            "SUPABASE_PROJECT_REF",
+            "SUPABASE_DB_URL",
+            "SUPABASE_DB_PASSWORD",
+            "SUPABASE_URL",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "BACKUP_ENCRYPTION_KEY"
+          ],
           "pendingBackupSecrets": []
         }
       },
@@ -79,7 +90,7 @@
       "worker": {
         "profilePath": "ops/worker/profiles/client-alpha.json",
         "profileFingerprint": "ecb6610ffe19202c7834790cc083a473a72c00c0179f55086e7a17fd597148af",
-        "targetWorkerRelease": "1.3.0",
+        "targetWorkerRelease": "1.4.0",
         "distributionChannel": "internal",
         "clientExtensions": [],
         "provisioningRecord": "ops/provisioning/client-alpha/operation.json",
@@ -92,11 +103,11 @@
         },
         "workerMainRepository": "github:tradesstack/tradesstack-worker-app",
         "repositoryReference": "github:tradesstack/tradesstack-worker-client-alpha",
-        "promotedWorkerRelease": "1.3.0",
+        "promotedWorkerRelease": "1.4.0",
         "sourceBaseline": {
-          "release": "1.3.0",
-          "sourceSha": "e51cec8ee1e7c6b0050583370e522455abe7b990",
-          "fingerprint": "d6e66a1935032759995aecfd70ad125fd5c97112005c68e69e77640f512b2d39"
+          "release": "1.4.0",
+          "sourceSha": "82a53ac80b3d4e88a65214093743ce161849594e",
+          "fingerprint": "b067572dc28bf836c4b7a2be25e0843b207738ab5f1ae73f15b3be6672ac2e30"
         },
         "lastPromotion": {
           "fromVersion": "1.3.0",
@@ -104,16 +115,9 @@
           "branch": "worker-upgrade/1.4.0",
           "commitSha": "8e81aa465d81446c1306af75f858a25b0b27fc6b",
           "record": "ops/worker/promotions/client-alpha/1.3.0__1.4.0.json",
-          "status": "SOURCE_PREPARED_AWAITING_MERGE"
+          "status": "SOURCE_MERGED_AWAITING_BUILD"
         },
-        "pendingPromotion": {
-          "toVersion": "1.4.0",
-          "fromVersion": "1.3.0",
-          "branch": "worker-upgrade/1.4.0",
-          "commitSha": "8e81aa465d81446c1306af75f858a25b0b27fc6b",
-          "record": "ops/worker/promotions/client-alpha/1.3.0__1.4.0.json",
-          "status": "AWAITING_MERGE"
-        }
+        "pendingPromotion": null
       },
       "provisioning": {
         "operationId": "prov-client-alpha-852e9dbde662d327",
