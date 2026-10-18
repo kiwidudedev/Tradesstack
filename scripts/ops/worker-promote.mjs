@@ -236,7 +236,11 @@ if (!options.skipValidation && fs.existsSync(path.join(workerRoot, "node_modules
 
 git(workerRoot, ["add", "-A"]);
 try {
-  git(workerRoot, ["commit", "-m", `worker: promote TradesStack Worker ${toVersion}`]);
+  git(workerRoot, [
+    "-c", "user.name=TradesStack Ops",
+    "-c", "user.email=ops@tradesstack.invalid",
+    "commit", "-m", `worker: promote TradesStack Worker ${toVersion}`,
+  ]);
 } catch {
   // No material difference (for example an identical re-run) — keep the branch.
 }

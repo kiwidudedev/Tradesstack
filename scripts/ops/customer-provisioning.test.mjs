@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ROOT } from './lib.mjs';
 
+const WORKER_MAIN = path.resolve(ROOT, '../tradesstack-worker-app/tradesstack-worker-app');
+const HAS_WORKER_MAIN = fs.existsSync(path.join(WORKER_MAIN, '.git'));
+
 function cloneWorkspace() {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'tradesstack-provision-'));
   fs.cpSync(path.join(ROOT, 'ops'), path.join(workspace, 'ops'), { recursive: true });
@@ -59,6 +62,7 @@ function provision(workspace, profileFile, extra = [], customerId = null) {
     '--provider', 'local',
     '--worker-release', '1.3.0',
     '--web-release', '1.2.0',
+    ...(HAS_WORKER_MAIN ? ['--worker-main', WORKER_MAIN] : []),
     ...extra,
   ];
   try {
@@ -75,7 +79,7 @@ function provision(workspace, profileFile, extra = [], customerId = null) {
   }
 }
 
-describe('unified customer provisioning', { timeout: 120000 }, () => {
+describe.skipIf(!HAS_WORKER_MAIN)('unified customer provisioning', { timeout: 120000 }, () => {
   let workspace;
   beforeEach(() => {
     workspace = cloneWorkspace();

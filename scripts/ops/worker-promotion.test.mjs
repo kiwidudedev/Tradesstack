@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ROOT } from './lib.mjs';
 
+const WORKER_MAIN = path.resolve(ROOT, '../tradesstack-worker-app/tradesstack-worker-app');
+const HAS_WORKER_MAIN = fs.existsSync(path.join(WORKER_MAIN, '.git'));
+
 const CUSTOMER = 'acme-promote';
 
 function cloneWorkspace() {
@@ -88,6 +91,7 @@ function provision(workspace) {
     '--provider', 'local',
     '--worker-release', '1.2.0',
     '--web-release', '1.2.0',
+    ...(HAS_WORKER_MAIN ? ['--worker-main', WORKER_MAIN] : []),
     '--apply',
   ], workspace);
 }
@@ -102,6 +106,7 @@ function promote(workspace, extra = []) {
     '--from', '1.2.0',
     '--to', '1.3.0',
     '--worker-root', workerRepo(workspace),
+    '--worker-main', WORKER_MAIN,
     '--workspace', workspace,
     '--skip-validation',
     '--apply',
@@ -118,7 +123,7 @@ function addCustomerExtension(root) {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
-describe('Worker Main to customer source promotion', { timeout: 120000 }, () => {
+describe.skipIf(!HAS_WORKER_MAIN)('Worker Main to customer source promotion', { timeout: 120000 }, () => {
   let workspace;
   beforeEach(() => {
     workspace = cloneWorkspace();
