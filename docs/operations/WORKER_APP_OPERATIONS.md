@@ -102,6 +102,7 @@ Rules:
 | Customer extension | `client/extensions/home/index.tsx` — Alpha-only site notice |
 | Profile | `client/worker-profile.json` → `ibjyzpyuqupsxqakpzxj` only |
 | Candidate build | `expo export --platform web` PASS; Alpha ref present, reference ref 0, extension included, version 1.4.0 |
+| Candidate browser validation | 8/8: dashboard organisation, customer extension card, POs + Time Clock tabs, existing Alpha PO `26001-PO-01`, detail total 287.50, no reference-project data, no page errors |
 | CI | `Worker App CI` on the repository |
 
 ## 1c. Provision a new customer Worker App (worker-only)
