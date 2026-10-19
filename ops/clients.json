@@ -16,7 +16,7 @@
         ".env*",
         ".vercel/project.json"
       ],
-      "targetRelease": "1.2.1",
+      "targetRelease": "1.2.2",
       "repositoryReference": "github:kiwidudedev/tradesstack-client-alpha",
       "deploymentTarget": "cloudflare:tradesstack-alpha",
       "databaseProjectReference": "supabase:ibjyzpyuqupsxqakpzxj",
@@ -30,7 +30,7 @@
         "applicationShellFingerprint": "9681b9f459099bfb170ff3393e7d279c802d4cbf56e3073a0897c1c589cf2be8",
         "mainReleaseFingerprint": "9681b9f459099bfb170ff3393e7d279c802d4cbf56e3073a0897c1c589cf2be8",
         "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d",
-        "status": "VERIFIED_1.2.1_DEPLOYED"
+        "status": "TARGET_1.2.2_PENDING_ALPHA_APPLICATION"
       },
       "database": {
         "baseline": "phase1o-1",
