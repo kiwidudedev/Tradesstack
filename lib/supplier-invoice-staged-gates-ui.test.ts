@@ -21,8 +21,9 @@ describe("Supplier Invoice staged workflow UI", () => {
   it("shows operational blockers and explains that accounting coding is later", () => {
     expect(workspace).toContain("blockers={workflowState.siteReviewBlockers}");
     expect(panel).toContain("Complete these operational checks before sending");
-    expect(panel).toContain("Accounting routing, account coding and tax treatment are completed later by Accounts");
-    expect(panel).toContain("are not required to send this for site review");
+    expect(panel).toContain("Accounting coding and tax treatment are completed later in Accounts.");
+    expect(panel).toContain("StatusBadge");
+    expect(panel).toContain("OperationalTable");
   });
 
   it("keeps accounting terminology out of the operational submission action", () => {
