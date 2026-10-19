@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "operationId": "prov-cf-auto-mvelgso9-77bdcc9ece0cb705",
+  "customerId": "cf-auto-mvelgso9",
+  "state": "PARTIALLY_PROVISIONED",
+  "inputs": {
+    "customerId": "cf-auto-mvelgso9",
+    "displayName": "Phase 6.8 Fictional Build Co (QA)",
+    "attachWorker": false,
+    "provider": "github",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "cf-auto-mvelgso9-production",
+      "supabaseProjectRef": "cfauthomvelgso900000"
+    },
+    "profileFingerprint": "09c34a3db125dd718683f75ed398dfc1d1703e56888eaf747b21c9f234701f6d",
+    "webRelease": "1.2.0",
+    "workerRelease": "1.4.0",
+    "webRepository": "github:tradesstack/tradesstack-client-cf-auto-mvelgso9",
+    "workerRepository": "github:tradesstack/tradesstack-worker-client-cf-auto-mvelgso9",
+    "deploymentTarget": "PENDING",
+    "domain": "PENDING"
+  },
+  "steps": [
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Customer cf-auto-mvelgso9 identity validated (cf-auto-mvelgso9-production)",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:49:17.482Z",
+      "finishedAt": "2026-10-19T01:49:17.482Z",
+      "updatedAt": "2026-10-19T01:49:17.482Z"
+    },
+    {
+      "id": "finalise",
+      "status": "FAILED_RETRYABLE",
+      "detail": "Command failed: git push -u origin main\nfatal: could not read Username for 'https://github.com': No such device or address\n",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:49:54.446Z",
+      "finishedAt": null,
+      "updatedAt": "2026-10-19T01:49:54.446Z"
+    }
+  ],
+  "externalActions": [],
+  "errors": [
+    {
+      "message": "Command failed: git push -u origin main\nfatal: could not read Username for 'https://github.com': No such device or address\n",
+      "at": "2026-10-19T01:49:54.446Z"
+    }
+  ],
+  "createdAt": "2026-10-19T01:49:17.480Z",
+  "updatedAt": "2026-10-19T01:49:54.446Z",
+  "createdBy": "scripts/ops/customer-provision.mjs"
+}
