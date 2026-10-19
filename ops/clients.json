@@ -125,6 +125,56 @@
         "record": "ops/provisioning/client-alpha/operation.json",
         "state": "READY_FOR_DEPLOYMENT"
       }
+    },
+    {
+      "clientId": "cf-auto-mvelli19",
+      "displayName": "Phase 6.8 Fictional Build Co (QA)",
+      "environment": "managed-client",
+      "lifecycleStatus": "PENDING",
+      "defaultBranch": "main",
+      "rolloutStatus": "ENABLED",
+      "releaseChannel": "stable",
+      "clientOwnedPaths": [
+        "client/**",
+        ".env*"
+      ],
+      "targetRelease": "1.2.0",
+      "repositoryReference": "github:tradesstack/tradesstack-client-cf-auto-mvelli19",
+      "deploymentTarget": "PENDING",
+      "databaseProjectReference": "supabase:cfauthomvelli1900000",
+      "runtimeReference": "PENDING",
+      "domainReference": "PENDING",
+      "releaseProvenance": {
+        "status": "PENDING_INITIAL_PROVISIONING",
+        "mainReleaseFingerprint": "b29b08a8a5afc4fa95b551ec2dfbd53a715471d1693afb36abd02ccd86b498f1"
+      },
+      "database": {
+        "baseline": "phase1o-1",
+        "migrationTarget": "20261014133000_create_blank_pricing_worksheet_template.sql",
+        "status": "PENDING_APPLICATION"
+      },
+      "worker": {
+        "profilePath": "ops/worker/profiles/cf-auto-mvelli19.json",
+        "profileFingerprint": "ced80b5b628b374936f3f6057c593d53e70486b90a861f76d06b478a11740766",
+        "workerMainRepository": "github:tradesstack/tradesstack-worker-app",
+        "repositoryReference": "github:tradesstack/tradesstack-worker-client-cf-auto-mvelli19",
+        "targetWorkerRelease": "1.4.0",
+        "promotedWorkerRelease": "1.4.0",
+        "sourceBaseline": {
+          "release": "1.4.0",
+          "sourceSha": "82a53ac80b3d4e88a65214093743ce161849594e",
+          "fingerprint": "b067572dc28bf836c4b7a2be25e0843b207738ab5f1ae73f15b3be6672ac2e30"
+        },
+        "distributionChannel": "internal",
+        "clientExtensions": [],
+        "provisioningRecord": "ops/provisioning/cf-auto-mvelli19/operation.json",
+        "compatibilityStatus": "COMPATIBLE"
+      },
+      "provisioning": {
+        "operationId": "prov-cf-auto-mvelli19-1386b0991136123b",
+        "record": "ops/provisioning/cf-auto-mvelli19/operation.json",
+        "state": "READY_FOR_DEPLOYMENT"
+      }
     }
   ]
 }

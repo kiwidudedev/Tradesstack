@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "clientKey": "cf-auto-mvelli19",
+  "identity": {
+    "appName": "CF Auto li19",
+    "slug": "cf-auto-mvelli19-worker",
+    "scheme": "cfautomvelli19",
+    "description": "Phase 6.8 Fictional Build Co (QA) TradesStack Worker App"
+  },
+  "distribution": {
+    "channel": "internal",
+    "iosBundleIdentifier": "com.tradesstack.worker.cfautomvelli19",
+    "androidPackage": "com.tradesstack.worker.cfautomvelli19",
+    "updateChannel": "cf-auto-mvelli19"
+  },
+  "environment": {
+    "kind": "hosted",
+    "environmentId": "cf-auto-mvelli19-production",
+    "displayLabel": "Phase 6.8 Fictional Build Co (QA)",
+    "supabaseProjectRef": "cfauthomvelli1900000"
+  },
+  "branding": {
+    "platformColor": "#123456",
+    "actionColor": "#D9480F",
+    "splashBackgroundColor": "#FFFFFF"
+  },
+  "modules": {
+    "dashboard": true,
+    "time_clock": true,
+    "tasks": true,
+    "purchase_orders": false,
+    "variations": false
+  },
+  "navigation": {
+    "tabs": [
+      "dashboard",
+      "time_clock",
+      "tasks",
+      "settings"
+    ],
+    "quickActions": [
+      {
+        "id": "create-todo",
+        "label": "Create a To Do",
+        "target": "tasks"
+      }
+    ]
+  },
+  "features": {
+    "notifications": true
+  },
+  "extensions": {},
+  "defaults": {
+    "locale": "en-NZ",
+    "currency": "NZD",
+    "timezone": "Pacific/Auckland"
+  }
+}

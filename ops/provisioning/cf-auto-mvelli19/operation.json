@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "operationId": "prov-cf-auto-mvelli19-1386b0991136123b",
+  "customerId": "cf-auto-mvelli19",
+  "state": "READY_FOR_DEPLOYMENT",
+  "inputs": {
+    "customerId": "cf-auto-mvelli19",
+    "displayName": "Phase 6.8 Fictional Build Co (QA)",
+    "attachWorker": false,
+    "provider": "github",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "cf-auto-mvelli19-production",
+      "supabaseProjectRef": "cfauthomvelli1900000"
+    },
+    "profileFingerprint": "ced80b5b628b374936f3f6057c593d53e70486b90a861f76d06b478a11740766",
+    "webRelease": "1.2.0",
+    "workerRelease": "1.4.0",
+    "webRepository": "github:tradesstack/tradesstack-client-cf-auto-mvelli19",
+    "workerRepository": "github:tradesstack/tradesstack-worker-client-cf-auto-mvelli19",
+    "deploymentTarget": "PENDING",
+    "domain": "PENDING"
+  },
+  "steps": [
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Customer cf-auto-mvelli19 identity validated (cf-auto-mvelli19-production)",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:53:30.107Z",
+      "finishedAt": "2026-10-19T01:53:30.107Z",
+      "updatedAt": "2026-10-19T01:53:30.107Z"
+    },
+    {
+      "id": "web-repository",
+      "status": "PASS",
+      "detail": "Web repository prepared at customer-repos/client-cf-auto-mvelli19/web from 1.2.0",
+      "artifact": {
+        "path": "customer-repos/client-cf-auto-mvelli19/web"
+      },
+      "startedAt": "2026-10-19T01:54:37.759Z",
+      "finishedAt": "2026-10-19T01:54:37.759Z",
+      "updatedAt": "2026-10-19T01:54:37.759Z"
+    },
+    {
+      "id": "worker-repository",
+      "status": "PASS",
+      "detail": "Worker repository prepared at customer-repos/client-cf-auto-mvelli19/worker from 1.4.0",
+      "artifact": {
+        "path": "customer-repos/client-cf-auto-mvelli19/worker"
+      },
+      "startedAt": "2026-10-19T01:54:45.880Z",
+      "finishedAt": "2026-10-19T01:54:45.880Z",
+      "updatedAt": "2026-10-19T01:54:45.880Z"
+    },
+    {
+      "id": "backend-binding",
+      "status": "PASS",
+      "detail": "Environment cf-auto-mvelli19-production bound to cfauthomvelli1900000; project creation/migrations remain external",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:54:45.880Z",
+      "finishedAt": "2026-10-19T01:54:45.880Z",
+      "updatedAt": "2026-10-19T01:54:45.880Z"
+    },
+    {
+      "id": "configuration",
+      "status": "PASS",
+      "detail": "Worker profile recorded at ops/worker/profiles/cf-auto-mvelli19.json",
+      "artifact": {
+        "path": "ops/worker/profiles/cf-auto-mvelli19.json"
+      },
+      "startedAt": "2026-10-19T01:54:45.880Z",
+      "finishedAt": "2026-10-19T01:54:45.880Z",
+      "updatedAt": "2026-10-19T01:54:45.880Z"
+    },
+    {
+      "id": "link-validation",
+      "status": "PASS",
+      "detail": "Web and Worker both resolve to cf-auto-mvelli19-production (cfauthomvelli1900000)",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:54:45.880Z",
+      "finishedAt": "2026-10-19T01:54:45.880Z",
+      "updatedAt": "2026-10-19T01:54:45.880Z"
+    },
+    {
+      "id": "registry",
+      "status": "PASS",
+      "detail": "One registry entry joins web, worker and environment for cf-auto-mvelli19",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:54:45.881Z",
+      "finishedAt": "2026-10-19T01:54:45.881Z",
+      "updatedAt": "2026-10-19T01:54:45.881Z"
+    },
+    {
+      "id": "ci",
+      "status": "PASS",
+      "detail": "Web CI requires configuration; Worker CI present",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:54:45.881Z",
+      "finishedAt": "2026-10-19T01:54:45.881Z",
+      "updatedAt": "2026-10-19T01:54:45.881Z"
+    },
+    {
+      "id": "validate",
+      "status": "PASS",
+      "detail": "Web/Worker configuration and vendor integrity validated",
+      "artifact": {
+        "validation": [
+          {
+            "check": "worker vendor integrity",
+            "status": "PASS"
+          },
+          {
+            "check": "worker profile validation",
+            "status": "PASS"
+          }
+        ]
+      },
+      "startedAt": "2026-10-19T01:54:47.304Z",
+      "finishedAt": "2026-10-19T01:54:47.304Z",
+      "updatedAt": "2026-10-19T01:54:47.304Z"
+    },
+    {
+      "id": "finalise",
+      "status": "PASS",
+      "detail": "Customer implementation READY_FOR_DEPLOYMENT",
+      "artifact": null,
+      "startedAt": "2026-10-19T01:54:47.305Z",
+      "finishedAt": "2026-10-19T01:54:47.305Z",
+      "updatedAt": "2026-10-19T01:54:47.305Z"
+    }
+  ],
+  "externalActions": [
+    {
+      "id": "create-supabase-project",
+      "status": "REQUIRED",
+      "detail": "cfauthomvelli1900000"
+    },
+    {
+      "id": "apply-database-baseline-and-migrations",
+      "status": "REQUIRED",
+      "detail": "Approved baseline + migrations for the customer project"
+    },
+    {
+      "id": "bind-web-environment-secrets",
+      "status": "REQUIRED",
+      "detail": "Web hosting env: NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SITE_URL"
+    },
+    {
+      "id": "bind-worker-build-secrets",
+      "status": "REQUIRED",
+      "detail": "EXPO_PUBLIC_SUPABASE_URL / ANON_KEY / FUNCTIONS_URL"
+    },
+    {
+      "id": "signing-and-store-listing",
+      "status": "NOT_REQUIRED",
+      "detail": "Owner approval required"
+    },
+    {
+      "id": "build-and-distribute",
+      "status": "REQUIRED",
+      "detail": "Web deploy + Worker build/distribution approvals"
+    }
+  ],
+  "errors": [],
+  "createdAt": "2026-10-19T01:53:30.105Z",
+  "updatedAt": "2026-10-19T01:54:47.306Z",
+  "createdBy": "scripts/ops/customer-provision.mjs",
+  "github": {
+    "web": {
+      "fullName": "tradesstack/tradesstack-client-cf-auto-mvelli19",
+      "created": true,
+      "pushed": true
+    },
+    "worker": {
+      "fullName": "tradesstack/tradesstack-worker-client-cf-auto-mvelli19",
+      "created": true,
+      "pushed": true
+    }
+  }
+}
