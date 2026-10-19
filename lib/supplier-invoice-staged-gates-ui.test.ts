@@ -18,12 +18,14 @@ describe("Supplier Invoice staged workflow UI", () => {
     expect(gstDialog).not.toContain("!allocation.accounting_mapping_id");
   });
 
-  it("shows operational blockers and explains that accounting coding is later", () => {
+  it("shows compact operational blockers without permanent accounting guidance", () => {
     expect(workspace).toContain("blockers={workflowState.siteReviewBlockers}");
-    expect(panel).toContain("Complete these operational checks before sending");
-    expect(panel).toContain("Accounting coding and tax treatment are completed later in Accounts.");
-    expect(panel).toContain("StatusBadge");
-    expect(panel).toContain("OperationalTable");
+    expect(panel).toContain("Before sending");
+    expect(panel).toContain("Approved by");
+    expect(panel).toContain("lines approved");
+    expect(panel).not.toContain("Accounting coding and tax treatment");
+    expect(panel).not.toContain("The project team reviews each matched invoice line");
+    expect(panel).not.toContain("<table");
   });
 
   it("keeps accounting terminology out of the operational submission action", () => {

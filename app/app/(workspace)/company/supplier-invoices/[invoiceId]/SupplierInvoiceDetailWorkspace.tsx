@@ -1931,6 +1931,13 @@ export function SupplierInvoiceDetailWorkspace({
     return activeMatchedPurchaseOrders.map((match) => ({
       purchaseOrderId: match.purchase_order_id,
       purchaseOrderNumber: match.purchaseOrder?.purchase_order_number ?? "Purchase Order",
+      href: (() => {
+        const projectId = match.purchaseOrder?.project_id;
+        const projectSlug = projectId ? projectById.get(projectId)?.slug : null;
+        return projectSlug
+          ? `/app/projects/${projectSlug}/preconstruction/purchase-orders/${match.purchase_order_id}`
+          : null;
+      })(),
       rows: teamApprovalAllocations
         .filter((allocation) => allocation.purchase_order_id === match.purchase_order_id)
         .map((allocation) => ({
@@ -1952,7 +1959,7 @@ export function SupplierInvoiceDetailWorkspace({
           reviewedAt: allocation.reviewed_at,
         })),
     }));
-  }, [activeMatchedPurchaseOrders, lines, matchedPurchaseOrderLines, memberDirectory, teamApprovalAllocations]);
+  }, [activeMatchedPurchaseOrders, lines, matchedPurchaseOrderLines, memberDirectory, projectById, teamApprovalAllocations]);
   const hasTeamApprovalHistory = useMemo(
     () => activityEvents.some((event) => event.event_type === "site_review_submitted"),
     [activityEvents]
