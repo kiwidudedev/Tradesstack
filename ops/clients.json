@@ -23,14 +23,14 @@
       "runtimeReference": "cloudflare:tradesstack-alpha",
       "domainReference": "https://tradesstack-alpha.tradesstack.workers.dev",
       "releaseProvenance": {
-        "repositorySha": "348710fc7cc20308325efe6b69b371f402403995",
-        "deploymentId": "e20f4844-2a5b-472e-89ff-c9b4e7e4233d",
-        "applicationShellRelease": "1.2.2",
-        "applicationShellSourceSha": "53fe6671b2a5c5c812bf4875f19a4d70882b70ad",
-        "applicationShellFingerprint": "a7f25780f2336c748de8353c7eeeb21a0b3fedeb2bbf83b17b91ea1d9dffcbb5",
-        "mainReleaseFingerprint": "a7f25780f2336c748de8353c7eeeb21a0b3fedeb2bbf83b17b91ea1d9dffcbb5",
+        "repositorySha": "9a7cdcfafe99fb63be0cd4fc3ba8825e37c17177",
+        "deploymentId": "786f32d6-b13d-4645-88b9-fb8343fec879",
+        "applicationShellRelease": "1.2.3",
+        "applicationShellSourceSha": "f0e02c20d72739848b0bfee828f5acc2c95577a6",
+        "applicationShellFingerprint": "444107ffe42777408f65165bf0d43986f18ba51ea68e73a521bf829784fb422e",
+        "mainReleaseFingerprint": "444107ffe42777408f65165bf0d43986f18ba51ea68e73a521bf829784fb422e",
         "clientConfigFingerprint": "42f9fd9d09ae3446efcc0e79ce24e485cf8eb09462993eda702691717928046d",
-        "status": "TARGET_1.2.3_PENDING_ALPHA_APPLICATION"
+        "status": "VERIFIED_1.2.3_DEPLOYED"
       },
       "database": {
         "baseline": "phase1o-1",
@@ -59,7 +59,7 @@
         "backupStatus": "Synthetic Alpha logical export and isolated restore proven; recurring managed backup/retention capability remains unverified on Free tier",
         "observability": "Cloudflare Worker/runtime logs, Supabase logs/health and Wrangler deployment output; no third-party monitoring",
         "retention": "Keep as fictional hosted proof/reference; remove only with explicit approval",
-        "hostedUpgrade": "TradesStack 1.2.2 promoted through controlled Alpha branch shell-upgrade/1.2.2 and PR 12; Alpha release tests (4689 passed, 29 skipped), typecheck and production build PASS; merged client commit 348710fc7cc20308325efe6b69b371f402403995; Alpha database migration 20261019120000 remains applied to ibjyzpyuqupsxqakpzxj; Cloudflare Worker version e20f4844-2a5b-472e-89ff-c9b4e7e4233d deployed with --containers-rollout=none (existing takeoff container unchanged); https://tradesstack-alpha.tradesstack.workers.dev returned HTTP 200 and the authenticated Team Approval section was visually verified after deployment.",
+        "hostedUpgrade": "TradesStack 1.2.3 promoted through controlled Alpha branch shell-upgrade/1.2.3 and PR 13; Alpha release tests (4698 passed, 29 skipped), typecheck and production build PASS; merged client commit 9a7cdcfafe99fb63be0cd4fc3ba8825e37c17177; database migration 20261019120000 remains applied to ibjyzpyuqupsxqakpzxj; Cloudflare Worker version 786f32d6-b13d-4645-88b9-fb8343fec879 deployed with --containers-rollout=none; https://tradesstack-alpha.tradesstack.workers.dev returned HTTP 200 and the redesigned Team approval card was verified live at desktop and mobile widths.",
         "pendingSharedFixes": "Legacy manually-created Alpha quote fixture remains an intentionally retained stale fixture without source lineage and was not repaired by SQL; recurring backups, alert ownership, MFA/recovery ownership and exact Auth continuity remain open",
         "hardeningRecord": "ops/hardening/client-alpha.json",
         "hardeningStatus": "PARTIAL_PROVIDER_AND_OWNER_READINESS_REQUIRED",
