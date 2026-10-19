@@ -2039,11 +2039,35 @@ export function SupplierInvoiceDetailWorkspace({
     if (exportStatus === "exported") return { status: "sent", message: "The Draft Bill has been created in Xero." };
     if (["failed", "attention_required"].includes(exportStatus ?? "")) return { status: "issue", message: "The Xero export needs attention before it can continue." };
     if (isUpdatingXeroBill) return { status: "waiting", message: "Preparing the Draft Bill for Xero." };
-    if (teamApprovalStatus === "declined") return { status: "issue", message: "A project reviewer declined one invoice line." };
+    if (teamApprovalStatus === "declined") return { status: "issue", message: "A project reviewer declined a line. Update the invoice before creating the Xero bill." };
     if (teamApprovalStatus === "invalidated") return { status: "issue", message: "This invoice changed and must be reviewed again." };
-    if (["not_sent", "waiting", "partially_reviewed"].includes(teamApprovalStatus)) return { status: "waiting", message: "Team Approval is not complete." };
+    if (["not_sent", "waiting", "partially_reviewed"].includes(teamApprovalStatus)) {
+      const message = teamApprovalStatus === "not_sent"
+        ? "Send the invoice for team approval before creating the Xero bill."
+        : teamApprovalStatus === "partially_reviewed"
+          ? "Waiting for the project team to finish reviewing the invoice."
+          : "Waiting for the project team to review the invoice.";
+      return { status: "waiting", message };
+    }
     if (isNoPurchaseOrderInvoice && !noPoReasonIsComplete) return { status: "waiting", message: "Select why this invoice does not use a Purchase Order." };
-    if (genuineCommercialBlocker) return { status: "issue", message: genuineCommercialBlocker.message };
+    if (genuineCommercialBlocker) {
+      const message = genuineCommercialBlocker.code === "missing_accounting_mapping"
+        ? "Add a Supplier Bills account before creating the Xero bill."
+        : genuineCommercialBlocker.code === "missing_tax_treatment"
+          ? "Choose a GST treatment before creating the Xero bill."
+          : genuineCommercialBlocker.code === "allocation_not_approved"
+            ? "Approve every invoice line before creating the Xero bill."
+            : genuineCommercialBlocker.code === "missing_no_po_reason"
+              ? "Select why this invoice does not use a Purchase Order."
+              : genuineCommercialBlocker.code === "supplier_mismatch"
+                ? "The invoice supplier does not match the Purchase Order."
+                : genuineCommercialBlocker.code === "blocking_variance"
+                  ? "Resolve the invoice discrepancy before creating the Xero bill."
+                  : genuineCommercialBlocker.code === "warning_not_accepted"
+                    ? "Accept the invoice warning before creating the Xero bill."
+                    : genuineCommercialBlocker.message;
+      return { status: "issue", message };
+    }
     if (genuineXeroBlocker) {
       const businessMessage = genuineXeroBlocker.code === "missing_contact_link"
         ? "The supplier needs to be connected to Xero."
@@ -2054,7 +2078,7 @@ export function SupplierInvoiceDetailWorkspace({
             : genuineXeroBlocker.message;
       return { status: "issue", message: businessMessage };
     }
-    return { status: "ready", message: "Everything is ready." };
+    return { status: "ready", message: "The invoice is approved and ready to create as a Draft Bill." };
   }, [exportStatus, genuineCommercialBlocker, genuineXeroBlocker, isNoPurchaseOrderInvoice, isUpdatingXeroBill, noPoReasonIsComplete, teamApprovalStatus]);
   const purchaseOrderProgressByLineId = useMemo(
     () =>
@@ -4302,6 +4326,11 @@ export function SupplierInvoiceDetailWorkspace({
           onNoPoExplanationChange={setNoPoExplanation}
           onCreate={() => void createDraftBillInXero()}
           onResolveGst={hasTaxException && canReview ? () => setIsTaxExceptionOpen(true) : undefined}
+          setupHref={
+            genuineCommercialBlocker?.code === "missing_accounting_mapping" && canReview
+              ? "/app/settings/integrations"
+              : null
+          }
         />
 
         <Dialog open={isTaxExceptionOpen} onOpenChange={setIsTaxExceptionOpen}>
