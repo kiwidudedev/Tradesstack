@@ -145,18 +145,19 @@ function validateClient(root, client, release, options) {
   }
   if (previous?.releaseId === release.manifest.releaseId && previous?.sourceSha === release.manifest.sourceSha && divergent.length === 0) errors.push("client already declares this release");
   const migration = release.manifest.database.migrationTarget;
+  const migrationVersion = migration.split("_")[0];
   if (!fs.existsSync(path.join(root, "supabase/migrations", migration)) && !options.forceReleaseOwned) errors.push(`client migration missing: ${migration}`);
   const migrationState = { status: options.skipDb ? "SKIPPED_BY_OPERATOR" : "NOT_LINKED_OR_NOT_CHECKED", target: migration, pending: false, ledger: null };
   if (!options.skipDb && fs.existsSync(path.join(root, "supabase/.temp/project-ref"))) {
     try {
       const listing = capture("supabase", ["migration", "list", "--linked", "--workdir", root], repositoryRoot);
-      const target = listing.split("\n").find((line) => line.includes(migration));
+      const target = listing.split("\n").find((line) => line.includes(migrationVersion));
       migrationState.ledger = target?.trim() ?? null;
-      if (!target || !target.includes(migration.split("_")[0])) {
+      if (!target || !target.includes(migrationVersion)) {
         migrationState.status = "AMBIGUOUS_OR_MISSING_TARGET";
         errors.push(`migration target not visible in linked ledger: ${migration}`);
       } else {
-        migrationState.pending = target.split("|").map((value) => value.trim())[1] !== migration.split("_")[0];
+        migrationState.pending = target.split("|").map((value) => value.trim())[1] !== migrationVersion;
         migrationState.status = migrationState.pending ? "PENDING" : "APPLIED";
       }
     } catch (error) {
