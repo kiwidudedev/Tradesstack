@@ -58,7 +58,7 @@ node scripts/ops/bootstrap-customer-database.mjs \
   --customer-key tradelynk \
   --project-ref <20-character-ref> \
   --customer-repo /path/to/tradesstack-client-tradelynk \
-  --release 1.2.5
+  --release 1.2.6
 ```
 
 Expected output includes `PLAN_ONLY`, the baseline/forward counts, the target,
@@ -72,7 +72,7 @@ node scripts/ops/bootstrap-customer-database.mjs \
   --customer-key tradelynk \
   --project-ref <20-character-ref> \
   --customer-repo /path/to/tradesstack-client-tradelynk \
-  --release 1.2.5 \
+  --release 1.2.6 \
   --backup-dir /secure/customer-backups \
   --apply
 ```
