@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "product": "TradesStack",
-  "officialVersion": "1.2.5",
-  "displayLabel": "TradesStack 1.2.5",
-  "approvedReleaseManifest": "ops/releases/1.2.5.json",
-  "approvedSourceSha": "30b0f0f014c22fcbdc5a9cdd9c7e00a6d9027c42",
-  "currentMainHead": "30b0f0f014c22fcbdc5a9cdd9c7e00a6d9027c42",
-  "releaseFingerprint": "d7d45e7a9f000e2c155a1eaa5989c0c9394bb8aa6cac649db9c7a31ab4827f29",
+  "officialVersion": "1.2.6",
+  "displayLabel": "TradesStack 1.2.6",
+  "approvedReleaseManifest": "ops/releases/1.2.6.json",
+  "approvedSourceSha": "eead509764c85b41509510329b3ac234b577f545",
+  "currentMainHead": "eead509764c85b41509510329b3ac234b577f545",
+  "releaseFingerprint": "ae932395ef0277d309701533688252d1d6d6873bb1b28514a35be43ed8f3ed72",
   "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
   "releaseDate": "2026-10-27",
   "validationStatus": "PASS"
