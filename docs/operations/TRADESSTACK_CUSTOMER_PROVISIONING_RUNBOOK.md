@@ -180,7 +180,7 @@ or deploy. Before deployment:
 4. Deploy:
 
 ```bash
-CLOUDFLARE_ENV=production npm run cloudflare:deploy
+CLOUDFLARE_ENV=production corepack npm run cloudflare:deploy
 ```
 
 The deploy preflight reads `deploy/customer.json` and `wrangler.jsonc` and

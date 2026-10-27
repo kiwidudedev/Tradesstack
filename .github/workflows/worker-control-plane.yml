@@ -35,8 +35,11 @@ jobs:
           node-version: "22.22.2"
           cache: npm
 
+      - name: Enable the declared npm toolchain
+        run: corepack enable
+
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: corepack npm ci --ignore-scripts
 
       - name: Worker configuration contract tests
         run: npm run test:worker-config

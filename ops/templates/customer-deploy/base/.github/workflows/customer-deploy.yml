@@ -29,5 +29,6 @@ jobs:
         with:
           node-version: "22.x"
           cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run cloudflare:deploy
+      - run: corepack enable
+      - run: corepack npm ci --ignore-scripts
+      - run: corepack npm run cloudflare:deploy

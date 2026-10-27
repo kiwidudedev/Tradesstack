@@ -266,7 +266,7 @@ upgrades preserve them and update only the release/source identity.
 ## Deploy
 
 \`\`\`bash
-CLOUDFLARE_ENV=${identity.cloudflareEnvironment} npm run cloudflare:deploy
+CLOUDFLARE_ENV=${identity.cloudflareEnvironment} corepack npm run cloudflare:deploy
 \`\`\`
 
 The deploy preflight validates \`deploy/customer.json\` and \`wrangler.jsonc\`

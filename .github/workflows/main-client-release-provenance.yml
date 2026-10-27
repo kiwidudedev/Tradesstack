@@ -41,8 +41,11 @@ jobs:
           node-version: "22.x"
           cache: npm
 
+      - name: Enable the declared npm toolchain
+        run: corepack enable
+
       - name: Install Main dependencies
-        run: npm ci --ignore-scripts
+        run: corepack npm ci --ignore-scripts
 
       - name: Clone registered clients for isolated preflight
         env:

@@ -22,6 +22,7 @@ jobs:
         with:
           node-version: "22.x"
           cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run typecheck:release
-      - run: npm run build
+      - run: corepack enable
+      - run: corepack npm ci --ignore-scripts
+      - run: corepack npm run typecheck:release
+      - run: corepack npm run build
