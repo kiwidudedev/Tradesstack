@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ROOT, readJson, latestOfficialReleaseManifest, result, printResult } from "./lib.mjs";
+import { ROOT, readJson, latestOfficialReleaseManifest, compareSemver, semver, result, printResult } from "./lib.mjs";
 
 const registry = readJson(path.join(ROOT, "ops/clients.json"));
 const release = latestOfficialReleaseManifest().value;
@@ -7,7 +7,13 @@ const details = ["provider drift is intentionally not inspected without provider
 const errors = [];
 for (const client of registry.clients || []) {
   if (client.targetRelease && !["UNKNOWN", "NOT_APPLICABLE"].includes(client.targetRelease) && client.targetRelease !== release.releaseId) {
-    errors.push(`${client.clientId}: target release differs from local approved manifest`);
+    if (semver(client.targetRelease) && semver(release.releaseId) && compareSemver(client.targetRelease, release.releaseId) < 0) {
+      // A newly approved release is expected to be ahead of customers until the
+      // controlled promotion runs. Record the lag; do not call it corruption.
+      details.push(`${client.clientId}: behind approved ${release.releaseId} at ${client.targetRelease}; controlled promotion pending`);
+    } else {
+      errors.push(`${client.clientId}: target release ${client.targetRelease} is not an approved prior release`);
+    }
   }
   for (const field of ["databaseBaseline", "migrationTarget", "configContractFingerprint", "toolchain"]) {
     if (client[field] === "UNKNOWN") details.push(`${client.clientId}: ${field} unknown; review required`);

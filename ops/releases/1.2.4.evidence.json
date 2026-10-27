@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "1.2.4",
+  "sourceSha": "68cb7d8b0be044b7bb995c3b8752f0300ca33b1b",
+  "releaseFingerprint": "41eb30ce64c2a048bab10aba48d9b0837b430f89fa9a1d317000d6bf93bf2128",
+  "immutableManifest": "ops/releases/1.2.4.json",
+  "status": "RECONCILED",
+  "reconciledAt": "2026-10-27",
+  "reconciledBy": "customer provisioning repair",
+  "alpha": {
+    "customerKey": "client-alpha",
+    "repository": "kiwidudedev/tradesstack-client-alpha",
+    "repositorySha": "365a22b4aa86f230ab1dfc7328981b7224224c82",
+    "deploymentProvider": "cloudflare",
+    "workerName": "tradesstack-alpha",
+    "deploymentId": "8e1841c8-ef8c-4660-955f-8bdc5280c715",
+    "deployedAt": "2026-10-19",
+    "httpStatus": 200,
+    "supabaseProjectRef": "ibjyzpyuqupsxqakpzxj",
+    "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+    "migrationStatus": "APPLIED",
+    "verificationSource": "ops/clients.json",
+    "verifiedAt": "2026-10-19"
+  },
+  "reconciliation": {
+    "manifestBrowserVerification": "PENDING_ALPHA_LIVE_VERIFICATION",
+    "effectiveBrowserVerification": "PASS",
+    "manifestDatabasePromotionStatus": "PENDING_ALPHA_APPLICATION_AFTER_VALIDATION",
+    "effectiveDatabasePromotionStatus": "APPLIED",
+    "note": "The immutable 1.2.4 manifest is not rewritten. This append-only evidence file records the later Alpha deployment and migration verification already present in ops/clients.json."
+  }
+}

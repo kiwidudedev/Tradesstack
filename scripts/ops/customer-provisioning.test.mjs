@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ROOT } from './lib.mjs';
@@ -52,6 +52,143 @@ function writeProfile(workspace, id, overrides = {}) {
   return file;
 }
 
+function provisionWebOnly(workspace, customerId, extra = []) {
+  const args = [
+    path.join(ROOT, 'scripts/ops/customer-provision.mjs'),
+    '--customer-id', customerId,
+    '--display-name', `${customerId} web`,
+    '--environment-id', `${customerId}-production`,
+    '--supabase-project-ref', 'webtestproject000001',
+    '--root', workspace,
+    '--provider', 'local',
+    '--web-release', '1.2.0',
+    '--web-only',
+    ...extra,
+  ];
+  try {
+    return { status: 0, json: JSON.parse(execFileSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 })) };
+  } catch (error) {
+    let json = null;
+    try {
+      json = JSON.parse(String(error.stdout));
+    } catch {
+      json = null;
+    }
+    return { status: error.status ?? 1, json, stdout: String(error.stdout ?? '') };
+  }
+}
+
+describe('web-only customer provisioning', { timeout: 120000 }, () => {
+  let workspace;
+  beforeEach(() => {
+    workspace = cloneWorkspace();
+  });
+  afterEach(() => {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it('creates a deployable web-only repository without a Worker application', () => {
+    const result = provisionWebOnly(workspace, 'tradelynk-web', ['--apply']);
+    expect(result.status).toBe(0);
+    expect(result.json.status).toBe('READY_FOR_DEPLOYMENT');
+    expect(result.json.webOnly).toBe(true);
+    expect(result.json.repositories.worker).toBeNull();
+
+    const webRoot = path.join(workspace, 'customer-repos', 'client-tradelynk-web', 'web');
+    const workerRoot = path.join(workspace, 'customer-repos', 'client-tradelynk-web', 'worker');
+    expect(fs.existsSync(path.join(webRoot, '.git'))).toBe(true);
+    expect(fs.existsSync(workerRoot)).toBe(false);
+
+    for (const file of [
+      'wrangler.jsonc',
+      'open-next.config.ts',
+      'cloudflare/worker.ts',
+      'cloudflare-env.d.ts',
+      'deploy/customer.json',
+      'scripts/ops/prepare-cloudflare-assets.mjs',
+      'scripts/ops/validate-cloudflare-deploy.mjs',
+      '.github/workflows/customer-ci.yml',
+      '.github/workflows/customer-deploy.yml',
+    ]) {
+      expect(fs.existsSync(path.join(webRoot, file)), file).toBe(true);
+    }
+
+    const identity = readJson(path.join(webRoot, 'deploy/customer.json'));
+    expect(identity.customerKey).toBe('tradelynk-web');
+    expect(identity.workerName).toBe('tradesstack-tradelynk-web');
+    expect(identity.r2BucketName).toBe('tradesstack-tradelynk-web-documents');
+    expect(identity.supabaseProjectRef).toBe('webtestproject000001');
+    expect(identity.release).toBe('1.2.0');
+
+    const wrangler = readJson(path.join(webRoot, 'wrangler.jsonc'));
+    const environment = wrangler.env.production;
+    expect(environment.name).toBe('tradesstack-tradelynk-web');
+    expect(environment.r2_buckets[0].bucket_name).toBe('tradesstack-tradelynk-web-documents');
+    expect(environment.vars.NEXT_PUBLIC_SUPABASE_URL).toBeUndefined();
+
+    const plain = ['wrangler.jsonc', 'deploy/customer.json', 'cloudflare/worker.ts'].map((file) => fs.readFileSync(path.join(webRoot, file), 'utf8')).join('\n');
+    expect(plain).not.toContain('ibjyzpyuqupsxqakpzxj');
+    expect(plain).not.toContain('mvxyxvrxaorzglppxzzz');
+    expect(plain).not.toContain('tradesstack-alpha');
+
+    const preflight = spawnSync(process.execPath, ['scripts/ops/validate-cloudflare-deploy.mjs'], {
+      cwd: webRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CLOUDFLARE_ENV: 'production',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://webtestproject000001.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+      },
+    });
+    expect(preflight.status, preflight.stderr).toBe(0);
+    expect(preflight.stdout).toContain('tradesstack-tradelynk-web');
+
+    const registry = readJson(path.join(workspace, 'ops/clients.json'));
+    const client = registry.clients.find((entry) => entry.clientId === 'tradelynk-web');
+    expect(client.worker).toBeUndefined();
+    expect(client.workerEnabled).toBe(false);
+    expect(client.deployment.workerName).toBe('tradesstack-tradelynk-web');
+    expect(client.releaseProvenance.releaseId).toBe('1.2.0');
+    expect(client.releaseProvenance.sourceSha).toBeTruthy();
+    expect(client.releaseProvenance.fingerprint).toBeTruthy();
+    expect(client.provisioning.state).toBe('READY_FOR_DEPLOYMENT');
+
+    const manifest = readJson(path.join(webRoot, 'release-manifest.json'));
+    expect(manifest.releaseId).toBe('1.2.0');
+    expect(manifest.files.length).toBeGreaterThan(2500);
+    expect(manifest.files.some((file) => file.startsWith('deploy/') || file.startsWith('cloudflare/') || file === 'wrangler.jsonc')).toBe(false);
+  });
+
+  it('is idempotent and resumes without recreating the Web repository', () => {
+    const failed = provisionWebOnly(workspace, 'tradelynk-retry', ['--apply', '--simulate-failure', 'configuration']);
+    expect(failed.status).toBe(1);
+    expect(failed.json.status).toBe('PARTIALLY_PROVISIONED');
+    const webRoot = path.join(workspace, 'customer-repos', 'client-tradelynk-retry', 'web');
+    const before = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: webRoot, encoding: 'utf8' }).trim();
+    expect(fs.existsSync(path.join(workspace, 'customer-repos', 'client-tradelynk-retry', 'worker'))).toBe(false);
+
+    const resumed = provisionWebOnly(workspace, 'tradelynk-retry', ['--apply', '--resume']);
+    expect(resumed.status).toBe(0);
+    expect(resumed.json.status).toBe('READY_FOR_DEPLOYMENT');
+    const after = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: webRoot, encoding: 'utf8' }).trim();
+    expect(after).toBe(before);
+
+    const replay = provisionWebOnly(workspace, 'tradelynk-retry', ['--apply']);
+    expect(replay.status).toBe(0);
+    expect(replay.json.status).toBe('ALREADY_PROVISIONED');
+  });
+
+  it('blocks a platform Supabase project and an invalid deployment identity', () => {
+    const platform = provisionWebOnly(workspace, 'tradelynk-platform', ['--apply', '--supabase-project-ref', 'mvxyxvrxaorzglppxzzz']);
+    expect(platform.status).toBe(1);
+    expect(platform.json.reason).toMatch(/platform Supabase project/);
+
+    const alpha = provisionWebOnly(workspace, 'tradelynk-alpha-ref', ['--apply', '--supabase-project-ref', 'ibjyzpyuqupsxqakpzxj']);
+    expect(alpha.status).toBe(1);
+    expect(alpha.json.reason).toMatch(/platform Supabase project|already owned by client-alpha/);
+  });
+});
 function provision(workspace, profileFile, extra = [], customerId = null) {
   const args = [
     path.join(ROOT, 'scripts/ops/customer-provision.mjs'),

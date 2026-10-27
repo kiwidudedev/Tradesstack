@@ -2,19 +2,24 @@
 /**
  * Unified TradesStack customer provisioning.
  *
- * One command prepares the complete customer implementation:
- * dedicated Web repository, dedicated Worker repository, shared customer
- * identity, environment binding, configurations, one registry record and
- * lifecycle checkpoints. It is idempotent, resumable and retry-safe.
+ * One command prepares a complete customer implementation:
+ * dedicated Web repository, optional dedicated Worker repository, shared
+ * customer identity, environment binding, customer configuration, deployable
+ * Cloudflare overlay, one registry record and resumable lifecycle checkpoints.
  *
- * External infrastructure (Supabase project, DNS, signing, stores) is recorded
- * as an external action; this tool never creates paid infrastructure.
+ * External infrastructure (Supabase project, R2 bucket, DNS, signing, stores) is
+ * recorded as an external action; this tool never creates paid infrastructure.
  *
  * Usage:
- *   node scripts/ops/customer-provision.mjs --customer-id wilson-construction \
- *     --display-name "Wilson Construction" \
- *     --worker-profile ops/worker/fixtures/wilson-construction.json \
- *     --supabase-project-ref wlsnconstruction0001 --provider local --apply
+ *   # web + Worker
+ *   node scripts/ops/customer-provision.mjs --customer-id acme \
+ *     --display-name "Acme" --worker-profile ops/worker/profiles/acme.json \
+ *     --provider github --apply
+ *
+ *   # web only (no Worker application)
+ *   node scripts/ops/customer-provision.mjs --customer-id acme --web-only \
+ *     --display-name "Acme" --environment-id acme-production \
+ *     --supabase-project-ref abcdefghij0123456789 --provider github --apply
  *
  *   # attach a dedicated Worker repository to an existing web customer
  *   node scripts/ops/customer-provision.mjs --customer-id client-alpha \
@@ -34,45 +39,48 @@ import {
   run,
   sha256File,
 } from "./worker-repo.mjs";
+import {
+  CUSTOMER_REPOSITORY_OWNER,
+  PLATFORM_SUPABASE_REFS,
+  defaultR2BucketName,
+  defaultSiteUrl,
+  defaultWorkerName,
+  deploymentIdentity,
+  deploymentTemplateFingerprint,
+  updateDeploymentRelease,
+  validateDeploymentIdentity,
+  validateDeploymentOverlay,
+  writeDeploymentOverlay,
+} from "./customer-deploy.mjs";
 
-const options = { apply: false, resume: false, activate: false, attachWorker: false, provider: "local" };
+const options = {
+  apply: false,
+  resume: false,
+  activate: false,
+  attachWorker: false,
+  webOnly: false,
+  takeoff: false,
+  provider: "local",
+};
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
   if (argument === "--apply") options.apply = true;
   else if (argument === "--resume") options.resume = true;
   else if (argument === "--activate") options.activate = true;
   else if (argument === "--attach-worker") options.attachWorker = true;
+  else if (argument === "--web-only") options.webOnly = true;
+  else if (argument === "--takeoff") options.takeoff = true;
   else if (argument.startsWith("--")) options[argument.slice(2)] = process.argv[++index];
 }
 
 const dataRoot = path.resolve(ROOT, options.root ?? ".");
 const reposRoot = path.resolve(dataRoot, options["repos-root"] ?? "customer-repos");
 const registryPath = path.join(dataRoot, "ops/clients.json");
-const workerMainRoot = options["worker-main"]
-  ? path.resolve(ROOT, options["worker-main"])
-  : path.resolve(ROOT, "../tradesstack-worker-app/tradesstack-worker-app");
-const owner = options.owner ?? "tradesstack";
+const owner = options.owner ?? CUSTOMER_REPOSITORY_OWNER;
 const provider = options.provider === "github" ? "github" : "local";
-const contract = await loadContract(ROOT);
-
-function ensureGithubRepository({ directory, fullName, description }) {
-  let exists = false;
-  try {
-    run("gh", ["repo", "view", fullName, "--json", "name"], ROOT);
-    exists = true;
-  } catch {
-    exists = false;
-  }
-  if (!exists) {
-    run("gh", ["repo", "create", fullName, "--private", "--description", description], ROOT);
-  }
-  const remotes = git(directory, ["remote"]).split("\n").filter(Boolean);
-  const url = `https://github.com/${fullName}.git`;
-  if (remotes.includes("origin")) run("git", ["remote", "set-url", "origin", url], directory);
-  else run("git", ["remote", "add", "origin", url], directory);
-  run("git", ["push", "-u", "origin", "main"], directory);
-  return { fullName, created: !exists, pushed: true };
-}
+const webOnly = Boolean(options.webOnly);
+const attachWorker = Boolean(options.attachWorker);
+if (webOnly && attachWorker) fail("--web-only cannot be combined with --attach-worker.");
 
 function output(payload, code = 0) {
   console.log(JSON.stringify(payload, null, 2));
@@ -86,6 +94,13 @@ function fail(reason, details = [], state = "BLOCKED") {
 
 function sha256Text(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function atomicWriteJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
+  fs.renameSync(temporary, file);
 }
 
 function latestRelease(directory) {
@@ -107,7 +122,10 @@ function semverCompare(left, right) {
 
 const customerId = options["customer-id"];
 if (!customerId || !/^[a-z][a-z0-9-]{2,62}$/.test(customerId)) fail("--customer-id is required and must be a safe slug");
-const attachWorker = options.attachWorker;
+if (customerId === "tradesstack-master" || (customerId === "client-alpha" && !attachWorker)) {
+  fail(`Customer id ${customerId} is reserved${customerId === "client-alpha" ? "; use --attach-worker to adopt it" : ""}`);
+}
+if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner)) fail("--owner must be a GitHub user or organisation name");
 const operationRoot = path.join(dataRoot, "ops/provisioning", customerId);
 const checkpointPath = path.join(operationRoot, "operation.json");
 const lockPath = path.join(operationRoot, ".lock");
@@ -119,55 +137,111 @@ const existingClient = (registry.clients ?? []).find((client) => client.clientId
 const webRelease = options["web-release"]
   ? readJson(path.join(dataRoot, "ops/releases", `${options["web-release"]}.json`))
   : latestRelease(path.join(dataRoot, "ops/releases"));
-const workerRelease = options["worker-release"]
-  ? readJson(path.join(workerPaths(dataRoot).releases, `${options["worker-release"]}.json`))
-  : latestRelease(workerPaths(dataRoot).releases);
 if (!webRelease) fail("No approved Web release found");
-if (!workerRelease) fail("No approved Worker release found");
 
-let workerProfileSource = null;
+const workerEnabled = !webOnly;
+let contract = null;
+let workerRelease = null;
 let workerProfileConfig = null;
-if (options["worker-profile"]) {
-  const profilePath = path.resolve(dataRoot, options["worker-profile"]);
-  if (!fs.existsSync(profilePath)) fail(`Worker profile not found: ${options["worker-profile"]}`);
-  try {
-    workerProfileConfig = contract.defineWorkerClientConfig(readJson(profilePath));
-  } catch (error) {
-    fail(`Worker profile is invalid: ${error.message}`);
-  }
-  workerProfileSource = path.relative(dataRoot, profilePath).split(path.sep).join("/");
-} else if (existingClient?.worker?.profilePath) {
-  workerProfileSource = existingClient.worker.profilePath;
-  workerProfileConfig = contract.defineWorkerClientConfig(readJson(path.join(dataRoot, workerProfileSource)));
-} else if (attachWorker) {
-  fail("--attach-worker needs an existing worker profile (ops/worker/profiles/<id>.json) or --worker-profile");
-} else {
-  fail("--worker-profile is required for a new customer");
-}
-if (workerProfileConfig.clientKey !== customerId) {
-  fail(`Worker profile clientKey ${workerProfileConfig.clientKey} must equal --customer-id ${customerId}`);
-}
-const canonicalProfile = contract.canonicalizeWorkerClientConfig(workerProfileConfig);
-const profileFingerprint = sha256Text(canonicalProfile);
+let profileFingerprint = null;
+let workerMainRoot = null;
 
-const environment =
-  workerProfileConfig.environment.kind === "hosted"
+if (workerEnabled || attachWorker) {
+  contract = await loadContract(ROOT);
+  workerMainRoot = options["worker-main"]
+    ? path.resolve(ROOT, options["worker-main"])
+    : path.resolve(ROOT, "../tradesstack-worker-app/tradesstack-worker-app");
+  workerRelease = options["worker-release"]
+    ? readJson(path.join(workerPaths(dataRoot).releases, `${options["worker-release"]}.json`))
+    : latestRelease(workerPaths(dataRoot).releases);
+  if (!workerRelease) fail("No approved Worker release found");
+
+  if (options["worker-profile"]) {
+    const profilePath = path.resolve(dataRoot, options["worker-profile"]);
+    if (!fs.existsSync(profilePath)) fail(`Worker profile not found: ${options["worker-profile"]}`);
+    try {
+      workerProfileConfig = contract.defineWorkerClientConfig(readJson(profilePath));
+    } catch (error) {
+      fail(`Worker profile is invalid: ${error.message}`);
+    }
+  } else if (existingClient?.worker?.profilePath) {
+    workerProfileConfig = contract.defineWorkerClientConfig(readJson(path.join(dataRoot, existingClient.worker.profilePath)));
+  } else if (attachWorker) {
+    fail("--attach-worker needs an existing worker profile (ops/worker/profiles/<id>.json) or --worker-profile");
+  } else {
+    fail("--worker-profile is required for a new web + Worker customer; use --web-only for a web-only implementation");
+  }
+  if (workerProfileConfig.clientKey !== customerId) {
+    fail(`Worker profile clientKey ${workerProfileConfig.clientKey} must equal --customer-id ${customerId}`);
+  }
+  profileFingerprint = sha256Text(contract.canonicalizeWorkerClientConfig(workerProfileConfig));
+}
+
+// The environment is explicit for web-only customers and derived from the
+// Worker profile for web + Worker customers. Both paths end in one hosted
+// environment identity.
+const explicitEnvironmentId = options["environment-id"]?.trim() || null;
+const explicitProjectRef = options["supabase-project-ref"]?.trim() || null;
+let environment;
+if (workerProfileConfig) {
+  const profileEnvironment = workerProfileConfig.environment;
+  if (explicitEnvironmentId && explicitEnvironmentId !== profileEnvironment.environmentId) {
+    fail(`--environment-id ${explicitEnvironmentId} differs from the Worker profile environment ${profileEnvironment.environmentId}`);
+  }
+  if (explicitProjectRef && explicitProjectRef !== profileEnvironment.supabaseProjectRef) {
+    fail(`--supabase-project-ref ${explicitProjectRef} differs from the Worker profile project ${profileEnvironment.supabaseProjectRef}`);
+  }
+  environment = profileEnvironment.kind === "hosted"
     ? {
         kind: "hosted",
-        environmentId: workerProfileConfig.environment.environmentId,
-        supabaseProjectRef: workerProfileConfig.environment.supabaseProjectRef,
+        environmentId: profileEnvironment.environmentId,
+        supabaseProjectRef: profileEnvironment.supabaseProjectRef,
       }
-    : { kind: "local", environmentId: workerProfileConfig.environment.environmentId, supabaseProjectRef: null };
-if (environment.kind === "hosted" && !/^[a-z0-9]{20}$/.test(environment.supabaseProjectRef)) {
-  fail("A hosted customer profile needs a valid Supabase project ref");
+    : { kind: "local", environmentId: profileEnvironment.environmentId, supabaseProjectRef: null };
+} else {
+  if (!explicitEnvironmentId || !explicitProjectRef) {
+    fail("A web-only implementation requires --environment-id and --supabase-project-ref");
+  }
+  environment = { kind: "hosted", environmentId: explicitEnvironmentId, supabaseProjectRef: explicitProjectRef };
 }
+if (environment.kind !== "hosted") {
+  fail("Customer provisioning requires a hosted environment; local Worker profiles are not deployable");
+}
+if (!/^[a-z0-9]{20}$/.test(environment.supabaseProjectRef ?? "")) {
+  fail("A hosted customer needs a valid 20-character Supabase project ref");
+}
+if (!workerEnabled && existingClient?.worker) {
+  fail("Existing customer has a Worker application; use a new customer key or keep the Worker enabled");
+}
+
+const displayName = options["display-name"] ?? existingClient?.displayName ?? workerProfileConfig?.identity?.appName ?? customerId;
+const platformColor = options["platform-color"] ?? workerProfileConfig?.branding?.platformColor ?? existingClient?.deployment?.branding?.platformColor ?? "#162033";
+const actionColor = options["action-color"] ?? workerProfileConfig?.branding?.actionColor ?? existingClient?.deployment?.branding?.actionColor ?? "#F45D22";
+const defaults = workerProfileConfig?.defaults ?? { locale: "en-NZ", currency: "NZD", timezone: "Pacific/Auckland" };
 
 const baseName = customerId.startsWith("client-") ? customerId : `client-${customerId}`;
 const webRepoName = `${owner}/tradesstack-${baseName}`;
-const workerRepoName = `${owner}/tradesstack-worker-${baseName}`;
+const workerRepoName = workerEnabled ? `${owner}/tradesstack-worker-${baseName}` : null;
+const workerName = options["worker-name"] ?? (existingClient?.runtimeReference && !/^PENDING$/i.test(existingClient.runtimeReference) ? existingClient.runtimeReference : defaultWorkerName(customerId));
+const r2BucketName = options["r2-bucket"] ?? defaultR2BucketName(workerName);
+const siteUrl = (options["site-url"] ?? (typeof existingClient?.domainReference === "string" && existingClient.domainReference.startsWith("http") ? existingClient.domainReference : defaultSiteUrl(workerName))).replace(/\/+$/, "");
 const existingWebRepository = existingClient?.repositoryReference ?? null;
 const webRepository = attachWorker ? existingWebRepository : `github:${webRepoName}`;
 if (!webRepository) fail("Existing customer has no web repository reference; cannot attach a Worker implementation");
+
+const identity = deploymentIdentity({
+  customerKey: customerId,
+  displayName,
+  environmentId: environment.environmentId,
+  supabaseProjectRef: environment.supabaseProjectRef,
+  workerName,
+  r2BucketName,
+  siteUrl,
+  release: webRelease.version,
+  sourceSha: webRelease.sourceSha,
+  releaseFingerprint: webRelease.releaseFingerprint,
+  takeoff: Boolean(options.takeoff),
+});
 
 // Redirect desktop and build output into the workspace only.
 if (provider === "local") {
@@ -178,14 +252,20 @@ function loadCheckpoint() {
   return fs.existsSync(checkpointPath) ? readJson(checkpointPath) : null;
 }
 
+function saveCheckpoint(checkpoint) {
+  checkpoint.updatedAt = new Date().toISOString();
+  atomicWriteJson(checkpointPath, checkpoint);
+}
+
 function stepRecord(checkpoint, id, status, detail, artifact = null) {
   const existing = checkpoint.steps.find((step) => step.id === id);
+  const finishedAt = ["PASS", "SKIPPED"].includes(status) ? new Date().toISOString() : null;
   if (existing) {
     existing.status = status;
     existing.detail = detail;
     existing.artifact = artifact ?? existing.artifact ?? null;
     existing.updatedAt = new Date().toISOString();
-    if (status === "PASS") existing.finishedAt = new Date().toISOString();
+    if (finishedAt) existing.finishedAt = finishedAt;
   } else {
     checkpoint.steps.push({
       id,
@@ -193,32 +273,34 @@ function stepRecord(checkpoint, id, status, detail, artifact = null) {
       detail,
       artifact,
       startedAt: new Date().toISOString(),
-      finishedAt: status === "PASS" ? new Date().toISOString() : null,
+      finishedAt,
       updatedAt: new Date().toISOString(),
     });
   }
 }
 
-function saveCheckpoint(checkpoint) {
-  fs.mkdirSync(operationRoot, { recursive: true });
-  checkpoint.updatedAt = new Date().toISOString();
-  fs.writeFileSync(checkpointPath, `${JSON.stringify(checkpoint, null, 2)}\n`);
-}
-
 function operationInputs() {
   return {
     customerId,
-    displayName: options["display-name"] ?? existingClient?.displayName ?? workerProfileConfig.identity.appName,
+    displayName,
+    owner,
     attachWorker,
+    webOnly,
+    takeoff: Boolean(options.takeoff),
     provider,
     environment,
     profileFingerprint,
     webRelease: webRelease.version,
-    workerRelease: workerRelease.version,
+    workerRelease: workerRelease?.version ?? null,
     webRepository,
-    workerRepository: `github:${workerRepoName}`,
-    deploymentTarget: options["deployment-target"] ?? "PENDING",
-    domain: options["domain"] ?? "PENDING",
+    workerRepository: workerEnabled ? `github:${workerRepoName}` : null,
+    deployment: {
+      workerName,
+      r2BucketName,
+      siteUrl,
+      environment: identity.cloudflareEnvironment,
+    },
+    domain: options.domain ?? "PENDING",
   };
 }
 
@@ -265,29 +347,38 @@ if (!checkpoint) {
 // Plan
 // ---------------------------------------------------------------------------
 
+const externalActions = [
+  { id: "create-supabase-project", status: environment.kind === "hosted" ? "REQUIRED" : "USE_LOCAL", detail: environment.supabaseProjectRef },
+  { id: "apply-database-baseline-and-migrations", status: "REQUIRED", detail: "Approved baseline + migrations for the customer project" },
+  { id: "create-r2-bucket", status: "REQUIRED", detail: `Private R2 bucket ${r2BucketName}` },
+  { id: "bind-web-environment-secrets", status: "REQUIRED", detail: "Web hosting env: NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SITE_URL, plus server secrets" },
+  { id: "create-cloudflare-worker", status: "REQUIRED", detail: `Cloudflare Worker ${workerName} and its R2 binding` },
+  { id: "configure-customer-domain", status: options.domain ? "REQUIRED" : "PENDING_APPROVAL", detail: options.domain ?? `${siteUrl} (workers.dev staging; custom domain pending)` },
+  ...(workerEnabled
+    ? [
+        { id: "bind-worker-build-secrets", status: "REQUIRED", detail: "Worker build env: EXPO_PUBLIC_SUPABASE_URL / ANON_KEY / FUNCTIONS_URL" },
+        { id: "signing-and-store-listing", status: workerProfileConfig.distribution.channel === "store" ? "REQUIRED" : "NOT_REQUIRED", detail: "Owner approval required" },
+      ]
+    : []),
+  { id: "build-and-distribute", status: "REQUIRED", detail: workerEnabled ? "Web deploy + Worker build/distribution approvals" : "Web deploy approval" },
+];
+
 const plan = {
   status: options.apply ? null : "PLAN_ONLY",
   operationId,
   customerId,
-  displayName: operationInputs().displayName,
+  displayName,
   provider,
-  identity: { baseName, environment, profileFingerprint },
+  identity: { baseName, environment, profileFingerprint, workerEnabled, deployment: identity },
   repositories: {
     web: { name: webRepoName, reuseExisting: Boolean(existingWebRepository), reference: webRepository },
-    worker: { name: workerRepoName, reference: `github:${workerRepoName}` },
+    worker: workerEnabled ? { name: workerRepoName, reference: `github:${workerRepoName}` } : null,
   },
   releases: {
-    web: { version: webRelease.version, sourceSha: webRelease.sourceSha },
-    worker: { version: workerRelease.version, sourceSha: workerRelease.sourceSha, fingerprint: workerRelease.releaseFingerprint },
+    web: { version: webRelease.version, sourceSha: webRelease.sourceSha, fingerprint: webRelease.releaseFingerprint ?? null },
+    worker: workerEnabled ? { version: workerRelease.version, sourceSha: workerRelease.sourceSha, fingerprint: workerRelease.releaseFingerprint } : null,
   },
-  externalActions: [
-    { id: "create-supabase-project", status: environment.kind === "hosted" ? "REQUIRED" : "USE_LOCAL", detail: environment.supabaseProjectRef ?? "local" },
-    { id: "apply-database-baseline-and-migrations", status: "REQUIRED", detail: "Approved baseline + migrations for the customer project" },
-    { id: "bind-web-environment-secrets", status: "REQUIRED", detail: "Web hosting env: NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SITE_URL" },
-    { id: "bind-worker-build-secrets", status: "REQUIRED", detail: "EXPO_PUBLIC_SUPABASE_URL / ANON_KEY / FUNCTIONS_URL" },
-    { id: "signing-and-store-listing", status: workerProfileConfig.distribution.channel === "store" ? "REQUIRED" : "NOT_REQUIRED", detail: "Owner approval required" },
-    { id: "build-and-distribute", status: "REQUIRED", detail: "Web deploy + Worker build/distribution approvals" },
-  ],
+  externalActions,
   steps: ["identity", "web-repository", "worker-repository", "backend-binding", "configuration", "link-validation", "registry", "ci", "validate", "finalise"],
 };
 
@@ -316,6 +407,11 @@ function completeStep(id, detail, artifact = null) {
   saveCheckpoint(checkpoint);
 }
 
+function skipStep(id, detail) {
+  stepRecord(checkpoint, id, "SKIPPED", detail);
+  saveCheckpoint(checkpoint);
+}
+
 function maybeSimulateFailure(id) {
   if (options["simulate-failure"] !== id) return;
   stepRecord(checkpoint, id, "FAILED_RETRYABLE", `Simulated failure at ${id}`);
@@ -332,6 +428,78 @@ function maybeSimulateFailure(id) {
   }, 1);
   process.exit(1);
 }
+
+function ensureGithubRepository({ directory, fullName, description }) {
+  let exists = false;
+  try {
+    const raw = run("gh", ["repo", "view", fullName, "--json", "isPrivate,visibility"], ROOT);
+    const info = JSON.parse(raw);
+    exists = true;
+    if (info.isPrivate !== true) fail(`GitHub repository ${fullName} already exists and is not private; refusing to use it`);
+  } catch (error) {
+    const text = `${error?.stderr ?? ""}\n${error?.stdout ?? ""}\n${error?.message ?? ""}`;
+    if (!/Could not resolve|HTTP 404|Not Found/i.test(text)) throw error;
+  }
+  if (!exists) {
+    run("gh", ["repo", "create", fullName, "--private", "--description", description], ROOT);
+  }
+  const remotes = git(directory, ["remote"]).split("\n").filter(Boolean);
+  const url = `https://github.com/${fullName}.git`;
+  if (remotes.includes("origin")) run("git", ["remote", "set-url", "origin", url], directory);
+  else run("git", ["remote", "add", "origin", url], directory);
+  const localHead = git(directory, ["rev-parse", "HEAD"]);
+  const remote = git(directory, ["ls-remote", "origin", "refs/heads/main"]).trim();
+  const remoteSha = remote.split(/\s+/)[0] || null;
+  if (remoteSha && remoteSha !== localHead) {
+    fail(`Remote ${fullName} main has diverged from the prepared snapshot; refusing to overwrite it`, [
+      `remote ${remoteSha}`,
+      `local ${localHead}`,
+    ]);
+  }
+  if (!remoteSha) run("git", ["push", "-u", "origin", "main"], directory);
+  return { fullName, created: !exists, pushed: !remoteSha, existing: exists, head: localHead };
+}
+
+function snapshotSummary(webDir, release) {
+  const file = path.join(webDir, "release-manifest.json");
+  if (!fs.existsSync(file)) return { errors: ["release-manifest.json missing"], fileCount: 0 };
+  const manifest = readJson(file);
+  const errors = [];
+  if (manifest.releaseId !== release.version || manifest.sourceSha !== release.sourceSha) {
+    errors.push(`release manifest is ${manifest.releaseId}/${manifest.sourceSha}, expected ${release.version}/${release.sourceSha}`);
+  }
+  const files = Array.isArray(manifest.files) ? manifest.files : [];
+  if (files.length === 0) errors.push("release manifest has no file list");
+  const hashes = manifest.fileHashes ?? {};
+  const missing = [];
+  const mismatched = [];
+  for (const relative of files) {
+    const target = path.join(webDir, relative);
+    if (!fs.existsSync(target)) missing.push(relative);
+    else if (sha256File(target) !== hashes[relative]) mismatched.push(relative);
+  }
+  if (missing.length) errors.push(`missing release files: ${missing.slice(0, 8).join(", ")}`);
+  if (mismatched.length) errors.push(`release file hashes differ: ${mismatched.slice(0, 8).join(", ")}`);
+  return { manifest, errors, fileCount: files.length };
+}
+
+const webContract = await import(path.join(ROOT, "packages/client-config/dist/index.js"));
+const clientConfig = webContract.defineTradesStackClientConfig(
+  options["web-config"]
+    ? readJson(path.resolve(dataRoot, options["web-config"]))
+    : {
+        schemaVersion: 1,
+        identity: {
+          clientKey: customerId,
+          displayName,
+          description: `${displayName} TradesStack implementation`,
+        },
+        theme: { platformColor, actionColor },
+        defaults,
+      },
+);
+const clientConfigFingerprint = sha256Text(JSON.stringify(clientConfig));
+const templateFingerprint = deploymentTemplateFingerprint();
 
 try {
   // 1. Identity -------------------------------------------------------------
@@ -350,6 +518,19 @@ try {
         fail(`Environment ${environment.supabaseProjectRef} is already owned by ${client.clientId}`);
       }
     }
+    if (PLATFORM_SUPABASE_REFS.includes(environment.supabaseProjectRef)) {
+      fail(`Refusing to provision a customer against platform Supabase project ${environment.supabaseProjectRef}`);
+    }
+    const identityErrors = validateDeploymentIdentity(identity);
+    if (identityErrors.length) fail(`Customer deployment identity is invalid: ${identityErrors.join("; ")}`, identityErrors);
+  } else {
+    for (const client of registry.clients ?? []) {
+      if (client.clientId !== customerId && client.worker?.repositoryReference === `github:${workerRepoName}`) {
+        fail(`Worker repository ${workerRepoName} is already registered to ${client.clientId}`);
+      }
+    }
+  }
+  if (workerEnabled) {
     for (const profile of fs.existsSync(workerPaths(dataRoot).profiles)
       ? fs.readdirSync(workerPaths(dataRoot).profiles).filter((file) => file.endsWith(".json"))
       : []) {
@@ -358,14 +539,8 @@ try {
       const conflicts = contract.findWorkerIsolationConflicts(workerProfileConfig, other);
       if (conflicts.length) fail(`Customer isolation conflict with ${profile}: ${conflicts.join("; ")}`);
     }
-  } else {
-    for (const client of registry.clients ?? []) {
-      if (client.clientId !== customerId && client.worker?.repositoryReference === `github:${workerRepoName}`) {
-        fail(`Worker repository ${workerRepoName} is already registered to ${client.clientId}`);
-      }
-    }
   }
-  completeStep("identity", `Customer ${customerId} identity validated (${environment.environmentId})`);
+  completeStep("identity", `Customer ${customerId} identity validated (${environment.environmentId}); ${workerEnabled ? "web + Worker" : "web-only"}`);
 
   // 2. Web repository -------------------------------------------------------
   const webDir = path.join(reposRoot, baseName, "web");
@@ -377,6 +552,19 @@ try {
         : null;
       if (manifest?.releaseId !== webRelease.version || manifest?.sourceSha !== webRelease.sourceSha) {
         fail(`Existing web repository ${webDir} is not based on ${webRelease.version}`);
+      }
+      const overlay = validateDeploymentOverlay(webDir);
+      if (overlay.present && overlay.errors.length) {
+        fail(`Existing customer deployment overlay is invalid: ${overlay.errors.join("; ")}`);
+      }
+      if (!overlay.present) {
+        writeDeploymentOverlay({ root: webDir, identity });
+      } else {
+        updateDeploymentRelease(webDir, {
+          version: webRelease.version,
+          sourceSha: webRelease.sourceSha,
+          releaseFingerprint: webRelease.releaseFingerprint,
+        });
       }
     } else {
       const temporary = fs.mkdtempSync(path.join(operationRoot, "web-snapshot-"));
@@ -395,37 +583,17 @@ try {
         fs.copyFileSync(path.join(snapshot, file), target);
         fileHashes[file] = sha256File(target);
       }
-      const clientConfig = options["web-config"]
-        ? readJson(path.resolve(dataRoot, options["web-config"]))
-        : {
-            schemaVersion: 1,
-            identity: {
-              clientKey: customerId,
-              displayName: operationInputs().displayName,
-              description: `${operationInputs().displayName} TradesStack implementation`,
-            },
-            theme: {
-              platformColor: workerProfileConfig.branding.platformColor,
-              actionColor: workerProfileConfig.branding.actionColor,
-            },
-            defaults: workerProfileConfig.defaults ?? {
-              locale: "en-NZ",
-              currency: "NZD",
-              timezone: "Pacific/Auckland",
-            },
-          };
-      const webContract = await import(path.join(ROOT, "packages/client-config/dist/index.js"));
-      const validatedClientConfig = webContract.defineTradesStackClientConfig(clientConfig);
       const configDir = path.join(webDir, "client/config");
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
         path.join(configDir, `${customerId}.ts`),
-        `import { defineTradesStackClientConfig } from "@tradesstack/client-config";\n\nexport const CLIENT_CONFIG = defineTradesStackClientConfig(${JSON.stringify(validatedClientConfig, null, 2)});\n`,
+        `import { defineTradesStackClientConfig } from "@tradesstack/client-config";\n\nexport const CLIENT_CONFIG = defineTradesStackClientConfig(${JSON.stringify(clientConfig, null, 2)});\n`,
       );
       fs.writeFileSync(
         path.join(webDir, "client/CLIENT_OWNERSHIP.md"),
-        `# ${operationInputs().displayName} — customer-owned web material\n\nThis directory is preserved by Web Main upgrades.\n`,
+        `# ${displayName} — customer-owned web material\n\nThis directory, deploy/, wrangler.jsonc, cloudflare/, open-next.config.ts and the deployment scripts are preserved by Web Main upgrades.\n`,
       );
+      writeDeploymentOverlay({ root: webDir, identity });
       fs.writeFileSync(
         path.join(webDir, "release-manifest.json"),
         `${JSON.stringify({
@@ -435,7 +603,16 @@ try {
           sourceSha: webRelease.sourceSha,
           mainReleaseFingerprint: webRelease.releaseFingerprint ?? null,
           customerId,
-          clientConfigFingerprint: sha256Text(JSON.stringify(validatedClientConfig)),
+          clientConfigFingerprint,
+          deploymentTemplateFingerprint: templateFingerprint,
+          deployment: {
+            workerName,
+            r2BucketName,
+            siteUrl,
+            environmentId: environment.environmentId,
+            workerEnabled,
+            takeoff: Boolean(options.takeoff),
+          },
           files,
           fileHashes,
           databaseCompatibility: webRelease.database?.migrationTarget ?? null,
@@ -445,14 +622,14 @@ try {
       );
       fs.rmSync(temporary, { recursive: true, force: true });
       run("git", ["add", "-A"], webDir);
-      run("git", ["-c", "user.name=TradesStack Ops", "-c", "user.email=ops@tradesstack.invalid", "commit", "-m", `Initial ${operationInputs().displayName} web implementation from ${webRelease.version}`], webDir);
+      run("git", ["-c", "user.name=TradesStack Ops", "-c", "user.email=ops@tradesstack.invalid", "commit", "-m", `Initial ${displayName} web implementation from ${webRelease.version}`], webDir);
     }
     if (provider === "github") {
       const webFullName = webRepoName.replace(/^.*\//, `${owner}/`);
       const published = ensureGithubRepository({
         directory: webDir,
         fullName: webFullName,
-        description: `${operationInputs().displayName} TradesStack web implementation`,
+        description: `${displayName} TradesStack web implementation`,
       });
       checkpoint.github = { ...(checkpoint.github ?? {}), web: published };
       saveCheckpoint(checkpoint);
@@ -464,159 +641,222 @@ try {
   }
 
   // 3. Worker repository ----------------------------------------------------
-  const workerDir = path.join(reposRoot, baseName, "worker");
-  const customerProfileJson = `${JSON.stringify(workerProfileConfig, null, 2)}\n`;
-  if (!fs.existsSync(path.join(workerDir, ".git"))) {
-    maybeSimulateFailure("worker-repository");
-  }
-  if (fs.existsSync(path.join(workerDir, ".git"))) {
-    const manifest = readCustomerManifest(workerDir);
-    if (!manifest || manifest.workerRelease !== workerRelease.version) {
-      fail(`Existing Worker repository ${workerDir} is not based on ${workerRelease.version}`);
-    }
-    if (!fs.existsSync(path.join(workerDir, "client/worker-profile.json"))) {
-      fail(`Existing Worker repository ${workerDir} has no client profile`);
-    }
-    const actual = sha256Text(contract.canonicalizeWorkerClientConfig(
-      contract.defineWorkerClientConfig(readJson(path.join(workerDir, "client/worker-profile.json"))),
-    ));
-    if (actual !== profileFingerprint) fail("Existing Worker repository profile differs from the registered profile");
+  const workerDir = workerEnabled ? path.join(reposRoot, baseName, "worker") : null;
+  if (!workerEnabled) {
+    skipStep("worker-repository", "Skipped — web-only implementation has no Worker application");
   } else {
-    const extracted = extractWorkerRelease({ workerMain: workerMainRoot, release: workerRelease, contract });
-    try {
-      fs.mkdirSync(path.dirname(workerDir), { recursive: true });
-      createCustomerWorkerRepository({
-        root: workerDir,
-        snapshot: extracted.snapshot,
-        release: workerRelease,
-        customerFiles: {
-          "client/worker-profile.json": customerProfileJson,
-          "client/README.md": `# ${operationInputs().displayName} — customer-owned Worker material\n\nPreserved by Worker Main upgrades. Add customer screens under client/extensions and assets under client/assets.\n`,
-          "client/extensions/home/index.tsx": "import type { HomeExtension } from '@/src/config/extension-host';\n\nexport const homeExtensions: HomeExtension[] = [];\n",
-          "client/IMPLEMENTATION.md": `# ${operationInputs().displayName} Worker implementation\n\n- Baseline Worker Main release: ${workerRelease.version} (${workerRelease.sourceSha})\n- Environment: ${environment.environmentId} (${environment.supabaseProjectRef ?? "local"})\n- Bundle: ${workerProfileConfig.distribution.iosBundleIdentifier} / ${workerProfileConfig.distribution.androidPackage}\n`,
-        },
-      });
-      run("git", ["add", "-A"], workerDir);
-      run("git", ["-c", "user.name=TradesStack Ops", "-c", "user.email=ops@tradesstack.invalid", "commit", "-m", `Initial ${operationInputs().displayName} Worker implementation from ${workerRelease.version}`], workerDir);
-    } finally {
-      extracted.dispose();
+    const customerProfileJson = `${JSON.stringify(workerProfileConfig, null, 2)}\n`;
+    if (!fs.existsSync(path.join(workerDir, ".git"))) {
+      maybeSimulateFailure("worker-repository");
     }
+    if (fs.existsSync(path.join(workerDir, ".git"))) {
+      const manifest = readCustomerManifest(workerDir);
+      if (!manifest || manifest.workerRelease !== workerRelease.version) {
+        fail(`Existing Worker repository ${workerDir} is not based on ${workerRelease.version}`);
+      }
+      if (!fs.existsSync(path.join(workerDir, "client/worker-profile.json"))) {
+        fail(`Existing Worker repository ${workerDir} has no client profile`);
+      }
+      const actual = sha256Text(contract.canonicalizeWorkerClientConfig(
+        contract.defineWorkerClientConfig(readJson(path.join(workerDir, "client/worker-profile.json"))),
+      ));
+      if (actual !== profileFingerprint) fail("Existing Worker repository profile differs from the registered profile");
+    } else {
+      const extracted = extractWorkerRelease({ workerMain: workerMainRoot, release: workerRelease, contract });
+      try {
+        fs.mkdirSync(path.dirname(workerDir), { recursive: true });
+        createCustomerWorkerRepository({
+          root: workerDir,
+          snapshot: extracted.snapshot,
+          release: workerRelease,
+          customerFiles: {
+            "client/worker-profile.json": customerProfileJson,
+            "client/README.md": `# ${displayName} — customer-owned Worker material\n\nPreserved by Worker Main upgrades. Add customer screens under client/extensions and assets under client/assets.\n`,
+            "client/extensions/home/index.tsx": "import type { HomeExtension } from '@/src/config/extension-host';\n\nexport const homeExtensions: HomeExtension[] = [];\n",
+            "client/IMPLEMENTATION.md": `# ${displayName} Worker implementation\n\n- Baseline Worker Main release: ${workerRelease.version} (${workerRelease.sourceSha})\n- Environment: ${environment.environmentId} (${environment.supabaseProjectRef})\n- Bundle: ${workerProfileConfig.distribution.iosBundleIdentifier} / ${workerProfileConfig.distribution.androidPackage}\n`,
+          },
+        });
+        run("git", ["add", "-A"], workerDir);
+        run("git", ["-c", "user.name=TradesStack Ops", "-c", "user.email=ops@tradesstack.invalid", "commit", "-m", `Initial ${displayName} Worker implementation from ${workerRelease.version}`], workerDir);
+      } finally {
+        extracted.dispose();
+      }
+    }
+    if (provider === "github") {
+      const published = ensureGithubRepository({
+        directory: workerDir,
+        fullName: workerRepoName,
+        description: `${displayName} TradesStack Worker implementation`,
+      });
+      checkpoint.github = { ...(checkpoint.github ?? {}), worker: published };
+      saveCheckpoint(checkpoint);
+    }
+    completeStep("worker-repository", `Worker repository prepared at ${path.relative(dataRoot, workerDir)} from ${workerRelease.version}`, { path: path.relative(dataRoot, workerDir) });
   }
-  if (provider === "github") {
-    const published = ensureGithubRepository({
-      directory: workerDir,
-      fullName: workerRepoName,
-      description: `${operationInputs().displayName} TradesStack Worker implementation`,
-    });
-    checkpoint.github = { ...(checkpoint.github ?? {}), worker: published };
-    saveCheckpoint(checkpoint);
-  }
-  completeStep("worker-repository", `Worker repository prepared at ${path.relative(dataRoot, workerDir)} from ${workerRelease.version}`, { path: path.relative(dataRoot, workerDir) });
 
   // 4. Backend binding ------------------------------------------------------
   completeStep(
     "backend-binding",
-    `Environment ${environment.environmentId} bound to ${environment.supabaseProjectRef ?? "local"}; project creation/migrations remain external`,
+    `Environment ${environment.environmentId} bound to ${environment.supabaseProjectRef}; Supabase project creation and migrations remain external`,
   );
 
   // 5. Configuration --------------------------------------------------------
-  const profileTarget = path.join(workerPaths(dataRoot).profiles, `${customerId}.json`);
-  fs.mkdirSync(path.dirname(profileTarget), { recursive: true });
-  if (fs.existsSync(profileTarget)) {
-    const existingFingerprint = sha256Text(contract.canonicalizeWorkerClientConfig(
-      contract.defineWorkerClientConfig(readJson(profileTarget)),
-    ));
-    if (existingFingerprint !== profileFingerprint) {
-      fail(`Existing customer profile ${path.relative(dataRoot, profileTarget)} differs; refusing to overwrite customer configuration`);
+  if (workerEnabled) {
+    const profileTarget = path.join(workerPaths(dataRoot).profiles, `${customerId}.json`);
+    fs.mkdirSync(path.dirname(profileTarget), { recursive: true });
+    if (fs.existsSync(profileTarget)) {
+      const existingFingerprint = sha256Text(contract.canonicalizeWorkerClientConfig(
+        contract.defineWorkerClientConfig(readJson(profileTarget)),
+      ));
+      if (existingFingerprint !== profileFingerprint) {
+        fail(`Existing customer profile ${path.relative(dataRoot, profileTarget)} differs; refusing to overwrite customer configuration`);
+      }
+    } else {
+      fs.writeFileSync(profileTarget, `${JSON.stringify(workerProfileConfig, null, 2)}\n`);
     }
+    maybeSimulateFailure("configuration");
+    completeStep("configuration", `Worker profile recorded at ${path.relative(dataRoot, profileTarget)}; deployment overlay written`, { path: path.relative(dataRoot, profileTarget) });
   } else {
-    fs.writeFileSync(profileTarget, customerProfileJson);
+    maybeSimulateFailure("configuration");
+    completeStep("configuration", "Web-only implementation: no Worker profile; deployment overlay written to deploy/customer.json");
   }
-  maybeSimulateFailure("configuration");
-  completeStep("configuration", `Worker profile recorded at ${path.relative(dataRoot, profileTarget)}`, { path: path.relative(dataRoot, profileTarget) });
 
   // 6. Link validation ------------------------------------------------------
-  const profileInRepo = readJson(path.join(workerDir, "client/worker-profile.json"));
-  const repoRef = profileInRepo.environment.kind === "hosted"
-    ? profileInRepo.environment.supabaseProjectRef
-    : null;
-  if (repoRef !== environment.supabaseProjectRef) {
-    fail("Worker repository profile does not point at the customer environment");
+  if (workerEnabled) {
+    const profileInRepo = readJson(path.join(workerDir, "client/worker-profile.json"));
+    const repoRef = profileInRepo.environment.kind === "hosted"
+      ? profileInRepo.environment.supabaseProjectRef
+      : null;
+    if (repoRef !== environment.supabaseProjectRef) {
+      fail("Worker repository profile does not point at the customer environment");
+    }
   }
-  if (environment.supabaseProjectRef === "mvxyxvrxaorzglppxzzz") {
-    fail("Refusing to provision a customer against the reference/Main Supabase project");
+  if (PLATFORM_SUPABASE_REFS.includes(environment.supabaseProjectRef) && !attachWorker) {
+    fail("Refusing to provision a customer against a platform Supabase project");
   }
-  completeStep("link-validation", `Web and Worker both resolve to ${environment.environmentId} (${environment.supabaseProjectRef ?? "local"})`);
+  if (!attachWorker) {
+    const overlayValidation = validateDeploymentOverlay(webDir);
+    if (overlayValidation.errors.length) {
+      fail(`Customer deployment overlay is invalid: ${overlayValidation.errors.join("; ")}`, overlayValidation.errors);
+    }
+  }
+  completeStep("link-validation", `${workerEnabled ? "Web and Worker both" : "Web"} resolve to ${environment.environmentId} (${environment.supabaseProjectRef}); deployment identity validated`);
 
   // 7. Registry -------------------------------------------------------------
   const provisioningRecord = path.relative(dataRoot, checkpointPath).split(path.sep).join("/");
-  const workerBinding = {
-    profilePath: path.relative(dataRoot, profileTarget).split(path.sep).join("/"),
-    profileFingerprint,
-    workerMainRepository: "github:tradesstack/tradesstack-worker-app",
-    repositoryReference: `github:${workerRepoName}`,
-    targetWorkerRelease: workerRelease.version,
-    promotedWorkerRelease: workerRelease.version,
-    sourceBaseline: {
-      release: workerRelease.version,
-      sourceSha: workerRelease.sourceSha,
-      fingerprint: workerRelease.releaseFingerprint,
-    },
-    distributionChannel: workerProfileConfig.distribution.channel,
-    clientExtensions: [],
-    provisioningRecord,
-    compatibilityStatus: "COMPATIBLE",
-  };
+  const workerBinding = workerEnabled
+    ? {
+        profilePath: path.relative(dataRoot, path.join(workerPaths(dataRoot).profiles, `${customerId}.json`)).split(path.sep).join("/"),
+        profileFingerprint,
+        workerMainRepository: "github:tradesstack/tradesstack-worker-app",
+        repositoryReference: `github:${workerRepoName}`,
+        targetWorkerRelease: workerRelease.version,
+        promotedWorkerRelease: workerRelease.version,
+        sourceBaseline: {
+          release: workerRelease.version,
+          sourceSha: workerRelease.sourceSha,
+          fingerprint: workerRelease.releaseFingerprint,
+        },
+        distributionChannel: workerProfileConfig.distribution.channel,
+        clientExtensions: [],
+        provisioningRecord,
+        compatibilityStatus: "COMPATIBLE",
+      }
+    : null;
   const existingEntry = (registry.clients ?? []).find((client) => client.clientId === customerId);
   const databaseBinding = {
     baseline: webRelease.database?.baseline ?? "phase1o-1",
     migrationTarget: webRelease.database?.migrationTarget ?? null,
     status: "PENDING_APPLICATION",
   };
+  const releaseProvenance = {
+    status: "SOURCE_PREPARED",
+    releaseId: webRelease.version,
+    sourceSha: webRelease.sourceSha,
+    fingerprint: webRelease.releaseFingerprint ?? null,
+    installedVersion: null,
+    installedAt: null,
+    installationMethod: "scripts/ops/customer-provision.mjs",
+    repositoryReference: `github:${webRepoName}`,
+    preparedAt: new Date().toISOString(),
+  };
+  const deploymentBinding = attachWorker
+    ? existingEntry?.deployment ?? null
+    : {
+        provider: "cloudflare",
+        workerName,
+        r2BucketName,
+        siteUrl,
+        deploymentUrl: identity.deploymentUrl,
+        environment: identity.cloudflareEnvironment,
+        workerEnabled,
+        takeoff: Boolean(options.takeoff),
+        status: "NOT_DEPLOYED",
+        templateVersion: identity.templateVersion,
+        templateFingerprint,
+      };
   const registryEntry = existingEntry
     ? {
         ...existingEntry,
+        displayName,
+        targetRelease: webRelease.version,
+        repositoryReference: `github:${webRepoName}`,
         database: existingEntry.database ?? databaseBinding,
-        worker: { ...(existingEntry.worker ?? {}), ...workerBinding },
+        ...(deploymentBinding ? { deployment: { ...(existingEntry.deployment ?? {}), ...deploymentBinding } } : {}),
+        releaseProvenance: { ...(existingEntry.releaseProvenance ?? {}), ...releaseProvenance },
+        ...(workerBinding ? { worker: { ...(existingEntry.worker ?? {}), ...workerBinding } } : {}),
         provisioning: { operationId, record: provisioningRecord, state: checkpoint.state },
       }
     : {
         clientId: customerId,
-        displayName: operationInputs().displayName,
+        displayName,
         environment: environment.kind === "hosted" ? "managed-client" : "local-development",
         lifecycleStatus: "PENDING",
         defaultBranch: "main",
         rolloutStatus: "ENABLED",
         releaseChannel: "stable",
-        clientOwnedPaths: ["client/**", ".env*"],
+        clientOwnedPaths: [
+          "client/**",
+          ".env*",
+          "deploy/**",
+          "wrangler.jsonc",
+          "cloudflare/**",
+          "cloudflare-env.d.ts",
+          "open-next.config.ts",
+          "scripts/**",
+          ".github/**",
+        ],
         targetRelease: webRelease.version,
         repositoryReference: `github:${webRepoName}`,
-        deploymentTarget: operationInputs().deploymentTarget,
-        databaseProjectReference: `supabase:${environment.supabaseProjectRef ?? "PENDING"}`,
-        runtimeReference: options["runtime-reference"] ?? "PENDING",
-        domainReference: operationInputs().domain,
-        releaseProvenance: { status: "PENDING_INITIAL_PROVISIONING", mainReleaseFingerprint: webRelease.releaseFingerprint ?? null },
+        deploymentTarget: workerName,
+        databaseProjectReference: `supabase:${environment.supabaseProjectRef}`,
+        runtimeReference: workerName,
+        domainReference: siteUrl,
+        workerEnabled,
+        takeoff: Boolean(options.takeoff),
+        releaseProvenance,
         database: databaseBinding,
-        worker: workerBinding,
+        ...(deploymentBinding ? { deployment: deploymentBinding } : {}),
+        ...(workerBinding ? { worker: workerBinding } : {}),
         provisioning: { operationId, record: provisioningRecord, state: checkpoint.state },
       };
   const nextRegistry = existingEntry
     ? { ...registry, clients: registry.clients.map((client) => client.clientId === customerId ? registryEntry : client) }
     : { ...registry, clients: [...(registry.clients ?? []), registryEntry] };
-  fs.writeFileSync(registryPath, `${JSON.stringify(nextRegistry, null, 2)}\n`);
-  completeStep("registry", `One registry entry joins web, worker and environment for ${customerId}`);
+  atomicWriteJson(registryPath, nextRegistry);
+  completeStep("registry", `One registry entry joins the web repository, environment and ${workerEnabled ? "Worker" : "web-only deployment"} for ${customerId}`);
 
   // 8. CI -------------------------------------------------------------------
   const webCi = fs.existsSync(path.join(webDir, ".github/workflows"));
-  const workerCi = fs.existsSync(path.join(workerDir, ".github/workflows/worker-app-ci.yml"));
+  const workerCi = workerEnabled && fs.existsSync(path.join(workerDir, ".github/workflows/worker-app-ci.yml"));
   completeStep(
     "ci",
-    `Web CI ${webCi ? "present" : "requires configuration"}; Worker CI ${workerCi ? "present" : "missing"}`,
+    `Web CI ${webCi ? "present" : "requires configuration"}${workerEnabled ? `; Worker CI ${workerCi ? "present" : "missing"}` : "; no Worker CI required"}`,
   );
 
   // 9. Validation -----------------------------------------------------------
   const validation = [];
-  if (fs.existsSync(workerDir)) {
+  if (workerDir && fs.existsSync(workerDir)) {
     try {
       run("npm", ["run", "config:verify-vendor"], workerDir, { timeout: 120000 });
       validation.push({ check: "worker vendor integrity", status: "PASS" });
@@ -630,6 +870,31 @@ try {
       validation.push({ check: "worker profile validation", status: "FAIL", detail: String(error.message).slice(0, 160) });
     }
   }
+  if (!attachWorker) {
+    const snapshot = snapshotSummary(webDir, webRelease);
+    validation.push({
+      check: "release snapshot integrity",
+      status: snapshot.errors.length ? "FAIL" : "PASS",
+      detail: snapshot.errors.length ? snapshot.errors.join("; ") : `${snapshot.fileCount} release files verified`,
+    });
+    const configManifest = readJson(path.join(webDir, "release-manifest.json"));
+    validation.push({
+      check: "customer configuration",
+      status: configManifest.clientConfigFingerprint === clientConfigFingerprint ? "PASS" : "FAIL",
+      detail: configManifest.clientConfigFingerprint === clientConfigFingerprint ? "client config fingerprint matches" : "client config fingerprint differs",
+    });
+    const finalOverlay = validateDeploymentOverlay(webDir);
+    validation.push({
+      check: "deployment overlay",
+      status: finalOverlay.errors.length ? "FAIL" : "PASS",
+      detail: finalOverlay.errors.length ? finalOverlay.errors.join("; ") : "Cloudflare overlay is customer-specific and complete",
+    });
+    validation.push({
+      check: "deployment identity",
+      status: validateDeploymentIdentity(identity).length ? "FAIL" : "PASS",
+      detail: validateDeploymentIdentity(identity).join("; ") || "no Alpha/Main identities present",
+    });
+  }
   const validationFailed = validation.some((item) => item.status === "FAIL");
   maybeSimulateFailure("validate");
   if (validationFailed) {
@@ -640,7 +905,7 @@ try {
     fs.rmSync(lockPath, { force: true });
     output({ status: "PARTIALLY_PROVISIONED", validation, record: path.relative(dataRoot, checkpointPath) }, 1);
   }
-  completeStep("validate", `Web/Worker configuration and vendor integrity validated`, { validation });
+  completeStep("validate", "Release snapshot, customer configuration, deployment overlay and identity validated", { validation });
 
   // 10. Finalise ------------------------------------------------------------
   checkpoint.externalActions = plan.externalActions;
@@ -650,9 +915,10 @@ try {
   for (const client of finalRegistry.clients ?? []) {
     if (client.clientId !== customerId) continue;
     client.provisioning = { ...(client.provisioning ?? {}), operationId, record: provisioningRecord, state: checkpoint.state };
+    client.releaseProvenance = { ...(client.releaseProvenance ?? {}), status: "SOURCE_PREPARED", preparedAt: new Date().toISOString() };
     if (options.activate) client.lifecycleStatus = "ACTIVE";
   }
-  fs.writeFileSync(registryPath, `${JSON.stringify(finalRegistry, null, 2)}\n`);
+  atomicWriteJson(registryPath, finalRegistry);
   saveCheckpoint(checkpoint);
   fs.rmSync(lockPath, { force: true });
 
@@ -660,17 +926,22 @@ try {
     status: checkpoint.state,
     operationId,
     customerId,
+    webOnly: !workerEnabled,
     identity: plan.identity,
     repositories: {
       web: `github:${webRepoName}`,
-      worker: `github:${workerRepoName}`,
-      localDirectories: attachWorker ? null : { web: path.relative(dataRoot, webDir), worker: path.relative(dataRoot, workerDir) },
+      worker: workerEnabled ? `github:${workerRepoName}` : null,
+      localDirectories: attachWorker ? null : {
+        web: path.relative(dataRoot, webDir),
+        ...(workerDir ? { worker: path.relative(dataRoot, workerDir) } : {}),
+      },
     },
     releases: plan.releases,
+    deployment: deploymentBinding,
     externalActions: plan.externalActions.filter((action) => action.status === "REQUIRED"),
     github: checkpoint.github ?? null,
     record: path.relative(dataRoot, checkpointPath),
-    note: "Migrations, secrets, deployment and distribution remain external actions.",
+    note: "Migrations, R2 creation, secrets, deployment and optional Worker distribution remain external actions.",
   });
 } catch (error) {
   stepRecord(checkpoint, "finalise", "FAILED_RETRYABLE", String(error.message).slice(0, 300));

@@ -7,6 +7,7 @@ const checks = [
   ["release tests", "test:release"],
   ["TypeScript", "typecheck:release"],
   ["release identity", "ops:release"],
+  ["release evidence", "ops:release-evidence"],
   ["registry", "ops:registry"],
   ["migration preflight", "ops:migrations"],
   ["security", "ops:security"],

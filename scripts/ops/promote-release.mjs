@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { latestOfficialReleaseManifest, semver, validateReleaseManifest } from "./lib.mjs";
+import { updateDeploymentRelease, validateDeploymentOverlay } from "./customer-deploy.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const defaultReleaseManifest = latestOfficialReleaseManifest(repositoryRoot).path;
@@ -144,6 +145,10 @@ function validateClient(root, client, release, options) {
     if (divergent.length && !options.forceReleaseOwned) errors.push(`release-owned divergence: ${divergent.slice(0, 12).join(", ")}${divergent.length > 12 ? "…" : ""}`);
   }
   if (previous?.releaseId === release.manifest.releaseId && previous?.sourceSha === release.manifest.sourceSha && divergent.length === 0) errors.push("client already declares this release");
+  const overlay = validateDeploymentOverlay(root);
+  if (overlay.present && overlay.errors.length) {
+    errors.push(`customer deployment overlay: ${overlay.errors.slice(0, 8).join("; ")}`);
+  }
   const migration = release.manifest.database.migrationTarget;
   const migrationVersion = migration.split("_")[0];
   if (!fs.existsSync(path.join(root, "supabase/migrations", migration)) && !options.forceReleaseOwned) errors.push(`client migration missing: ${migration}`);
@@ -270,6 +275,14 @@ function materializeRelease(root, release, previous, releaseRoot) {
     fileHashes: release.manifest.fileHashes,
   };
   writeJson(path.join(root, "release-manifest.json"), nextManifest);
+  // Customer deployment identity is customer-owned, but its release/source
+  // fields must move with the approved release. Identity fields (project,
+  // Worker, bucket, domain) are preserved; Alpha has no overlay and is skipped.
+  updateDeploymentRelease(root, {
+    version: release.manifest.version,
+    sourceSha: release.manifest.sourceSha,
+    releaseFingerprint: release.fingerprint,
+  });
 }
 
 function promoteClient(client, release, options, releaseRoot) {

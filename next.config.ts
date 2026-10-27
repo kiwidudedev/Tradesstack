@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
       ),
     },
   },
-  deploymentId: process.env.DEPLOYMENT_VERSION || process.env.GIT_SHA,
+  deploymentId: process.env.TRADESSTACK_RELEASE || process.env.DEPLOYMENT_VERSION || process.env.GIT_SHA,
   ...(process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR
     ? { distDir: process.env.PAYMENT_CLAIM_PLAYWRIGHT_DIST_DIR }
     : {}),

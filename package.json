@@ -45,6 +45,7 @@
     "ops:toolchain": "corepack npm run ops:toolchain:check",
     "ops:toolchain:check": "node scripts/ops/toolchain.mjs",
     "ops:release": "node scripts/ops/release.mjs",
+    "ops:release-evidence": "node scripts/ops/release-evidence.mjs",
     "ops:registry": "node scripts/ops/registry.mjs",
     "ops:migrations": "node scripts/ops/migrations.mjs",
     "ops:security": "node scripts/ops/security.mjs",
@@ -70,7 +71,7 @@
     "verify:alpha-worker": "node scripts/verify-worker-alpha.mjs",
     "customer:provision": "node scripts/ops/customer-provision.mjs",
     "worker:promote": "node scripts/ops/worker-promote.mjs",
-    "test:customer-provisioning": "vitest run scripts/ops/customer-provisioning.test.mjs scripts/ops/worker-promotion.test.mjs"
+    "test:customer-provisioning": "vitest run scripts/ops/customer-provisioning.test.mjs scripts/ops/worker-promotion.test.mjs scripts/ops/customer-database-bootstrap.test.mjs"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",
