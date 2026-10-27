@@ -53,7 +53,7 @@ Never run this against Alpha, Main or the Business Hub database.
 ## Dry run
 
 ```bash
-CUSTOMER_DATABASE_URL='postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres' \
+# CUSTOMER_DATABASE_URL is loaded from the approved secret store.
 node scripts/ops/bootstrap-customer-database.mjs \
   --customer-key tradelynk \
   --project-ref <20-character-ref> \
@@ -67,7 +67,7 @@ and `baselineSha256`. No SQL is executed.
 ## Apply
 
 ```bash
-CUSTOMER_DATABASE_URL='postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres' \
+# CUSTOMER_DATABASE_URL is loaded from the approved secret store.
 node scripts/ops/bootstrap-customer-database.mjs \
   --customer-key tradelynk \
   --project-ref <20-character-ref> \
@@ -112,7 +112,7 @@ historical replay to “repair” a production project.
 
 ```bash
 pg_restore --no-owner --no-acl --clean --if-exists \
-  --dbname 'postgresql://postgres:...@db.<new-ref>.supabase.co:5432/postgres' \
+  --dbname "$RESTORE_DATABASE_URL" \
   /secure/customer-backups/<file>.dump
 ```
 
