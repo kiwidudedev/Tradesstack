@@ -11,19 +11,6 @@ interface LoginResult {
   redirectPath?: string | null;
 }
 
-interface RegisterResult {
-  error: string | null;
-  requiresEmailConfirmation: boolean;
-}
-
-type RegisterInput = {
-  email: string;
-  password: string;
-  fullName: string;
-  organizationName: string;
-  inviteToken?: string;
-};
-
 type MemberRow = Database["public"]["Tables"]["organization_members"]["Row"];
 type OrganizationRow = Pick<
   Database["public"]["Tables"]["organizations"]["Row"],
@@ -337,57 +324,6 @@ export function useAuth() {
     return { error: null, redirectPath: null };
   }, []);
 
-  const register = useCallback(async (input: RegisterInput): Promise<RegisterResult> => {
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      return {
-        error: MISSING_ENV_ERROR,
-        requiresEmailConfirmation: false,
-      };
-    }
-
-    const fullName = input.fullName.trim();
-    const organizationName = input.organizationName.trim();
-    const inviteToken = (input.inviteToken ?? "").trim();
-
-    if (!fullName || (!organizationName && !inviteToken)) {
-      return {
-        error: "Full name is required, plus organization name or invite token.",
-        requiresEmailConfirmation: false,
-      };
-    }
-
-    const { data, error } = await supabase.auth.signUp({
-      email: input.email,
-      password: input.password,
-      options: {
-        data: {
-          full_name: fullName,
-          organization_name: organizationName || undefined,
-          invite_token: inviteToken || undefined,
-        },
-      },
-    });
-
-    if (error) {
-      return {
-        error: toAuthMessage(error, "Unable to create your account right now."),
-        requiresEmailConfirmation: false,
-      };
-    }
-
-    const requiresEmailConfirmation = !data.session;
-
-    if (!requiresEmailConfirmation) {
-      await refreshAuthSession();
-    }
-
-    return {
-      error: null,
-      requiresEmailConfirmation,
-    };
-  }, []);
-
   const logout = useCallback(async () => {
     const supabase = getSupabaseClient();
     if (!supabase) {
@@ -404,7 +340,6 @@ export function useAuth() {
     role: session?.role,
     isLoading,
     login,
-    register,
     refresh,
     logout,
   };

@@ -4,15 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeftCircle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { akzidenz, akzidenzProBoldEx } from "@/lib/fonts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-interface LoginShowcasePanelProps {
-  closeHref?: string;
-}
 
 function getPostAuthPath(nextPath: string | null): string {
   if (nextPath?.startsWith("/app")) {
@@ -31,9 +26,7 @@ const fieldLabelStyle = {
   fontFamily: '"Graphik Semibold", "Graphik Regular", Inter, system-ui, sans-serif',
 };
 
-const benefitLines = ["Get access before launch.", "Help shape the roadmap.", "Be first to onboard your team."];
-
-export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
+export function LoginShowcasePanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
@@ -44,6 +37,7 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const postAuthPath = useMemo(() => getPostAuthPath(searchParams.get("next")), [searchParams]);
+  const passwordResetComplete = searchParams.get("reset") === "1";
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -70,17 +64,6 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-[1.2rem] border border-[#0B2639]/8 bg-white px-6 py-6 sm:px-9 sm:py-8 lg:min-h-[532px] lg:px-10 lg:py-8">
           <div className="mx-auto flex h-full max-w-[560px] flex-col">
-            {closeHref ? (
-              <Link
-                href={closeHref}
-                className="inline-flex items-center gap-2 text-[15px] font-semibold text-[#24122C] underline underline-offset-2 transition hover:text-[#F74917]"
-                style={graphikStyle}
-              >
-                <ArrowLeftCircle className="h-4 w-4" />
-                Back to the website
-              </Link>
-            ) : null}
-
             <div className="mt-9 space-y-3">
               <h1
                 className={`${akzidenz.className} max-w-[15ch] text-[2.65rem] font-bold leading-[0.924] tracking-[-0.07em] text-[#0B2639] sm:max-w-none sm:text-[3.25rem]`}
@@ -92,6 +75,16 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
                 Sign in to continue managing projects, trade packs, and workflows with your team.
               </p>
             </div>
+
+            {passwordResetComplete ? (
+              <p
+                role="status"
+                className="mt-6 rounded-[0.55rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+                style={graphikStyle}
+              >
+                Your password has been updated. Sign in with your new password.
+              </p>
+            ) : null}
 
             <form className="mt-10 flex flex-col space-y-5" onSubmit={onSubmit}>
               <div className="relative pt-3">
@@ -105,6 +98,7 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
                 <Input
                   id="login-email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   className="h-[53px] rounded-[0.55rem] border-[2px] border-[#d2d0d4] bg-white px-5 text-[1rem] font-semibold text-[#1F2430] focus-visible:ring-[#F74917]/20"
@@ -124,6 +118,7 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
                 <Input
                   id="login-password"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="h-[53px] rounded-[0.55rem] border-[2px] border-[#d2d0d4] bg-white px-5 text-[1rem] font-semibold text-[#1F2430] focus-visible:ring-[#F74917]/20"
@@ -133,7 +128,7 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
               </div>
 
               {error ? (
-                <p className="text-sm text-red-600" style={graphikStyle}>
+                <p role="alert" aria-live="polite" className="text-sm text-red-600" style={graphikStyle}>
                   {error}
                 </p>
               ) : null}
@@ -153,12 +148,8 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
                 </Link>
               </p>
 
-              <p className="text-[13px] text-[#0B2639]" style={graphikStyle}>
-                New to TradeStack?{" "}
-                <Link href="/register" className="font-semibold text-[#F74917] transition hover:text-[#d95a1c]">
-                  Create an account
-                </Link>
-                .
+              <p className="text-[13px] leading-[1.5] text-[#495d6f]" style={graphikStyle}>
+                Access is managed by your workspace administrator. Ask them for an invitation if you need an account.
               </p>
             </form>
           </div>
@@ -178,24 +169,19 @@ export function LoginShowcasePanel({ closeHref }: LoginShowcasePanelProps) {
                   priority
                 />
                 <span className={`${akzidenzProBoldEx.className} block max-w-[16ch] text-[2.52rem] leading-[0.98] tracking-[-0.036em] text-white`}>
-                  A quick FREE sign-up could change your trade business forever.
+                  Your workspace. Your business.
                 </span>
                 <p className="mt-6 max-w-[33rem] text-[1.02rem] leading-[1.5] text-white sm:pr-8 sm:text-[1.0625rem] lg:pr-14" style={graphikStyle}>
-                  No payment needed. Just sign up and we&apos;ll show you what we&apos;re building.
+                  Everything you need to manage your work in one place.
                 </p>
               </div>
             </div>
 
-            <div className="mt-6 space-y-8">
-              <div className="grid gap-3 sm:grid-cols-3">
-                {benefitLines.map((benefit) => (
-                  <div key={benefit} className="rounded-[0.55rem] border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
-                    <p className="text-sm font-semibold leading-6 text-white" style={graphikStyle}>
-                      {benefit}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <div className="mt-6">
+              <p className="max-w-[33rem] text-sm leading-6 text-white/70 sm:pr-8 lg:pr-14" style={graphikStyle}>
+                This is a private workspace for your team. Accounts are created by invitation or by your workspace
+                administrator.
+              </p>
             </div>
           </div>
         </section>

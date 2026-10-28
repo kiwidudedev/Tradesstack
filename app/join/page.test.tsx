@@ -27,20 +27,21 @@ describe("join page rendering", () => {
     expect(mocked.client).not.toHaveBeenCalled();
   });
 
-  it("preserves the invitation token, sign-in form and website link when parameters are available", () => {
+  it("preserves the invitation token and sign-in form without marketing navigation", () => {
     mocked.searchParams.mockReturnValue(new URLSearchParams({ token: " local-invite/token " }));
     const html = renderToString(<JoinPage />);
     expect(html).toContain("Accept your invite");
     expect(html).toContain('href="/register?token=local-invite%2Ftoken"');
-    expect(html).toContain('href="/"');
+    expect(html).not.toContain("Back to the website");
     expect(html).toContain('id="join-email"');
     expect(html).toContain('id="join-password"');
     expect(mocked.client).not.toHaveBeenCalled();
   });
 
-  it("preserves the registration link without an invitation token", () => {
+  it("does not expose a public registration link without an invitation token", () => {
     const html = renderToString(<JoinPage />);
-    expect(html).toContain('href="/register"');
+    expect(html).not.toContain('href="/register"');
+    expect(html).toContain("Ask your workspace administrator for an invitation");
     expect(mocked.client).not.toHaveBeenCalled();
   });
 });

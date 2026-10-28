@@ -7,6 +7,20 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const { response, user, projectSlugRedirect } = await updateSession(request);
 
+  // The application root is an entry gate, not a marketing page. Redirecting
+  // here keeps the public landing page and intermediate loading states out of
+  // the customer application entirely.
+  if (pathname === "/") {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = user ? "/app/dashboard" : "/login";
+    redirectUrl.search = "";
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+    return redirectResponse;
+  }
+
   if (AUTH_PAGES.has(pathname) && user) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/app/dashboard";
@@ -30,5 +44,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/register", "/app/:path*"],
+  matcher: ["/", "/login", "/register", "/app/:path*"],
 };

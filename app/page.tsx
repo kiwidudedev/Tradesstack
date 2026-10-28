@@ -1,47 +1,30 @@
-"use client";
+import { redirect } from "next/navigation";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-import { Footer } from "@/components/marketing/Footer";
-import { FeatureShowcaseSection } from "@/components/marketing/FeatureShowcaseSection";
-import { EarlyAccessSection } from "@/components/marketing/EarlyAccessSection";
-import { FinalCtaSection } from "@/components/marketing/FinalCtaSection";
-import { Hero } from "@/components/marketing/Hero";
-import { Navbar } from "@/components/marketing/Navbar";
-import { OnePlatformSection } from "@/components/marketing/OnePlatformSection";
-import { PreHeroInsights } from "@/components/marketing/PreHeroInsights";
-import { ScrollToTopButton } from "@/components/marketing/ScrollToTopButton";
-import { SoftwareSyncSection } from "@/components/marketing/SoftwareSyncSection";
-import { StatsResultsSection } from "@/components/marketing/StatsResultsSection";
-import { useAuth } from "@/hooks/use-auth";
+export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  const { session } = useAuth();
+/**
+ * Application entry point for every dedicated TradesStack workspace.
+ *
+ * The customer application does not serve the public TradesStack marketing
+ * landing page. Signed-in users continue to their authorised default route and
+ * everyone else is sent to sign in. Resolving this on the server avoids a flash
+ * of marketing content or an intermediate loading screen.
+ */
+export default async function HomePage() {
+  let isAuthenticated = false;
 
-  return (
-    <div className="landing-page min-h-screen overflow-x-hidden bg-[#0B2639] text-white">
-      <style jsx global>{`
-        .landing-page h2 {
-          font-size: 45px !important;
-        }
+  try {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    isAuthenticated = Boolean(user);
+  } catch {
+    // A missing Supabase configuration or an unreadable session is treated as
+    // signed out; the login page renders the single supported entry form.
+    isAuthenticated = false;
+  }
 
-        @media (min-width: 1024px) {
-          .landing-page h2 {
-            font-size: 65px !important;
-          }
-        }
-      `}</style>
-      <main>
-        <Navbar session={session} loginHref="/login" />
-        <Hero />
-        <PreHeroInsights />
-        <OnePlatformSection />
-        <FeatureShowcaseSection />
-        <SoftwareSyncSection />
-        <StatsResultsSection />
-        <EarlyAccessSection />
-        <FinalCtaSection />
-        <Footer />
-        <ScrollToTopButton />
-      </main>
-    </div>
-  );
+  redirect(isAuthenticated ? "/app/dashboard" : "/login");
 }

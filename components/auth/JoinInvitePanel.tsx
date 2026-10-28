@@ -4,15 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeftCircle } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { akzidenz, akzidenzProBoldEx } from "@/lib/fonts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-interface JoinInvitePanelProps {
-  closeHref?: string;
-}
 
 const graphikStyle = {
   fontFamily: '"Graphik Regular", Inter, system-ui, sans-serif',
@@ -28,7 +23,7 @@ function parseToken(raw: string | null) {
   return raw.trim();
 }
 
-export function JoinInvitePanel({ closeHref }: JoinInvitePanelProps) {
+export function JoinInvitePanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = useMemo(() => parseToken(searchParams.get("token")), [searchParams]);
@@ -108,17 +103,6 @@ export function JoinInvitePanel({ closeHref }: JoinInvitePanelProps) {
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-[1.2rem] border border-[#0B2639]/8 bg-white px-6 py-6 sm:px-9 sm:py-8 lg:min-h-[532px] lg:px-10 lg:py-8">
           <div className="mx-auto flex h-full max-w-[560px] flex-col">
-            {closeHref ? (
-              <Link
-                href={closeHref}
-                className="inline-flex items-center gap-2 text-[15px] font-semibold text-[#24122C] underline underline-offset-2 transition hover:text-[#F74917]"
-                style={graphikStyle}
-              >
-                <ArrowLeftCircle className="h-4 w-4" />
-                Back to the website
-              </Link>
-            ) : null}
-
             <div className="mt-9 space-y-3">
               <h1
                 className={`${akzidenz.className} max-w-[15ch] text-[2.65rem] font-bold leading-[0.924] tracking-[-0.07em] text-[#0B2639] sm:max-w-none sm:text-[3.25rem]`}
@@ -130,14 +114,20 @@ export function JoinInvitePanel({ closeHref }: JoinInvitePanelProps) {
                 Sign in to accept this organization invite.
               </p>
               <p className="text-sm text-[#495d6f]" style={graphikStyle}>
-                Need an account?{" "}
-                <Link
-                  href={inviteToken ? `/register?token=${encodeURIComponent(inviteToken)}` : "/register"}
-                  className="font-semibold text-[#F74917] underline underline-offset-2"
-                >
-                  Create one with this invite
-                </Link>
-                .
+                {inviteToken ? (
+                  <>
+                    Need an account?{" "}
+                    <Link
+                      href={`/register?token=${encodeURIComponent(inviteToken)}`}
+                      className="font-semibold text-[#F74917] underline underline-offset-2"
+                    >
+                      Create one with this invite
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  "Ask your workspace administrator for an invitation if you need an account."
+                )}
               </p>
             </div>
 

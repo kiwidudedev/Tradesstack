@@ -42,7 +42,12 @@ export function getSupabaseEnv(): SupabaseEnv {
 }
 
 export function getSupabaseServiceRoleEnv(): SupabaseServiceRoleEnv {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = getPublicSupabaseEnvValue(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    typeof __TRADESSTACK_SUPABASE_URL__ === "undefined"
+      ? undefined
+      : __TRADESSTACK_SUPABASE_URL__,
+  );
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceRoleKey) {

@@ -122,3 +122,16 @@ same Main-owned payload in both successful clients, preserves each client-owned
 configuration, and blocks the drifting client without modifying the successful
 configuration, runs client tests/typecheck/build in an isolated worktree, and
 blocks the drifting client without modifying the successful clients.
+
+## Authentication and application-entry policy
+
+From release 1.2.8, the customer application root is an entry gate (login or
+workspace dashboard) and account creation is invitation-only. The reusable
+policy, the hosted Supabase Auth setting and the approved per-customer upgrade
+steps are documented in
+[`TRADESSTACK_APPLICATION_ENTRY_AND_AUTH_POLICY.md`](TRADESSTACK_APPLICATION_ENTRY_AND_AUTH_POLICY.md).
+
+A customer upgrade is not complete until the hosted Supabase project reports
+`disable_signup: true` and the password-recovery redirect URL is allow-listed.
+Record those checks separately from the Cloudflare deployment; disabling public
+sign-ups is a provider configuration change, not a release-file change.
