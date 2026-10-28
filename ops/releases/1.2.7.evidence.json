@@ -4,7 +4,7 @@
   "sourceSha": "93451c64cee5b5d808e8e33fcbe6658d057d3e20",
   "releaseFingerprint": "393258ee2791436dcc8f95c8c8af895eb97b9635395c28c6a43786588f6ca821",
   "immutableManifest": "ops/releases/1.2.7.json",
-  "status": "VERIFIED_ALPHA_DEPLOYED",
+  "status": "RECONCILED",
   "verifiedAt": "2026-10-28",
   "alpha": {
     "customerKey": "client-alpha",
@@ -24,7 +24,8 @@
     "healthSourceSha": "93451c64cee5b5d808e8e33fcbe6658d057d3e20",
     "supabaseProjectRef": "ibjyzpyuqupsxqakpzxj",
     "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
-    "migrationStatus": "APPLIED"
+    "migrationStatus": "APPLIED",
+    "httpStatus": 200
   },
   "verification": {
     "candidateDependencies": "PASS",
@@ -37,5 +38,9 @@
     "liveRoot": "PASS",
     "browserVerification": "NOT_PERFORMED"
   },
-  "note": "The immutable 1.2.7 release manifest recorded Alpha promotion as pending. This append-only evidence records the subsequent controlled Alpha deployment and live HTTP verification."
+  "note": "The immutable 1.2.7 release manifest recorded Alpha promotion as pending. This append-only evidence records the subsequent controlled Alpha deployment and live HTTP verification.",
+  "reconciliation": {
+    "effectiveBrowserVerification": "NOT_PERFORMED",
+    "effectiveDatabasePromotionStatus": "APPLIED"
+  }
 }

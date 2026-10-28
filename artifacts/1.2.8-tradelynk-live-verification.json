@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "release": "1.2.8",
+  "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+  "releaseFingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+  "customer": "tradelynk",
+  "url": "https://tradesstack-tradelynk.tradesstack.workers.dev",
+  "verifiedAt": "2026-10-28T08:04:00Z",
+  "anonymity": "No credentials or session cookies were supplied.",
+  "results": [
+    { "check": "anonymous_root_http", "value": "307 -> /login" },
+    { "check": "anonymous_root_final_url", "value": "https://tradesstack-tradelynk.tradesstack.workers.dev/login" },
+    { "check": "anonymous_root_renders_login", "value": true },
+    { "check": "login_workspace_message", "value": "Your workspace. Your business." },
+    { "check": "login_workspace_copy", "value": "Everything you need to manage your work in one place." },
+    { "check": "login_has_forgot_password", "value": true },
+    { "check": "login_no_create_account", "value": true },
+    { "check": "login_no_register_link", "value": true },
+    { "check": "login_no_early_access", "value": true },
+    { "check": "login_no_free_signup", "value": true },
+    { "check": "login_no_back_to_website", "value": true },
+    { "check": "login_invalid_credentials_alert", "value": "Incorrect email or password." },
+    { "check": "register_without_token_http", "value": "307 -> /login" },
+    { "check": "register_with_invalid_token_alert", "value": "This invitation is no longer valid. Ask your workspace administrator to send a new invitation." },
+    { "check": "join_page_accept_invite", "value": true },
+    { "check": "join_page_sign_in_form", "value": true },
+    { "check": "forgot_password_status", "value": "If an account exists for that email, a password reset link is on its way." },
+    { "check": "reset_password_missing_session", "value": "This password reset link is invalid or has expired." },
+    { "check": "authenticated_root_redirect", "value": "NOT_EXECUTED_NO_CUSTOMER_TEST_CREDENTIAL" }
+  ]
+}

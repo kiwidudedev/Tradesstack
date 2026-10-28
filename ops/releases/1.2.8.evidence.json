@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "1.2.8",
+  "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+  "releaseFingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+  "immutableManifest": "ops/releases/1.2.8.json",
+  "status": "RECONCILED",
+  "verifiedAt": "2026-10-28",
+  "tradelynk": {
+    "customerKey": "tradelynk",
+    "repository": "tradesstack/tradesstack-client-tradelynk",
+    "upgradeBranch": "shell-upgrade/1.2.8",
+    "releasePullRequest": 1,
+    "upgradeCommit": "aff392a685c5465cb01b973cef8fe2e50d338801",
+    "mergeCommit": "070fbc963688262053b3e361192003d51a001515",
+    "deploymentProvider": "cloudflare",
+    "workerName": "tradesstack-tradelynk",
+    "deploymentId": "fb09e5f7-f39a-4c13-b3a4-2d30abed307f",
+    "deployedAt": "2026-10-28T08:02:24.027Z",
+    "siteUrl": "https://tradesstack-tradelynk.tradesstack.workers.dev",
+    "supabaseProjectRef": "wnjzsnazpzxkunofmjlf",
+    "r2Bucket": "tradesstack-tradelynk-documents",
+    "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+    "migrationStatus": "NOT_VERIFIED_NO_HOSTED_DATABASE_ACCESS",
+    "health": {
+      "ok": true,
+      "release": "1.2.8",
+      "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+      "releaseFingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+      "environment": "wnjzsnazpzxkunofmjlf",
+      "workerName": "tradesstack-tradelynk"
+    },
+    "liveRoutes": {
+      "anonymousRoot": "307 -> /login",
+      "registerWithoutToken": "307 -> /login",
+      "login": "HTTP 200",
+      "anonymousRootFinalUrl": "/login"
+    },
+    "browserVerification": {
+      "loginWorkspaceMessage": "PASS",
+      "loginWorkspaceCopy": "PASS",
+      "loginNoCreateAccountLink": "PASS",
+      "loginNoEarlyAccessCopy": "PASS",
+      "loginNoBackToWebsiteLink": "PASS",
+      "loginInvalidCredentialsError": "PASS (Incorrect email or password.)",
+      "invalidInvitationRejectedServerSide": "PASS (This invitation is no longer valid.)",
+      "invitationJoinPage": "PASS",
+      "forgotPasswordRequest": "PASS (uniform success message shown)",
+      "resetPasswordWithoutSession": "PASS (invalid or expired link)",
+      "authenticatedRootRedirect": "PROVEN_BY_AUTOMATED_TESTS_NOT_LIVE_NO_CUSTOMER_TEST_CREDENTIAL",
+      "logout": "NOT_PERFORMED_NO_CUSTOMER_TEST_CREDENTIAL",
+      "validInvitationAcceptance": "NOT_PERFORMED_NO_ADMIN_SESSION_TO_CREATE_INVITE"
+    },
+    "identitiesUnchanged": {
+      "supabaseProjectRef": true,
+      "supabaseAnonKey": true,
+      "cloudflareWorkerName": true,
+      "r2Bucket": true,
+      "siteUrl": true
+    },
+    "hostedSupabaseAuth": {
+      "disableSignupObserved": false,
+      "requiredSetting": "disable_signup=true",
+      "status": "PENDING_APPROVED_CUSTOMER_UPGRADE_ACTION",
+      "reason": "The operating Supabase identity has no management access to project wnjzsnazpzxkunofmjlf; the app no longer exposes a public signup path and the declarative Auth baseline disables signups."
+    }
+  },
+  "verification": {
+    "mainReleaseTests": "4723 passed, 29 skipped",
+    "mainTypecheck": "PASS",
+    "mainLint": "PASS_WITH_EXISTING_WARNINGS",
+    "mainBuild": "PASS",
+    "authoritativeLocalReleaseValidation": "PASS",
+    "releaseFingerprintRecomputed": "PASS",
+    "clientCandidateDependencies": "PASS",
+    "clientCandidateReleaseTests": "PASS",
+    "clientCandidateTypecheck": "PASS",
+    "clientCandidateBuild": "PASS",
+    "cloudflareBuild": "PASS",
+    "cloudflareDeployment": "PASS",
+    "liveHealth": "PASS",
+    "liveAnonymousRoot": "PASS",
+    "liveLoginContent": "PASS",
+    "liveInvitationGuard": "PASS",
+    "livePasswordRecoveryRequest": "PASS"
+  },
+  "note": "The immutable 1.2.8 manifest records the reusable Main change. Hosted Supabase Auth hardening (disable_signup=true) and reset-password redirect allow-listing remain a required approved customer-upgrade action because this operator has no Management API access to the customer project.",
+  "reconciliation": {
+    "effectiveBrowserVerification": "PASS (login content, invitation guard, password-recovery request; authenticated redirect proven by Main tests)",
+    "effectiveDatabasePromotionStatus": "UNVERIFIED_NO_HOSTED_DATABASE_ACCESS"
+  }
+}
