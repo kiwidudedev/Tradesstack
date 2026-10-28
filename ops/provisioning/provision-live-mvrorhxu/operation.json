@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "operationId": "prov-provision-live-mvrorhxu-e1ed34f7bcead203",
+  "customerId": "provision-live-mvrorhxu",
+  "state": "READY_FOR_DEPLOYMENT",
+  "inputs": {
+    "customerId": "provision-live-mvrorhxu",
+    "displayName": "Phase 6.8 Fictional Build Co (QA)",
+    "owner": "tradesstack",
+    "attachWorker": false,
+    "webOnly": true,
+    "takeoff": false,
+    "provider": "github",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "provision-live-mvrorhxu-production",
+      "supabaseProjectRef": "liveproject000000001"
+    },
+    "profileFingerprint": null,
+    "webRelease": "1.2.6",
+    "workerRelease": null,
+    "webRepository": "github:tradesstack/tradesstack-client-provision-live-mvrorhxu",
+    "workerRepository": null,
+    "deployment": {
+      "workerName": "tradesstack-provision-live-mvrorhxu",
+      "r2BucketName": "tradesstack-provision-live-mvrorhxu-documents",
+      "siteUrl": "https://tradesstack-provision-live-mvrorhxu.tradesstack.workers.dev",
+      "environment": "production"
+    },
+    "domain": "PENDING"
+  },
+  "steps": [
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Customer provision-live-mvrorhxu identity validated (provision-live-mvrorhxu-production); web-only",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:43:00.609Z",
+      "finishedAt": "2026-10-28T05:43:00.609Z",
+      "updatedAt": "2026-10-28T05:43:00.609Z"
+    },
+    {
+      "id": "web-repository",
+      "status": "PASS",
+      "detail": "Web repository prepared at customer-repos/client-provision-live-mvrorhxu/web from 1.2.6",
+      "artifact": {
+        "path": "customer-repos/client-provision-live-mvrorhxu/web"
+      },
+      "startedAt": "2026-10-28T05:44:17.338Z",
+      "finishedAt": "2026-10-28T05:44:17.338Z",
+      "updatedAt": "2026-10-28T05:44:17.338Z"
+    },
+    {
+      "id": "worker-repository",
+      "status": "SKIPPED",
+      "detail": "Skipped — web-only implementation has no Worker application",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:17.338Z",
+      "finishedAt": "2026-10-28T05:44:17.338Z",
+      "updatedAt": "2026-10-28T05:44:17.338Z"
+    },
+    {
+      "id": "backend-binding",
+      "status": "PASS",
+      "detail": "Environment provision-live-mvrorhxu-production bound to liveproject000000001; Supabase project creation and migrations remain external",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:17.339Z",
+      "finishedAt": "2026-10-28T05:44:17.339Z",
+      "updatedAt": "2026-10-28T05:44:17.339Z"
+    },
+    {
+      "id": "configuration",
+      "status": "PASS",
+      "detail": "Web-only implementation: no Worker profile; deployment overlay written to deploy/customer.json",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:17.339Z",
+      "finishedAt": "2026-10-28T05:44:17.339Z",
+      "updatedAt": "2026-10-28T05:44:17.339Z"
+    },
+    {
+      "id": "link-validation",
+      "status": "PASS",
+      "detail": "Web resolve to provision-live-mvrorhxu-production (liveproject000000001); deployment identity validated",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:17.341Z",
+      "finishedAt": "2026-10-28T05:44:17.341Z",
+      "updatedAt": "2026-10-28T05:44:17.341Z"
+    },
+    {
+      "id": "registry",
+      "status": "PASS",
+      "detail": "One registry entry joins the web repository, environment and web-only deployment for provision-live-mvrorhxu",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:17.341Z",
+      "finishedAt": "2026-10-28T05:44:17.341Z",
+      "updatedAt": "2026-10-28T05:44:17.341Z"
+    },
+    {
+      "id": "ci",
+      "status": "PASS",
+      "detail": "Web CI present; no Worker CI required",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:17.342Z",
+      "finishedAt": "2026-10-28T05:44:17.342Z",
+      "updatedAt": "2026-10-28T05:44:17.342Z"
+    },
+    {
+      "id": "validate",
+      "status": "PASS",
+      "detail": "Release snapshot, customer configuration, deployment overlay and identity validated",
+      "artifact": {
+        "validation": [
+          {
+            "check": "release snapshot integrity",
+            "status": "PASS",
+            "detail": "2573 release files verified"
+          },
+          {
+            "check": "customer configuration",
+            "status": "PASS",
+            "detail": "client config fingerprint matches"
+          },
+          {
+            "check": "deployment overlay",
+            "status": "PASS",
+            "detail": "Cloudflare overlay is customer-specific and complete"
+          },
+          {
+            "check": "deployment identity",
+            "status": "PASS",
+            "detail": "no Alpha/Main identities present"
+          }
+        ]
+      },
+      "startedAt": "2026-10-28T05:44:18.205Z",
+      "finishedAt": "2026-10-28T05:44:18.205Z",
+      "updatedAt": "2026-10-28T05:44:18.205Z"
+    },
+    {
+      "id": "finalise",
+      "status": "PASS",
+      "detail": "Customer implementation READY_FOR_DEPLOYMENT",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:44:18.206Z",
+      "finishedAt": "2026-10-28T05:44:18.206Z",
+      "updatedAt": "2026-10-28T05:44:18.206Z"
+    }
+  ],
+  "externalActions": [
+    {
+      "id": "create-supabase-project",
+      "status": "REQUIRED",
+      "detail": "liveproject000000001"
+    },
+    {
+      "id": "apply-database-baseline-and-migrations",
+      "status": "REQUIRED",
+      "detail": "Approved baseline + migrations for the customer project"
+    },
+    {
+      "id": "create-r2-bucket",
+      "status": "REQUIRED",
+      "detail": "Private R2 bucket tradesstack-provision-live-mvrorhxu-documents"
+    },
+    {
+      "id": "bind-web-environment-secrets",
+      "status": "REQUIRED",
+      "detail": "Web hosting env: NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SITE_URL, plus server secrets"
+    },
+    {
+      "id": "create-cloudflare-worker",
+      "status": "REQUIRED",
+      "detail": "Cloudflare Worker tradesstack-provision-live-mvrorhxu and its R2 binding"
+    },
+    {
+      "id": "configure-customer-domain",
+      "status": "PENDING_APPROVAL",
+      "detail": "https://tradesstack-provision-live-mvrorhxu.tradesstack.workers.dev (workers.dev staging; custom domain pending)"
+    },
+    {
+      "id": "build-and-distribute",
+      "status": "REQUIRED",
+      "detail": "Web deploy approval"
+    }
+  ],
+  "errors": [],
+  "createdAt": "2026-10-28T05:43:00.212Z",
+  "updatedAt": "2026-10-28T05:44:18.206Z",
+  "createdBy": "scripts/ops/customer-provision.mjs",
+  "github": {
+    "web": {
+      "fullName": "tradesstack/tradesstack-client-provision-live-mvrorhxu",
+      "created": true,
+      "pushed": true,
+      "existing": false,
+      "head": "379e578c3019099de7fac752f6d5c9fd649d75e4"
+    }
+  }
+}

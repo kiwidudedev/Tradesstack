@@ -175,6 +175,68 @@
         "record": "ops/provisioning/cf-auto-mvelli19/operation.json",
         "state": "READY_FOR_DEPLOYMENT"
       }
+    },
+    {
+      "clientId": "provision-live-mvrorhxu",
+      "displayName": "Phase 6.8 Fictional Build Co (QA)",
+      "environment": "managed-client",
+      "lifecycleStatus": "PENDING",
+      "defaultBranch": "main",
+      "rolloutStatus": "ENABLED",
+      "releaseChannel": "stable",
+      "clientOwnedPaths": [
+        "client/**",
+        ".env*",
+        "deploy/**",
+        "wrangler.jsonc",
+        "cloudflare/**",
+        "cloudflare-env.d.ts",
+        "open-next.config.ts",
+        "scripts/**",
+        ".github/**"
+      ],
+      "targetRelease": "1.2.6",
+      "repositoryReference": "github:tradesstack/tradesstack-client-provision-live-mvrorhxu",
+      "deploymentTarget": "tradesstack-provision-live-mvrorhxu",
+      "databaseProjectReference": "supabase:liveproject000000001",
+      "runtimeReference": "tradesstack-provision-live-mvrorhxu",
+      "domainReference": "https://tradesstack-provision-live-mvrorhxu.tradesstack.workers.dev",
+      "workerEnabled": false,
+      "takeoff": false,
+      "releaseProvenance": {
+        "status": "SOURCE_PREPARED",
+        "releaseId": "1.2.6",
+        "sourceSha": "eead509764c85b41509510329b3ac234b577f545",
+        "fingerprint": "ae932395ef0277d309701533688252d1d6d6873bb1b28514a35be43ed8f3ed72",
+        "installedVersion": null,
+        "installedAt": null,
+        "installationMethod": "scripts/ops/customer-provision.mjs",
+        "repositoryReference": "github:tradesstack/tradesstack-client-provision-live-mvrorhxu",
+        "preparedAt": "2026-10-28T05:44:18.206Z"
+      },
+      "database": {
+        "baseline": "phase1o-1",
+        "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+        "status": "PENDING_APPLICATION"
+      },
+      "deployment": {
+        "provider": "cloudflare",
+        "workerName": "tradesstack-provision-live-mvrorhxu",
+        "r2BucketName": "tradesstack-provision-live-mvrorhxu-documents",
+        "siteUrl": "https://tradesstack-provision-live-mvrorhxu.tradesstack.workers.dev",
+        "deploymentUrl": "https://tradesstack-provision-live-mvrorhxu.tradesstack.workers.dev/api/health",
+        "environment": "production",
+        "workerEnabled": false,
+        "takeoff": false,
+        "status": "NOT_DEPLOYED",
+        "templateVersion": 1,
+        "templateFingerprint": "f337d59be26ca14cac1ce268270d223f1d46c8b88c848ff1c6f5b4d68d53eeff"
+      },
+      "provisioning": {
+        "operationId": "prov-provision-live-mvrorhxu-e1ed34f7bcead203",
+        "record": "ops/provisioning/provision-live-mvrorhxu/operation.json",
+        "state": "READY_FOR_DEPLOYMENT"
+      }
     }
   ]
 }
