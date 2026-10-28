@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "1.2.7",
+  "version": "1.2.7",
+  "displayLabel": "TradesStack 1.2.7",
+  "releaseType": "OFFICIAL",
+  "status": "APPROVED",
+  "releaseDate": "2026-10-28",
+  "previousRelease": "1.2.6",
+  "sourceSha": "93451c64cee5b5d808e8e33fcbe6658d057d3e20",
+  "releaseFingerprint": "393258ee2791436dcc8f95c8c8af895eb97b9635395c28c6a43786588f6ca821",
+  "applicationShell": {
+    "releaseId": "0.0.0-phase1v.local",
+    "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
+  },
+  "packageIdentities": {
+    "@tradesstack/core-contracts": "0.0.0",
+    "@tradesstack/client-config": "0.0.0",
+    "@tradesstack/shared-ui": "0.0.0",
+    "@tradesstack/pdf-utils": "0.0.0",
+    "@tradesstack/suppliers": "0.0.0"
+  },
+  "database": {
+    "baseline": "phase1o-1",
+    "baselineSha256": "52ac69bea6587301c9d50fca809847bb077f03471406476b1d01ed2520c5a372",
+    "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+    "promotionStatus": "BASELINE_UNCHANGED_FROM_1_2_4"
+  },
+  "clientConfig": {
+    "contract": "@tradesstack/client-config@0.0.0",
+    "schemaVersion": 1
+  },
+  "toolchain": {
+    "node": "22.22.2",
+    "npm": "11.6.2",
+    "next": "16.3.8"
+  },
+  "validation": {
+    "status": "PASS",
+    "releaseTests": "settings regression test added and passing",
+    "typecheck": "PASS",
+    "lint": "PASS_WITH_EXISTING_WARNINGS",
+    "diffCheck": "PASS",
+    "build": "PASS",
+    "browserVerification": "PENDING_CUSTOMER_DEPLOYMENT"
+  },
+  "approval": {
+    "mainPush": "APPROVED_BY_REQUEST",
+    "realClient": "APPROVED",
+    "alphaPromotion": "NOT_APPLIED_REMAINS_1_2_4"
+  },
+  "summary": "Patch release: the Branding panel now has a working Save changes control, and the preview mock is no longer a disabled save button.",
+  "createdAt": "2026-10-28T07:22:11Z"
+}
