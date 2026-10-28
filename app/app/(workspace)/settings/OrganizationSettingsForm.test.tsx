@@ -41,6 +41,10 @@ describe("OrganizationSettingsForm", () => {
     );
 
     expect(markup).toContain("Construction Profile");
+    expect(markup).toContain("Primary action");
+    expect(markup).toContain(">Save changes<");
+    expect(markup).toMatch(/type="submit"[^>]*>[^<]*Save changes/);
+    expect(markup).not.toContain(">Save changes</button></button>");
     expect(markup).toContain("Tell TradesStack about your construction business");
     expect(markup).toContain('id="organization-construction-profile"');
     expect(markup).toContain("textarea");

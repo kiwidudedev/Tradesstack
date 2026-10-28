@@ -408,26 +408,15 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                   <span className={`${interMedium.className} text-[12px] text-[var(--text-secondary)]`}>
                     Primary action
                   </span>
-                  <button
-                    type="button"
-                    disabled
+                  <span
+                    aria-hidden="true"
                     className={`${interMedium.className} inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] px-4 text-[13px] font-medium text-white shadow-none`}
                     style={{
                       background: isValidHex(brandAccentColor) ? brandAccentColor : DEFAULT_BRAND_ACCENT_COLOR,
                     }}
-                    onMouseEnter={(event) => {
-                      if (isValidHex(brandAccentColor)) {
-                        event.currentTarget.style.background = darken(brandAccentColor, 0.92);
-                      }
-                    }}
-                    onMouseLeave={(event) => {
-                      if (isValidHex(brandAccentColor)) {
-                        event.currentTarget.style.background = brandAccentColor;
-                      }
-                    }}
                   >
-                    Save changes
-                  </button>
+                    Primary action
+                  </span>
                 </div>
               </div>
 
@@ -435,17 +424,26 @@ export function OrganizationSettingsForm(props: OrganizationSettingsFormProps) {
                 <p className={`${interMedium.className} text-[12px] text-[var(--text-muted)]`}>
                   These colours apply to your whole organisation.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBrandPrimaryColor(DEFAULT_BRAND_PRIMARY_COLOR);
-                    setBrandAccentColor(DEFAULT_BRAND_ACCENT_COLOR);
-                  }}
-                  disabled={!props.canEdit || isSaving}
-                  className={`${interMedium.className} inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60`}
-                >
-                  Reset to defaults
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBrandPrimaryColor(DEFAULT_BRAND_PRIMARY_COLOR);
+                      setBrandAccentColor(DEFAULT_BRAND_ACCENT_COLOR);
+                    }}
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    Reset to defaults
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!props.canEdit || isSaving}
+                    className={`${interMedium.className} inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {isSaving ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
               </div>
             </div>
           </OperationalPanel>
