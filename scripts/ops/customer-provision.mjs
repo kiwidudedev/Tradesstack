@@ -432,7 +432,7 @@ function maybeSimulateFailure(id) {
 function ensureGithubRepository({ directory, fullName, description }) {
   let exists = false;
   try {
-    const raw = run("gh", ["repo", "view", fullName, "--json", "isPrivate,visibility"], ROOT);
+    const raw = run("gh", ["repo", "view", fullName, "--json", "isPrivate"], ROOT);
     const info = JSON.parse(raw);
     exists = true;
     if (info.isPrivate !== true) fail(`GitHub repository ${fullName} already exists and is not private; refusing to use it`);
