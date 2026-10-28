@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "operationId": "prov-provision-live-mvrodbev-3c5b13100f636db6",
+  "customerId": "provision-live-mvrodbev",
+  "state": "PARTIALLY_PROVISIONED",
+  "inputs": {
+    "customerId": "provision-live-mvrodbev",
+    "displayName": "Phase 6.8 Fictional Build Co (QA)",
+    "owner": "tradesstack",
+    "attachWorker": false,
+    "webOnly": true,
+    "takeoff": false,
+    "provider": "github",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "provision-live-mvrodbev-production",
+      "supabaseProjectRef": "liveproject000000001"
+    },
+    "profileFingerprint": null,
+    "webRelease": "1.2.6",
+    "workerRelease": null,
+    "webRepository": "github:tradesstack/tradesstack-client-provision-live-mvrodbev",
+    "workerRepository": null,
+    "deployment": {
+      "workerName": "tradesstack-provision-live-mvrodbev",
+      "r2BucketName": "tradesstack-provision-live-mvrodbev-documents",
+      "siteUrl": "https://tradesstack-provision-live-mvrodbev.tradesstack.workers.dev",
+      "environment": "production"
+    },
+    "domain": "PENDING"
+  },
+  "steps": [
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Customer provision-live-mvrodbev identity validated (provision-live-mvrodbev-production); web-only",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:31:49.272Z",
+      "finishedAt": "2026-10-28T05:31:49.272Z",
+      "updatedAt": "2026-10-28T05:31:49.272Z"
+    },
+    {
+      "id": "finalise",
+      "status": "FAILED_RETRYABLE",
+      "detail": "Command failed: gh repo view tradesstack/tradesstack-client-provision-live-mvrodbev --json isPrivate,visibility\nUnknown JSON field: \"visibility\"\nAvailable fields:\n  assignableUsers\n  codeOfConduct\n  contactLinks\n  createdAt\n  defaultBranchRef\n  deleteBranchOnMerge\n  description\n  diskUsage\n  forkCou",
+      "artifact": null,
+      "startedAt": "2026-10-28T05:32:17.968Z",
+      "finishedAt": null,
+      "updatedAt": "2026-10-28T05:32:17.968Z"
+    }
+  ],
+  "externalActions": [],
+  "errors": [
+    {
+      "message": "Command failed: gh repo view tradesstack/tradesstack-client-provision-live-mvrodbev --json isPrivate,visibility\nUnknown JSON field: \"visibility\"\nAvailable fields:\n  assignableUsers\n  codeOfConduct\n  contactLinks\n  createdAt\n  defaultBranchRef\n  deleteBranchOnMerge\n  description\n  diskUsage\n  forkCount\n  fundingLinks\n  hasDiscussionsEnabled\n  hasIssuesEnabled\n  hasProjectsEnabled\n  hasWikiEnabled\n  homepageUrl\n  id\n  isArchived\n  isBlankIssuesEnabled\n  isEmpty\n  isFork\n  isInOrganization\n  isMirror\n  isPrivate\n  isSecurityPolicyEnabled\n  isTemplate\n  isUserConfigurationRepository\n  issueTemplates\n  issues\n  labels\n  languages\n  latestRelease\n  licenseInfo\n  mentionableUsers\n  mergeCommitAllowed\n  milestones\n  mirrorUrl\n  name\n  nameWithOwner\n  openGraphImageUrl\n  owner\n  parent\n  primaryLanguage\n  projects\n  pullRequestTemplates\n  pullRequests\n  pushedAt\n  rebaseMergeAllowed\n  repositoryTopics\n  securityPolicyUrl\n  squashMergeAllowed\n  sshUrl\n  stargazerCount\n  templateRepository\n  updatedAt\n  url\n  usesCustomOpenGraphImage\n  viewerCanAdminister\n  viewerDefaultCommitEmail\n  viewerDefaultMergeMethod\n  viewerHasStarred\n  viewerPermission\n  viewerPossibleCommitEmails\n  viewerSubscription\n  watchers\n",
+      "at": "2026-10-28T05:32:17.968Z"
+    }
+  ],
+  "createdAt": "2026-10-28T05:31:48.971Z",
+  "updatedAt": "2026-10-28T05:32:17.968Z",
+  "createdBy": "scripts/ops/customer-provision.mjs"
+}
