@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "1.2.8",
+  "version": "1.2.8",
+  "displayLabel": "TradesStack 1.2.8",
+  "releaseType": "OFFICIAL",
+  "status": "APPROVED",
+  "releaseDate": "2026-10-28",
+  "previousRelease": "1.2.7",
+  "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+  "releaseFingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+  "applicationShell": {
+    "releaseId": "0.0.0-phase1v.local",
+    "fingerprint": "1b018ff6d8cec75208f9127ceffce78f39e5c0882b339a17bc8e59e1e7a91f4c"
+  },
+  "packageIdentities": {
+    "@tradesstack/core-contracts": "0.0.0",
+    "@tradesstack/client-config": "0.0.0",
+    "@tradesstack/shared-ui": "0.0.0",
+    "@tradesstack/pdf-utils": "0.0.0",
+    "@tradesstack/suppliers": "0.0.0"
+  },
+  "database": {
+    "baseline": "phase1o-1",
+    "baselineSha256": "52ac69bea6587301c9d50fca809847bb077f03471406476b1d01ed2520c5a372",
+    "migrationTarget": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+    "promotionStatus": "BASELINE_UNCHANGED_FROM_1_2_7"
+  },
+  "clientConfig": {
+    "contract": "@tradesstack/client-config@0.0.0",
+    "schemaVersion": 1
+  },
+  "toolchain": {
+    "node": "22.22.2",
+    "npm": "11.6.2",
+    "next": "16.3.8"
+  },
+  "validation": {
+    "status": "PASS",
+    "releaseTests": "4723 passed, 29 skipped",
+    "typecheck": "PASS",
+    "lint": "PASS_WITH_EXISTING_WARNINGS",
+    "diffCheck": "PASS",
+    "build": "PASS",
+    "browserVerification": "PENDING_CUSTOMER_DEPLOYMENT"
+  },
+  "approval": {
+    "mainPush": "APPROVED_BY_REQUEST",
+    "realClient": "APPROVED",
+    "alphaPromotion": "NOT_APPLIED_REMAINS_1_2_4"
+  },
+  "summary": [
+    "The application root is an entry gate: authenticated visitors continue to /app/dashboard and everyone else is sent to /login",
+    "The public TradesStack marketing landing page, early-access and contact-sales routes are removed from the customer application",
+    "The login page presents a dedicated-workspace sign-in message without public registration, early-access or back-to-website links",
+    "Public self-registration is disabled in the Supabase Auth baseline; account creation is invitation-only and provisioned server-side through the Auth admin API",
+    "Password recovery is available at /forgot-password and /reset-password",
+    "No database migration change; the phase1o-1 baseline and 20261019120000 migration target are unchanged"
+  ],
+  "hostedConfiguration": {
+    "required": true,
+    "customerSupabaseAuth": "Set disable_signup=true and allow <site>/reset-password as a recovery redirect URL through the approved customer upgrade process",
+    "evidence": "docs/operations/TRADESSTACK_APPLICATION_ENTRY_AND_AUTH_POLICY.md"
+  },
+  "createdAt": "2026-10-28T08:15:00.000Z"
+}
