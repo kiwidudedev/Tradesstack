@@ -1,0 +1,64 @@
+{
+  "releaseId": "1.2.8",
+  "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+  "fingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+  "results": [
+    {
+      "clientId": "tradelynk",
+      "targetRelease": "1.2.8",
+      "previousRelease": "1.2.7",
+      "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+      "fingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+      "repositoryReference": "github:tradesstack/tradesstack-client-tradelynk",
+      "branch": "shell-upgrade/1.2.8",
+      "clientCommitSha": "aff392a685c5465cb01b973cef8fe2e50d338801",
+      "migration": {
+        "status": "NOT_LINKED_OR_NOT_CHECKED",
+        "target": "20261019120000_separate_supplier_invoice_site_and_accounting_gates.sql",
+        "pending": false,
+        "ledger": null
+      },
+      "validation": {
+        "status": "PASS",
+        "checks": [
+          {
+            "label": "dependencies",
+            "status": "PASS"
+          },
+          {
+            "label": "tests",
+            "status": "PASS"
+          },
+          {
+            "label": "typecheck",
+            "status": "PASS"
+          },
+          {
+            "label": "build",
+            "status": "PASS"
+          }
+        ]
+      },
+      "pullRequest": {
+        "status": "OPENED",
+        "reference": "https://github.com/tradesstack/tradesstack-client-tradelynk/pull/1"
+      },
+      "deployment": {
+        "status": "AWAITING_APPROVED_PR_MERGE",
+        "target": "tradesstack-tradelynk",
+        "expectedRepositorySha": "aff392a685c5465cb01b973cef8fe2e50d338801",
+        "expectedMainSourceSha": "6aa2c289447052197baf67544740eb53061f18db"
+      },
+      "status": "UPGRADE_PREPARED",
+      "errors": [],
+      "pushed": true
+    }
+  ],
+  "summary": [
+    {
+      "clientId": "tradelynk",
+      "status": "UPGRADE_PREPARED",
+      "reason": null
+    }
+  ]
+}

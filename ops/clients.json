@@ -180,7 +180,7 @@
       "clientId": "tradelynk",
       "displayName": "TradeLynk",
       "environment": "managed-client",
-      "lifecycleStatus": "PENDING",
+      "lifecycleStatus": "ACTIVE",
       "defaultBranch": "main",
       "rolloutStatus": "ENABLED",
       "releaseChannel": "stable",
@@ -195,7 +195,7 @@
         "scripts/**",
         ".github/**"
       ],
-      "targetRelease": "1.2.6",
+      "targetRelease": "1.2.8",
       "repositoryReference": "github:tradesstack/tradesstack-client-tradelynk",
       "deploymentTarget": "tradesstack-tradelynk",
       "databaseProjectReference": "supabase:wnjzsnazpzxkunofmjlf",
@@ -204,15 +204,18 @@
       "workerEnabled": true,
       "takeoff": false,
       "releaseProvenance": {
-        "status": "SOURCE_PREPARED",
-        "releaseId": "1.2.6",
-        "sourceSha": "eead509764c85b41509510329b3ac234b577f545",
-        "fingerprint": "ae932395ef0277d309701533688252d1d6d6873bb1b28514a35be43ed8f3ed72",
-        "installedVersion": null,
-        "installedAt": null,
-        "installationMethod": "scripts/ops/customer-provision.mjs",
+        "status": "VERIFIED_1_2_8_DEPLOYED",
+        "releaseId": "1.2.8",
+        "sourceSha": "6aa2c289447052197baf67544740eb53061f18db",
+        "fingerprint": "76503730d2b37ce2406bef71f8ead203a502440130405c1703aae838a4f5310b",
+        "installedVersion": "1.2.8",
+        "installedAt": "2026-10-28T08:02:24Z",
+        "installationMethod": "scripts/ops/promote-release.mjs (shell-upgrade/1.2.8, PR #1)",
         "repositoryReference": "github:tradesstack/tradesstack-client-tradelynk",
-        "preparedAt": "2026-10-28T06:50:24.843Z"
+        "repositorySha": "070fbc963688262053b3e361192003d51a001515",
+        "clientUpgradeCommit": "aff392a685c5465cb01b973cef8fe2e50d338801",
+        "deploymentId": "fb09e5f7-f39a-4c13-b3a4-2d30abed307f",
+        "verification": "Anonymous / redirects to /login; login, invite-validation, invitation and password-recovery UI verified live; authenticated / redirect proven by Main/proxy tests and blocked live by absence of a customer test credential"
       },
       "database": {
         "baseline": "phase1o-1",
@@ -228,9 +231,12 @@
         "environment": "production",
         "workerEnabled": true,
         "takeoff": false,
-        "status": "NOT_DEPLOYED",
+        "status": "DEPLOYED",
         "templateVersion": 1,
-        "templateFingerprint": "f337d59be26ca14cac1ce268270d223f1d46c8b88c848ff1c6f5b4d68d53eeff"
+        "templateFingerprint": "f337d59be26ca14cac1ce268270d223f1d46c8b88c848ff1c6f5b4d68d53eeff",
+        "deploymentId": "fb09e5f7-f39a-4c13-b3a4-2d30abed307f",
+        "verifiedRelease": "1.2.8",
+        "verifiedAt": "2026-10-28T08:03:05Z"
       },
       "worker": {
         "profilePath": "ops/worker/profiles/tradelynk.json",
@@ -252,7 +258,7 @@
       "provisioning": {
         "operationId": "prov-tradelynk-5444264237bb6eb9",
         "record": "ops/provisioning/tradelynk/operation.json",
-        "state": "READY_FOR_DEPLOYMENT"
+        "state": "DEPLOYED"
       }
     }
   ]
