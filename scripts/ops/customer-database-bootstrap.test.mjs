@@ -57,6 +57,26 @@ describe("hosted customer database bootstrap plan", () => {
     });
     expect(host.join("; ")).toMatch(/host does not contain/);
 
+    // IPv4-only operators connect through the Supabase pooler, where the
+    // project ref lives in the username rather than the hostname.
+    const pooler = validateBootstrapPlan({
+      plan,
+      projectRef: "abcdefghij0123456789",
+      databaseUrl: "postgresql://postgres.abcdefghij0123456789:test@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres",
+      release,
+      baselinePath,
+    });
+    expect(pooler).toEqual([]);
+
+    const wrongPooler = validateBootstrapPlan({
+      plan,
+      projectRef: "abcdefghij0123456789",
+      databaseUrl: "postgresql://postgres.zzzzzzzzzzzzzzzzzzzz:test@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres",
+      release,
+      baselinePath,
+    });
+    expect(wrongPooler.join("; ")).toMatch(/host does not contain/);
+
     const badRelease = { ...release, database: { ...release.database, baselineSha256: "0".repeat(64) } };
     const baseline = validateBootstrapPlan({
       plan,

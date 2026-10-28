@@ -93,7 +93,11 @@ export function validateBootstrapPlan({
     try {
       const parsed = new URL(databaseUrl);
       if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") errors.push("database URL must be PostgreSQL");
-      if (!parsed.hostname.includes(projectRef)) errors.push("database host does not contain the expected project ref");
+      const poolerHost = /\.pooler\.supabase\.com$/i.test(parsed.hostname);
+      const poolerUser = decodeURIComponent(parsed.username).includes(projectRef);
+      if (!parsed.hostname.includes(projectRef) && !(poolerHost && poolerUser)) {
+        errors.push("database host does not contain the expected project ref (direct host, or pooler host with postgres.<ref> user)");
+      }
     } catch {
       errors.push("database URL is not a valid absolute URL");
     }
