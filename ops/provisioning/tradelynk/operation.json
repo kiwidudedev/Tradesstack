@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "operationId": "prov-tradelynk-5444264237bb6eb9",
+  "customerId": "tradelynk",
+  "state": "PARTIALLY_PROVISIONED",
+  "inputs": {
+    "customerId": "tradelynk",
+    "displayName": "TradeLynk",
+    "owner": "tradesstack",
+    "attachWorker": false,
+    "webOnly": false,
+    "takeoff": false,
+    "provider": "github",
+    "environment": {
+      "kind": "hosted",
+      "environmentId": "tradelynk-staging",
+      "supabaseProjectRef": "wnjzsnazpzxkunofmjlf"
+    },
+    "profileFingerprint": "c1ccc8ac8dab0cc45859d649c69e817aa6643526f1a5d9244efda7f76055ff9b",
+    "webRelease": "1.2.6",
+    "workerRelease": "1.4.0",
+    "webRepository": "github:tradesstack/tradesstack-client-tradelynk",
+    "workerRepository": "github:tradesstack/tradesstack-worker-client-tradelynk",
+    "deployment": {
+      "workerName": "tradesstack-tradelynk",
+      "r2BucketName": "tradesstack-tradelynk-documents",
+      "siteUrl": "https://tradesstack-tradelynk.tradesstack.workers.dev",
+      "environment": "production"
+    },
+    "domain": "PENDING"
+  },
+  "steps": [
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Customer tradelynk identity validated (tradelynk-staging); web + Worker",
+      "artifact": null,
+      "startedAt": "2026-10-28T06:47:19.045Z",
+      "finishedAt": "2026-10-28T06:47:19.045Z",
+      "updatedAt": "2026-10-28T06:47:19.045Z"
+    },
+    {
+      "id": "finalise",
+      "status": "FAILED_RETRYABLE",
+      "detail": "Command failed: git push -u origin main\nerror: RPC failed; HTTP 500 curl 22 The requested URL returned error: 500\nsend-pack: unexpected disconnect while reading sideband packet\nfatal: the remote end hung up unexpectedly\nEverything up-to-date\n",
+      "artifact": null,
+      "startedAt": "2026-10-28T06:48:29.155Z",
+      "finishedAt": null,
+      "updatedAt": "2026-10-28T06:48:29.155Z"
+    }
+  ],
+  "externalActions": [],
+  "errors": [
+    {
+      "message": "Command failed: git push -u origin main\nerror: RPC failed; HTTP 500 curl 22 The requested URL returned error: 500\nsend-pack: unexpected disconnect while reading sideband packet\nfatal: the remote end hung up unexpectedly\nEverything up-to-date\n",
+      "at": "2026-10-28T06:48:29.155Z"
+    }
+  ],
+  "createdAt": "2026-10-28T06:47:18.961Z",
+  "updatedAt": "2026-10-28T06:48:29.155Z",
+  "createdBy": "scripts/ops/customer-provision.mjs"
+}
